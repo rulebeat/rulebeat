@@ -1,0 +1,610 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RULEBEAT DESIGN SYSTEM — "GRID"
+   ───────────────────────────────────────────────────────────────────────────
+   Swiss/International style. Structure comes from a strict modular grid and
+   from GROUND, not from fills, shadows or rounded corners. Colour is spent
+   in exactly one place: red, and only where something is genuinely critical.
+   Severity is encoded by visual WEIGHT, not by a hue rainbow.
+
+   SEPARATION IS BY GROUND, NOT BY OUTLINE (revised 2026-08-10). The first cut
+   drew a hairline around everything: cards, chips, badges, status markers,
+   table cells. Each one was defensible alone; a settings page with four cards,
+   three chips and a table showed twenty boxes and no hierarchy, which reads as
+   fussy rather than precise. So the page now has a ground the panels sit ON,
+   the small repeating elements are soft filled shapes with no outline at all,
+   and a line survives only where it does structural work — under a table
+   header, between table rows, around an input, at the edge of the chrome.
+   The rule ramp below was softened to match: `rule-strong` is a real line but
+   it is no longer black, because eighty-five of them across the app were.
+
+   Two grounds. Light is the default and the reference. Dark is NOT an
+   inversion — pure white hairlines glare and #E3000F vibrates against near
+   black, so both are retuned. See the dark block for the specifics.
+
+   ADDING A FEATURE LATER? Use the semantic tokens below, never a literal
+   colour and never a Tailwind palette class (text-slate-600, bg-red-50).
+   Anything built on these tokens themes itself on both grounds for free.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme inline {
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --font-sans: var(--font-body);        /* Inter — running text, UI          */
+  --font-heading: var(--font-display);  /* Inter Tight — headings, big numbers */
+  --font-mono: var(--font-data);        /* IBM Plex Mono — labels, data, code */
+
+  /* ── shadcn contract (kept, repointed to Grid) ────────────────────────── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* ── Grid additions ───────────────────────────────────────────────────── */
+
+  /* Surfaces. These carry the separation now, so they are deliberately far
+     enough apart to be seen without help from a border:
+       · `background` is the page ground — the canvas panels sit on.
+       · `surface`    is a panel: a card, the header, the sidebar rail.
+       · `raised`     floats above a panel: dropdowns, popovers, dialogs.
+       · `sunken`     is a soft filled shape: chips, badges, code blocks,
+                      table footers, the unpressed half of a toggle. */
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-raised: var(--surface-raised);
+  /* Hover for something already filled with `sunken`. It needs its own value
+     rather than reusing `surface-hover`, which moves toward white — correct for
+     a white row, backwards for a grey chip, and backwards in the other
+     direction again on the dark ground. */
+  --color-surface-sunken-hover: var(--surface-sunken-hover);
+
+  /* Ink ramp. Four steps, used in this order and no other. */
+  --color-ink: var(--ink);              /* primary text                      */
+  --color-ink-2: var(--ink-2);          /* secondary text, body copy         */
+  --color-ink-muted: var(--ink-muted);  /* labels, captions, metadata        */
+  --color-ink-faint: var(--ink-faint);  /* placeholder, disabled             */
+
+  /* Rules. Three weights, all quiet. `strong` is the structural line — the
+     frame of something that genuinely needs an edge. `border` (shadcn's name)
+     is the repeating divider between table rows, so a long table reads as one
+     block instead of a ladder. `faint` is for tracks and the quietest splits.
+     None of them is ink: a line that has to shout is doing a job that ground
+     should be doing. The one deliberately black line left in the app is the
+     rule under a table header, which is set with `border-ink` at that one
+     call site precisely because it is the exception. */
+  --color-rule-strong: var(--rule-strong);
+  --color-rule-faint: var(--rule-faint);
+  /* The exception. One black line, under a table header, and nowhere else. It
+     is what is left of the Swiss hairline once everything else stopped drawing
+     one, and with a page of soft fills around it it is the strongest mark on
+     screen — which is the point. It is not `ink`: near-white under a header on
+     the dark ground glares, so dark gets a lifted grey instead. */
+  --color-rule-anchor: var(--rule-anchor);
+
+  /* Severity — encoded by weight. Critical is the only hue. */
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-high: var(--sev-high);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-low: var(--sev-low);
+  --color-sev-critical-soft: var(--sev-critical-soft);
+
+  /* Status — for outcomes (scan succeeded, credential verified), NOT for
+     severity. Deliberately deep and desaturated so they never compete with
+     the accent red. */
+  --color-status-ok: var(--status-ok);
+  --color-status-ok-soft: var(--status-ok-soft);
+  --color-status-warn: var(--status-warn);
+  --color-status-warn-soft: var(--status-warn-soft);
+  --color-status-info: var(--status-info);
+  --color-status-info-soft: var(--status-info-soft);
+
+  /* Data viz */
+  --color-fill: var(--fill);            /* solid bar / area fill             */
+  --color-track: var(--track);          /* the unfilled part of a bar        */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Sidebar — now light in both grounds. The old dark-sidebar-on-light-body
+     split is gone, which removes a whole class of token bugs where shared
+     muted/foreground values resolved to the wrong theme. */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  /* Grid is hard-cornered. Declared explicitly rather than by calc() off a
+     base, because calc(0px - 2px) is negative and silently invalid. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* The dimmed ground behind a modal. A token rather than a literal black,
+     because a black scrim over a dark page barely reads as one: dark needs a
+     heavier veil to separate the dialog from what it covers. */
+  --color-scrim: var(--scrim);
+
+  /* ── Elevation ────────────────────────────────────────────────────────── */
+  /* Swiss design does not use drop shadows for hierarchy. The only shadow in
+     the system lifts genuinely floating layers (dropdowns, dialogs) off the
+     page so they read as temporary. Everything else uses a rule. */
+  --shadow-overlay: var(--overlay-shadow);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT — the default and the reference
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light;
+
+  /* The canvas is no longer white. A white page and a white card are the same
+     colour, which is why the card needed a black outline to exist at all. Drop
+     the ground a few points and the card defines itself by being lighter than
+     what it sits on, with no line drawn anywhere. */
+  --background: #F1F1EF;
+  --foreground: #000000;
+
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  /* Darker than the canvas on purpose: a chip has to read both on a white card
+     and on the bare page, so it cannot be the same tone as the ground. */
+  --surface-sunken: #E9E9E7;
+  --surface-sunken-hover: #DEDEDB;
+  --surface-hover: #F5F5F4;
+
+  --ink: #000000;
+  --ink-2: #3A3A3A;
+  /* The muted and faint tiers are text, not decoration, so they are set from a
+     contrast measurement rather than by eye. Both were a step too light in the
+     first cut (5.10:1 and 2.78:1 on white) and read as washed out on the very
+     surfaces they are used most: sidebar items, table headers, widget captions.
+     Every tier here clears 4.5:1 on all three light grounds. */
+  --ink-muted: #55554F;
+  --ink-faint: #71716C;
+
+  --rule-strong: #C6C6C3;
+  --border: #E2E2E0;
+  --rule-faint: #EFEFEE;
+  --rule-anchor: #000000;
+  --input: #C6C6C3;
+
+  /* The primary action is ink, not the accent red. Red already means one thing
+     everywhere else in the product: something is wrong. Spending it on "New
+     dashboard" made the loudest mark on the page a routine button, put Create
+     and Delete in the same colour, and taught people to read past red. Black on
+     white is the stronger call to action anyway. The red survives as the focus
+     ring, which is transient and where salience is the whole point. */
+  --primary: #000000;
+  --primary-foreground: #FFFFFF;
+  --ring: #E3000F;
+
+  --destructive: #E3000F;
+  --destructive-foreground: #FFFFFF;
+
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--ink);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--ink);
+
+  /* Severity is a single warm ramp that cools as it descends: alarm red, burnt
+     orange, ochre, then plain grey for the ordinary end. This replaces the first
+     cut, which was red-then-greyscale on the theory that severity should be read
+     by weight alone. It failed in use — High rendered as a solid black square,
+     the loudest mark on the screen, and Medium and Low were two greys nobody
+     could order at a glance. One ramp is still not a rainbow: the hue only ever
+     moves along the hot-to-neutral axis, and nothing here borrows a hue that
+     already means something else (green never appears, blue stays with charts). */
+  --sev-critical: #E3000F;
+  --sev-high: #B4460F;
+  --sev-medium: #8F6100;
+  --sev-low: #6E6E6A;
+  --sev-critical-soft: #FDECEC;
+
+  --status-ok: #0F7B4F;
+  --status-ok-soft: #E8F4EE;
+  --status-warn: #8A5A00;
+  --status-warn-soft: #FBF1E0;
+  --status-info: #1F5F8B;
+  --status-info-soft: #E9F1F7;
+
+  /* The bar and area fill, and the colour a healthy posture score is drawn in.
+     Deep blue rather than ink: a bar is a large solid shape, and filling every one
+     of them with black made black the loudest thing on a dashboard whose whole job
+     is to make the unhealthy number stand out. Still not green — see postureColor. */
+  --fill: #1F5F8B;
+  --track: #E4E4E4;
+  /* Series colours for a chart comparing several categories. Deliberately not the
+     severity ramp: that ramp is hot-to-neutral, so one category would be drawn as
+     if it were critical. These five are quiet, distinguishable, and none of them is
+     the red. Black is not among them either: a black line reads as the total or the
+     axis rather than as one series of five. */
+  --chart-1: #1F5F8B;
+  --chart-2: #3E7C6A;
+  --chart-3: #9A6A2F;
+  --chart-4: #7B5EA7;
+  --chart-5: #5A6570;
+
+  /* The rail is chrome, so it takes the panel surface and reads as white
+     against the canvas — the same relationship the header has. */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #ECECEA;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #E2E2E0;
+  --sidebar-ring: #E3000F;
+
+  --overlay-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 12px 28px -10px rgba(0, 0, 0, .22);
+  --scrim: rgba(0, 0, 0, .35);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK — retuned, not inverted
+
+   Four values could not simply flip:
+     · Ground is #0D0E0F, not pure black. A hair off zero stops the screen
+       reading as a hole and stops hairlines glaring.
+     · Text is #F4F4F2, not pure white. Full white on near-black haloes, and
+       that is the main reason dark interfaces are tiring after ten minutes.
+     · Structural hairlines drop to #63676B. Inverting black rules to white
+       would put glaring lines across every table and card. This is the one
+       real compromise: rules carry slightly less contrast than on white.
+     · The accent lifts to #FF453D. #E3000F vibrates against a dark ground,
+       an optical effect that genuinely strains eyes.
+
+   Severity keeps its weight logic: on light, maximum weight is black; on
+   dark, maximum weight is near-white.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dark {
+  color-scheme: dark;
+
+  /* Same relationship as light, inverted: the canvas is the darkest thing on
+     screen and a panel is lifted off it. The old values had surface only two
+     points above background, which was invisible without the border that used
+     to carry the card — with the border gone the gap has to be real. */
+  --background: #0B0C0D;
+  --foreground: #F4F4F2;
+
+  --surface: #17191B;
+  --surface-raised: #1F2225;
+  /* Lighter than the panel, not darker. On a dark ground a recessed fill
+     disappears; the soft shape a chip needs has to come up, not down. */
+  --surface-sunken: #212428;
+  --surface-sunken-hover: #2A2E33;
+  --surface-hover: #1E2124;
+
+  --ink: #F4F4F2;
+  --ink-2: #C8CACC;
+  /* Lifted for the same reason light was darkened: faint was 3.43:1 on a panel. */
+  --ink-muted: #A9ADB1;
+  --ink-faint: #83888D;
+
+  --rule-strong: #34383B;
+  --border: #26292C;
+  --rule-faint: #1D2022;
+  --rule-anchor: #6E7276;
+  --input: #3A3E42;
+
+  /* Same reasoning as light: the primary action is ink, the accent stays with
+     the focus ring. Inverted here, so the filled button is near-white on black. */
+  --primary: #F4F4F2;
+  --primary-foreground: #0D0E0F;
+  --ring: #FF453D;
+
+  --destructive: #FF453D;
+  --destructive-foreground: #0D0E0F;
+
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--ink);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--ink);
+
+  /* The same hot-to-neutral ramp as light, lifted off the dark ground. */
+  --sev-critical: #FF453D;
+  --sev-high: #F59E5B;
+  --sev-medium: #D9A441;
+  --sev-low: #8B9096;
+  --sev-critical-soft: #2C1513;
+
+  --status-ok: #3DD68C;
+  --status-ok-soft: #10231A;
+  --status-warn: #E5A93D;
+  --status-warn-soft: #261C0C;
+  --status-info: #6FB3DD;
+  --status-info-soft: #0F1D26;
+
+  --fill: #6BA9D6;
+  --track: #26282A;
+  /* Same five roles as light, lifted to hold their own against the dark ground. */
+  --chart-1: #6BA9D6;
+  --chart-2: #6FC0A9;
+  --chart-3: #D6A45C;
+  --chart-4: #B79BE0;
+  --chart-5: #98A3AE;
+
+  --sidebar: #17191B;
+  --sidebar-foreground: #F4F4F2;
+  --sidebar-primary: #F4F4F2;
+  --sidebar-primary-foreground: #0B0C0D;
+  --sidebar-accent: #23262A;
+  --sidebar-accent-foreground: #F4F4F2;
+  --sidebar-border: #26292C;
+  --sidebar-ring: #FF453D;
+
+  --overlay-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 28px -10px rgba(0, 0, 0, .7);
+  --scrim: rgba(0, 0, 0, .6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    /* Stops the layout shifting sideways when a page is short enough not to
+       scroll and the next one is long enough to. */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings take the display face and Grid's tight tracking. Sizes stay
+     with the components; only the family and tracking are global. */
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+  }
+
+  /* Ligatures off in code so operators like != and -> stay literal, which
+     matters in the KQL builder. */
+  code, pre, textarea, .font-mono {
+    font-feature-settings: 'calt' 0, 'liga' 0;
+  }
+
+  /* Every number that sits in a column lines up. */
+  table, .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One visible, consistent keyboard focus state everywhere. Grid is
+     hard-cornered so the ring is square. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  ::placeholder {
+    color: var(--ink-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GRID UTILITIES
+   The few patterns Grid repeats often enough to be worth naming.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The uppercase mono micro-label that sits above every number and section.
+   One definition so the tracking and size never drift between screens. */
+@utility label-grid {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;   /* 11px — the floor, and only for uppercase mono */
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  /* Takes the secondary tier, not the muted one. This is the smallest type in the
+     app at 11px, and it is uppercase and letterspaced on top of that, which costs
+     more legibility than the size alone suggests. A caption may be quieter than
+     its value without being hard to read. */
+  color: var(--ink-2);
+}
+
+/* The same label at full contrast, for when it is the title of a panel rather
+   than the caption above a value.
+
+   This exists as its own utility on purpose. `label-grid` sets a colour, so
+   writing `label-grid text-ink` puts two single-class rules in a specificity tie
+   that only stylesheet order breaks — it works or it doesn't depending on which
+   one Tailwind happens to emit last. Never override a Grid utility's colour from
+   outside it; name the variant instead. */
+@utility label-grid-strong {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* The title of a panel: a card header, a dashboard widget header, a named
+   section. One utility so a widget and a card never disagree about what a
+   title looks like — they did, and the widget lost. It was set in `label-grid`,
+   which is the *caption* style, so a widget's own name rendered smaller and
+   lighter than the column headers inside it.
+
+   Deliberately not uppercase mono. That treatment is a labelling device for
+   metadata (captions, column headers, eyebrows) and every mature dashboard
+   product sets panel titles in sentence case with weight carrying the
+   hierarchy. It also fits: sentence case at 14px is narrower than 11px
+   uppercase at 0.1em tracking, so long titles stop truncating. */
+@utility title-grid {
+  font-family: var(--font-heading);
+  font-size: 0.875rem;    /* 14px */
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1;
+  color: var(--ink);
+}
+
+/* Big display numbers: posture %, finding counts. */
+@utility numeral-grid {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.95;
+}
+
+/* Scroll regions. Pairing an explicit overflow on BOTH axes is deliberate:
+   setting only one leaves the other at `auto`, which lets a region scroll in
+   a direction it was never meant to. */
+/* Each of these owns both axes on purpose: set only one and CSS promotes the
+   other to `auto`, and the element scrolls in a direction it was never meant to.
+
+   None of them contain the scroll. `overscroll-behavior: contain` looks like the
+   tidy choice, but it stops the wheel passing to the page — including on an axis
+   the element cannot scroll at all. A findings table wide enough to scroll
+   sideways swallowed every vertical wheel event, so the page sat still until the
+   pointer moved off the table. Chaining to the page is the behaviour people
+   expect; a region that reaches its end should hand the scroll upward. */
+@utility scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@utility scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@utility scroll-both {
+  overflow: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCROLLBARS
+   Native scrollbars are the loudest unstyled thing left in a themed app, and
+   they differ per OS. `color-scheme` above handles Firefox and Safari; this
+   handles Chromium and Edge, which is what most self-hosters will run.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 2px solid var(--background);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-faint);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   react-grid-layout + react-resizable (dashboard editing)
+   Repointed onto tokens so drag/resize affordances theme with everything else.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.react-grid-layout { position: relative; transition: height 200ms ease; }
+.react-grid-item { transition: all 200ms ease; transition-property: left, top, width, height; }
+.react-grid-item.cssTransforms { transition-property: transform, width, height; }
+.react-grid-item.resizing { transition: none; z-index: 1; will-change: width, height; }
+.react-grid-item.react-draggable-dragging { transition: none; z-index: 3; will-change: transform; }
+.react-grid-item.dropping { visibility: hidden; }
+.react-grid-item.react-grid-placeholder {
+  background: var(--primary);
+  opacity: 0.14;
+  border-radius: 0;
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+.react-grid-item > .react-resizable-handle {
+  position: absolute; width: 20px; height: 20px;
+}
+.react-grid-item > .react-resizable-handle::after {
+  content: ""; position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px;
+  border-right: 2px solid var(--ink-faint);
+  border-bottom: 2px solid var(--ink-faint);
+}
+.react-resizable-hide > .react-resizable-handle { display: none; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; transform: rotate(90deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-nw { top: 0; left: 0; cursor: nw-resize; transform: rotate(180deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-ne { top: 0; right: 0; cursor: ne-resize; transform: rotate(270deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e { top: 50%; margin-top: -10px; cursor: ew-resize; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-w { left: 0; transform: rotate(135deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-e { right: 0; transform: rotate(315deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n,
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s { left: 50%; margin-left: -10px; cursor: ns-resize; }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-n { top: 0; transform: rotate(225deg); }
+.react-grid-item > .react-resizable-handle.react-resizable-handle-s { bottom: 0; transform: rotate(45deg); }
+.react-resizable { position: relative; }
+.react-resizable-handle {
+  position: absolute; width: 20px; height: 20px;
+  background-repeat: no-repeat; background-origin: content-box;
+  box-sizing: border-box; background-position: bottom right; padding: 0 3px 3px 0;
+}

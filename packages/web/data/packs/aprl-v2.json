@@ -1,0 +1,2576 @@
+[
+  {
+    "id": "bb6deb9d-24fa-4ee8-bc23-ac3ebc7fdf8e",
+    "name": "Use at least the Enterprise SKU",
+    "description": "You need to use a minimum of Enterprise SKU for your managed domain to support replica sets.\nLearn more: https://learn.microsoft.com/entra/identity/domain-services/tutorial-create-replica-set",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AAD/domainServices"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Gets Entry Domain Services that are using only one replicaSet\nresources\n| where type == \"microsoft.aad/domainservices\"\n| extend replicaSets = properties.replicaSets\n| where array_length(replicaSets) < 2\n| project recommendationId='a3058909-fcf8-4450-88b5-499f57449178', name=name, id=id, tags=tags, param1=strcat('replicaSetLocation:', replicaSets[0].location)"
+  },
+  {
+    "id": "a3058909-fcf8-4450-88b5-499f57449178",
+    "name": "Use replica sets for resiliency or geolocation in Microsoft Entra Domain Services",
+    "description": "To improve the resiliency of a Microsoft Entra Domain Services managed domain, or deploy to additional geographic locations close to your applications, you can use replica sets.\nYou can add a replica set to any peered virtual network in any Azure region that supports Domain Services.\nLearn more: https://learn.microsoft.com/entra/identity/domain-services/tutorial-create-replica-set",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AAD/domainServices"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Gets Entry Domain Services that are using the Standard SKU\nresources\n| where type == \"microsoft.aad/domainservices\"\n| extend sku = properties.sku\n| where sku =~ 'Standard'\n| project recommendationId='bb6deb9d-24fa-4ee8-bc23-ac3ebc7fdf8e', name=name, id=id, tags=tags, param1=strcat('SKU:', sku)"
+  },
+  {
+    "id": "9ec5b4c8-3dd8-473a-86ee-3273290331b9",
+    "name": "Enable Stretched Clusters for Multi-AZ Availability of the vSAN Datastore",
+    "description": "For Azure VMware Solution, enabling Stretched Clusters offers 99.99% SLA, synchronous storage replication (RPO=0), and spreads vSAN datastore across two AZs. Must be done at initial setup, needing double quota due to extension across AZs.\nLearn more: https://learn.microsoft.com/azure/azure-vmware/deploy-vsan-stretched-clusters",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure VMware Solution resources that don't have a cluster host memory critical alert with a threshold of 95%.\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"UsageAverage\"\n| where threshold == 95\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"029208c8-5186-4a76-8ee8-6e3445fef4dd\", name, id, tags, param1 = \"hostMemoryCriticalAlert: isNull or threshold != 95\""
+  },
+  {
+    "id": "4232eb32-3241-4049-9e14-9b8005817b56",
+    "name": "Configure Azure Monitor Alert warning thresholds for vSAN datastore utilization",
+    "description": "Ensure VMware vSAN datastore slack space is maintained for SLA by monitoring storage utilization and setting alerts at 70% and 75% utilization to allow for capacity planning. To expand, add hosts or external storage like Azure Elastic SAN, Azure NetApp Files, if CPU and RAM requirements are met.\nLearn more: https://learn.microsoft.com/azure/azure-vmware/configure-alerts-for-azure-vmware-solution#supported-metrics-and-activities",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "4ee5d535-c47b-470a-9557-4a3dd297d62f",
+    "name": "Monitor CPU Utilization to ensure sufficient resources for workloads",
+    "description": "Ensure sufficient compute resources to avoid host resource exhaustion in Azure VMware Solution, which utilizes vSphere DRS and HA for dynamic workload resource management. However, sustained CPU utilization over 95% may increase CPU Ready times, impacting workloads.\nLearn more: https://learn.microsoft.com/azure/well-architected/azure-vmware/monitoring#configure-and-streamline-alerts",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure VMware Solution resources that don't have a vSAN capacity critical alert with a threshold of 75% or a warning capacity of 70%.\n(\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"DiskUsedPercentage\"\n| where threshold == 75\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"4232eb32-3241-4049-9e14-9b8005817b56\", name, id, tags, param1 = \"vsanCapacityCriticalAlert: isNull or threshold != 75\"\n)\n| union (\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"DiskUsedPercentage\"\n| where threshold == 70\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"4232eb32-3241-4049-9e14-9b8005817b56\", name, id, tags, param1 = \"vsanCapacityWarningAlert: isNull or threshold != 70\"\n)"
+  },
+  {
+    "id": "029208c8-5186-4a76-8ee8-6e3445fef4dd",
+    "name": "Monitor Memory Utilization to ensure sufficient resources for workloads",
+    "description": "Ensure sufficient memory resources to prevent host resource exhaustion in Azure VMware Solution. It uses vSphere DRS and vSphere HA for dynamic workload management. Yet, continuous memory use over 95% leads to disk swapping, affecting workloads.\nLearn more: https://learn.microsoft.com/azure/well-architected/azure-vmware/monitoring#configure-and-streamline-alerts",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure VMware Solution resources that don't have a Cluster CPU capacity critical alert with a threshold of 95%.\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"EffectiveCpuAverage\"\n| where threshold == 95\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"4ee5d535-c47b-470a-9557-4a3dd297d62f\", name, id, tags, param1 = \"hostCpuCriticalAlert: isNull or threshold != 95\""
+  },
+  {
+    "id": "baf3bfc0-32a2-4c0c-926d-c9bf0b49808e",
+    "name": "Migrate API Management services to Premium SKU to support Availability Zones",
+    "description": "Upgrading the API Management instance to the Premium SKU adds support for Availability Zones, enhancing availability and resilience by distributing services across physically separate locations within Azure regions.\nLearn more: https://learn.microsoft.com/azure/api-management/upgrade-and-scale#change-your-api-management-service-tier",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ApiManagement/service"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Premium API Management instances that aren't zone redundant\nresources\n| where type =~ 'Microsoft.ApiManagement/service'\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| extend skuName = sku.name\n| where tolower(skuName) == tolower('premium')\n| where isnull(zones) or array_length(zones) < 2\n| extend zoneValue = iff((isnull(zones)), \"null\", zones)\n| project recommendationId = \"740f2c1c-8857-4648-80eb-47d2c56d5a50\", name, id, tags, param1=\"Zones: No Zone or Zonal\", param2=strcat(\"Zones value: \", zoneValue )"
+  },
+  {
+    "id": "740f2c1c-8857-4648-80eb-47d2c56d5a50",
+    "name": "Enable Availability Zones on Premium API Management instances",
+    "description": "Zone redundancy for APIM instances ensures the gateway and control plane (Management API, developer portal, Git configuration) are replicated across datacenters in physically separated zones, boosting resilience to zone failures.\nLearn more: https://learn.microsoft.com/azure/api-management/high-availability#availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ApiManagement/service"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "e35cf148-8eee-49d1-a1c9-956160f99e0b",
+    "name": "Azure API Management platform version should be stv2",
+    "description": "stv1 instances were deprecated on August 31, 2024. If not migrated to stv2 by then, auto-migration will occur. In some cases, due to technical limitations, services may be shut down in March 2025.\nLearn more: https://learn.microsoft.com/azure/api-management/breaking-changes/stv1-platform-retirement-august-2024",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ApiManagement/service"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "f4201965-a88d-449d-b3b4-021394719eb2",
+    "name": "Deploy zone redundant Container app environments",
+    "description": "To take advantage of availability zones, you must enable zone redundancy when you create a Container Apps environment. The environment must include a virtual network with an available subnet. To ensure proper distribution of replicas, set your app's minimum replica count to three.\nLearn more: https://learn.microsoft.com/azure/reliability/reliability-azure-container-apps",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.App/managedenvironments"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// The query filters the qualified Container app environments that do not have Zone Redundancy enabled.\nresources\n| where type =~ \"microsoft.app/managedenvironments\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where tobool(properties.zoneRedundant) == false\n| project recommendationId = \"f4201965-a88d-449d-b3b4-021394719eb2\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "bb4c8db4-f821-475b-b1ea-16e95358665e",
+    "name": "Enable Purge protection for Azure App Configuration",
+    "description": "With Purge protection enabled, soft deleted stores can't be purged in the retention period. If disabled, the soft deleted store can be purged before the retention period expires.\nLearn more: https://learn.microsoft.com/azure/azure-app-configuration/concept-soft-delete#purge-protection",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AppConfiguration/configurationStores"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Upgrade to App Configuration Standard tier\nresources\n| where type =~ \"Microsoft.AppConfiguration/configurationStores\"\n| where sku.name == \"free\"\n| project recommendationId = \"2102a57a-a056-4d5e-afe5-9df9f92177ca\", name, id, tags, param1 = \"Upgrade to Standard SKU\""
+  },
+  {
+    "id": "2102a57a-a056-4d5e-afe5-9df9f92177ca",
+    "name": "Upgrade to App Configuration Standard tier",
+    "description": "SLA is not available for Free tier. Upgrade to the Standard tier to get an SLA of 99.9%\nLearn more: https://learn.microsoft.com/en-us/azure/azure-app-configuration/faq#which-app-configuration-tier-should-i-use",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AppConfiguration/configurationStores"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Purge protection should be enabled for App Configuration stores to prevent accidental deletion of configuration data.\nresources\n| where type =~ \"Microsoft.AppConfiguration/configurationStores\"\n| where sku.name <> \"free\"\n| where (properties.enablePurgeProtection <> true) or isnull(properties.enablePurgeProtection )\n| project recommendationId = \"bb4c8db4-f821-475b-b1ea-16e95358665e\", name, id, tags, param1 = \"Enable purge protection\""
+  },
+  {
+    "id": "5a44bd30-ae6a-4b81-9b68-dc3a8ffca4d8",
+    "name": "Enable zone redundancy for Azure Cache for Redis",
+    "description": "Azure Cache for Redis offers zone redundancy in Premium and Enterprise tiers, using VMs across multiple Availability Zones to ensure greater resilience and availability.\nLearn more: https://learn.microsoft.com/azure/azure-cache-for-redis/cache-how-to-zone-redundancy",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Cache/Redis"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Cache for Redis instances with one or no Zones selected\nresources\n| where type =~ \"microsoft.cache/redis\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where array_length(zones) <= 1 or isnull(zones)\n| project recommendationId = \"5a44bd30-ae6a-4b81-9b68-dc3a8ffca4d8\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "3263a64a-c256-de48-9818-afd3cbc55c2a",
+    "name": "Shared disks should only be enabled in clustered servers",
+    "description": "Azure shared disks let you attach a disk to multiple VMs at once for deploying or migrating clustered applications, suitable only when a disk is shared among VM cluster members.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/disks-shared",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/disks"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Disks configured to be Shared. This is not an indication of an issue, but if a disk with this configuration is assigned to two or more VMs without a proper disk control mechanism (like a WSFC) it can lead to data loss\nresources\n| where type =~ 'Microsoft.Compute/disks'\n| where isnotnull(properties.maxShares) and properties.maxShares >= 2\n| project id, name, tags, lowerCaseDiskId = tolower(id), diskState = tostring(properties.diskState)\n| join kind = leftouter (\n    resources\n    | where type =~ 'Microsoft.Compute/virtualMachines'\n    | project osDiskVmName = name, lowerCaseOsDiskId = tolower(properties.storageProfile.osDisk.managedDisk.id)\n    | join kind = fullouter (\n        resources\n        | where type =~ 'Microsoft.Compute/virtualMachines'\n        | mv-expand dataDisks = properties.storageProfile.dataDisks\n        | project dataDiskVmName = name, lowerCaseDataDiskId = tolower(dataDisks.managedDisk.id)\n        )\n        on $left.lowerCaseOsDiskId == $right.lowerCaseDataDiskId\n    | project lowerCaseDiskId = coalesce(lowerCaseOsDiskId, lowerCaseDataDiskId), vmName = coalesce(osDiskVmName, dataDiskVmName)\n    )\n    on lowerCaseDiskId\n| summarize vmNames = make_set(vmName) by name, id, tostring(tags), diskState\n| extend param1 = strcat(\"DiskState: \", diskState), param2 = iif(isempty(vmNames[0]), \"VMName: n/a\", strcat(\"VMName: \", strcat_array(vmNames, \", \")))\n| project recommendationId = \"3263a64a-c256-de48-9818-afd3cbc55c2a\", name, id, tags, param1, param2\n| order by id asc"
+  },
+  {
+    "id": "fa0cf4f5-0b21-47b7-89a9-ee936f193ce1",
+    "name": "Use Azure Disks with Zone Redundant Storage for higher resiliency and availability",
+    "description": "Azure disks offers a zone-redundant storage (ZRS) option for workloads that need to be resilient to an entire zone being down. Due to the cross-zone data replication, ZRS disks have higher write latency when compared to the locally-redundant option (LRS), so make sure to benchmark your disks.\nLearn more: https://aka.ms/zrsdisksdoc",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/disks"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find eligible Disks that are not zonal nor zone redundant\nresources\n| where type == 'microsoft.compute/disks'\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where sku has \"Premium_LRS\" or sku has \"StandardSSD_LRS\"\n| where sku.name has_cs 'ZRS' or array_length(zones) > 0\n| project recommendationId=\"fa0cf4f5-0b21-47b7-89a9-ee936f193ce1\", name, id, tags, param1 = sku, param2 = sku.name"
+  },
+  {
+    "id": "b49a39fd-f431-4b61-9062-f2157849d845",
+    "name": "A minimum of three replicas should be kept for production image versions",
+    "description": "Keeping a minimum of 3 replicas for production images in Azure's Compute Gallery ensures scalability and prevents throttling in multi-VM deployments by distributing VM deployments across different replicas. This reduces the risk of overloading a single replica.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/azure-compute-gallery#best-practices",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/galleries/images/versions"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to list all images whose Hyper-V generation is not V2\nresources\n| where type =~ \"microsoft.compute/galleries/images\"\n| extend VMGeneration = properties.hyperVGeneration\n| where VMGeneration <> 'V2'\n| project RecommendationId=\"1c5e1e58-4e56-491c-8529-10f37af9d4ed\",name,id,tags,param1=strcat(\"VMGeneration: \",VMGeneration)"
+  },
+  {
+    "id": "488dcc8b-f2e3-40ce-bf95-73deb2db095f",
+    "name": "Zone redundant storage should be used for image versions",
+    "description": "Use ZRS for high availability when creating image/VM versions in Azure Compute Gallery, offering resilience against Availability Zone failures. ZRS accounts are advisable in regions with Availability Zones, with the choice of Standard_ZRS recommended over Standard_LRS for these regions.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/azure-compute-gallery#best-practices",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/galleries/images/versions"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to list all image versions and its associated image and gallery name whose Storage account type is not using ZRS\nresources\n| where type =~ \"microsoft.compute/galleries/images/versions\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| extend GalleryName = tostring(split(tostring(id), \"/\")[8]), ImageName = tostring(split(tostring(id), \"/\")[10])\n| extend StorageAccountType = tostring(properties.publishingProfile.storageAccountType)\n| where StorageAccountType !has \"ZRS\"\n| project RecommendationId=\"488dcc8b-f2e3-40ce-bf95-73deb2db095f\",name,id,tags,param1=strcat(\"GalleryName: \",GalleryName),param2=strcat(\"ImageName: \",ImageName),param3=strcat(\"StorageAccountType: \",StorageAccountType)"
+  },
+  {
+    "id": "e7495e1c-0c75-0946-b266-b429b5c7f3bf",
+    "name": "Deploy VMSS with Flex orchestration mode instead of Uniform",
+    "description": "Deploying even single instance VMs into a scale set with Flexible orchestration mode future-proofs applications for scaling and availability. This mode guarantees high availability (up to 1000 VMs) by distributing VMs across fault domains in a region or within an Availability Zone.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-design-overview#when-to-use-scale-sets-instead-of-virtual-machines",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMSSs Uniform not using SSD storage\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where properties.orchestrationMode != \"Flexible\"\n| where properties.virtualMachineProfile.storageProfile.osDisk.managedDisk.storageAccountType == 'Standard_LRS'\n| project recommendationId = \"1074f391-22bf-42f5-9c95-68af5ad89bf6\", name, id, tags"
+  },
+  {
+    "id": "94794d2a-eff0-2345-9b67-6f9349d0a627",
+    "name": "Enable Azure Virtual Machine Scale Set Application Health Monitoring",
+    "description": "Monitoring application health in Azure Virtual Machine Scale Sets is crucial for deployment management. It supports rolling upgrades such as automatic OS-image upgrades and VM guest patching, leveraging health monitoring for upgrading.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-health-extension?tabs=rest-api",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find VMSS instances with one or no Zones selected\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where isempty(tostring(tags['aks-managed-poolName']))\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where array_length(zones) <= 1 or isnull(zones)\n| project recommendationId = \"1422c567-782c-7148-ac7c-5fc14cf45adc\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "820f4743-1f94-e946-ae0b-45efafd87962",
+    "name": "Enable Automatic Repair Policy on Azure Virtual Machine Scale Sets",
+    "description": "Enabling automatic instance repairs in Azure Virtual Machine Scale Sets enhances application availability through a continuous health check and maintenance process.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-automatic-instance-repairs#requirements-for-using-automatic-instance-repairs",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find VMSS instances associated with autoscale settings when predictiveAutoscalePolicy_scaleMode is disabled\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where iff(isempty(tostring(tags['aks-managed-poolName'])), true, false)\n| project name, id=tolower(id), tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/autoscalesettings\"\n| where tostring(properties.targetResourceUri) contains \"Microsoft.Compute/virtualMachineScaleSets\"\n| project id = tolower(tostring(properties.targetResourceUri)), autoscalesettings = properties\n) on id\n| where autoscalesettings.enabled == \"true\" and autoscalesettings.predictiveAutoscalePolicy.scaleMode == \"Disabled\"\n| project recommendationId = \"3f85a51c-e286-9f44-b4dc-51d00768696c\", name, id, tags, param1 = \"predictiveAutoscalePolicy_scaleMode: Disabled\"\n| order by id asc"
+  },
+  {
+    "id": "ee66ff65-9aa3-2345-93c1-25827cf79f44",
+    "name": "Configure VMSS Autoscale to custom and configure the scaling metrics",
+    "description": "Use custom autoscale for VMSS based on metrics and schedules to improve performance and cost effectiveness, adjusting instances as demand changes.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/autoscale/autoscale-get-started?WT.mc_id=Portal-Microsoft_Azure_Monitoring",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that do NOT have automatic repair policy enabled\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where isempty(tostring(tags['aks-managed-poolName']))\n| where properties.automaticRepairsPolicy.enabled == false\n| project recommendationId = \"820f4743-1f94-e946-ae0b-45efafd87962\", name, id, tags, param1 = \"automaticRepairsPolicy: Disabled\""
+  },
+  {
+    "id": "3f85a51c-e286-9f44-b4dc-51d00768696c",
+    "name": "Enable Predictive autoscale and configure at least for Forecast Only",
+    "description": "Predictive autoscale utilizes machine learning to efficiently manage and scale Azure Virtual Machine Scale Sets by forecasting CPU load through historical usage analysis, ensuring timely scale-out to meet demand.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/autoscale/autoscale-predictive",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "//cannot-be-validated-with-arg"
+  },
+  {
+    "id": "b5a63aa0-c58e-244f-b8a6-cbba0560a6db",
+    "name": "Disable Force strictly even balance across zones to avoid scale in and out fail attempts",
+    "description": "Microsoft advises disabling strictly even VM instance distribution across Availability Zones in VMSS to improve scalability and flexibility, noting that uneven distribution may better serve application load demands despite the potential trade-off in resilience.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-scale-in-policy",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that do NOT have health monitoring enabled\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where isempty(tostring(tags['aks-managed-poolName']))\n| join kind=leftouter  (\n    resources\n    | where type == \"microsoft.compute/virtualmachinescalesets\"\n    | where isempty(tostring(tags['aks-managed-poolName']))\n    | mv-expand extension=properties.virtualMachineProfile.extensionProfile.extensions\n    | where extension.properties.type in ( \"ApplicationHealthWindows\", \"ApplicationHealthLinux\" )\n    | project id\n) on id\n| where id1 == \"\"\n| project recommendationId = \"94794d2a-eff0-2345-9b67-6f9349d0a627\", name, id, tags, param1 = \"extension: null\""
+  },
+  {
+    "id": "1422c567-782c-7148-ac7c-5fc14cf45adc",
+    "name": "Deploy VMSS across availability zones with VMSS Flex",
+    "description": "When creating VMSS, implement availability zones as a protection measure for your applications and data against the rare event of datacenter failure.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-use-availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns any AKS cluster nodepools that do not have Ephemeral Disks\nresources\n| where type == \"microsoft.containerservice/managedclusters\"\n| mv-expand agentPoolProfile = properties.agentPoolProfiles\n| extend\n    osDiskType         = tostring(agentPoolProfile.osDiskType),\n    nodePoolName       = tostring(agentPoolProfile.name),\n    nodeResourceGroup  = tostring(properties.nodeResourceGroup),\n    subscriptionId     = tostring(split(id, \"/\")[2])\n| where osDiskType != \"Ephemeral\" and isnotempty(nodeResourceGroup)\n| project\n    nodePoolName,\n    nodeResourceGroup,\n    subscriptionId\n| join kind=inner (\n    resources\n    | where type == \"microsoft.compute/virtualmachinescalesets\"\n    | extend\n        vmssName        = name,\n        vmssId          = id,\n        subscriptionId  = tostring(split(id, \"/\")[2]),\n        resourceGroup   = tostring(split(id, \"/\")[4])\n) on subscriptionId\n| where tolower(resourceGroup) == tolower(nodeResourceGroup)\n    and tolower(vmssName) contains tolower(nodePoolName)\n| project\n    recommendationId = \"a7bfcc18-b0d8-4d37-81f3-8131ed8bead5\",\n    name = vmssName,\n    id   = vmssId,\n    tags,\n    param1 = \"osDiskType: Non-Ephemeral\""
+  },
+  {
+    "id": "a7bfcc18-b0d8-4d37-81f3-8131ed8bead5",
+    "name": "Use Ephemeral OS Disks for AKS VMSS Node Pools",
+    "description": "Ephemeral OS disks on AKS offer lower read/write latency due to local attachment, eliminating the need for replication seen with managed disks. This enhances performance and speeds up cluster operations such as scaling or upgrading due to quicker re-imaging and boot times.\nLearn more: https://learn.microsoft.com/azure/aks/concepts-storage#ephemeral-os-disk",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachineScaleSets"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find VMSS instances where strictly zoneBalance is set to True\nresources\n| where type == \"microsoft.compute/virtualmachinescalesets\"\n| where properties.orchestrationMode == \"Uniform\" and properties.zoneBalance == true\n| project recommendationId = \"b5a63aa0-c58e-244f-b8a6-cbba0560a6db\", name, id, tags, param1 = \"strictly zoneBalance: Enabled\"\n| order by id asc"
+  },
+  {
+    "id": "273f6b30-68e0-4241-85ea-acf15ffb60bf",
+    "name": "Run production workloads on two or more VMs using VMSS Flex",
+    "description": "Production VM workloads should be deployed on multiple VMs and grouped in a VMSS Flex instance to intelligently distribute across the platform, minimizing the impact of platform faults and updates.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-orchestration-modes#what-has-changed-with-flexible-orchestration-mode",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that are not using Managed Disks\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where isnull(properties.storageProfile.osDisk.managedDisk)\n| project recommendationId = \"122d11d7-b91f-8747-a562-f56b79bcfbdc\", name, id, tags"
+  },
+  {
+    "id": "2bd0be95-a825-6f47-a8c6-3db1fb5eb387",
+    "name": "Deploy VMs across Availability Zones",
+    "description": "Azure Availability Zones, within each Azure region, are tolerant to local failures, protecting applications and data against unlikely Datacenter failures by being physically separate.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/create-portal-availability-zone?tabs=standard",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that do NOT have Backup enabled\n// Run query to see results.\nresources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| project name, id, tags\n| join kind=leftouter (\n    recoveryservicesresources\n    | where type =~ 'Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems'\n    | where properties.dataSourceInfo.datasourceType =~ 'Microsoft.Compute/virtualMachines'\n    | project idBackupEnabled=properties.sourceResourceId\n    | extend name=strcat_array(array_slice(split(idBackupEnabled, '/'), 8, -1), '/')\n) on name\n| where isnull(idBackupEnabled)\n| project-away idBackupEnabled\n| project-away name1\n| project recommendationId = \"1981f704-97b9-b645-9c57-33f8ded9261a\", name, id, tags\n| order by id asc"
+  },
+  {
+    "id": "a8d25876-7951-b646-b4e8-880c9031596b",
+    "name": "Migrate VMs using availability sets to VMSS Flex",
+    "description": "While availability sets are not scheduled for immediate deprecation, they are planned to be deprecated in the future. Migrate workloads from VMs to VMSS Flex for deployment across zones or within the same zone across different fault domains (FDs) for better reliability.\nLearn more: https://learn.microsoft.com/azure/virtual-machine-scale-sets/flexible-virtual-machine-scale-sets-migration-resources",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VM NICs that have DNS Server settings configured in any of the NICs\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where isnotnull(properties.networkProfile.networkInterfaces)\n| mv-expand nic=properties.networkProfile.networkInterfaces\n| project name, id, tags, nicId = nic.id\n| extend nicId = tostring(nicId)\n| join kind=inner (\n    Resources\n    | where type =~ 'Microsoft.Network/networkInterfaces'\n    | project name, id, dnsServers = properties.dnsSettings.dnsServers\n    | extend hasDns = array_length(dnsServers) >= 1\n    | where hasDns != 0\n    | project name, nicId = tostring(id)\n) on nicId\n| project recommendationId = \"1cf8fe21-9593-1e4e-966b-779a294c0d30\", name, id, tags\n| order by id asc"
+  },
+  {
+    "id": "cfe22a65-b1db-fd41-9e8e-d573922709ae",
+    "name": "Replicate VMs using Azure Site Recovery",
+    "description": "Replicating Azure VMs via Site Recovery entails continuous, asynchronous disk replication to a target region. Recovery points are generated every few minutes, ensuring a Recovery Point Objective (RPO) in minutes.\nLearn more: https://learn.microsoft.com/azure/architecture/checklist/resiliency-per-service#virtual-machines",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs with PublicIPs directly associated with them\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where isnotnull(properties.networkProfile.networkInterfaces)\n| mv-expand nic=properties.networkProfile.networkInterfaces\n| project name, id, tags, nicId = nic.id\n| extend nicId = tostring(nicId)\n| join kind=inner (\n    Resources\n    | where type =~ 'Microsoft.Network/networkInterfaces'\n    | where isnotnull(properties.ipConfigurations)\n    | mv-expand ipconfig=properties.ipConfigurations\n    | extend publicIp = tostring(ipconfig.properties.publicIPAddress.id)\n    | where publicIp != \"\"\n    | project name, nicId = tostring(id), publicIp\n) on nicId\n| project recommendationId = \"1f629a30-c9d0-d241-82ee-6f2eb9d42cb4\", name, id, tags\n| order by id asc"
+  },
+  {
+    "id": "122d11d7-b91f-8747-a562-f56b79bcfbdc",
+    "name": "Use Managed Disks for VM disks",
+    "description": "Azure is retiring unmanaged disks on September 30, 2025. Users should plan the migration to avoid disruptions and maintain service reliability.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/unmanaged-disks-deprecation",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that are not associated with a VMSS Flex instance\nresources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where isnull(properties.virtualMachineScaleSet.id)\n| project recommendationId=\"273f6b30-68e0-4241-85ea-acf15ffb60bf\", name, id, tags"
+  },
+  {
+    "id": "1981f704-97b9-b645-9c57-33f8ded9261a",
+    "name": "Backup VMs with Azure Backup service",
+    "description": "Enable backups for your virtual machines with Azure Backup to secure and quickly recover your data. This service offers simple, secure, and cost-effective solutions for backing up and recovering data from the Microsoft Azure cloud.\nLearn more: https://learn.microsoft.com/azure/backup/backup-overview",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that are not assigned to a Zone\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where isnull(zones)\n| project recommendationId=\"2bd0be95-a825-6f47-a8c6-3db1fb5eb387\", name, id, tags, param1=\"No Zone\""
+  },
+  {
+    "id": "dfedbeb1-1519-fc47-86a5-52f96cf07105",
+    "name": "Enable Accelerated Networking (AccelNet)",
+    "description": "Accelerated networking enables SR-IOV to a VM, greatly improving its networking performance by bypassing the host from the data path, which reduces latency, jitter, and CPU utilization for demanding network workloads on supported VM types.\nLearn more: https://learn.microsoft.com/azure/virtual-network/accelerated-networking-overview",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "73d1bb04-7d3e-0d47-bc0d-63afe773b5fe",
+    "name": "When AccelNet is enabled, you must manually update the GuestOS NIC driver",
+    "description": "When Accelerated Networking is enabled, the default Azure VNet interface in GuestOS is swapped for a Mellanox, and its driver comes from a 3rd party. Marketplace images have the latest Mellanox drivers, but post-deployment, updating the driver is the user's responsibility.\nLearn more: https://learn.microsoft.com/azure/virtual-network/accelerated-networking-overview",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Virtual Machine capacity reservations and their associated properties\nadvisorresources\n| where properties.recommendationTypeId =~ '1670c0af-6536-4cbf-872f-152c91a51a80' // RecommendationID from Advisor\n| mv-expand resId = properties.resourceMetadata.resourceId\n| extend resId = tolower(tostring(resId))\n| project recId = properties.recommendationTypeId, resId\n| join kind=leftouter (\n    resources\n    | extend id = tolower(tostring(id))\n    | project id, name, tags, location, properties\n) on $left.resId == $right.id\n| project recommendationId = \"302fda08-ee65-4fbe-a916-6dc0b33169c4\", name , id = resId, tags,param1 = properties.hardwareProfile.vmSize, param2 = location"
+  },
+  {
+    "id": "41a22a5e-5e08-9647-92d0-2ffe9ef1bdad",
+    "name": "IP Forwarding should only be enabled for Network Virtual Appliances",
+    "description": "IP forwarding allows a virtual machine network interface to receive and send network traffic not destined for or originating from its assigned IP addresses.\nLearn more: https://learn.microsoft.com/azure/virtual-network/virtual-network-network-interface?tabs=network-interface-portal#enable-or-disable-ip-forwarding",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs using A or B series families\nresources\n| where type == 'microsoft.compute/virtualmachines'\n| where properties.hardwareProfile.vmSize contains \"Standard_B\" or properties.hardwareProfile.vmSize contains \"Standard_A\"\n| project recommendationId = \"3201dba8-d1da-4826-98a4-104066545170\", name, id, tags, param1=strcat(\"vmSku: \" , properties.hardwareProfile.vmSize)"
+  },
+  {
+    "id": "b72214bb-e879-5f4b-b9cd-642db84f36f4",
+    "name": "Enable VM Insights",
+    "description": "VM Insights monitors VM and scale set performance, health, running processes, and dependencies. It enhances the predictability of application performance and availability by pinpointing performance bottlenecks and network issues, and it clarifies if problems are related to other dependencies.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/vm/vminsights-overview",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VM NICs that have IPForwarding enabled. This feature is usually only required for Network Virtual Appliances\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where isnotnull(properties.networkProfile.networkInterfaces)\n| mv-expand nic=properties.networkProfile.networkInterfaces\n| project name, id, tags, nicId = nic.id\n| extend nicId = tostring(nicId)\n| join kind=inner (\n    Resources\n    | where type =~ 'Microsoft.Network/networkInterfaces'\n    | where properties.enableIPForwarding == true\n    | project nicId = tostring(id)\n) on nicId\n| project recommendationId = \"41a22a5e-5e08-9647-92d0-2ffe9ef1bdad\", name, id, tags\n| order by id asc"
+  },
+  {
+    "id": "52ab9e5c-eec0-3148-8bd7-b6dd9e1be870",
+    "name": "Use maintenance configurations for the Dedicated and/or Isolated VM SKUs",
+    "description": "The maintenance configuration settings let users schedule and manage updates, making sure the updates or interruptions on the VM are performed within a planned timeframe.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/maintenance-configurations",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Virtual Machines without diagnostic settings enabled/with diagnostic settings enabled but not configured both performance counters and event logs/syslogs.\nresources\n| where type =~ \"microsoft.compute/virtualmachines\"\n| project name, id, tags, lowerCaseVmId = tolower(id)\n| join kind = leftouter (\n    resources\n    | where type =~ \"Microsoft.Compute/virtualMachines/extensions\" and properties.publisher =~ \"Microsoft.Azure.Diagnostics\"\n    | project\n        lowerCaseVmIdOfExtension = tolower(substring(id, 0, indexof(id, \"/extensions/\"))),\n        extensionType = properties.type,\n        provisioningState = properties.provisioningState,\n        storageAccount = properties.settings.StorageAccount,\n        // Windows\n        wadPerfCounters = properties.settings.WadCfg.DiagnosticMonitorConfiguration.PerformanceCounters.PerformanceCounterConfiguration,\n        wadEventLogs = properties.settings.WadCfg.DiagnosticMonitorConfiguration.WindowsEventLog,\n        // Linux\n        ladPerfCounters = properties.settings.ladCfg.diagnosticMonitorConfiguration.performanceCounters.performanceCounterConfiguration,\n        ladSyslog = properties.settings.ladCfg.diagnosticMonitorConfiguration.syslogEvents\n    | extend\n        // Windows\n        isWadPerfCountersConfigured = iif(array_length(wadPerfCounters) > 0, true, false),\n        isWadEventLogsConfigured = iif(isnotnull(wadEventLogs) and array_length(wadEventLogs.DataSource) > 0, true, false),\n        // Linux\n        isLadPerfCountersConfigured = iif(array_length(ladPerfCounters) > 0, true, false),\n        isLadSyslogConfigured = isnotnull(ladSyslog)\n    | project\n        lowerCaseVmIdOfExtension,\n        extensionType,\n        provisioningState,\n        storageAccount,\n        isPerfCountersConfigured = case(extensionType =~ \"IaaSDiagnostics\", isWadPerfCountersConfigured, extensionType =~ \"LinuxDiagnostic\", isLadPerfCountersConfigured, false),\n        isEventLogsConfigured = case(extensionType =~ \"IaaSDiagnostics\", isWadEventLogsConfigured, extensionType =~ \"LinuxDiagnostic\", isLadSyslogConfigured, false)\n    )\n    on $left.lowerCaseVmId == $right.lowerCaseVmIdOfExtension\n| where isempty(lowerCaseVmIdOfExtension) or provisioningState !~ \"Succeeded\" or not(isPerfCountersConfigured and isEventLogsConfigured)\n| extend\n    param1 = strcat(\"DiagnosticSetting: \", iif(isnotnull(extensionType), strcat(\"Enabled, partially configured (\", extensionType, \")\"), \"Not enabled\")),\n    param2 = strcat(\"ProvisioningState: \", iif(isnotnull(provisioningState), provisioningState, \"n/a\")),\n    param3 = strcat(\"storageAccount: \", iif(isnotnull(storageAccount), storageAccount, \"n/a\")),\n    param4 = strcat(\"PerformanceCounters: \", case(isnull(isPerfCountersConfigured), \"n/a\", isPerfCountersConfigured, \"Configured\", \"Not configured\")),\n    param5 = strcat(\"EventLogs/Syslogs: \", case(isnull(isEventLogsConfigured), \"n/a\", isEventLogsConfigured, \"Configured\", \"Not configured\"))\n| project recommendationId = \"4a9d8973-6dba-0042-b3aa-07924877ebd5\", name, id, tags, param1, param2, param3, param4, param5"
+  },
+  {
+    "id": "3201dba8-d1da-4826-98a4-104066545170",
+    "name": "Don't use A or B-Series VMs for production needing constant full CPU performance",
+    "description": "A-series VMs are tailored for entry-level workloads like development and testing, including use cases such as development and test servers, low traffic web servers, and small to medium databases.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/sizes-b-series-burstable",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs that only have OS Disk\nResources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| where array_length(properties.storageProfile.dataDisks) < 1\n| project recommendationId = \"4ea2878f-0d69-8d4a-b715-afc10d1e538e\", name, id, tags"
+  },
+  {
+    "id": "df0ff862-814d-45a3-95e4-4fad5a244ba6",
+    "name": "Mission Critical Workloads should consider using Premium or Ultra Disks",
+    "description": "Compared to Standard HDD and SSD, Premium SSD, SSD v2, and Ultra Disks offer improved performance, configurability, and higher single-instance VM uptime SLAs. The lowest SLA of all disks on a VM applies, so it is best to use Premium or Ultra Disks for the highest uptime SLA.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/disks-types#disk-type-comparison",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find VMs on Dedicated Hosts or using Isolated SKUs (via substring match)  that do NOT have a maintenance configuration assigned\nresources\n| where type =~ 'Microsoft.Compute/virtualMachines'\n| extend\n    resourceId    = tolower(id),\n    hostId        = tostring(properties.host.id),\n    hostGroupId   = tostring(properties.hostGroup.id),\n    vmSize        = tostring(properties.hardwareProfile.vmSize)\n| where\n    // 1) Dedicated Host association\n    isnotempty(hostId) or isnotempty(hostGroupId)\n    // 2) OR any of the \"isolated\" substrings\n    or (\n        vmSize contains \"i_\"    or\n        vmSize contains \"is_\"   or\n        vmSize contains \"id_\"   or\n        vmSize contains \"ids_\"  or\n        vmSize contains \"idms_\" or\n        vmSize contains \"ims_\"  or\n        vmSize contains \"G5\"    or\n        vmSize contains \"GS5\"   or\n        vmSize contains \"F72s_\" or\n        vmSize contains \"M128ms\"\n    )\n| join kind=leftouter (\n    resources\n    | where type =~ 'microsoft.maintenance/configurationassignments'\n    | extend resourceId = tolower(tostring(properties.resourceId))\n    | project resourceId, maintenanceProps = properties\n) on resourceId\n| where isnull(maintenanceProps)\n| project\n    recommendationId = \"52ab9e5c-eec0-3148-8bd7-b6dd9e1be870\",\n    name,\n    id,\n    tags\n| order by id asc"
+  },
+  {
+    "id": "302fda08-ee65-4fbe-a916-6dc0b33169c4",
+    "name": "Reserve Compute Capacity for critical workloads",
+    "description": "Azure Capacity Reservations ensure high availability for virtual machines by reserving compute capacity in advance within a specific region or availability zone. This guarantees that VMs will have the necessary resources during peak demand or maintenance events, enhancing reliability and uptime.\nLearn more: https://aka.ms/on-demand-capacity-reservations-docs",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "eb005943-40a8-194b-9db2-474d430046b7",
+    "name": "Use Premium tier for critical production workloads",
+    "description": "Choose a service tier of Azure Container Registry to meet your performance needs. Premium offers the most bandwidth and highest rate of read and write operations for high-volume deployments. Use Basic to start, Standard for production, and Premium for hyper-scale performance and geo-replication.\nLearn more: https://learn.microsoft.com/azure/container-registry/container-registry-best-practices",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerRegistry/registries"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Container Registries that have anonymous pull access enabled\nresources\n| where type =~ \"microsoft.containerregistry/registries\"\n| where properties.anonymousPullEnabled == \"true\"\n| project recommendationId = \"03f4a7d8-c5b4-7842-8e6e-14997a34842b\", name, id, tags\n| order by id asc"
+  },
+  {
+    "id": "63491f70-22e4-3b4a-8b0c-845450e46fac",
+    "name": "Enable zone redundancy",
+    "description": "Azure Container Registry's optional zone redundancy enhances resiliency and high availability for registries or replication resources in a specific region by distributing resources across multiple zones.\nLearn more: https://learn.microsoft.com/azure/container-registry/zone-redundancy?toc=%2Fazure%2Freliability%2Ftoc.json&bc=%2Fazure%2Freliability%2Fbreadcrumb%2Ftoc.json&branch=main",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerRegistry/registries"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Container Registries that do not have geo-replication enabled\nresources\n| where type =~ \"microsoft.containerregistry/registries\"\n| project registryName = name, registryId = id, tags, primaryRegion = location\n| join kind=leftouter (\n    Resources\n    | where type =~ \"microsoft.containerregistry/registries/replications\"\n    | project replicationRegion=name, replicationId = id\n    | extend registryId=strcat_array(array_slice(split(replicationId, '/'), 0, -3), '/')\n    ) on registryId\n| project-away registryId1, replicationId\n| where isempty(replicationRegion)\n| project recommendationId = \"36ea6c09-ef6e-d743-9cfb-bd0c928a430b\", name=registryName, id=registryId, tags\n| order by id asc"
+  },
+  {
+    "id": "36ea6c09-ef6e-d743-9cfb-bd0c928a430b",
+    "name": "Create container registries with geo-replication enabled",
+    "description": "Use Azure Container Registry's geo-replication for multi-region deployments to simplify registry management and minimize latency. It enables serving global customers from local data centers and supports distributed development teams. Regional webhooks can notify of events in replicas.\nLearn more: https://learn.microsoft.com/azure/container-registry/container-registry-best-practices#geo-replicate-multi-region-deployments",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerRegistry/registries"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Container Registries that have their retention policy disabled\nresources\n| where type =~ \"microsoft.containerregistry/registries\"\n| where properties.policies.retentionPolicy.status == \"disabled\"\n| project recommendationId = \"3ef86f16-f65b-c645-9901-7830d6dc3a1b\", name, id, tags, param1='retentionPolicy:disabled'\n| order by id asc"
+  },
+  {
+    "id": "03f4a7d8-c5b4-7842-8e6e-14997a34842b",
+    "name": "Disable anonymous pull access",
+    "description": "By default, Azure container registry requires authentication for pull/push actions. Enabling anonymous pull access exposes all content for public read actions. This applies to all repositories, potentially allowing unrestricted access if repository-scoped tokens are used.\nLearn more: https://learn.microsoft.com/azure/container-registry/anonymous-pull-access#about-anonymous-pull-access",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerRegistry/registries"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "e7f0fd54-fba0-054e-9ab8-e676f2851f88",
+    "name": "Enable soft delete policy",
+    "description": "Enabling soft delete preview feature in Azure Container Registry (ACR) allows for the management of deleted artifacts with a specified retention period. Users can list, filter, and restore these artifacts until automatically purged post-retention.\nLearn more: https://learn.microsoft.com/azure/container-registry/container-registry-soft-delete-policy",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerRegistry/registries"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Container Registries that do not have zone redundancy enabled\nresources\n| where type =~ \"microsoft.containerregistry/registries\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where properties.zoneRedundancy != \"Enabled\"\n| project recommendationId = \"63491f70-22e4-3b4a-8b0c-845450e46fac\", name, id, tags, param1=strcat(\"zoneRedundancy: \", tostring(properties.zoneRedundancy))\n| order by id asc"
+  },
+  {
+    "id": "4f63619f-5001-439c-bacb-8de891287727",
+    "name": "Deploy AKS cluster across availability zones",
+    "description": "Azure Availability Zones ensure high availability by offering independent locations within regions, equipped with their own power, cooling, and networking to ensure applications and data are protected from datacenter-level failures.\nLearn more: https://learn.microsoft.com/azure/aks/availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns each AKS cluster with nodepools that have user nodepools with less than 2 nodes\nresources\n| where type =~ \"Microsoft.ContainerService/managedClusters\"\n| mv-expand agentPoolProfile = properties.agentPoolProfiles\n| extend\n    taints = tostring(parse_json(agentPoolProfile.nodeTaints)),\n    nodePool = tostring(parse_json(agentPoolProfile.name))\n| where taints !has \"CriticalAddonsOnly=true:NoSchedule\"\n| where (agentPoolProfile.enableAutoScaling == true and agentPoolProfile[\"minCount\"] < 2) or (agentPoolProfile.enableAutoScaling == false and agentPoolProfile[\"count\"] < 2)\n| project\n    recommendationId = \"005ccbbd-aeab-46ef-80bd-9bd4479412ec\",\n    name,\n    id,\n    tags,\n    param1 = strcat(\"nodePoolName: \", nodePool),\n    param2 = strcat(\"enableAutoScaling: \", agentPoolProfile.enableAutoScaling),\n    param3 = iff(tobool(agentPoolProfile.enableAutoScaling), strcat(\"nodePoolMinNodeCount: \", agentPoolProfile[\"minCount\"]), strcat(\"nodePoolNodeCount: \", agentPoolProfile[\"count\"]))"
+  },
+  {
+    "id": "5ee083cd-6ac3-4a83-8913-9549dd36cf56",
+    "name": "Isolate system and application pods",
+    "description": "AKS assigns the kubernetes.azure.com/mode: system label to nodes in system node pools signaling the preference for system pods should be scheduled there. The CriticalAddonsOnly=true:NoSchedule taint can be added to your system nodes to prohibit application pods from being scheduled on them.\nLearn more: https://learn.microsoft.com/azure/aks/use-system-pools?tabs=azure-cli#system-and-user-node-pools",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns all AKS clusters not running on the Standard tier or the Premium tier.\nresources\n| where type =~ \"Microsoft.ContainerService/managedClusters\"\n| where sku.tier !in~ (\"Standard\", \"Premium\")\n| project recommendationId = \"0611251f-e70f-4243-8ddd-cfe894bec2e7\", name,id, tags, param1 = strcat(\"skuName: \", sku.name), param2 = strcat(\"skuTier: \", sku.tier)"
+  },
+  {
+    "id": "c22db132-399b-4e7c-995d-577a60881be8",
+    "name": "Configure Azure CNI networking for dynamic allocation of IPs or use CNI overlay",
+    "description": "Azure CNI enhances cluster IP and network management, allowing dynamic IP allocation, scalable subnets, direct pod-VNET connectivity, and supports diverse network policies for pods and nodes with Azure Network Policies and Calico, optimizing network efficiency and security\nLearn more: https://learn.microsoft.com/azure/aks/configure-azure-cni-dynamic-ip-allocation",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find AKS clusters that do not have backup enabled\n\nresources\n| where type =~ 'Microsoft.ContainerService/managedClusters'\n| extend lname = tolower(name)\n| join kind=leftouter(recoveryservicesresources\n    | where type =~ 'microsoft.dataprotection/backupvaults/backupinstances'\n    | extend lname = tolower(tostring(split(properties.dataSourceInfo.resourceID, '/')[8]))\n    | extend protectionState = properties.currentProtectionState\n    | project lname, protectionState) on lname\n| where protectionState != 'ProtectionConfigured'\n| extend param1 = iif(isnull(protectionState), 'Protection Not Configured', strcat('Protection State: ', protectionState))\n| project recommendationId = \"269a9f1a-6675-460a-831e-b05a887a8c4b\", name, id, tags, param1"
+  },
+  {
+    "id": "902c82ff-4910-4b61-942d-0d6ef7f39b67",
+    "name": "Enable the cluster auto-scaler on an existing cluster",
+    "description": "The cluster auto-scaler in AKS adjusts node counts based on pod resource needs and available capacity, enabling scaling as per demand to prevent outages.\nLearn more: https://learn.microsoft.com/azure/aks/cluster-autoscaler?tabs=azure-cli",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns a count of non-compliant policy items per AKS cluster\nPolicyResources\n| where type =~ 'Microsoft.PolicyInsights/PolicyStates'\n| extend complianceState = tostring(properties.complianceState)\n| where complianceState == 'NonCompliant'\n| where properties.resourceType =~ 'Microsoft.ContainerService/managedClusters'\n| extend\n    id = tostring(properties.resourceId)\n| summarize count() by id\n| join kind=inner (\n    resources\n    | where type =~ 'Microsoft.ContainerService/managedClusters'\n    | project id, name\n) on id\n| project recommendationId=\"26ebaf1f-c70d-4ebd-8641-4b60a0ce0094\", name,id,param1=strcat(\"numNonCompliantAlerts: \", count_)"
+  },
+  {
+    "id": "269a9f1a-6675-460a-831e-b05a887a8c4b",
+    "name": "Back up Azure Kubernetes Service",
+    "description": "AKS, popular for stateful apps needing backups, can now use Azure Backup to secure clusters and attached volumes through an installed Backup Extension, enabling backup and restore operations via a Backup Vault.\nLearn more: https://learn.microsoft.com/azure/backup/azure-kubernetes-service-cluster-backup",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns AKS clusters Node Pools that do not have any availability zones enabled or only use a single zone\nresources\n| where type =~ \"Microsoft.ContainerService/managedClusters\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| project id, name, tags, location, pools = properties.agentPoolProfiles\n| mv-expand pool = pools\n| extend\n    numOfAvailabilityZones = iif(isnull(pool.availabilityZones), 0, array_length(pool.availabilityZones))\n| where numOfAvailabilityZones < 2\n| project\n    recommendationId = \"4f63619f-5001-439c-bacb-8de891287727\",\n    name=pool.name,\n    id=strcat(id,\"/agentPools/\",pool.name),\n    tags,\n    param1 = strcat(\"NodePoolName: \", pool.name),\n    param2 = strcat(\"Mode: \", pool.mode),\n    param3 = strcat(\"AvailabilityZones: \", iif(numOfAvailabilityZones == 0, \"None\", strcat(\"Zone \", strcat_array(pool.availabilityZones, \", \")))),\n    param4 = strcat(\"Location: \", location)"
+  },
+  {
+    "id": "b002c030-72e6-4a37-8217-1cb276c43169",
+    "name": "Upgrade Persistent Volumes using in-tree drivers to Azure CSI drivers",
+    "description": "From Kubernetes 1.26, Azure Disk and Azure File in-tree drivers are deprecated in favor of CSI drivers. Existing deployments remain operational but untested; users should switch to CSI drivers for new features and SKUs.\nLearn more: https://learn.microsoft.com/azure/aks/csi-storage-drivers",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns each AKS cluster with nodepools that do not have system pods labelled with CriticalAddonsOnly\nresources\n| where type == \"microsoft.containerservice/managedclusters\"\n| mv-expand agentPoolProfile = properties.agentPoolProfiles\n| where agentPoolProfile.mode =~ 'System' // system node pools\n| extend taint = tostring(parse_json(agentPoolProfile.nodeTaints))\n| extend hasCriticalAddonsTaint = agentPoolProfile.kubeletConfig has 'CriticalAddonsOnly'\n| extend hasNodeLabel = agentPoolProfile.customNodeLabels has 'CriticalAddonsOnly'\n| extend hasCriticalAddonsOnly = hasCriticalAddonsTaint or hasNodeLabel or isempty(taint)\n| extend nodePool = tostring(parse_json(agentPoolProfile.name))\n| where hasCriticalAddonsOnly\n| project\n    recommendationId=\"5ee083cd-6ac3-4a83-8913-9549dd36cf56\",\n    name,\n    id,\n    tags,\n    param1=strcat(\"nodepoolName: \", nodePool)"
+  },
+  {
+    "id": "0611251f-e70f-4243-8ddd-cfe894bec2e7",
+    "name": "Update AKS tier to Standard or Premium",
+    "description": "Production AKS clusters require the Standard or Premium tier for a financially backed SLA and enhanced node scalability, as the free service lacks these features. Use the Premium tier for mission-critical workloads.\nLearn more: https://learn.microsoft.com/azure/aks/free-standard-pricing-tiers",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns AKS clusters where GitOps is not enabled\nresources\n|  where type == \"microsoft.containerservice/managedclusters\"\n|  extend gitops = tostring (parse_json(properties.addOnProfiles.gitops.enabled))\n|  where isempty(gitops)\n|  project recommendationId=\"5f3cbd68-692a-4121-988c-9770914859a9\", name, id, tags, param1=strcat(\"gitopsEnabled: \", \"false\")"
+  },
+  {
+    "id": "dcaf8128-94bd-4d53-9235-3a0371df6b74",
+    "name": "Enable AKS Monitoring",
+    "description": "Azure Monitor enables real-time health and performance insights for AKS by collecting events, capturing container logs, and gathering CPU/Memory data from the Metrics API. It allows data visualization using Azure Monitor Container Insights, Prometheus, Grafana, or others.\nLearn more: https://learn.microsoft.com/azure/aks/monitor-aks",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Returns each AKS cluster with nodepools that have system nodepools with less than 2 nodes\nresources\n| where type == \"microsoft.containerservice/managedclusters\"\n| mv-expand agentPoolProfile = properties.agentPoolProfiles\n| extend taints = tostring(parse_json(agentPoolProfile.nodeTaints))\n| extend nodePool = tostring(parse_json(agentPoolProfile.name))\n| where taints has \"CriticalAddonsOnly=true:NoSchedule\" and  agentPoolProfile.minCount < 3\n| project recommendationId=\"7f7ae535-a5ba-4665-b7e0-c451dbdda01f\", name, id, tags, param1=strcat(\"nodePoolName: \", nodePool), param2=strcat(\"nodePoolMinNodeCount: \", agentPoolProfile.minCount)"
+  },
+  {
+    "id": "7f7ae535-a5ba-4665-b7e0-c451dbdda01f",
+    "name": "Configure system nodepool count",
+    "description": "The system node pool should be configured with a minimum node count of three to ensure critical system pods are resilient to node outages.\nLearn more: https://learn.microsoft.com/azure/aks/use-system-pools?tabs=azure-cli",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find AKS clusters with auto-scaling disabled\nResources\n| where type == \"microsoft.containerservice/managedclusters\"\n| extend autoScaling = tostring (parse_json(properties.agentPoolProfiles.[0].enableAutoScaling))\n| where autoScaling == \"false\"\n| project recommendationId=\"902c82ff-4910-4b61-942d-0d6ef7f39b67\", name, id, tags, param1=strcat(\"autoScaling :\", autoScaling)"
+  },
+  {
+    "id": "005ccbbd-aeab-46ef-80bd-9bd4479412ec",
+    "name": "Configure user nodepool count",
+    "description": "Configuring the user node pool with at least two nodes is essential for applications needing high availability, ensuring they remain operational and accessible without interruption.\nLearn more: https://learn.microsoft.com/azure/well-architected/service-guides/azure-kubernetes-service#design-checklist",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ContainerService/managedClusters"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "88856605-53d8-4bbd-a75b-4a7b14939d32",
+    "name": "Enable HA with zone redundancy",
+    "description": "Enable HA with zone redundancy on flexible server instances to deploy a standby replica in a different zone, offering automatic failover capability for improved reliability and disaster recovery.\nLearn more: https://learn.microsoft.com/azure/mysql/flexible-server/concepts-high-availability",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforMySQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for MySQL instances that do not have geo redundant backup storage enabled\nresources\n| where type =~ \"microsoft.dbformysql/flexibleservers\"\n| where properties.backup.geoRedundantBackup != \"Enabled\"\n| project recommendationId = \"5c96afc3-7d2e-46ff-a4c7-9c32850c441b\", name, id, tags, param1 = strcat(\"geoRedundantBackup:\", properties['backup']['geoRedundantBackup'])"
+  },
+  {
+    "id": "5c96afc3-7d2e-46ff-a4c7-9c32850c441b",
+    "name": "Configure geo redundant backup storage",
+    "description": "Configure GRS to ensure that your database meets its availability and durability targets even in the face of failures or disasters.\nLearn more: https://learn.microsoft.com/azure/mysql/flexible-server/concepts-backup-restore",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforMySQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for MySQL instances that do not have a storage auto-grow\nresources\n| where type =~ \"microsoft.dbformysql/flexibleservers\"\n| where properties.storage.autoGrow != \"Enabled\"\n| project recommendationId = \"8176a79d-8645-4e52-96be-a10fc0204fe5\", name, id, tags, param1 = strcat(\"autoGrow:\", properties['storage']['autoGrow'])"
+  },
+  {
+    "id": "b49a8653-cc43-48c9-8513-a2d2e3f14dd1",
+    "name": "Configure one or more read replicas",
+    "description": "Configure one or more read replicas to ensure that your database meets its availability and durability targets even in the face of failures or disasters.\nLearn more: https://learn.microsoft.com/azure/mysql/flexible-server/concepts-read-replicas",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforMySQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for MySQL instances that do not have a custom maintenance window\nresources\n| where type =~ \"microsoft.dbformysql/flexibleservers\"\n| where properties.maintenanceWindow.customWindow != \"Enabled\"\n| project recommendationId = \"82a9a0f2-24ee-496f-9ad2-25f81710942d\", name, id, tags, param1 = strcat(\"customWindow:\", properties['maintenanceWindow']['customWindow'])"
+  },
+  {
+    "id": "8176a79d-8645-4e52-96be-a10fc0204fe5",
+    "name": "Configure storage auto-grow",
+    "description": "Configure storage auto-grow to prevent the server from running out of storage and becoming read-only.\nLearn more: https://learn.microsoft.com/azure/mysql/flexible-server/concepts-service-tiers-storage#storage-auto-grow",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforMySQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for MySQL instances that are not zone redundant\nresources\n| where type == \"microsoft.dbformysql/flexibleservers\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where properties.highAvailability.mode != \"ZoneRedundant\"\n| project recommendationId = \"88856605-53d8-4bbd-a75b-4a7b14939d32\", name, id, tags, param1 = \"ZoneRedundant: False\""
+  },
+  {
+    "id": "ca87914f-aac4-4783-ab67-82a6f936f194",
+    "name": "Enable HA with zone redundancy (82a6f936f194)",
+    "description": "Enable HA with zone redundancy on flexible server instances to deploy a standby replica in a different zone, offering automatic failover capability for improved reliability and disaster recovery.\nLearn more: https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-high-availability",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforPostgreSQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for PostgreSQL instances that do not have read replicas\nresources\n| where type == \"microsoft.dbforpostgresql/flexibleservers\" and properties.replicationRole == \"AsyncReplica\"\n| project replicaServerId = id, id = tostring(properties.sourceServerResourceId)\n| join kind=fullouter (resources | where type == \"microsoft.dbforpostgresql/flexibleservers\" and properties.replicationRole != \"AsyncReplica\") on id\n| where isempty(replicaServerId)\n| project recommendationId = \"2ab85a67-26be-4ed2-a0bb-101b2513ec63\", name, id = id1, tags, param1 = strcat(\"replicationRole:\", properties['replicationRole'])"
+  },
+  {
+    "id": "b2bad57d-7e03-4c0f-9024-597c9eb295bb",
+    "name": "Enable custom maintenance schedule",
+    "description": "Use custom maintenance schedule on flexible server instances to select a preferred time for service updates to be applied.\nLearn more: https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-maintenance",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforPostgreSQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for PostgreSQL instances that do not have geo redundant backup storage configured\nadvisorresources\n| where properties.recommendationTypeId =~ '5295ed8a-f7a1-48d3-b4a9-e5e472cf1685' // RecommendationID from Advisor\n| mv-expand resId = properties.resourceMetadata.resourceId\n| extend resId = tostring(resId)\n| project recId = properties.recommendationTypeId, resId\n| join kind=leftouter (\n    resources\n    | extend id = tostring(id)\n    | project id, name, tags, location, properties\n) on $left.resId == $right.id\n| project recommendationId = \"31f4ac4b-29cb-4588-8de2-d8fe6f13ceb3\", name , id = resId, tags, param1 = strcat(\"geoRedundantBackup:\", properties['backup']['geoRedundantBackup'])"
+  },
+  {
+    "id": "31f4ac4b-29cb-4588-8de2-d8fe6f13ceb3",
+    "name": "Configure geo redundant backup storage (d8fe6f13ceb3)",
+    "description": "Configure GRS to ensure that your database meets its availability and durability targets even in the face of failures or disasters.\nLearn more: https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-backup-restore",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforPostgreSQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure Database for PostgreSQL flexible server resources that do not configure auto-grow to enabled\nresources\n| where type =~ \"Microsoft.DBforPostgreSQL/flexibleServers\"\n| where properties.storage.type !~ \"PremiumV2_LRS\"\n| where properties.storage.autoGrow !~ \"Enabled\"\n| project recommendationId = \"6293a3cc-6b4a-4c0f-9ea7-b8ae8d7dd3d5\", name, id, tags, param1 = strcat(\"autoGrow: \", properties.storage.autoGrow)"
+  },
+  {
+    "id": "2ab85a67-26be-4ed2-a0bb-101b2513ec63",
+    "name": "Configure one or more read replicas (101b2513ec63)",
+    "description": "Configure one or more read replicas to ensure that your database meets its availability and durability targets even in the face of failures or disasters.\nLearn more: https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-read-replicas",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DBforPostgreSQL/flexibleServers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Database for PostgreSQL instances that do not have a custom maintenance window\nresources\n| where type == \"microsoft.dbforpostgresql/flexibleservers\"\n| where properties.maintenanceWindow.customWindow != \"Enabled\"\n| project recommendationId = \"b2bad57d-7e03-4c0f-9024-597c9eb295bb\", name, id, tags, param1 = strcat(\"customWindow:\", properties['maintenanceWindow']['customWindow'])"
+  },
+  {
+    "id": "6cd57b65-ef84-4088-9ada-c0d8de74c2f7",
+    "name": "Enable zone redundancy in Managed Grafana",
+    "description": "Managed Grafana Standard tier is hosted on a dedicated set of VMs to provide redundancy. With zone redundancy enabled, VMs are spread across availability zones (AZ). Related resources are also configured for AZ. Zone redundancy can only be enabled when creating the Azure Managed Grafana instance.\nLearn more: https://learn.microsoft.com/Azure/managed-grafana/how-to-enable-zone-redundancy",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Dashboard/grafana"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure Managed Grafana resources that do not zone redundancy enabled.\nresources\n| where type =~ \"Microsoft.Dashboard/grafana\"\n| extend zoneRedundancy = properties.zoneRedundancy\n| where zoneRedundancy !~ \"Enabled\"\n| project\n    recommendationId = \"6cd57b65-ef84-4088-9ada-c0d8de74c2f7\",\n    name,\n    id,\n    tags,\n    param1 = strcat(\"location: \", location),\n    param2 = strcat(\"sku: \", sku.name),\n    param3 = strcat(\"zoneRedundancy: \", zoneRedundancy)"
+  },
+  {
+    "id": "eeba3a49-fef0-481f-a471-7ff01139b474",
+    "name": "Do not use free tier",
+    "description": "In a production scenario, the IoT Hub tier should not be Free because the Free tier does not provide the necessary Service Level Agreement.\nLearn more: https://learn.microsoft.com/azure/iot-hub/iot-hub-scaling",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Devices/IotHubs"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "b1e1378d-4572-4414-bebd-b8872a6d4d1c",
+    "name": "Use Device Provisioning Service",
+    "description": "Device Provisioning Service (DPS) enables easy redistribution of IoT devices for scaling and availability, allowing devices to be reassigned and not bound to specific IoT Hub instances. Devices in IoT Hubs using DPS should be verified for DPS utilization.\nLearn more: https://learn.microsoft.com/azure/iot-dps/concepts-service",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Devices/IotHubs"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "e7dbd21f-b27a-4b8c-a901-cedb1e6d8e1e",
+    "name": "Disabled Fallback Route",
+    "description": "Using message routing for custom endpoints in IoT Hub, messages might not reach these destinations if specific conditions are unmet. A default route ensures all messages are received, but disabling this safety net risks leaving some messages undelivered.\nLearn more: https://learn.microsoft.com/azure/iot-hub/iot-hub-devguide-messages-d2c#fallback-route",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Devices/IotHubs"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "43663217-a1d3-844b-80ea-571a2ce37c6c",
+    "name": "Configure at least two regions for high availability",
+    "description": "Enable a secondary region in Cosmos DB for higher SLA without downtime. Simple as pinning a location on a map. For Strong consistency, configure at least three regions for write availability in case of failure.\nLearn more: https://learn.microsoft.com/azure/cosmos-db/distribute-data-globally",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DocumentDB/databaseAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to find Azure Cosmos DB accounts that have less than 2 regions or less than 3 regions with strong consistency level\nResources\n| where type =~ 'Microsoft.DocumentDb/databaseAccounts'\n| where\n    array_length(properties.locations) < 2 or\n    (array_length(properties.locations) < 3 and properties.consistencyPolicy.defaultConsistencyLevel == 'Strong')\n| project recommendationId='43663217-a1d3-844b-80ea-571a2ce37c6c', name, id, tags"
+  },
+  {
+    "id": "9cabded7-a1fc-6e4a-944b-d7dd98ea31a2",
+    "name": "Enable service-managed failover for multi-region accounts with single write region",
+    "description": "Cosmos DB boasts high uptime and resiliency. Even so, issues may arise. With Service-Managed failover, if a region is down, Cosmos DB automatically switches to the next available region, requiring no user action.\nLearn more: https://learn.microsoft.com/azure/cosmos-db/how-to-manage-database-account#automatic-failover",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DocumentDB/databaseAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "921631f6-ed59-49a5-94c1-f0f3ececa580",
+    "name": "Enable availability zones",
+    "description": "When availability zones are configured, Azure Cosmos DB intelligently distributes the 4 replicas of your data across all available zones. It ensures that your Azure Cosmos DB can withstand an outage in one availability zone and remain fully operational throughout.\nLearn more: https://learn.microsoft.com/azure/reliability/reliability-cosmos-db-nosql",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DocumentDB/databaseAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to find Azure Cosmos DB accounts that do not utilize availability zones and are deployed in availability-zone supported regions\nResources\n| where type == \"microsoft.documentdb/databaseaccounts\"\n| where properties.capabilities !has_cs 'EnableServerless'\n| project recommendationId='921631f6-ed59-49a5-94c1-f0f3ececa580', name, id, tags, locations=properties.locations\n| mv-expand locations\n| where not(locations.isZoneRedundant) //filter out already AZ enabled regions\n| extend location=tostring(locations.locationName)\n| project-away locations\n| where location in (\n    'Australia East', 'Brazil South', 'Canada Central', 'Central India', 'Central US',\n    'China North 3', 'East Asia', 'East US', 'East US 2', 'France Central',\n    'Germany West Central', 'Israel Central', 'Italy North', 'Japan East', 'Japan West',\n    'Korea Central', 'Mexico Central', 'New Zealand North', 'North Europe', 'Norway East',\n    'Poland Central', 'Qatar Central', 'South Africa North', 'South Central US', 'Southeast Asia',\n    'Spain Central', 'Sweden Central', 'Switzerland North', 'UAE North', 'UK South',\n    'US Gov Virginia', 'West Europe', 'West US 2', 'West US 3') // filter out regions unsupported for AZs\n| project-rename param1=location"
+  },
+  {
+    "id": "9ce78192-74a0-104c-b5bb-9a443f941649",
+    "name": "Evaluate multi-region write capability",
+    "description": "Multi-region writes enable high availability but require careful consistency and conflict resolution. Using Bounded Staleness is an anti-pattern, as replication lag increases latency and coordination overhead. This setup undermines scalability, impacting performance and availability.\nLearn more: https://learn.microsoft.com/azure/cosmos-db/distribute-data-globally",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DocumentDB/databaseAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to list all Azure Cosmos DB accounts that do not have multiple write locations or automatic failover enabled\nResources\n| where type =~ 'Microsoft.DocumentDb/databaseAccounts'\n| where\n    array_length(properties.locations) > 1 and\n    tobool(properties.enableAutomaticFailover) == false and\n    tobool(properties.enableMultipleWriteLocations) == false\n| project recommendationId='9cabded7-a1fc-6e4a-944b-d7dd98ea31a2', name, id, tags"
+  },
+  {
+    "id": "e544520b-8505-7841-9e77-1f1974ee86ec",
+    "name": "Configure continuous backup mode",
+    "description": "Cosmos DB's backup is always on, offering protection against data mishaps. Continuous mode allows for self-serve restoration to a pre-mishap point, unlike periodic mode which requires contacting Microsoft support, leading to longer restore times.\nLearn more: https://learn.microsoft.com/azure/cosmos-db/continuous-backup-restore-introduction",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.DocumentDB/databaseAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Query to find Azure Cosmos DB accounts that have multiple read locations but do not have multiple write locations enabled\nResources\n| where type =~ 'Microsoft.DocumentDb/databaseAccounts'\n| where\n    array_length(properties.locations) > 1 and\n    properties.enableMultipleWriteLocations == false\n| project recommendationId='9ce78192-74a0-104c-b5bb-9a443f941649', name, id, tags"
+  },
+  {
+    "id": "84636c6c-b317-4722-b603-7b1ffc16384b",
+    "name": "Ensure zone redundancy is enabled in supported regions",
+    "description": "When using the Azure portal, zone redundancy is automatically enabled. However, some Infrastructure as Code (IaC) tools may default this to false. To ensure replication of metadata and events across data centers in an availability zone, always verify that zone redundancy is enabled.\nLearn more: https://learn.microsoft.com/azure/event-hubs/event-hubs-geo-dr?tabs=portal#availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.EventHub/namespaces"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Event Hub namespace instances that are not zone redundant\nresources\n| where type == \"microsoft.eventhub/namespaces\"\n| where properties.zoneRedundant == false\n| project recommendationId = \"84636c6c-b317-4722-b603-7b1ffc16384b\", name, id, tags, param1 = \"ZoneRedundant: False\"\n| order by id asc"
+  },
+  {
+    "id": "fbfef3df-04a5-41b2-a8fd-b8541eb04956",
+    "name": "Enable auto-inflate on Event Hub Standard tier",
+    "description": "Enable auto-inflate on Event Hub Standard tier namespaces to automatically scale up throughput units (TUs), meeting usage needs and preventing data ingress or egress throttle scenarios by adjusting to allowed rates.\nLearn more: https://learn.microsoft.com/azure/event-hubs/event-hubs-auto-inflate",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.EventHub/namespaces"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Event Hub namespace instances that are Standard tier and do not have Auto Inflate enabled\nresources\n| where type == \"microsoft.eventhub/namespaces\"\n| where sku.tier == \"Standard\"\n| where properties.isAutoInflateEnabled == \"false\"\n| project recommendationId = \"fbfef3df-04a5-41b2-a8fd-b8541eb04956\", name, id, tags, param1 = \"AutoInflateEnabled: False\""
+  },
+  {
+    "id": "dac421ec-2832-4c37-839e-b6dc5a38f2fa",
+    "name": "Convert Classic Deployments",
+    "description": "Classic Application Insights retires in February 2024. To minimize disruption to existing application monitoring scenarios, transition to workspace-based Application Insights before 29 February 2024.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/app/convert-classic-resource",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Insights/components"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "1cca00d2-d9ab-8e42-a788-5d40f49405cb",
+    "name": "Key vaults should have soft delete enabled",
+    "description": "Key Vault's soft-delete feature enables recovery of deleted vaults and objects like keys, secrets, and certificates. When enabled, marked resources are retained for 90 days, allowing for their recovery, essentially undoing deletion.\nLearn more: https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.KeyVault/vaults"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This resource graph query will return all Key Vaults that does not have a Private Endpoint Connection or where a private endpoint exists but public access is enabled\n\nresources\n| where type == \"microsoft.keyvault/vaults\"\n| where isnull(properties.privateEndpointConnections) or properties.privateEndpointConnections[0].properties.provisioningState != (\"Succeeded\") or (isnull(properties.networkAcls) and properties.publicNetworkAccess == 'Enabled')\n| extend param1 = strcat('Private Endpoint: ', iif(isnotnull(properties.privateEndpointConnections),split(properties.privateEndpointConnections[0].properties.privateEndpoint.id,'/')[8],'No Private Endpoint'))\n| extend param2 = strcat('Access: ', iif(properties.publicNetworkAccess == 'Disabled', 'Public Access Disabled', iif(isnotnull(properties.networkAcls), 'NetworkACLs in place','Public Access Enabled')))\n| project recommendationId = \"00c3d2b0-ea6e-4c4b-89be-b78a35caeb51\", name, id, tags, param1, param2"
+  },
+  {
+    "id": "70fcfe6d-00e9-5544-a63a-fff42b9f2edb",
+    "name": "Key vaults should have purge protection enabled",
+    "description": "Purge protection secures against malicious deletions by enforcing a retention period for soft deleted key vaults, ensuring no one, not even insiders or Microsoft, can purge your key vaults during this period, preventing permanent data loss.\nLearn more: https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview#purge-protection",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.KeyVault/vaults"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This Resource Graph query will return all Key Vaults that do not have soft delete enabled.\nresources\n| where type == \"microsoft.keyvault/vaults\"\n| where isnull(properties.enableSoftDelete) or properties.enableSoftDelete != \"true\"\n| project recommendationId = \"1cca00d2-d9ab-8e42-a788-5d40f49405cb\", name, id, tags, param1 = \"EnableSoftDelete: Disabled\""
+  },
+  {
+    "id": "ab984130-c57b-6c4a-8d04-6723b4e1bdb6",
+    "name": "Use standard network features for production in Azure NetApp Files",
+    "description": "Standard network feature in Azure NetApp Files enhances IP limits and VNet capabilities, including network security groups, user-defined routes on subnets, and diverse connectivity options.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/azure-netapp-files-network-topologies",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "47d100a5-7f85-5742-967a-67eb5081240a",
+    "name": "Use availability zones for high availability in Azure NetApp Files",
+    "description": "Availability zones are distinct locations within an Azure region to withstand local failures. Deploy your workload in multiple availability zones and use application-based replication or Azure NetApp Files cross-zone replication to achieve high availability. Note that failover is a manual process.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/use-availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This Resource Graph query will return all Azure NetApp Files volumes without an availability zone defined.\nResources\n| where type =~ \"Microsoft.NetApp/netAppAccounts/capacityPools/volumes\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where array_length(zones) == 0 or isnull(zones)\n| project recommendationId = \"47d100a5-7f85-5742-967a-67eb5081240a\", name, id, tags"
+  },
+  {
+    "id": "72827434-c773-4345-9493-34848ddf5803",
+    "name": "Use snapshots for data protection in Azure NetApp Files",
+    "description": "Azure NetApp Files snapshot technology ensures stability, scalability, and swift data recoverability without affecting performance. It supports automatic snapshot creation via policies for Azure NetApp Files data.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/snapshots-introduction",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "b2fb3e60-97ec-e34d-af29-b16a0d61c2ac",
+    "name": "Enable backup for data protection in Azure NetApp Files",
+    "description": "Azure NetApp Files offers a fully managed backup solution enhancing long-term recovery, archiving, and compliance.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/backup-introduction",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "e30317d2-c502-4dfe-a2d3-0a737cc79545",
+    "name": "Enable Cross-region replication of Azure NetApp Files volumes",
+    "description": "Azure NetApp Files replication offers data protection by allowing asynchronous cross-region volume replication for application failover in case of regional outages. Volumes can be replicated across regions, not concurrently with cross-zone replication. Note that failover is a manual process.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/cross-region-replication-introduction",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This Resource Graph query will return all Azure NetApp Files volumes without a snapshot policy defined.\nadvisorresources\n| where properties.recommendationTypeId =~ 'cda11061-35a8-4ca3-aa03-b242dcdf7319' // RecommendationID from Advisor\n| mv-expand resId = properties.resourceMetadata.resourceId\n| extend resId = tostring(resId)\n| project recId = properties.recommendationTypeId, resId\n| join kind=leftouter (\n    resources\n    | extend id = tostring(id)\n    | project id, name, tags, location, properties\n) on $left.resId == $right.id\n| project recommendationId = \"72827434-c773-4345-9493-34848ddf5803\", name , id = resId, tags"
+  },
+  {
+    "id": "e3d742e1-dacd-9b48-b6b1-510ec9f87c96",
+    "name": "Enable Cross-zone replication of Azure NetApp Files volumes",
+    "description": "The cross-zone replication (CZR) feature enables asynchronous data replication between Azure NetApp Files volumes across different availability zones, ensuring data protection and critical application failover in case of zone-wide disasters. Note that failover is a manual process.\nLearn more: https://learn.microsoft.com/azure/azure-netapp-files/cross-zone-replication-introduction",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "823b0cff-05c0-2e4e-a1e7-9965e1cfa16f",
+    "name": "Ensure Autoscale feature has been enabled",
+    "description": "Azure Application Gateways v2 are always deployed in a highly available fashion with multiple instances by default. Enabling autoscale ensures the service is not reliant on manual intervention for scaling.\nLearn more: https://learn.microsoft.com/azure/application-gateway/application-gateway-autoscaling-zone-redundant#autoscaling-and-high-availability",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will check if connection draining is enabled\nresources\n| where type =~ \"microsoft.network/applicationGateways\"\n| mv-expand backendHttpSettings = properties.backendHttpSettingsCollection\n| extend connectionDrainingEnabled = backendHttpSettings.properties.connectionDraining.enabled\n| where connectionDrainingEnabled != true\n| extend backendPoolName = backendHttpSettings.name\n| project recommendationId = \"10f02bc6-e2e7-004d-a2c2-f9bf9f16b915\", name, id, tags, param1 = \"connectionDraining: Disabled\", param2 = strcat(\"backendSettingsName: \", backendPoolName)"
+  },
+  {
+    "id": "7893f0b3-8622-1d47-beed-4b50a19f7895",
+    "name": "Migrate to Application Gateway v2",
+    "description": "Use Application Gateway v2 for built-in features like autoscaling, static VIPs, Azure KeyVault integration for better traffic management and performance, unless v1 is necessary.\nLearn more: https://learn.microsoft.com/azure/application-gateway/overview-v2",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// You can use the following Azure Resource Graph query to check if an HTTP rule is using an SSL certificate or is using Azure Key Vault to store the certificates\nresources\n| where type =~ \"microsoft.network/applicationGateways\"\n| mv-expand frontendPorts = properties.frontendPorts\n| mv-expand httpListeners = properties.httpListeners\n| where isnull(parse_json(httpListeners.properties.sslCertificate))\n| project recommendationId=\"233a7008-71e9-e745-923e-1a1c7a0b92f3\", name, id, tags, param1=strcat(\"frontendPort: \", frontendPorts.properties.port), param2=\"tls: false\""
+  },
+  {
+    "id": "847a8d88-21c4-bc48-a94e-562206edd767",
+    "name": "Use Health Probes to detect backend availability",
+    "description": "Using custom health probes enhances understanding of backend availability and facilitates monitoring of backend services for any impact.\nLearn more: https://learn.microsoft.com/azure/application-gateway/application-gateway-probe-overview",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "c9c00f2a-3888-714b-a72b-b4c9e8fcffb2",
+    "name": "Deploy Application Gateway in a zone-redundant configuration",
+    "description": "Deploying Application Gateway in a zone-aware configuration ensures continued customer access to services even if a specific zone goes down, as services in other zones remain available.\nLearn more: https://learn.microsoft.com/azure/well-architected/services/networking/azure-application-gateway#reliability",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Get all Application Gateways, which are using the deprecated V1 SKU\nresources\n| where type =~ 'microsoft.network/applicationgateways'\n| extend tier = properties.sku.tier\n| where tier == 'Standard' or tier == 'WAF'\n| project recommendationId = \"7893f0b3-8622-1d47-beed-4b50a19f7895\", name, id, tags"
+  },
+  {
+    "id": "10f02bc6-e2e7-004d-a2c2-f9bf9f16b915",
+    "name": "Plan for backend maintenance by using connection draining",
+    "description": "Using connection draining for backend maintenance ensures graceful removal of backend pool members during updates or health issues. It's enabled via Backend Setting and applies to all members during rule creation.\nLearn more: https://learn.microsoft.com/azure/application-gateway/features#connection-draining",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will return all Application Gateways that do not have autoscale enabled or have a min capacity of 1\nresources\n| where type =~ \"microsoft.network/applicationGateways\"\n| where isnull(properties.autoscaleConfiguration) or properties.autoscaleConfiguration.minCapacity <= 1\n| project recommendationId = \"823b0cff-05c0-2e4e-a1e7-9965e1cfa16f\", name, id, tags, param1 = \"autoScaleConfiguration: isNull or MinCapacity <= 1\"\n| order by id asc"
+  },
+  {
+    "id": "8364fd0a-7c0e-e240-9d95-4bf965aec243",
+    "name": "A minimum subnet size of /24 is recommended for Application Gateway v2 subnets.",
+    "description": "Application Gateway (Standard_v2 or WAF_v2 SKU) can support up to 125 instances (125 instance IP addresses + 1 private frontend IP configuration + 5 Azure reserved). A minimum subnet size of /24 is recommended.\nLearn more: https://learn.microsoft.com/azure/application-gateway/configuration-infrastructure#size-of-the-subnet",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/applicationGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will validate the subnet id for an appGW ends with a /24\nresources\n| where type == \"microsoft.network/applicationgateways\"\n| extend subnetId = tostring(properties.gatewayIPConfigurations[0].properties.subnet.id)\n| project id, subscriptionId, subnetId, name, tags\n| join (\n    resources\n    | where type == \"microsoft.network/virtualnetworks\"\n    | project id, subnets = properties.subnets\n    | mv-expand subnets\n    | mv-expand subnets.properties.addressPrefixes\n    | project\n        id,\n        subnetId = tostring(subnets.id),\n        prefix1 = subnets.properties.addressPrefix,\n        prefix2 = subnets.properties.addressPrefixes\n    | mv-expand prefix2\n    | extend prefix = iff(isnotnull(prefix1), prefix1, prefix2)\n    | extend subnetPrefixLength = split(prefix, \"/\")[1]\n) on subnetId\n| where subnetPrefixLength > 24 and subnetPrefixLength != 64\n| project recommendationId = \"8364fd0a-7c0e-e240-9d95-4bf965aec243\",name,id,tags,param1 = strcat(\"AppGW subnet prefix: \", prefix)"
+  },
+  {
+    "id": "c72b7fee-1fa0-5b4b-98e5-54bcae95bb74",
+    "name": "Deploy Azure Firewall across multiple availability zones",
+    "description": "Azure Firewall offers different SLAs depending on its deployment; in a single availability zone or across multiple, potentially improving reliability and performance.\nLearn more: https://learn.microsoft.com/azure/architecture/framework/services/networking/azure-firewall",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/azureFirewalls"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// List all in-scope Azure Firewall resources, where the VNet is not associated to a DDoS Protection Plan\nresources\n| where type =~ \"Microsoft.Network/azureFirewalls\"\n| where isempty(properties.virtualHub.id) or isnull(properties.virtualHub.id)\n| mv-expand ipConfig = properties.ipConfigurations\n| project\n    name,\n    firewallId = id,\n    tags,\n    vNetName = split(ipConfig.properties.subnet.id, \"/\", 8)[0],\n    vNetId = tolower(substring(ipConfig.properties.subnet.id, 0, indexof(ipConfig.properties.subnet.id, \"/subnet\")))\n| join kind=fullouter (\n    resources\n    | where type =~ \"Microsoft.Network/ddosProtectionPlans\"\n    | mv-expand vNet = properties.virtualNetworks\n    | project ddosProtectionPlanId = id, vNetId = tolower(vNet.id)\n    )\n    on vNetId\n| where isempty(ddosProtectionPlanId)\n| project recommendationId = \"1b2dbf4a-8a0b-5e4b-8f4e-3f758188910d\", name, id = firewallId, tags, param1 = strcat(\"vNet: \", vNetName), param2 = \"ddosProtection: Disabled\""
+  },
+  {
+    "id": "3c8fa7c6-6b78-a24a-a63f-348a7c71acb9",
+    "name": "Monitor Azure Firewall metrics",
+    "description": "Monitor Azure Firewall for overall health, processed throughput, and outbound SNAT port usage. Get alerted before limits impact services. Consider NAT gateway integration with zonal deployments; note limitations with zone redundant firewalls and secure virtual hub networks.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/essentials/metrics-supported#microsoftnetworkazurefirewalls",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/azureFirewalls"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "d40c769d-2f08-4980-8d8f-a386946276e6",
+    "name": "Implement rate-limiting across ExpressRoute Direct Circuits to optimize network flow",
+    "description": "Rate limiting controls traffic volume between on-premises networks and Azure via ExpressRoute Direct, applying to private or Microsoft peering. It distributes port bandwidth, ensures stability, and prevents congestion, with steps outlined for enabling on circuits.\nLearn more: https://learn.microsoft.com/azure/expressroute/rate-limit",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/expressRouteCircuits"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "60077378-7cb1-4b35-89bb-393884d9921d",
+    "name": "The Admin State of both Links of an ExpressRoute Direct should be in Enabled state",
+    "description": "In Azure ExpressRoute Direct, the \"Admin State\" indicates the administrative status of layer 1 links, showing if a link is enabled or disabled, effectively turning the physical port on or off.\nLearn more: https://learn.microsoft.com/azure/expressroute/expressroute-howto-erdirect#state",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/ExpressRoutePorts"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Express Route Directs that are over subscribed\nresources\n| where type == \"microsoft.network/expressrouteports\"\n| where toint(properties['provisionedBandwidthInGbps']) > toint(properties['bandwidthInGbps'])\n| project recommendationId = \"0bee356b-7348-4799-8cab-0c71ffe13018\", name, id, tags, param1 = strcat(\"provisionedBandwidthInGbps: \", properties['provisionedBandwidthInGbps']), param2 = strcat(\"bandwidthInGbps: \", properties['bandwidthInGbps'])"
+  },
+  {
+    "id": "0bee356b-7348-4799-8cab-0c71ffe13018",
+    "name": "Ensure ExpressRoute Direct is not over-subscribed",
+    "description": "Provisioning ExpressRoute circuits on a 10-Gbps or 100-Gbps ExpressRoute Direct resource up to 20-Gbps or 200-Gbps is possible but not recommended for resiliency. If an ExpressRoute Direct port fails, and circuits are using full capacity, the remaining port won't handle the extra load.\nLearn more: https://learn.microsoft.com/azure/expressroute/expressroute-erdirect-about?source=recommendations#circuit-sizes",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/ExpressRoutePorts"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "38c3bca1-97a1-eb42-8cd3-838b243f35ba",
+    "name": "Use Standard Load Balancer SKU",
+    "description": "Selecting Standard SKU Load Balancer enhances reliability through availability zones and zone resiliency, ensuring deployments withstand zone and region failures. Unlike Basic, it supports global load balancing and offers an SLA.\nLearn more: https://learn.microsoft.com/azure/architecture/framework/services/networking/azure-load-balancer/reliability",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/loadBalancers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all LoadBalancers using Basic SKU\nresources\n| where type =~ 'Microsoft.Network/loadBalancers'\n| where sku.name == 'Basic'\n| project recommendationId = \"38c3bca1-97a1-eb42-8cd3-838b243f35ba\", name, id, tags, Param1=strcat(\"sku-tier: basic\")"
+  },
+  {
+    "id": "6d82d042-6d61-ad49-86f0-6a5455398081",
+    "name": "Ensure the Backend Pool contains at least two instances",
+    "description": "Deploying Azure Load Balancers with at least two instances in the backend prevents a single point of failure and supports scalability. Pairing with Virtual Machine Scale Sets is advised for optimal scale building.\nLearn more: https://learn.microsoft.com/azure/architecture/checklist/resiliency-per-service#azure-load-balancer",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/loadBalancers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all LoadBalancers with with regional or zonal public IP Addresses\nresources\n| where type == \"microsoft.network/loadbalancers\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where tolower(sku.name) != 'basic'\n| mv-expand feIPconfigs = properties.frontendIPConfigurations\n| extend\n    feConfigName = (feIPconfigs.name),\n    PrivateSubnetId = toupper(feIPconfigs.properties.subnet.id),\n    PrivateIPZones = feIPconfigs.zones,\n    PIPid = toupper(feIPconfigs.properties.publicIPAddress.id),\n    JoinID = toupper(id)\n| where isnotempty(PrivateSubnetId)\n| where isnull(PrivateIPZones) or array_length(PrivateIPZones) < 2\n| project name, feConfigName, id\n| union (resources\n    | where type == \"microsoft.network/loadbalancers\"\n    | where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n    | where tolower(sku.name) != 'basic'\n    | mv-expand feIPconfigs = properties.frontendIPConfigurations\n    | extend\n        feConfigName = (feIPconfigs.name),\n        PIPid = toupper(feIPconfigs.properties.publicIPAddress.id),\n        JoinID = toupper(id)\n    | where isnotempty(PIPid)\n    | join kind=innerunique (\n        resources\n        | where type == \"microsoft.network/publicipaddresses\"\n        | where location in~ (\"centralindia\", \"centralus\", \"eastus\", \"japaneast\", \"japanwest\",\"newzealandnorth\", \"southcentralus\", \"southeastasia\", \"switzerlandnorth\",\"uaenorth\", \"westeurope\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n        | where isnull(zones) or array_length(zones) < 2\n        | extend\n            LBid = toupper(substring(properties.ipConfiguration.id, 0, indexof(properties.ipConfiguration.id, '/frontendIPConfigurations'))),\n            InnerID = toupper(id)\n    ) on $left.PIPid == $right.InnerID)\n| project recommendationId = \"621dbc78-3745-4d32-8eac-9e65b27b7512\", name, id, tags, param1=\"Zones: No Zone or Zonal\", param2=strcat(\"Frontend IP Configuration:\", \" \", feConfigName)"
+  },
+  {
+    "id": "8d319a05-677b-944f-b9b4-ca0fb42e883c",
+    "name": "Use NAT Gateway instead of Outbound Rules for Production Workloads",
+    "description": "Outbound rules for Standard Public Load Balancer involve manual port allocation for backend pools, limiting scalability and risk of SNAT port exhaustion. NAT Gateway is recommended for its dynamic scaling and secure internet connectivity.\nLearn more: https://learn.microsoft.com/azure/architecture/checklist/resiliency-per-service#azure-load-balancer",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/loadBalancers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all LoadBalancers with only 1 VM in any backend pool\nresources\n| where type =~ 'Microsoft.Network/loadBalancers'\n| mv-expand bpool = properties.backendAddressPools\n| extend BackendAddresses = array_length(bpool.properties.loadBalancerBackendAddresses)\n| where BackendAddresses <= 1\n| extend lbId = id, lbName = name, poolName = tostring(bpool.name), lbTags = tostring(tags)\n| summarize impactedPools = make_list(poolName) by lbId, lbName, lbTags\n| project recommendationId = \"6d82d042-6d61-ad49-86f0-6a5455398081\",name = lbName,id = lbId,tags = lbTags,param1 = strcat(\"backendPoolNames: \", strcat_array(impactedPools, \", \"))"
+  },
+  {
+    "id": "621dbc78-3745-4d32-8eac-9e65b27b7512",
+    "name": "Ensure Standard Load Balancer is zone-redundant",
+    "description": "In regions with Availability Zones, assigning a zone-redundant frontend IP to a Standard Load Balancer ensures continuous traffic distribution even if one availability zone fails, provided other healthy zones and backend instances are available to receive the traffic.\nLearn more: https://learn.microsoft.com/azure/load-balancer/load-balancer-standard-availability-zones#zone-redundant",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/loadBalancers"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all LoadBalancers with Outbound rules configured\nresources\n| where type =~ 'Microsoft.Network/loadBalancers'\n| extend outboundRules = array_length(properties.outboundRules)\n| where outboundRules > 0\n| project recommendationId = \"8d319a05-677b-944f-b9b4-ca0fb42e883c\", name, id, tags, Param1 = \"outboundRules: >=1\""
+  },
+  {
+    "id": "8bb4a57b-55e4-d24e-9c19-2679d8bc779f",
+    "name": "Monitor changes in Network Security Groups with Azure Monitor",
+    "description": "Create Alerts with Azure Monitor for operations like creating or updating Network Security Group rules to catch unauthorized/undesired changes to resources and spot attempts to bypass firewalls or access resources from the outside.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/essentials/activity-log?tabs=powershell",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/networkSecurityGroups"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "22a769ed-0ecb-8b49-bafe-8f52e6373d9c",
+    "name": "Fix Flow Log configurations in Failed state or Disabled Status",
+    "description": "Network security group flow logging is a feature of Azure Network Watcher that logs IP traffic info through a network security group. If in Failed state, monitoring data from the associated resource is not collected.\nLearn more: https://learn.microsoft.com/azure/network-watcher/nsg-flow-logging",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/networkWatchers/flowlogs"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will return all regions for which Network Watcher is deployed but Connection Monitor is not deployed\nResources\n    | where type =~ \"microsoft.network/networkwatchers\"\n    | summarize by location, subscriptionId, name, id\n| join kind = leftouter (\nresources\n| where type =~ 'microsoft.network/networkwatchers/connectionmonitors'\n| summarize by location, subscriptionId\n    | project nwlocation = location, nwsubscriptionId = subscriptionId\n    )  on $left.location == $right.nwlocation,\n    $left.subscriptionId == $right.nwsubscriptionId\n      | where isnull(nwlocation) or isempty(nwlocation)\n| project recommendationId = \"1e28bbc1-1eb7-486f-8d7f-93943f40219c\", name, id, tags=''"
+  },
+  {
+    "id": "b89c9acc-0aba-fb44-9ff2-3dbfcf97dce7",
+    "name": "Resolve issues with Private Endpoints in non Succeeded connection state",
+    "description": "A private endpoint has two custom properties, static IP address and the network interface name, which must be set at creation. If not in Succeeded state, there may be issues with the endpoint or associated resource.\nLearn more: https://learn.microsoft.com/azure/private-link/manage-private-endpoint?tabs=manage-private-link-powershell#private-endpoint-connections",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/privateEndpoints"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will return all Private Endpoints that are not in a Succeeded state\nresources\n| where type =~ \"microsoft.network/privateendpoints\"\n| where (properties.provisioningState =~ \"Succeeded\" and (properties.privateLinkServiceConnections[0].properties.provisioningState =~ \"Succeeded\" or properties.manualPrivateLinkServiceConnections[0].properties.provisioningState =~ \"Succeeded\")) == false\n| project recommendationId = \"b89c9acc-0aba-fb44-9ff2-3dbfcf97dce7\", name, id, tags, param1 = strcat(\"provisioningState: \", tostring(properties.provisioningState)), param2 = strcat(\"provisioningState: \", tostring(properties.privateLinkServiceConnections[0].properties.provisioningState)), param3 = strcat(\"manualProvisioningState: \", tostring(properties.manualPrivateLinkServiceConnections[0].properties.provisioningState))"
+  },
+  {
+    "id": "c63b81fb-7afc-894c-a840-91bb8a8dcfaf",
+    "name": "Use Standard SKU and Zone-Redundant IPs when applicable",
+    "description": "Public IP addresses in Azure can be of standard SKU, available as non-zonal, zonal, or zone-redundant. Zone-redundant IPs are accessible across all zones, resisting any single zone failure, thereby providing higher resilience.\nLearn more: https://learn.microsoft.com/azure/virtual-network/ip-services/public-ip-addresses#availability-zone",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/publicIPAddresses"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph query\n// Lists VMs with PIPs\nresources\n| where type =~ 'Microsoft.Network/publicIPAddresses'\n| where tostring(properties.ipConfiguration.id) contains \"microsoft.network/networkinterfaces\"\n| project recommendationId=\"1adba190-5c4c-e646-8527-dd1b2a6d8b15\", name, id, tags, param1=strcat(\"Migrate from instance IP to NAT Gateway\")"
+  },
+  {
+    "id": "1adba190-5c4c-e646-8527-dd1b2a6d8b15",
+    "name": "Use NAT gateway for outbound connectivity to avoid SNAT Exhaustion",
+    "description": "Prevent connectivity failures due to SNAT port exhaustion by employing NAT gateway for outbound traffic from virtual networks, ensuring dynamic scaling and secure internet connections.\nLearn more: https://learn.microsoft.com/azure/advisor/advisor-reference-reliability-recommendations#use-nat-gateway-for-outbound-connectivity",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/publicIPAddresses"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph query\n// List Basic SKU public IP addresses\nResources\n| where type =~ \"Microsoft.Network/publicIPAddresses\"\n| where sku.name =~ \"Basic\"\n| project recommendationId = \"5cea1501-6fe4-4ec4-ac8f-f72320eb18d3\", name, id, tags, param1 = strcat(\"sku: \", sku.name)"
+  },
+  {
+    "id": "5cea1501-6fe4-4ec4-ac8f-f72320eb18d3",
+    "name": "Upgrade Basic SKU public IP addresses to Standard SKU",
+    "description": "Basic SKU public IP addresses will be retired on September 30, 2025. Users are advised to upgrade to Standard SKU public IP addresses before this date to avoid service disruptions.\nLearn more: https://learn.microsoft.com/azure/virtual-network/ip-services/public-ip-basic-upgrade-guidance",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/publicIPAddresses"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph query\n// Public IP addresses should have DDoS protection enabled\nresources\n| where type =~ 'Microsoft.Network/publicIPAddresses'\n| where properties.ddosSettings.protectionMode !in~ (\"Enabled\", \"VirtualNetworkInherited\")\n| project recommendationId=\"c4254c66-b8a5-47aa-82f6-e7d7fb418f47\", name, id, tags, param1=strcat(\"Apply either DDoS Network protection or DDoS IP Protrection to the public IP address.\")"
+  },
+  {
+    "id": "23b2dfc7-7e5d-9443-9f62-980ca621b561",
+    "name": "Monitor changes in Route Tables with Azure Monitor",
+    "description": "Create Alerts with Azure Monitor for operations like Create or Update Route Table to spot unauthorized/undesired changes in production resources. This setup aids in identifying improper routing changes, including efforts to evade firewalls or access resources from outside.\nLearn more: https://learn.microsoft.com/azure/azure-monitor/essentials/activity-log?tabs=powershell",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/routeTables"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Route Tables without alerts for modification configured.\nresources\n| where type =~ \"Microsoft.Network/routeTables\"\n| project name, id, tags, lowerCaseRouteTableId = tolower(id)\n| join kind = leftouter (\n    resources\n    | where type =~ \"Microsoft.Insights/activityLogAlerts\" and properties.enabled == true\n    | mv-expand scope = properties.scopes\n    | where scope has \"Microsoft.Network/routeTables\"\n    | project alertName = name, conditionJson = dynamic_to_json(properties.condition.allOf), scope\n    | where conditionJson has '\"Administrative\"' and (\n        // Create or Update Route Table\n        (conditionJson has '\"Microsoft.Network/routeTables/write\"') or\n        // All Administrative operations\n        (conditionJson !has '\"Microsoft.Network/routeTables/write\"' and conditionJson !has '\"Microsoft.Network/routeTables/delete\"' and conditionJson !has '\"Microsoft.Network/routeTables/join/action\"')\n        )\n    | project lowerCaseRouteTableIdOfScope = tolower(scope)\n    )\n    on $left.lowerCaseRouteTableId == $right.lowerCaseRouteTableIdOfScope\n| where isempty(lowerCaseRouteTableIdOfScope)\n| project recommendationId = \"23b2dfc7-7e5d-9443-9f62-980ca621b561\", name, id, tags, param1 = \"ModificationAlert: Not configured/Disabled\""
+  },
+  {
+    "id": "f05a3e6d-49db-2740-88e2-2b13706c1f67",
+    "name": "Traffic Manager Monitor Status Should be Online",
+    "description": "Monitor status should be online to ensure failover for application workload. If Traffic Manager's health shows Degraded, one or more endpoints may also be Degraded.\nLearn more: https://learn.microsoft.com/azure/traffic-manager/traffic-manager-monitoring",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/trafficManagerProfiles"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find traffic manager profiles that do not have at least two endpoints in different regions\nresources\n| where type == \"microsoft.network/trafficmanagerprofiles\"\n| extend endpoints = properties.endpoints\n| mv-expand endpoint = endpoints\n| extend endpointLocation = endpoint.properties.endpointLocation\n| summarize\n    regions = makeset(endpointLocation),\n    tags = any(tags),\n    name = any(name)\n  by id\n| extend regionCount = array_length(regions)\n| where regionCount <= 1\n| project recommendationId = \"1ad9d7b7-9692-1441-a8f4-93792efbe97a\", name, id, tags, param1 = regions"
+  },
+  {
+    "id": "5b422a7f-8caa-3d48-becb-511599e5bba9",
+    "name": "Traffic manager profiles should have more than one endpoint",
+    "description": "When configuring the Azure traffic manager, provision at least two endpoints to ensure workloads can fail-over to another instance, enhancing reliability and availability.\nLearn more: https://learn.microsoft.com/azure/traffic-manager/traffic-manager-endpoint-types",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/trafficManagerProfiles"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find traffic manager profiles that have less than 2 endpoints\nresources\n| where type == \"microsoft.network/trafficmanagerprofiles\"\n| where array_length(properties.endpoints) < 2\n| project recommendationId = \"5b422a7f-8caa-3d48-becb-511599e5bba9\", name, id, tags, param1 = strcat('EndpointCount: ', array_length(properties.endpoints))"
+  },
+  {
+    "id": "c31f76a0-48cd-9f44-aa43-99ee904db9bc",
+    "name": "Ensure endpoint configured to (All World) for geographic profiles",
+    "description": "For geographic routing, traffic is directed to endpoints based on specific regions. If a region fails, without a predefined failover, configuring an endpoint to \"All (World)\" for geographic profiles can prevent traffic black holes, ensuring service remains available.\nLearn more: https://learn.microsoft.com/azure/advisor/advisor-reference-reliability-recommendations#add-an-endpoint-configured-to-all-world",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/trafficManagerProfiles"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Avoid combining Traffic Manager and Front Door\nresources\n| where type == \"microsoft.network/trafficmanagerprofiles\"\n| mvexpand(properties.endpoints)\n| extend endpoint=tostring(properties_endpoints.properties.target)\n| project name, trafficmanager=id, matchname=endpoint, tags\n| join (\n    resources\n    | where type =~ \"microsoft.cdn/profiles/afdendpoints\"\n    | extend matchname= tostring(properties.hostName)\n    | extend splitid=split(id, \"/\")\n    | extend frontdoorid=tolower(strcat_array(array_slice(splitid, 0, 8), \"/\"))\n    | project name, id, matchname, frontdoorid, type\n    | union\n        (cdnresources\n        | where type =~ \"Microsoft.Cdn/Profiles/CustomDomains\"\n        | extend matchname= tostring(properties.hostName)\n        | extend splitid=split(id, \"/\")\n        | extend frontdoorid=tolower(strcat_array(array_slice(splitid, 0, 8), \"/\"))\n        | project name, id, matchname, frontdoorid, type)\n    )\n    on matchname\n| project\n    recommendationId = \"9437634c-d69e-2747-b13e-631c13182150\",\n    name=split(trafficmanager, \"/\")[-1],\n    id=trafficmanager,\n    tags,\n    param1=strcat(\"hostname:\", matchname),\n    param2=strcat(\"frontdoorid:\", frontdoorid)"
+  },
+  {
+    "id": "9437634c-d69e-2747-b13e-631c13182150",
+    "name": "Avoid combining Traffic Manager and Front Door",
+    "description": "For most solutions, choose either Azure Front Door for content caching, CDN, TLS termination, and WAF, or Traffic Manager for simple global load balancing.\nLearn more: https://learn.microsoft.com/azure/architecture/guide/technology-choices/load-balancing-overview",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/trafficManagerProfiles"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Traffic Manager resources that are not confirgured for all-World access\nResources\n| where type == 'microsoft.network/trafficmanagerprofiles'\n| where properties.trafficRoutingMethod =~ \"Geographic\"\n| extend endpoints = properties.endpoints\n| mv-expand endpoint = endpoints\n| where endpoint.properties.geoMapping !contains \"WORLD\"\n| extend endpointName = endpoint.name\n| project recommendationId=\"c31f76a0-48cd-9f44-aa43-99ee904db9bc\", name, id, tags, param1=strcat(\"endpointName:\",endpointName), param2=strcat(\"GeoMapping:\", tostring(endpoint.properties.geoMapping))"
+  },
+  {
+    "id": "d37db635-157f-584d-9bce-4f6fc8c65ce5",
+    "name": "Connect ExpressRoute gateway with circuits from diverse peering locations",
+    "description": "For improved reliability, each ExpressRoute gateway should connect to at least two circuits, with each circuit sourced from a different peering location. This setup ensures diverse connectivity paths, enhancing resilience and minimizing service disruption risks.\nLearn more: https://learn.microsoft.com/azure/expressroute/designing-for-disaster-recovery-with-expressroute-privatepeering",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "bbe668b7-eb5c-c746-8b82-70afdedf0cae",
+    "name": "Use Zone-redundant ExpressRoute gateway SKUs",
+    "description": "Azure ExpressRoute gateway offers variable SLAs based on deployment in single or multiple availability zones. To deploy virtual network gateways across zones automatically, use zone-redundant gateways for accessing critical, scalable services with increased resilience.\nLearn more: https://learn.microsoft.com/azure/expressroute/expressroute-about-virtual-network-gateways#zrgw",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "3e115044-a3aa-433e-be01-ce17d67e50da",
+    "name": "Configure customer-controlled ExpressRoute gateway maintenance",
+    "description": "ExpressRoute gateways are updated for improved functionality, reliability, performance, and security. Customer-controlled maintenance configuration and scheduling minimize update impact and align with your maintenance windows.\nLearn more: https://learn.microsoft.com/azure/expressroute/customer-controlled-gateway-maintenance#azure-portal-steps",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Identifies non-active-active VPN type virtual network gateways\nresources\n| where type =~ 'Microsoft.Network/virtualNetworkGateways'\n| where properties.gatewayType =~ \"vpn\"\n| extend gatewayType = properties.gatewayType, vpnType = properties.vpnType, connections = properties.connections, activeactive=properties.activeActive\n| where activeactive == false\n| project recommendationId = \"281a2713-c0e0-3c48-b596-19f590c46671\", name, id, tags"
+  },
+  {
+    "id": "f8c2e6d9-4b3a-45d6-b9e2-8e7f3a1c2d04",
+    "name": "Configure customer-controlled VPN gateway maintenance",
+    "description": "VPN gateways are updated for improved functionality, reliability, performance, and security. Customer-controlled maintenance configuration and scheduling minimize update impact and align with your maintenance windows.\nLearn more: https://learn.microsoft.com/azure/vpn-gateway/customer-controlled-gateway-maintenance",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all ExpressRoute Virtual Network Gateways without Maintenance Configurations\n\nresources\n| where type =~ \"Microsoft.Network/virtualNetworkGateways\"\n| where properties.gatewayType =~ \"ExpressRoute\"\n| extend resourceId = tolower(id)\n| join kind=leftouter  (\n    maintenanceresources\n    | where type =~ \"Microsoft.Maintenance/configurationAssignments\"\n    | project JsonData = parse_json(properties)\n    | extend maintenanceConfigurationId = tolower(tostring(JsonData.maintenanceConfigurationId))\n    | join kind=inner (\n        resources\n        | where type =~ \"Microsoft.Maintenance/maintenanceConfigurations\"\n        | project maintenanceConfigurationId=tolower(id)\n    ) on maintenanceConfigurationId\n    | project maintenanceConfigurationId, resourceId=tolower(tostring(JsonData.resourceId))\n) on resourceId\n| where isempty(maintenanceConfigurationId)\n| project recommendationId = \"3e115044-a3aa-433e-be01-ce17d67e50da\", name, id, tags, param1= strcat(\"sku-tier: \" , properties.sku.tier), param2=location"
+  },
+  {
+    "id": "5b1933a6-90e4-f642-a01f-e58594e5aab2",
+    "name": "Choose a Zone-redundant VPN gateway",
+    "description": "Deploying zone-redundant virtual network gateways across availability zones ensures zone-resiliency, improving access to mission-critical, scalable services on Azure. Mission Critical workloads should use dual ExpressRoutes instead of VPN.\nLearn more: https://learn.microsoft.com/azure/vpn-gateway/about-zone-redundant-vnet-gateways",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of zone-redundant Azure VPN gateways associated with non-zone-redundant Public IPs\nresources\n| where type =~ \"Microsoft.Network/virtualNetworkGateways\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where properties.gatewayType == \"Vpn\"\n| where properties.sku.tier contains 'AZ'\n| mv-expand ipconfig = properties.ipConfigurations\n| extend pipId = tostring(ipconfig.properties.publicIPAddress.id)\n| join kind=inner (\n    resources\n    | where type == \"microsoft.network/publicipaddresses\"\n    | where\n    (location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n    and array_length(zones) <= 1)\n    or\n    (location in~ (\"centralindia\", \"centralus\", \"eastus\", \"japaneast\", \"japanwest\", \"newzealandnorth\",\"southcentralus\", \"southeastasia\", \"switzerlandnorth\", \"uaenorth\", \"westeurope\", \"westus3\",\"usgovvirginia\", \"chinanorth3\")\n    and (isempty(zones) or array_length(zones) <= 1)))\n    on $left.pipId == $right.id\n| project recommendationId = \"4bae5a28-5cf4-40d9-bcf1-623d28f6d917\", name, id, tags, param1 = strcat(\"PublicIpAddressName: \", name1), param2 = strcat (\"PublicIpAddressId: \",id1), param3 = strcat (\"PublicIpAddressTags: \",tags1)"
+  },
+  {
+    "id": "281a2713-c0e0-3c48-b596-19f590c46671",
+    "name": "Enable Active-Active VPN Gateways for redundancy",
+    "description": "The active-active mode is available for all SKUs except Basic, allowing for two Gateway IP configurations and two public IP addresses, enhancing redundancy and traffic handling. Mission Critical workloads should use dual ExpressRoutes instead of VPN.\nLearn more: https://learn.microsoft.com/azure/vpn-gateway/active-active-portal#gateway",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// For all VNGs of type Vpn, show any that do not have AZ in the SKU tier\nresources\n| where type =~ \"Microsoft.Network/virtualNetworkGateways\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where properties.gatewayType == \"Vpn\"\n| where properties.sku.tier !contains 'AZ'\n| project recommendationId = \"5b1933a6-90e4-f642-a01f-e58594e5aab2\", name, id, tags, param1= strcat(\"sku-tier: \" , properties.sku.tier), param2=location\n| order by id asc"
+  },
+  {
+    "id": "4bae5a28-5cf4-40d9-bcf1-623d28f6d917",
+    "name": "Deploy VPN gateways with zone-redundant Public IPs",
+    "description": "For zone-redundant VPN gateways, always use zone-redundant Standard SKU public IPs to avoid deploying all instances in one zone. This ensures the gateway's reliability. Mission Critical workloads should use dual ExpressRoutes instead of VPN.\nLearn more: https://learn.microsoft.com/azure/vpn-gateway/about-zone-redundant-vnet-gateways",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworkGateways"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "06b77be9-56a3-4d41-b362-8b295c5a283d",
+    "name": "Enable Virtual Network Flow Logs",
+    "description": "Improves monitoring and security for Azure and Hybrid connectivity\nLearn more: https://learn.microsoft.com/azure/network-watcher/vnet-flow-logs-overview",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Network/virtualNetworks"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This query will return all Vnets missing Flow Logs configuration\nresources\n| where type =~ \"Microsoft.Network/virtualNetworks\"\n| extend vnetId = tolower(tostring(id)),vnetName = name,vnetTags = tags,vnetLocation = location\n| join kind = leftouter (\n    resources\n    | where type =~ \"microsoft.network/networkwatchers/flowlogs\"\n    | extend flowLogType = iff(\n        properties.targetResourceId contains \"Microsoft.Network/virtualNetworks\",\n        'Virtual network',\n        'Virtual network'\n      )\n    | extend flowLogTargetVnet = tolower(properties.targetResourceId)\n) on $left.vnetId == $right.flowLogTargetVnet\n| where strlen(flowLogTargetVnet) == 0\n| project recommendationId = \"06b77be9-56a3-4d41-b362-8b295c5a283d\",name=vnetName,id=vnetId,tags,param1 = \"Missing Vnet Flow Log configuration\""
+  },
+  {
+    "id": "17e877f7-3a89-4205-8a24-0670de54ddcd",
+    "name": "Validate VM functionality with a Site Recovery test failover to check performance at target",
+    "description": "Perform a test failover to validate your BCDR strategy and ensure that your applications are functioning correctly in the target region without impacting your production environment. Test your Disaster Recovery plan periodically without any data loss or downtime, using test failovers.\nLearn more: https://learn.microsoft.com/azure/site-recovery/azure-to-azure-tutorial-dr-drill#run-a-test-failover",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Displays all recovery services vaults that do not have cross region restore enabled\nresources\n| where type =~ \"Microsoft.RecoveryServices/vaults\" and\n    properties.redundancySettings.standardTierStorageRedundancy =~ \"GeoRedundant\" and\n    properties.redundancySettings.crossRegionRestore !~ \"Enabled\"\n| extend\n    param1 = strcat(\"CrossRegionRestore: \", properties.redundancySettings.crossRegionRestore),\n    param2 = strcat(\"StorageReplicationType: \", properties.redundancySettings.standardTierStorageRedundancy)\n| project recommendationId = \"1549b91f-2ea0-4d4f-ba2a-4596becbe3de\", name, id, tags, param1, param2"
+  },
+  {
+    "id": "1549b91f-2ea0-4d4f-ba2a-4596becbe3de",
+    "name": "Enable Cross Region Restore for your GRS Recovery Services Vault",
+    "description": "Cross Region Restore enables the restoration of Azure VMs in a secondary, Azure paired region, facilitating drills for audit or compliance and allowing recovery of VMs or disks in the event of a primary region disaster. It is an opt-in feature available exclusively for GRS vaults.\nLearn more: https://learn.microsoft.com/azure/backup/backup-create-recovery-services-vault#set-cross-region-restore",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.RecoveryServices/vaults"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all VMs where replication has been enabled but Test Failover was never performed\nrecoveryservicesresources\n| where type == \"microsoft.recoveryservices/vaults/replicationfabrics/replicationprotectioncontainers/replicationprotecteditems\"\n| where properties.providerSpecificDetails.dataSourceInfo.datasourceType == 'AzureVm' and isnull(properties.lastSuccessfulTestFailoverTime)\n| project recommendationId=\"17e877f7-3a89-4205-8a24-0670de54ddcd\" , name = properties.providerSpecificDetails.recoveryAzureVMName, id=properties.providerSpecificDetails.dataSourceInfo.resourceId"
+  },
+  {
+    "id": "9e39919b-78af-4a0b-b70f-c548dae97c25",
+    "name": "Enable Soft Delete for Recovery Services Vaults in Azure Backup",
+    "description": "With soft delete, if backup data is deleted, the backup data is retained for 14 additional days, allowing the recovery of that backup item with no data loss with no cost to you. Soft delete is enabled by default. Disabling this feature isn't recommended.\nLearn more: https://learn.microsoft.com/azure/backup/backup-azure-security-feature-cloud?tabs=azure-portal",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.RecoveryServices/vaults"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This Resource Graph query will return all Recovery services vault with Classic alerts enabled.\nresources\n| where type in~ ('microsoft.recoveryservices/vaults')\n| extend monitoringSettings = parse_json(properties).monitoringSettings\n| extend isUsingClassicAlerts = case(isnull(monitoringSettings),'Enabled',monitoringSettings.classicAlertSettings.alertsForCriticalOperations)\n| extend isUsingJobsAlerts = case(isnull(monitoringSettings), 'Enabled', monitoringSettings.azureMonitorAlertSettings.alertsForAllJobFailures)\n| where isUsingClassicAlerts == 'Enabled'\n| project recommendationId = \"2912472d-0198-4bdc-aa90-37f145790edc\", name, id, tags, param1=strcat(\"isUsingClassicAlerts: \", isUsingClassicAlerts), param2=strcat(\"isUsingJobsAlerts: \", isUsingJobsAlerts)"
+  },
+  {
+    "id": "b376281d-bfec-4695-8f90-9a44544fdfa4",
+    "name": "Enable AZ support in AI Search by configuring multiple replicas to your search service",
+    "description": "Availability zones are used when adding multiple replicas to your search service. Each replica is assigned to a different zone in the region. If there are more replicas than zones, they are distributed as evenly as possible across the available zones.\nLearn more: https://learn.microsoft.com/azure/search/search-reliability#availability-zone-support",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Search/searchServices"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of all deployments for AI search with less than two replicas\nresources\n| where type == \"microsoft.search/searchservices\"\n| extend replicaCount = properties['replicaCount']\n| where properties['replicaCount'] < 2\n| project recommendationId = \"b376281d-bfec-4695-8f90-9a44544fdfa4\", name, id, param1 = strcat(properties['replicaCount']) , param2 = strcat(location)\n| order by id asc"
+  },
+  {
+    "id": "f075a1bd-de9e-4819-9a1d-1ac41037a74f",
+    "name": "Configure the minimum TLS version for Service Bus namespaces to TLS v1.2 or higher",
+    "description": "As of 31 October 2024, TLS 1.0 and TLS 1.1 will no longer be supported on Azure including Service Bus to enhance security and provide best-in-class encryption for your data. Change the minimum TLS version for your Service Bus namespace to TLS v1.2 or higher.\nLearn more: https://learn.microsoft.com/azure/service-bus-messaging/transport-layer-security-configure-minimum-version",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.ServiceBus/namespaces"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "6a8b3db9-5773-413a-a127-4f7032f34bbd",
+    "name": "Enable zone redundancy for SignalR",
+    "description": "Use SignalR with zone redundancy for production to improve uptime. This feature, available in the Premium tier, is activated upon creating or upgrading to Premium. Standard can upgrade to Premium without downtime.\nLearn more: https://learn.microsoft.com/azure/azure-signalr/availability-zones",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.SignalRService/SignalR"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find SignalR instances that are not configured with the Premium tier\nresources\n| where type == \"microsoft.signalrservice/signalr\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where sku.tier != \"Premium\"\n| project recommendationId = \"6a8b3db9-5773-413a-a127-4f7032f34bbd\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "f8f834a9-c761-4e84-b2cb-ac55494d0c37",
+    "name": "Enable zone redundancy for Azure SQL Managed Instance to improve high availability and resiliency",
+    "description": "Azure SQL Managed Instance offers built-in availability by deploying multiple replicas in the same zone. For higher availability, use a zone-redundant configuration that spreads replicas across three Azure availability zones, each with independent power, cooling, and networking.\nLearn more: https://learn.microsoft.com/azure/azure-sql/managed-instance/high-availability-sla-local-zone-redundancy?view=azuresql-mi#zone-redundant-availability",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Sql/managedInstances"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Managed Instance storage backup redundancy check – any server that is not configured for GZRS\nresources\n| where type =~ 'Microsoft.Sql/managedInstances'\n| extend backupredundancy=properties.storageAccountType\n| extend ServiceTier = sku.tier\n| where backupredundancy != 'GeoZone'\n| project recommendationId='15e2712c-f3ea-4a8d-9081-11e822b1ccfb', name, id, param1=strcat('Service Tier:', ServiceTier), param2=strcat('Backup Redundancy:', backupredundancy)"
+  },
+  {
+    "id": "15e2712c-f3ea-4a8d-9081-11e822b1ccfb",
+    "name": "Use Zone-redundant or Geo-zone-redundant Backup storage redundancy",
+    "description": "Configuring zone redundancy option for backups copies your backup file synchronously across three Azure availability zones in the primary region. If Geo is selected, then it copies your data asynchronously three times to a single physical location in the paired secondary region.\nLearn more: https://learn.microsoft.com/azure/azure-sql/managed-instance/automated-backups-overview?view=azuresql-mi&preserve-view=true#backup-storage-redundancy",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Sql/managedInstances"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "c14de326-2729-4be7-a91f-4ea185d24b10",
+    "name": "Use Redirect connection type to accelerate application access",
+    "description": "Redirect mode enables direct connectivity to the instance bypassing the local gateway component and resulting in improved latency and throughput. Redirect mode applies to the VNet-local endpoint only, while the public and private endpoint will always operate in Proxy connection mode.\nLearn more: https://learn.microsoft.com/azure/azure-sql/managed-instance/connection-types-overview?view=azuresql#connection-types",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Sql/managedInstances"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "c0085c32-84c0-c247-bfa9-e70977cbf108",
+    "name": "Enable zone redundancy for Azure SQL Database to achieve high availability and resiliency",
+    "description": "By default, Azure SQL Database premium tier provisions multiple copies within the same region. For geo redundancy, databases can be set as Zone Redundant, distributing copies across Azure Availability Zones to maintain availability during regional outages.\nLearn more: https://learn.microsoft.com/azure/azure-sql/database/high-availability-sla",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Sql/servers/databases"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "e6c7e1cc-2f47-264d-aa50-1da421314472",
+    "name": "Ensure that storage accounts are zone or region redundant",
+    "description": "Redundancy ensures storage accounts meet availability and durability targets amidst failures, weighing lower costs against higher availability. Locally redundant storage offers the least durability at the lowest cost.\nLearn more: https://learn.microsoft.com/azure/storage/common/storage-redundancy",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Storage/storageAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "2ad78dec-5a4d-4a30-8fd1-8584335ad781",
+    "name": "Consider upgrading legacy storage accounts to v2 storage accounts",
+    "description": "General-purpose v2 accounts are recommended for most storage scenarios offering the latest features or the lowest per-gigabyte pricing. Legacy accounts like Standard general-purpose v1 and Blob Storage aren't advised by Microsoft but may fit specific scenarios.\nLearn more: https://learn.microsoft.com/azure/storage/common/storage-account-upgrade",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Storage/storageAccounts"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "e48a7227-5ec7-463a-b955-ee7cb598ded4",
+    "name": "Run jobs in your own dedicated Stream Analytics cluster for increased reliability and security",
+    "description": "Stream Analytics cluster (dedicated) offers more reliable performance guarantees. All the jobs running on your cluster belong only to you. You can also have access to important features like private endpoints, Auto-Scaling, Vnet Support, etc.\nLearn more: https://learn.microsoft.com/azure/stream-analytics/cluster-overview",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.StreamAnalytics/streamingjobs"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Azure Stream Analytics jobs that are not using the latest version of the service.\nresources\n| where type =~ \"Microsoft.StreamAnalytics/streamingjobs\"\n| where properties.sku.name !~ \"StandardV2\"\n| project recommendationId = \"5d40d3d4-179d-4cf5-ac24-901210f512e7\", name, id, tags"
+  },
+  {
+    "id": "5d40d3d4-179d-4cf5-ac24-901210f512e7",
+    "name": "Migrate Stream Analytics jobs to StandardV2 SKU",
+    "description": "Configure Autoscale to allow your job to dynamically change the allocated number of Streaming Units (SU) based on load, metrics, and/or schedule.\nLearn more: https://learn.microsoft.com/azure/stream-analytics/stream-analytics-streaming-unit-consumption",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.StreamAnalytics/streamingjobs"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Azure Stream Analytics jobs that are not associated with a dedicated cluster\nresources\n| where type =~ \"Microsoft.StreamAnalytics/streamingjobs\"\n| where isnull(properties.cluster.id)\n| project recommendationId = \"e48a7227-5ec7-463a-b955-ee7cb598ded4\", name, id, tags"
+  },
+  {
+    "id": "c041d596-6c97-4c5f-b4b3-9cd37628f2e2",
+    "name": "Do not create more than 4000 Citrix VDA servers per subscription",
+    "description": "A Citrix Managed Azure subscription supports VMs with VDA for app/desktop delivery, excluding other machines like Cloud Connectors. When close to the limit, signaled by a dashboard notification, and with sufficient licenses, request another subscription. Can't exceed the given limits for catalogs.\nLearn more: https://docs.citrix.com/en-us/citrix-daas-azure/limits",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Subscription/Subscriptions"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure Subscriptions that are placed under the Tenant Root Management Group\nresourcecontainers\n| where type == 'microsoft.resources/subscriptions'\n| extend mgParentSize = array_length(properties.managementGroupAncestorsChain)\n| where mgParentSize == 1\n| project recommendationId=\"5ada5ffa-7149-4e49-9fbf-e67be7c2594c\", name, id, tags"
+  },
+  {
+    "id": "9729c89d-8118-41b4-a39b-e12468fa872b",
+    "name": "Configure Service Health Alerts",
+    "description": "Service health gives a personalized health view of Azure services and regions used, offering the best place for notifications on outages, planned maintenance, and health advisories by knowing the services used.\nLearn more: https://learn.microsoft.com/azure/service-health/alerts-activity-log-service-notifications-portal",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Subscription/Subscriptions"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// This resource graph query will return all subscriptions without Service Health alerts configured AND subscriptions with Service Health alerts only configured with specific configuration (which requires manual verification regarding the scope being covered by this rule)\nresourcecontainers\n| where type == 'microsoft.resources/subscriptions'\n| project subscriptionId = id, subscriptionName = name, tags\n| join kind=leftouter (\n    resources\n    | where type == \"microsoft.insights/activitylogalerts\" and properties.condition contains \"ServiceHealth\"\n    | extend shaRuleType = iff(array_length(properties.condition.allOf) > 1, 'Explicit','All')\n    | project subscriptionId = strcat('/subscriptions/',subscriptionId), name, shaRuleType\n    | summarize shaAllRuleCount = countif(shaRuleType == 'All'), shaExplicitRuleCount = countif(shaRuleType == 'Explicit') by subscriptionId\n) on subscriptionId\n| extend shaStatus = iff(isnull(shaAllRuleCount) and isnull(shaExplicitRuleCount), 'Not configured',iff(shaAllRuleCount >= 1, 'Configured', 'Explicit'))\n| where shaStatus != 'Configured'\n| project recommendationId = \"9729c89d-8118-41b4-a39b-e12468fa872b\", name = subscriptionName, id= subscriptionId, tags, param1 = iff(shaStatus == 'Explicit', 'Explicit only Service Health Alert Rule(s) found. Please verify that the expected scope is covered by these rule(s).','No Service Health Alert Rule found.')"
+  },
+  {
+    "id": "98bd7098-49d6-491b-86f1-b143d6b1a0ff",
+    "name": "Ensure Resource Group and its Resources are located in the same Region",
+    "description": "Ensure resource locations align with their resource group to manage resources during regional outages. ARM stores resource data, which if in an unavailable region, could halt updates, rendering resources read-only.\nLearn more: https://learn.microsoft.com/azure/azure-resource-manager/management/overview#resource-group-location-alignment",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Subscription/Subscriptions"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "21fb841b-ba70-1f4e-a460-1f72fb41aa51",
+    "name": "Replicate your Image Templates to a secondary region",
+    "description": "The Azure Image Builder service lacks availability zones support. Replicating Image Templates to a secondary region will enable the build of new images in secondary region.\nLearn more: https://learn.microsoft.com/azure/reliability/reliability-image-builder?toc=%2Fazure%2Fvirtual-machines%2Ftoc.json&bc=%2Fazure%2Fvirtual-machines%2Fbreadcrumb%2Ftoc.json&tabs=graph#disaster-recovery",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.VirtualMachineImages/imageTemplates"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "88cb90c2-3b99-814b-9820-821a63f600dd",
+    "name": "Migrate App Service to availability Zone Support",
+    "description": "Azure's feature of deploying App Service plans across availability zones enhances resiliency and reliability by ensuring operation during datacenter failures, providing redundancy without needing different regions, thus minimizing downtime and maintaining uninterrupted services.\nLearn more: https://learn.microsoft.com/azure/reliability/migrate-app-service",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/serverFarms"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure App Service Plans and the number of changes that was made to the pricing tier, if the count is higher that 3 it means you need to avoid scaling up and down that often\n\nresourcechanges\n| extend changeTime = todatetime(properties.changeAttributes.timestamp), targetResourceId = tostring(properties.targetResourceId),\nchangeType = tostring(properties.changeType), correlationId = properties.changeAttributes.correlationId,\nchangedProperties = properties.changes, changeCount = properties.changeAttributes.changesCount\n| where changeTime > ago(14d)\n| join kind=inner (resources | project resources_Name = name, resources_Type = type, resources_Subscription= subscriptionId, resources_ResourceGroup= resourceGroup, id) on $left.targetResourceId == $right.id\n| where resources_Type contains \"microsoft.web/serverfarms\"\n| where changedProperties['sku.name'].propertyChangeType == 'Update' or changedProperties['sku.tier'].propertyChangeType == 'Update'\n| summarize count() by targetResourceId, resources_Name  ,tostring(changedProperties['sku.name'].previousValue), tostring(changedProperties['sku.tier'].newValue)\n| project recommendationId=\"07243659-4643-d44c-a1c6-07ac21635072\", name=resources_Name, id=targetResourceId, tags=\"\", param1=['changedProperties_sku.name_previousValue'], param2=['changedProperties_sku.tier_newValue'], param3=count_"
+  },
+  {
+    "id": "b2113023-a553-2e41-9789-597e2fb54c31",
+    "name": "Use Standard or Premium tier",
+    "description": "Choose Standard/Premium Azure App Service Plan for robust apps with advanced scaling, high availability, better performance, and multiple slots, ensuring resilience and continuous operation.\nLearn more: https://learn.microsoft.com/azure/architecture/checklist/resiliency-per-service#app-service",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/serverFarms"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  },
+  {
+    "id": "855ca19a-6518-4f2e-9e5a-01796fbca9f8",
+    "name": "Set minimum instance count to 2 for app service",
+    "description": "App Service should be configured with a minimum of two instances for production workloads. If apps have a longer warmup time a minimum of three instances should be used.\nLearn more: https://azure.github.io/AppService/2020/05/15/Robust-Apps-for-the-cloud.html",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/serverFarms"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of App services that do not have minimum instance count of 2\n\nresources\n| where type == \"microsoft.web/serverfarms\"\n| where sku.capacity < 2\n| project recommendationId = \"855ca19a-6518-4f2e-9e5a-01796fbca9f8\", name, id, tags, param1 = \"Instance count is less than 2\""
+  },
+  {
+    "id": "a1d91661-32d4-430b-b3b6-5adeb0975df7",
+    "name": "Deploy to a staging slot",
+    "description": "Create a deployment slot for staging to deploy updates, verify them, and ensure all instances are warmed up before production swap, reducing bad update chances. An LKG slot allows easy rollback to a previous good deployment if issues arise later, enhancing reliability.\nLearn more: https://learn.microsoft.com/azure/app-service-web/web-sites-staged-publishing",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/sites"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure App Service Slot resources that don't have App Settings configured\nResources\n| where type =~ 'microsoft.web/sites/slots'\n| join kind=inner\n    (appserviceresources\n    | where type == \"microsoft.web/sites/config\"\n    | extend AppSettings = iif(isempty(properties.AppSettings), false, true)\n    | where AppSettings == false\n    | extend id = replace(@\"/config/web$\", \"\", id)\n    ) on id\n| project recommendationID = \"0a535241-8dc4-4058-af03-f2fff0abad2a\", id, name, param1=\"AppSettings is not configured\", properties"
+  },
+  {
+    "id": "0b80b67c-afbe-4988-ad58-a85a146b681e",
+    "name": "Store configuration as app settings for Web Sites",
+    "description": "Use app settings for configuration and define them in Resource Manager templates or via PowerShell to facilitate part of an automated deployment/update process for improved reliability.\nLearn more: https://learn.microsoft.com/azure/app-service-web/web-sites-configure",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/sites"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "0a535241-8dc4-4058-af03-f2fff0abad2a",
+    "name": "Store configuration as app settings for Web Site Slots",
+    "description": "Use app settings for configuration and define them in Resource Manager templates or via PowerShell to facilitate part of an automated deployment/update process for improved reliability.\nLearn more: https://learn.microsoft.com/azure/app-service-web/web-sites-configure",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/sites/slots"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure App Service resources that don't have App Settings configured\nResources\n| where type =~ 'microsoft.web/sites'\n| join kind=inner\n    (appserviceresources\n    | where type == \"microsoft.web/sites/config\"\n    | extend AppSettings = iif(isempty(properties.AppSettings), false, true)\n    | where AppSettings == false\n    | extend id = replace(@\"/config/web$\", \"\", id)\n    ) on id\n| project recommendationID = \"0b80b67c-afbe-4988-ad58-a85a146b681e\", id, name, param1=\"AppSettings is not configured\""
+  },
+  {
+    "id": "fd049c28-ae6d-48f0-a641-cc3ba1a3fe1d",
+    "name": "Enable Health check for App Services",
+    "description": "Use Health Check for production workloads. Health check increases your application's availability by rerouting requests away from unhealthy instances, and replacing instances if they remain unhealthy. The Health check path should check critical components of your application.\nLearn more: https://learn.microsoft.com/azure/app-service/monitor-instances-health-check?tabs=dotnet#enable-health-check",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/sites"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "c6c4b962-5af4-447a-9d74-7b9c53a5dff5",
+    "name": "Enable auto heal for Functions App",
+    "description": "Auto Heal allows you to mitigate your apps when it runs into unexpected situations like HTTP server errors, resource exhaustion, etc. You can configure different triggers based on your need and choose to recycle the app to recover it from a bad state.\nLearn more: https://azure.github.io/AppService/2018/09/10/Announcing-the-New-Auto-Healing-Experience-in-App-Service-Diagnostics.html",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Web/sites"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "b60ae773-9917-4bca-8a42-7cb45365a917",
+    "name": "If using single-instance VMs all OS and data disks must be Premium SSD or Ultra Disk",
+    "description": "For single-instance VMs, both OS and data disks must be either Premium SSD or Ultra Disk to achieve the single-instance SLA of 99.9% availability.\nLearn more: https://learn.microsoft.com/azure/sap/workloads/planning-guide-storage",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Subscription/subscriptions"
+    ],
+    "rules": [],
+    "rawKql": "// under-development"
+  }
+]

@@ -1,0 +1,1742 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`TS-25 · the upgrade produces a recorded, stable result > 25-02 · cron-schedules upgrades to a known state 1`] = `
+"== SCHEMA ==
+table audit_log
+  id TEXT PK(1)
+  actor_id TEXT NOT NULL
+  actor_email TEXT NOT NULL
+  action TEXT NOT NULL
+  entity_type TEXT
+  entity_id TEXT
+  summary TEXT NOT NULL
+  details TEXT
+  occurred_at TEXT NOT NULL
+table azure_credentials
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  last_verified_subscriptions INTEGER
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table categories
+  id TEXT PK(1)
+  label TEXT NOT NULL
+  color TEXT
+  icon TEXT
+  sort_order INTEGER NOT NULL DEFAULT 0
+  is_builtin INTEGER NOT NULL DEFAULT 0
+  is_special INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table dashboards
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT
+  config TEXT NOT NULL
+  is_default INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table finding_events
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  scan_id TEXT NOT NULL
+  type TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+table findings
+  fingerprint TEXT PK(1)
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  kind TEXT NOT NULL DEFAULT 'state'
+  dimension_key TEXT
+  resource_id TEXT
+  resource_type TEXT
+  resource_name TEXT
+  subscription_id TEXT NOT NULL
+  resource_group TEXT
+  location TEXT
+  title TEXT NOT NULL
+  description TEXT NOT NULL DEFAULT ''
+  recommendation TEXT NOT NULL DEFAULT ''
+  remediation_steps TEXT NOT NULL DEFAULT '[]'
+  evidence TEXT NOT NULL DEFAULT '{}'
+  azure_portal_link TEXT
+  status TEXT NOT NULL DEFAULT 'active'
+  first_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL
+  resolved_at TEXT
+  last_scan_id TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
+table local_accounts
+  user_id TEXT PK(1)
+  password_hash TEXT NOT NULL
+  must_change_password INTEGER NOT NULL DEFAULT 0
+  failed_attempts INTEGER NOT NULL DEFAULT 0
+  locked_until TEXT
+  password_updated_at TEXT
+  created_at TEXT NOT NULL
+table log_analytics_workspaces
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  workspace_id TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table meta
+  key TEXT PK(1)
+  value TEXT NOT NULL
+table notification_channels
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  type TEXT NOT NULL
+  url TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_notified_at TEXT
+  last_error TEXT
+  config TEXT
+table notification_deliveries
+  id TEXT PK(1)
+  channel_id TEXT NOT NULL
+  schedule_id TEXT NOT NULL
+  run_id TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+  ok INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 1
+  http_status INTEGER
+  error TEXT
+  findings_count INTEGER NOT NULL DEFAULT 0
+table posture_snapshots
+  category TEXT NOT NULL PK(1)
+  subscription_id TEXT NOT NULL PK(2) DEFAULT ''
+  date TEXT NOT NULL PK(3)
+  posture_pct INTEGER
+  passing_rules INTEGER NOT NULL DEFAULT 0
+  total_rules INTEGER NOT NULL DEFAULT 0
+  active_findings INTEGER NOT NULL DEFAULT 0
+  severity_counts TEXT NOT NULL DEFAULT '{}'
+  updated_at TEXT NOT NULL
+  unknown_rules INTEGER NOT NULL DEFAULT 0
+  activity_rule_count INTEGER NOT NULL DEFAULT 0
+  formula_version INTEGER NOT NULL DEFAULT 1
+table query_runs
+  id TEXT PK(1)
+  query_backend TEXT NOT NULL
+  scope TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  count INTEGER NOT NULL
+  capped INTEGER NOT NULL
+  truncated INTEGER NOT NULL
+  saved_query_id TEXT
+  owner_id TEXT NOT NULL
+  ran_at TEXT NOT NULL
+table resource_types_cache
+  id INTEGER PK(1)
+  types TEXT NOT NULL
+  cached_at TEXT NOT NULL
+table rules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  filter TEXT
+  conditions TEXT NOT NULL DEFAULT '[]'
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  rules_operator TEXT
+  visual_query TEXT
+  type TEXT NOT NULL DEFAULT 'custom'
+  pack TEXT
+  group_name TEXT
+  tags TEXT
+  query_backend TEXT NOT NULL DEFAULT 'resource-graph'
+  shape TEXT NOT NULL DEFAULT 'detect'
+  kind TEXT NOT NULL DEFAULT 'state'
+  last_run_status TEXT
+  last_run_at TEXT
+  applies_to TEXT
+  last_population_count INTEGER
+  graph_query TEXT
+  logs_query TEXT
+table saved_queries
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  query_backend TEXT NOT NULL
+  scope TEXT
+  visual_query TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  visibility TEXT NOT NULL DEFAULT 'private'
+  owner_id TEXT NOT NULL
+  owner_email TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+table scans
+  id TEXT PK(1)
+  module TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT NOT NULL
+  duration_ms INTEGER NOT NULL
+  subscriptions_scanned TEXT NOT NULL
+  findings TEXT NOT NULL
+  counts TEXT NOT NULL
+  total_rules INTEGER NOT NULL DEFAULT 0
+  total_policies INTEGER NOT NULL DEFAULT 0
+  triggered_by TEXT NOT NULL DEFAULT 'manual'
+  schedule_id TEXT
+  run_id TEXT
+  coverage TEXT NOT NULL DEFAULT 'complete'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+table schedule_notification_channels
+  schedule_id TEXT NOT NULL PK(1)
+  channel_id TEXT NOT NULL PK(2)
+  min_severity TEXT NOT NULL DEFAULT 'high'
+  category_ids TEXT
+  subscription_ids TEXT
+table schedule_runs
+  id TEXT PK(1)
+  schedule_id TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT
+  status TEXT NOT NULL
+  categories TEXT NOT NULL
+  total_findings INTEGER NOT NULL DEFAULT 0
+  new_findings INTEGER NOT NULL DEFAULT 0
+  new_finding_fingerprints TEXT
+  error TEXT
+  duration_ms INTEGER
+  triggered_by TEXT NOT NULL DEFAULT 'schedule'
+  target_type TEXT
+  target_values TEXT
+  notify_status TEXT NOT NULL DEFAULT 'none'
+table schedules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  next_run_at TEXT
+  last_run_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  target_type TEXT NOT NULL DEFAULT 'all'
+  target_values TEXT NOT NULL DEFAULT '[]'
+  recurrence_type TEXT NOT NULL DEFAULT 'once'
+  interval INTEGER NOT NULL DEFAULT 1
+  days_of_week TEXT
+  day_of_month INTEGER
+  start_at TEXT NOT NULL DEFAULT ''
+  end_type TEXT NOT NULL DEFAULT 'never'
+  end_date TEXT
+table schema_cache
+  resource_type TEXT PK(1)
+  fields TEXT NOT NULL
+  cached_at TEXT NOT NULL
+  field_count INTEGER NOT NULL
+table sso_providers
+  id TEXT PK(1)
+  provider TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 0
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table suppressions
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  resource_id TEXT
+  reason TEXT NOT NULL
+  suppressed_at TEXT NOT NULL
+  expires_at TEXT
+table users
+  id TEXT PK(1)
+  email TEXT NOT NULL
+  oid TEXT
+  name TEXT
+  role TEXT NOT NULL DEFAULT 'viewer'
+  scope TEXT
+  session_epoch INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+  last_seen_at TEXT
+index idx_audit_log_occurred on audit_log
+index idx_finding_events_time on finding_events
+index idx_findings_category_status on findings
+index idx_findings_rule on findings
+index idx_notification_deliveries_channel on notification_deliveries
+index idx_query_runs_owner on query_runs
+index idx_saved_queries_owner on saved_queries
+index idx_scans_module_started on scans
+index idx_schedule_runs_schedule on schedule_runs
+index idx_snapshots_date on posture_snapshots
+index idx_users_oid on users
+
+== COUNTS ==
+audit_log: 0
+azure_credentials: 0
+categories: 5
+dashboards: 1
+finding_events: 0
+findings: 2
+local_accounts: 1
+log_analytics_workspaces: 0
+meta: 2
+notification_channels: 0
+notification_deliveries: 0
+posture_snapshots: 1
+query_runs: 0
+resource_types_cache: 0
+rules: 19
+saved_queries: 0
+scans: 1
+schedule_notification_channels: 0
+schedule_runs: 1
+schedules: 2
+schema_cache: 0
+sso_providers: 0
+suppressions: 1
+users: 1
+
+== ROWS ==
+categories {"color":"#0d9488","created_at":"<TS>","icon":"ShieldCheck","id":"security","is_builtin":1,"is_special":0,"label":"Security","sort_order":3}
+categories {"color":"#22c55e","created_at":"<TS>","icon":"Activity","id":"reliability","is_builtin":1,"is_special":0,"label":"Reliability","sort_order":5}
+categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance","is_builtin":1,"is_special":0,"label":"Compliance","sort_order":1}
+categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
+categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
+dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"dashboards-seeded-v1","value":"1"}
+meta {"key":"onboarding-v1","value":"{\\"status\\":\\"pending\\",\\"lastStep\\":1,\\"completedAt\\":null,\\"completedBy\\":null}"}
+posture_snapshots {"active_findings":4,"activity_rule_count":0,"category":"cost","date":"2026-07-19","formula_version":1,"passing_rules":8,"posture_pct":80,"severity_counts":"{\\"high\\":1}","subscription_id":"","total_rules":10,"unknown_rules":0,"updated_at":"<TS>"}
+rules {"applies_to":null,"category":"compliance","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Anything still running in westeurope.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"VMs in the retired region","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/virtualmachines'\\n| where location =~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'CostCenter' tag cannot be attributed to a cost center for chargeback. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing CostCenter Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['CostCenter'])) or isnull(tags['CostCenter'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Environment' tag cannot be attributed to a deployment environment (dev/test/prod). Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Environment Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Environment'])) or isnull(tags['Environment'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Owner' tag have no accountable team or person. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Owner Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Owner'])) or isnull(tags['Owner'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[]","conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Legacy rule builtin::aprl-<UUID>","pack":"aprl-v2","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources | project id","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Cost check on oversized managed disks.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Disks over 512 GB","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where tolong(properties.diskSizeGB) > 512\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Disk snapshots older than 30 days are candidates for cleanup. Review whether they are still needed as recovery points.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Stale Disk Snapshot","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/snapshots'\\n| where todatetime(properties.timeCreated) < ago(30d)\\n| project id, name, type, location, resourceGroup, subscriptionId, timeCreated=properties.timeCreated, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/snapshots\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Managed disks not attached to any VM are still billed. Delete or snapshot them if no longer needed.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Managed Disk","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where properties.diskState =~ 'Unattached'\\n| project id, name, type, location, resourceGroup, subscriptionId, diskState=properties.diskState, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/disks\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"NSGs with no associated NICs or subnets serve no purpose and add noise to security reviews.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Empty Network Security Group","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networksecuritygroups'\\n| where (isnull(properties.networkInterfaces) or array_length(properties.networkInterfaces) == 0)\\n| where (isnull(properties.subnets) or array_length(properties.subnets) == 0)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networksecuritygroups\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Network interfaces not associated with any VM add clutter and can confuse network troubleshooting.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Network Interface","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networkinterfaces'\\n| where isnull(properties.virtualMachine)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networkinterfaces\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Public IPs not associated with any resource still incur charges (Standard SKU ~$3.65/mo) and increase attack surface.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unassigned Public IP Address","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/publicipaddresses'\\n| where isnull(properties.ipConfiguration)\\n| project id, name, type, location, resourceGroup, subscriptionId, sku=properties.sku.name","resource_types":"[\\"microsoft.network/publicipaddresses\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A certificate credential on an app registration is expiring soon. Upload a new certificate and update the application configuration before the current one expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"keyCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/certificates\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-cert-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Certificate Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A client secret on an app registration is expiring soon. Rotate the secret and update any applications that use it before it expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"passwordCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/secrets\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-secret-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Secret Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"reliability","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Checks the SKU name for a ZRS suffix.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage accounts must be zone redundant","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where sku.name !endswith 'ZRS'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Allowing HTTP traffic to storage accounts exposes data in transit. All access should be restricted to HTTPS.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Allows HTTP Traffic","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.supportsHttpsTrafficOnly != true\\n| project id, name, type, location, resourceGroup, subscriptionId, supportsHttpsTrafficOnly=properties.supportsHttpsTrafficOnly","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Anonymous public read access allows unauthenticated data access. Disable unless explicitly required for public content.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Public Blob Access Enabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.allowBlobPublicAccess == true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+schedule_runs {"categories":"[\\"cost\\"]","duration_ms":null,"error":null,"finished_at":"<TS>","id":"r0000000-0000-4000-8000-000000000001","new_finding_fingerprints":null,"new_findings":1,"notify_status":"none","schedule_id":"sch00000-0000-4000-8000-000000000001","started_at":"<TS>","status":"success","target_type":null,"target_values":null,"total_findings":4,"triggered_by":"schedule"}
+schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000001","interval":1,"last_run_at":"<TS>","name":"Nightly cost sweep","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"categories","target_values":"[\\"cost\\",\\"security\\"]","updated_at":"<TS>"}
+schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000002","interval":1,"last_run_at":null,"name":"Everything, weekly","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"all","target_values":"[]","updated_at":"<TS>"}
+suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
+`;
+
+exports[`TS-25 · the upgrade produces a recorded, stable result > 25-02 · current upgrades to a known state 1`] = `
+"== SCHEMA ==
+table audit_log
+  id TEXT PK(1)
+  actor_id TEXT NOT NULL
+  actor_email TEXT NOT NULL
+  action TEXT NOT NULL
+  entity_type TEXT
+  entity_id TEXT
+  summary TEXT NOT NULL
+  details TEXT
+  occurred_at TEXT NOT NULL
+table azure_credentials
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  last_verified_subscriptions INTEGER
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table categories
+  id TEXT PK(1)
+  label TEXT NOT NULL
+  color TEXT
+  icon TEXT
+  sort_order INTEGER NOT NULL DEFAULT 0
+  is_builtin INTEGER NOT NULL DEFAULT 0
+  is_special INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table dashboards
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT
+  config TEXT NOT NULL
+  is_default INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table finding_events
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  scan_id TEXT NOT NULL
+  type TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+table findings
+  fingerprint TEXT PK(1)
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  kind TEXT NOT NULL DEFAULT 'state'
+  dimension_key TEXT
+  resource_id TEXT
+  resource_type TEXT
+  resource_name TEXT
+  subscription_id TEXT NOT NULL
+  resource_group TEXT
+  location TEXT
+  title TEXT NOT NULL
+  description TEXT NOT NULL DEFAULT ''
+  recommendation TEXT NOT NULL DEFAULT ''
+  remediation_steps TEXT NOT NULL DEFAULT '[]'
+  evidence TEXT NOT NULL DEFAULT '{}'
+  azure_portal_link TEXT
+  status TEXT NOT NULL DEFAULT 'active'
+  first_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL
+  resolved_at TEXT
+  last_scan_id TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
+table local_accounts
+  user_id TEXT PK(1)
+  password_hash TEXT NOT NULL
+  must_change_password INTEGER NOT NULL DEFAULT 0
+  failed_attempts INTEGER NOT NULL DEFAULT 0
+  locked_until TEXT
+  password_updated_at TEXT
+  created_at TEXT NOT NULL
+table log_analytics_workspaces
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  workspace_id TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table meta
+  key TEXT PK(1)
+  value TEXT NOT NULL
+table notification_channels
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  type TEXT NOT NULL
+  url TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_notified_at TEXT
+  last_error TEXT
+  config TEXT
+table notification_deliveries
+  id TEXT PK(1)
+  channel_id TEXT NOT NULL
+  schedule_id TEXT NOT NULL
+  run_id TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+  ok INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 1
+  http_status INTEGER
+  error TEXT
+  findings_count INTEGER NOT NULL DEFAULT 0
+table posture_snapshots
+  category TEXT NOT NULL PK(1)
+  subscription_id TEXT NOT NULL PK(2) DEFAULT ''
+  date TEXT NOT NULL PK(3)
+  posture_pct INTEGER
+  passing_rules INTEGER NOT NULL DEFAULT 0
+  total_rules INTEGER NOT NULL DEFAULT 0
+  active_findings INTEGER NOT NULL DEFAULT 0
+  severity_counts TEXT NOT NULL DEFAULT '{}'
+  updated_at TEXT NOT NULL
+  unknown_rules INTEGER NOT NULL DEFAULT 0
+  activity_rule_count INTEGER NOT NULL DEFAULT 0
+  formula_version INTEGER NOT NULL DEFAULT 1
+table query_runs
+  id TEXT PK(1)
+  query_backend TEXT NOT NULL
+  scope TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  count INTEGER NOT NULL
+  capped INTEGER NOT NULL
+  truncated INTEGER NOT NULL
+  saved_query_id TEXT
+  owner_id TEXT NOT NULL
+  ran_at TEXT NOT NULL
+table resource_types_cache
+  id INTEGER PK(1)
+  types TEXT NOT NULL
+  cached_at TEXT NOT NULL
+table rules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  filter TEXT
+  conditions TEXT NOT NULL DEFAULT '[]'
+  project_columns TEXT
+  raw_kql TEXT
+  rules_operator TEXT
+  type TEXT NOT NULL DEFAULT 'custom'
+  pack TEXT
+  group_name TEXT
+  visual_query TEXT
+  tags TEXT
+  query_backend TEXT NOT NULL DEFAULT 'resource-graph'
+  shape TEXT NOT NULL DEFAULT 'detect'
+  kind TEXT NOT NULL DEFAULT 'state'
+  last_run_status TEXT
+  last_run_at TEXT
+  applies_to TEXT
+  last_population_count INTEGER
+  graph_query TEXT
+  logs_query TEXT
+  condition_groups TEXT
+table saved_queries
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  query_backend TEXT NOT NULL
+  scope TEXT
+  visual_query TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  visibility TEXT NOT NULL DEFAULT 'private'
+  owner_id TEXT NOT NULL
+  owner_email TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+table scans
+  id TEXT PK(1)
+  module TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT NOT NULL
+  duration_ms INTEGER NOT NULL
+  subscriptions_scanned TEXT NOT NULL
+  findings TEXT NOT NULL
+  counts TEXT NOT NULL
+  triggered_by TEXT NOT NULL DEFAULT 'manual'
+  schedule_id TEXT
+  coverage TEXT NOT NULL DEFAULT 'complete'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  total_rules INTEGER NOT NULL DEFAULT 0
+  total_policies INTEGER NOT NULL DEFAULT 0
+  run_id TEXT
+table schedule_notification_channels
+  schedule_id TEXT NOT NULL PK(1)
+  channel_id TEXT NOT NULL PK(2)
+  min_severity TEXT NOT NULL DEFAULT 'high'
+  category_ids TEXT
+  subscription_ids TEXT
+table schedule_runs
+  id TEXT PK(1)
+  schedule_id TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT
+  status TEXT NOT NULL
+  categories TEXT NOT NULL
+  total_findings INTEGER NOT NULL DEFAULT 0
+  new_findings INTEGER NOT NULL DEFAULT 0
+  new_finding_fingerprints TEXT
+  error TEXT
+  duration_ms INTEGER
+  triggered_by TEXT NOT NULL DEFAULT 'schedule'
+  target_type TEXT
+  target_values TEXT
+  notify_status TEXT NOT NULL DEFAULT 'none'
+table schedules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  next_run_at TEXT
+  last_run_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  target_type TEXT NOT NULL DEFAULT 'all'
+  target_values TEXT NOT NULL DEFAULT '[]'
+  recurrence_type TEXT NOT NULL DEFAULT 'once'
+  interval INTEGER NOT NULL DEFAULT 1
+  days_of_week TEXT
+  day_of_month INTEGER
+  start_at TEXT NOT NULL DEFAULT ''
+  end_type TEXT NOT NULL DEFAULT 'never'
+  end_date TEXT
+table schema_cache
+  resource_type TEXT PK(1)
+  fields TEXT NOT NULL
+  cached_at TEXT NOT NULL
+  field_count INTEGER NOT NULL
+table sso_providers
+  id TEXT PK(1)
+  provider TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 0
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table suppressions
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  resource_id TEXT
+  reason TEXT NOT NULL
+  suppressed_at TEXT NOT NULL
+  expires_at TEXT
+table users
+  id TEXT PK(1)
+  email TEXT NOT NULL
+  oid TEXT
+  name TEXT
+  role TEXT NOT NULL DEFAULT 'viewer'
+  scope TEXT
+  session_epoch INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+  last_seen_at TEXT
+index idx_audit_log_occurred on audit_log
+index idx_finding_events_time on finding_events
+index idx_findings_category_status on findings
+index idx_findings_rule on findings
+index idx_notification_deliveries_channel on notification_deliveries
+index idx_query_runs_owner on query_runs
+index idx_saved_queries_owner on saved_queries
+index idx_scans_module_started on scans
+index idx_schedule_runs_schedule on schedule_runs
+index idx_snapshots_date on posture_snapshots
+index idx_users_oid on users
+
+== COUNTS ==
+audit_log: 0
+azure_credentials: 0
+categories: 5
+dashboards: 1
+finding_events: 0
+findings: 0
+local_accounts: 1
+log_analytics_workspaces: 0
+meta: 2
+notification_channels: 0
+notification_deliveries: 0
+posture_snapshots: 0
+query_runs: 0
+resource_types_cache: 0
+rules: 15
+saved_queries: 0
+scans: 0
+schedule_notification_channels: 0
+schedule_runs: 0
+schedules: 0
+schema_cache: 0
+sso_providers: 0
+suppressions: 0
+users: 1
+
+== ROWS ==
+categories {"color":"#0d9488","created_at":"<TS>","icon":"ShieldCheck","id":"security","is_builtin":1,"is_special":0,"label":"Security","sort_order":3}
+categories {"color":"#22c55e","created_at":"<TS>","icon":"Activity","id":"reliability","is_builtin":1,"is_special":0,"label":"Reliability","sort_order":5}
+categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance","is_builtin":1,"is_special":0,"label":"Compliance","sort_order":1}
+categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
+categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
+dashboards {"config":"{\\"autoRefresh\\":0,\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Overall Posture\\",\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"posture-pct\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Open Findings\\",\\"x\\":3,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"total-findings\\"}},{\\"id\\":\\"w3\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Critical Issues\\",\\"x\\":6,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"critical-findings\\"}},{\\"id\\":\\"w4\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Healthy Categories\\",\\"x\\":9,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"modules-healthy\\"}},{\\"id\\":\\"w5\\",\\"type\\":\\"trend\\",\\"title\\":\\"Posture Trend\\",\\"x\\":0,\\"y\\":3,\\"w\\":8,\\"h\\":5,\\"config\\":{\\"category\\":\\"all\\",\\"period\\":\\"30d\\",\\"chartType\\":\\"area\\",\\"showFindings\\":true}},{\\"id\\":\\"w6\\",\\"type\\":\\"posture-ring\\",\\"title\\":\\"Overall Posture\\",\\"x\\":8,\\"y\\":3,\\"w\\":4,\\"h\\":5,\\"config\\":{\\"category\\":\\"all\\",\\"showDelta\\":true,\\"showPolicyCounts\\":true}},{\\"id\\":\\"w7\\",\\"type\\":\\"category-scorecard\\",\\"title\\":\\"Category Overview\\",\\"x\\":0,\\"y\\":8,\\"w\\":12,\\"h\\":5,\\"config\\":{}},{\\"id\\":\\"w8\\",\\"type\\":\\"top-rules\\",\\"title\\":\\"Top Violating Rules\\",\\"x\\":0,\\"y\\":13,\\"w\\":5,\\"h\\":7,\\"config\\":{\\"limit\\":8}},{\\"id\\":\\"w9\\",\\"type\\":\\"recent-findings\\",\\"title\\":\\"Recent Findings\\",\\"x\\":5,\\"y\\":13,\\"w\\":7,\\"h\\":7,\\"config\\":{\\"limit\\":15}},{\\"id\\":\\"w11\\",\\"type\\":\\"severity-breakdown\\",\\"title\\":\\"Severity Breakdown\\",\\"x\\":0,\\"y\\":20,\\"w\\":4,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w12\\",\\"type\\":\\"subscription-scorecard\\",\\"title\\":\\"Subscription Overview\\",\\"x\\":4,\\"y\\":20,\\"w\\":8,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w13\\",\\"type\\":\\"top-resources\\",\\"title\\":\\"Top Offending Resources\\",\\"x\\":0,\\"y\\":26,\\"w\\":6,\\"h\\":6,\\"config\\":{\\"limit\\":8}},{\\"id\\":\\"w14\\",\\"type\\":\\"coverage-freshness\\",\\"title\\":\\"Scan Coverage\\",\\"x\\":6,\\"y\\":26,\\"w\\":6,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w15\\",\\"type\\":\\"new-vs-fixed\\",\\"title\\":\\"New vs. Fixed\\",\\"x\\":0,\\"y\\":32,\\"w\\":12,\\"h\\":5,\\"config\\":{\\"period\\":\\"30d\\"}}]}","created_at":"<TS>","description":"Overall governance posture across all categories","id":"default","is_default":1,"name":"Overview"}
+meta {"key":"dashboards-seeded-v1","value":"1"}
+meta {"key":"onboarding-v1","value":"{\\"status\\":\\"pending\\",\\"lastStep\\":1,\\"completedAt\\":null,\\"completedBy\\":null}"}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'CostCenter' tag cannot be attributed to a cost center for chargeback. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing CostCenter Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['CostCenter'])) or isnull(tags['CostCenter'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Environment' tag cannot be attributed to a deployment environment (dev/test/prod). Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Environment Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Environment'])) or isnull(tags['Environment'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Owner' tag have no accountable team or person. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Owner Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Owner'])) or isnull(tags['Owner'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Disk snapshots older than 30 days are candidates for cleanup. Review whether they are still needed as recovery points.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Stale Disk Snapshot","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/snapshots'\\n| where todatetime(properties.timeCreated) < ago(30d)\\n| project id, name, type, location, resourceGroup, subscriptionId, timeCreated=properties.timeCreated, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/snapshots\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Managed disks not attached to any VM are still billed. Delete or snapshot them if no longer needed.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Managed Disk","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where properties.diskState =~ 'Unattached'\\n| project id, name, type, location, resourceGroup, subscriptionId, diskState=properties.diskState, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/disks\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"NSGs with no associated NICs or subnets serve no purpose and add noise to security reviews.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Empty Network Security Group","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networksecuritygroups'\\n| where (isnull(properties.networkInterfaces) or array_length(properties.networkInterfaces) == 0)\\n| where (isnull(properties.subnets) or array_length(properties.subnets) == 0)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networksecuritygroups\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Network interfaces not associated with any VM add clutter and can confuse network troubleshooting.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Network Interface","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networkinterfaces'\\n| where isnull(properties.virtualMachine)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networkinterfaces\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Public IPs not associated with any resource still incur charges (Standard SKU ~$3.65/mo) and increase attack surface.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unassigned Public IP Address","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/publicipaddresses'\\n| where isnull(properties.ipConfiguration)\\n| project id, name, type, location, resourceGroup, subscriptionId, sku=properties.sku.name","resource_types":"[\\"microsoft.network/publicipaddresses\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A certificate credential on an app registration is expiring soon. Upload a new certificate and update the application configuration before the current one expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"keyCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/certificates\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-cert-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Certificate Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A client secret on an app registration is expiring soon. Rotate the secret and update any applications that use it before it expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"passwordCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/secrets\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-secret-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Secret Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Allowing HTTP traffic to storage accounts exposes data in transit. All access should be restricted to HTTPS.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Allows HTTP Traffic","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.supportsHttpsTrafficOnly != true\\n| project id, name, type, location, resourceGroup, subscriptionId, supportsHttpsTrafficOnly=properties.supportsHttpsTrafficOnly","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Anonymous public read access allows unauthenticated data access. Disable unless explicitly required for public content.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Public Blob Access Enabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.allowBlobPublicAccess == true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
+`;
+
+exports[`TS-25 · the upgrade produces a recorded, stable result > 25-02 · legacy-rules upgrades to a known state 1`] = `
+"== SCHEMA ==
+table audit_log
+  id TEXT PK(1)
+  actor_id TEXT NOT NULL
+  actor_email TEXT NOT NULL
+  action TEXT NOT NULL
+  entity_type TEXT
+  entity_id TEXT
+  summary TEXT NOT NULL
+  details TEXT
+  occurred_at TEXT NOT NULL
+table azure_credentials
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  last_verified_subscriptions INTEGER
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table categories
+  id TEXT PK(1)
+  label TEXT NOT NULL
+  color TEXT
+  icon TEXT
+  sort_order INTEGER NOT NULL DEFAULT 0
+  is_builtin INTEGER NOT NULL DEFAULT 0
+  is_special INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table dashboards
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT
+  config TEXT NOT NULL
+  is_default INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table finding_events
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  scan_id TEXT NOT NULL
+  type TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+table findings
+  fingerprint TEXT PK(1)
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  kind TEXT NOT NULL DEFAULT 'state'
+  dimension_key TEXT
+  resource_id TEXT
+  resource_type TEXT
+  resource_name TEXT
+  subscription_id TEXT NOT NULL
+  resource_group TEXT
+  location TEXT
+  title TEXT NOT NULL
+  description TEXT NOT NULL DEFAULT ''
+  recommendation TEXT NOT NULL DEFAULT ''
+  remediation_steps TEXT NOT NULL DEFAULT '[]'
+  evidence TEXT NOT NULL DEFAULT '{}'
+  azure_portal_link TEXT
+  status TEXT NOT NULL DEFAULT 'active'
+  first_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL
+  resolved_at TEXT
+  last_scan_id TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
+table local_accounts
+  user_id TEXT PK(1)
+  password_hash TEXT NOT NULL
+  must_change_password INTEGER NOT NULL DEFAULT 0
+  failed_attempts INTEGER NOT NULL DEFAULT 0
+  locked_until TEXT
+  password_updated_at TEXT
+  created_at TEXT NOT NULL
+table log_analytics_workspaces
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  workspace_id TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table meta
+  key TEXT PK(1)
+  value TEXT NOT NULL
+table notification_channels
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  type TEXT NOT NULL
+  url TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_notified_at TEXT
+  last_error TEXT
+  config TEXT
+table notification_deliveries
+  id TEXT PK(1)
+  channel_id TEXT NOT NULL
+  schedule_id TEXT NOT NULL
+  run_id TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+  ok INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 1
+  http_status INTEGER
+  error TEXT
+  findings_count INTEGER NOT NULL DEFAULT 0
+table posture_snapshots
+  category TEXT NOT NULL PK(1)
+  subscription_id TEXT NOT NULL PK(2) DEFAULT ''
+  date TEXT NOT NULL PK(3)
+  posture_pct INTEGER
+  passing_rules INTEGER NOT NULL DEFAULT 0
+  total_rules INTEGER NOT NULL DEFAULT 0
+  active_findings INTEGER NOT NULL DEFAULT 0
+  severity_counts TEXT NOT NULL DEFAULT '{}'
+  updated_at TEXT NOT NULL
+  unknown_rules INTEGER NOT NULL DEFAULT 0
+  activity_rule_count INTEGER NOT NULL DEFAULT 0
+  formula_version INTEGER NOT NULL DEFAULT 1
+table query_runs
+  id TEXT PK(1)
+  query_backend TEXT NOT NULL
+  scope TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  count INTEGER NOT NULL
+  capped INTEGER NOT NULL
+  truncated INTEGER NOT NULL
+  saved_query_id TEXT
+  owner_id TEXT NOT NULL
+  ran_at TEXT NOT NULL
+table resource_types_cache
+  id INTEGER PK(1)
+  types TEXT NOT NULL
+  cached_at TEXT NOT NULL
+table rules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  filter TEXT
+  conditions TEXT NOT NULL DEFAULT '[]'
+  condition_groups TEXT
+  type TEXT
+  group_name TEXT
+  raw_kql TEXT
+  project_columns TEXT
+  rules_operator TEXT
+  pack TEXT
+  visual_query TEXT
+  tags TEXT
+  query_backend TEXT NOT NULL DEFAULT 'resource-graph'
+  shape TEXT NOT NULL DEFAULT 'detect'
+  kind TEXT NOT NULL DEFAULT 'state'
+  last_run_status TEXT
+  last_run_at TEXT
+  applies_to TEXT
+  last_population_count INTEGER
+  graph_query TEXT
+  logs_query TEXT
+table saved_queries
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  query_backend TEXT NOT NULL
+  scope TEXT
+  visual_query TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  visibility TEXT NOT NULL DEFAULT 'private'
+  owner_id TEXT NOT NULL
+  owner_email TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+table scans
+  id TEXT PK(1)
+  module TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT NOT NULL
+  duration_ms INTEGER NOT NULL
+  subscriptions_scanned TEXT NOT NULL
+  findings TEXT NOT NULL
+  counts TEXT NOT NULL
+  total_rules INTEGER NOT NULL DEFAULT 0
+  total_policies INTEGER NOT NULL DEFAULT 0
+  triggered_by TEXT NOT NULL DEFAULT 'manual'
+  schedule_id TEXT
+  run_id TEXT
+  coverage TEXT NOT NULL DEFAULT 'complete'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+table schedule_notification_channels
+  schedule_id TEXT NOT NULL PK(1)
+  channel_id TEXT NOT NULL PK(2)
+  min_severity TEXT NOT NULL DEFAULT 'high'
+  category_ids TEXT
+  subscription_ids TEXT
+table schedule_runs
+  id TEXT PK(1)
+  schedule_id TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT
+  status TEXT NOT NULL
+  categories TEXT NOT NULL
+  total_findings INTEGER NOT NULL DEFAULT 0
+  new_findings INTEGER NOT NULL DEFAULT 0
+  new_finding_fingerprints TEXT
+  error TEXT
+  duration_ms INTEGER
+  triggered_by TEXT NOT NULL DEFAULT 'schedule'
+  target_type TEXT
+  target_values TEXT
+  notify_status TEXT NOT NULL DEFAULT 'none'
+table schedules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  next_run_at TEXT
+  last_run_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  target_type TEXT NOT NULL DEFAULT 'all'
+  target_values TEXT NOT NULL DEFAULT '[]'
+  recurrence_type TEXT NOT NULL DEFAULT 'once'
+  interval INTEGER NOT NULL DEFAULT 1
+  days_of_week TEXT
+  day_of_month INTEGER
+  start_at TEXT NOT NULL DEFAULT ''
+  end_type TEXT NOT NULL DEFAULT 'never'
+  end_date TEXT
+table schema_cache
+  resource_type TEXT PK(1)
+  fields TEXT NOT NULL
+  cached_at TEXT NOT NULL
+  field_count INTEGER NOT NULL
+table sso_providers
+  id TEXT PK(1)
+  provider TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 0
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table suppressions
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  resource_id TEXT
+  reason TEXT NOT NULL
+  suppressed_at TEXT NOT NULL
+  expires_at TEXT
+table users
+  id TEXT PK(1)
+  email TEXT NOT NULL
+  oid TEXT
+  name TEXT
+  role TEXT NOT NULL DEFAULT 'viewer'
+  scope TEXT
+  session_epoch INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+  last_seen_at TEXT
+index idx_audit_log_occurred on audit_log
+index idx_finding_events_time on finding_events
+index idx_findings_category_status on findings
+index idx_findings_rule on findings
+index idx_notification_deliveries_channel on notification_deliveries
+index idx_query_runs_owner on query_runs
+index idx_saved_queries_owner on saved_queries
+index idx_scans_module_started on scans
+index idx_schedule_runs_schedule on schedule_runs
+index idx_snapshots_date on posture_snapshots
+index idx_users_oid on users
+
+== COUNTS ==
+audit_log: 0
+azure_credentials: 0
+categories: 5
+dashboards: 1
+finding_events: 1
+findings: 2
+local_accounts: 1
+log_analytics_workspaces: 0
+meta: 2
+notification_channels: 0
+notification_deliveries: 0
+posture_snapshots: 0
+query_runs: 0
+resource_types_cache: 0
+rules: 18
+saved_queries: 0
+scans: 1
+schedule_notification_channels: 0
+schedule_runs: 0
+schedules: 0
+schema_cache: 0
+sso_providers: 0
+suppressions: 1
+users: 1
+
+== ROWS ==
+categories {"color":"#0d9488","created_at":"<TS>","icon":"ShieldCheck","id":"security","is_builtin":1,"is_special":0,"label":"Security","sort_order":3}
+categories {"color":"#22c55e","created_at":"<TS>","icon":"Activity","id":"reliability","is_builtin":1,"is_special":0,"label":"Reliability","sort_order":5}
+categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance","is_builtin":1,"is_special":0,"label":"Compliance","sort_order":1}
+categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
+categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
+dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
+finding_events {"category":"cost","fingerprint":"<FP>","id":"<UUID>","occurred_at":"<TS>","rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","type":"new"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"dashboards-seeded-v1","value":"1"}
+meta {"key":"onboarding-v1","value":"{\\"status\\":\\"pending\\",\\"lastStep\\":1,\\"completedAt\\":null,\\"completedBy\\":null}"}
+rules {"applies_to":null,"category":"compliance","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Anything still running in westeurope.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"VMs in the retired region","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/virtualmachines'\\n| where location =~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'CostCenter' tag cannot be attributed to a cost center for chargeback. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing CostCenter Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['CostCenter'])) or isnull(tags['CostCenter'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Owner' tag have no accountable team or person. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Owner Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Owner'])) or isnull(tags['Owner'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[]","conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Environment Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Environment'])) or isnull(tags['Environment'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[]","conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Allows HTTP Traffic","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.supportsHttpsTrafficOnly != true\\n| project id, name, type, location, resourceGroup, subscriptionId, supportsHttpsTrafficOnly=properties.supportsHttpsTrafficOnly","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[]","conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Managed Disk","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where properties.diskState =~ 'Unattached'\\n| project id, name, type, location, resourceGroup, subscriptionId, diskState=properties.diskState, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Cost check on oversized managed disks.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Disks over 512 GB","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where tolong(properties.diskSizeGB) > 512\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Disk snapshots older than 30 days are candidates for cleanup. Review whether they are still needed as recovery points.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Stale Disk Snapshot","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/snapshots'\\n| where todatetime(properties.timeCreated) < ago(30d)\\n| project id, name, type, location, resourceGroup, subscriptionId, timeCreated=properties.timeCreated, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/snapshots\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"NSGs with no associated NICs or subnets serve no purpose and add noise to security reviews.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Empty Network Security Group","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networksecuritygroups'\\n| where (isnull(properties.networkInterfaces) or array_length(properties.networkInterfaces) == 0)\\n| where (isnull(properties.subnets) or array_length(properties.subnets) == 0)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networksecuritygroups\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Network interfaces not associated with any VM add clutter and can confuse network troubleshooting.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Network Interface","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networkinterfaces'\\n| where isnull(properties.virtualMachine)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networkinterfaces\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Public IPs not associated with any resource still incur charges (Standard SKU ~$3.65/mo) and increase attack surface.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unassigned Public IP Address","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/publicipaddresses'\\n| where isnull(properties.ipConfiguration)\\n| project id, name, type, location, resourceGroup, subscriptionId, sku=properties.sku.name","resource_types":"[\\"microsoft.network/publicipaddresses\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A certificate credential on an app registration is expiring soon. Upload a new certificate and update the application configuration before the current one expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"keyCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/certificates\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-cert-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Certificate Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A client secret on an app registration is expiring soon. Rotate the secret and update any applications that use it before it expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"passwordCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/secrets\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-secret-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Secret Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"reliability","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Checks the SKU name for a ZRS suffix.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage accounts must be zone redundant","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where sku.name !endswith 'ZRS'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Anonymous public read access allows unauthenticated data access. Disable unless explicitly required for public content.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Public Blob Access Enabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.allowBlobPublicAccess == true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
+`;
+
+exports[`TS-25 · the upgrade produces a recorded, stable result > 25-02 · policies-era upgrades to a known state 1`] = `
+"== SCHEMA ==
+table audit_log
+  id TEXT PK(1)
+  actor_id TEXT NOT NULL
+  actor_email TEXT NOT NULL
+  action TEXT NOT NULL
+  entity_type TEXT
+  entity_id TEXT
+  summary TEXT NOT NULL
+  details TEXT
+  occurred_at TEXT NOT NULL
+table azure_credentials
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  last_verified_subscriptions INTEGER
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table categories
+  id TEXT PK(1)
+  label TEXT NOT NULL
+  color TEXT
+  icon TEXT
+  sort_order INTEGER NOT NULL DEFAULT 0
+  is_builtin INTEGER NOT NULL DEFAULT 0
+  is_special INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table dashboards
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT
+  config TEXT NOT NULL
+  is_default INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table finding_events
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  scan_id TEXT NOT NULL
+  type TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+table findings
+  fingerprint TEXT PK(1)
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  kind TEXT NOT NULL DEFAULT 'state'
+  dimension_key TEXT
+  resource_id TEXT
+  resource_type TEXT
+  resource_name TEXT
+  subscription_id TEXT NOT NULL
+  resource_group TEXT
+  location TEXT
+  title TEXT NOT NULL
+  description TEXT NOT NULL DEFAULT ''
+  recommendation TEXT NOT NULL DEFAULT ''
+  remediation_steps TEXT NOT NULL DEFAULT '[]'
+  evidence TEXT NOT NULL DEFAULT '{}'
+  azure_portal_link TEXT
+  status TEXT NOT NULL DEFAULT 'active'
+  first_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL
+  resolved_at TEXT
+  last_scan_id TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
+table local_accounts
+  user_id TEXT PK(1)
+  password_hash TEXT NOT NULL
+  must_change_password INTEGER NOT NULL DEFAULT 0
+  failed_attempts INTEGER NOT NULL DEFAULT 0
+  locked_until TEXT
+  password_updated_at TEXT
+  created_at TEXT NOT NULL
+table log_analytics_workspaces
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  workspace_id TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table meta
+  key TEXT PK(1)
+  value TEXT NOT NULL
+table notification_channels
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  type TEXT NOT NULL
+  url TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_notified_at TEXT
+  last_error TEXT
+  config TEXT
+table notification_deliveries
+  id TEXT PK(1)
+  channel_id TEXT NOT NULL
+  schedule_id TEXT NOT NULL
+  run_id TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+  ok INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 1
+  http_status INTEGER
+  error TEXT
+  findings_count INTEGER NOT NULL DEFAULT 0
+table posture_snapshots
+  category TEXT NOT NULL PK(1)
+  subscription_id TEXT NOT NULL PK(2) DEFAULT ''
+  date TEXT NOT NULL PK(3)
+  posture_pct INTEGER
+  passing_rules INTEGER NOT NULL DEFAULT 0
+  total_rules INTEGER NOT NULL DEFAULT 0
+  active_findings INTEGER NOT NULL DEFAULT 0
+  severity_counts TEXT NOT NULL DEFAULT '{}'
+  updated_at TEXT NOT NULL
+  unknown_rules INTEGER NOT NULL DEFAULT 0
+  activity_rule_count INTEGER NOT NULL DEFAULT 0
+  formula_version INTEGER NOT NULL DEFAULT 1
+table query_runs
+  id TEXT PK(1)
+  query_backend TEXT NOT NULL
+  scope TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  count INTEGER NOT NULL
+  capped INTEGER NOT NULL
+  truncated INTEGER NOT NULL
+  saved_query_id TEXT
+  owner_id TEXT NOT NULL
+  ran_at TEXT NOT NULL
+table resource_types_cache
+  id INTEGER PK(1)
+  types TEXT NOT NULL
+  cached_at TEXT NOT NULL
+table rules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  filter TEXT
+  conditions TEXT NOT NULL DEFAULT '[]'
+  condition_groups TEXT
+  type TEXT
+  group_name TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  rules_operator TEXT
+  pack TEXT
+  visual_query TEXT
+  tags TEXT
+  query_backend TEXT NOT NULL DEFAULT 'resource-graph'
+  shape TEXT NOT NULL DEFAULT 'detect'
+  kind TEXT NOT NULL DEFAULT 'state'
+  last_run_status TEXT
+  last_run_at TEXT
+  applies_to TEXT
+  last_population_count INTEGER
+  graph_query TEXT
+  logs_query TEXT
+table saved_queries
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  query_backend TEXT NOT NULL
+  scope TEXT
+  visual_query TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  visibility TEXT NOT NULL DEFAULT 'private'
+  owner_id TEXT NOT NULL
+  owner_email TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+table scans
+  id TEXT PK(1)
+  module TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT NOT NULL
+  duration_ms INTEGER NOT NULL
+  subscriptions_scanned TEXT NOT NULL
+  findings TEXT NOT NULL
+  counts TEXT NOT NULL
+  total_rules INTEGER NOT NULL DEFAULT 0
+  total_policies INTEGER NOT NULL DEFAULT 0
+  triggered_by TEXT NOT NULL DEFAULT 'manual'
+  schedule_id TEXT
+  run_id TEXT
+  coverage TEXT NOT NULL DEFAULT 'complete'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+table schedule_notification_channels
+  schedule_id TEXT NOT NULL PK(1)
+  channel_id TEXT NOT NULL PK(2)
+  min_severity TEXT NOT NULL DEFAULT 'high'
+  category_ids TEXT
+  subscription_ids TEXT
+table schedule_runs
+  id TEXT PK(1)
+  schedule_id TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT
+  status TEXT NOT NULL
+  categories TEXT NOT NULL
+  total_findings INTEGER NOT NULL DEFAULT 0
+  new_findings INTEGER NOT NULL DEFAULT 0
+  new_finding_fingerprints TEXT
+  error TEXT
+  duration_ms INTEGER
+  triggered_by TEXT NOT NULL DEFAULT 'schedule'
+  target_type TEXT
+  target_values TEXT
+  notify_status TEXT NOT NULL DEFAULT 'none'
+table schedules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  next_run_at TEXT
+  last_run_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  target_type TEXT NOT NULL DEFAULT 'all'
+  target_values TEXT NOT NULL DEFAULT '[]'
+  recurrence_type TEXT NOT NULL DEFAULT 'once'
+  interval INTEGER NOT NULL DEFAULT 1
+  days_of_week TEXT
+  day_of_month INTEGER
+  start_at TEXT NOT NULL DEFAULT ''
+  end_type TEXT NOT NULL DEFAULT 'never'
+  end_date TEXT
+table schema_cache
+  resource_type TEXT PK(1)
+  fields TEXT NOT NULL
+  cached_at TEXT NOT NULL
+  field_count INTEGER NOT NULL
+table sso_providers
+  id TEXT PK(1)
+  provider TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 0
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table suppressions
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  resource_id TEXT
+  reason TEXT NOT NULL
+  suppressed_at TEXT NOT NULL
+  expires_at TEXT
+table users
+  id TEXT PK(1)
+  email TEXT NOT NULL
+  oid TEXT
+  name TEXT
+  role TEXT NOT NULL DEFAULT 'viewer'
+  scope TEXT
+  session_epoch INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+  last_seen_at TEXT
+index idx_audit_log_occurred on audit_log
+index idx_finding_events_time on finding_events
+index idx_findings_category_status on findings
+index idx_findings_rule on findings
+index idx_notification_deliveries_channel on notification_deliveries
+index idx_query_runs_owner on query_runs
+index idx_saved_queries_owner on saved_queries
+index idx_scans_module_started on scans
+index idx_schedule_runs_schedule on schedule_runs
+index idx_snapshots_date on posture_snapshots
+index idx_users_oid on users
+
+== COUNTS ==
+audit_log: 0
+azure_credentials: 0
+categories: 5
+dashboards: 1
+finding_events: 0
+findings: 0
+local_accounts: 1
+log_analytics_workspaces: 0
+meta: 2
+notification_channels: 0
+notification_deliveries: 0
+posture_snapshots: 0
+query_runs: 0
+resource_types_cache: 0
+rules: 22
+saved_queries: 0
+scans: 1
+schedule_notification_channels: 0
+schedule_runs: 0
+schedules: 0
+schema_cache: 0
+sso_providers: 0
+suppressions: 1
+users: 1
+
+== ROWS ==
+categories {"color":"#0d9488","created_at":"<TS>","icon":"ShieldCheck","id":"security","is_builtin":1,"is_special":0,"label":"Security","sort_order":3}
+categories {"color":"#22c55e","created_at":"<TS>","icon":"Activity","id":"reliability","is_builtin":1,"is_special":0,"label":"Reliability","sort_order":5}
+categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance","is_builtin":1,"is_special":0,"label":"Compliance","sort_order":1}
+categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
+categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
+dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
+meta {"key":"dashboards-seeded-v1","value":"1"}
+meta {"key":"onboarding-v1","value":"{\\"status\\":\\"pending\\",\\"lastStep\\":1,\\"completedAt\\":null,\\"completedBy\\":null}"}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Anything still running in westeurope.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"VMs in the retired region","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where location !~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'CostCenter' tag cannot be attributed to a cost center for chargeback. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing CostCenter Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['CostCenter'])) or isnull(tags['CostCenter'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Environment' tag cannot be attributed to a deployment environment (dev/test/prod). Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Environment Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Environment'])) or isnull(tags['Environment'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Owner' tag have no accountable team or person. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Owner Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Owner'])) or isnull(tags['Owner'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Cost check on oversized managed disks.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Disks over 512 GB","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where location !~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Disk snapshots older than 30 days are candidates for cleanup. Review whether they are still needed as recovery points.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Stale Disk Snapshot","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/snapshots'\\n| where todatetime(properties.timeCreated) < ago(30d)\\n| project id, name, type, location, resourceGroup, subscriptionId, timeCreated=properties.timeCreated, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/snapshots\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Managed disks not attached to any VM are still billed. Delete or snapshot them if no longer needed.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Managed Disk","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where properties.diskState =~ 'Unattached'\\n| project id, name, type, location, resourceGroup, subscriptionId, diskState=properties.diskState, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/disks\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"NSGs with no associated NICs or subnets serve no purpose and add noise to security reviews.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Empty Network Security Group","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networksecuritygroups'\\n| where (isnull(properties.networkInterfaces) or array_length(properties.networkInterfaces) == 0)\\n| where (isnull(properties.subnets) or array_length(properties.subnets) == 0)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networksecuritygroups\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Network interfaces not associated with any VM add clutter and can confuse network troubleshooting.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Network Interface","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networkinterfaces'\\n| where isnull(properties.virtualMachine)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networkinterfaces\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Public IPs not associated with any resource still incur charges (Standard SKU ~$3.65/mo) and increase attack surface.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unassigned Public IP Address","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/publicipaddresses'\\n| where isnull(properties.ipConfiguration)\\n| project id, name, type, location, resourceGroup, subscriptionId, sku=properties.sku.name","resource_types":"[\\"microsoft.network/publicipaddresses\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Legacy rule tag-environment-valid-values","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Legacy rule tag-required-costcenter","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Legacy rule tag-required-environment","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Seeded under an older id scheme.","enabled":0,"filter":null,"graph_query":null,"group_name":"Legacy","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Legacy rule tag-required-owner","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Legacy\\"]","type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A certificate credential on an app registration is expiring soon. Upload a new certificate and update the application configuration before the current one expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"keyCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/certificates\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-cert-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Certificate Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A client secret on an app registration is expiring soon. Rotate the secret and update any applications that use it before it expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"passwordCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/secrets\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-secret-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Secret Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"reliability","condition_groups":null,"conditions":"[]","description":"Checks the SKU name for a ZRS suffix.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage accounts must be zone redundant","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where location !~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Allowing HTTP traffic to storage accounts exposes data in transit. All access should be restricted to HTTPS.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Allows HTTP Traffic","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.supportsHttpsTrafficOnly != true\\n| project id, name, type, location, resourceGroup, subscriptionId, supportsHttpsTrafficOnly=properties.supportsHttpsTrafficOnly","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Anonymous public read access allows unauthenticated data access. Disable unless explicitly required for public content.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Public Blob Access Enabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.allowBlobPublicAccess == true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"compliance","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
+`;
+
+exports[`TS-25 · the upgrade produces a recorded, stable result > 25-02 · pre-rbac upgrades to a known state 1`] = `
+"== SCHEMA ==
+table audit_log
+  id TEXT PK(1)
+  actor_id TEXT NOT NULL
+  actor_email TEXT NOT NULL
+  action TEXT NOT NULL
+  entity_type TEXT
+  entity_id TEXT
+  summary TEXT NOT NULL
+  details TEXT
+  occurred_at TEXT NOT NULL
+table azure_credentials
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  last_verified_subscriptions INTEGER
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table categories
+  id TEXT PK(1)
+  label TEXT NOT NULL
+  color TEXT
+  icon TEXT
+  sort_order INTEGER NOT NULL DEFAULT 0
+  is_builtin INTEGER NOT NULL DEFAULT 0
+  is_special INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table dashboards
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT
+  config TEXT NOT NULL
+  is_default INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+table finding_events
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  scan_id TEXT NOT NULL
+  type TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+table findings
+  fingerprint TEXT PK(1)
+  rule_id TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  kind TEXT NOT NULL DEFAULT 'state'
+  dimension_key TEXT
+  resource_id TEXT
+  resource_type TEXT
+  resource_name TEXT
+  subscription_id TEXT NOT NULL
+  resource_group TEXT
+  location TEXT
+  title TEXT NOT NULL
+  description TEXT NOT NULL DEFAULT ''
+  recommendation TEXT NOT NULL DEFAULT ''
+  remediation_steps TEXT NOT NULL DEFAULT '[]'
+  evidence TEXT NOT NULL DEFAULT '{}'
+  azure_portal_link TEXT
+  status TEXT NOT NULL DEFAULT 'active'
+  first_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL
+  resolved_at TEXT
+  last_scan_id TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
+table local_accounts
+  user_id TEXT PK(1)
+  password_hash TEXT NOT NULL
+  must_change_password INTEGER NOT NULL DEFAULT 0
+  failed_attempts INTEGER NOT NULL DEFAULT 0
+  locked_until TEXT
+  password_updated_at TEXT
+  created_at TEXT NOT NULL
+table log_analytics_workspaces
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  workspace_id TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 1
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table meta
+  key TEXT PK(1)
+  value TEXT NOT NULL
+table notification_channels
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  type TEXT NOT NULL
+  url TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_notified_at TEXT
+  last_error TEXT
+  config TEXT
+table notification_deliveries
+  id TEXT PK(1)
+  channel_id TEXT NOT NULL
+  schedule_id TEXT NOT NULL
+  run_id TEXT NOT NULL
+  occurred_at TEXT NOT NULL
+  ok INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 1
+  http_status INTEGER
+  error TEXT
+  findings_count INTEGER NOT NULL DEFAULT 0
+table posture_snapshots
+  category TEXT NOT NULL PK(1)
+  subscription_id TEXT NOT NULL PK(2) DEFAULT ''
+  date TEXT NOT NULL PK(3)
+  posture_pct INTEGER
+  passing_rules INTEGER NOT NULL DEFAULT 0
+  total_rules INTEGER NOT NULL DEFAULT 0
+  active_findings INTEGER NOT NULL DEFAULT 0
+  severity_counts TEXT NOT NULL DEFAULT '{}'
+  updated_at TEXT NOT NULL
+  unknown_rules INTEGER NOT NULL DEFAULT 0
+  activity_rule_count INTEGER NOT NULL DEFAULT 0
+  formula_version INTEGER NOT NULL DEFAULT 1
+table query_runs
+  id TEXT PK(1)
+  query_backend TEXT NOT NULL
+  scope TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  count INTEGER NOT NULL
+  capped INTEGER NOT NULL
+  truncated INTEGER NOT NULL
+  saved_query_id TEXT
+  owner_id TEXT NOT NULL
+  ran_at TEXT NOT NULL
+table resource_types_cache
+  id INTEGER PK(1)
+  types TEXT NOT NULL
+  cached_at TEXT NOT NULL
+table rules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  filter TEXT
+  conditions TEXT NOT NULL DEFAULT '[]'
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  rules_operator TEXT
+  visual_query TEXT
+  type TEXT NOT NULL DEFAULT 'custom'
+  pack TEXT
+  group_name TEXT
+  tags TEXT
+  query_backend TEXT NOT NULL DEFAULT 'resource-graph'
+  shape TEXT NOT NULL DEFAULT 'detect'
+  kind TEXT NOT NULL DEFAULT 'state'
+  last_run_status TEXT
+  last_run_at TEXT
+  applies_to TEXT
+  last_population_count INTEGER
+  graph_query TEXT
+  logs_query TEXT
+table saved_queries
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  query_backend TEXT NOT NULL
+  scope TEXT
+  visual_query TEXT
+  raw_kql TEXT
+  graph_query TEXT
+  logs_query TEXT
+  visibility TEXT NOT NULL DEFAULT 'private'
+  owner_id TEXT NOT NULL
+  owner_email TEXT NOT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+table scans
+  id TEXT PK(1)
+  module TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT NOT NULL
+  duration_ms INTEGER NOT NULL
+  subscriptions_scanned TEXT NOT NULL
+  findings TEXT NOT NULL
+  counts TEXT NOT NULL
+  triggered_by TEXT NOT NULL DEFAULT 'manual'
+  schedule_id TEXT
+  run_id TEXT
+  total_rules INTEGER NOT NULL DEFAULT 0
+  total_policies INTEGER NOT NULL DEFAULT 0
+  coverage TEXT NOT NULL DEFAULT 'complete'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+table schedule_notification_channels
+  schedule_id TEXT NOT NULL PK(1)
+  channel_id TEXT NOT NULL PK(2)
+  min_severity TEXT NOT NULL DEFAULT 'high'
+  category_ids TEXT
+  subscription_ids TEXT
+table schedule_runs
+  id TEXT PK(1)
+  schedule_id TEXT NOT NULL
+  started_at TEXT NOT NULL
+  finished_at TEXT
+  status TEXT NOT NULL
+  categories TEXT NOT NULL
+  total_findings INTEGER NOT NULL DEFAULT 0
+  new_findings INTEGER NOT NULL DEFAULT 0
+  new_finding_fingerprints TEXT
+  error TEXT
+  duration_ms INTEGER
+  triggered_by TEXT NOT NULL DEFAULT 'schedule'
+  target_type TEXT
+  target_values TEXT
+  notify_status TEXT NOT NULL DEFAULT 'none'
+table schedules
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  enabled INTEGER NOT NULL DEFAULT 1
+  next_run_at TEXT
+  last_run_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  target_type TEXT NOT NULL DEFAULT 'all'
+  target_values TEXT NOT NULL DEFAULT '[]'
+  recurrence_type TEXT NOT NULL DEFAULT 'once'
+  interval INTEGER NOT NULL DEFAULT 1
+  days_of_week TEXT
+  day_of_month INTEGER
+  start_at TEXT NOT NULL DEFAULT ''
+  end_type TEXT NOT NULL DEFAULT 'never'
+  end_date TEXT
+table schema_cache
+  resource_type TEXT PK(1)
+  fields TEXT NOT NULL
+  cached_at TEXT NOT NULL
+  field_count INTEGER NOT NULL
+table sso_providers
+  id TEXT PK(1)
+  provider TEXT NOT NULL
+  tenant_id TEXT NOT NULL
+  client_id TEXT NOT NULL
+  client_secret TEXT NOT NULL
+  is_active INTEGER NOT NULL DEFAULT 0
+  last_verified_at TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  created_by TEXT
+table suppressions
+  id TEXT PK(1)
+  fingerprint TEXT NOT NULL
+  resource_id TEXT
+  reason TEXT NOT NULL
+  suppressed_at TEXT NOT NULL
+  expires_at TEXT
+table users
+  id TEXT PK(1)
+  email TEXT NOT NULL
+  oid TEXT
+  name TEXT
+  role TEXT NOT NULL DEFAULT 'viewer'
+  scope TEXT
+  session_epoch INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
+  last_seen_at TEXT
+index idx_audit_log_occurred on audit_log
+index idx_finding_events_time on finding_events
+index idx_findings_category_status on findings
+index idx_findings_rule on findings
+index idx_notification_deliveries_channel on notification_deliveries
+index idx_query_runs_owner on query_runs
+index idx_saved_queries_owner on saved_queries
+index idx_scans_module_started on scans
+index idx_schedule_runs_schedule on schedule_runs
+index idx_snapshots_date on posture_snapshots
+index idx_users_oid on users
+
+== COUNTS ==
+audit_log: 0
+azure_credentials: 0
+categories: 5
+dashboards: 1
+finding_events: 0
+findings: 2
+local_accounts: 1
+log_analytics_workspaces: 0
+meta: 2
+notification_channels: 0
+notification_deliveries: 0
+posture_snapshots: 0
+query_runs: 0
+resource_types_cache: 0
+rules: 18
+saved_queries: 0
+scans: 1
+schedule_notification_channels: 0
+schedule_runs: 0
+schedules: 0
+schema_cache: 0
+sso_providers: 0
+suppressions: 1
+users: 1
+
+== ROWS ==
+categories {"color":"#0d9488","created_at":"<TS>","icon":"ShieldCheck","id":"security","is_builtin":1,"is_special":0,"label":"Security","sort_order":3}
+categories {"color":"#22c55e","created_at":"<TS>","icon":"Activity","id":"reliability","is_builtin":1,"is_special":0,"label":"Reliability","sort_order":5}
+categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance","is_builtin":1,"is_special":0,"label":"Compliance","sort_order":1}
+categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
+categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
+dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
+findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"dashboards-seeded-v1","value":"1"}
+meta {"key":"onboarding-v1","value":"{\\"status\\":\\"pending\\",\\"lastStep\\":1,\\"completedAt\\":null,\\"completedBy\\":null}"}
+rules {"applies_to":null,"category":"compliance","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Anything still running in westeurope.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"VMs in the retired region","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/virtualmachines'\\n| where location =~ 'westeurope'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'CostCenter' tag cannot be attributed to a cost center for chargeback. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing CostCenter Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['CostCenter'])) or isnull(tags['CostCenter'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Environment' tag cannot be attributed to a deployment environment (dev/test/prod). Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Environment Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Environment'])) or isnull(tags['Environment'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"compliance","condition_groups":null,"conditions":"[]","description":"Resources missing the 'Owner' tag have no accountable team or person. Edit this rule's KQL to match your tag name.","enabled":0,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Missing Owner Tag","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type !in~ (\\n    'microsoft.network/virtualnetworks/subnets',\\n    'microsoft.network/networksecuritygroups/securityrules',\\n    'microsoft.network/routetables/routes',\\n    'microsoft.compute/virtualmachinescalesets/virtualmachines',\\n    'microsoft.resources/deployments',\\n    'microsoft.resources/deploymentscripts'\\n  )\\n| where isempty(tostring(tags['Owner'])) or isnull(tags['Owner'])\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Cost check on oversized managed disks.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Disks over 512 GB","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where tolong(properties.diskSizeGB) > 512\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Disk snapshots older than 30 days are candidates for cleanup. Review whether they are still needed as recovery points.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Stale Disk Snapshot","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/snapshots'\\n| where todatetime(properties.timeCreated) < ago(30d)\\n| project id, name, type, location, resourceGroup, subscriptionId, timeCreated=properties.timeCreated, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/snapshots\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Managed disks not attached to any VM are still billed. Delete or snapshot them if no longer needed.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Managed Disk","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.compute/disks'\\n| where properties.diskState =~ 'Unattached'\\n| project id, name, type, location, resourceGroup, subscriptionId, diskState=properties.diskState, diskSizeGB=properties.diskSizeGB","resource_types":"[\\"microsoft.compute/disks\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"NSGs with no associated NICs or subnets serve no purpose and add noise to security reviews.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Empty Network Security Group","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networksecuritygroups'\\n| where (isnull(properties.networkInterfaces) or array_length(properties.networkInterfaces) == 0)\\n| where (isnull(properties.subnets) or array_length(properties.subnets) == 0)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networksecuritygroups\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Network interfaces not associated with any VM add clutter and can confuse network troubleshooting.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unattached Network Interface","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/networkinterfaces'\\n| where isnull(properties.virtualMachine)\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.network/networkinterfaces\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"low","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"cost","condition_groups":null,"conditions":"[]","description":"Public IPs not associated with any resource still incur charges (Standard SKU ~$3.65/mo) and increase attack surface.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Unassigned Public IP Address","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.network/publicipaddresses'\\n| where isnull(properties.ipConfiguration)\\n| project id, name, type, location, resourceGroup, subscriptionId, sku=properties.sku.name","resource_types":"[\\"microsoft.network/publicipaddresses\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A certificate credential on an app registration is expiring soon. Upload a new certificate and update the application configuration before the current one expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"keyCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/certificates\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-cert-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Certificate Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"identity","condition_groups":null,"conditions":"[]","description":"A client secret on an app registration is expiring soon. Rotate the secret and update any applications that use it before it expires, or whatever depends on it will break without warning.","enabled":1,"filter":null,"graph_query":"{\\"path\\":\\"applications\\",\\"expand\\":{\\"arrayField\\":\\"passwordCredentials\\",\\"dateField\\":\\"endDateTime\\",\\"itemIdField\\":\\"keyId\\",\\"resourceType\\":\\"microsoft.aad/applications/secrets\\",\\"bands\\":[{\\"maxDays\\":7,\\"severity\\":\\"critical\\"},{\\"maxDays\\":14,\\"severity\\":\\"high\\"},{\\"maxDays\\":30,\\"severity\\":\\"medium\\"}]}}","group_name":null,"id":"cred:app-secret-expiring","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"App Registration Secret Expiring","pack":"rulebeat-core","project_columns":null,"query_backend":"microsoft-graph","raw_kql":null,"resource_types":"[]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"reliability","condition_groups":"[{\\"id\\":\\"g1\\",\\"conditions\\":[{\\"field\\":\\"location\\",\\"operator\\":\\"equals\\",\\"value\\":\\"westeurope\\"}]}]","conditions":"[{\\"field\\":\\"name\\",\\"operator\\":\\"startsWith\\",\\"value\\":\\"x\\"}]","description":"Checks the SKU name for a ZRS suffix.","enabled":1,"filter":null,"graph_query":null,"group_name":"Production","id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage accounts must be zone redundant","pack":null,"project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where sku.name !endswith 'ZRS'\\n| project id, name, type, location, resourceGroup, subscriptionId, tags","resource_types":"[\\"*\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":"[\\"Production\\"]","type":"custom","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Allowing HTTP traffic to storage accounts exposes data in transit. All access should be restricted to HTTPS.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Allows HTTP Traffic","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.supportsHttpsTrafficOnly != true\\n| project id, name, type, location, resourceGroup, subscriptionId, supportsHttpsTrafficOnly=properties.supportsHttpsTrafficOnly","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Anonymous public read access allows unauthenticated data access. Disable unless explicitly required for public content.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account Public Blob Access Enabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where properties.allowBlobPublicAccess == true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000009","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":12,"triggered_by":"manual"}
+suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
+`;

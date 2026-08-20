@@ -1,0 +1,89 @@
+services:
+  rulebeat:
+    build: .
+    # Restart automatically on crash or host reboot, but not after an intentional `docker compose
+    # stop`/`down`. /api/health (excluded from auth in proxy.ts) is what
+    # Docker's own HEALTHCHECK (in the Dockerfile) polls to know whether a restart is warranted.
+    restart: unless-stopped
+    ports:
+      # Bound to localhost by default: RuleBeat holds a live Azure read credential and does its own
+      # auth, but it has no TLS story of its own, so the safe default is "reachable only from this
+      # host." To expose it to your network, put a reverse proxy (with TLS) in front and point it at
+      # 127.0.0.1:3000 rather than widening this binding — see docs/public/configure.md.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - rulebeat-data:/app/packages/web/data
+    environment:
+      # Nothing in this file is required. `docker compose up` with a genuinely empty .env boots a
+      # working install: read the generated owner password with
+      # `docker compose exec rulebeat cat data/initial-password.txt` (it's written to the
+      # rulebeat-data volume, never printed to the logs), sign in, and configure Azure scanning
+      # and Microsoft sign-in from Settings. Everything below is for a deployment that wants to
+      # arrive pre-configured instead — env always wins over the console either way.
+
+      # Optional: your Azure tenant ID, used for scanning and/or Entra sign-in if those are
+      # configured below. Leave unset and configure both from the console after first sign-in.
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+
+      # Optional: NextAuth v5 session secret. Leave unset and RuleBeat generates one on first boot
+      # into the data volume — fine for a single instance. Set it explicitly (same value across
+      # every replica) for a multi-instance deployment. Generate with: npx auth secret
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      # Optional: this deployment's public URL, used to build the Microsoft sign-in redirect URL.
+      # Leave unset and set it in Settings → Sign-in instead, or rely on the forwarded-host header
+      # RuleBeat always trusts (safe here because the callback URL is pinned in the Entra app
+      # registration itself, so a forged Host header can't redirect a real sign-in anywhere).
+      AUTH_URL: ${AUTH_URL:-}
+
+      # Optional: configuring all three makes Microsoft sign-in work from first boot and locks the
+      # equivalent card in Settings → Sign-in. Leave unset and configure the same thing from
+      # Settings after signing in with the generated local password instead — that path also
+      # verifies the redirect URI, which setting these does not.
+      AUTH_MICROSOFT_ENTRA_ID_ID: ${AUTH_MICROSOFT_ENTRA_ID_ID:-}
+      AUTH_MICROSOFT_ENTRA_ID_SECRET: ${AUTH_MICROSOFT_ENTRA_ID_SECRET:-}
+      AUTH_MICROSOFT_ENTRA_ID_TENANT_ID: ${AZURE_TENANT_ID:-}
+
+      # Optional: work email of the first admin once someone signs in with Microsoft — irrelevant
+      # if nobody does, since the generated local owner account is already an admin. Also the
+      # recovery path if every admin is ever removed: set it and restart.
+      RULEBEAT_INITIAL_ADMIN: ${RULEBEAT_INITIAL_ADMIN:-}
+
+      # ── How RuleBeat reads Azure ──────────────────────────────────────────────────────────────
+      # A container has no managed identity and no `az login`, so unlike local development there is
+      # nothing to fall back on: you either supply a credential here or connect Azure in the UI
+      # (Settings → Azure connection) after signing in. Both work; these win if set.
+      #
+      # Keyless, and preferred wherever the host can produce an OIDC token (AKS workload identity,
+      # federated CI). Mount the token into the container and point at it:
+      # AZURE_FEDERATED_TOKEN_FILE: ${AZURE_FEDERATED_TOKEN_FILE:-}
+      #
+      # Otherwise a service principal with Reader. See .env.example for the az command that creates
+      # it. RuleBeat never creates the service principal and never asks for write access.
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+
+      # Prefer the mounted secret over the plain variable below. Uncomment this line and the
+      # `secrets:` blocks at the bottom of this file, then put the secret in ./secrets/azure_client_secret
+      # (one line, no trailing newline needed — RuleBeat trims it).
+      #
+      # A secret in an environment variable shows up in `docker inspect` for anyone in the docker
+      # group, is inherited by every child process, and lands in crash dumps. A mounted file does
+      # none of that, and can be rotated without recreating the container.
+      # AZURE_CLIENT_SECRET_FILE: /run/secrets/azure_client_secret
+
+      # Last resort: the secret in cleartext, straight from .env. Works everywhere, weakest option.
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+
+      # Encrypts credentials entered through the UI. Generated on first boot into the data volume if
+      # unset — set it here to keep the key off the volume. Back it up either way; see .env.example.
+      RULEBEAT_ENCRYPTION_KEY: ${RULEBEAT_ENCRYPTION_KEY:-}
+
+    # Uncomment together with AZURE_CLIENT_SECRET_FILE above.
+    # secrets:
+    #   - azure_client_secret
+
+volumes:
+  rulebeat-data:
+
+# secrets:
+#   azure_client_secret:
+#     file: ./secrets/azure_client_secret

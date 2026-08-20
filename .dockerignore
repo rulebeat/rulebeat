@@ -1,0 +1,21 @@
+.git
+.gitignore
+node_modules
+packages/web/node_modules
+packages/core/node_modules
+packages/web/.next
+packages/web/data/schemas
+packages/web/data/*.db
+packages/web/data/*.db-shm
+packages/web/data/*.db-wal
+packages/web/data/*.db.backup-*
+packages/core/dist
+*.md
+docs/
+.claude/
+# The brand master kit. The four files the app actually serves are generated
+# copies under packages/web/app and packages/web/public, which are not excluded.
+brand/
+.env*
+docker-compose.yml
+Dockerfile

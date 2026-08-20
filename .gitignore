@@ -1,0 +1,87 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+secrets/
+credentials.json
+
+# Logs
+*.log
+logs/
+
+# Node / TS (for when code starts)
+node_modules/
+dist/
+build/
+out/
+coverage/
+test-results/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Python (in case)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Terraform (in case)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Azure
+.azure/
+
+# Tooling caches
+.cache/
+.tmp/
+tmp/
+
+# Schema cache (ARM resource type property schemas, auto-populated at runtime)
+packages/web/data/schemas/
+
+# SQLite database files (runtime data — not source controlled)
+packages/web/data/*.db
+packages/web/data/*.db-shm
+packages/web/data/*.db-wal
+# Copies taken before a manual repair — real data, must never be committed
+packages/web/data/*.db.backup-*
+
+# Pack files are source-controlled (committed, version-pinned)
+# data/packs/ is intentionally tracked
+
+# Scan outputs
+/demo-report.html
+/scan-*.html
+/scan-*.json
+
+# Claude Code harness runtime state (not project config)
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
+# Output of scripts/launch/build-public-snapshot.mjs — a generated dry-run tree, not source
+.public-snapshot/
+
+# Generated first-boot admin password (also printed to logs, never source controlled)
+packages/web/data/initial-password.txt
+

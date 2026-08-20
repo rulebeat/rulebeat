@@ -1,0 +1,11 @@
+{
+  "aprl-v2": {
+    "label": "APRL v2",
+    "source": "https://github.com/Azure/Azure-Proactive-Resiliency-Library-v2",
+    "license": "MIT",
+    "attribution": "Copyright (c) Microsoft Corporation. Azure Proactive Resiliency Library v2.",
+    "pinnedCommit": "1824eb5958d11482f6e23c231f0cb1d2d5bd44f6",
+    "syncedAt": "2026-06-21",
+    "policyCount": 143
+  }
+}

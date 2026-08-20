@@ -1,0 +1,1 @@
+RuleBeat runs the governance checks your team writes for Azure on a schedule, tracks every finding over time, and never holds write access.

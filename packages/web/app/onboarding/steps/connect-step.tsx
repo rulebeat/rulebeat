@@ -1,0 +1,212 @@
+'use client';
+
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Callout } from '@/components/ui/callout';
+import { CodeBlock } from '@/components/ui/code-block';
+import { FieldHint, Input, Label } from '@/components/ui/input';
+import type { AzureConnectionStatus, AzureCredentialSource } from '@/lib/azure-credential';
+import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
+
+/**
+ * Onboarding step 1 — connect Azure.
+ *
+ * Two shapes, decided in the plan for this feature:
+ *  - `managedByEnv`: the credential comes from environment variables. Rather than skipping this step
+ *    entirely (the launch plan's original wording), it renders a read-only confirmation with a
+ *    Verify button — a template deployment whose service principal was never granted Reader
+ *    authenticates fine and sees zero subscriptions, and skipping the step means that install only
+ *    discovers the problem at 3am on its first scheduled scan. One round trip, one button.
+ *  - otherwise: the same tenant/client/secret form as Settings → Azure connection, saved through the
+ *    same verify-before-persist endpoint.
+ */
+
+const SETUP_COMMANDS = `# 1. Create the service principal
+az ad sp create-for-rbac --name "RuleBeat" --role Reader \\
+  --scopes /subscriptions/<subscription-id>
+
+# 2. Note the appId, password and tenant it prints — those are the
+#    client ID, client secret and tenant ID below. The password is
+#    shown only once.
+
+# 3. Optional, for identity checks in step 2: grant Microsoft Graph
+#    Application.Read.All to the same app registration and grant
+#    admin consent.
+
+# See docs/public/permissions.md for the full guide, including the
+# Azure Portal equivalent of every command above.`;
+
+export function ConnectStep({
+  status, onVerified, onNext,
+}: {
+  status: AzureConnectionStatus;
+  onVerified: (status: AzureConnectionStatus) => void;
+  onNext: () => void;
+}) {
+  const [tenantId, setTenantId] = useState(status.stored?.tenantId ?? '');
+  const [clientId, setClientId] = useState(status.stored?.clientId ?? '');
+  const [clientSecret, setClientSecret] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [verifiedSubs, setVerifiedSubs] = useState<number | null>(null);
+
+  async function handleTestLive() {
+    setBusy('test'); setError(null);
+    try {
+      const res = await fetch('/api/settings/azure-connection/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json() as { ok?: boolean; subscriptionCount?: number; error?: string };
+      if (body.ok) {
+        setVerified(true);
+        setVerifiedSubs(body.subscriptionCount ?? null);
+      } else {
+        setVerified(false);
+        setError(body.error ?? 'The connection test failed.');
+      }
+    } catch {
+      setError('Could not reach the RuleBeat server.');
+    } finally { setBusy(null); }
+  }
+
+  async function handleSave() {
+    setBusy('save'); setError(null);
+    try {
+      const res = await fetch('/api/settings/azure-connection', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: tenantId.trim(), clientId: clientId.trim(), clientSecret }),
+      });
+      const body = await res.json() as AzureConnectionStatus & { error?: string };
+      if (!res.ok) { setError(body.error ?? 'Could not save the connection.'); return; }
+      setVerified(true);
+      setVerifiedSubs(body.stored?.lastVerifiedSubscriptions ?? null);
+      onVerified(body);
+    } catch {
+      setError('Could not reach the RuleBeat server.');
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Cloud className="size-4 text-ink-muted" />
+          Connect Azure
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm leading-relaxed text-ink-2">
+          RuleBeat reads Azure with a service principal that only needs the{' '}
+          <strong className="font-medium text-ink">Reader</strong> role. It never creates that
+          service principal and never requests write access.{' '}
+          <button
+            type="button"
+            onClick={() => setShowHelp(h => !h)}
+            className="font-medium text-ink underline underline-offset-2 hover:no-underline"
+          >
+            {showHelp ? 'Hide the commands' : 'Show me how'}
+          </button>
+        </p>
+
+        {showHelp && <CodeBlock code={SETUP_COMMANDS} title="Create the service principal" />}
+
+        {error && <Callout tone="error">{error}</Callout>}
+        {verified && (
+          <Callout tone="success">
+            Reached Azure.{verifiedSubs != null ? ` ${verifiedSubs} subscription${verifiedSubs === 1 ? '' : 's'} visible.` : ''}
+          </Callout>
+        )}
+
+        {status.managedByEnv ? (
+          <>
+            {/* Not a warning: a credential coming from the environment is the
+                recommended shape, so it states the fact on a plain ground. */}
+            <div className="space-y-1.5 border border-border bg-surface-sunken px-3.5 py-3 text-xs">
+              <div className="flex items-start gap-2 text-ink-2">
+                <Lock className="mt-0.5 size-3.5 shrink-0 text-ink-muted" />
+                <span>{ENV_SOURCE_LABEL[status.source ?? 'chain']} is supplying this credential from the environment.</span>
+              </div>
+              {status.tenantId && (
+                <p className="break-all font-mono text-ink">
+                  Tenant {status.tenantId}{status.clientId ? ` · App ${status.clientId}` : ''}
+                </p>
+              )}
+            </div>
+            <Button size="sm" onClick={handleTestLive} disabled={busy !== null}>
+              {busy === 'test' ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
+              Verify
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="onboarding-tenant-id">Tenant ID</Label>
+                <Input
+                  id="onboarding-tenant-id"
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value)}
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="onboarding-client-id">Client ID (application ID)</Label>
+                <Input
+                  id="onboarding-client-id"
+                  value={clientId}
+                  onChange={e => setClientId(e.target.value)}
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="onboarding-client-secret">Client secret</Label>
+                <Input
+                  id="onboarding-client-secret"
+                  type="password"
+                  value={clientSecret}
+                  onChange={e => setClientSecret(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Paste the secret Value, not its Secret ID"
+                />
+                <FieldHint className="leading-relaxed">
+                  Encrypted before it is written to disk, and verified against Azure before it is saved.
+                </FieldHint>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={busy !== null || !tenantId.trim() || !clientId.trim() || !clientSecret}
+            >
+              {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
+              Connect Azure
+            </Button>
+          </>
+        )}
+
+        <div className="flex justify-end border-t border-border pt-2">
+          <Button onClick={onNext} disabled={!verified}>
+            Continue
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const ENV_SOURCE_LABEL: Record<AzureCredentialSource, string> = {
+  'env-federated': 'Workload identity federation',
+  'env-certificate': 'A service principal certificate',
+  'env-secret-file': 'A service principal secret (mounted file)',
+  'env-secret': 'A service principal secret (environment variable)',
+  stored: 'A credential stored in RuleBeat',
+  chain: 'Managed identity or Azure CLI sign-in',
+};

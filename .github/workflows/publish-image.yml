@@ -1,0 +1,82 @@
+name: Publish image
+
+# Promotes an already-built, already-CI-verified image to :latest/:<version> — it never builds
+# from source itself. ci.yml is the one place a Docker image is ever built: on every push to
+# main, after typecheck, unit tests, the production build, and the e2e suite all pass, it pushes
+# ghcr.io/<owner>/rulebeat:sha-<commit>. This workflow's only job, on a version tag, is to find
+# that commit's image, confirm CI actually passed for that exact commit, and retag it with
+# `docker buildx imagetools create` — a manifest copy, not a rebuild. That's what makes a released
+# version provably the commit CI verified, rather than a second build done at tag time that could
+# differ from what was tested.
+#
+# RuleBeat publishes under Apache-2.0, source included (CLAUDE.md's 2026-08-15 decision) — this
+# workflow exists so anyone who'd rather `docker pull` than build from source can, not because the
+# source is hidden.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Extra tag to publish alongside latest (e.g. beta)'
+        required: false
+        default: ''
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/rulebeat
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+
+    steps:
+      - name: Verify CI passed for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          COUNT=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&status=success" \
+            --jq '[.workflow_runs[] | select(.name == "CI")] | length')
+          if [[ "${COUNT:-0}" -lt 1 ]]; then
+            echo "::error::No successful CI run found for commit $SHA — refusing to publish an unverified image. Push $SHA to main (or wait for its CI run to finish) before tagging a release."
+            exit 1
+          fi
+          echo "CI verified for $SHA — promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine tags
+        id: tags
+        run: |
+          TAGS="${{ env.IMAGE_NAME }}:latest"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAGS="$TAGS,${{ env.IMAGE_NAME }}:${VERSION}"
+          fi
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            TAGS="$TAGS,${{ env.IMAGE_NAME }}:${{ inputs.tag }}"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Promote CI-verified image to release tags
+        run: |
+          SOURCE="${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          IFS=',' read -ra DEST_TAGS <<< "${{ steps.tags.outputs.tags }}"
+          ARGS=()
+          for t in "${DEST_TAGS[@]}"; do
+            ARGS+=(--tag "$t")
+          done
+          docker buildx imagetools create "${ARGS[@]}" "$SOURCE"

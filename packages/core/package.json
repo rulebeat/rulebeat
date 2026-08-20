@@ -1,0 +1,34 @@
+{
+  "name": "@rulebeat/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RuleBeat core — scanning engine, ARM clients, policy engine, types",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./kql": {
+      "types": "./dist/kql.d.ts",
+      "default": "./dist/kql.js"
+    },
+    "./finding": {
+      "types": "./dist/finding.d.ts",
+      "default": "./dist/finding.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean && rimraf dist"
+  },
+  "dependencies": {
+    "@azure/arm-resourcegraph": "^4.2.0",
+    "@azure/arm-resources": "^7.0.0",
+    "@azure/arm-resources-subscriptions": "^2.1.0",
+    "@azure/identity": "^4.13.0",
+    "@azure/monitor-query-logs": "^1.0.0"
+  }
+}

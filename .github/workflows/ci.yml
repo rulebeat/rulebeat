@@ -1,0 +1,152 @@
+name: CI
+
+# Runs on every push and every pull request. The point is that nobody has to remember to run the
+# tests — a broken build cannot reach a released image without this failing first.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to the same branch supersedes an in-flight run.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/rulebeat
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # Was 15; the Playwright suite (browser install + demo-data generation + 6 specs) adds a few
+    # minutes on top of a build that alone runs ~2 minutes on GitHub-hosted runners — this margin
+    # is for a cold Chromium/apt-get install on a cache miss, not steady-state runtime. The Docker
+    # build and smoke test below adds several more on a cache miss.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Only needed for the image-publish step below, which only runs on push to main — a PR
+      # build never reaches it, so a fork PR's read-only token is unaffected.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` needs better-sqlite3 to build its native addon; ubuntu-latest has the toolchain.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Mirrors the Dockerfile's build steps exactly (core dist, then the Next.js production
+      # build) — typecheck and tests both run against source, so neither one catches a build that
+      # only breaks once bundled (e.g. a server-only import reaching a client component).
+      - name: Build core
+        run: npm run build:core
+
+      - name: Build web (production)
+        run: npm run build --workspace=packages/web
+
+      # `always()` so the results are kept when the tests fail — which is exactly when they're
+      # worth reading. Uses the official upload action; no third-party test reporters, since
+      # Vitest's built-in `github-actions` reporter already annotates failures inline.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/junit.xml
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Runs after the production build so the suite's two `next start` servers (packages/web/
+      # playwright.config.ts) exercise the exact same build as the rest of this job, not a
+      # separately-built one. Cached by Playwright's own version so a routine run skips the
+      # download; the cache key changes automatically on a dependency bump.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('packages/web/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        working-directory: packages/web
+        run: npx playwright install --with-deps chromium
+
+      # Synthetic estate, no Azure calls — same fake-data pattern as the rest of the suite.
+      - name: Generate demo data
+        working-directory: packages/web
+        run: npm run generate-demo
+
+      - name: E2E (Playwright)
+        working-directory: packages/web
+        run: npm run test:e2e
+
+      # Traces (packages/web/playwright.config.ts: `trace: 'retain-on-failure'`) only exist when a
+      # test actually failed, so this only fires then — nothing to keep on a green run.
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: packages/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # `npm run lint` is deliberately absent: it currently fails with ~25 pre-existing errors
+      # (setState inside effects, non-simple useMemo dependency arrays). Adding it now would make CI
+      # red on every run, which trains everyone to ignore it. It gets added once those are cleared.
+
+      # Docker build + smoke test: runs on every push and PR, not just main, so a broken image is
+      # caught before it can be tagged and published, not after. scripts/docker-smoke-test.sh
+      # executes the exact steps docs/public/install.md documents — build, boot, read the
+      # generated password, restart, recreate against the same volume.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: rulebeat:ci-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker smoke test
+        run: bash scripts/docker-smoke-test.sh rulebeat:ci-smoke --skip-build
+
+      # Build-once-promote: the smoke-tested image above is rebuilt with the same cache (so this
+      # is a near-instant layer reuse, not a second real build) and pushed by commit SHA — but
+      # only for a real push to main, never a PR, whose fork token can't push packages anyway.
+      # publish-image.yml never builds from source; it finds this exact image by commit SHA and
+      # retags it, so a released version is always provably the commit CI verified, not a second,
+      # potentially different build done at tag time.
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push verified image (by commit SHA)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,37 @@
+{
+  "name": "rulebeat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RuleBeat — Azure governance visibility and guided remediation for platform teams",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build:core": "tsc --build packages/core",
+    "dev": "npm run build:core && npm run dev --workspace=packages/web",
+    "typecheck": "npm run build:core && npm run typecheck --workspace=packages/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:core": "vitest run --project core",
+    "test:web": "vitest run --project web",
+    "test:coverage": "vitest run --coverage",
+    "sync-pack": "tsx scripts/sync-pack.ts",
+    "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
+    "public-snapshot": "node scripts/launch/build-public-snapshot.mjs",
+    "secrets-scan": "gitleaks detect --source . --log-opts=--all",
+    "secrets-scan:snapshot": "npm run public-snapshot && gitleaks detect --source .public-snapshot --no-git"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "js-yaml": "^5.0.0",
+    "rimraf": "^6.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.10"
+  }
+}
