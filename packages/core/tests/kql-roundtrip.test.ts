@@ -819,6 +819,66 @@ describe('TS-09 · clauses written on the table line', () => {
   });
 });
 
+describe('TS-09 · a bare "| where ..." with no table line is not lost [spec 043]', () => {
+  /**
+   * splitTopLevelPipes() filters out empty segments, so a body that opens directly with `|`
+   * used to have its leading empty segment dropped and the where-clause text itself mistaken
+   * for the table name — silently losing the whole filter to defaultFilterStage(). A user pasting
+   * a filter snippet with no table name (common when copying from elsewhere) hit this.
+   */
+  it('recovers the real condition instead of an empty placeholder', () => {
+    const kql = "| where name startswith 'vm-'";
+    const conditions = parsedConditions(kql);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toMatchObject({ field: 'name', operator: 'startsWith', value: 'vm-' });
+  });
+
+  it('warns that a table name was assumed', () => {
+    const kql = "| where name startswith 'vm-'";
+    const parsed = parseKqlToVisualQuery(kql);
+    expect(parsed.warnings.some(w => /table name/i.test(w))).toBe(true);
+  });
+
+  it('still recovers later stages, not just the first clause', () => {
+    const kql = ["| where name startswith 'vm-'", '| project id, name'].join('\n');
+    const parsed = parseKqlToVisualQuery(kql);
+    const filterStage = parsed.visualQuery.stages.find(s => s.type === 'filter');
+    expect(filterStage, 'the where clause was lost').toBeDefined();
+    // A trailing | project is output-column metadata, not a mid-pipeline ShapeStage — same
+    // treatment any other query's trailing project gets.
+    expect(parsed.projectColumns).toEqual(['id', 'name']);
+  });
+
+  it('falls through to the empty placeholder for a bare "| where" with no condition', () => {
+    const kql = '| where';
+    const parsed = parseKqlToVisualQuery(kql);
+    expect(() => parsed.visualQuery).not.toThrow();
+    const filterStage = parsed.visualQuery.stages.find(s => s.type === 'filter');
+    expect(filterStage).toBeDefined();
+  });
+
+  it('falls through cleanly for a bare pipe body with no where clause at all', () => {
+    const kql = '| project id, name';
+    const parsed = parseKqlToVisualQuery(kql);
+    expect(() => parsed.visualQuery).not.toThrow();
+    // The sole clause is a trailing project, so it becomes output-column metadata, not a stage.
+    expect(parsed.projectColumns).toEqual(['id', 'name']);
+  });
+
+  it('round-trips stably once regenerated', () => {
+    const kql = "| where name startswith 'vm-'";
+    const once = regenerate(kql);
+    expect(once.startsWith('Resources')).toBe(true);
+    expect(regenerate(once)).toBe(once);
+  });
+
+  it('leaves a real Resources-first query completely unaffected', () => {
+    const kql = "Resources\n| where name startswith 'vm-'";
+    const parsed = parseKqlToVisualQuery(kql);
+    expect(parsed.warnings.some(w => /table name/i.test(w))).toBe(false);
+  });
+});
+
 describe('TS-09 · generated KQL is stable', () => {
   it('09-19 · building the same rule twice produces identical KQL', () => {
     const build = () => buildQueryFromVisual(

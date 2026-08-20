@@ -16,11 +16,9 @@ test('admin creates a custom rule via the KQL editor, then deletes it', async ({
 
   // The KQL textarea is the only one on the page styled font-mono (Description is a plain Textarea).
   await page.locator('textarea.font-mono').fill('Resources\n| where tolower(name) startswith "e2e"');
-  // The KQL pane -> builder sync is debounced 400ms (rule-form.tsx); Create Rule sends whatever
-  // the builder state currently holds, so clicking before the debounce fires submits a stale,
-  // empty visualQuery that the server's own hasCompilableFilter check rejects with a 400.
-  await page.waitForTimeout(500);
-
+  // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait — Create
+  // Rule now re-parses kqlText fresh for the submitted payload, not just the client-side gate, so
+  // clicking immediately after typing is a real regression guard rather than a race to avoid.
   await page.getByRole('button', { name: 'Create Rule' }).click();
   await page.waitForURL(/\/library$/, { timeout: 15_000 });
 

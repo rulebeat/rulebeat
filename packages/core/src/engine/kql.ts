@@ -572,7 +572,26 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   // (scope detection silently falls back to the default) and its matching close gets glued onto the
   // last real clause as corrupted text.
   const leadingWrapped = rawLines[0] === '(';
-  const bodyLines = leadingWrapped ? rawLines.slice(1) : rawLines;
+  const bodyLinesRaw = leadingWrapped ? rawLines.slice(1) : rawLines;
+
+  if (bodyLinesRaw.length === 0) {
+    result.visualQuery.stages.push(defaultFilterStage());
+    return result;
+  }
+
+  // A body that opens directly with a top-level `|` (e.g. a pasted `| where ...` snippet with no
+  // table name) has no table line at all. Without this, splitTopLevelPipes' `.filter(Boolean)`
+  // drops the resulting leading empty segment and the where-clause text itself gets mistaken for
+  // the table name below, silently losing the whole clause to defaultFilterStage() (spec 043).
+  // Prepending 'Resources' — the same default RuleScope.level:'resource' already assumes — makes
+  // this take the exact same path a real `Resources\n| where ...` input would, so scope/clause
+  // handling can't diverge from the working case. The user is told, since this is a repair, not a
+  // literal read of what they typed.
+  const bareLeadingPipe = /^\s*\|/.test(bodyLinesRaw[0] as string);
+  if (bareLeadingPipe) {
+    result.warnings.push('No table name found before the first "|" — assumed "Resources".');
+  }
+  const bodyLines = bareLeadingPipe ? ['Resources', ...bodyLinesRaw] : bodyLinesRaw;
 
   if (bodyLines.length === 0) {
     result.visualQuery.stages.push(defaultFilterStage());

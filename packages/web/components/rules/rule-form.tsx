@@ -469,13 +469,18 @@ export function RuleForm({
 
   async function save() {
     if (!name.trim()) return alert('Name is required');
+    // spec 044: the payload sent below must use this same value, not the raw `visualQuery` state —
+    // that state only syncs from kqlText after a 400ms debounce (see kqlDriver above) and can still
+    // be stale at the moment Save is clicked, even though this fresh re-parse (and therefore the
+    // validation gate right below) already sees the real, current filter.
+    let effectiveVisualQuery = visualQuery;
     if (!isBuiltinCheck && !usesDedicatedEditor) {
       // RB-RM-004: validate real compilation, not field non-emptiness (the old isRealCondition
       // check) — a condition can reference an unwritable field or carry an empty value list and
       // still look "filled in". When raw KQL is the driving surface, re-parse kqlText fresh rather
       // than trusting visualQuery, which only syncs from it after a 400ms debounce (see kqlDriver
       // above) and can still be stale at the moment Save is clicked.
-      const effectiveVisualQuery = kqlDriver.current === 'kql'
+      effectiveVisualQuery = kqlDriver.current === 'kql'
         ? parseKqlToVisualQuery(kqlText).visualQuery
         : visualQuery;
       if (!hasCompilableFilter(effectiveVisualQuery)) {
@@ -499,7 +504,7 @@ export function RuleForm({
     };
     const resTypes = resourceTypes.split(',').map(t => t.trim()).filter(Boolean);
     const dedicated = deriveDedicatedEditorFields(queryBackend, {
-      visualQuery, appliesTo, rawKql: kqlText, graphQuery, logsQuery,
+      visualQuery: effectiveVisualQuery, appliesTo, rawKql: kqlText, graphQuery, logsQuery,
     });
     const payload = {
       name: name.trim(), description: description.trim(), category, severity, enabled, tags,
