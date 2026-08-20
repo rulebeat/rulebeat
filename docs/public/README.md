@@ -10,8 +10,7 @@ notification workflow.
 Use Azure Policy when you are ready to enforce. Use RuleBeat to define and observe your standards
 first. It never blocks a deployment and never holds write credentials.
 
-RuleBeat is open source (Apache-2.0) and free, permanently. Paid expertise (install help, custom
-rules, support) is available separately.
+RuleBeat is open source (Apache-2.0) and free.
 
 These pages are plain markdown, rendered by GitHub, and describe the product as it ships today.
 Nothing here promises a feature that is not in the code; the forward list lives in

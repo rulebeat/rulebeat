@@ -1,8 +1,6 @@
 # Support
 
-RuleBeat is self-hosted and community-supported. RuleBeat is open source (Apache-2.0) and free,
-permanently. Paid expertise (install help, custom rules, support) is available separately; the
-software itself is never what is sold.
+RuleBeat is open source (Apache-2.0) and free. It is self-hosted and community-supported.
 
 ## Before asking
 
@@ -25,11 +23,10 @@ software itself is never what is sold.
   chat or forum today.
 - **Security vulnerability:** don't open a public issue. See [`SECURITY.md`](SECURITY.md) for how
   to report privately.
-- **Something else entirely** (partnership, paid engagement, press): see the contact listed on
-  rulebeat.com.
+- **Something else entirely** (partnership, press, anything not covered above): see the contact
+  listed on rulebeat.com.
 
 ## What to expect
 
-This is a solo-maintained open-source project in public beta. Response time varies. There's no SLA.
-If you need guaranteed response times or hands-on help standing up a deployment, that's the kind of
-paid engagement described above, not something the free issue tracker commits to.
+This is a solo-maintained open-source project in public beta. Response time varies, and there's no
+SLA or guaranteed response time.

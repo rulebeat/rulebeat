@@ -13,8 +13,7 @@ notification workflow.
 Use Azure Policy when you are ready to enforce. Use RuleBeat to define and observe your standards
 first. It never blocks a deployment and never holds write credentials.
 
-RuleBeat is open source (Apache-2.0) and free, permanently. Paid expertise (install help, custom
-rules, support) is available separately.
+RuleBeat is open source (Apache-2.0) and free.
 
 ## The problem
 
@@ -229,7 +228,7 @@ notifications, RBAC, audit logging) is built and in daily use. What is designed 
 is listed honestly in [`docs/public/whats-next.md`](docs/public/whats-next.md), starting with Logs
 and activity rules and generated remediation steps.
 
-The software itself is free permanently, not just during beta; see License below. Right now this
+The software is free, during beta and after; see License below. Right now this
 is a feedback-gathering phase. If something breaks, is confusing, or is missing something you would
 need to actually adopt this, [open an issue](https://github.com/rulebeat/rulebeat/issues).
 

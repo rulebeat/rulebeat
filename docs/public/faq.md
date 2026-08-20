@@ -119,6 +119,5 @@ sensitive. See [`configure.md`](configure.md) and [`security.md`](security.md).
 
 ## Is it really free?
 
-RuleBeat is open source (Apache-2.0) and free, permanently. Paid expertise (install help, custom
-rules, support) is available separately. There is no paid tier of the software and no feature held
-back from the open version.
+RuleBeat is open source (Apache-2.0) and free. There is no paid tier of the software and no feature
+held back from the open version.
