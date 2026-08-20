@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getArmCredential } from '@/lib/arm';
+import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { SubscriptionClient } from '@azure/arm-resources-subscriptions';
 import { AZURE_LIST_TIMEOUT_MS } from '@rulebeat/core';
 import { isDemoMode } from '@/lib/demo';
@@ -32,6 +33,12 @@ export async function GET() {
     subs.sort((a, b) => a.name.localeCompare(b.name));
     return NextResponse.json(subs);
   } catch (err) {
+    // Every page that labels a subscription filter calls this in the background on load — including
+    // before Azure has ever been connected (a fresh install, or mid-onboarding). Unlike an
+    // interactive picker, there's no user action to surface an error against here, so "not
+    // configured yet" degrades to the same empty list a genuinely subscription-less tenant would
+    // get, rather than a page-load error every fresh install would otherwise hit.
+    if (err instanceof AzureNotConfiguredError) return NextResponse.json([]);
     return serverError('Failed to list Azure subscriptions', err);
   }
 }
