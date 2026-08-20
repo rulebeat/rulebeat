@@ -2,7 +2,7 @@
   "name": "rulebeat",
   "version": "0.1.0",
   "private": true,
-  "description": "RuleBeat — Azure governance visibility and guided remediation for platform teams",
+  "description": "RuleBeat: Azure governance checks, scheduled scans, and posture tracking for platform teams",
   "workspaces": [
     "packages/*"
   ],
@@ -20,9 +20,7 @@
     "test:coverage": "vitest run --coverage",
     "sync-pack": "tsx scripts/sync-pack.ts",
     "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
-    "public-snapshot": "node scripts/launch/build-public-snapshot.mjs",
-    "secrets-scan": "gitleaks detect --source . --log-opts=--all",
-    "secrets-scan:snapshot": "npm run public-snapshot && gitleaks detect --source .public-snapshot --no-git"
+    "secrets-scan": "gitleaks detect --source . --log-opts=--all"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
