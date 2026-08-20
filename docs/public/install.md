@@ -67,8 +67,6 @@ a four-step wizard walks you through connecting Azure, verifying what the creden
 choosing what to scan, and running a first scan; see [`permissions.md`](permissions.md) for the
 identity it asks for.
 
-![Onboarding wizard verifying Azure access](img/onboarding.png)
-
 ### Arriving pre-configured
 
 Everything above works with a completely empty `.env`, and everything it sets up (Azure
