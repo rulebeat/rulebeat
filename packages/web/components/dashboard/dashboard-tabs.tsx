@@ -26,7 +26,12 @@ export function DashboardTabs({ dashboards, activeId }: Props) {
 
   return (
     <>
-      <div className="scroll-x sticky top-0 z-20 flex shrink-0 items-center gap-1 border-b border-rule-strong bg-surface px-4 pt-2">
+      <div
+        className="scroll-x sticky top-0 z-20 flex shrink-0 items-center gap-1 border-b border-rule-strong bg-surface px-4 pt-2"
+        tabIndex={0}
+        role="region"
+        aria-label="Dashboard tabs"
+      >
         {sorted.map(d => {
           const active = d.id === activeId;
           return (

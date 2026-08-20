@@ -102,7 +102,11 @@ export function openDatabase(dbPath: string): Database.Database {
   // forces the sidecar to exist first, so the secrets those writes carry are never briefly exposed
   // at default (world-readable) permissions.
   if (dbPath !== ':memory:') {
-    sqlite.exec('CREATE TABLE IF NOT EXISTS __rulebeat_wal_bootstrap (x); DROP TABLE __rulebeat_wal_bootstrap;');
+    // IF NOT EXISTS / IF EXISTS on both statements, not just the create: two processes opening
+    // the same brand-new file at once (Next's parallel page-data-collection workers at build time
+    // are the reproducible case) can otherwise have one drop the table a moment before the other
+    // gets to, which throws "no such table" on the unconditional DROP.
+    sqlite.exec('CREATE TABLE IF NOT EXISTS __rulebeat_wal_bootstrap (x); DROP TABLE IF EXISTS __rulebeat_wal_bootstrap;');
   }
   restrictDbFilePermissions(dbPath);
   return sqlite;
