@@ -94,6 +94,16 @@ export function openDatabase(dbPath: string): Database.Database {
   // waiting a moment for the lock to clear (see seedDefaultDashboard/seedOwnerAccount below for
   // why more than one process can legitimately race to open this file).
   sqlite.pragma('busy_timeout = 5000');
+  // On a brand-new, still-empty database file, `journal_mode = WAL` above does not create the
+  // `-wal` sidecar: SQLite has no existing page-1 header to convert yet, so it defers that until
+  // the first write. A fresh install's very first writes are the migrations and the initial admin
+  // seed that follow this call, which would land in a `-wal` file created after
+  // restrictDbFilePermissions() below already ran and found nothing to chmod. This throwaway write
+  // forces the sidecar to exist first, so the secrets those writes carry are never briefly exposed
+  // at default (world-readable) permissions.
+  if (dbPath !== ':memory:') {
+    sqlite.exec('CREATE TABLE IF NOT EXISTS __rulebeat_wal_bootstrap (x); DROP TABLE __rulebeat_wal_bootstrap;');
+  }
   restrictDbFilePermissions(dbPath);
   return sqlite;
 }
@@ -102,10 +112,9 @@ export function openDatabase(dbPath: string): Database.Database {
  * Best-effort `0600` on the db file and its `-wal`/`-shm` sidecars — no-op on Windows, same
  * `try {} catch {}` shape already used for `auth.key`/`encryption.key`/`initial-password.txt`
  * elsewhere in this file. Runs on every open, not just first creation, so an upgrade from an older
- * RuleBeat version tightens permissions on its existing database the next time it starts.
- * `journal_mode = WAL` (above) creates the `-wal` sidecar as a side effect of setting the pragma,
- * so it — and, once a write happens, `-shm` — normally already exist by the time this runs; each
- * is still guarded by `existsSync` rather than assumed.
+ * RuleBeat version tightens permissions on its existing database the next time it starts. The
+ * throwaway write above guarantees the `-wal` sidecar (and, on some SQLite builds, `-shm`) already
+ * exists by the time this runs; each is still guarded by `existsSync` rather than assumed.
  */
 function restrictDbFilePermissions(dbPath: string): void {
   if (dbPath === ':memory:') return;
