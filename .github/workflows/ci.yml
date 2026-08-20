@@ -17,6 +17,34 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/rulebeat
 
 jobs:
+  # Independent of build-and-test below: no npm install, no build, so a secret or a stray
+  # internal reference is caught even if the app itself is currently red, and this job's own
+  # runtime doesn't grow as the app does.
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks scans git log, not just the working tree; a shallow clone would only ever
+          # see the tip commit's diff.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      # Blocking: a committed secret is a real incident regardless of where else it's caught.
+      - name: Secret scan (gitleaks)
+        run: gitleaks detect --source . --log-opts=--all
+
+      # Non-blocking: see scripts/check-internal-references.sh for why.
+      - name: Internal-reference scan
+        run: bash scripts/check-internal-references.sh
+
   build-and-test:
     runs-on: ubuntu-latest
     # Was 15; the Playwright suite (browser install + demo-data generation + 6 specs) adds a few
