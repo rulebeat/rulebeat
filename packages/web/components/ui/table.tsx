@@ -49,6 +49,10 @@ function TableScroll({
     <div
       data-slot="table-scroll"
       data-fill={fill ? "" : undefined}
+      // A region with overflow must itself be reachable by keyboard (WCAG 2.1.1 /
+      // axe "scrollable-region-focusable") — otherwise a keyboard-only user can
+      // never scroll a table wider or taller than its container.
+      tabIndex={0}
       className={cn(
         "relative w-full",
         fill ? "min-h-0 flex-1 scroll-both" : "scroll-x",
