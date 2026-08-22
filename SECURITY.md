@@ -20,6 +20,13 @@ isn't yours while investigating an issue.
 
 ## Supported versions
 
-RuleBeat is in public beta and does not yet have a formal versioned release schedule. Security
-fixes land on the `main` branch and are the version you get by pulling the latest image or
-container build.
+RuleBeat publishes pinned version tags (starting with `0.1.0`); see the
+[releases page](https://github.com/rulebeat/rulebeat/releases) for what's current. While RuleBeat is
+in `0.x` public beta, only the most recently released version is supported: security fixes land on
+`main` and ship in the next tagged release, and you're expected to be running a recent tag rather
+than one several releases behind. There is no long-term-support branch yet.
+
+If you're running an older tag, upgrade to the latest before reporting an issue, in case it's
+already fixed; see [`docs/public/install.md`](docs/public/install.md#upgrading) for how to pull a
+new tag. Running `:latest` (unpinned) means you're always on the most recently built image, which
+carries the newest fixes fastest but with no record of when it changed under you.

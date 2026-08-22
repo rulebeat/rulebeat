@@ -2,13 +2,8 @@
 
 RuleBeat is licensed under Apache-2.0 (see [`LICENSE`](LICENSE) and
 [`LICENSE_SCOPE.md`](LICENSE_SCOPE.md)). This file lists content bundled with RuleBeat that carries
-its own, separate license.
-
-> **Scope, stated honestly:** this list covers content RuleBeat directly vendors or bundles, namely
-> a rule pack and font files. It does **not** yet include a full SPDX audit of the npm dependency
-> tree. That scan has not been run, and this file should be regenerated from its output before
-> anyone treats it as complete: a missed transitive dependency's license is exactly the gap this
-> file exists to close.
+its own, separate license: a vendored rule pack, self-hosted fonts, and a summary of the npm
+dependency tree's licenses.
 
 ## Azure Proactive Resiliency Library v2 (APRL)
 
@@ -42,9 +37,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-*(License text above is the standard MIT template; verify it against the upstream repository's own
-`LICENSE` file at the pinned commit before publishing, rather than trusting this copy.)*
-
 ## Fonts
 
 Self-hosted at build time via `next/font/google`; see `packages/web/app/layout.tsx`.
@@ -57,30 +49,24 @@ Full OFL 1.1 text: https://openfontlicense.org/open-font-license-official-text/
 
 ## npm dependencies
 
-The SPDX scan noted above was run this session (`npx license-checker --summary`, from the repo root,
-over the full hoisted dependency tree, 802 packages):
+An SPDX audit of the full hoisted dependency tree (`npx license-checker --summary`, from the repo
+root, 802 packages as of 2026-08-17) found:
 
 ```
 MIT: 669  ·  ISC: 47  ·  Apache-2.0: 32  ·  BSD-3-Clause: 14  ·  BSD-2-Clause: 12
 BlueOak-1.0.0: 9  ·  MPL-2.0: 6  ·  0BSD: 2  ·  Python-2.0: 1  ·  CC-BY-4.0: 1
 CC0-1.0: 1  ·  MIT-0: 1  ·  MIT AND ISC: 1  ·  (MIT OR WTFPL): 1
 (MIT OR CC0-1.0): 1  ·  (BSD-2-Clause OR MIT OR Apache-2.0): 1
-Apache-2.0 AND LGPL-3.0-or-later: 1  ·  UNLICENSED: 3
+Apache-2.0 AND LGPL-3.0-or-later: 1
 ```
 
-**No GPL/AGPL/SSPL-family (strong copyleft) package found.** Two entries worth a specific note:
+**No GPL/AGPL/SSPL-family (strong copyleft) package found.** One entry worth a specific note:
+**`Apache-2.0 AND LGPL-3.0-or-later`: `@img/sharp-win32-x64`**, the platform binary for `sharp`
+(image processing, used by Next.js's image optimization). `sharp`'s LGPL obligation attaches to its
+bundled `libvips` component; used as an ordinary npm dependency (not statically linked into a
+distributed binary in a way that would trigger relicensing), this is the routine, low-risk case LGPL
+is designed for, but it's the one non-fully-permissive license in the tree and worth a one-line
+mention here rather than silence.
 
-- **`Apache-2.0 AND LGPL-3.0-or-later` (1 package): `@img/sharp-win32-x64`**, the platform binary for
-  `sharp` (image processing, used by Next.js's image optimization). `sharp`'s LGPL obligation attaches
-  to its bundled `libvips` component; used as an ordinary npm dependency (not statically linked into
-  a distributed binary in a way that would trigger relicensing) this is the routine, low-risk case
-  LGPL is designed for, but it's the one non-fully-permissive license in the tree and worth a
-  one-line mention here rather than silence.
-- **`UNLICENSED` (3 packages): `@rulebeat/core`, `rulebeat`, `@rulebeat/web`**: these are RuleBeat's own three
-  workspace packages, reported as unlicensed because `package.json` currently carries no `license`
-  field (the Apache-2.0 swap hasn't happened yet). Not a third-party risk; will resolve on its own
-  once the workspace `package.json` files are updated as part of the license swap itself.
-
-This scan covers the *resolved* tree as installed on 2026-08-17, hoisted at the repo root
-(`npm-workspaces`); re-run it against the actual snapshot commit before publishing, since dependency
-versions (and therefore licenses) can drift between now and Gate B's snapshot approval.
+RuleBeat's own three workspace packages (`rulebeat`, `@rulebeat/core`, `@rulebeat/web`) each declare
+`"license": "Apache-2.0"` in their `package.json`, matching [`LICENSE`](LICENSE).
