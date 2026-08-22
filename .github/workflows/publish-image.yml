@@ -8,10 +8,6 @@ name: Publish image
 # `docker buildx imagetools create` — a manifest copy, not a rebuild. That's what makes a released
 # version provably the commit CI verified, rather than a second build done at tag time that could
 # differ from what was tested.
-#
-# RuleBeat publishes under Apache-2.0, source included (CLAUDE.md's 2026-08-15 decision) — this
-# workflow exists so anyone who'd rather `docker pull` than build from source can, not because the
-# source is hidden.
 on:
   push:
     tags: ['v*.*.*']
