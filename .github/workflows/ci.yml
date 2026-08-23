@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # gitleaks scans git log, not just the working tree; a shallow clone would only ever
           # see the tip commit's diff.
@@ -57,11 +57,15 @@ jobs:
       # Only needed for the image-publish step below, which only runs on push to main — a PR
       # build never reaches it, so a fork PR's read-only token is unaffected.
       packages: write
+      # For cosign's keyless signing step below — also only reached on push to main.
+      id-token: write
+      # For uploading the Trivy SARIF scan to the Security tab below — runs on every push and PR.
+      security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -108,7 +112,7 @@ jobs:
       # Vitest's built-in `github-actions` reporter already annotates failures inline.
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-results
           path: test-results/junit.xml
@@ -120,7 +124,7 @@ jobs:
       # separately-built one. Cached by Playwright's own version so a routine run skips the
       # download; the cache key changes automatically on a dependency bump.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('packages/web/package-lock.json') }}
@@ -142,7 +146,7 @@ jobs:
       # test actually failed, so this only fires then — nothing to keep on a green run.
       - name: Upload Playwright traces
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-traces
           path: packages/web/test-results/
@@ -158,10 +162,10 @@ jobs:
       # executes the exact steps docs/public/install.md documents — build, boot, read the
       # generated password, restart, recreate against the same volume.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Build image for smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: false
@@ -173,6 +177,61 @@ jobs:
       - name: Docker smoke test
         run: bash scripts/docker-smoke-test.sh rulebeat:ci-smoke --skip-build
 
+      # Vulnerability scan against the already-built, already-smoke-tested local image — no
+      # second build, no repull. Runs on every push and PR, not just main, so a scan
+      # result is visible before an image is ever published, not after. Every finding, fixable or
+      # not, uploads to the Security tab unconditionally; the separate blocking step below is the
+      # only thing that can fail this job, and only on the narrower CRITICAL-with-a-fix condition.
+      - name: Scan image for vulnerabilities (Trivy, full results)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rulebeat:ci-smoke
+          format: sarif
+          output: trivy-results.sarif
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+          exit-code: '0'
+
+      # Skipped for a fork PR: GitHub forces a fork's token read-only regardless of what this job
+      # declares, so this step would otherwise fail loudly on every outside contributor's PR for a
+      # permissions reason unrelated to their actual change. The scan and its blocking check above
+      # still run either way — only the Security-tab upload needs same-repo write access.
+      - name: Upload Trivy results to the Security tab
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@e4d2851c4593439ac10bdcd57c5b06cac73b4775 # v3.37.8
+        with:
+          sarif_file: trivy-results.sarif
+
+      # Second Trivy invocation, JSON output, feeding the blocking decision below. Two runs rather
+      # than reusing the SARIF above: SARIF doesn't carry a clean fixed-version field to filter on,
+      # and this keeps "what's visible" (all severities, unconditional) and "what blocks" (a
+      # narrower rule) as two genuinely separate concerns instead of one report serving both. Only
+      # this invocation reads .trivyignore (via trivyignores:) — a suppression there narrows what
+      # can block the build, but the SARIF step above has no trivyignores: input, so anything
+      # listed there stays fully visible on the Security tab regardless.
+      - name: Scan image for vulnerabilities (Trivy, JSON for the blocking check)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rulebeat:ci-smoke
+          format: json
+          output: trivy-results.json
+          severity: 'CRITICAL'
+          exit-code: '0'
+          trivyignores: '.trivyignore'
+
+      # The actual blocking gate. Only a CRITICAL finding with a published fix
+      # fails the job — nothing with no available fix can ever block a release regardless of
+      # severity, and no severity below CRITICAL blocks at all, so an unfixable base-image CVE
+      # cannot make CI permanently red the way an unscoped "fail on any finding" rule would.
+      - name: Fail on a fixable CRITICAL vulnerability
+        run: |
+          COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" and .FixedVersion != null and .FixedVersion != "")] | length' trivy-results.json)
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "::error::$COUNT fixable CRITICAL vulnerabilit$([ "$COUNT" -eq 1 ] && echo y || echo ies) found — see the Security tab for detail, or trivy-results.json in this run's logs."
+            jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" and .FixedVersion != null and .FixedVersion != "")]' trivy-results.json
+            exit 1
+          fi
+          echo "No fixable CRITICAL vulnerabilities."
+
       # Build-once-promote: the smoke-tested image above is rebuilt with the same cache (so this
       # is a near-instant layer reuse, not a second real build) and pushed by commit SHA — but
       # only for a real push to main, never a PR, whose fork token can't push packages anyway.
@@ -181,18 +240,51 @@ jobs:
       # potentially different build done at tag time.
       - name: Log in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Derives OCI labels (source repo, exact revision, build time, license) from git context,
+      # fed into the build-push step below rather than baked into the Dockerfile itself, since a
+      # git-derived label baked directly into the Dockerfile would invalidate its layer cache on
+      # every single commit regardless of what else changed.
+      - name: Docker image metadata
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: type=raw,value=sha-${{ github.sha }}
+
       - name: Build and push verified image (by commit SHA)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
           tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Sigstore keyless signing — no private key to create, store, or rotate.
+      # The runner's own GitHub Actions OIDC token (id-token: write above) proves "this exact
+      # workflow run, in this exact repo, built this," recorded publicly in Sigstore's Rekor
+      # transparency log. Signs the digest build-push-action just pushed, not a tag — publish-
+      # image.yml's later `docker buildx imagetools create` promotes that same digest under
+      # :latest/:<version>, so the signature travels with it automatically; that inheritance is
+      # verified for real in publish-image.yml's own "Verify signature" step, not just assumed here.
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the pushed image (keyless)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: cosign sign --yes "${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
