@@ -91,6 +91,37 @@ volume, or every stored secret has to be re-entered on restore. See
 [`configure.md`](configure.md#rotating-secrets) for the exact behaviour when that key is lost or
 changes.
 
+## Verifying a published image
+
+Every image published to `ghcr.io/rulebeat/rulebeat` is signed with [Sigstore's keyless
+signing](https://docs.sigstore.dev/cosign/signing/overview/): no private key exists to leak or
+rotate, and the signature is tied to the exact GitHub Actions workflow run, in this exact repo, that
+built the image, recorded publicly in Sigstore's Rekor transparency log. Verify a pulled image with
+[`cosign`](https://docs.sigstore.dev/cosign/installation/):
+
+```bash
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/rulebeat/rulebeat/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/rulebeat/rulebeat:0.1.0
+```
+
+A successful verification prints the signing certificate's identity and the Rekor log entry. Every
+image also carries a software bill of materials and a build provenance attestation, generated at
+build time by Docker Buildx and attached to the same digest as the signature. Inspect either with:
+
+```bash
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.1.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.1.0 --format '{{ json .Provenance }}'
+```
+
+The CI pipeline that builds and scans every image is public: see
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
+[`.github/workflows/publish-image.yml`](../../.github/workflows/publish-image.yml). Every
+third-party GitHub Action either workflow uses is pinned to a commit SHA rather than a mutable
+version tag, so a compromised or force-moved action tag cannot silently change what runs in either
+pipeline.
+
 ## What RuleBeat never does
 
 - Never issues an Azure write call. Its code only ever performs read operations, regardless of

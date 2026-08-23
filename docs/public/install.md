@@ -30,7 +30,9 @@ traffic, not just that the process started.
 
 Pin a specific version rather than `:latest`; see [Upgrading](#upgrading) below for why, and for
 where to find the current version. `:latest` is still published if you want it, at the same risk as
-any always-newest tag: the running version can change under you with no record of when.
+any always-newest tag: the running version can change under you with no record of when. Every
+published image is signed and carries an SBOM and build provenance you can verify yourself; see
+[Verifying a published image](security.md#verifying-a-published-image) in the security docs.
 
 Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`:
 
