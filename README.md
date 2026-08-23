@@ -245,6 +245,13 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: the whole platform is o
 community-contributed under Apache-2.0. [Open an issue](https://github.com/rulebeat/rulebeat/issues)
 with bug reports, feature requests, or rule ideas, or open a pull request directly.
 
+## Sponsors
+
+RuleBeat is free and stays that way regardless of sponsorship.
+[Sponsoring on GitHub](https://github.com/sponsors/abdohanafy) funds the maintenance time behind
+it: triaging issues, reviewing pull requests, writing new rules. See [`SPONSORS.md`](SPONSORS.md)
+for the full list.
+
 ## License
 
 RuleBeat's license is Apache-2.0, covering the whole platform. The [`LICENSE`](LICENSE) file beside
