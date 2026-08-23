@@ -82,6 +82,19 @@ These are not negotiable, and they are the rules the whole suite's value rests o
 - Adding an API route? A structural test fails until that route calls `requireRole`. That is
   intentional. Add the guard rather than an exception.
 
+## Cutting a release
+
+`npm run release -- <patch|minor|major>` is the whole process. It bumps `package.json` in the
+root and both packages to the same new version, resyncs `package-lock.json` against them, moves
+`CHANGELOG.md`'s `[Unreleased]` section under a new dated header, commits all five files together,
+and creates an annotated `vX.Y.Z` tag. It refuses outright on a dirty working tree or an empty
+`[Unreleased]` section, and changes nothing when it refuses.
+
+It does not push. Review the commit (`git show HEAD`), then `git push && git push origin vX.Y.Z`
+yourself. Pushing the tag is what starts `publish-image.yml`, which itself refuses to promote a
+release whose tag disagrees with what `package.json`/`CHANGELOG.md` say — a check that runs
+independently of this script, so it still catches a tag pushed by hand with no script involved.
+
 ## What this project deliberately does not do
 
 - **No parallel work on one feature.** Review is the bottleneck, not typing. Producing diffs faster

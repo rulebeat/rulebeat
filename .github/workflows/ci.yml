@@ -83,6 +83,17 @@ jobs:
       - name: Test release-version checker
         run: npm run test:release-version
 
+      - name: Test CHANGELOG bump logic
+        run: npm run test:release-changelog
+
+      # Runs scripts/release.mjs for real against a scratch fixture repo (see the script's own
+      # header): npm's real bump arithmetic, package-lock.json ending up genuinely consistent
+      # (checked by running `npm ci` against the result), the git commit and annotated tag, and
+      # the dirty-working-tree refusal. The fixture repo gets its own local git identity (the
+      # script does this itself), so this needs nothing from the runner's own git config.
+      - name: Release script smoke test
+        run: bash scripts/release-smoke-test.sh
+
       # Mirrors the Dockerfile's build steps exactly (core dist, then the Next.js production
       # build) — typecheck and tests both run against source, so neither one catches a build that
       # only breaks once bundled (e.g. a server-only import reaching a client component).
