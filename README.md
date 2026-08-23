@@ -104,14 +104,21 @@ tenant at all, run it in [demo mode](docs/public/demo-mode.md).
 
 ### Run it
 
-RuleBeat publishes under Apache-2.0, but the public source repository is not live yet. For now,
-pull the built image instead:
+Pull the built image:
 
 ```bash
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
   -v rulebeat-data:/app/packages/web/data \
   ghcr.io/rulebeat/rulebeat:0.1.0
 ```
+
+Or clone and build it yourself:
+
+```bash
+git clone https://github.com/rulebeat/rulebeat.git
+```
+
+then follow [Local development](#local-development) below.
 
 Nothing else is required. RuleBeat boots with a generated local admin account.
 
@@ -234,13 +241,12 @@ need to actually adopt this, [open an issue](https://github.com/rulebeat/rulebea
 
 ## Feedback & contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: the whole platform is meant to be open
-and community-contributed under Apache-2.0, but the public repository is not published yet; until
-it is, [open an issue](https://github.com/rulebeat/rulebeat/issues) with bug reports, feature
-requests, or rule ideas.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: the whole platform is open and
+community-contributed under Apache-2.0. [Open an issue](https://github.com/rulebeat/rulebeat/issues)
+with bug reports, feature requests, or rule ideas, or open a pull request directly.
 
 ## License
 
-RuleBeat's license is Apache-2.0, covering the whole platform. The public source repository is not
-live yet, so the [`LICENSE`](LICENSE) file beside this README is what governs the copy you are
+RuleBeat's license is Apache-2.0, covering the whole platform. The [`LICENSE`](LICENSE) file beside
+this README is what governs the copy you are
 reading. The rules and content shipped with RuleBeat may carry their own separate license.

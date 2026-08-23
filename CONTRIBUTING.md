@@ -1,11 +1,10 @@
 # Contributing
 
-RuleBeat's whole platform (the engine, UI, scheduler, RBAC, dashboards, rules, packs) is meant to
-publish under Apache-2.0, open to contribution. The public repository isn't live yet, so this
-repository isn't open for pull requests today. Until it is, the best way to contribute a rule idea,
-a check you'd like to see, a correction to an existing rule's recommendation text, or a change to
-the product itself
-is to [open an issue](https://github.com/rulebeat/rulebeat/issues) describing it.
+RuleBeat's whole platform (the engine, UI, scheduler, RBAC, dashboards, rules, packs) publishes
+under Apache-2.0, open to contribution. Fork the repo, branch, and open a pull request against
+`main`. For a rule idea, a check you'd like to see, a correction to an existing rule's
+recommendation text, or a change to the product itself, [open an issue](https://github.com/rulebeat/rulebeat/issues)
+first if you want to talk it through before writing code.
 
 ## Working on the code
 

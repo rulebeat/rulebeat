@@ -10,14 +10,17 @@
 
 ### Run it
 
-RuleBeat publishes under Apache-2.0, but the public source repository isn't live yet. For now,
-you pull the published image instead of cloning.
+Pull the published image:
 
 ```bash
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
   -v rulebeat-data:/app/packages/web/data \
   ghcr.io/rulebeat/rulebeat:0.1.0
 ```
+
+Or clone the source and build it yourself: `git clone https://github.com/rulebeat/rulebeat.git`,
+then see [Local development](../../README.md#local-development) in the repo root (this doc covers
+the Docker path only).
 
 Nothing else is required. A brand-new install with zero users seeds one local admin account with a
 generated password on first boot. `--restart unless-stopped` means Docker brings the container back
