@@ -20,6 +20,7 @@
     "test:web": "vitest run --project web",
     "test:coverage": "vitest run --coverage",
     "sync-pack": "tsx scripts/sync-pack.ts",
+    "test:release-version": "node --test scripts/verify-release-version.test.mjs",
     "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
     "secrets-scan": "gitleaks detect --source . --log-opts=--all"
   },

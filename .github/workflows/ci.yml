@@ -76,6 +76,13 @@ jobs:
       - name: Test
         run: npm test
 
+      # Outside both vitest projects (it's release tooling, not product code, node:test not
+      # vitest) so it needs its own step rather than riding along with the line above. Runs on
+      # every push, not just at tag time, so a broken checker itself is caught long before it
+      # would matter to a real release.
+      - name: Test release-version checker
+        run: npm run test:release-version
+
       # Mirrors the Dockerfile's build steps exactly (core dist, then the Next.js production
       # build) — typecheck and tests both run against source, so neither one catches a build that
       # only breaks once bundled (e.g. a server-only import reaching a client component).

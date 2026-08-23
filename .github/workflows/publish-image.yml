@@ -8,6 +8,12 @@ name: Publish image
 # `docker buildx imagetools create` — a manifest copy, not a rebuild. That's what makes a released
 # version provably the commit CI verified, rather than a second build done at tag time that could
 # differ from what was tested.
+#
+# On a real version tag, the first thing this workflow does is refuse to promote anything if the
+# tag disagrees with what package.json/CHANGELOG.md themselves say
+# (scripts/verify-release-version.mjs) — even a tag pushed entirely by hand, with no release
+# process involved, cannot result in a published image whose version claims disagree with what
+# the running app itself reports via Diagnostics -> System (packages/web/lib/version.ts).
 on:
   push:
     tags: ['v*.*.*']
@@ -31,6 +37,22 @@ jobs:
       actions: read
 
     steps:
+      # Only a real version tag has a version to verify — workflow_dispatch can also run this
+      # workflow from a plain branch (to republish :latest on demand), which "Determine tags"
+      # below already treats as version-tag-less by checking the same ref_type.
+      - name: Checkout
+        if: github.ref_type == 'tag'
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: github.ref_type == 'tag'
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify tag matches package.json and CHANGELOG
+        if: github.ref_type == 'tag'
+        run: node scripts/verify-release-version.mjs "$GITHUB_REF_NAME"
+
       - name: Verify CI passed for this commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
