@@ -1,0 +1,15 @@
+# Suppresses specific CVEs from the CI blocking gate only (ci.yml's second Trivy invocation).
+# The unconditional SARIF scan that feeds the Security tab does NOT read this file —
+# every listed CVE stays fully visible there. This file only narrows what can fail the build.
+#
+# CVE-2026-59873 — tar gzip-bomb DoS (GHSA-23hp-3jrh-7fpw), fixed in tar 7.5.19.
+# Path: usr/local/lib/node_modules/npm/node_modules/tar — npm's own internal bundled dependency,
+# shipped as part of the node:22-alpine base image, not something in RuleBeat's own package.json
+# or package-lock.json. server.js never invokes npm at runtime (Next.js standalone output runs
+# directly, no package manager calls on the request path); the only way this code path executes
+# inside a running container is a manual `docker exec ... npm/npx ...`, which already requires
+# exec access an attacker with that access has already turned into full container control.
+# Revisit when node:22-alpine next rebuilds with a patched npm bundled, or if the Dockerfile's
+# runner stage is ever changed to strip npm entirely (it isn't today — see the ENV NPM_CONFIG_CACHE
+# comment there, which exists to keep manual `docker exec ... npx` debugging usable).
+CVE-2026-59873
