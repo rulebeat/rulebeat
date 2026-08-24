@@ -1,5 +1,10 @@
 # Scans and schedules
 
+Everything scan-related lives on the one Scans page, under four tabs: **Results** (current
+findings, filterable by category, severity, status and more), **Run History** (every past run and
+its coverage), **Rules** (every rule with its enabled state and last outcome), and **Schedules**
+(recurring scans). Category is a filter on each tab, not a separate page.
+
 ## Manual scans
 
 The Scans page has a Run Scan button that executes a set of rules immediately against your
@@ -43,6 +48,24 @@ two built-in identity checks) run through a Graph query rather than a KQL query,
 ordinary rules otherwise, reachable through any targeting mode, including tags and a specific-rules
 list.
 
+### A worked example
+
+A team that wants its security and identity posture refreshed before the working day starts, and
+wants to hear about it only when something serious appears, creates one schedule:
+
+| Field | Value |
+|---|---|
+| Name | Morning security sweep |
+| Target | Categories: security, identity |
+| Recurrence | Daily, every 1 day, starting tomorrow 06:30 |
+| Ends | Never |
+| Notify | The "Platform team" Teams channel, minimum severity high |
+
+Every morning at 06:30 the scheduler runs every enabled rule in those two categories. The run
+lands in Run History like any manual run would, findings update on the Results tab, and a Teams
+message goes out only if the run produced new findings at high severity or above. Other
+categories' rules are untouched, and their posture numbers don't move.
+
 ### Run history
 
 Every run, manual or scheduled, is recorded in a unified run history with its outcome, how long it
@@ -51,37 +74,23 @@ recurrence, next run, and last run, with a status indicator that refreshes autom
 
 ### What a run records per rule
 
-A scan is not a bare list of findings. Every rule in the run ends with exactly one outcome:
-**success** (the query ran to completion), **failed** (it threw), **capped** (it came back
-truncated, or the KQL has a top-level `take`/`limit`, so its findings are real but not exhaustive),
-or **invalid** (its rows carried no resource id). Only a `success` outcome is allowed to mark a
-rule's previously-active findings as fixed when they do not reappear; a failed or capped rule keeps
-its old findings as they were rather than quietly "fixing" them. A run with any non-success outcome
-is badged **partial** coverage in Run History, and the coverage-freshness dashboard widget shows the
-same per category.
+A scan is not a bare list of findings: every rule in the run ends with exactly one outcome
+(success, failed, capped, or invalid), only a successful rule may mark its old findings fixed, and
+a run with any non-success outcome is badged **partial** coverage in Run History rather than
+folded into the posture number. The outcome model, what each status means, and why it exists are
+in [`how-it-works.md`](how-it-works.md#one-outcome-per-rule).
 
 ## What "X of Y passing" means
 
-Every category's headline number, and the Overall Posture ring, count a rule as passing only when
-two things are both true: it currently has zero active findings, and its most recent run finished
-successfully. A rule that has not run yet, or whose last run failed, was capped, or returned rows
-with no resource id, is counted separately as **unknown** rather than folded into passing. The Rules
-tab shows why per rule, with a chip reading "not yet run," "query failed," "result capped," or "no
-resource id." The full definition, including why the number can move when nothing in your estate
-changed and what the trend widgets can and cannot show, is in [`posture.md`](posture.md).
+A rule counts as passing only when it currently has zero active findings **and** its most recent
+run finished successfully; a rule that hasn't run, or whose last run failed or was capped, is
+counted as **unknown** instead, with a chip on the Rules tab saying why. The full definition,
+including why the number can move when nothing in your estate changed, is in
+[`posture.md`](posture.md).
 
 ## Notifications
 
-Notification channels (Microsoft Teams, Slack, a generic webhook, or email) are configured once
-from Settings → Notifications as a plain address book: a name, a type, and a destination. Who gets
-notified, and at what severity, is then decided per schedule: when editing a schedule, choose
-which channels should notify for it and the minimum severity that should trigger one.
-
-A transient delivery failure (a network error, a timeout, an HTTP 429, or a 5xx) retries up to
-three total attempts with backoff. A 4xx response never retries, since retrying a rejected
-request just repeats the same rejection. Every attempt is recorded in a per-channel delivery
-history, viewable from Settings → Notifications, so a missed notification is something you can
-actually diagnose rather than something you have to take on faith.
-
-Manual runs never notify. Only scheduled runs do, and only through the channels that specific
-schedule has assigned.
+Channels (Microsoft Teams, Slack, a generic webhook, or email) are a plain address book in
+Settings → Notifications; who gets notified, and at what minimum severity, is decided per
+schedule, when editing it. Manual runs never notify. Delivery, retries, and the per-channel
+delivery history are covered in [`notifications.md`](notifications.md).

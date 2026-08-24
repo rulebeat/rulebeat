@@ -103,7 +103,7 @@ built the image, recorded publicly in Sigstore's Rekor transparency log. Verify 
 cosign verify \
   --certificate-identity-regexp '^https://github.com/rulebeat/rulebeat/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/rulebeat/rulebeat:0.1.0
+  ghcr.io/rulebeat/rulebeat:0.2.0
 ```
 
 A successful verification prints the signing certificate's identity and the Rekor log entry. Every
@@ -111,8 +111,8 @@ image also carries a software bill of materials and a build provenance attestati
 build time by Docker Buildx and attached to the same digest as the signature. Inspect either with:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.1.0 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.1.0 --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.2.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.2.0 --format '{{ json .Provenance }}'
 ```
 
 The CI pipeline that builds and scans every image is public: see

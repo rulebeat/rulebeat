@@ -74,7 +74,7 @@ it produces, among others:
 | Resource group | `rg-web-prod` |
 | Subscription | `00000000-0000-0000-0000-000000000001` |
 | Severity | medium |
-| Status | active, first seen 2026-06-20, last seen 2026-08-18, seen 121 times |
+| Status | active, first seen at the start of the sixty-day demo history, seen in every run since |
 | Evidence | `{}` (the query projects no extra columns; the absence of the tag is the whole point) |
 | Portal link | the resource's page in the Azure portal |
 
@@ -127,7 +127,7 @@ From the demo data:
 | Type | `microsoft.storage/storageaccounts` |
 | Resource group | `rg-analytics-prod` |
 | Severity | medium |
-| Status | active, seen 121 times over 60 days |
+| Status | active, seen in every run across the sixty-day history |
 | Evidence | `{"supportsHttpsTrafficOnly": false}` |
 
 The finding's recommendation text is the rule's description: "Allowing HTTP traffic to storage

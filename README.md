@@ -15,6 +15,85 @@ first. It never blocks a deployment and never holds write credentials.
 
 RuleBeat is open source (Apache-2.0) and free.
 
+![Dashboard overview with the Overall Posture ring, trend, and stat cards](docs/public/img/dashboard.png)
+
+**Contents:** [Quick start](#quick-start) · [The problem](#the-problem) ·
+[What it does](#what-it-does) · [Why not just use...](#why-not-just-use) ·
+[A closer look](#a-closer-look) · [Connect Azure](#connect-azure) ·
+[Microsoft sign-in](#optional-microsoft-sign-in) · [Local development](#local-development) ·
+[How it works](#how-it-works) · [Status](#status) · [Contributing](#feedback--contributing)
+
+## Quick start
+
+You need Docker, and an Azure subscription with at least Reader access if you want to connect real
+Azure data (you can also explore the UI without connecting anything).
+
+1. Start the container.
+
+   bash or zsh:
+
+   ```bash
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
+     -v rulebeat-data:/app/packages/web/data \
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+   PowerShell:
+
+   ```powershell
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
+     -v rulebeat-data:/app/packages/web/data `
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+2. Read the generated admin password. It is written to the data volume, never to the container
+   logs, so it does not outlive the forced password change in your log history:
+
+   ```
+   docker exec rulebeat cat data/initial-password.txt
+   ```
+
+3. Open `http://localhost:3000`, sign in, and change the password when prompted. A
+   <!-- count:onboarding-steps -->four-step wizard then connects Azure, verifies what your
+   credential can actually reach, lets you choose what to scan, and runs your first scan. The
+   wizard asks for a read-only Azure identity; [Connect Azure](#connect-azure) below lists the
+   ways to supply one.
+
+The app binds to `127.0.0.1` on purpose: RuleBeat holds a live Azure read credential, so the
+default is reachable from this host only. To reach it from another machine, put a reverse proxy
+with TLS in front; see
+[`docs/public/configure.md`](docs/public/configure.md#exposing-it-beyond-localhost).
+
+Pin a version tag rather than `:latest`. A running instance shows its version in the sidebar
+footer and on the Diagnostics page's System card, so you can always see what you are on and
+upgrade on your own schedule. Upgrading, backup, arriving pre-configured via environment
+variables, and building the image from source are all in
+[`docs/public/install.md`](docs/public/install.md).
+
+<details>
+<summary>Prefer Docker Compose?</summary>
+
+Save this as `docker-compose.yml` and run `docker compose up -d`:
+
+```yaml
+services:
+  rulebeat:
+    image: ghcr.io/rulebeat/rulebeat:0.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - rulebeat-data:/app/packages/web/data
+volumes:
+  rulebeat-data:
+```
+
+The repo's own [`docker-compose.yml`](docker-compose.yml) is the long-form version of this file:
+it builds from source (`build: .`) and documents every environment variable RuleBeat reads, each
+one optional, with a comment saying what it is for.
+
+</details>
+
 ## The problem
 
 Azure Policy can block deployments and enforce compliance, but that is exactly the friction most
@@ -61,14 +140,16 @@ environment and see exactly where reality diverges from it, scan after scan.
   freshness, new-versus-fixed velocity, activity occurrences, stat cards and a recent findings feed.
   Filter a whole dashboard by category, subscription, resource group, tag, severity, rule or date
   window; build as many dashboards as you need.
-- **Notifications** to Microsoft Teams, Slack, a generic webhook, or email, chosen per schedule
-  with a severity threshold, with retry on transient failures and a delivery history you can read.
+- **Notifications to <!-- count:channel-types -->four channel types** (Microsoft Teams, Slack, a
+  generic webhook, or email), chosen per schedule with a severity threshold, with retry on
+  transient failures and a delivery history you can read.
 - <!-- count:roles -->**Three roles** (viewer, editor, admin) enforced on every API route, not just
   in the UI, resolved from the database on every request, with an audit log covering every change.
   Sign in with local accounts or Microsoft Entra ID.
-- **Installs as one container.** A generated admin password, a four-step onboarding wizard that
-  verifies what your credential can actually reach, a diagnostics page for the support questions,
-  and a demo mode that runs against synthetic data with no Azure access at all.
+- **Installs as one container.** A generated admin password, a
+  <!-- count:onboarding-steps -->four-step onboarding wizard that verifies what your credential can
+  actually reach, a diagnostics page for the support questions, and a demo mode that runs against
+  synthetic data with no Azure access at all.
 
 ## Why not just use...
 
@@ -84,87 +165,16 @@ environment and see exactly where reality diverges from it, scan after scan.
 - **A spreadsheet or a one-off script.** Works fine until a second person needs to run it, or until
   you need history, scheduling, or an audit trail. RuleBeat gives you all three from day one.
 
-## See it first
+## A closer look
 
-![Dashboard overview with the Overall Posture ring, trend, and stat cards](docs/public/img/dashboard.png)
 ![Results tab with a finding expanded](docs/public/img/findings.png)
-![60 second walkthrough: sign-in, findings, rule builder, a scan run, and the dashboard](docs/public/img/walkthrough.gif)
+![Walkthrough: the dashboard, findings, the rule library, a rule's detail, and run history](docs/public/img/walkthrough.gif)
 
 There is no hosted demo instance yet. The fastest way to see RuleBeat is to run it yourself; the
-quick start below takes about five minutes. To show it to someone without connecting an Azure
-tenant at all, run it in [demo mode](docs/public/demo-mode.md).
+[quick start](#quick-start) above takes about five minutes. To show it to someone without
+connecting an Azure tenant at all, run it in [demo mode](docs/public/demo-mode.md).
 
-## Quick start (self-host with Docker)
-
-### Prerequisites
-
-- Docker and Docker Compose
-- An Azure subscription you have at least Reader access to, if you want to connect real Azure data
-  (you can also explore the UI without connecting anything)
-
-### Run it
-
-Pull the built image:
-
-```bash
-docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
-  -v rulebeat-data:/app/packages/web/data \
-  ghcr.io/rulebeat/rulebeat:0.1.0
-```
-
-Or clone and build it yourself:
-
-```bash
-git clone https://github.com/rulebeat/rulebeat.git
-```
-
-then follow [Local development](#local-development) below.
-
-Nothing else is required. RuleBeat boots with a generated local admin account.
-
-Pin a version tag rather than `:latest`; see [`docs/public/install.md`](docs/public/install.md#upgrading)
-for how to check the current version and upgrade deliberately. `:latest` is still published if you
-want always-newest instead.
-
-Prefer Docker Compose, or want the full list of optional environment variables (Azure credentials,
-Microsoft sign-in, encryption key) documented inline? Save this as `docker-compose.yml`:
-
-```yaml
-services:
-  rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.1.0
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    volumes:
-      - rulebeat-data:/app/packages/web/data
-volumes:
-  rulebeat-data:
-```
-
-then run `docker compose up -d`. See [`docs/public/configure.md`](docs/public/configure.md) for
-every optional variable that can go under `environment:`, and for how to reach RuleBeat from
-outside the host (put a reverse proxy with TLS in front, do not widen the port binding above).
-
-### Sign in with the generated owner account
-
-The password is written to `data/initial-password.txt` inside the data volume (never to the
-container logs, so it does not outlive the forced password change in your log history):
-
-```bash
-docker exec rulebeat cat data/initial-password.txt
-```
-
-Open `http://localhost:3000`, sign in, and you will be asked to change the password immediately.
-
-### Optional: Microsoft sign-in
-
-If you would rather your team sign in with their work accounts than a shared local password,
-configure Microsoft Entra ID from Settings → Sign-in once you are in, or set it up ahead of time
-with environment variables. See [`.env.example`](.env.example) and
-[`docs/public/configure.md`](docs/public/configure.md).
-
-### Connect Azure
+## Connect Azure
 
 RuleBeat needs a read-only identity to scan with. Connect one from Settings → Azure connection
 after signing in, or supply it as an environment variable so the container arrives pre-configured.
@@ -178,18 +188,31 @@ Five ways to supply the credential, ranked best first:
 |---|---|---|
 | Managed identity | Automatic when RuleBeat itself runs on Azure (VM, AKS, Container Apps) | No secret exists anywhere |
 | Workload identity federation | `AZURE_FEDERATED_TOKEN_FILE` | No secret, and works off-Azure too (AKS workload identity, federated CI) |
-| Certificate | `AZURE_CLIENT_CERTIFICATE_PATH` / `_PASSWORD` | A secret exists, but not a shared one |
+| Certificate | `AZURE_CLIENT_CERTIFICATE_PATH` | A secret exists, but not a shared one |
 | Client secret, mounted file | `AZURE_CLIENT_SECRET_FILE` | Rotatable without recreating the container, not visible in `docker inspect` |
 | Client secret, plain variable | `AZURE_CLIENT_SECRET` | Works everywhere, weakest option |
 
-If you go the service principal route:
+A password-protected certificate file also takes `AZURE_CLIENT_CERTIFICATE_PASSWORD`; that
+variable is read by the Azure SDK itself, not by RuleBeat.
 
-```bash
-az ad sp create-for-rbac --name rulebeat-reader --role Reader --scopes /subscriptions/<sub-id>
+If you go the service principal route, this one line works in bash, zsh and PowerShell (replace
+`<subscription-id>` first):
+
+```
+az ad sp create-for-rbac --name rulebeat-reader --role Reader --scopes /subscriptions/<subscription-id>
 ```
 
 Full detail, including the optional Microsoft Graph permission for Directory rules, is in
 [`docs/public/permissions.md`](docs/public/permissions.md).
+
+## Optional: Microsoft sign-in
+
+If you would rather your team sign in with their work accounts than a shared local password,
+configure Microsoft Entra ID from Settings → Sign-in once you are in, or set it up ahead of time
+with environment variables. See [`.env.example`](.env.example) and
+[`docs/public/configure.md`](docs/public/configure.md). If you already connected Azure with an app
+registration, the sign-in screen offers a checkbox to reuse it, so you do not have to register a
+second Entra app just for sign-in.
 
 ## Local development
 
@@ -206,7 +229,7 @@ own CLI session if nothing else is configured.
 ```bash
 npm test                # everything, both packages
 npm run test:watch      # watch mode while working
-npx tsc --noEmit        # typecheck, from packages/web or packages/core
+npm run typecheck       # typecheck both packages, from the repo root
 ```
 
 ## How it works
@@ -244,6 +267,8 @@ need to actually adopt this, [open an issue](https://github.com/rulebeat/rulebea
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: the whole platform is open and
 community-contributed under Apache-2.0. [Open an issue](https://github.com/rulebeat/rulebeat/issues)
 with bug reports, feature requests, or rule ideas, or open a pull request directly.
+[`SUPPORT.md`](SUPPORT.md) says where to ask questions; everyone interacting in the project's
+spaces is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Sponsors
 

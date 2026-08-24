@@ -59,6 +59,14 @@ function countWidgetTemplates(): number {
   return (m[1]!.match(/^\s*type: '[a-z-]+',$/gm) ?? []).length;
 }
 
+/** Onboarding wizard steps: one `{ id: N, ... }` entry per step in the stepper's STEPS array. */
+function countOnboardingSteps(): number {
+  const src = readFileSync(join(WEB_ROOT, 'app', 'onboarding', 'onboarding-client.tsx'), 'utf8');
+  const m = src.match(/const STEPS: StepperStep\[\] = \[([\s\S]*?)\n\];/);
+  if (!m) throw new Error('could not find STEPS in onboarding-client.tsx');
+  return (m[1]!.match(/\{ id: \d+,/g) ?? []).length;
+}
+
 const allPackRules = [...packRules.values()].flat();
 const liveCounts: Record<string, number> = {
   'builtin-rules': BUILTIN_RULES.length,
@@ -66,6 +74,7 @@ const liveCounts: Record<string, number> = {
   'checks-total': BUILTIN_RULES.length + allPackRules.length,
   'credential-expiry-rules': BUILTIN_RULES.filter(r => r.queryBackend === 'microsoft-graph').length,
   'widget-types': countWidgetTemplates(),
+  'onboarding-steps': countOnboardingSteps(),
   'channel-types': countUnionMembers(join(WEB_ROOT, 'lib', 'db', 'notification-channels.ts'), 'NotificationChannelType'),
   'roles': ROLES.length,
   'graph-resource-types': GRAPH_RESOURCE_PATHS.length,
@@ -116,6 +125,7 @@ const REQUIRED: Array<[file: string, key: string]> = [
   ['docs/public/security.md', 'graph-resource-types'],
   ['docs/public/security.md', 'credential-expiry-rules'],
   ['docs/public/rbac.md', 'roles'],
+  ['docs/public/install.md', 'onboarding-steps'],
 ];
 
 describe('public docs state the same numbers the code ships', () => {
@@ -166,5 +176,35 @@ describe('public docs state the same numbers the code ships', () => {
     for (const [id, rules] of packRules) {
       expect(packManifest[id]?.policyCount, `pack-manifest.json policyCount for ${id}`).toBe(rules.length);
     }
+  });
+});
+
+// ---- Pinned image tags ---------------------------------------------------------------------------
+// Docs pin `ghcr.io/rulebeat/rulebeat:X.Y.Z` in install, upgrade and cosign-verify commands. The
+// release script bumps package.json and CHANGELOG but nothing rewrites markdown, so `0.1.0`
+// survived the 0.2.0 release in nine places. Same convention as the count markers: the doc states
+// a number the code owns, so a test compares them.
+
+const appVersion = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
+const IMAGE_TAG = /ghcr\.io\/rulebeat\/rulebeat:(\d+\.\d+\.\d+)/g;
+
+interface TagOccurrence { file: string; tag: string }
+const pinnedTags: TagOccurrence[] = DOC_FILES.flatMap(file => {
+  const rel = file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/');
+  return [...readFileSync(file, 'utf8').matchAll(IMAGE_TAG)].map(m => ({ file: rel, tag: m[1]! }));
+});
+
+describe('pinned image tags in the docs match the version the repo ships', () => {
+  it('found pinned tags at all (guards against this suite silently testing nothing)', () => {
+    // The upgrade and cosign-verify docs deliberately pin a concrete version. If pinned tags are
+    // ever removed from the docs on purpose, delete this describe block deliberately with them.
+    expect(pinnedTags.length).toBeGreaterThan(0);
+  });
+
+  it.each(pinnedTags.map(o => [o.file, o.tag] as const))('%s pins ghcr.io/rulebeat/rulebeat:%s, which must equal package.json', (file, tag) => {
+    expect(tag, [
+      `${file} pins image tag ${tag} but package.json says ${appVersion}.`,
+      'Update the doc, not this test.',
+    ].join(' ')).toBe(appVersion);
   });
 });

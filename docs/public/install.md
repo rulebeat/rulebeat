@@ -10,22 +10,45 @@
 
 ### Run it
 
-Pull the published image:
+1. Pull and start the published image.
 
-```bash
-docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
-  -v rulebeat-data:/app/packages/web/data \
-  ghcr.io/rulebeat/rulebeat:0.1.0
+   bash or zsh:
+
+   ```bash
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
+     -v rulebeat-data:/app/packages/web/data \
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+   PowerShell:
+
+   ```powershell
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
+     -v rulebeat-data:/app/packages/web/data `
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+2. Confirm the container reports healthy (it can take a few seconds to move past `starting`):
+
+   ```
+   docker inspect rulebeat --format '{{.State.Health.Status}}'
+   ```
+
+3. Continue with [First sign-in](#first-sign-in) below.
+
+To build the image from source instead, clone the repo and let the committed Compose file build it
+(its `build: .` points at the repo's own Dockerfile):
+
 ```
-
-Or clone the source and build it yourself: `git clone https://github.com/rulebeat/rulebeat.git`,
-then see [Local development](../../README.md#local-development) in the repo root (this doc covers
-the Docker path only).
+git clone https://github.com/rulebeat/rulebeat.git
+cd rulebeat
+docker compose up -d --build
+```
 
 Nothing else is required. A brand-new install with zero users seeds one local admin account with a
 generated password on first boot. `--restart unless-stopped` means Docker brings the container back
-on its own after a crash or host reboot. The image also ships a `HEALTHCHECK` (`docker inspect rulebeat`
-shows `Health.Status`) that `docker run` and Compose both use to know the app is actually serving
+on its own after a crash or host reboot. The image also ships a `HEALTHCHECK` (the `Health.Status`
+you inspected above) that `docker run` and Compose both use to know the app is actually serving
 traffic, not just that the process started.
 
 Pin a specific version rather than `:latest`; see [Upgrading](#upgrading) below for why, and for
@@ -39,7 +62,7 @@ Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.1.0
+    image: ghcr.io/rulebeat/rulebeat:0.2.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -48,6 +71,11 @@ services:
 volumes:
   rulebeat-data:
 ```
+
+The repo's own [`docker-compose.yml`](../../docker-compose.yml) is the long-form version of this
+file: it builds from source (`build: .`) and documents every environment variable RuleBeat reads,
+each one optional, with a comment saying what it's for. Use it as the reference when you want a
+deployment to [arrive pre-configured](#arriving-pre-configured).
 
 Bound to `127.0.0.1` on purpose: RuleBeat holds a live Azure read credential and does its own
 authentication but has no TLS story of its own, so the default is "reachable from this host only."
@@ -59,18 +87,22 @@ the encryption key) lives in the `rulebeat-data` named volume. Back that up, not
 
 ### First sign-in
 
-The password is written to `data/initial-password.txt` inside the data volume (never to the
-container logs, so it doesn't outlive the forced password change in your log history):
+1. Read the generated admin password. It's written to `data/initial-password.txt` inside the data
+   volume, never to the container logs, so it doesn't outlive the forced password change in your
+   log history:
 
-```bash
-docker exec rulebeat cat data/initial-password.txt
-```
+   ```
+   docker exec rulebeat cat data/initial-password.txt
+   ```
 
-Open `http://localhost:3000`, sign in with that password, and you'll be asked to change it
-immediately. That's expected: the generated password is meant to be used exactly once. From there
-a four-step wizard walks you through connecting Azure, verifying what the credential can reach,
-choosing what to scan, and running a first scan; see [`permissions.md`](permissions.md) for the
-identity it asks for.
+2. Open `http://localhost:3000` and sign in with it.
+
+3. Change the password when prompted. That's expected: the generated password is meant to be used
+   exactly once.
+
+4. Follow the <!-- count:onboarding-steps -->four-step wizard that opens next: connect Azure,
+   verify what the credential can reach, choose what to scan, and run a first scan. See
+   [`permissions.md`](permissions.md) for the identity it asks for.
 
 ### Arriving pre-configured
 
@@ -83,21 +115,34 @@ never falls back to showing a setup screen. See [`configure.md`](configure.md) f
 
 ### Upgrading
 
-Check the [releases page](https://github.com/rulebeat/rulebeat/releases) (or the version shown
-under Diagnostics → System in a running instance) for the current version, then pull that specific
-tag rather than `:latest`. A pinned tag means you upgrade on your own schedule and can always see
-which version you're running:
+A running instance shows its version in the sidebar footer and on the admin Diagnostics page's
+System card; the [releases page](https://github.com/rulebeat/rulebeat/releases) shows the newest
+one. Pull a specific tag rather than `:latest`: a pinned tag means you upgrade on your own schedule
+and can always see which version you're running.
 
-```bash
-docker pull ghcr.io/rulebeat/rulebeat:0.1.0
-docker stop rulebeat && docker rm rulebeat
-docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
-  -v rulebeat-data:/app/packages/web/data \
-  ghcr.io/rulebeat/rulebeat:0.1.0
-```
+1. Pull the new version's image: `docker pull ghcr.io/rulebeat/rulebeat:0.2.0`
+2. Remove the old container: `docker stop rulebeat && docker rm rulebeat` (the data volume is
+   untouched by this).
+3. Start the new one with the same command as the install.
 
-(`docker compose pull && docker compose up -d` instead, if you used Compose; update the `image:`
-tag in your `docker-compose.yml` first.)
+   bash or zsh:
+
+   ```bash
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
+     -v rulebeat-data:/app/packages/web/data \
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+   PowerShell:
+
+   ```powershell
+   docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
+     -v rulebeat-data:/app/packages/web/data `
+     ghcr.io/rulebeat/rulebeat:0.2.0
+   ```
+
+With Compose, update the `image:` tag in your `docker-compose.yml` first, then
+`docker compose pull && docker compose up -d`.
 
 Migrations run automatically against the existing data volume on startup. RuleBeat's own test
 suite includes an upgrade path test that synthesizes old database shapes and asserts a user's
@@ -108,7 +153,9 @@ because migrations are the place data loss tends to hide.
 
 To show RuleBeat around before connecting a real tenant, run it in demo mode: `RULEBEAT_DEMO=1`
 against a generated synthetic database. Anonymous, read-only, and structurally unable to reach a
-real Azure tenant. See [`demo-mode.md`](demo-mode.md).
+real Azure tenant. Generating that database needs a source checkout (the published Docker image
+doesn't ship the generator), so demo mode is something you run from the repo, not from this page's
+container install. See [`demo-mode.md`](demo-mode.md).
 
 ## Deployment topology
 
@@ -151,7 +198,7 @@ your own CLI session if nothing else is configured.
 ```bash
 npm test                # everything, both packages
 npm run test:watch      # watch mode while working
-npx tsc --noEmit        # typecheck, from packages/web or packages/core
+npm run typecheck       # typecheck both packages, from the repo root
 ```
 
 `packages/web` imports `@rulebeat/core` from its compiled output, not its source, so

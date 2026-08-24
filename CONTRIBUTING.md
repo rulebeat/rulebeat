@@ -18,7 +18,17 @@ Three documents cover what this project asks of a change. Read them in this orde
 - [`docs/engineering/codebase-map.md`](docs/engineering/codebase-map.md): where things live.
 
 Local setup is in the [README](README.md#local-development); the short version is `npm install`,
-`npm run build:core`, then `npm run dev`. `npm test` from the repo root runs both packages.
+`npm run build:core`, then `npm run dev`. Before opening a pull request, run the same gates CI
+runs, all from the repo root:
+
+```bash
+npm run build:core     # web imports core's compiled output, so build core first
+npm run typecheck      # both packages
+npm test               # vitest, both packages (npm run test:core / test:web to narrow)
+```
+
+`npm run lint` and the Playwright suite (`npm run test:e2e`) live in `packages/web`; run those
+from that directory when your change touches the UI.
 
 ## Bug reports
 
