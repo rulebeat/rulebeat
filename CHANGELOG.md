@@ -6,6 +6,22 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Sign-in (and the onboarding Connect Azure step) can reuse the Azure connection's
+  app registration for Microsoft sign-in instead of registering a second one, when the two are
+  meant to share credentials.
+
+### Fixed
+
+- The Microsoft sign-in button now appears on the sign-in page as soon as sign-in is configured,
+  instead of staying hidden until a first sign-in had verified it (previously reachable only
+  through an undiscoverable `/signin?test=1` link).
+- A local (non-Entra) sign-in now updates the account's last-seen time, so a local admin who signs
+  in regularly no longer shows as "Never signed in" in Settings → Users.
+- Two em dashes removed from product-facing copy (the sign-in `AccessDenied` error and the
+  onboarding scope step), per the no-em-dash rule.
+
 ## [0.1.0] - 2026-08-22
 
 First public release.

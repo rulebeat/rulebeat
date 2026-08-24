@@ -37,6 +37,9 @@
 | `packages/web/lib/db/users.ts` | Users repository + `getDefaultRole`/`setDefaultRole` (meta-backed); last-admin protection lives in `updateUserRole`/`deleteUser` |
 | `packages/web/lib/db/audit.ts` | `writeAudit` (synchronous, never throws, because a failed audit must not fail the operation), `listAuditEntries`, `changedFields()` |
 | `packages/web/lib/provision-user.ts` | `provisionUser()`: JIT user creation, invite-by-email oid linking, first-sign-in-wins admin bootstrap |
+| `packages/web/lib/sign-in-config.ts` | `getSignInStatus`/`resolveSignInConfig`/`buildProviders`/`authorizeLocalAccount`: the sign-in equivalent of `azure-credential.ts`, one resolution order (env → Settings → Sign-in row). The Entra app registration used for sign-in is independent of the Azure connection's; either can optionally reuse the other's stored credential |
+| `packages/web/app/(app)/settings/sign-in-section.tsx` | Settings → Sign-in card: tenant/client id/secret fields, the reuse-Azure-connection checkbox, local sign-in policy (`always`/`break-glass`/`disabled`) |
+| `packages/web/app/signin/` | `page.tsx` (server, reads `getSignInStatus()`) + `signin-client.tsx`: the Microsoft button shows as soon as sign-in is configured, not gated on `isActive`/verified — a bad config surfaces as `?error=` here instead |
 | `packages/web/lib/fetch-json.ts` | `fetchJson<T>()` returns a `FetchResult<T>` (`{ok:true,data}` \| `{ok:false}`) instead of storing an error body as data or collapsing failure to null; every self-fetching widget goes through it |
 | `packages/web/types/next-auth.d.ts` | Session augmentation carrying `user.oid` (the JWT needs none, since Auth.js types it as `Record<string, unknown>`) |
 | `packages/web/app/(app)/settings/users-section.tsx` | Admin-only Users card: roles, invite-by-email, default role for new sign-ins |

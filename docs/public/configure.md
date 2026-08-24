@@ -45,13 +45,18 @@ Host header can't redirect a real sign-in anywhere Entra wasn't told to allow.
 
 Setting `AUTH_MICROSOFT_ENTRA_ID_ID`, `AUTH_MICROSOFT_ENTRA_ID_SECRET`, and
 `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID` together makes Microsoft sign-in work from first boot. Leave
-them unset and configure the same thing from Settings → Sign-in after your first local sign-in
+them unset and configure Microsoft sign-in from Settings → Sign-in after your first local sign-in
 instead; that path also verifies the redirect URI actually works, which setting these variables
 does not.
 
-Register an app in Entra ID → App registrations, and add the redirect URI
-`<your AUTH_URL>/api/auth/callback/microsoft-entra-id`. No Azure API permissions are needed on this
-app registration; scanning uses its own separate credential (see below).
+This can be the same app registration used to connect Azure, or a separate one; either way it needs
+the redirect URI `<your AUTH_URL>/api/auth/callback/microsoft-entra-id` added in Entra ID → App
+registrations → Authentication, and no Azure API permissions. From the onboarding Connect Azure
+step or Settings → Sign-in you can check "reuse this app registration for Microsoft sign-in" to
+point sign-in at the same credential already used to connect Azure, without re-entering it; that
+app registration then both signs users in and holds Azure Reader access. To keep the two
+separate instead, register a new app and enter its tenant, client ID, and secret manually in either
+of those two places.
 
 `AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE` mounts the client secret as a file instead and wins over
 `AUTH_MICROSOFT_ENTRA_ID_SECRET` when both are set. Unlike `AUTH_SECRET_FILE` above, this one is

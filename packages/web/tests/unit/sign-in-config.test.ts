@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resetDb } from '../helpers/db';
 import { resetSecretBoxForTests } from '@/lib/secret-box';
-import { createUser } from '@/lib/db/users';
+import { createUser, getUser } from '@/lib/db/users';
 import { setPassword, recordFailedAttempt } from '@/lib/db/local-accounts';
 import { saveSsoProvider } from '@/lib/db/sso-providers';
 import {
@@ -246,6 +246,22 @@ describe('local sign-in policy enforcement inside authorizeLocalAccount', () => 
       const result = await authorizeLocalAccount({ email: 'normal@example.com', password: 'CorrectPassword1!' });
       expect(result).not.toBeNull();
     }
+  });
+
+  // Settings → Users reads lastSeenAt to decide between "Never signed in" and a real timestamp.
+  // The Entra path updates it via provisionUser()'s touchLastSeen() call; a successful local
+  // sign-in must do the same, or a local admin who signs in every day still shows as never
+  // having signed in.
+  it('a successful local sign-in sets lastSeenAt, same as the Entra path', async () => {
+    const created = createUser({ email: 'lastseen@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    expect(created.user.lastSeenAt).toBeNull();
+    setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+
+    const result = await authorizeLocalAccount({ email: 'lastseen@example.com', password: 'CorrectPassword1!' });
+    expect(result).not.toBeNull();
+
+    expect(getUser(created.user.id)?.lastSeenAt).not.toBeNull();
   });
 });
 

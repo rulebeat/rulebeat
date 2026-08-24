@@ -7,6 +7,7 @@ import {
   getStoredSsoProviderSummary,
   type SsoProviderSummary,
 } from '@/lib/db/sso-providers';
+import { getActiveAzureCredentialSummary, type AzureCredentialSummary } from '@/lib/db/azure-credentials';
 import { readSecretFileTrimmed } from '@/lib/secret-file';
 
 /**
@@ -153,6 +154,8 @@ export interface SignInStatus {
   message: string;
   localSignInPolicy: LocalSignInPolicy;
   publicUrl: string | null;
+  /** The Azure connection's app registration, if one is configured and reusable for sign-in too. */
+  azureConnection: AzureCredentialSummary | null;
 }
 
 /** Read-only description of sign-in configuration, for the settings screen and /signin. */
@@ -161,6 +164,7 @@ export function getSignInStatus(): SignInStatus {
   const fromEnv = envSignInConfig();
   const localSignInPolicy = getLocalSignInPolicy();
   const publicUrl = getPublicUrl();
+  const azureConnection = getActiveAzureCredentialSummary();
 
   if (fromEnv) {
     return {
@@ -173,6 +177,7 @@ export function getSignInStatus(): SignInStatus {
       message: 'Microsoft sign-in is configured by this deployment’s environment variables.',
       localSignInPolicy,
       publicUrl,
+      azureConnection,
     };
   }
 
@@ -186,9 +191,11 @@ export function getSignInStatus(): SignInStatus {
       isActive: stored.isActive,
       message: stored.isActive
         ? 'Microsoft sign-in is configured and verified.'
-        : 'Saved, but not verified yet — sign in with Microsoft once to confirm it actually works.',
+        : 'Microsoft sign-in is configured and already appears on the sign-in page. Nobody has '
+          + 'used it yet, so it is not confirmed working end to end.',
       localSignInPolicy,
       publicUrl,
+      azureConnection,
     };
   }
 
@@ -204,6 +211,7 @@ export function getSignInStatus(): SignInStatus {
         + 'data volume was replaced. Enter the secret again to restore Microsoft sign-in.',
       localSignInPolicy,
       publicUrl,
+      azureConnection,
     };
   }
 
@@ -218,6 +226,7 @@ export function getSignInStatus(): SignInStatus {
       + 'Entra ID below.',
     localSignInPolicy,
     publicUrl,
+    azureConnection,
   };
 }
 
@@ -259,7 +268,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
   const password = typeof credentials.password === 'string' ? credentials.password : '';
   if (!email || !password) return null;
 
-  const [{ getUserByEmail }, localAccounts, { verifyPassword, verifyDummyPassword }, { writeAudit, logAuthEvent }] =
+  const [{ getUserByEmail, touchLastSeen }, localAccounts, { verifyPassword, verifyDummyPassword }, { writeAudit, logAuthEvent }] =
     await Promise.all([
       import('@/lib/db/users'),
       import('@/lib/db/local-accounts'),
@@ -302,6 +311,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
   }
 
   localAccounts.clearFailedAttempts(user.id);
+  touchLastSeen(user.id);
   const { writeSignInAudit } = await import('@/lib/provision-user');
   writeSignInAudit(user);
 

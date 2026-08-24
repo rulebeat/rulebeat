@@ -11,26 +11,24 @@ import { Loader2 } from 'lucide-react';
 /** `?error=` values Auth.js redirects with — read from source, not observed, since there is no
  * live tenant here to trigger them against. Anything else falls back to a generic message. */
 const ERROR_MESSAGES: Record<string, string> = {
-  AccessDenied: 'That Microsoft account can\'t sign in here — it may not be in the right tenant, or an admin hasn\'t added it yet. Ask an admin to add you.',
+  AccessDenied: 'That Microsoft account can\'t sign in here. It may not be in the right tenant, or an admin hasn\'t added it yet. Ask an admin to add you.',
   Configuration: 'Sign-in is not configured correctly. Contact your RuleBeat admin.',
   CredentialsSignin: 'Incorrect email or password.',
 };
 
 export function SignInClient({
-  ssoConfigured, ssoVerified, showLocalForm,
+  ssoConfigured, showLocalForm,
 }: {
   ssoConfigured: boolean;
-  ssoVerified: boolean;
   showLocalForm: boolean;
 }) {
   const searchParams = useSearchParams();
   const oauthError = searchParams.get('error');
   const passwordChanged = searchParams.get('passwordChanged') === '1';
-  // `?test=1` lets whoever just saved sign-in config in Settings try the button before it's
-  // proven itself — clicking it still runs a full OAuth round trip, so this reveals nothing that
-  // wasn't already true; it only changes whether the button is drawn.
-  const testMode = searchParams.get('test') === '1';
-  const showMicrosoft = ssoConfigured && (ssoVerified || testMode);
+  // The button appears as soon as something is configured, whether or not it has been proven by a
+  // real sign-in yet. A misconfigured tenant, client id or secret surfaces as `?error=` on this
+  // same page once someone tries it, so there is nothing extra a "verified" gate would catch.
+  const showMicrosoft = ssoConfigured;
   const [formError, formAction, pending] = useActionState(signInWithPassword, null);
 
   return (

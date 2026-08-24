@@ -162,7 +162,7 @@ export function ScopeStep({
               <KeyRound className="size-4 shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-ink">{identityCategory.label}</p>
-                <p className="text-xs">Runs when Microsoft Graph access is available — see step 2.</p>
+                <p className="text-xs">Runs when Microsoft Graph access is available. See step 2.</p>
               </div>
             </li>
           )}
