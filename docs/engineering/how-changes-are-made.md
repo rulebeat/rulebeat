@@ -109,9 +109,25 @@ is how this project actually uses the three levels in practice, and that's worth
 before `1.0.0`.
 
 The `[Unreleased]` section in `CHANGELOG.md` is the running record: every PR that changes app
-behaviour adds a line there (Added / Changed / Fixed) as part of the same commit, whether or not
-a release follows right away. When someone decides to cut a release, the bump level is read
+behaviour adds a line there (Added / Changed / Fixed / Security) as part of the same commit, whether
+or not a release follows right away. When someone decides to cut a release, the bump level is read
 straight off what's accumulated there.
+
+**The changelog gate.** That rule is now enforced: `pr-checks.yml` fails a PR that changes files
+reaching the shipped image without adding an entry. It exists because the rule was silently ignored
+seven times in one batch, and because the decision only makes sense at PR time, while the author
+still knows what the change means. At release time the context is gone.
+
+- Docs, tests, workflow and top-level `brand/` changes are exempt automatically. No label needed.
+  Anything not explicitly exempt counts as shipping, so an unfamiliar file type fails closed.
+- A maintainer can apply the `no-changelog` label for a shipping change that genuinely alters
+  nothing a user would notice. It is a judgement, not a bypass.
+- A release PR is exempt, because a release empties `[Unreleased]` rather than adding to it.
+
+It catches an accidental omission, which is what actually happened. It is not an adversarial
+control: a fork can edit the checker and report green, which is visible in the diff and is what
+review is for. Running it under `pull_request_target` to close that would be worse, since the job
+would then run fork-authored code with a writable token.
 
 **What a merge to `main` actually publishes, docs-only included:** `ci.yml` builds and pushes a
 Docker image on every push to `main`, tagged only by commit (`ghcr.io/.../rulebeat:sha-<commit>`).
@@ -177,8 +193,11 @@ involved.
 - **No parallel work on one feature.** Review is the bottleneck, not typing. Producing diffs faster
   than anyone can read them makes the bottleneck worse, not better.
 - **No new tooling without a reason traceable to a real delay.** The harness is not the product.
-- **No enforcement hooks yet.** They are for things people keep forgetting. Nothing has slipped
-  repeatedly enough to justify one.
+- **One enforcement hook, added after seven merges slipped past the rule.** Enforcement is for
+  things people keep forgetting, and until August 2026 nothing qualified. Then seven dependency PRs
+  merged in a single batch with no `CHANGELOG.md` entry between them, so `pr-checks.yml` now fails a
+  PR that changes shipped files without adding one. That remains the bar for a second: a rule that
+  has actually been forgotten repeatedly, not one that might be.
 
 ---
 

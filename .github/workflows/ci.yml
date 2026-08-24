@@ -98,6 +98,9 @@ jobs:
       - name: Test release-candidate checker
         run: npm run test:release-candidate
 
+      - name: Test changelog gate
+        run: npm run test:changelog-gate
+
       # Early feedback on a release branch, before its PR changes main. `github.head_ref` is set on
       # pull_request runs (where `github.ref_name` is the PR merge ref, e.g. "31/merge", and would
       # never match); `github.ref_name` covers the workflow_dispatch run prepare-release.yml fires

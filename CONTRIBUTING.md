@@ -20,6 +20,28 @@ Three documents cover what this project asks of a change. Read them in this orde
 Local setup is in the [README](README.md#local-development); the short version is `npm install`,
 `npm run build:core`, then `npm run dev`. `npm test` from the repo root runs both packages.
 
+## Changelog
+
+If your change affects what the running app does, add one bullet under `## [Unreleased]` in
+[`CHANGELOG.md`](CHANGELOG.md), in the same commit. CI checks for this and will fail the pull
+request otherwise, with a message explaining what to add.
+
+```markdown
+## [Unreleased]
+
+### Fixed
+
+- What changed for someone running RuleBeat, and briefly why it happened.
+```
+
+Use `Added` for a new capability, `Changed` for different behaviour, `Fixed` for a bug, `Security`
+for a vulnerability fix. Describe what a user would notice rather than what the diff does; the
+existing entries are the model.
+
+Changes to docs, tests, workflows and the top-level `brand/` kit are exempt automatically, so most
+first contributions need nothing here. The reason the check exists at all: only a pushed `vX.Y.Z`
+tag moves the `:latest` image, so a change with no entry has nothing to carry it into a release.
+
 ## Bug reports
 
 Also via [GitHub issues](https://github.com/rulebeat/rulebeat/issues). Useful things to include:

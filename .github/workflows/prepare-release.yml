@@ -93,3 +93,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run "CI" --ref "release/v${{ steps.release.outputs.version }}"
+
+      # Not optional once "Changelog entry" is a required check: a GITHUB_TOKEN-created PR may get
+      # no automatic run, which would leave that check permanently "Expected" and make the release
+      # PR unmergeable. The gate exempts a valid release PR, but it has to actually run to say so.
+      - name: Dispatch PR checks against the release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=$(gh pr view "release/v${{ steps.release.outputs.version }}" --json number --jq '.number')
+          gh workflow run "PR checks" --ref main -f pr="$PR"

@@ -13,6 +13,14 @@ All notable changes to RuleBeat are documented here. Format follows
   empty `[Unreleased]` section aborted the release with a half-bumped tree, despite the documentation
   promising a refusal changes nothing.
 
+### Added
+
+- CI now fails a pull request that changes files reaching the shipped image without adding an entry
+  under `## [Unreleased]` in `CHANGELOG.md`. Documentation, tests, workflow and brand-kit changes are
+  exempt automatically, and a maintainer can apply a `no-changelog` label to a shipping change that
+  genuinely alters nothing a user would notice. Seven dependency updates merged in one batch with no
+  entry between them, which is what prompted this.
+
 ### Changed
 
 - Releases are now tagged only after the exact merged commit has passed CI, and the tag points at

@@ -1,0 +1,92 @@
+name: PR checks
+
+# Fast, fork-safe checks on the pull request itself, deliberately separate from ci.yml.
+#
+# The `labeled`/`unlabeled` triggers are the reason this cannot just be another job in ci.yml:
+# applying the `no-changelog` label has to re-run the check, and trigger types are per-workflow, so
+# putting them on ci.yml would re-run its ~10-minute build-and-test on every label change anywhere.
+#
+# There is deliberately NO `paths:` filter. A required status check whose workflow never runs leaves
+# every PR stuck on "Expected -- waiting for status" forever. The exemption for docs/tests/workflow
+# changes is computed inside the job instead.
+#
+# `pull_request`, never `pull_request_target`: this runs a script from the PR's own checkout, and
+# pull_request_target would hand fork-authored code a writable base-repo token. A fork gets a
+# read-only token here, which is all this needs -- it makes no API writes at all.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  # prepare-release.yml dispatches this against its own release PR. A GITHUB_TOKEN-created PR does
+  # not reliably get automatic workflow runs, and once "Changelog entry" is a required check, a
+  # release PR with no run at all can never merge.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to check
+        required: true
+        type: string
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  changelog-entry:
+    # This exact string is the check context to select in branch protection. Keep it unique across
+    # workflows: duplicate job names make a required check ambiguous.
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Resolves both trigger shapes into one set of env vars, so the checker itself never has to
+      # know which one fired.
+      - name: Resolve pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            JSON=$(gh api "repos/${{ github.repository }}/pulls/${{ inputs.pr }}")
+            {
+              echo "base_sha=$(echo "$JSON" | jq -r '.base.sha')"
+              echo "head_sha=$(echo "$JSON" | jq -r '.head.sha')"
+              echo "head_ref=$(echo "$JSON" | jq -r '.head.ref')"
+              echo "head_repo=$(echo "$JSON" | jq -r '.head.repo.full_name')"
+              echo "author=$(echo "$JSON" | jq -r '.user.login')"
+              echo "labels=$(echo "$JSON" | jq -c '[.labels[].name]')"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "base_sha=${{ github.event.pull_request.base.sha }}"
+              echo "head_sha=${{ github.event.pull_request.head.sha }}"
+              echo "head_ref=${{ github.event.pull_request.head.ref }}"
+              echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+              echo "author=${{ github.event.pull_request.user.login }}"
+              echo 'labels=${{ toJSON(github.event.pull_request.labels.*.name) }}'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # fetch-depth: 0 because the checker needs merge-base(base, head) and both versions of
+      # CHANGELOG.md. GitHub materializes fork commits under refs/pull/N/* in this repo, so this
+      # works identically for outside contributors.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # No `npm ci` on purpose: the checker imports only node: builtins, so this job stays ~20s.
+      - name: Changelog entry
+        env:
+          PR_AUTHOR: ${{ steps.pr.outputs.author }}
+          PR_HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          PR_HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
+          PR_LABELS: ${{ steps.pr.outputs.labels }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-changelog-entry.mjs
