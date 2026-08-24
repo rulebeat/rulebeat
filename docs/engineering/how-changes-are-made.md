@@ -82,18 +82,77 @@ These are not negotiable, and they are the rules the whole suite's value rests o
 - Adding an API route? A structural test fails until that route calls `requireRole`. That is
   intentional. Add the guard rather than an exception.
 
+## Deciding whether a merge needs a release
+
+A release is not tied to a merge or a PR. Several merges can sit unreleased in
+`CHANGELOG.md`'s `[Unreleased]` section until it's worth publishing a new version; a release
+happens when someone decides it's time to publish a new Docker image, not automatically.
+
+**Does the version number move at all?**
+
+- **Docs-only change** (a page under `docs/public/`, the `README`, code comments): no version
+  bump. Nothing the running app does changed, so there's nothing to redeploy or for
+  `getAppVersion()` to report differently.
+- **Anything that changes what the running app does** (a fix, a new setting, a new page, a
+  schema change): gets a version bump when it's next released, at whatever level below applies.
+
+**If it does move, which level:**
+
+| Bump | When | Example from this repo |
+|---|---|---|
+| **patch** (`0.1.0` → `0.1.1`) | A fix, with no new capability | The `?signin=test1` gate removal, a copy fix |
+| **minor** (`0.1.0` → `0.2.0`) | A new capability, nothing existing breaks | The reuse-Azure-connection checkbox |
+| **major** (`1.x.0` → `2.0.0`) | Something requires the user to act (a migration, a removed setting) | Not applicable yet, pre-1.0 |
+
+Pre-1.0 (`0.x.y`), semver technically allows anything to break at any bump, but the table above
+is how this project actually uses the three levels in practice, and that's worth keeping even
+before `1.0.0`.
+
+The `[Unreleased]` section in `CHANGELOG.md` is the running record: every PR that changes app
+behaviour adds a line there (Added / Changed / Fixed) as part of the same commit, whether or not
+a release follows right away. When someone decides to cut a release, the bump level is read
+straight off what's accumulated there.
+
+**What a merge to `main` actually publishes, docs-only included:** `ci.yml` builds and pushes a
+Docker image on every push to `main`, tagged only by commit (`ghcr.io/.../rulebeat:sha-<commit>`).
+That happens unconditionally, docs-only changes included, because CI needs a real image to run
+the Docker smoke test against either way. But nobody pulls an image by commit SHA. `:latest` and
+any version tag (`:0.1.1`) only move when `publish-image.yml` runs, and that workflow only fires
+on a pushed `vX.Y.Z` tag, i.e. only after `npm run release` and a deliberate `git push origin
+vX.Y.Z`. So a docs-only merge leaves an unreferenced `sha-<commit>` image sitting in the registry,
+doesn't move `:latest`, and doesn't change what `getAppVersion()` reports — it just waits in
+`[Unreleased]` until the next real release bundles it in.
+
 ## Cutting a release
 
-`npm run release -- <patch|minor|major>` is the whole process. It bumps `package.json` in the
-root and both packages to the same new version, resyncs `package-lock.json` against them, moves
-`CHANGELOG.md`'s `[Unreleased]` section under a new dated header, commits all five files together,
-and creates an annotated `vX.Y.Z` tag. It refuses outright on a dirty working tree or an empty
-`[Unreleased]` section, and changes nothing when it refuses.
+Two GitHub Actions stages, run from the Actions tab, so tagging a release is never a step someone
+has to remember to do correctly from a local checkout — and so the actual diff gets reviewed
+before anything is published, not just the decision to release.
 
-It does not push. Review the commit (`git show HEAD`), then `git push && git push origin vX.Y.Z`
-yourself. Pushing the tag is what starts `publish-image.yml`, which itself refuses to promote a
+1. **Prepare release** (`workflow_dispatch`, pick `patch`/`minor`/`major`). Runs
+   `scripts/release.mjs` on a throwaway branch — the same script described below — then drops the
+   local tag it creates and opens a PR titled `release: vX.Y.Z` instead of pushing anything
+   further. Nothing is tagged or published at this point.
+2. Review that PR like any other: the whole diff is the version bump plus the `CHANGELOG.md`
+   reshuffle, nothing else. **Merging it is the approval** — ordinary PR review, gated by whatever
+   branch protection `main` already has.
+3. **Tag release** picks up the merge automatically, re-verifies `package.json`/`CHANGELOG.md`
+   agree with each other, then creates and pushes the `vX.Y.Z` tag. Pushing that tag is what
+   starts `publish-image.yml` (see below) — this workflow never builds or publishes an image
+   itself, only tags.
+
+Under the hood, `npm run release -- <patch|minor|major>` (`scripts/release.mjs`) is what stage 1
+actually runs: it bumps `package.json` in the root and both packages to the same new version,
+resyncs `package-lock.json` against them, moves `CHANGELOG.md`'s `[Unreleased]` section under a
+new dated header, and commits all five files together. It refuses outright on a dirty working tree
+or an empty `[Unreleased]` section, and changes nothing when it refuses. It can still be run
+locally the same way if the two-stage workflow is ever unavailable — review the commit
+(`git show HEAD`), then `git push && git push origin vX.Y.Z` yourself, same as stage 3 above does.
+
+Either way, pushing the tag is what starts `publish-image.yml`, which itself refuses to promote a
 release whose tag disagrees with what `package.json`/`CHANGELOG.md` say — a check that runs
-independently of this script, so it still catches a tag pushed by hand with no script involved.
+independently of both paths, so it still catches a tag pushed by hand with no script or workflow
+involved.
 
 ## What this project deliberately does not do
 
