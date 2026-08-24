@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { CodeBlock } from '@/components/ui/code-block';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import type { AzureConnectionStatus, AzureCredentialSource } from '@/lib/azure-credential';
+import { redirectUriFor } from '@/lib/redirect-uri';
 import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
 
 /**
@@ -48,10 +49,37 @@ export function ConnectStep({
   const [clientId, setClientId] = useState(status.stored?.clientId ?? '');
   const [clientSecret, setClientSecret] = useState('');
   const [showHelp, setShowHelp] = useState(false);
-  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'test' | 'continue' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [verifiedSubs, setVerifiedSubs] = useState<number | null>(null);
+  const [enableSignIn, setEnableSignIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  // Deferred to an effect rather than read directly in render: a `typeof window` branch in render
+  // renders '' on the server and the real origin on the client's very first (pre-hydration) pass,
+  // a guaranteed hydration mismatch. Starting at '' and filling it in after mount keeps the first
+  // client render identical to the server's.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const redirectUri = origin ? redirectUriFor(origin) : '';
+
+  async function handleContinue() {
+    if (!enableSignIn) { onNext(); return; }
+    setBusy('continue'); setSignInError(null);
+    try {
+      const res = await fetch('/api/settings/sign-in', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reuseAzureConnection: true }),
+      });
+      const body = await res.json() as { error?: string };
+      if (!res.ok) { setSignInError(body.error ?? 'Could not enable Microsoft sign-in.'); return; }
+      onNext();
+    } catch {
+      setSignInError('Could not reach the RuleBeat server.');
+    } finally { setBusy(null); }
+  }
 
   async function handleTestLive() {
     setBusy('test'); setError(null);
@@ -192,8 +220,42 @@ export function ConnectStep({
           </>
         )}
 
+        {verified && (
+          <div className="flex items-start gap-2.5 border border-border bg-surface-sunken px-3.5 py-2.5">
+            <input
+              type="checkbox"
+              id="onboarding-enable-signin"
+              checked={enableSignIn}
+              onChange={e => setEnableSignIn(e.target.checked)}
+              className="mt-0.5 size-3.5 shrink-0 accent-ink"
+            />
+            <label htmlFor="onboarding-enable-signin" className="min-w-0 flex-1 space-y-1 text-xs leading-relaxed text-ink-2">
+              <span className="block text-[13px] font-medium text-ink">
+                Also use this app registration for Microsoft sign-in
+              </span>
+              <span className="block">
+                Lets people sign in with Microsoft instead of a local password, using this same
+                credential. That app registration then both signs users in and holds Azure Reader
+                access, rather than keeping the two separate. You can undo this anytime from
+                Settings → Sign-in, or set it up there later with a different app registration
+                instead.
+              </span>
+              {enableSignIn && (
+                <span className="block">
+                  Add this redirect URI to the app registration’s Authentication settings in Entra
+                  ID:{' '}
+                  <code className="break-all font-mono text-ink">{redirectUri || '…'}</code>
+                </span>
+              )}
+            </label>
+          </div>
+        )}
+
+        {signInError && <Callout tone="error">{signInError}</Callout>}
+
         <div className="flex justify-end border-t border-border pt-2">
-          <Button onClick={onNext} disabled={!verified}>
+          <Button onClick={handleContinue} disabled={!verified || busy !== null}>
+            {busy === 'continue' ? <Loader2 className="size-3.5 animate-spin" /> : null}
             Continue
           </Button>
         </div>

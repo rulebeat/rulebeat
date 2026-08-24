@@ -4,6 +4,7 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { countAdminsWithPassword } from '@/lib/db/local-accounts';
 import { deleteSsoProvider, saveSsoProvider } from '@/lib/db/sso-providers';
+import { getActiveAzureCredential } from '@/lib/db/azure-credentials';
 import {
   getSignInStatus, probeTenant, setLocalSignInPolicy, setPublicUrl, syncAuthUrlMirror,
   type LocalSignInPolicy,
@@ -37,7 +38,7 @@ export async function PUT(req: Request) {
 
   let body: {
     tenantId?: string; clientId?: string; clientSecret?: string; localSignInPolicy?: string;
-    publicUrl?: string;
+    publicUrl?: string; reuseAzureConnection?: boolean;
   };
   try {
     body = await req.json() as typeof body;
@@ -106,7 +107,9 @@ export async function PUT(req: Request) {
     });
   }
 
-  const changingProvider = body.tenantId !== undefined || body.clientId !== undefined || body.clientSecret !== undefined;
+  const reuseAzureConnection = body.reuseAzureConnection === true;
+  const changingProvider = reuseAzureConnection
+    || body.tenantId !== undefined || body.clientId !== undefined || body.clientSecret !== undefined;
   if (changingProvider) {
     const status = getSignInStatus();
     if (status.managedByEnv) {
@@ -117,18 +120,37 @@ export async function PUT(req: Request) {
       }, { status: 409 });
     }
 
-    const tenantId = body.tenantId?.trim() ?? '';
-    const clientId = body.clientId?.trim() ?? '';
-    const clientSecret = body.clientSecret ?? '';
+    let tenantId: string;
+    let clientId: string;
+    let clientSecret: string;
 
-    if (!GUID.test(tenantId)) {
-      return NextResponse.json({ error: 'Tenant ID must be a GUID.' }, { status: 400 });
-    }
-    if (!GUID.test(clientId)) {
-      return NextResponse.json({ error: 'Client ID (application ID) must be a GUID.' }, { status: 400 });
-    }
-    if (!clientSecret.trim()) {
-      return NextResponse.json({ error: 'Client secret is required.' }, { status: 400 });
+    if (reuseAzureConnection) {
+      // Copies the already-encrypted Azure connection credential straight through, server-side —
+      // the secret never travels to the browser for this path, unlike the manual-entry one below.
+      const azureCred = getActiveAzureCredential();
+      if (!azureCred) {
+        return NextResponse.json({
+          error: 'No Azure connection is configured to reuse. Connect Azure first, or enter '
+            + 'Microsoft sign-in details manually below.',
+        }, { status: 409 });
+      }
+      tenantId = azureCred.tenantId;
+      clientId = azureCred.clientId;
+      clientSecret = azureCred.clientSecret;
+    } else {
+      tenantId = body.tenantId?.trim() ?? '';
+      clientId = body.clientId?.trim() ?? '';
+      clientSecret = body.clientSecret ?? '';
+
+      if (!GUID.test(tenantId)) {
+        return NextResponse.json({ error: 'Tenant ID must be a GUID.' }, { status: 400 });
+      }
+      if (!GUID.test(clientId)) {
+        return NextResponse.json({ error: 'Client ID (application ID) must be a GUID.' }, { status: 400 });
+      }
+      if (!clientSecret.trim()) {
+        return NextResponse.json({ error: 'Client secret is required.' }, { status: 400 });
+      }
     }
 
     // A cheap, honest check — catches a typo'd tenant instantly, but doesn't prove the client id,
@@ -151,9 +173,11 @@ export async function PUT(req: Request) {
         actor,
         action: 'sign_in_config.save',
         entityType: 'sign_in_config',
-        summary: `Configured Microsoft sign-in for tenant ${tenantId} (not yet verified)`,
+        summary: reuseAzureConnection
+          ? `Configured Microsoft sign-in for tenant ${tenantId}, reusing the Azure connection app registration (not yet verified)`
+          : `Configured Microsoft sign-in for tenant ${tenantId} (not yet verified)`,
         // Field names only — the secret and its length are both absent by design.
-        details: { fields: ['tenantId', 'clientId', 'clientSecret'] },
+        details: { fields: ['tenantId', 'clientId', 'clientSecret'], reusedAzureConnection: reuseAzureConnection },
       });
     } catch (err) {
       return serverError('Failed to save sign-in configuration', err);

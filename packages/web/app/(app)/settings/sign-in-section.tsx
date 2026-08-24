@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { SignInStatus, LocalSignInPolicy } from '@/lib/sign-in-config';
+import { redirectUriFor } from '@/lib/redirect-uri';
 import {
   Check, Copy, KeyRound, Loader2, Lock, RefreshCw, ShieldAlert, Trash2,
 } from 'lucide-react';
@@ -71,7 +72,16 @@ function StatusLine({ status }: { status: SignInStatus }) {
   );
 
   if (status.configured) {
-    return <Callout tone="warn" title="Not yet verified">{body}</Callout>;
+    return (
+      <Callout tone="warn" title="Not yet verified">
+        {body}
+        <p>
+          The Microsoft sign-in button already appears on the sign-in page. Nobody has used it
+          yet, so it is not confirmed working end to end; if something is misconfigured, the
+          sign-in page will show the error the first time someone tries.
+        </p>
+      </Callout>
+    );
   }
 
   return (
@@ -85,6 +95,15 @@ function StatusLine({ status }: { status: SignInStatus }) {
   );
 }
 
+// True once the stored sign-in provider's tenant and client id are literally the ones
+// `reuseAzureConnection: true` copied over (see api/settings/sign-in/route.ts) -- there's no
+// separate "was this a reuse" flag persisted, so a match on both ids is what reuse looks like.
+function reusesAzureConnection(status: SignInStatus): boolean {
+  return status.azureConnection !== null
+    && status.tenantId === status.azureConnection.tenantId
+    && status.clientId === status.azureConnection.clientId;
+}
+
 export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }) {
   const [status, setStatus] = useState(initialStatus);
   const [tenantId, setTenantId] = useState(initialStatus.stored?.tenantId ?? '');
@@ -95,11 +114,22 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [reuseAzure, setReuseAzure] = useState(() => reusesAzureConnection(initialStatus));
 
   const locked = status.managedByEnv;
-  const redirectUri = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/auth/callback/microsoft-entra-id`
-    : '';
+  // Deferred to an effect rather than read directly in render: the server has no `window`, so a
+  // `typeof window` branch in render renders '' on the server and the real origin on the client's
+  // very first (pre-hydration) pass -- a guaranteed hydration mismatch. Starting both at '' and
+  // filling it in after mount keeps the first client render identical to the server's.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  // The saved Public URL wins when set, same resolution order `resolveMetadataBase()` uses
+  // server-side -- otherwise this fell back to whatever address the browser happens to be on,
+  // which is wrong the moment Settings is reached through anything other than the public URL
+  // (an internal port-forward, a VPN address, localhost while testing).
+  const redirectUri = status.publicUrl
+    ? redirectUriFor(status.publicUrl)
+    : origin ? redirectUriFor(origin) : '';
 
   function reset(next: SignInStatus) {
     setStatus(next);
@@ -107,6 +137,7 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
     setClientId(next.stored?.clientId ?? '');
     setClientSecret('');
     setPublicUrlInput(next.publicUrl ?? '');
+    setReuseAzure(reusesAzureConnection(next));
   }
 
   async function handlePublicUrlSave() {
@@ -132,12 +163,16 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
       const res = await fetch('/api/settings/sign-in', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: tenantId.trim(), clientId: clientId.trim(), clientSecret }),
+        body: JSON.stringify(
+          reuseAzure
+            ? { reuseAzureConnection: true }
+            : { tenantId: tenantId.trim(), clientId: clientId.trim(), clientSecret },
+        ),
       });
       const body = await res.json() as SignInStatus & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Could not save sign-in configuration.'); return; }
       reset(body);
-      setSuccess('Saved. Sign in with Microsoft once from the sign-in page to verify it end to end.');
+      setSuccess('Saved.');
     } catch {
       setError('Could not reach the RuleBeat server.');
     } finally { setBusy(null); }
@@ -230,42 +265,76 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
           </div>
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="signin-tenant-id">Tenant ID</Label>
-                <Input
-                  id="signin-tenant-id"
-                  value={tenantId}
-                  onChange={e => setTenantId(e.target.value)}
-                  placeholder="00000000-0000-0000-0000-000000000000"
-                  className="font-mono"
+            <p className="text-xs leading-relaxed text-ink-2">
+              Microsoft sign-in uses its own app registration, separate from the one used to connect
+              Azure. Either reuse that app registration here, or register a new one. Neither choice
+              needs Azure API permissions, only the redirect URI below.
+            </p>
+
+            {status.azureConnection && !status.azureConnection.secretUnreadable && (
+              <div className="flex items-start gap-2.5 border border-border bg-surface-sunken px-3.5 py-2.5">
+                <input
+                  type="checkbox"
+                  id="signin-reuse-azure"
+                  checked={reuseAzure}
+                  onChange={e => setReuseAzure(e.target.checked)}
+                  className="mt-0.5 size-3.5 shrink-0 accent-ink"
                 />
+                <label htmlFor="signin-reuse-azure" className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed text-ink-2">
+                  <span className="block text-[13px] font-medium text-ink">
+                    Reuse the Azure connection’s app registration
+                  </span>
+                  <span className="block break-all font-mono">
+                    Tenant {status.azureConnection.tenantId} · App {status.azureConnection.clientId}
+                  </span>
+                  <span className="block">
+                    Its stored secret is reused too, nothing to type here. You still need to add the
+                    redirect URI below to that same app registration in Entra ID. Doing this means
+                    that app registration both signs users in and holds Azure Reader access, rather
+                    than keeping the two credentials separate.
+                  </span>
+                </label>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="signin-client-id">Client ID (application ID)</Label>
-                <Input
-                  id="signin-client-id"
-                  value={clientId}
-                  onChange={e => setClientId(e.target.value)}
-                  placeholder="00000000-0000-0000-0000-000000000000"
-                  className="font-mono"
-                />
+            )}
+
+            {!reuseAzure && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="signin-tenant-id">Tenant ID</Label>
+                  <Input
+                    id="signin-tenant-id"
+                    value={tenantId}
+                    onChange={e => setTenantId(e.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signin-client-id">Client ID (application ID)</Label>
+                  <Input
+                    id="signin-client-id"
+                    value={clientId}
+                    onChange={e => setClientId(e.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="signin-client-secret">Client secret</Label>
+                  <Input
+                    id="signin-client-secret"
+                    type="password"
+                    value={clientSecret}
+                    onChange={e => setClientSecret(e.target.value)}
+                    autoComplete="off"
+                    placeholder={status.stored?.secretSet ? 'Already stored. Enter a new secret to replace it.' : 'Paste the secret Value, not its Secret ID'}
+                  />
+                  <FieldHint className="leading-relaxed">
+                    Encrypted before it is written to disk, and never sent back to the browser.
+                  </FieldHint>
+                </div>
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="signin-client-secret">Client secret</Label>
-                <Input
-                  id="signin-client-secret"
-                  type="password"
-                  value={clientSecret}
-                  onChange={e => setClientSecret(e.target.value)}
-                  autoComplete="off"
-                  placeholder={status.stored?.secretSet ? 'Already stored. Enter a new secret to replace it.' : 'Paste the secret Value, not its Secret ID'}
-                />
-                <FieldHint className="leading-relaxed">
-                  Encrypted before it is written to disk, and never sent back to the browser.
-                </FieldHint>
-              </div>
-            </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Redirect URI (add this to the app registration’s Authentication settings)</Label>
@@ -285,7 +354,7 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
               <Button
                 size="sm"
                 onClick={handleSave}
-                disabled={busy !== null || !tenantId.trim() || !clientId.trim() || !clientSecret}
+                disabled={busy !== null || (reuseAzure ? false : !tenantId.trim() || !clientId.trim() || !clientSecret)}
               >
                 {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
                 {status.stored ? 'Update sign-in' : 'Connect Microsoft'}

@@ -1,0 +1,46 @@
+name: Tag release
+
+# Stage 2 of 2. Fires when a release/v* branch's PR merges into main -- that merge (ordinary PR
+# review, gated by main's own branch protection) is the approval for the release. This workflow's
+# only job is to create and push the vX.Y.Z tag that publish-image.yml already listens for; it
+# never builds or publishes an image itself. See prepare-release.yml for stage 1.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  tag:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Same check publish-image.yml runs before promoting -- catching a mismatch here, before any
+      # tag exists, is cheaper than catching it after one is already pushed.
+      - name: Verify package.json and CHANGELOG agree on this version
+        run: node scripts/verify-release-version.mjs "${{ steps.version.outputs.version }}"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag and push
+        run: |
+          git tag -a "v${{ steps.version.outputs.version }}" -m "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"

@@ -1,0 +1,65 @@
+name: Prepare release
+
+# Stage 1 of 2. Runs scripts/release.mjs on a throwaway branch and opens a PR with the exact
+# version bump and CHANGELOG diff for review -- nothing is tagged or published here. The local tag
+# release.mjs creates is deliberately dropped before anything is pushed, so no image can be
+# promoted from this workflow alone. Merging the PR this opens is what authorizes the release;
+# tag-release.yml (stage 2) picks it up from there and creates the real tag.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run release script
+        id: release
+        run: |
+          npm run release -- ${{ inputs.bump }}
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # release.mjs tags the commit it just made. That tag is dropped here, not pushed -- stage 2
+      # recreates it only after this PR has been reviewed and merged, so nothing publish-image.yml
+      # would act on exists until a human has actually looked at the diff.
+      - name: Drop the local tag
+        run: git tag -d "v${{ steps.release.outputs.version }}"
+
+      - name: Push release branch
+        run: |
+          git checkout -b "release/v${{ steps.release.outputs.version }}"
+          git push origin "release/v${{ steps.release.outputs.version }}"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "release: v${{ steps.release.outputs.version }}" \
+            --body "Opened by **Prepare release** (bump: \`${{ inputs.bump }}\`). Merging this PR into \`main\` is what authorizes **Tag release** to tag and publish v${{ steps.release.outputs.version }} -- review the version bump and CHANGELOG diff before merging." \
+            --base main \
+            --head "release/v${{ steps.release.outputs.version }}"

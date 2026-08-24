@@ -18,7 +18,6 @@ export default function SignInPage() {
     <Suspense>
       <SignInClient
         ssoConfigured={status.configured}
-        ssoVerified={status.isActive}
         showLocalForm={showLocalForm}
       />
     </Suspense>

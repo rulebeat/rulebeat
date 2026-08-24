@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { getLocalAccount } from '@/lib/db/local-accounts';
 import { can } from '@/lib/rbac';
 import { isOnboardingPending } from '@/lib/onboarding';
+import { getAppVersion } from '@/lib/version';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
@@ -38,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="relative flex flex-col h-screen overflow-hidden bg-background">
       <DemoBanner />
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar initialPinned={initialPinned} role={user?.role ?? 'viewer'} />
+        <Sidebar initialPinned={initialPinned} role={user?.role ?? 'viewer'} version={getAppVersion()} />
         {/* The single scroll region for the whole app — sidebar and (per-page) header stay fixed
             while page content scrolls independently, instead of the browser scrolling the entire
             page (which dragged the sidebar/header off-screen too and, combined with any bounded

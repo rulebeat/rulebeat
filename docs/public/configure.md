@@ -45,13 +45,18 @@ Host header can't redirect a real sign-in anywhere Entra wasn't told to allow.
 
 Setting `AUTH_MICROSOFT_ENTRA_ID_ID`, `AUTH_MICROSOFT_ENTRA_ID_SECRET`, and
 `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID` together makes Microsoft sign-in work from first boot. Leave
-them unset and configure the same thing from Settings → Sign-in after your first local sign-in
+them unset and configure Microsoft sign-in from Settings → Sign-in after your first local sign-in
 instead; that path also verifies the redirect URI actually works, which setting these variables
 does not.
 
-Register an app in Entra ID → App registrations, and add the redirect URI
-`<your AUTH_URL>/api/auth/callback/microsoft-entra-id`. No Azure API permissions are needed on this
-app registration; scanning uses its own separate credential (see below).
+This can be the same app registration used to connect Azure, or a separate one; either way it needs
+the redirect URI `<your AUTH_URL>/api/auth/callback/microsoft-entra-id` added in Entra ID → App
+registrations → Authentication, and no Azure API permissions. From the onboarding Connect Azure
+step or Settings → Sign-in you can check "reuse this app registration for Microsoft sign-in" to
+point sign-in at the same credential already used to connect Azure, without re-entering it; that
+app registration then both signs users in and holds Azure Reader access. To keep the two
+separate instead, register a new app and enter its tenant, client ID, and secret manually in either
+of those two places.
 
 `AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE` mounts the client secret as a file instead and wins over
 `AUTH_MICROSOFT_ENTRA_ID_SECRET` when both are set. Unlike `AUTH_SECRET_FILE` above, this one is
@@ -93,6 +98,61 @@ Microsoft sign-in redirect and cookie settings are correct. If you're running on
 reverse proxy at all and need direct network access anyway (a trusted internal network, for
 example), you can widen the binding by changing `docker-compose.yml`'s `ports:` entry to
 `"3000:3000"`, but that's an explicit choice to make, not the shipped default.
+
+### Example: Azure Container Instances behind Application Gateway
+
+One concrete way to run this in Azure itself, if you'd rather the reverse proxy be a managed
+Azure resource than a process on the same host as RuleBeat:
+
+- **Two subnets in one VNet.** One delegated to `Microsoft.ContainerInstance/containerGroups` for
+  RuleBeat's container group, one dedicated to Application Gateway. Azure requires both: a
+  VNet-injected container group needs a subnet of its own, and Application Gateway needs a
+  dedicated subnet too, they can't share.
+- **RuleBeat's container group gets no public IP.** Deploying it into that subnet is what plays
+  the role `127.0.0.1` plays above: the container is reachable only from inside the VNet, not the
+  internet, the same "only the proxy can reach it directly" posture as the local case, achieved
+  with network isolation instead of a loopback bind. An NSG on that subnet that only allows inbound
+  TCP 3000 from Application Gateway's subnet locks it down further.
+- **Persistent storage.** A container instance's local disk does not survive a restart, and the
+  SQLite database, the generated admin password, the auth secret, and the encryption key all live
+  under `/app/packages/web/data` (the path `docker-compose.yml` mounts a volume at). Mount an Azure
+  Files share at that same path as the container group's volume, or every restart looks like a
+  brand-new install.
+- **Application Gateway v2** terminates TLS (a certificate from Key Vault, or uploaded directly) on
+  its public frontend, with a backend pool pointing at the container group's private IP, backend
+  port 3000 over plain HTTP (fine here, that hop never leaves the VNet), and a custom health probe
+  on `/api/health`, the same unauthenticated liveness route the image's own `HEALTHCHECK` polls.
+- **`AUTH_URL`** is Application Gateway's public HTTPS address (a custom domain pointed at its
+  public IP, with a matching certificate). Set it as a container environment variable, and register
+  `<AUTH_URL>/api/auth/callback/microsoft-entra-id` in Entra ID exactly as described above.
+
+Illustrative rather than copy-paste-ready:
+
+```bash
+# Container group: VNet-injected, no public IP, data volume on Azure Files
+az container create -g rulebeat-rg -n rulebeat \
+  --image ghcr.io/rulebeat/rulebeat:0.1.0 \
+  --vnet rulebeat-vnet --subnet aci-subnet \
+  --ports 3000 \
+  --azure-file-volume-account-name <storage-account> \
+  --azure-file-volume-account-key <key> \
+  --azure-file-volume-share-name rulebeat-data \
+  --azure-file-volume-mount-path /app/packages/web/data \
+  --environment-variables AUTH_URL=https://rulebeat.example.com AZURE_TENANT_ID=<tenant-id> \
+  --restart-policy Always
+
+# Application Gateway's backend pool points at the container group's private IP
+az network application-gateway address-pool create -g rulebeat-rg \
+  --gateway-name rulebeat-appgw --name rulebeat-backend \
+  --servers <container-group-private-ip>
+```
+
+Worth knowing before choosing this over a plain VM running Caddy or nginx: a classic container
+instance has no probe-based restart of its own. Application Gateway's health probe only stops
+routing to a dead container, it does not restart it, and `--restart-policy Always` restarts on
+crash, not on a hung process. If you want a managed ingress layer with less to wire up by hand,
+Azure Container Apps' built-in ingress (automatic TLS on a custom domain, no separate gateway
+resource to run) is the lighter-weight alternative.
 
 ## Azure scanning credential
 

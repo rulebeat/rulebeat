@@ -25,6 +25,8 @@ Visual and colour decisions live in [design-system.md](design-system.md), not he
 
 **Use `useLayoutEffect` (not `useEffect`) to restore `localStorage` state before first paint in Next.js client components.** `useState(() => readFromStorage())` causes a hydration mismatch: the initializer returns null on the server and rehydration reuses that null rather than re-running it.
 
+**A `typeof window !== 'undefined'` branch read directly in render is a guaranteed hydration mismatch**, not a safe guard: the server has no `window`, so it renders the false branch, and the client's own first (pre-hydration) render pass runs the same render function and takes the true branch. Start state at the server-safe default (`useState('')`) and fill in the real value in a plain `useEffect` after mount instead.
+
 **A ResizeObserver on a container never fires for content loading inside a fixed-height child.** Self-fetching widgets swap a spinner for content without changing any observed box, so pair it with a MutationObserver on the subtree. Otherwise the measuring pass only ever sees spinners.
 
 **Section/tab nav state belongs in the URL (`?section=`), not React state alone.** A client-side remount (e.g. browser Back) loses local state. Read the initial value from server `searchParams` and sync changes via `router.replace`.

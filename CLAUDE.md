@@ -52,6 +52,18 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
 - **User auth:** NextAuth.js v5 with Microsoft Entra ID, plus local accounts bootstrapped on first
   run. Every setting an admin can configure lives in the console, not in env vars; env still wins
   where it's set, so a template deployment never sees a setup screen.
+- **Sign-in config:** `lib/sign-in-config.ts` is the sign-in equivalent of `azure-credential.ts`,
+  the one place that resolves how someone signs in (env vars → the row saved in Settings →
+  Sign-in). The Entra app registration used for sign-in is independent of the one used to connect
+  Azure; Settings → Sign-in (and the onboarding Connect Azure step) offers a checkbox to reuse the
+  Azure connection's app registration instead of registering a second one. A `users` row has no
+  "type": whether someone can sign in locally (a `local_accounts` row with a password hash) and
+  whether they've linked an Entra `oid` are two independent, optional facts about the same
+  identity row, not a account-type field. The Microsoft sign-in button on `/signin` shows as soon
+  as sign-in is configured, not only once `isActive`/"verified" flips true; `buildProviders()`
+  registers the Entra provider the same way either way, so a misconfigured tenant, client id, or
+  secret surfaces as a real `?error=` on that same page rather than needing to be hidden until
+  proven working.
 - **Azure API calls:** resolved in exactly one place, `packages/web/lib/azure-credential.ts`: env
   vars (federated token → certificate → client secret) → the credential an admin entered in the UI →
   `DefaultAzureCredential` (managed identity in Azure, `az login` locally). Env constructs a
