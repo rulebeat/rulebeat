@@ -92,8 +92,12 @@ export function openDatabase(dbPath: string): Database.Database {
   // SQLite allows exactly one writer at a time; without this, a second process that opens the
   // same file while the first is mid-migration/seed gets an immediate SQLITE_BUSY instead of
   // waiting a moment for the lock to clear (see seedDefaultDashboard/seedOwnerAccount below for
-  // why more than one process can legitimately race to open this file).
-  sqlite.pragma('busy_timeout = 5000');
+  // why more than one process can legitimately race to open this file). 5000 wasn't enough on its
+  // own: with three of Next's page-data-collection workers racing through the full
+  // migration+seed sequence at once (each its own handful of IMMEDIATE transactions), the last
+  // worker can still be queued behind the other two for longer than 5s on CI's slower storage,
+  // so it hit SQLITE_BUSY instead of just waiting its turn.
+  sqlite.pragma('busy_timeout = 30000');
   // On a brand-new, still-empty database file, `journal_mode = WAL` above does not create the
   // `-wal` sidecar: SQLite has no existing page-1 header to convert yet, so it defers that until
   // the first write. A fresh install's very first writes are the migrations and the initial admin

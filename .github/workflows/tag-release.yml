@@ -57,3 +57,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run "Publish image" --ref "v${{ steps.version.outputs.version }}"
+
+      # Pushing a tag never creates a GitHub Release on its own -- without this, the repo's
+      # Releases page silently keeps showing the previous version as "Latest" forever.
+      - name: Extract this version's changelog section
+        run: |
+          awk '
+            index($0, "## [${{ steps.version.outputs.version }}]") == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes-file release-notes.md \
+            --latest
