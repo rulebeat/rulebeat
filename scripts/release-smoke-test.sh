@@ -45,6 +45,9 @@ cat > "$SCRATCH/CHANGELOG.md" <<'EOF'
 ## [0.1.0] - 2026-08-22
 
 First fixture release.
+
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0
 EOF
 
 (
@@ -82,6 +85,12 @@ grep -q '^## \[0.1.1\] - [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$' "$SCRATCH/CHANGELOG.
 grep -q 'A fixture bug, standing in for a real one.' "$SCRATCH/CHANGELOG.md"
 grep -q '## \[0.1.0\] - 2026-08-22' "$SCRATCH/CHANGELOG.md"
 log "CHANGELOG.md content correct"
+
+log "checking the footer links were kept in sync with the new release"
+grep -q '^\[Unreleased\]: https://github.com/rulebeat/rulebeat/compare/v0.1.1\.\.\.HEAD$' "$SCRATCH/CHANGELOG.md"
+grep -q '^\[0.1.1\]: https://github.com/rulebeat/rulebeat/compare/v0.1.0\.\.\.v0.1.1$' "$SCRATCH/CHANGELOG.md"
+grep -q '^\[0.1.0\]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0$' "$SCRATCH/CHANGELOG.md"
+log "CHANGELOG.md footer links correct"
 
 log "checking a commit and an annotated tag were created"
 (

@@ -26,6 +26,7 @@ const WEB_PKG = resolve(root, 'packages/web/package.json');
 const CHANGELOG = resolve(root, 'CHANGELOG.md');
 
 const VALID_BUMPS = new Set(['patch', 'minor', 'major']);
+const REPO_URL = 'https://github.com/rulebeat/rulebeat';
 
 /**
  * Moves CHANGELOG.md's "## [Unreleased]" content under a new dated version header, leaving a
@@ -74,6 +75,37 @@ export function bumpChangelog(changelogText, version, dateStr) {
   return [...before, ...newSection, ...after].join('\n');
 }
 
+/**
+ * Keeps the reference-link definitions at the bottom of CHANGELOG.md in sync with the version
+ * headers bumpChangelog() just rewrote above them. Those definitions are what make the
+ * "## [Unreleased]" heading at the *top* of the rendered page a real link -- bumpChangelog only
+ * ever touches headers/content, never this footer, so left alone it drifts: [Unreleased] keeps
+ * pointing at whatever version was newest the last time a human happened to update it by hand, and
+ * the version that just shipped gets no link of its own.
+ *
+ * Pure and side-effect-free, same as bumpChangelog, and meant to run right after it.
+ *
+ * @param {string} changelogText
+ * @param {string} previousVersion e.g. "0.1.0" -- the version being superseded
+ * @param {string} newVersion e.g. "0.1.1" -- the version that was just released
+ * @returns {string} the rewritten CHANGELOG.md content
+ */
+export function updateChangelogFooterLinks(changelogText, previousVersion, newVersion) {
+  const lines = changelogText.split('\n');
+  const newUnreleasedLine = `[Unreleased]: ${REPO_URL}/compare/v${newVersion}...HEAD`;
+  const newVersionLine = `[${newVersion}]: ${REPO_URL}/compare/v${previousVersion}...v${newVersion}`;
+
+  const unreleasedLinkIdx = lines.findIndex((l) => l.startsWith('[Unreleased]:'));
+  if (unreleasedLinkIdx === -1) {
+    const withTrailingNewline = changelogText.endsWith('\n') ? changelogText : `${changelogText}\n`;
+    return `${withTrailingNewline}${newUnreleasedLine}\n${newVersionLine}\n`;
+  }
+
+  lines[unreleasedLinkIdx] = newUnreleasedLine;
+  lines.splice(unreleasedLinkIdx + 1, 0, newVersionLine);
+  return lines.join('\n');
+}
+
 function readVersion(pkgPath) {
   return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
 }
@@ -115,6 +147,7 @@ function main() {
   // three independently, so nothing can make them disagree with each other. (They are only ever
   // this consistent to bump from in the first place because verify-release-version.mjs already
   // refuses to let a previous release ship with them disagreeing.)
+  const previousVersion = readVersion(ROOT_PKG);
   execFileSync('npm', ['version', bump, '--no-git-tag-version'], { cwd: root, stdio: 'inherit' });
   const version = readVersion(ROOT_PKG);
 
@@ -124,7 +157,8 @@ function main() {
   execFileSync('npm', ['install', '--package-lock-only'], { cwd: root, stdio: 'inherit' });
 
   const changelogText = readFileSync(CHANGELOG, 'utf8');
-  const newChangelog = bumpChangelog(changelogText, version, todayISO());
+  const withNewSection = bumpChangelog(changelogText, version, todayISO());
+  const newChangelog = updateChangelogFooterLinks(withNewSection, previousVersion, version);
   writeFileSync(CHANGELOG, newChangelog);
 
   execFileSync(
