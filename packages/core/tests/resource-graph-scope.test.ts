@@ -84,10 +84,10 @@ describe('ResourceGraphClient request shape (spec 004)', () => {
   });
 
   it('passes the request timeout as the second positional argument, not nested in the first (spec 007)', async () => {
-    // The legacy arm-resourcegraph SDK's .resources() takes transport options (RequestOptionsBase,
-    // which has .timeout) as a second argument — Resource Graph's own QueryRequestOptions (the
-    // `options` field on the first argument) has no timeout field at all, so nesting it there is a
-    // silent no-op that never bounds the call.
+    // The arm-resourcegraph SDK's .resources() takes transport options (OperationOptions, whose
+    // timeout lives at .requestOptions.timeout) as a second argument — Resource Graph's own
+    // QueryRequestOptions (the `options` field on the first argument) has no timeout field at all,
+    // so nesting it there is a silent no-op that never bounds the call.
     const client = new ResourceGraphClient({ credential: FAKE_CREDENTIAL, subscriptionIds: subs(3) });
 
     await client.queryAll('resources');
@@ -95,9 +95,9 @@ describe('ResourceGraphClient request shape (spec 004)', () => {
     expect(resourcesMock).toHaveBeenCalledTimes(1);
     const call = resourcesMock.mock.calls[0]!;
     const firstArg = call[0] as { options?: Record<string, unknown> };
-    const secondArg = call[1] as { timeout?: number } | undefined;
-    expect(secondArg?.timeout).toEqual(expect.any(Number));
-    expect(secondArg?.timeout).toBeGreaterThan(0);
+    const secondArg = call[1] as { requestOptions?: { timeout?: number } } | undefined;
+    expect(secondArg?.requestOptions?.timeout).toEqual(expect.any(Number));
+    expect(secondArg?.requestOptions?.timeout).toBeGreaterThan(0);
     expect(firstArg.options).not.toHaveProperty('timeout');
   });
 });

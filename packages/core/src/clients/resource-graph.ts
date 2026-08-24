@@ -58,7 +58,7 @@ export class ResourceGraphClient {
         ...(batch.subscriptions ? { subscriptions: batch.subscriptions } : {}),
         ...(batch.managementGroups ? { managementGroups: batch.managementGroups } : {}),
         options: { resultFormat: 'objectArray', top: PAGE_SIZE, skipToken },
-      }, { timeout: AZURE_CALL_TIMEOUT_MS })) as { data?: unknown[]; skipToken?: string; resultTruncated?: 'true' | 'false' };
+      }, { requestOptions: { timeout: AZURE_CALL_TIMEOUT_MS } })) as { data?: unknown[]; skipToken?: string; resultTruncated?: 'true' | 'false' };
 
       const rows = (response.data ?? []) as TRow[];
       rowsSeen += rows.length;
