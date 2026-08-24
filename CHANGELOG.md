@@ -6,6 +6,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation overhaul ahead of launch: the README rewritten around the current product,
+  install and configure commands given in both bash and PowerShell, every screenshot retaken
+  from synthetic data, a recorded product walkthrough, and the docs drift test now also fails
+  on a stale image tag version.
+
 ## [0.2.0] - 2026-08-24
 
 ### Added

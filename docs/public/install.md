@@ -97,12 +97,20 @@ the encryption key) lives in the `rulebeat-data` named volume. Back that up, not
 
 2. Open `http://localhost:3000` and sign in with it.
 
+   ![The sign-in page with the local email and password form](img/signin.png)
+
 3. Change the password when prompted. That's expected: the generated password is meant to be used
    exactly once.
 
 4. Follow the <!-- count:onboarding-steps -->four-step wizard that opens next: connect Azure,
    verify what the credential can reach, choose what to scan, and run a first scan. See
    [`permissions.md`](permissions.md) for the identity it asks for.
+
+   ![Wizard step 1, Connect Azure, asking for a tenant id, client id and client secret](img/onboarding-connect.png)
+
+   ![Wizard step 3, choosing which categories to scan](img/onboarding-scope.png)
+
+   ![Wizard step 4, running the first scan or finishing later](img/onboarding-scan.png)
 
 ### Arriving pre-configured
 

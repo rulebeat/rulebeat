@@ -25,6 +25,8 @@ A finding that was already active does not get re-sent on the next run.
 
 <!-- count:channel-types -->Four types:
 
+![Settings, the new channel form with a name, a type dropdown and a destination URL](img/settings-notifications.png)
+
 ### Microsoft Teams
 
 Teams no longer accepts the old Office 365 connector webhooks; RuleBeat posts an Adaptive Card to a

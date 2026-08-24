@@ -45,6 +45,8 @@ very next request rather than waiting for a token to expire.
 A brand-new install with zero users seeds one local admin account with a generated password,
 forced to change it on first sign-in (see [`install.md`](install.md)). From there, an admin can:
 
+![Settings, the Users table with a role dropdown and local password actions per user](img/settings-users.png)
+
 - Create additional local accounts from Settings → Users, choosing their role up front.
 - Configure Microsoft Entra ID sign-in (see [`configure.md`](configure.md)) so people sign in with
   their work account instead of a local password. An admin can create a user's row by email before

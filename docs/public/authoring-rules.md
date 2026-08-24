@@ -14,6 +14,8 @@ the first question the editor asks is **"What does this rule check?"**, with thr
 - **Logs & activity.** Not available yet. The option is visible in the picker so the shape of the
   product is honest about where it is going; see [`whats-next.md`](whats-next.md).
 
+![The new rule picker asking what the rule checks, with three backends](img/rule-backend-picker.png)
+
 Whichever kind you pick, the rule lands in the same Rules tab, runs in the same scans, produces
 findings with the same lifecycle, and can be suppressed, scheduled, dashboarded and notified on the
 same way. The backend changes how a rule is written and run, not what you can do with its results.

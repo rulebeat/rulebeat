@@ -162,6 +162,8 @@ ships **disabled**; you enable the ones that fit your estate. An upgrade keeps y
 severity and any query edit on a pack rule; only the rule's name, pack label and resource type
 list are kept in step with the pack. See [`authoring-rules.md`](authoring-rules.md#rule-provenance).
 
+![The Library page listing the APRL v2 pack rules alongside the built-in rules](img/library.png)
+
 In the Rules tab the rule carries an "APRL v2" pack label. The trailing "Learn more" URL in the
 upstream description is split out and shown as a **Read the official guidance** link on the finding
 (for this rule, Microsoft's Well-Architected page on load balancer reliability), so the vendor's

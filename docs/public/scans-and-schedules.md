@@ -5,6 +5,8 @@ findings, filterable by category, severity, status and more), **Run History** (e
 its coverage), **Rules** (every rule with its enabled state and last outcome), and **Schedules**
 (recurring scans). Category is a filter on each tab, not a separate page.
 
+![The Rules tab, with per-rule enabled toggles, outcome chips and category filters](img/rules-tab.png)
+
 ## Manual scans
 
 The Scans page has a Run Scan button that executes a set of rules immediately against your
@@ -19,6 +21,8 @@ against the same tenant.
 Schedules poll every 30 seconds for anything due to run, backed by a hand-written recurrence
 engine rather than cron, since cron alone can't express "every 3 weeks" or a pattern anchored to
 an arbitrary start date.
+
+![The Schedules tab showing a daily schedule with its target, recurrence, next run and last run](img/schedules.png)
 
 ### Recurrence
 
@@ -69,7 +73,9 @@ categories' rules are untouched, and their posture numbers don't move.
 ### Run history
 
 Every run, manual or scheduled, is recorded in a unified run history with its outcome, how long it
-took, and which rules it covered. The Schedules table itself shows each schedule's name, target,
+took, and which rules it covered.
+
+![The Run History tab listing scheduled runs with their duration, rule counts and findings](img/run-history.png) The Schedules table itself shows each schedule's name, target,
 recurrence, next run, and last run, with a status indicator that refreshes automatically.
 
 ### What a run records per rule
