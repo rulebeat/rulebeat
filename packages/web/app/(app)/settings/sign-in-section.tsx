@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { SignInStatus, LocalSignInPolicy } from '@/lib/sign-in-config';
+import { redirectUriFor } from '@/lib/redirect-uri';
 import {
   Check, Copy, KeyRound, Loader2, Lock, RefreshCw, ShieldAlert, Trash2,
 } from 'lucide-react';
@@ -94,6 +95,15 @@ function StatusLine({ status }: { status: SignInStatus }) {
   );
 }
 
+// True once the stored sign-in provider's tenant and client id are literally the ones
+// `reuseAzureConnection: true` copied over (see api/settings/sign-in/route.ts) -- there's no
+// separate "was this a reuse" flag persisted, so a match on both ids is what reuse looks like.
+function reusesAzureConnection(status: SignInStatus): boolean {
+  return status.azureConnection !== null
+    && status.tenantId === status.azureConnection.tenantId
+    && status.clientId === status.azureConnection.clientId;
+}
+
 export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }) {
   const [status, setStatus] = useState(initialStatus);
   const [tenantId, setTenantId] = useState(initialStatus.stored?.tenantId ?? '');
@@ -104,12 +114,22 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [reuseAzure, setReuseAzure] = useState(false);
+  const [reuseAzure, setReuseAzure] = useState(() => reusesAzureConnection(initialStatus));
 
   const locked = status.managedByEnv;
-  const redirectUri = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/auth/callback/microsoft-entra-id`
-    : '';
+  // Deferred to an effect rather than read directly in render: the server has no `window`, so a
+  // `typeof window` branch in render renders '' on the server and the real origin on the client's
+  // very first (pre-hydration) pass -- a guaranteed hydration mismatch. Starting both at '' and
+  // filling it in after mount keeps the first client render identical to the server's.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  // The saved Public URL wins when set, same resolution order `resolveMetadataBase()` uses
+  // server-side -- otherwise this fell back to whatever address the browser happens to be on,
+  // which is wrong the moment Settings is reached through anything other than the public URL
+  // (an internal port-forward, a VPN address, localhost while testing).
+  const redirectUri = status.publicUrl
+    ? redirectUriFor(status.publicUrl)
+    : origin ? redirectUriFor(origin) : '';
 
   function reset(next: SignInStatus) {
     setStatus(next);
@@ -117,7 +137,7 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
     setClientId(next.stored?.clientId ?? '');
     setClientSecret('');
     setPublicUrlInput(next.publicUrl ?? '');
-    setReuseAzure(false);
+    setReuseAzure(reusesAzureConnection(next));
   }
 
   async function handlePublicUrlSave() {

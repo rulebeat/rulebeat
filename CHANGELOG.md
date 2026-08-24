@@ -11,6 +11,9 @@ All notable changes to RuleBeat are documented here. Format follows
 - Settings → Sign-in (and the onboarding Connect Azure step) can reuse the Azure connection's
   app registration for Microsoft sign-in instead of registering a second one, when the two are
   meant to share credentials.
+- A concrete deployment example in `docs/public/configure.md`: running RuleBeat as an Azure
+  Container Instance behind Application Gateway, with VNet isolation and an Azure Files volume
+  for persistent storage.
 
 ### Changed
 

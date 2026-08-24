@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { CodeBlock } from '@/components/ui/code-block';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import type { AzureConnectionStatus, AzureCredentialSource } from '@/lib/azure-credential';
+import { redirectUriFor } from '@/lib/redirect-uri';
 import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
 
 /**
@@ -55,9 +56,13 @@ export function ConnectStep({
   const [enableSignIn, setEnableSignIn] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
-  const redirectUri = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/auth/callback/microsoft-entra-id`
-    : '';
+  // Deferred to an effect rather than read directly in render: a `typeof window` branch in render
+  // renders '' on the server and the real origin on the client's very first (pre-hydration) pass,
+  // a guaranteed hydration mismatch. Starting at '' and filling it in after mount keeps the first
+  // client render identical to the server's.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const redirectUri = origin ? redirectUriFor(origin) : '';
 
   async function handleContinue() {
     if (!enableSignIn) { onNext(); return; }

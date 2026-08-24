@@ -80,10 +80,10 @@ export function syncAuthUrlMirror(url: string | null): void {
   else delete process.env.AUTH_URL;
 }
 
-/** Where Entra must send someone back to, for the app registration's Authentication settings. */
-export function redirectUriFor(origin: string): string {
-  return `${origin.replace(/\/$/, '')}/api/auth/callback/microsoft-entra-id`;
-}
+// Re-exported for anything already importing it from here — the definition itself lives in
+// `redirect-uri.ts` because that file has no server-only imports and the client-side settings
+// screen needs the exact same string logic to compute what it displays.
+export { redirectUriFor } from './redirect-uri';
 
 interface EnvSignInConfig {
   tenantId: string;
