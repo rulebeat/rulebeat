@@ -30,7 +30,9 @@ env:
 jobs:
   promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 was enough for a single point-in-time CI check; the poll loop below can now wait up to
+    # ~35 minutes for ci.yml's build-and-test job to finish on this commit.
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -56,17 +58,41 @@ jobs:
         if: github.ref_type == 'tag'
         run: node scripts/verify-release-version.mjs "$GITHUB_REF_NAME"
 
+      # Polls rather than checking once: tag-release.yml pushes the release tag within seconds of
+      # the release PR merging, while ci.yml's build-and-test job (the one that builds the
+      # sha-<commit> image this workflow promotes) can still be minutes from finishing on that same
+      # commit. A single point-in-time check would almost always lose that race and fail a release
+      # that was actually fine. Every outcome other than "still running" (no run found at all, or a
+      # completed run that isn't a success) fails fast instead of waiting out the timeout.
       - name: Verify CI passed for this commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA="${{ github.sha }}"
-          COUNT=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&status=success" \
-            --jq '[.workflow_runs[] | select(.name == "CI")] | length')
-          if [[ "${COUNT:-0}" -lt 1 ]]; then
-            echo "::error::No successful CI run found for commit $SHA — refusing to publish an unverified image. Push $SHA to main (or wait for its CI run to finish) before tagging a release."
+          for i in $(seq 1 70); do
+            RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}" \
+              --jq '[.workflow_runs[] | select(.name == "CI")] | sort_by(.run_started_at) | last // empty')
+            if [[ -z "$RUN_JSON" ]]; then
+              echo "No CI run registered yet for $SHA, waiting..."
+              sleep 30
+              continue
+            fi
+            STATUS=$(echo "$RUN_JSON" | jq -r '.status')
+            if [[ "$STATUS" != "completed" ]]; then
+              echo "CI run for $SHA is $STATUS, waiting..."
+              sleep 30
+              continue
+            fi
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+            if [[ "$CONCLUSION" == "success" ]]; then
+              echo "CI verified for $SHA — promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
+              exit 0
+            fi
+            echo "::error::CI run for $SHA completed with conclusion '$CONCLUSION' — refusing to publish an unverified image."
             exit 1
-          fi
+          done
+          echo "::error::Timed out waiting for CI to finish on $SHA — refusing to publish an unverified image."
+          exit 1
           echo "CI verified for $SHA — promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
 
       - name: Log in to GHCR
