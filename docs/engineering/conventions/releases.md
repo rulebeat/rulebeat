@@ -60,6 +60,35 @@ so the original merge SHA stays red permanently, and the version transformation 
 - Deterministic failure: no tag exists yet. Revert the release transformation against the merge
   commit's first parent, merge the fix, and prepare the same version again.
 
+## The changelog gate
+
+**The changelog decision has to happen at PR time, not release time.** Seven dependency PRs merged
+in one batch with no entry between them; by the time anyone cut a release the context needed to
+write those entries was gone.
+
+**Unknown paths count as shipping.** The exemption list is explicit and everything else fails
+closed, so a file type nobody anticipated is never waved through by accident.
+
+**`packages/web/public/**` ships; the top-level `brand/**` does not.** There are two `brand`
+directories, and only the source kit at the top level is inert. Reversing them would silently exempt
+every logo change in the running app.
+
+**Diff changed paths with `--no-renames`.** Otherwise moving a shipping file into `docs/` reports
+only the new path, and the change exempts itself.
+
+**Compare `[Unreleased]` against the current base, not the merge base.** A PR that merely merged
+`main` in inherits someone else's bullet; measured against the merge base that reads as a new entry
+of its own.
+
+**The gate prevents an accidental omission; it is not an adversarial control.** A fork can edit the
+checker and report green. That edit is visible in the diff and `scripts/**` is not exempt, so review
+is the mitigation. `pull_request_target` would make it worse, not better: the job would run
+fork-authored code with a writable token.
+
+**A required check whose workflow never runs blocks every PR forever.** No `paths:` filter on
+`pr-checks.yml`, and `prepare-release.yml` must dispatch it against the release PR, because a
+`GITHUB_TOKEN`-created PR may get no automatic run at all.
+
 ## The CHANGELOG itself
 
 **Only a pushed `vX.Y.Z` tag moves `:latest`.** A merge to `main` leaves an unreferenced
