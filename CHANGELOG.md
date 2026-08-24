@@ -6,6 +6,25 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `npm run release` now leaves the working tree byte-identical when it refuses. It bumped all three
+  `package.json` files and regenerated `package-lock.json` before it ever read `CHANGELOG.md`, so an
+  empty `[Unreleased]` section aborted the release with a half-bumped tree, despite the documentation
+  promising a refusal changes nothing.
+
+### Changed
+
+- Releases are now tagged only after the exact merged commit has passed CI, and the tag points at
+  that commit rather than at whatever `main` points to when the workflow starts. A release that
+  fails CI now costs a revert instead of a permanently burned version number.
+- A release is now identified by the branch pattern, source repository, author and version together,
+  not by the branch name alone, which any fork could choose. A pull request shaped like a release
+  that fails those checks fails the workflow rather than being skipped silently.
+- A release is refused if `[Unreleased]` is not empty at the commit being tagged, or if the release
+  branch changed anything beyond the five files the release script writes. Both catch a release
+  branch that drifted from the snapshot it was generated from.
+
 ## [0.2.1] - 2026-08-24
 
 ### Security

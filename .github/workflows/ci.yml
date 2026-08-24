@@ -95,6 +95,20 @@ jobs:
       - name: Test CHANGELOG bump logic
         run: npm run test:release-changelog
 
+      - name: Test release-candidate checker
+        run: npm run test:release-candidate
+
+      # Early feedback on a release branch, before its PR changes main. `github.head_ref` is set on
+      # pull_request runs (where `github.ref_name` is the PR merge ref, e.g. "31/merge", and would
+      # never match); `github.ref_name` covers the workflow_dispatch run prepare-release.yml fires
+      # against the branch. Identity is deliberately not checked here -- a dispatched run has no PR
+      # payload -- so tag-release.yml stays the authority on that.
+      - name: Validate release candidate
+        if: startsWith(github.head_ref, 'release/v') || startsWith(github.ref_name, 'release/v')
+        run: |
+          git fetch origin main --depth=0 2>/dev/null || git fetch origin main
+          node scripts/check-release-candidate.mjs --candidate-only
+
       # Runs scripts/release.mjs for real against a scratch fixture repo (see the script's own
       # header): npm's real bump arithmetic, package-lock.json ending up genuinely consistent
       # (checked by running `npm ci` against the result), the git commit and annotated tag, and

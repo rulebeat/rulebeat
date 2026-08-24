@@ -136,16 +136,34 @@ before anything is published, not just the decision to release.
 2. Review that PR like any other: the whole diff is the version bump plus the `CHANGELOG.md`
    reshuffle, nothing else. **Merging it is the approval** — ordinary PR review, gated by whatever
    branch protection `main` already has.
-3. **Tag release** picks up the merge automatically, re-verifies `package.json`/`CHANGELOG.md`
-   agree with each other, then creates and pushes the `vX.Y.Z` tag. Pushing that tag is what
-   starts `publish-image.yml` (see below) — this workflow never builds or publishes an image
-   itself, only tags.
+3. **Tag release** picks up the merge automatically and runs, in this order: validate the release
+   candidate, wait for CI to pass on the exact merge commit, create and push the `vX.Y.Z` tag, then
+   dispatch `publish-image.yml`. This workflow never builds or publishes an image itself, only tags.
+
+That order is load-bearing. A tag is permanent, so creating one before its commit has passed CI
+means a failing release burns a version number instead of costing a revert. Three related rules,
+each written up in [`conventions/releases.md`](conventions/releases.md):
+
+- It tags `pull_request.merge_commit_sha`, not `main`, which can advance in between.
+- Release identity is not the branch name (a fork can call its branch `release/v9.9.9`); it requires
+  the exact pattern, the same repository, the expected author, and a matching version.
+- `[Unreleased]` must be empty at the tagged commit. A release branch that sat open while `main`
+  moved can absorb a new entry through the merge and ship it unrecorded.
+
+**If CI fails on the merge commit**, no tag exists yet. A flaky failure means re-run CI on that same
+commit; a real one cannot be fixed forward, because fixing produces a new commit and the original
+merge SHA stays red. Revert the release transformation against the merge commit's first parent, merge
+the fix, and prepare the same version again.
 
 Under the hood, `npm run release -- <patch|minor|major>` (`scripts/release.mjs`) is what stage 1
 actually runs: it bumps `package.json` in the root and both packages to the same new version,
 resyncs `package-lock.json` against them, moves `CHANGELOG.md`'s `[Unreleased]` section under a
-new dated header, and commits all five files together. It refuses outright on a dirty working tree
-or an empty `[Unreleased]` section, and changes nothing when it refuses. It can still be run
+new dated header, updates the reference-link footer, and commits all five files together. It refuses
+outright on a dirty working tree or an empty `[Unreleased]` section, and genuinely changes nothing
+when it refuses: every mutating step runs inside a snapshot restored on any failure, so an abort
+leaves the tree byte-identical. (That was not true until it was fixed and covered by
+`release-smoke-test.sh`; the manifests and lockfile were rewritten before the changelog was ever
+read.) It can still be run
 locally the same way if the two-stage workflow is ever unavailable — review the commit
 (`git show HEAD`), then `git push && git push origin vX.Y.Z` yourself, same as stage 3 above does.
 

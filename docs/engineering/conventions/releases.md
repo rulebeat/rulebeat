@@ -1,0 +1,72 @@
+# Lessons: cutting a release, and the CHANGELOG
+
+Read this before touching anything under `scripts/release*`, `scripts/check-release-*`,
+`scripts/verify-release-*`, `CHANGELOG.md`, or the three release workflows
+(`prepare-release.yml`, `tag-release.yml`, `publish-image.yml`).
+
+---
+
+## The order the pipeline runs in
+
+**The release sequence is `validate candidate` then `CI green on the exact merge SHA` then
+`create the tag` then `publish`, and that order is load-bearing.** A tag is permanent. Creating one
+before its commit has passed CI means a failing release burns a version number: the tag exists,
+publishing refuses, and the idempotency rule below correctly will not move it.
+
+**Tag `pull_request.merge_commit_sha`, never `ref: main`.** `main` can advance between the release PR
+merging and the runner starting, and tagging whatever it points at then attaches the release to a
+commit nobody reviewed as part of it.
+
+**Compare a tag's peeled target, `vX.Y.Z^{}`, never the bare ref.** These are annotated tags, so
+`git rev-parse v0.2.0` returns the tag *object* (`54f5a9f`), not the commit (`bd0e77a`). Idempotent
+re-tagging that compares the bare ref reads "points elsewhere" on every legitimate re-run and refuses.
+
+**A release contains everything merged into `main` through the release PR's merge SHA.** Product
+changes in it were reviewed in their own PRs; the release PR reviews only the version and CHANGELOG
+transformation. An unrelated commit inside a release is normal, not a fault. What must contain
+nothing but the release files is the release *branch's own* diff against its merge base.
+
+## Identity
+
+**A branch name is not an identity.** `startsWith(head.ref, 'release/v')` is a string anybody can
+choose, and a fork can name its branch `release/v9.9.9`. Identity requires the exact
+`release/vX.Y.Z` pattern, the same repository, the expected automation author, and a version
+matching `package.json`, all together.
+
+**A PR shaped like a release that fails identity must fail loudly, never skip silently.** Silently
+skipping it hides exactly the case the check exists for. Ordinary PRs skip; near-misses fail.
+
+**A job-level `if:` cannot call a JavaScript predicate.** The job's condition stays broad and the
+first step classifies, then later steps gate on its output.
+
+## Refusing safely
+
+**A refusal must change nothing.** `release.mjs` used to run `npm version`, rewrite both workspace
+manifests and regenerate the lockfile before it ever read `CHANGELOG.md`, so an empty `[Unreleased]`
+aborted with a half-bumped tree while the docs claimed otherwise. Every mutating step now runs inside
+a snapshot that is restored on any failure, including a partway `npm install` failure.
+
+**`[Unreleased]` must be empty at the commit being tagged.** A release branch that sat open while
+`main` moved can absorb a newly added `[Unreleased]` entry through the merge, leaving it on the wrong
+side of the new version header. v0.2.0 came within one lucky three-way merge of shipping a fix that
+was never recorded in the release that carried it.
+
+## When CI fails on the merge commit
+
+**A deterministic failure cannot be fixed forward on the same commit.** Fixing produces a new commit,
+so the original merge SHA stays red permanently, and the version transformation is already on `main`.
+
+- Flaky or infrastructure failure: re-run CI on the same merge SHA, then re-run the tag workflow.
+- Deterministic failure: no tag exists yet. Revert the release transformation against the merge
+  commit's first parent, merge the fix, and prepare the same version again.
+
+## The CHANGELOG itself
+
+**Only a pushed `vX.Y.Z` tag moves `:latest`.** A merge to `main` leaves an unreferenced
+`sha-<commit>` image in the registry that nobody pulls, so a change is not shipped to anyone until a
+release goes out.
+
+**Rewriting version headers does not maintain the reference-link footer.** `bumpChangelog()` moves
+sections; the `[Unreleased]: .../compare/...` definitions at the bottom are what make the heading at
+the *top* a real link. Left alone they drift: `[Unreleased]` pointed at `v0.1.0` for the whole 0.2.0
+cycle, and 0.2.0 had no link at all. `updateChangelogFooterLinks()` runs right after every bump.
