@@ -31,6 +31,10 @@ All notable changes to RuleBeat are documented here. Format follows
   in regularly no longer shows as "Never signed in" in Settings → Users.
 - Two em dashes removed from product-facing copy (the sign-in `AccessDenied` error and the
   onboarding scope step), per the no-em-dash rule.
+- A `database is locked` failure that could hit startup migrations under concurrent access (for
+  example, `next build`'s parallel page-data-collection workers all opening a brand-new database
+  file at once). Several seed transactions read before writing without acquiring SQLite's write
+  lock up front, which could lose a WAL-mode retry race that `busy_timeout` alone doesn't cover.
 
 ## [0.1.0] - 2026-08-22
 

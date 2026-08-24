@@ -1049,7 +1049,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
             insert.run(s.id, s.fingerprint, s.resourceId, s.reason, s.suppressedAt, s.expiresAt ?? null);
           }
         });
-        insertMany(raw);
+        // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred
+        // transaction isn't enough under concurrent build-time workers.
+        insertMany.immediate(raw);
       } catch { /* ignore */ }
     }
 
@@ -1076,7 +1078,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
         const files = readdirSync(scansDir).filter(f => f.endsWith('.json'));
         for (const file of files) {
           const summaries = JSON.parse(readFileSync(join(scansDir, file), 'utf-8')) as Record<string, unknown>[];
-          insertMany(summaries);
+          insertMany.immediate(summaries);
         }
       } catch { /* ignore */ }
     }
@@ -1102,7 +1104,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
             return [JSON.parse(readFileSync(join(schemasDir, f), 'utf-8')) as { resourceType: string; fields: string[]; cachedAt: string; fieldCount: number }];
           } catch { return []; }
         });
-        insertMany(entries);
+        insertMany.immediate(entries);
 
         if (existsSync(typesFile)) {
           const data = JSON.parse(readFileSync(typesFile, 'utf-8')) as { types: string[]; cachedAt: string };
@@ -1164,7 +1166,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
         update.run(r.pack ?? 'rulebeat-core', r.name, r.rawKql ?? null, queryBackend, shape, kind, graphQuery, r.id);
       }
     });
-    seedAll();
+    // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred
+    // transaction isn't enough under concurrent build-time workers.
+    seedAll.immediate();
   }
 
   function seedPackRules() {
@@ -1205,7 +1209,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
             );
           }
         });
-        seedPack();
+        seedPack.immediate();
       } catch { /* malformed pack file — skip */ }
     }
   }
@@ -1248,7 +1252,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
         OLD_SECURITY_RED,
       );
     });
-    seedAll();
+    // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred
+    // transaction isn't enough under concurrent build-time workers.
+    seedAll.immediate();
   }
 
   // Seeds the starter dashboard on the very first startup only. Gated on a one-time 'meta' marker
