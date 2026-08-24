@@ -2,8 +2,9 @@ name: Tag release
 
 # Stage 2 of 2. Fires when a release/v* branch's PR merges into main -- that merge (ordinary PR
 # review, gated by main's own branch protection) is the approval for the release. This workflow's
-# only job is to create and push the vX.Y.Z tag that publish-image.yml already listens for; it
-# never builds or publishes an image itself. See prepare-release.yml for stage 1.
+# job is to create and push the vX.Y.Z tag that publish-image.yml listens for, then explicitly
+# dispatch publish-image.yml itself; it never builds or publishes an image itself. See
+# prepare-release.yml for stage 1.
 on:
   pull_request:
     types: [closed]
@@ -16,6 +17,11 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+      # To dispatch publish-image.yml below -- pushing the tag with this job's own GITHUB_TOKEN
+      # does NOT trigger publish-image.yml's on:push:tags listener (GitHub does not let a
+      # GITHUB_TOKEN-authenticated push trigger other workflow runs, as an anti-recursion guard),
+      # so it has to be started explicitly instead of relying on that push to cascade.
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,3 +50,10 @@ jobs:
         run: |
           git tag -a "v${{ steps.version.outputs.version }}" -m "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
+
+      # See the actions:write comment above: this push doesn't trigger publish-image.yml on its
+      # own, so start it explicitly against the tag we just pushed.
+      - name: Trigger image publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "Publish image" --ref "v${{ steps.version.outputs.version }}"
