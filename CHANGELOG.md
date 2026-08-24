@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-24
+
 ### Security
 
 - Updated nodemailer to 9.0.5, which includes upstream fixes for header and CRLF injection in
@@ -106,6 +108,7 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rulebeat/rulebeat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0
