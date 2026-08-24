@@ -6,6 +6,18 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Security
+
+- Updated nodemailer to 9.0.5, which includes upstream fixes for header and CRLF injection in
+  outgoing mail (List-* header comments, DKIM tags, parsed addresses) and hardened STARTTLS
+  socket handling.
+
+### Changed
+
+- Updated better-sqlite3 (SQLite engine to 3.53.4), `@azure/arm-resources`, and
+  `@azure/arm-resourcegraph` to their current major versions, plus the routine npm minor/patch
+  group (`@auth/core`, `@azure/identity`, Next.js, React, and others).
+
 ## [0.2.0] - 2026-08-24
 
 ### Added
