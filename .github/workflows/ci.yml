@@ -3,8 +3,13 @@ name: CI
 # Runs on every push and every pull request. The point is that nobody has to remember to run the
 # tests — a broken build cannot reach a released image without this failing first.
 on:
+  # push is restricted to main: pull_request already covers every feature/release branch (it fires
+  # on open, synchronize, and reopen, so every push to a branch with an open PR is covered there).
+  # A push trigger on '**' used to fire a second, full duplicate run alongside pull_request's for
+  # the same commit -- different github.ref (refs/heads/<branch> vs refs/pull/<N>/merge), so the
+  # concurrency group below never deduped them and every PR push ran CI twice in parallel.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
