@@ -11,3 +11,16 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+
+  # npm dependencies across the workspace (root manifest covers both packages via workspaces).
+  # Minor and patch bumps arrive grouped as one weekly PR so the update stream stays reviewable;
+  # major bumps stay individual because they are the ones that actually need a close look.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    groups:
+      npm-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
