@@ -71,7 +71,7 @@ function NavItem({ item, active, expanded }: {
   );
 }
 
-export function Sidebar({ initialPinned, role }: { initialPinned: boolean; role: Role }) {
+export function Sidebar({ initialPinned, role, version }: { initialPinned: boolean; role: Role; version: string }) {
   const pathname = usePathname();
   const topNav = [
     ...staticNavTop,
@@ -179,8 +179,8 @@ export function Sidebar({ initialPinned, role }: { initialPinned: boolean; role:
             expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium leading-none text-ink">Community</p>
-              <p className="label-grid mt-1.5">Free plan</p>
+              <p className="truncate text-xs font-medium leading-none text-ink">RuleBeat</p>
+              <p className="label-grid mt-1.5">v{version}</p>
             </div>
           </div>
 

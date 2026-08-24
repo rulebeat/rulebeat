@@ -12,6 +12,11 @@ All notable changes to RuleBeat are documented here. Format follows
   app registration for Microsoft sign-in instead of registering a second one, when the two are
   meant to share credentials.
 
+### Changed
+
+- The sidebar footer shows the running version instead of a "Community / Free plan" badge, which
+  implied a pricing tier RuleBeat does not have.
+
 ### Fixed
 
 - The Microsoft sign-in button now appears on the sign-in page as soon as sign-in is configured,
