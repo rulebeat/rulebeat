@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-24
+
 ### Added
 
 - Settings → Sign-in (and the onboarding Connect Azure step) can reuse the Azure connection's
