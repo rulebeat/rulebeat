@@ -112,7 +112,7 @@ jobs:
       # Vitest's built-in `github-actions` reporter already annotates failures inline.
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: test-results/junit.xml
@@ -146,7 +146,7 @@ jobs:
       # test actually failed, so this only fires then — nothing to keep on a green run.
       - name: Upload Playwright traces
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-traces
           path: packages/web/test-results/
@@ -197,7 +197,7 @@ jobs:
       # still run either way — only the Security-tab upload needs same-repo write access.
       - name: Upload Trivy results to the Security tab
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@e4d2851c4593439ac10bdcd57c5b06cac73b4775 # v3.37.8
+        uses: github/codeql-action/upload-sarif@42947a340483f03ba47bb1a039b2c519aab3df85 # v3.37.8
         with:
           sarif_file: trivy-results.sarif
 
