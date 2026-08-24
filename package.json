@@ -23,6 +23,7 @@
     "release": "node scripts/release.mjs",
     "test:release-version": "node --test scripts/verify-release-version.test.mjs",
     "test:release-changelog": "node --test scripts/release-bump-changelog.test.mjs",
+    "test:release-candidate": "node --test scripts/check-release-candidate.test.mjs",
     "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
     "secrets-scan": "gitleaks detect --source . --log-opts=--all"
   },

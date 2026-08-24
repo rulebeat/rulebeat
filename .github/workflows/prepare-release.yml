@@ -17,6 +17,14 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # To dispatch CI against the release branch at the end -- a GITHUB_TOKEN-created PR does not
+  # reliably get its own workflow runs, so the release branch is given one explicitly.
+  actions: write
+
+# Shared with tag-release.yml: never two releases in flight at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -30,6 +38,19 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
+
+      # Two releases prepared at once would each be generated from a base that does not include the
+      # other, so whichever merged second would carry a stale snapshot.
+      - name: Refuse if a release PR is already open
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OPEN=$(gh pr list --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release/v")) | .headRefName] | join(", ")')
+          if [[ -n "$OPEN" ]]; then
+            echo "::error::A release PR is already open ($OPEN). Merge or close it before preparing another."
+            exit 1
+          fi
 
       - name: Configure git identity
         run: |
@@ -63,3 +84,12 @@ jobs:
             --body "Opened by **Prepare release** (bump: \`${{ inputs.bump }}\`). Merging this PR into \`main\` is what authorizes **Tag release** to tag and publish v${{ steps.release.outputs.version }} -- review the version bump and CHANGELOG diff before merging." \
             --base main \
             --head "release/v${{ steps.release.outputs.version }}"
+
+      # A GITHUB_TOKEN-created PR does not reliably get its own automatic workflow runs (PR #30 for
+      # v0.2.1 had zero check runs), so the release branch is given one explicitly. This is early
+      # feedback only -- it tests the branch, not the eventual merge commit. tag-release.yml's
+      # candidate validation and merge-SHA CI wait remain the authority.
+      - name: Dispatch CI against the release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "CI" --ref "release/v${{ steps.release.outputs.version }}"

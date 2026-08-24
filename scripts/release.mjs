@@ -10,7 +10,7 @@
 // Usage: npm run release -- <patch|minor|major>
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -24,6 +24,7 @@ const ROOT_PKG = resolve(root, 'package.json');
 const CORE_PKG = resolve(root, 'packages/core/package.json');
 const WEB_PKG = resolve(root, 'packages/web/package.json');
 const CHANGELOG = resolve(root, 'CHANGELOG.md');
+const LOCKFILE = resolve(root, 'package-lock.json');
 
 const VALID_BUMPS = new Set(['patch', 'minor', 'major']);
 const REPO_URL = 'https://github.com/rulebeat/rulebeat';
@@ -118,6 +119,31 @@ function writeVersion(pkgPath, version) {
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + trailingNewline);
 }
 
+/**
+ * Reads every given file, and returns a function that writes them all back byte-for-byte. Used to
+ * make the mutating half of a release all-or-nothing: `npm version` and `npm install` both mutate
+ * before anything has validated the changelog, and `npm install` can itself fail partway.
+ *
+ * A file that does not exist yet is recorded as absent and removed again on restore, so a first
+ * run that creates package-lock.json does not leave one behind when it aborts.
+ *
+ * @param {string[]} paths
+ * @returns {() => void}
+ */
+function snapshot(paths) {
+  const saved = paths.map((path) => ({
+    path,
+    existed: existsSync(path),
+    content: existsSync(path) ? readFileSync(path) : null,
+  }));
+  return () => {
+    for (const { path, existed, content } of saved) {
+      if (existed) writeFileSync(path, content);
+      else if (existsSync(path)) rmSync(path);
+    }
+  };
+}
+
 function isWorkingTreeClean() {
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
   return status.trim() === '';
@@ -148,18 +174,34 @@ function main() {
   // this consistent to bump from in the first place because verify-release-version.mjs already
   // refuses to let a previous release ship with them disagreeing.)
   const previousVersion = readVersion(ROOT_PKG);
-  execFileSync('npm', ['version', bump, '--no-git-tag-version'], { cwd: root, stdio: 'inherit' });
-  const version = readVersion(ROOT_PKG);
 
-  writeVersion(CORE_PKG, version);
-  writeVersion(WEB_PKG, version);
+  // Everything below can fail -- `npm version` and `npm install` both shell out, and
+  // bumpChangelog() refuses an empty [Unreleased]. This script's contract, and what
+  // how-changes-are-made.md promises, is that a refusal changes NOTHING. It used to mutate all
+  // three manifests and the lockfile before ever reading the changelog, so an empty [Unreleased]
+  // left a half-bumped tree behind. The snapshot is taken first and restored on any failure, which
+  // keeps that promise without reimplementing npm's semver arithmetic here.
+  const restore = snapshot([ROOT_PKG, CORE_PKG, WEB_PKG, LOCKFILE, CHANGELOG]);
+  let version;
+  try {
+    execFileSync('npm', ['version', bump, '--no-git-tag-version'], { cwd: root, stdio: 'inherit' });
+    version = readVersion(ROOT_PKG);
 
-  execFileSync('npm', ['install', '--package-lock-only'], { cwd: root, stdio: 'inherit' });
+    // Pure, and therefore the part that refuses: computed before any further write so a bad
+    // changelog aborts with only npm's own root bump to undo.
+    const changelogText = readFileSync(CHANGELOG, 'utf8');
+    const withNewSection = bumpChangelog(changelogText, version, todayISO());
+    const newChangelog = updateChangelogFooterLinks(withNewSection, previousVersion, version);
 
-  const changelogText = readFileSync(CHANGELOG, 'utf8');
-  const withNewSection = bumpChangelog(changelogText, version, todayISO());
-  const newChangelog = updateChangelogFooterLinks(withNewSection, previousVersion, version);
-  writeFileSync(CHANGELOG, newChangelog);
+    writeVersion(CORE_PKG, version);
+    writeVersion(WEB_PKG, version);
+    execFileSync('npm', ['install', '--package-lock-only'], { cwd: root, stdio: 'inherit' });
+    writeFileSync(CHANGELOG, newChangelog);
+  } catch (err) {
+    restore();
+    console.error(`\nRelease aborted, working tree restored unchanged.\n${err.message}`);
+    process.exit(1);
+  }
 
   execFileSync(
     'git',

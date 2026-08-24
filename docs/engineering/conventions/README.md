@@ -19,6 +19,7 @@ working on. Everything topic-specific is below.
 | [auth-security.md](auth-security.md) | Auth, RBAC, API route guards, Azure credentials, secrets. |
 | [platform.md](platform.md) | Next.js, TypeScript, Docker, the test runner, or the dev loop. |
 | [content.md](content.md) | Writing anything a user reads: UI strings, docs, README, public claims. |
+| [releases.md](releases.md) | Cutting a release, `CHANGELOG.md`, or anything under `scripts/release*` and the release workflows. |
 
 See also [`../codebase-map.md`](../codebase-map.md) for where things live, and
 [`../how-changes-are-made.md`](../how-changes-are-made.md) for how a change gets from idea to merge.
