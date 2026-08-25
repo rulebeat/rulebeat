@@ -201,19 +201,42 @@ function readPackageVersions() {
 }
 
 /**
- * The release branch's own change set, derived entirely from the merge commit: parent 1 is main
- * before the merge, parent 2 is the release branch tip, so their merge base is the branch point.
+ * The release branch's own change set, derived entirely from the commit the PR merged as.
+ *
+ * Both merge strategies have to work, because which one a repository uses is a repository setting
+ * nobody thinks about at release time. This assumed a merge commit and threw on anything else,
+ * which killed the v0.2.2 tagging run: v0.2.0 had been merged with a merge commit, the repository
+ * squash-merges now, and nothing had exercised the difference in between.
+ *
+ *  - Two parents (merge commit): parent 1 is main before the merge and parent 2 is the branch tip,
+ *    so their merge base is the branch point and the diff to parent 2 is the branch's own work.
+ *  - One parent (squash or fast-forward): the commit IS the branch's whole change set, so its own
+ *    diff against its parent is exactly that, with no merge base to find.
+ *
+ * Anything else is not a pull-request merge and is refused rather than guessed at.
+ *
+ * @param {string} mergeCommit
+ * @returns {string[]} repo-relative paths the release branch itself changed
  */
-function releaseBranchChangedPaths(mergeCommit) {
-  const parents = git('rev-list', '--parents', '-n', '1', mergeCommit).split(/\s+/).slice(1);
-  if (parents.length !== 2) {
-    throw new Error(
-      `${mergeCommit} has ${parents.length} parent(s); expected a 2-parent merge commit.`
-    );
+export function releaseBranchChangedPaths(mergeCommit, run = git) {
+  const parents = run('rev-list', '--parents', '-n', '1', mergeCommit).split(/\s+/).slice(1);
+
+  if (parents.length === 1) {
+    return run('diff', '--name-only', '--no-renames', parents[0], mergeCommit)
+      .split('\n')
+      .filter(Boolean);
   }
-  const [mainSide, branchSide] = parents;
-  const base = git('merge-base', mainSide, branchSide);
-  return git('diff', '--name-only', '--no-renames', base, branchSide).split('\n').filter(Boolean);
+
+  if (parents.length === 2) {
+    const [mainSide, branchSide] = parents;
+    const base = run('merge-base', mainSide, branchSide);
+    return run('diff', '--name-only', '--no-renames', base, branchSide).split('\n').filter(Boolean);
+  }
+
+  throw new Error(
+    `${mergeCommit} has ${parents.length} parent(s). A pull request merges as either a 2-parent ` +
+      'merge commit or a 1-parent squash, so this is neither.'
+  );
 }
 
 function main() {

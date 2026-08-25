@@ -26,6 +26,14 @@ changes in it were reviewed in their own PRs; the release PR reviews only the ve
 transformation. An unrelated commit inside a release is normal, not a fault. What must contain
 nothing but the release files is the release *branch's own* diff against its merge base.
 
+**Both merge strategies have to work, because which one a repository uses is a setting nobody
+thinks about at release time.** Reading the branch's own diff assumed a 2-parent merge commit and
+threw on anything else, which killed the v0.2.2 tagging run on
+`329ad3d has 1 parent(s); expected a 2-parent merge commit.` v0.2.0 was merged with a merge commit
+so the assumption held once; the repository squash-merges now. A squash commit needs no merge base
+at all, since its own diff against its single parent IS the branch's whole change set. Anything
+other than one or two parents is not a pull-request merge and is refused rather than guessed at.
+
 ## Identity
 
 **A branch name is not an identity.** `startsWith(head.ref, 'release/v')` is a string anybody can
