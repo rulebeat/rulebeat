@@ -29,6 +29,7 @@
     "test:changelog-gate": "node --test scripts/check-changelog-entry.test.mjs",
     "test:pr-context": "node --test scripts/resolve-pr-context.test.mjs",
     "test:builder-deps": "node --test scripts/verify-builder-deps.test.mjs",
+    "test:fetch-main-ref": "node --test scripts/fetch-main-ref.test.mjs",
     "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
     "secrets-scan": "gitleaks detect --source . --log-opts=--all"
   },

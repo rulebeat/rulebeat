@@ -39,6 +39,22 @@ skipping it hides exactly the case the check exists for. Ordinary PRs skip; near
 **A job-level `if:` cannot call a JavaScript predicate.** The job's condition stays broad and the
 first step classifies, then later steps gate on its output.
 
+**A CI job cannot use `origin/main` without asking for it.** `actions/checkout` fetches one ref at
+depth 1, so main is neither a remote-tracking ref nor a shared ancestor, and
+`git merge-base origin/main HEAD` dies with "fatal: Not a valid object name origin/main". Fetching
+it needs an explicit refspec (`+refs/heads/main:refs/remotes/origin/main`) to create the ref, plus
+`--unshallow` to supply the history, applied only when the clone is shallow because git refuses it
+on a complete repository. The first real release died here, on
+`git fetch origin main --depth=0 2>/dev/null || git fetch origin main`: `--depth` is a *clone*
+option that fetch rejects, `2>/dev/null` hid that, and the fallback populates `FETCH_HEAD` without
+ever creating the ref. It is `scripts/fetch-main-ref.sh` now, with tests, for the same reason the
+pull-request context resolution moved out of YAML.
+
+**A fixture that quietly stops reproducing the condition proves nothing.** `git clone --depth 1`
+from a plain filesystem path uses git's local transport, which hardlinks the object store and
+ignores the depth entirely, so the "shallow" clone comes out complete and every assertion passes
+vacuously. Use a `file://` URL, and keep a test asserting the fixture really is shallow.
+
 ## Refusing safely
 
 **A refusal must change nothing.** `release.mjs` used to run `npm version`, rewrite both workspace
