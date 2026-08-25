@@ -129,7 +129,6 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const widgetsRef = useRef(initial.config.widgets);
-  const autoFitRef = useRef(false);
 
   /* Both toolbar menus used to be hand-rolled: local open state, a ref and a
      shared document mousedown listener. The shared menu owns all of that now,
@@ -232,15 +231,11 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
 
       if (!changed) return;
       /* Shrinking a widget makes the grid compact everything below it upward, and
-         RGL reports that back through onLayoutChange with new positions. Left alone
-         it reads as a drag and the dashboard shows "Save changes" to someone who
-         only opened the page. The flag tells that handler to take the new positions
-         without treating them as an edit; it clears on a timer rather than after the
-         first callback because one fit can produce several. */
-      autoFitRef.current = true;
+         RGL reports that back through onLayoutChange with new positions — which is
+         fine: this pass only ever runs outside edit mode, and a layout change
+         outside edit mode never marks the dashboard dirty (see onLayoutChange). */
       widgetsRef.current = next;
       setWidgets(next);
-      setTimeout(() => { autoFitRef.current = false; }, 300);
     };
 
     const schedule = () => {
@@ -257,9 +252,9 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgets, gridWidth, editMode, refreshKey]);
 
-  // Layout change from drag/resize.
+  // Layout change from drag/resize, and from RGL's own compaction passes.
   // RGL v2 fires onLayoutChange on mount (and after each state update) with the compacted layout.
-  // We compare against the current widget positions — only mark dirty when something actually moved.
+  // We compare against the current widget positions — only sync when something actually moved.
   function onLayoutChange(layout: RGLLayoutArray) {
     const items = layout as RGLLayout[];
     const current = widgetsRef.current;
@@ -277,7 +272,15 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
     });
     widgetsRef.current = merged;
     setWidgets(merged);
-    if (autoFitRef.current) return; // the fit-to-content pass moved these, not a person
+    /* Machine-made moves arrive through this same callback: the mount-time compaction
+       of the stored layout, and the grid re-packing after the fit-to-content shrink
+       above. A timing flag used to tell those apart from a person's drag, and lost
+       the race whenever two widgets' fits overlapped its 300ms window — exactly what
+       a fresh load with a dozen self-fetching widgets does — so the dashboard
+       offered "Save changes" to someone who had only opened it. Edit mode is the
+       reliable distinction: dragging and resizing exist only there, and the
+       fit-to-content pass never runs there. */
+    if (!editMode) return;
     setDirty(true);
   }
 

@@ -54,6 +54,9 @@ function graphRemediation(clientId?: string): string {
   return `Grant ${target} the Microsoft Graph "Application.Read.All" permission (read-only) and an admin consent, then re-run this check.`;
 }
 
+const CREDENTIAL_REMEDIATION =
+  'Check the service principal in Settings → Azure connection, or the environment variables supplying it.';
+
 async function checkCredential(getToken: (scope: string) => Promise<string | null>): Promise<PreflightCheck> {
   const start = Date.now();
   try {
@@ -63,7 +66,7 @@ async function checkCredential(getToken: (scope: string) => Promise<string | nul
       return {
         id: 'credential', label: 'Azure credential', status: 'fail',
         summary: 'Azure returned no token for the configured credential.',
-        remediation: 'Check the service principal in Settings → Azure connection, or the environment variables supplying it.',
+        remediation: CREDENTIAL_REMEDIATION,
         durationMs,
       };
     }
@@ -73,7 +76,7 @@ async function checkCredential(getToken: (scope: string) => Promise<string | nul
     return {
       id: 'credential', label: 'Azure credential', status: 'fail',
       summary: describeCredentialFailure(err),
-      remediation: 'Check the service principal in Settings → Azure connection, or the environment variables supplying it.',
+      remediation: CREDENTIAL_REMEDIATION,
       durationMs: Date.now() - start,
     };
   }
@@ -285,4 +288,35 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
     : checks.some(c => c.status === 'warn') ? 'warn' : 'ok';
 
   return { ranAt: new Date().toISOString(), overall, checks, subscriptions };
+}
+
+/**
+ * The result for a preflight that never got a context to probe with. `createTenantContext()`
+ * resolves the credential and lists its subscriptions, so a bad secret or an unreachable Azure
+ * throws there, before `runPreflight()` runs a single check — exactly the failure this page exists
+ * to explain. Folding it into the normal result shape keeps the onboarding step on its per-check
+ * rendering: the credential row fails with the same curated wording the in-run check uses, and the
+ * checks that never ran say why they were skipped instead of disappearing.
+ */
+export function credentialFailedPreflight(err: unknown, durationMs: number): PreflightResult {
+  // Raw error to the server log only, mirroring checkCredential() — it can carry tenant and
+  // correlation ids.
+  console.error('[RuleBeat] preflight: building the tenant context failed:', err);
+  const notRun = 'Not run because the Azure credential check failed.';
+  return {
+    ranAt: new Date().toISOString(),
+    overall: 'fail',
+    subscriptions: [],
+    checks: [
+      {
+        id: 'credential', label: 'Azure credential', status: 'fail',
+        summary: describeCredentialFailure(err),
+        remediation: CREDENTIAL_REMEDIATION,
+        durationMs,
+      },
+      { id: 'subscriptions', label: 'Subscription access', status: 'skipped', summary: notRun, durationMs: 0 },
+      { id: 'resource-graph', label: 'Resource Graph', status: 'skipped', summary: notRun, durationMs: 0 },
+      { id: 'graph-applications', label: 'Microsoft Graph (directory rules)', status: 'skipped', summary: notRun, durationMs: 0 },
+    ],
+  };
 }
