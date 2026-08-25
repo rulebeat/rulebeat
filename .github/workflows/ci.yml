@@ -107,6 +107,9 @@ jobs:
       - name: Test builder dependency check
         run: npm run test:builder-deps
 
+      - name: Test main-ref fetch
+        run: npm run test:fetch-main-ref
+
       - name: Test CHANGELOG structural invariants
         run: npm run test:changelog-structure
 
@@ -121,7 +124,7 @@ jobs:
       - name: Validate release candidate
         if: startsWith(github.head_ref, 'release/v') || startsWith(github.ref_name, 'release/v')
         run: |
-          git fetch origin main --depth=0 2>/dev/null || git fetch origin main
+          bash scripts/fetch-main-ref.sh
           node scripts/check-release-candidate.mjs --candidate-only
 
       # Runs scripts/release.mjs for real against a scratch fixture repo (see the script's own
