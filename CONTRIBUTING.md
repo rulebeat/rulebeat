@@ -30,6 +30,31 @@ npm test               # vitest, both packages (npm run test:core / test:web to 
 `npm run lint` and the Playwright suite (`npm run test:e2e`) live in `packages/web`; run those
 from that directory when your change touches the UI.
 
+## Changelog
+
+If your change affects what the running app does, add one bullet under `## [Unreleased]` in
+[`CHANGELOG.md`](CHANGELOG.md), in the same commit. CI checks for this and will fail the pull
+request otherwise, with a message explaining what to add.
+
+```markdown
+## [Unreleased]
+
+### Fixed
+
+- What changed for someone running RuleBeat, and briefly why it happened.
+```
+
+Use `Added` for a new capability, `Changed` for different behaviour, `Fixed` for a bug, `Security`
+for a vulnerability fix. Describe what a user would notice rather than what the diff does; the
+existing entries are the model.
+
+Changes to docs, tests, CI config, build and release scripts, and the top-level `brand/` kit are
+exempt automatically, so most first contributions need nothing here. What matters is whether a file
+reaches the running container, not whether it changed in the repo.
+
+The reason the check exists at all: only a pushed `vX.Y.Z` tag moves the `:latest` image, so a
+change with no entry has nothing to carry it into a release.
+
 ## Bug reports
 
 Also via [GitHub issues](https://github.com/rulebeat/rulebeat/issues). Useful things to include:

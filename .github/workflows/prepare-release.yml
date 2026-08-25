@@ -9,14 +9,25 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump
+        # `auto` reads the level off what accumulated in CHANGELOG.md's [Unreleased] section, which
+        # is where how-changes-are-made.md already says the bump comes from. An explicit choice
+        # still works, but may not go BELOW the level the changelog requires.
+        description: Version bump (auto reads it from CHANGELOG.md)
         required: true
+        default: auto
         type: choice
-        options: [patch, minor, major]
+        options: [auto, patch, minor, major]
 
+# `actions: write` used to be here, to dispatch workflow runs at the end. Both dispatches are gone
+# (see the note below the Open PR step), so the permission goes with them.
 permissions:
   contents: write
   pull-requests: write
+
+# Shared with tag-release.yml: never two releases in flight at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -30,6 +41,19 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
+
+      # Two releases prepared at once would each be generated from a base that does not include the
+      # other, so whichever merged second would carry a stale snapshot.
+      - name: Refuse if a release PR is already open
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OPEN=$(gh pr list --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release/v")) | .headRefName] | join(", ")')
+          if [[ -n "$OPEN" ]]; then
+            echo "::error::A release PR is already open ($OPEN). Merge or close it before preparing another."
+            exit 1
+          fi
 
       - name: Configure git identity
         run: |
@@ -58,8 +82,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cat > "$RUNNER_TEMP/release-pr-body.md" <<'BODY'
+          Opened by **Prepare release** (bump: `${{ inputs.bump }}`).
+
+          ### Before anything runs
+
+          This PR was opened by an automation account, so its checks sit as "awaiting approval"
+          and **nothing runs until a maintainer presses "Approve workflows to run"**. That is the
+          only mechanism now; there are no dispatched runs behind it.
+
+          ### Merging this is the authorization
+
+          Merging into `main` is what authorizes **Tag release** to tag and publish
+          v${{ steps.release.outputs.version }}. Review the version bump and the CHANGELOG diff
+          first. Nothing is tagged or published before that.
+
+          ### One thing to avoid
+
+          Do not merge anything else into `main` between merging this and the tag appearing. CI
+          cancels an in-flight run when the branch moves, and the tag needs green CI on its own
+          commit.
+          BODY
+
           gh pr create \
             --title "release: v${{ steps.release.outputs.version }}" \
-            --body "Opened by **Prepare release** (bump: \`${{ inputs.bump }}\`). Merging this PR into \`main\` is what authorizes **Tag release** to tag and publish v${{ steps.release.outputs.version }} -- review the version bump and CHANGELOG diff before merging." \
+            --body-file "$RUNNER_TEMP/release-pr-body.md" \
             --base main \
             --head "release/v${{ steps.release.outputs.version }}"
+
+      # No workflow dispatches follow, deliberately. Two used to, on the belief that a
+      # GITHUB_TOKEN-created PR gets no automatic runs at all: PR #30 showed "Checks 0" and that
+      # was read as "nothing ran". It actually means "runs exist but are awaiting approval" -- they
+      # were always being created. The workarounds addressed a problem that did not exist, and the
+      # "PR checks" one could never have worked anyway: dispatched against `main`, its run attached
+      # to main's SHA rather than the PR head, where no required check can ever see it.
+      #
+      # Keeping them produced two runs of the same workflow on the same commit. Branch protection
+      # takes the LATEST result per check name, so a flaky duplicate could overwrite a good result
+      # on a required check. One mechanism beats two, and the automatic pull_request runs are the
+      # correct one: they attach to the right commit and cover every workflow.
+      #
+      # The cost is one click, from someone who has to be present to merge the release anyway. It
+      # is also what makes "Changelog entry" requireable: once approved, that run attaches to the
+      # PR head, which a dispatch against main never did.

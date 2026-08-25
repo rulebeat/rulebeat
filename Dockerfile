@@ -16,8 +16,22 @@ RUN npm ci
 FROM base AS builder
 RUN apk add --no-cache python3 make g++
 
-COPY --from=deps /app/node_modules ./node_modules
+# The WHOLE of /app, not just /app/node_modules. npm does not hoist everything to the root: with
+# these manifests it nests nodemailer and typescript under packages/web/node_modules, and
+# .dockerignore excludes those paths so `COPY . .` cannot supply them either. Copying only the root
+# left packages/web/node_modules absent from this stage entirely, and dispatch.ts's dynamic
+# `import('nodemailer')` then resolved by walking UP to a hoisted nodemailer@8.0.11 that is an
+# optional peer of another package, rather than the ^9.0.5 packages/web declares. The build passed
+# on a package nothing had asked for, and `output: 'standalone'` traced that copy into the image.
+# It only surfaced when two dependency bumps happened to drop the 8.0.11 entry from the lockfile
+# and the build finally failed with module-not-found instead of silently shipping the wrong one.
+COPY --from=deps /app ./
 COPY . .
+
+# Fail fast and loudly if a workspace's dependencies are not the ones its manifest declares.
+# Resolving to the WRONG copy looks exactly like resolving to the right one, which is why the
+# nodemailer mix-up above survived a release; this turns that silence into a build failure.
+RUN node scripts/verify-builder-deps.mjs
 
 # Build core first, then web
 RUN npm run build:core

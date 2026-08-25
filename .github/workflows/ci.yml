@@ -95,6 +95,38 @@ jobs:
       - name: Test CHANGELOG bump logic
         run: npm run test:release-changelog
 
+      - name: Test release-candidate checker
+        run: npm run test:release-candidate
+
+      - name: Test changelog gate
+        run: npm run test:changelog-gate
+
+      - name: Test pull-request context resolution
+        run: npm run test:pr-context
+
+      - name: Test builder dependency check
+        run: npm run test:builder-deps
+
+      - name: Test main-ref fetch
+        run: npm run test:fetch-main-ref
+
+      - name: Test CHANGELOG structural invariants
+        run: npm run test:changelog-structure
+
+      - name: Test dependency notes and bump inference
+        run: npm run test:dependency-notes
+
+      # Early feedback on a release branch, before its PR changes main. `github.head_ref` is set on
+      # pull_request runs (where `github.ref_name` is the PR merge ref, e.g. "31/merge", and would
+      # never match); `github.ref_name` covers the workflow_dispatch run prepare-release.yml fires
+      # against the branch. Identity is deliberately not checked here -- a dispatched run has no PR
+      # payload -- so tag-release.yml stays the authority on that.
+      - name: Validate release candidate
+        if: startsWith(github.head_ref, 'release/v') || startsWith(github.ref_name, 'release/v')
+        run: |
+          bash scripts/fetch-main-ref.sh
+          node scripts/check-release-candidate.mjs --candidate-only
+
       # Runs scripts/release.mjs for real against a scratch fixture repo (see the script's own
       # header): npm's real bump arithmetic, package-lock.json ending up genuinely consistent
       # (checked by running `npm ci` against the result), the git commit and annotated tag, and
@@ -158,9 +190,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # `npm run lint` is deliberately absent: it currently fails with ~25 pre-existing errors
-      # (setState inside effects, non-simple useMemo dependency arrays). Adding it now would make CI
-      # red on every run, which trains everyone to ignore it. It gets added once those are cleared.
+      # `npm run lint` is deliberately absent, and the reason has changed. It used to be ~25
+      # pre-existing errors (setState inside effects, non-simple useMemo dependency arrays). Since
+      # TypeScript 7 landed, lint does not run at all: typescript-eslint refuses to load against
+      # TS 7 ("typescript-eslint does not support TS 7.0"), and no released version accepts it --
+      # 8.68.0, the latest, pins `typescript: >=4.8.4 <6.1.0`. So the errors above cannot even be
+      # enumerated right now, let alone cleared.
+      #
+      # Tracked upstream at https://github.com/typescript-eslint/typescript-eslint/issues/10940.
+      # Adding the step when it becomes possible is what finally validates the ESLint 10 bump, which
+      # nothing in CI exercises today. Until then, treat a green run as saying nothing about lint.
 
       # Docker build + smoke test: runs on every push and PR, not just main, so a broken image is
       # caught before it can be tagged and published, not after. scripts/docker-smoke-test.sh
@@ -202,7 +241,7 @@ jobs:
       # still run either way — only the Security-tab upload needs same-repo write access.
       - name: Upload Trivy results to the Security tab
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@42947a340483f03ba47bb1a039b2c519aab3df85 # v3.37.8
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           sarif_file: trivy-results.sarif
 
@@ -245,7 +284,7 @@ jobs:
       # potentially different build done at tag time.
       - name: Log in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

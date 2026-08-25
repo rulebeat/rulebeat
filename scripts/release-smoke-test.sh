@@ -45,6 +45,9 @@ cat > "$SCRATCH/CHANGELOG.md" <<'EOF'
 ## [0.1.0] - 2026-08-22
 
 First fixture release.
+
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0
 EOF
 
 (
@@ -83,6 +86,12 @@ grep -q 'A fixture bug, standing in for a real one.' "$SCRATCH/CHANGELOG.md"
 grep -q '## \[0.1.0\] - 2026-08-22' "$SCRATCH/CHANGELOG.md"
 log "CHANGELOG.md content correct"
 
+log "checking the footer links were kept in sync with the new release"
+grep -q '^\[Unreleased\]: https://github.com/rulebeat/rulebeat/compare/v0.1.1\.\.\.HEAD$' "$SCRATCH/CHANGELOG.md"
+grep -q '^\[0.1.1\]: https://github.com/rulebeat/rulebeat/compare/v0.1.0\.\.\.v0.1.1$' "$SCRATCH/CHANGELOG.md"
+grep -q '^\[0.1.0\]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0$' "$SCRATCH/CHANGELOG.md"
+log "CHANGELOG.md footer links correct"
+
 log "checking a commit and an annotated tag were created"
 (
   cd "$SCRATCH"
@@ -112,5 +121,165 @@ after_head="$(cd "$SCRATCH" && git rev-parse HEAD)"
   exit 1
 }
 log "dirty-tree refusal correct, no commit was made"
+
+# --------------------------------------------------------------------------------------------
+# Atomicity: a refusal must change NOTHING. release.mjs used to run `npm version`, rewrite both
+# workspace manifests and regenerate the lockfile BEFORE it ever read CHANGELOG.md, so an empty
+# [Unreleased] aborted with a half-bumped tree -- while how-changes-are-made.md claimed it "changes
+# nothing when it refuses". These scenarios assert the files are byte-identical afterwards.
+# --------------------------------------------------------------------------------------------
+
+ATOMIC="$(mktemp -d)"
+cleanup_atomic() { rm -rf "$ATOMIC"; }
+trap 'cleanup; cleanup_atomic' EXIT
+
+build_atomic_fixture() {
+  local changelog_body="$1"
+  rm -rf "${ATOMIC:?}"/*
+  mkdir -p "$ATOMIC/packages/core" "$ATOMIC/packages/web"
+  write_pkg "$ATOMIC/package.json" "rulebeat-fixture"
+  write_pkg "$ATOMIC/packages/core/package.json" "@rulebeat-fixture/core"
+  write_pkg "$ATOMIC/packages/web/package.json" "@rulebeat-fixture/web"
+  printf '%s\n' "$changelog_body" > "$ATOMIC/CHANGELOG.md"
+  (
+    cd "$ATOMIC"
+    git init -q
+    git config user.email "smoke-test@example.com"
+    git config user.name "release-smoke-test"
+    git add -A
+    git commit -q -m "fixture: initial state"
+  )
+}
+
+assert_unchanged() {
+  local label="$1"
+  local before_head after_head dirty
+  before_head="$(cd "$ATOMIC" && git rev-parse HEAD)"
+  if RELEASE_SCRIPT_ROOT="$ATOMIC" node "$REPO_ROOT/scripts/release.mjs" patch >/dev/null 2>&1; then
+    echo "[release-smoke-test] FAIL: $label -- release.mjs should have refused" >&2
+    exit 1
+  fi
+  after_head="$(cd "$ATOMIC" && git rev-parse HEAD)"
+  [[ "$before_head" == "$after_head" ]] || {
+    echo "[release-smoke-test] FAIL: $label -- HEAD moved" >&2
+    exit 1
+  }
+  dirty="$(cd "$ATOMIC" && git status --porcelain)"
+  [[ -z "$dirty" ]] || {
+    echo "[release-smoke-test] FAIL: $label -- refusal left the tree modified:" >&2
+    echo "$dirty" >&2
+    exit 1
+  }
+  log "$label: refused, tree byte-identical, HEAD unchanged"
+}
+
+log "checking an EMPTY [Unreleased] refuses atomically"
+build_atomic_fixture '# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-08-22
+
+First fixture release.'
+assert_unchanged "empty [Unreleased]"
+
+log "checking a MISSING [Unreleased] header refuses atomically"
+build_atomic_fixture '# Changelog
+
+## [0.1.0] - 2026-08-22
+
+First fixture release.'
+assert_unchanged "missing [Unreleased] header"
+
+log "checking an [Unreleased] with prose but no bullets refuses atomically"
+build_atomic_fixture '# Changelog
+
+## [Unreleased]
+
+Nothing here is a bullet, so there is nothing to release.
+
+## [0.1.0] - 2026-08-22
+
+First fixture release.'
+assert_unchanged "[Unreleased] with no bullets"
+
+# --------------------------------------------------------------------------------------------
+# Dependency notes derived from repository state. The fixture above has no tags, which exercises
+# the first-release path; this one has a real v0.1.0 tag, which is the normal case: the notes are
+# diffed between that tag's manifests and the working tree's.
+# --------------------------------------------------------------------------------------------
+
+DEPS="$(mktemp -d)"
+cleanup_deps() { rm -rf "$DEPS"; }
+trap 'cleanup; cleanup_atomic; cleanup_deps' EXIT
+
+log "checking dependency notes are derived from the manifests between releases"
+mkdir -p "$DEPS/packages/core" "$DEPS/packages/web"
+write_pkg "$DEPS/package.json" "rulebeat-fixture"
+cat > "$DEPS/packages/core/package.json" <<'EOF'
+{
+  "name": "@rulebeat-fixture/core",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": { "left-pad": "^1.0.0" }
+}
+EOF
+cat > "$DEPS/packages/web/package.json" <<'EOF'
+{
+  "name": "@rulebeat-fixture/web",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": { "right-pad": "^2.0.0" },
+  "devDependencies": { "vitest": "^4.0.0" }
+}
+EOF
+cat > "$DEPS/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- A fixture bug.
+
+## [0.1.0] - 2026-08-22
+
+First fixture release.
+EOF
+(
+  cd "$DEPS"
+  git init -q
+  git config user.email "smoke-test@example.com"
+  git config user.name "release-smoke-test"
+  git add -A
+  git commit -q -m "fixture: initial state"
+  git tag -a v0.1.0 -m v0.1.0
+)
+
+# Bump a runtime dependency and a devDependency; only the runtime one should be reported.
+python3 - "$DEPS" <<'PYEOF'
+import json, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+core = json.loads((root / "packages/core/package.json").read_text())
+core["dependencies"]["left-pad"] = "^1.3.0"
+(root / "packages/core/package.json").write_text(json.dumps(core, indent=2) + "\n")
+web = json.loads((root / "packages/web/package.json").read_text())
+web["devDependencies"]["vitest"] = "^4.9.9"
+(root / "packages/web/package.json").write_text(json.dumps(web, indent=2) + "\n")
+PYEOF
+(cd "$DEPS" && git add -A && git commit -q -m "build(deps): bump left-pad and vitest")
+
+RELEASE_SCRIPT_ROOT="$DEPS" node "$REPO_ROOT/scripts/release.mjs" patch >/dev/null
+
+grep -q '^### Dependencies$' "$DEPS/CHANGELOG.md" || {
+  echo "[release-smoke-test] FAIL: no Dependencies block was derived" >&2; exit 1; }
+grep -q 'left-pad.*1\.0\.0 to 1\.3\.0' "$DEPS/CHANGELOG.md" || {
+  echo "[release-smoke-test] FAIL: the runtime bump was not described" >&2; exit 1; }
+if grep -q 'vitest' "$DEPS/CHANGELOG.md"; then
+  echo "[release-smoke-test] FAIL: a devDependency reached the release notes" >&2; exit 1
+fi
+# It must land in the released section, not the fresh empty [Unreleased] left behind.
+awk '/^## \[0.1.1\]/{f=1} /^## \[0.1.0\]/{f=0} f' "$DEPS/CHANGELOG.md" | grep -q '### Dependencies' || {
+  echo "[release-smoke-test] FAIL: Dependencies landed outside the released section" >&2; exit 1; }
+log "dependency notes derived correctly, devDependencies excluded"
 
 log "all checks passed"

@@ -13,6 +13,66 @@ All notable changes to RuleBeat are documented here. Format follows
   from synthetic data, a recorded product walkthrough, and the docs drift test now also fails
   on a stale image tag version.
 
+## [0.2.3] - 2026-08-25
+
+### Fixed
+
+- Microsoft sign-in could not be configured at all from the documented install. That install binds
+  to 127.0.0.1, so the redirect URI shown in Settings and in onboarding used that address, and
+  Microsoft rejects a redirect URI on an IP address. Both places now show the localhost form and
+  say what else has to match, instead of an address no app registration can accept.
+- Opening a brand-new database no longer fails with `database is locked` when several processes
+  race to be the first. SQLite refuses the losing side of its WAL conversion immediately, before
+  the configured busy timeout is ever consulted, so the loser now retries the conversion instead
+  of dying on it. In practice the loser was one of `next build`'s parallel workers inside the
+  Docker image build, which failed the whole build often enough that releases could need a manual
+  CI re-run before they could be tagged.
+- Signing in no longer lands on `http://0.0.0.0:3000` when no public URL is configured. The
+  standalone server the Docker image runs rebuilds every request's address from the address it
+  binds to, so with `AUTH_URL` unset, the post-sign-in redirect, the sign-in error redirect and
+  the redirect URI sent to Microsoft all named an address no browser can be on. The real address
+  still arrives with every request, so it is now restored before sign-in reads it. This also
+  makes an install behind a reverse proxy honour `X-Forwarded-Host` without setting `AUTH_URL`,
+  though setting the public URL explicitly is still the recommended configuration.
+
+## [0.2.2] - 2026-08-25
+
+### Fixed
+
+- The container image is now built against the dependency versions the manifests declare. The
+  build stage copied only the top-level `node_modules`, so a dependency npm placed inside
+  `packages/web` was absent while the app was compiled and resolution fell back to whatever
+  compatible copy happened to sit at the top level. `nodemailer` resolved this way to 8.0.11, a
+  package pulled in indirectly by something else, rather than the 9.0.5 the manifest pins, and
+  that is the copy the build traced into the image. Anyone relying on email notifications was
+  running a different version of it than the release notes described.
+
+### Security
+
+- Corrects the 0.2.1 release note. That release recorded a nodemailer update to 9.0.5 for upstream
+  header and CRLF injection fixes, but the image it produced resolved nodemailer to 8.0.11 and so
+  did not contain them. The build defect responsible is the one fixed above. This is the first
+  image that carries the 9.0.5 the manifest pins. If you have email notifications configured and
+  are running 0.2.1, upgrade.
+
+### Dependencies
+
+- Updated `@azure/arm-resources-subscriptions` from 2.1.0 to 3.0.0.
+
+## [0.2.1] - 2026-08-24
+
+### Security
+
+- Updated nodemailer to 9.0.5, which includes upstream fixes for header and CRLF injection in
+  outgoing mail (List-* header comments, DKIM tags, parsed addresses) and hardened STARTTLS
+  socket handling.
+
+### Changed
+
+- Updated better-sqlite3 (SQLite engine to 3.53.4), `@azure/arm-resources`, and
+  `@azure/arm-resourcegraph` to their current major versions, plus the routine npm minor/patch
+  group (`@auth/core`, `@azure/identity`, Next.js, React, and others).
+
 ## [0.2.0] - 2026-08-24
 
 ### Added
@@ -101,5 +161,9 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/rulebeat/rulebeat/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/rulebeat/rulebeat/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0

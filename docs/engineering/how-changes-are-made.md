@@ -109,9 +109,27 @@ is how this project actually uses the three levels in practice, and that's worth
 before `1.0.0`.
 
 The `[Unreleased]` section in `CHANGELOG.md` is the running record: every PR that changes app
-behaviour adds a line there (Added / Changed / Fixed) as part of the same commit, whether or not
-a release follows right away. When someone decides to cut a release, the bump level is read
+behaviour adds a line there (Added / Changed / Fixed / Security) as part of the same commit, whether
+or not a release follows right away. When someone decides to cut a release, the bump level is read
 straight off what's accumulated there.
+
+**The changelog gate.** That rule is now enforced: `pr-checks.yml` fails a PR that changes files
+reaching the shipped image without adding an entry. It exists because the rule was silently ignored
+seven times in one batch, and because the decision only makes sense at PR time, while the author
+still knows what the change means. At release time the context is gone.
+
+- Docs, tests, CI config, `scripts/` and top-level `brand/` changes are exempt automatically, and
+  a manifest change that only adds an npm script is too. What counts is whether a file reaches the
+  runtime image, not whether it changed. Anything not explicitly exempt counts as shipping, so an
+  unfamiliar file type fails closed.
+- A maintainer can apply the `no-changelog` label for a shipping change that genuinely alters
+  nothing a user would notice. It is a judgement, not a bypass.
+- A release PR is exempt, because a release empties `[Unreleased]` rather than adding to it.
+
+It catches an accidental omission, which is what actually happened. It is not an adversarial
+control: a fork can edit the checker and report green, which is visible in the diff and is what
+review is for. Running it under `pull_request_target` to close that would be worse, since the job
+would then run fork-authored code with a writable token.
 
 **What a merge to `main` actually publishes, docs-only included:** `ci.yml` builds and pushes a
 Docker image on every push to `main`, tagged only by commit (`ghcr.io/.../rulebeat:sha-<commit>`).
@@ -136,16 +154,34 @@ before anything is published, not just the decision to release.
 2. Review that PR like any other: the whole diff is the version bump plus the `CHANGELOG.md`
    reshuffle, nothing else. **Merging it is the approval** — ordinary PR review, gated by whatever
    branch protection `main` already has.
-3. **Tag release** picks up the merge automatically, re-verifies `package.json`/`CHANGELOG.md`
-   agree with each other, then creates and pushes the `vX.Y.Z` tag. Pushing that tag is what
-   starts `publish-image.yml` (see below) — this workflow never builds or publishes an image
-   itself, only tags.
+3. **Tag release** picks up the merge automatically and runs, in this order: validate the release
+   candidate, wait for CI to pass on the exact merge commit, create and push the `vX.Y.Z` tag, then
+   dispatch `publish-image.yml`. This workflow never builds or publishes an image itself, only tags.
+
+That order is load-bearing. A tag is permanent, so creating one before its commit has passed CI
+means a failing release burns a version number instead of costing a revert. Three related rules,
+each written up in [`conventions/releases.md`](conventions/releases.md):
+
+- It tags `pull_request.merge_commit_sha`, not `main`, which can advance in between.
+- Release identity is not the branch name (a fork can call its branch `release/v9.9.9`); it requires
+  the exact pattern, the same repository, the expected author, and a matching version.
+- `[Unreleased]` must be empty at the tagged commit. A release branch that sat open while `main`
+  moved can absorb a new entry through the merge and ship it unrecorded.
+
+**If CI fails on the merge commit**, no tag exists yet. A flaky failure means re-run CI on that same
+commit; a real one cannot be fixed forward, because fixing produces a new commit and the original
+merge SHA stays red. Revert the release transformation against the merge commit's first parent, merge
+the fix, and prepare the same version again.
 
 Under the hood, `npm run release -- <patch|minor|major>` (`scripts/release.mjs`) is what stage 1
 actually runs: it bumps `package.json` in the root and both packages to the same new version,
 resyncs `package-lock.json` against them, moves `CHANGELOG.md`'s `[Unreleased]` section under a
-new dated header, and commits all five files together. It refuses outright on a dirty working tree
-or an empty `[Unreleased]` section, and changes nothing when it refuses. It can still be run
+new dated header, updates the reference-link footer, and commits all five files together. It refuses
+outright on a dirty working tree or an empty `[Unreleased]` section, and genuinely changes nothing
+when it refuses: every mutating step runs inside a snapshot restored on any failure, so an abort
+leaves the tree byte-identical. (That was not true until it was fixed and covered by
+`release-smoke-test.sh`; the manifests and lockfile were rewritten before the changelog was ever
+read.) It can still be run
 locally the same way if the two-stage workflow is ever unavailable — review the commit
 (`git show HEAD`), then `git push && git push origin vX.Y.Z` yourself, same as stage 3 above does.
 
@@ -159,8 +195,11 @@ involved.
 - **No parallel work on one feature.** Review is the bottleneck, not typing. Producing diffs faster
   than anyone can read them makes the bottleneck worse, not better.
 - **No new tooling without a reason traceable to a real delay.** The harness is not the product.
-- **No enforcement hooks yet.** They are for things people keep forgetting. Nothing has slipped
-  repeatedly enough to justify one.
+- **One enforcement hook, added after seven merges slipped past the rule.** Enforcement is for
+  things people keep forgetting, and until August 2026 nothing qualified. Then seven dependency PRs
+  merged in a single batch with no `CHANGELOG.md` entry between them, so `pr-checks.yml` now fails a
+  PR that changes shipped files without adding one. That remains the bar for a second: a rule that
+  has actually been forgotten repeatedly, not one that might be.
 
 ---
 

@@ -5,16 +5,36 @@ name: Tag release
 # job is to create and push the vX.Y.Z tag that publish-image.yml listens for, then explicitly
 # dispatch publish-image.yml itself; it never builds or publishes an image itself. See
 # prepare-release.yml for stage 1.
+#
+# The order below is the whole point, and it is load-bearing:
+#
+#   validate candidate  ->  CI green on the exact merge SHA  ->  create the immutable tag  ->  publish
+#
+# A tag is permanent. Creating one before its commit has passed CI means a failing release costs a
+# burned version number: the tag exists, publishing refuses, and the idempotency rule below
+# (correctly) will not move it. Validating and waiting first means a bad release costs a revert.
 on:
   pull_request:
     types: [closed]
     branches: [main]
 
+# Never two releases in flight. cancel-in-progress is false on purpose: interrupting this job
+# between "tag pushed" and "publish dispatched" leaves a tag nothing is promoting, which is worse
+# than waiting.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   tag:
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+    # Deliberately broad. Release identity is NOT a branch name -- head.ref is a string anybody can
+    # choose, and a fork could name its branch release/v9.9.9. The real check runs as the first
+    # step below, in JS, because a job-level `if:` cannot call it. That step skips ordinary PRs
+    # cleanly and FAILS a PR that is shaped like a release but fails identity; silently skipping
+    # the latter would hide exactly the case the check exists for.
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 45
     permissions:
       contents: write
       # To dispatch publish-image.yml below -- pushing the tag with this job's own GITHUB_TOKEN
@@ -23,37 +43,127 @@ jobs:
       # so it has to be started explicitly instead of relying on that push to cascade.
       actions: write
     steps:
+      # The exact commit the PR merged, never `ref: main`. main can advance between the merge and
+      # this runner starting, and tagging whatever main points at then would attach the release to
+      # a commit nobody reviewed as part of it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
 
-      - name: Read version
-        id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      # Identity + candidate validation in one place. Exits 0 having set is_release=false for an
+      # ordinary PR, exits 1 loudly for a spoofed or malformed release.
+      - name: Classify and validate the release candidate
+        id: candidate
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/check-release-candidate.mjs \
+            --merge-commit "${{ github.event.pull_request.merge_commit_sha }}"
 
-      # Same check publish-image.yml runs before promoting -- catching a mismatch here, before any
-      # tag exists, is cheaper than catching it after one is already pushed.
+      # Everything below only runs for a validated release PR.
       - name: Verify package.json and CHANGELOG agree on this version
-        run: node scripts/verify-release-version.mjs "${{ steps.version.outputs.version }}"
+        if: steps.candidate.outputs.is_release == 'true'
+        run: node scripts/verify-release-version.mjs "${{ steps.candidate.outputs.version }}"
+
+      # Moved here from publish-image.yml. The tag must not exist until the commit it would point at
+      # has actually passed CI -- see the header comment. publish-image.yml keeps its own copy of
+      # this check as defence in depth for a hand-pushed tag.
+      #
+      # Polls rather than checking once: this job starts within seconds of the release PR merging,
+      # while ci.yml's build-and-test on that same commit can still be minutes from finishing. Every
+      # outcome other than "still running" fails fast instead of waiting out the timeout.
+      - name: Wait for CI to pass on the merge commit
+        if: steps.candidate.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          for i in $(seq 1 70); do
+            RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}" \
+              --jq '[.workflow_runs[] | select(.name == "CI")] | sort_by(.run_started_at) | last // empty')
+            if [[ -z "$RUN_JSON" ]]; then
+              echo "No CI run registered yet for $SHA, waiting..."
+              sleep 30
+              continue
+            fi
+            STATUS=$(echo "$RUN_JSON" | jq -r '.status')
+            if [[ "$STATUS" != "completed" ]]; then
+              echo "CI run for $SHA is $STATUS, waiting..."
+              sleep 30
+              continue
+            fi
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+            if [[ "$CONCLUSION" == "success" ]]; then
+              echo "CI verified for $SHA — safe to tag."
+              exit 0
+            fi
+            echo "::error::CI on $SHA concluded '$CONCLUSION'. No tag has been created. If this is a flake, re-run CI on that same commit and re-run this workflow. If it is a real failure, revert the release transformation against the merge commit's first parent, merge the fix, and prepare v${{ steps.candidate.outputs.version }} again -- fixing forward creates a new commit, so $SHA can never turn green."
+            exit 1
+          done
+          echo "::error::Timed out waiting for CI on $SHA. No tag has been created."
+          exit 1
 
       - name: Configure git identity
+        if: steps.candidate.outputs.is_release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Tag and push
+      # Idempotent, so a re-run after a transient failure is safe. Note `vX.Y.Z^{}`, not `vX.Y.Z`:
+      # these are annotated tags, so the plain ref resolves to the tag OBJECT, not the commit. A
+      # naive comparison would read "points elsewhere" on every legitimate re-run and refuse.
+      - name: Tag the merge commit
+        if: steps.candidate.outputs.is_release == 'true'
         run: |
-          git tag -a "v${{ steps.version.outputs.version }}" -m "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.candidate.outputs.version }}"
+          SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            EXISTING=$(git rev-parse "v${VERSION}^{}")
+            if [[ "$EXISTING" == "$SHA" ]]; then
+              echo "v${VERSION} already points at ${SHA}; nothing to do."
+            else
+              echo "::error::v${VERSION} already exists and points at ${EXISTING}, not ${SHA}. Refusing to move a published tag."
+              exit 1
+            fi
+          else
+            git tag -a "v${VERSION}" -m "v${VERSION}" "$SHA"
+            git push origin "v${VERSION}"
+            echo "Tagged ${SHA} as v${VERSION}."
+          fi
 
       # See the actions:write comment above: this push doesn't trigger publish-image.yml on its
       # own, so start it explicitly against the tag we just pushed.
       - name: Trigger image publish
+        if: steps.candidate.outputs.is_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run "Publish image" --ref "v${{ steps.version.outputs.version }}"
+        run: gh workflow run "Publish image" --ref "v${{ steps.candidate.outputs.version }}"
+
+      # Pushing a tag never creates a GitHub Release on its own -- without this, the repo's
+      # Releases page silently keeps showing the previous version as "Latest" forever.
+      - name: Extract this version's changelog section
+        if: steps.candidate.outputs.is_release == 'true'
+        run: |
+          awk '
+            index($0, "## [${{ steps.candidate.outputs.version }}]") == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Create GitHub release
+        if: steps.candidate.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.candidate.outputs.version }}" \
+            --title "v${{ steps.candidate.outputs.version }}" \
+            --notes-file release-notes.md \
+            --latest

@@ -18,7 +18,7 @@
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
      -e AUTH_URL=http://localhost:3000 \
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
    PowerShell:
@@ -27,7 +27,7 @@
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
      -e AUTH_URL=http://localhost:3000 `
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
    Reach RuleBeat at `http://localhost:3000`. The port binding is deliberately loopback-only:
@@ -75,7 +75,7 @@ Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.2.0
+    image: ghcr.io/rulebeat/rulebeat:0.2.3
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -143,7 +143,7 @@ System card; the [releases page](https://github.com/rulebeat/rulebeat/releases) 
 one. Pull a specific tag rather than `:latest`: a pinned tag means you upgrade on your own schedule
 and can always see which version you're running.
 
-1. Pull the new version's image: `docker pull ghcr.io/rulebeat/rulebeat:0.2.0`
+1. Pull the new version's image: `docker pull ghcr.io/rulebeat/rulebeat:0.2.3`
 2. Remove the old container: `docker stop rulebeat && docker rm rulebeat` (the data volume is
    untouched by this).
 3. Start the new one with the same command as the install.
@@ -154,7 +154,7 @@ and can always see which version you're running.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
      -e AUTH_URL=http://localhost:3000 \
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
    PowerShell:
@@ -163,7 +163,7 @@ and can always see which version you're running.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
      -e AUTH_URL=http://localhost:3000 `
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
 With Compose, update the `image:` tag in your `docker-compose.yml` first, then

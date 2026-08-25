@@ -261,6 +261,13 @@ and usually `auth-security.md`.
   `sha256(ruleId::resourceId)`, so renaming a rule strands finding history and silently disables
   suppressions.
 
+### Changelog
+- **A change that affects the running app adds a bullet under `## [Unreleased]` in `CHANGELOG.md`,
+  in the same commit.** `pr-checks.yml` enforces this and will fail the PR otherwise. Docs, tests,
+  workflows and top-level `brand/` are exempt automatically; anything else counts as shipping. Only
+  a pushed `vX.Y.Z` tag moves `:latest`, so an unlogged change has nothing to carry it into a
+  release. See [`docs/engineering/conventions/releases.md`](docs/engineering/conventions/releases.md).
+
 ### User-facing copy
 - **No em dashes anywhere in product UI strings or docs.** Plain sentences instead. This applies to
   labels, empty states, error messages, tooltips and every page under `docs/public/`.
@@ -286,7 +293,7 @@ Read these only when the task needs them.
 | `docs/engineering/how-changes-are-made.md` | Before starting any change. The two lanes, which one your change is in, and what each one asks of you. |
 | `docs/engineering/conventions/README.md` | Before editing code. The cross-cutting rules, plus the index of topic files. Read every one that matches your work. |
 | `docs/engineering/codebase-map.md` | You need to find something. Where each file lives and what it is for. |
-| `CHANGELOG.md` | Release history: what shipped in each version. |
+| `CHANGELOG.md` | Release history, and the `[Unreleased]` section every behaviour-changing PR must add a line to. |
 | `docs/public/README.md` | Index of the user-facing docs: install, permissions, security, and the behaviour pages. |
 | `docs/public/how-it-works.md` | The request path and the two rule engines, for anyone touching scan or finding code. |
 | `docs/public/posture.md` | Exactly what "X of Y passing" means; read before touching anything that counts findings. |

@@ -35,7 +35,7 @@ Azure data (you can also explore the UI without connecting anything).
    ```bash
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
    PowerShell:
@@ -43,7 +43,7 @@ Azure data (you can also explore the UI without connecting anything).
    ```powershell
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
-     ghcr.io/rulebeat/rulebeat:0.2.0
+     ghcr.io/rulebeat/rulebeat:0.2.3
    ```
 
 2. Read the generated admin password. It is written to the data volume, never to the container
@@ -78,7 +78,7 @@ Save this as `docker-compose.yml` and run `docker compose up -d`:
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.2.0
+    image: ghcr.io/rulebeat/rulebeat:0.2.3
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
