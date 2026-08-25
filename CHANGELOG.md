@@ -18,6 +18,13 @@ All notable changes to RuleBeat are documented here. Format follows
   of dying on it. In practice the loser was one of `next build`'s parallel workers inside the
   Docker image build, which failed the whole build often enough that releases could need a manual
   CI re-run before they could be tagged.
+- Signing in no longer lands on `http://0.0.0.0:3000` when no public URL is configured. The
+  standalone server the Docker image runs rebuilds every request's address from the address it
+  binds to, so with `AUTH_URL` unset, the post-sign-in redirect, the sign-in error redirect and
+  the redirect URI sent to Microsoft all named an address no browser can be on. The real address
+  still arrives with every request, so it is now restored before sign-in reads it. This also
+  makes an install behind a reverse proxy honour `X-Forwarded-Host` without setting `AUTH_URL`,
+  though setting the public URL explicitly is still the recommended configuration.
 
 ## [0.2.2] - 2026-08-25
 

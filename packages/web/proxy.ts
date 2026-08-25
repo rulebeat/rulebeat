@@ -1,6 +1,8 @@
 import NextAuth from 'next-auth';
-import type { NextFetchEvent, NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
+import type { NextFetchEvent } from 'next/server';
 import { authConfig } from '@/auth.config';
+import { correctedRequestUrl } from '@/lib/request-origin';
 
 // A second NextAuth instance built from the DB-free config, not `@/auth` — the proxy runs on
 // every non-excluded request and only needs to decode the JWT and check one claim, so it has no
@@ -64,8 +66,21 @@ export function fixCallbackUrlOrigin(response: Response): Response {
 // is deliberate — Next.js's proxy-export check rejected the destructured form outright ("must
 // export a function") even though it evaluates to one; wrapping `authHandler` this way keeps that
 // same shape.
+// The standalone server hands this proxy a request whose URL carries the bind address
+// (0.0.0.0), not the browser's — and the auth handler embeds that URL's origin into the
+// `callbackUrl` it sends people to /signin with, which lands them on 0.0.0.0 after signing in
+// (#49). Rebuild the request on the corrected origin first; see lib/request-origin.ts. Bodyless
+// on purpose: the auth decision reads the URL, method, headers and the cookies they carry, never
+// a body — /api/auth and /signin are outside the matcher above, and the route the request
+// continues to still receives the original, body intact.
+function correctProxyRequest(req: NextRequest): NextRequest {
+  const corrected = correctedRequestUrl(req.url, req.headers);
+  if (!corrected) return req;
+  return new NextRequest(corrected, { headers: req.headers, method: req.method });
+}
+
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
-  const response = await authHandler(req, event);
+  const response = await authHandler(correctProxyRequest(req), event);
   return fixCallbackUrlOrigin(response);
 }
 
