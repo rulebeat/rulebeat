@@ -16,6 +16,14 @@ All notable changes to RuleBeat are documented here. Format follows
   that is the copy the build traced into the image. Anyone relying on email notifications was
   running a different version of it than the release notes described.
 
+### Security
+
+- Corrects the 0.2.1 release note. That release recorded a nodemailer update to 9.0.5 for upstream
+  header and CRLF injection fixes, but the image it produced resolved nodemailer to 8.0.11 and so
+  did not contain them. The build defect responsible is the one fixed above. This is the first
+  image that carries the 9.0.5 the manifest pins. If you have email notifications configured and
+  are running 0.2.1, upgrade.
+
 ## [0.2.1] - 2026-08-24
 
 ### Security
