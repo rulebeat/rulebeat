@@ -28,6 +28,17 @@
      ghcr.io/rulebeat/rulebeat:0.2.0
    ```
 
+   The port binding is deliberately loopback-only: RuleBeat holds a live Azure read credential
+   and has no TLS of its own, so it is reachable from this machine and nowhere else until you put
+   a reverse proxy in front of it. Reach it at `http://localhost:3000`.
+
+   Use `localhost`, not `127.0.0.1`. If you set up Microsoft sign-in, Entra ID accepts a redirect
+   URI only over HTTPS or on `http://localhost`, and refuses an IP address. Reaching RuleBeat at
+   `127.0.0.1` produces a redirect URI no app registration can be configured to match. To pin it
+   regardless of how you browse, add `-e AUTH_URL=http://localhost:3000` to the command above, or
+   set the same address in Settings → Sign-in → Public URL. A deployment behind a domain sets its
+   own public URL instead, as described in [`configure.md`](configure.md).
+
 2. Confirm the container reports healthy (it can take a few seconds to move past `starting`):
 
    ```
