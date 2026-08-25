@@ -92,9 +92,9 @@ only the new path, and the change exempts itself.
 of its own.
 
 **The gate prevents an accidental omission; it is not an adversarial control.** A fork can edit the
-checker and report green. That edit is visible in the diff and `scripts/**` is not exempt, so review
-is the mitigation. `pull_request_target` would make it worse, not better: the job would run
-fork-authored code with a writable token.
+checker and report green. That edit is plainly visible in the diff, so review is the mitigation.
+`pull_request_target` would make it worse, not better: the job would run fork-authored code with a
+writable token.
 
 **A required check whose workflow never runs blocks every PR forever.** No `paths:` filter on
 `pr-checks.yml`, and `prepare-release.yml` must dispatch it against the release PR, because a
@@ -105,6 +105,14 @@ fork-authored code with a writable token.
 **Only a pushed `vX.Y.Z` tag moves `:latest`.** A merge to `main` leaves an unreferenced
 `sha-<commit>` image in the registry that nobody pulls, so a change is not shipped to anyone until a
 release goes out.
+
+**CHANGELOG.md's own invariants are checked, not trusted.** `check-changelog-structure.mjs` runs
+inside `verify-release-version.mjs`'s `main()`, which both `tag-release.yml` and `publish-image.yml`
+already call, so the invariants gate tagging and promotion with no workflow wiring. It asserts every
+header has a correctly-targeted footer link, `[Unreleased]` points at the newest release, versions
+descend, dates are real calendar dates and do not increase, and nothing is duplicated or orphaned.
+A header that only looks like a release (`## [0.2]`) is reported rather than skipped, because a
+silent skip is how a whole entry disappears from every other check.
 
 **Rewriting version headers does not maintain the reference-link footer.** `bumpChangelog()` moves
 sections; the `[Unreleased]: .../compare/...` definitions at the bottom are what make the heading at

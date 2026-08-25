@@ -101,6 +101,9 @@ jobs:
       - name: Test changelog gate
         run: npm run test:changelog-gate
 
+      - name: Test CHANGELOG structural invariants
+        run: npm run test:changelog-structure
+
       # Early feedback on a release branch, before its PR changes main. `github.head_ref` is set on
       # pull_request runs (where `github.ref_name` is the PR merge ref, e.g. "31/merge", and would
       # never match); `github.ref_name` covers the workflow_dispatch run prepare-release.yml fires
