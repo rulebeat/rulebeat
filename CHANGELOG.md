@@ -6,6 +6,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation overhaul ahead of launch: the README rewritten around the current product,
+  install and configure commands given in both bash and PowerShell, every screenshot retaken
+  from synthetic data, a recorded product walkthrough, and install commands now reference the
+  image as `:latest` so they do not go stale between releases.
+
 ### Fixed
 
 - The onboarding access check now reports a credential that fails to authenticate as a failing

@@ -14,6 +14,8 @@ the first question the editor asks is **"What does this rule check?"**, with thr
 - **Logs & activity.** Not available yet. The option is visible in the picker so the shape of the
   product is honest about where it is going; see [`whats-next.md`](whats-next.md).
 
+![The new rule picker asking what the rule checks, with three backends](img/rule-backend-picker.png)
+
 Whichever kind you pick, the rule lands in the same Rules tab, runs in the same scans, produces
 findings with the same lifecycle, and can be suppressed, scheduled, dashboarded and notified on the
 same way. The backend changes how a rule is written and run, not what you can do with its results.
@@ -38,20 +40,39 @@ every environment.
 
 A rule's conditions are field, operator, value triples, combined with and/or, optionally grouped.
 The visual builder currently offers <!-- count:visual-operators -->34 operators, grouped by what
-they check: presence (`exists`, `isNull`, `isEmpty`, `isTrue`, and their opposites), equality and
-text matching (`equals`, `contains`, `startsWith`, `endsWith`, `matchesRegex`, and their
-opposites), set membership (`in`, `has`, `hasAny`, and their opposites), numeric and date
-comparison (`gt`, `gte`, `lt`, `lte`, `between`, `olderThanDays`, `withinLastDays`), and array
-shape (`arrayEmpty`, `arrayLengthGt`, `arrayContains`, and related checks). Fields can be
-top-level resource properties (`name`, `location`, `type`, `kind`, `tenantId`, `managedBy`),
-nested properties (`properties.something`), or tags (`tags.owner`). The field picker is fed by the
-ARM provider aliases API, the same source Azure Policy uses, so it offers the real properties of a
-resource type rather than whatever happened to be set on the resources you sampled.
+they check:
+
+| Group | Operators |
+|---|---|
+| Presence | `exists`, `isNull`, `isEmpty`, `isTrue`, and their opposites |
+| Equality and text matching | `equals`, `contains`, `startsWith`, `endsWith`, `matchesRegex`, and their opposites |
+| Set membership | `in`, `has`, `hasAny`, and their opposites |
+| Numeric and date comparison | `gt`, `gte`, `lt`, `lte`, `between`, `olderThanDays`, `withinLastDays` |
+| Array shape | `arrayEmpty`, `arrayLengthGt`, `arrayContains`, and related checks |
+
+Fields can be top-level resource properties (`name`, `location`, `type`, `kind`, `tenantId`,
+`managedBy`), nested properties (`properties.something`), or tags (`tags.owner`). The field picker
+is fed by the ARM provider aliases API, the same source Azure Policy uses, so it offers the real
+properties of a resource type rather than whatever happened to be set on the resources you
+sampled.
 
 Conditions describe what makes a resource **non-compliant**. A rule that requires an `owner` tag
 is written as "flag anything where the `owner` tag does not exist," and the query it compiles to
 is that violation query directly. This matters if you are reading a rule's generated KQL and
 expecting to see the positive requirement spelled out: you are looking at its negation.
+
+Concretely: a rule scoped to virtual machines whose one condition is `tags['owner']` **is empty**
+compiles to this query, shown live in the editor's query pane as you build:
+
+```kql
+Resources
+| where type in~ ('microsoft.compute/virtualmachines')
+| where isempty(tostring(tags['owner']))
+| project id, name, type, location, resourceGroup, subscriptionId, tags
+```
+
+Every row that query returns becomes one finding. [`examples.md`](examples.md) walks this same
+rule from the form to the finding to the dashboard.
 
 ## Applies to
 

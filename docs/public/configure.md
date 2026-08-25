@@ -51,7 +51,12 @@ does not.
 
 This can be the same app registration used to connect Azure, or a separate one; either way it needs
 the redirect URI `<your AUTH_URL>/api/auth/callback/microsoft-entra-id` added in Entra ID → App
-registrations → Authentication, and no Azure API permissions. From the onboarding Connect Azure
+registrations → Authentication, and no Azure API permissions. Entra ID accepts that URI only
+over HTTPS or on `http://localhost`, and refuses an IP address, so an `AUTH_URL` of
+`http://127.0.0.1:3000` can never be registered. Locally, use `http://localhost:3000` for both the
+`AUTH_URL` and the registered redirect URI, and reach RuleBeat at that same address: the sign-in
+request is built from `AUTH_URL` when it is set and from the incoming request otherwise, and Entra
+rejects the sign-in unless the two match exactly. From the onboarding Connect Azure
 step or Settings → Sign-in you can check "reuse this app registration for Microsoft sign-in" to
 point sign-in at the same credential already used to connect Azure, without re-entering it; that
 app registration then both signs users in and holds Azure Reader access. To keep the two
@@ -91,13 +96,20 @@ The published Docker Compose file binds RuleBeat to `127.0.0.1:3000` on the host
 RuleBeat holds a live Azure read credential and does its own authentication, but it has no TLS
 story of its own, so an unencrypted port open to the network is the wrong default.
 
-To reach it from elsewhere, put a reverse proxy in front that terminates TLS (nginx, Caddy,
-Traefik, or your cloud's load balancer all work) and point it at `127.0.0.1:3000` on the host.
-Do not widen the Docker port binding itself. Set `AUTH_URL` to the proxy's public HTTPS URL so the
-Microsoft sign-in redirect and cookie settings are correct. If you're running on a host with no
-reverse proxy at all and need direct network access anyway (a trusted internal network, for
-example), you can widen the binding by changing `docker-compose.yml`'s `ports:` entry to
-`"3000:3000"`, but that's an explicit choice to make, not the shipped default.
+To reach it from elsewhere:
+
+1. Put a reverse proxy in front that terminates TLS (nginx, Caddy, Traefik, or your cloud's load
+   balancer all work) and point it at `127.0.0.1:3000` on the host. Do not widen the Docker port
+   binding itself.
+2. Set `AUTH_URL` to the proxy's public HTTPS URL, so the Microsoft sign-in redirect and cookie
+   settings are correct.
+3. If Microsoft sign-in is configured, make sure the redirect URI registered in Entra ID uses that
+   same public URL (see [Microsoft Entra ID sign-in](#microsoft-entra-id-sign-in-optional) above).
+
+If you're running on a host with no reverse proxy at all and need direct network access anyway (a
+trusted internal network, for example), you can widen the binding by changing
+`docker-compose.yml`'s `ports:` entry to `"3000:3000"`, but that's an explicit choice to make, not
+the shipped default.
 
 ### Example: Azure Container Instances behind Application Gateway
 
@@ -126,12 +138,14 @@ Azure resource than a process on the same host as RuleBeat:
   public IP, with a matching certificate). Set it as a container environment variable, and register
   `<AUTH_URL>/api/auth/callback/microsoft-entra-id` in Entra ID exactly as described above.
 
-Illustrative rather than copy-paste-ready:
+Illustrative rather than copy-paste-ready.
+
+bash or zsh:
 
 ```bash
 # Container group: VNet-injected, no public IP, data volume on Azure Files
 az container create -g rulebeat-rg -n rulebeat \
-  --image ghcr.io/rulebeat/rulebeat:0.1.0 \
+  --image ghcr.io/rulebeat/rulebeat:latest \
   --vnet rulebeat-vnet --subnet aci-subnet \
   --ports 3000 \
   --azure-file-volume-account-name <storage-account> \
@@ -144,6 +158,27 @@ az container create -g rulebeat-rg -n rulebeat \
 # Application Gateway's backend pool points at the container group's private IP
 az network application-gateway address-pool create -g rulebeat-rg \
   --gateway-name rulebeat-appgw --name rulebeat-backend \
+  --servers <container-group-private-ip>
+```
+
+PowerShell:
+
+```powershell
+# Container group: VNet-injected, no public IP, data volume on Azure Files
+az container create -g rulebeat-rg -n rulebeat `
+  --image ghcr.io/rulebeat/rulebeat:latest `
+  --vnet rulebeat-vnet --subnet aci-subnet `
+  --ports 3000 `
+  --azure-file-volume-account-name <storage-account> `
+  --azure-file-volume-account-key <key> `
+  --azure-file-volume-share-name rulebeat-data `
+  --azure-file-volume-mount-path /app/packages/web/data `
+  --environment-variables AUTH_URL=https://rulebeat.example.com AZURE_TENANT_ID=<tenant-id> `
+  --restart-policy Always
+
+# Application Gateway's backend pool points at the container group's private IP
+az network application-gateway address-pool create -g rulebeat-rg `
+  --gateway-name rulebeat-appgw --name rulebeat-backend `
   --servers <container-group-private-ip>
 ```
 
@@ -170,8 +205,9 @@ credential entered in Settings → Azure connection.
    an OIDC token (AKS workload identity, GitHub Actions, another cloud), federate it to an Entra app
    registration: `AZURE_CLIENT_ID` and `AZURE_FEDERATED_TOKEN_FILE`. This is Microsoft's current
    recommendation for workloads running outside Azure.
-3. **Certificate.** `AZURE_CLIENT_ID`, `AZURE_CLIENT_CERTIFICATE_PATH`, and
-   `AZURE_CLIENT_CERTIFICATE_PASSWORD`.
+3. **Certificate.** `AZURE_CLIENT_ID` and `AZURE_CLIENT_CERTIFICATE_PATH`. If the certificate
+   file is password-protected, `AZURE_CLIENT_CERTIFICATE_PASSWORD` as well; that one is read by
+   the Azure SDK itself, not by RuleBeat.
 4. **Client secret, mounted as a file.** `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET_FILE`. This is
    the same `*_FILE` convention the official Postgres and MySQL images use, and what Docker
    secrets, Kubernetes secrets, and the Key Vault CSI driver all mount into. An environment
@@ -223,11 +259,22 @@ which one:
   restarts. Rotating `AUTH_SECRET` this way invalidates every live session (everyone signs in
   again); that's expected.
 
-**Before rotating `RULEBEAT_ENCRYPTION_KEY`(`_FILE`) specifically**, confirm local sign-in is
-actually reachable: check Settings → Sign-in, or sign in with a local account once. A stored SSO
-provider becomes unreadable the moment the key that encrypted its client secret changes (the same
-"lost or rotated key" behaviour every stored credential has), and if the local sign-in policy also
-happens to be set to `disabled` at that moment, every admin is locked out at once with no way back
-in short of `RULEBEAT_FORCE_LOCAL_SIGNIN` on the host itself. Rotating the key just means re-saving
-each stored credential (Azure connection, SSO client secret, webhook URLs) afterward. None of them
-are silently lost, they just need to be entered again once they read back as unreadable.
+**Rotating `RULEBEAT_ENCRYPTION_KEY`(`_FILE`) specifically** takes a sequence, because every
+secret stored through the console becomes unreadable the moment the key that encrypted it changes:
+
+1. Confirm local sign-in is actually reachable before touching the key: check Settings → Sign-in,
+   or sign in with a local account once. A stored SSO provider's client secret is among the
+   secrets the rotation makes unreadable, and if the local sign-in policy is also set to
+   `disabled` at that moment, every admin is locked out at once with no way back in short of
+   `RULEBEAT_FORCE_LOCAL_SIGNIN` on the host itself.
+2. Change the key and restart the process.
+3. Re-save each stored credential (Azure connection, SSO client secret, webhook URLs, SMTP
+   password). None of them are silently lost, they just need to be entered again once they read
+   back as unreadable.
+
+## Scan history retention
+
+`SCAN_HISTORY_LIMIT` caps how many scan runs are kept per category in Run History; the default is
+90, and older runs are pruned as new ones complete. The findings lifecycle is unaffected: a
+finding's first-seen, last-seen, and fixed state live in their own table, so pruning old run
+records never changes the posture number or a finding's age.

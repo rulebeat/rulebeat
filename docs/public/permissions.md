@@ -28,15 +28,27 @@ issue](https://github.com/rulebeat/rulebeat/issues) if that's blocking you.
 
 ### CLI
 
-```bash
-az ad sp create-for-rbac --name "RuleBeat" --role Reader \
-  --scopes /subscriptions/<subscription-id>
+The same line works in bash, zsh and PowerShell; replace `<subscription-id>` first.
+
+```
+az ad sp create-for-rbac --name "RuleBeat" --role Reader --scopes /subscriptions/<subscription-id>
 ```
 
-This prints an `appId`, `password` and `tenant`. Those are the **client ID**, **client secret** and
-**tenant ID** RuleBeat asks for in Settings → Azure connection (or the `AZURE_CLIENT_ID` /
-`AZURE_CLIENT_SECRET` / `AZURE_TENANT_ID` environment variables, for an unattended deployment). The
-password is shown once, so copy it immediately.
+It prints something like:
+
+```json
+{
+  "appId": "11111111-2222-3333-4444-555555555555",
+  "displayName": "RuleBeat",
+  "password": "<shown once, copy it now>",
+  "tenant": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+}
+```
+
+`appId`, `password` and `tenant` are the **client ID**, **client secret** and **tenant ID**
+RuleBeat asks for in Settings → Azure connection (or the `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
+/ `AZURE_TENANT_ID` environment variables, for an unattended deployment). The password is shown
+once, so copy it immediately.
 
 To scope Reader across several subscriptions in one command, repeat `--scopes`, or grant it at a
 management group instead (see below).
@@ -57,14 +69,14 @@ subscription for a pilot, or a management group to cover many subscriptions at o
 
 ### CLI
 
-```bash
+Both lines work in bash, zsh and PowerShell.
+
+```
 # On a subscription
-az role assignment create --assignee <client-id> --role Reader \
-  --scope /subscriptions/<subscription-id>
+az role assignment create --assignee <client-id> --role Reader --scope /subscriptions/<subscription-id>
 
 # On a management group
-az role assignment create --assignee <client-id> --role Reader \
-  --scope /providers/Microsoft.Management/managementGroups/<management-group-id>
+az role assignment create --assignee <client-id> --role Reader --scope /providers/Microsoft.Management/managementGroups/<management-group-id>
 ```
 
 ### Portal
@@ -89,7 +101,7 @@ checks (expiring app secrets and certificates) are Directory rules themselves, n
 and they need exactly this permission. Skip this section if you don't need those checks yet.
 Nothing else in RuleBeat depends on it.
 
-A Directory rule can read one of seven object types: users, groups, applications, service
+A Directory rule can read one of <!-- count:graph-resource-types -->seven object types: users, groups, applications, service
 principals, directory roles, devices, and administrative units. `Application.Read.All` covers
 applications and service principals only. A rule against any other type returns data only if the
 same identity also holds the matching Microsoft Graph read permission for that type (for example
@@ -99,11 +111,25 @@ object type and is reported as such in the run, and every other rule is unaffect
 
 ### CLI
 
+Microsoft Graph's application ID is fixed (`00000003-0000-0000-c000-000000000000`), and so is
+`Application.Read.All`'s app-role ID (`9a5d68dd-52b0-4cc2-bd40-abcf44112121`), so these commands
+are the same for every tenant.
+
+bash or zsh:
+
 ```bash
-# Microsoft Graph's application ID is fixed (00000003-0000-0000-c000-000000000000).
-# Application.Read.All's app-role ID is fixed too (9a5d68dd-52b0-4cc2-bd40-abcf44112121).
 az ad app permission add --id <client-id> \
   --api 00000003-0000-0000-c000-000000000000 \
+  --api-permissions 9a5d68dd-52b0-4cc2-bd40-abcf44112121=Role
+
+az ad app permission admin-consent --id <client-id>
+```
+
+PowerShell:
+
+```powershell
+az ad app permission add --id <client-id> `
+  --api 00000003-0000-0000-c000-000000000000 `
   --api-permissions 9a5d68dd-52b0-4cc2-bd40-abcf44112121=Role
 
 az ad app permission admin-consent --id <client-id>
@@ -130,8 +156,17 @@ nothing else in RuleBeat depends on it.
 
 ### CLI
 
+bash or zsh:
+
 ```bash
 az role assignment create --assignee <client-id> --role "Log Analytics Reader" \
+  --scope /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.OperationalInsights/workspaces/<workspace-name>
+```
+
+PowerShell:
+
+```powershell
+az role assignment create --assignee <client-id> --role "Log Analytics Reader" `
   --scope /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.OperationalInsights/workspaces/<workspace-name>
 ```
 
@@ -142,17 +177,18 @@ az role assignment create --assignee <client-id> --role "Log Analytics Reader" \
 2. Role: **Log Analytics Reader**. Assign access to: **User, group, or service principal**. Select
    the same app registration you created above.
 
-Without this role, RuleBeat can still authenticate and save the workspace id, but the verification
-step (both when saving it in Settings and on the Diagnostics page) fails until the role is granted.
+Without this role, RuleBeat can still authenticate, but saving the workspace in Settings fails:
+the workspace is verified with a real query before it's persisted, and that query is refused until
+the role is granted.
 
 ---
 
 ## Verifying it worked
 
 RuleBeat's onboarding wizard (step 2) runs a preflight, and the admin-only Diagnostics page
-(linked from Settings → Azure connection as **View diagnostics**) runs the same checks on demand:
-that the credential authenticates, that it can see at least one subscription through Azure
-Resource Graph, that Resource Graph answers a query, whether Microsoft Graph is reachable with the
-permission above, and whether a connected Log Analytics workspace (if any) answers a query. The
-Log Analytics check reports "skipped" rather than a failure when no workspace is configured yet.
-Run it after each step rather than guessing. See [`troubleshooting.md`](troubleshooting.md).
+(linked from Settings → Azure connection as **View diagnostics**) runs the same four checks on
+demand: that the credential authenticates, that it can see at least one subscription, that Azure
+Resource Graph answers a query, and whether Microsoft Graph is reachable with the permission
+above. A Log Analytics workspace is verified separately, at the moment you save it in Settings
+(step 4 above). Run the checks after each step rather than guessing. See
+[`troubleshooting.md`](troubleshooting.md).
