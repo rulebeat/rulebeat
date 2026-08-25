@@ -96,6 +96,29 @@ checker and report green. That edit is plainly visible in the diff, so review is
 `pull_request_target` would make it worse, not better: the job would run fork-authored code with a
 writable token.
 
+**Nothing may be interpolated into a workflow's shell with `${{ }}` when `jq` can read it instead.**
+`toJSON()` pretty-prints across multiple lines, and `$GITHUB_OUTPUT`'s `key=value` form takes
+single-line values only, so one label rendered as three lines and the runner killed the step with
+`Invalid format '  "dependencies"'` before the checker ran. It hid for as long as every PR had zero
+labels, then broke all five open Dependabot PRs the moment `dependabot.yml` began applying
+`dependencies`, and it disabled the escape hatch at the same time: applying `no-changelog` is itself
+what produces the multi-line value, so the label that exists to unblock a PR guaranteed it could not
+pass. `jq -c` cannot emit a multi-line value. Interpolating a fork's branch name or a label into a
+`run:` block is also a shell-injection vector, which reading the payload with `jq` removes outright.
+
+**Logic that decides whether a PR can merge does not live inside YAML.** The step above was
+untestable where it sat, which is the only reason it shipped broken; it is now
+`scripts/resolve-pr-context.sh` with `node:test` cases that run the real script.
+
+**Dependabot's own bumps are exempt, but only when the PR touches nothing but manifests and the
+lockfile.** The note that matters is derived at release time from the manifests, so a hand-written
+entry would duplicate the line the release generates anyway, and a devDependency bump has no release
+note to write at all. The path restriction is what keeps this safe: a dependency branch that also
+carries source changes is an ordinary product change, and that is not hypothetical, since the
+`@azure/arm-resourcegraph` 5.0.0 bump needed a real edit to `resource-graph.ts` for its moved
+`timeout` option. Identity is the author plus the repository plus the `dependabot/` branch prefix,
+never the branch name alone.
+
 **A required check whose workflow never runs blocks every PR forever.** No `paths:` filter on
 `pr-checks.yml`, and `prepare-release.yml` must dispatch it against the release PR, because a
 `GITHUB_TOKEN`-created PR may get no automatic run at all.

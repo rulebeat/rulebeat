@@ -74,6 +74,41 @@ const NON_SHIPPING = [
 /** Root and workspace manifests, where only some kinds of change reach the image. */
 const MANIFEST = /^(package\.json|packages\/[^/]+\/package\.json)$/;
 
+/** The identity Dependabot's own pull requests arrive under. Not settable by a fork. */
+export const DEPENDABOT_AUTHOR = 'dependabot[bot]';
+
+/** A manifest or the lockfile: the complete set of files a pure dependency bump touches. */
+const DEPENDENCY_FILE = /^(package-lock\.json|package\.json|packages\/[^/]+\/package\.json)$/;
+
+/**
+ * Dependabot's own bumps are exempt, because the note that matters is now derived rather than
+ * hand-written: release.mjs runs release-dependency-notes.mjs, which diffs the direct runtime
+ * `dependencies` of the two published packages between the previous tag and the release, and
+ * writes them into [Unreleased] at release time. A human bullet naming the same package still
+ * wins -- 0.2.1's nodemailer entry explained an impact no derived version span could.
+ *
+ * Requiring a hand-written entry here instead would mean writing, by hand, the exact line the
+ * release will generate anyway; and a devDependency bump has no release note to write at all,
+ * since nothing about eslint or @types/node reaches the image.
+ *
+ * The tightening that makes this safe: it applies ONLY when the PR touches nothing but manifests
+ * and the lockfile. A dependency branch that also carries source changes is an ordinary product
+ * change wearing a Dependabot label, and it is not a hypothetical -- the @azure/arm-resourcegraph
+ * 5.0.0 bump needed a real edit to packages/core/src/clients/resource-graph.ts for its moved
+ * `timeout` option. Without this clause the exemption would have waved that edit straight through.
+ *
+ * @param {{ author: string, headRef: string, headRepoFullName: string, repository: string,
+ *           changedPaths: string[] }} input
+ * @returns {boolean}
+ */
+export function isDependabotBump({ author, headRef, headRepoFullName, repository, changedPaths }) {
+  if (author !== DEPENDABOT_AUTHOR) return false;
+  // Dependabot pushes to branches in this repository. A fork cannot claim this identity.
+  if (headRepoFullName !== repository) return false;
+  if (!headRef.startsWith('dependabot/')) return false;
+  return changedPaths.length > 0 && changedPaths.every((p) => DEPENDENCY_FILE.test(p));
+}
+
 /**
  * @param {string} path repo-relative
  * @returns {boolean} true when the path can affect the shipped artifact
@@ -200,6 +235,11 @@ export function checkChangelogGate(input) {
       shippingPaths: [],
       error: 'No changed paths were found. That is a bug in how the diff range was computed, not an empty PR.',
     };
+  }
+
+  // After the fail-closed check above, so "no paths" can never be read as a pure dependency bump.
+  if (isDependabotBump({ author, headRef, headRepoFullName, repository, changedPaths })) {
+    return { ok: true, reason: 'dependabot-bump', shippingPaths: [] };
   }
 
   const shippingPaths = changedPaths.filter((p) => {
@@ -364,6 +404,7 @@ function main() {
     const explain = {
       'release-pr': 'Release PR: the release itself empties [Unreleased].',
       labelled: `Labelled \`${SKIP_LABEL}\` by a maintainer.`,
+      'dependabot-bump': 'Dependency bump: the release derives its own note from the manifests.',
       'non-shipping': 'Nothing here reaches the shipped image.',
       'entry-added': 'A new [Unreleased] entry was added.',
     }[result.reason];

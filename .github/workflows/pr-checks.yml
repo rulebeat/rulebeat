@@ -40,40 +40,23 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Resolves both trigger shapes into one set of env vars, so the checker itself never has to
-      # know which one fired.
-      - name: Resolve pull request
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            JSON=$(gh api "repos/${{ github.repository }}/pulls/${{ inputs.pr }}")
-            {
-              echo "base_sha=$(echo "$JSON" | jq -r '.base.sha')"
-              echo "head_sha=$(echo "$JSON" | jq -r '.head.sha')"
-              echo "head_ref=$(echo "$JSON" | jq -r '.head.ref')"
-              echo "head_repo=$(echo "$JSON" | jq -r '.head.repo.full_name')"
-              echo "author=$(echo "$JSON" | jq -r '.user.login')"
-              echo "labels=$(echo "$JSON" | jq -c '[.labels[].name]')"
-            } >> "$GITHUB_OUTPUT"
-          else
-            {
-              echo "base_sha=${{ github.event.pull_request.base.sha }}"
-              echo "head_sha=${{ github.event.pull_request.head.sha }}"
-              echo "head_ref=${{ github.event.pull_request.head.ref }}"
-              echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
-              echo "author=${{ github.event.pull_request.user.login }}"
-              echo 'labels=${{ toJSON(github.event.pull_request.labels.*.name) }}'
-            } >> "$GITHUB_OUTPUT"
-          fi
-
       # fetch-depth: 0 because the checker needs merge-base(base, head) and both versions of
       # CHANGELOG.md. GitHub materializes fork commits under refs/pull/N/* in this repo, so this
       # works identically for outside contributors.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # Resolves both trigger shapes into one set of outputs, so the checker itself never has to
+      # know which one fired. The body lives in scripts/resolve-pr-context.sh so it can be tested:
+      # it was inline here, and a multi-line `toJSON` value silently broke every labelled PR. See
+      # the header of that script for the full story.
+      - name: Resolve pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: bash scripts/resolve-pr-context.sh
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
