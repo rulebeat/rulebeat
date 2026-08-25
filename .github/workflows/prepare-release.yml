@@ -18,12 +18,11 @@ on:
         type: choice
         options: [auto, patch, minor, major]
 
+# `actions: write` used to be here, to dispatch workflow runs at the end. Both dispatches are gone
+# (see the note below the Open PR step), so the permission goes with them.
 permissions:
   contents: write
   pull-requests: write
-  # To dispatch CI against the release branch at the end -- a GITHUB_TOKEN-created PR does not
-  # reliably get its own workflow runs, so the release branch is given one explicitly.
-  actions: write
 
 # Shared with tag-release.yml: never two releases in flight at once.
 concurrency:
@@ -83,27 +82,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cat > "$RUNNER_TEMP/release-pr-body.md" <<'BODY'
+          Opened by **Prepare release** (bump: `${{ inputs.bump }}`).
+
+          ### Before anything runs
+
+          This PR was opened by an automation account, so its checks sit as "awaiting approval"
+          and **nothing runs until a maintainer presses "Approve workflows to run"**. That is the
+          only mechanism now; there are no dispatched runs behind it.
+
+          ### Merging this is the authorization
+
+          Merging into `main` is what authorizes **Tag release** to tag and publish
+          v${{ steps.release.outputs.version }}. Review the version bump and the CHANGELOG diff
+          first. Nothing is tagged or published before that.
+
+          ### One thing to avoid
+
+          Do not merge anything else into `main` between merging this and the tag appearing. CI
+          cancels an in-flight run when the branch moves, and the tag needs green CI on its own
+          commit.
+          BODY
+
           gh pr create \
             --title "release: v${{ steps.release.outputs.version }}" \
-            --body "Opened by **Prepare release** (bump: \`${{ inputs.bump }}\`). Merging this PR into \`main\` is what authorizes **Tag release** to tag and publish v${{ steps.release.outputs.version }} -- review the version bump and CHANGELOG diff before merging." \
+            --body-file "$RUNNER_TEMP/release-pr-body.md" \
             --base main \
             --head "release/v${{ steps.release.outputs.version }}"
 
-      # A GITHUB_TOKEN-created PR does not reliably get its own automatic workflow runs (PR #30 for
-      # v0.2.1 had zero check runs), so the release branch is given one explicitly. This is early
-      # feedback only -- it tests the branch, not the eventual merge commit. tag-release.yml's
-      # candidate validation and merge-SHA CI wait remain the authority.
-      - name: Dispatch CI against the release branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run "CI" --ref "release/v${{ steps.release.outputs.version }}"
-
-      # Not optional once "Changelog entry" is a required check: a GITHUB_TOKEN-created PR may get
-      # no automatic run, which would leave that check permanently "Expected" and make the release
-      # PR unmergeable. The gate exempts a valid release PR, but it has to actually run to say so.
-      - name: Dispatch PR checks against the release PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          PR=$(gh pr view "release/v${{ steps.release.outputs.version }}" --json number --jq '.number')
-          gh workflow run "PR checks" --ref main -f pr="$PR"
+      # No workflow dispatches follow, deliberately. Two used to, on the belief that a
+      # GITHUB_TOKEN-created PR gets no automatic runs at all: PR #30 showed "Checks 0" and that
+      # was read as "nothing ran". It actually means "runs exist but are awaiting approval" -- they
+      # were always being created. The workarounds addressed a problem that did not exist, and the
+      # "PR checks" one could never have worked anyway: dispatched against `main`, its run attached
+      # to main's SHA rather than the PR head, where no required check can ever see it.
+      #
+      # Keeping them produced two runs of the same workflow on the same commit. Branch protection
+      # takes the LATEST result per check name, so a flaky duplicate could overwrite a good result
+      # on a required check. One mechanism beats two, and the automatic pull_request runs are the
+      # correct one: they attach to the right commit and cover every workflow.
+      #
+      # The cost is one click, from someone who has to be present to merge the release anyway. It
+      # is also what makes "Changelog entry" requireable: once approved, that run attaches to the
+      # PR head, which a dispatch against main never did.
