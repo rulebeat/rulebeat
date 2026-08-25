@@ -13,6 +13,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { diffRuntimeDependencies, injectDependencyNotes, RUNTIME_MANIFESTS } from './release-dependency-notes.mjs';
+import { recommendBump, checkOverride } from './recommend-bump.mjs';
 
 // Overridable so the smoke test can point this at a scratch fixture repo instead of the real one,
 // the same env-var-override idiom packages/web/tests/setup.ts already uses for RULEBEAT_DB_PATH.
@@ -26,7 +28,7 @@ const WEB_PKG = resolve(root, 'packages/web/package.json');
 const CHANGELOG = resolve(root, 'CHANGELOG.md');
 const LOCKFILE = resolve(root, 'package-lock.json');
 
-const VALID_BUMPS = new Set(['patch', 'minor', 'major']);
+const VALID_BUMPS = new Set(['patch', 'minor', 'major', 'auto']);
 const REPO_URL = 'https://github.com/rulebeat/rulebeat';
 
 /**
@@ -144,6 +146,47 @@ function snapshot(paths) {
   };
 }
 
+/**
+ * The two runtime manifests as they were at the previous release tag.
+ *
+ * Fails closed. The previous version is known exactly (it is in package.json), so "that tag is not
+ * reachable" is a real fault -- a shallow clone, or a tag that was never pushed -- not a reason to
+ * silently fall back to scanning all history and emitting a twenty-bullet Dependencies block.
+ *
+ * @param {string} previousVersion
+ * @returns {Record<string,string>}
+ */
+function manifestsAtPreviousRelease(previousVersion) {
+  const tag = `v${previousVersion}`;
+  try {
+    execFileSync('git', ['rev-parse', '--verify', `${tag}^{commit}`], { cwd: root, stdio: 'ignore' });
+  } catch {
+    // Two very different situations, and collapsing them would be wrong in both directions.
+    const anyTags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: root, encoding: 'utf8' }).trim();
+    if (!anyTags) {
+      // Nothing has ever been released here, so there is no previous state to diff against. That
+      // is not a fault, and refusing would make a project's first release impossible.
+      return null;
+    }
+    // Tags exist but this specific one does not: a shallow clone, or a tag that was never pushed.
+    // Guessing here is how a release grows a twenty-bullet Dependencies block from all of history.
+    throw new Error(
+      `Cannot read the previous release: tag ${tag} is not reachable here, though other version ` +
+        'tags are. Fetch tags (actions/checkout with fetch-depth: 0 fetches them) and try again. ' +
+        'Refusing to guess at the dependency notes.'
+    );
+  }
+  const texts = {};
+  for (const path of RUNTIME_MANIFESTS) {
+    try {
+      texts[path] = execFileSync('git', ['show', `${tag}:${path}`], { cwd: root, encoding: 'utf8' });
+    } catch {
+      texts[path] = '';
+    }
+  }
+  return texts;
+}
+
 function isWorkingTreeClean() {
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
   return status.trim() === '';
@@ -154,9 +197,9 @@ function todayISO() {
 }
 
 function main() {
-  const bump = process.argv[2];
-  if (!VALID_BUMPS.has(bump)) {
-    console.error('Usage: npm run release -- <patch|minor|major>');
+  const requested = process.argv[2];
+  if (!VALID_BUMPS.has(requested)) {
+    console.error('Usage: npm run release -- <patch|minor|major|auto>');
     process.exit(2);
   }
 
@@ -175,6 +218,46 @@ function main() {
   // refuses to let a previous release ship with them disagreeing.)
   const previousVersion = readVersion(ROOT_PKG);
 
+  // Dependency notes come from repository state, and land BEFORE the bump so they end up inside
+  // the released section rather than in the fresh [Unreleased] left behind.
+  let changelogForBump = readFileSync(CHANGELOG, 'utf8');
+  try {
+    const baseManifests = manifestsAtPreviousRelease(previousVersion);
+    if (baseManifests === null) {
+      console.log('No previous release tag in this repository; skipping derived dependency notes.');
+    } else {
+      const depChanges = diffRuntimeDependencies(
+        baseManifests,
+        Object.fromEntries(RUNTIME_MANIFESTS.map((p) => [p, readFileSync(resolve(root, p), 'utf8')]))
+      );
+      changelogForBump = injectDependencyNotes(changelogForBump, depChanges);
+      if (changelogForBump !== readFileSync(CHANGELOG, 'utf8')) {
+        console.log(`Derived ${depChanges.length} dependency note(s) from the manifests.`);
+      }
+    }
+  } catch (err) {
+    console.error(`\n${err.message}`);
+    process.exit(1);
+  }
+
+  // The bump is read off what accumulated in [Unreleased], including the notes just injected.
+  const recommendation = recommendBump(changelogForBump);
+  let bump = requested;
+  if (requested === 'auto') {
+    if (!recommendation.bump) {
+      console.error(`\nCannot choose a bump automatically: ${recommendation.reason}`);
+      process.exit(1);
+    }
+    bump = recommendation.bump;
+    console.log(`Bump: ${bump} (${recommendation.reason}).`);
+  } else {
+    const override = checkOverride(requested, recommendation.ambiguous ? null : recommendation.bump);
+    if (!override.ok) {
+      console.error(`\n${override.error}`);
+      process.exit(1);
+    }
+  }
+
   // Everything below can fail -- `npm version` and `npm install` both shell out, and
   // bumpChangelog() refuses an empty [Unreleased]. This script's contract, and what
   // how-changes-are-made.md promises, is that a refusal changes NOTHING. It used to mutate all
@@ -189,8 +272,7 @@ function main() {
 
     // Pure, and therefore the part that refuses: computed before any further write so a bad
     // changelog aborts with only npm's own root bump to undo.
-    const changelogText = readFileSync(CHANGELOG, 'utf8');
-    const withNewSection = bumpChangelog(changelogText, version, todayISO());
+    const withNewSection = bumpChangelog(changelogForBump, version, todayISO());
     const newChangelog = updateChangelogFooterLinks(withNewSection, previousVersion, version);
 
     writeVersion(CORE_PKG, version);

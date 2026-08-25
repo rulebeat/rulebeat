@@ -203,4 +203,83 @@ Nothing here is a bullet, so there is nothing to release.
 First fixture release.'
 assert_unchanged "[Unreleased] with no bullets"
 
+# --------------------------------------------------------------------------------------------
+# Dependency notes derived from repository state. The fixture above has no tags, which exercises
+# the first-release path; this one has a real v0.1.0 tag, which is the normal case: the notes are
+# diffed between that tag's manifests and the working tree's.
+# --------------------------------------------------------------------------------------------
+
+DEPS="$(mktemp -d)"
+cleanup_deps() { rm -rf "$DEPS"; }
+trap 'cleanup; cleanup_atomic; cleanup_deps' EXIT
+
+log "checking dependency notes are derived from the manifests between releases"
+mkdir -p "$DEPS/packages/core" "$DEPS/packages/web"
+write_pkg "$DEPS/package.json" "rulebeat-fixture"
+cat > "$DEPS/packages/core/package.json" <<'EOF'
+{
+  "name": "@rulebeat-fixture/core",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": { "left-pad": "^1.0.0" }
+}
+EOF
+cat > "$DEPS/packages/web/package.json" <<'EOF'
+{
+  "name": "@rulebeat-fixture/web",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": { "right-pad": "^2.0.0" },
+  "devDependencies": { "vitest": "^4.0.0" }
+}
+EOF
+cat > "$DEPS/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- A fixture bug.
+
+## [0.1.0] - 2026-08-22
+
+First fixture release.
+EOF
+(
+  cd "$DEPS"
+  git init -q
+  git config user.email "smoke-test@example.com"
+  git config user.name "release-smoke-test"
+  git add -A
+  git commit -q -m "fixture: initial state"
+  git tag -a v0.1.0 -m v0.1.0
+)
+
+# Bump a runtime dependency and a devDependency; only the runtime one should be reported.
+python3 - "$DEPS" <<'PYEOF'
+import json, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+core = json.loads((root / "packages/core/package.json").read_text())
+core["dependencies"]["left-pad"] = "^1.3.0"
+(root / "packages/core/package.json").write_text(json.dumps(core, indent=2) + "\n")
+web = json.loads((root / "packages/web/package.json").read_text())
+web["devDependencies"]["vitest"] = "^4.9.9"
+(root / "packages/web/package.json").write_text(json.dumps(web, indent=2) + "\n")
+PYEOF
+(cd "$DEPS" && git add -A && git commit -q -m "build(deps): bump left-pad and vitest")
+
+RELEASE_SCRIPT_ROOT="$DEPS" node "$REPO_ROOT/scripts/release.mjs" patch >/dev/null
+
+grep -q '^### Dependencies$' "$DEPS/CHANGELOG.md" || {
+  echo "[release-smoke-test] FAIL: no Dependencies block was derived" >&2; exit 1; }
+grep -q 'left-pad.*1\.0\.0 to 1\.3\.0' "$DEPS/CHANGELOG.md" || {
+  echo "[release-smoke-test] FAIL: the runtime bump was not described" >&2; exit 1; }
+if grep -q 'vitest' "$DEPS/CHANGELOG.md"; then
+  echo "[release-smoke-test] FAIL: a devDependency reached the release notes" >&2; exit 1
+fi
+# It must land in the released section, not the fresh empty [Unreleased] left behind.
+awk '/^## \[0.1.1\]/{f=1} /^## \[0.1.0\]/{f=0} f' "$DEPS/CHANGELOG.md" | grep -q '### Dependencies' || {
+  echo "[release-smoke-test] FAIL: Dependencies landed outside the released section" >&2; exit 1; }
+log "dependency notes derived correctly, devDependencies excluded"
+
 log "all checks passed"

@@ -9,10 +9,14 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump
+        # `auto` reads the level off what accumulated in CHANGELOG.md's [Unreleased] section, which
+        # is where how-changes-are-made.md already says the bump comes from. An explicit choice
+        # still works, but may not go BELOW the level the changelog requires.
+        description: Version bump (auto reads it from CHANGELOG.md)
         required: true
+        default: auto
         type: choice
-        options: [patch, minor, major]
+        options: [auto, patch, minor, major]
 
 permissions:
   contents: write

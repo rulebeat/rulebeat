@@ -100,6 +100,32 @@ writable token.
 `pr-checks.yml`, and `prepare-release.yml` must dispatch it against the release PR, because a
 `GITHUB_TOKEN`-created PR may get no automatic run at all.
 
+## Dependency notes and the bump
+
+**Dependency notes come from the manifests, not from commit subjects.** Anyone can write
+`build(deps): bump ...`, a bump can be reverted while its subject still claims it happened,
+Dependabot truncates its own titles once they get long (`487d1fb` has no versions in it at all), and
+a grouped PR collapses twenty packages into one unparseable sentence. Manifests cannot lie about
+their own contents.
+
+**Only direct runtime `dependencies` of the two published packages count.** devDependencies, root
+tooling and Actions bumps are not in the image, so they are not release notes.
+
+**A package a human already named in `[Unreleased]` is skipped, never duplicated.** A derived
+"from 7.0.13 to 9.0.5" cannot explain impact; 0.2.1's hand-written nodemailer entry did.
+
+**Tag discovery fails closed, except for the very first release.** The previous version is known
+exactly, so "that tag is missing while other tags exist" is a shallow clone or an unpushed tag, not
+a licence to scan all history. A repository with no version tags at all is a genuine first release
+and simply gets no derived notes.
+
+**The bump is read off `[Unreleased]`, and an explicit choice may raise it but never lower it.**
+Breaking marker (`### Changed (breaking)` or a `**Breaking:**` bullet) means major; a non-empty
+`### Added` means minor; fixes, security and dependencies alone mean patch. A non-empty plain
+`### Changed` is ambiguous and refuses to guess, but only when nothing higher already decided:
+ambiguity that changes no outcome must not block a release. An empty heading with no bullets is not
+a section.
+
 ## The CHANGELOG itself
 
 **Only a pushed `vX.Y.Z` tag moves `:latest`.** A merge to `main` leaves an unreferenced
