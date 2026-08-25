@@ -187,9 +187,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # `npm run lint` is deliberately absent: it currently fails with ~25 pre-existing errors
-      # (setState inside effects, non-simple useMemo dependency arrays). Adding it now would make CI
-      # red on every run, which trains everyone to ignore it. It gets added once those are cleared.
+      # `npm run lint` is deliberately absent, and the reason has changed. It used to be ~25
+      # pre-existing errors (setState inside effects, non-simple useMemo dependency arrays). Since
+      # TypeScript 7 landed, lint does not run at all: typescript-eslint refuses to load against
+      # TS 7 ("typescript-eslint does not support TS 7.0"), and no released version accepts it --
+      # 8.68.0, the latest, pins `typescript: >=4.8.4 <6.1.0`. So the errors above cannot even be
+      # enumerated right now, let alone cleared.
+      #
+      # Tracked upstream at https://github.com/typescript-eslint/typescript-eslint/issues/10940.
+      # Adding the step when it becomes possible is what finally validates the ESLint 10 bump, which
+      # nothing in CI exercises today. Until then, treat a green run as saying nothing about lint.
 
       # Docker build + smoke test: runs on every push and PR, not just main, so a broken image is
       # caught before it can be tagged and published, not after. scripts/docker-smoke-test.sh
