@@ -11,6 +11,14 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+    # Six separate action bumps in a week is six reviews of the same shape. One grouped PR is one.
+    groups:
+      github-actions-all:
+        patterns:
+          - '*'
 
   # npm dependencies across the workspace (root manifest covers both packages via workspaces).
   # Minor and patch bumps arrive grouped as one weekly PR so the update stream stays reviewable;
@@ -19,6 +27,16 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+    # `include: scope` APPENDS the scope, so the prefix must be the bare type: this produces
+    # "build(deps): ..." and "build(deps-dev): ...". Setting prefix to "build(deps)" here would
+    # emit a doubled scope. Verify against a real generated PR of each kind before anything is
+    # taught to parse it.
+    commit-message:
+      prefix: 'build'
+      include: 'scope'
     groups:
       npm-minor-patch:
         update-types:

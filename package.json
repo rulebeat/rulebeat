@@ -25,6 +25,7 @@
     "test:release-changelog": "node --test scripts/release-bump-changelog.test.mjs",
     "test:release-candidate": "node --test scripts/check-release-candidate.test.mjs",
     "test:changelog-structure": "node --test scripts/check-changelog-structure.test.mjs",
+    "test:dependency-notes": "node --test scripts/release-dependency-notes.test.mjs",
     "test:changelog-gate": "node --test scripts/check-changelog-entry.test.mjs",
     "generate-demo": "npm run build:core && npm run generate-demo --workspace=packages/web",
     "secrets-scan": "gitleaks detect --source . --log-opts=--all"
