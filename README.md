@@ -35,7 +35,8 @@ Azure data (you can also explore the UI without connecting anything).
    ```bash
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     -e AUTH_URL=http://localhost:3000 \
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
    PowerShell:
@@ -43,7 +44,8 @@ Azure data (you can also explore the UI without connecting anything).
    ```powershell
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     -e AUTH_URL=http://localhost:3000 `
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
 2. Read the generated admin password. It is written to the data volume, never to the container
@@ -64,9 +66,15 @@ default is reachable from this host only. To reach it from another machine, put 
 with TLS in front; see
 [`docs/public/configure.md`](docs/public/configure.md#exposing-it-beyond-localhost).
 
-Pin a version tag rather than `:latest`. A running instance shows its version in the sidebar
-footer and on the Diagnostics page's System card, so you can always see what you are on and
-upgrade on your own schedule. Upgrading, backup, arriving pre-configured via environment
+`AUTH_URL` names the address RuleBeat treats as its own. Use `localhost`, not `127.0.0.1`:
+Microsoft sign-in only accepts a redirect URI over HTTPS or on `http://localhost`, and the
+sign-in flow builds that URI from `AUTH_URL`. Details in
+[`docs/public/install.md`](docs/public/install.md).
+
+`:latest` tracks the newest release. Every release is also published under its own version tag
+(listed on the [releases page](https://github.com/rulebeat/rulebeat/releases)) if you want to
+upgrade on your own schedule, and a running instance shows its version in the sidebar footer and
+on the Diagnostics page's System card. Upgrading, backup, arriving pre-configured via environment
 variables, and building the image from source are all in
 [`docs/public/install.md`](docs/public/install.md).
 
@@ -78,10 +86,12 @@ Save this as `docker-compose.yml` and run `docker compose up -d`:
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.2.3
+    image: ghcr.io/rulebeat/rulebeat:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
+    environment:
+      AUTH_URL: http://localhost:3000
     volumes:
       - rulebeat-data:/app/packages/web/data
 volumes:

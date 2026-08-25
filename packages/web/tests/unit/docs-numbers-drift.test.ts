@@ -180,31 +180,19 @@ describe('public docs state the same numbers the code ships', () => {
 });
 
 // ---- Pinned image tags ---------------------------------------------------------------------------
-// Docs pin `ghcr.io/rulebeat/rulebeat:X.Y.Z` in install, upgrade and cosign-verify commands. The
-// release script bumps package.json and CHANGELOG but nothing rewrites markdown, so `0.1.0`
-// survived the 0.2.0 release in nine places. Same convention as the count markers: the doc states
-// a number the code owns, so a test compares them.
+// The docs reference the image as `ghcr.io/rulebeat/rulebeat:latest` on purpose, so install and
+// upgrade commands never go stale between releases. A concrete `X.Y.Z` tag in a doc would drift
+// the moment the next release ships (0.1.0 survived the 0.2.0 release in nine places before the
+// docs switched to `:latest`), so its presence is itself the defect.
 
-const appVersion = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
-const IMAGE_TAG = /ghcr\.io\/rulebeat\/rulebeat:(\d+\.\d+\.\d+)/g;
+const PINNED_IMAGE_TAG = /ghcr\.io\/rulebeat\/rulebeat:\d+\.\d+\.\d+/g;
 
-interface TagOccurrence { file: string; tag: string }
-const pinnedTags: TagOccurrence[] = DOC_FILES.flatMap(file => {
-  const rel = file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/');
-  return [...readFileSync(file, 'utf8').matchAll(IMAGE_TAG)].map(m => ({ file: rel, tag: m[1]! }));
-});
-
-describe('pinned image tags in the docs match the version the repo ships', () => {
-  it('found pinned tags at all (guards against this suite silently testing nothing)', () => {
-    // The upgrade and cosign-verify docs deliberately pin a concrete version. If pinned tags are
-    // ever removed from the docs on purpose, delete this describe block deliberately with them.
-    expect(pinnedTags.length).toBeGreaterThan(0);
-  });
-
-  it.each(pinnedTags.map(o => [o.file, o.tag] as const))('%s pins ghcr.io/rulebeat/rulebeat:%s, which must equal package.json', (file, tag) => {
-    expect(tag, [
-      `${file} pins image tag ${tag} but package.json says ${appVersion}.`,
-      'Update the doc, not this test.',
-    ].join(' ')).toBe(appVersion);
+describe('docs reference the image by :latest, never a pinned version', () => {
+  it.each(DOC_FILES.map(file => [file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/'), file] as const))('%s has no pinned image tag', (rel, file) => {
+    const pins = [...readFileSync(file, 'utf8').matchAll(PINNED_IMAGE_TAG)].map(m => m[0]);
+    expect(pins, [
+      `${rel} pins ${pins.join(', ')} but the docs reference the image as :latest`,
+      'so commands never go stale between releases. Use :latest, or name the version in prose.',
+    ].join(' ')).toEqual([]);
   });
 });

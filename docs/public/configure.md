@@ -145,7 +145,7 @@ bash or zsh:
 ```bash
 # Container group: VNet-injected, no public IP, data volume on Azure Files
 az container create -g rulebeat-rg -n rulebeat \
-  --image ghcr.io/rulebeat/rulebeat:0.2.3 \
+  --image ghcr.io/rulebeat/rulebeat:latest \
   --vnet rulebeat-vnet --subnet aci-subnet \
   --ports 3000 \
   --azure-file-volume-account-name <storage-account> \
@@ -166,7 +166,7 @@ PowerShell:
 ```powershell
 # Container group: VNet-injected, no public IP, data volume on Azure Files
 az container create -g rulebeat-rg -n rulebeat `
-  --image ghcr.io/rulebeat/rulebeat:0.2.3 `
+  --image ghcr.io/rulebeat/rulebeat:latest `
   --vnet rulebeat-vnet --subnet aci-subnet `
   --ports 3000 `
   --azure-file-volume-account-name <storage-account> `

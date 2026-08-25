@@ -18,7 +18,7 @@
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
      -e AUTH_URL=http://localhost:3000 \
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
    PowerShell:
@@ -27,7 +27,7 @@
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
      -e AUTH_URL=http://localhost:3000 `
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
    Reach RuleBeat at `http://localhost:3000`. The port binding is deliberately loopback-only:
@@ -64,18 +64,20 @@ on its own after a crash or host reboot. The image also ships a `HEALTHCHECK` (t
 you inspected above) that `docker run` and Compose both use to know the app is actually serving
 traffic, not just that the process started.
 
-Pin a specific version rather than `:latest`; see [Upgrading](#upgrading) below for why, and for
-where to find the current version. `:latest` is still published if you want it, at the same risk as
-any always-newest tag: the running version can change under you with no record of when. Every
-published image is signed and carries an SBOM and build provenance you can verify yourself; see
-[Verifying a published image](security.md#verifying-a-published-image) in the security docs.
+`:latest` tracks the newest release, so the commands on this page never go stale. Every release is
+also published under its own version tag, listed on the
+[releases page](https://github.com/rulebeat/rulebeat/releases); pin one instead if you want
+upgrades to happen only when you choose. `:latest` only moves when a release is tagged, never from
+ordinary commits. Every published image is signed and carries an SBOM and build provenance you can
+verify yourself; see [Verifying a published image](security.md#verifying-a-published-image) in the
+security docs.
 
 Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`:
 
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.2.3
+    image: ghcr.io/rulebeat/rulebeat:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -140,10 +142,10 @@ never falls back to showing a setup screen. See [`configure.md`](configure.md) f
 
 A running instance shows its version in the sidebar footer and on the admin Diagnostics page's
 System card; the [releases page](https://github.com/rulebeat/rulebeat/releases) shows the newest
-one. Pull a specific tag rather than `:latest`: a pinned tag means you upgrade on your own schedule
-and can always see which version you're running.
+one and what changed in it.
 
-1. Pull the new version's image: `docker pull ghcr.io/rulebeat/rulebeat:0.2.3`
+1. Pull the new image: `docker pull ghcr.io/rulebeat/rulebeat:latest` (or a specific version tag
+   from the releases page, if you pin).
 2. Remove the old container: `docker stop rulebeat && docker rm rulebeat` (the data volume is
    untouched by this).
 3. Start the new one with the same command as the install.
@@ -154,7 +156,7 @@ and can always see which version you're running.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
      -e AUTH_URL=http://localhost:3000 \
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
    PowerShell:
@@ -163,11 +165,11 @@ and can always see which version you're running.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
      -e AUTH_URL=http://localhost:3000 `
-     ghcr.io/rulebeat/rulebeat:0.2.3
+     ghcr.io/rulebeat/rulebeat:latest
    ```
 
-With Compose, update the `image:` tag in your `docker-compose.yml` first, then
-`docker compose pull && docker compose up -d`.
+With Compose, `docker compose pull && docker compose up -d` does both steps. If you pin a
+version tag, update `image:` in your `docker-compose.yml` first.
 
 Migrations run automatically against the existing data volume on startup. RuleBeat's own test
 suite includes an upgrade path test that synthesizes old database shapes and asserts a user's
