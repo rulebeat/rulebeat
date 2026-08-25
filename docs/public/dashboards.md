@@ -31,7 +31,7 @@ dashboard; the Scans page is where you go to see them.
 | **Top Offending Resources** | The resources with the most open findings across all rules, for the "which five things should I fix first" question. |
 | **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against a threshold you set (one week by default), with that run's complete/partial coverage. |
 | **New vs. Fixed** | Remediation velocity: findings first seen versus findings fixed, per day, over the window. |
-| **Activity Occurrences** | A daily bar count of findings from activity rules (checks that count events over time rather than test a resource's current state). No pass/fail posture here: activity findings age out rather than resolve. No shipped rule produces activity findings yet, since they need the Log Analytics backend that isn't authorable today ([`whats-next.md`](whats-next.md)), so this widget stays empty until that lands. |
+| **Activity Occurrences** | A daily bar count of findings from activity rules (checks that count events over time rather than test a resource's current state). No pass/fail posture here: activity findings age out rather than resolve. No shipped rule produces activity findings yet, since they need the Log Analytics backend that isn't authorable today, so this widget stays empty until that lands. |
 
 Every widget has a title you can rename, and a Scope panel (below). Widgets whose height should
 follow their content (the scorecards, Recent Findings) shrink to fit; nothing on a dashboard ever

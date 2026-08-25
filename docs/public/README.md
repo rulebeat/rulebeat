@@ -13,8 +13,8 @@ first. It never blocks a deployment and never holds write credentials.
 RuleBeat is open source (Apache-2.0) and free.
 
 These pages are plain markdown, rendered by GitHub, and describe the product as it ships today.
-Nothing here promises a feature that is not in the code; the forward list lives in
-[`whats-next.md`](whats-next.md) and is the only page that talks about unshipped work.
+Nothing here promises a feature that is not in the code; where a page touches something
+unshipped, it says plainly that the thing does not exist yet.
 
 ## Start here
 
@@ -52,7 +52,6 @@ Nothing here promises a feature that is not in the code; the forward list lives 
 | [`directory-rules.md`](directory-rules.md) | Rules that read Microsoft Graph: object types, OData filters, expiring items, validation, permissions. |
 | [`demo-mode.md`](demo-mode.md) | Running RuleBeat against synthetic data with no Azure access at all. |
 | [`faq.md`](faq.md) | How RuleBeat relates to Azure Policy, Defender for Cloud and Advisor, and the questions people ask before installing. |
-| [`whats-next.md`](whats-next.md) | What is designed or in build, and what is deliberately not planned. No dates. |
 
 ## Conventions used in these pages
 

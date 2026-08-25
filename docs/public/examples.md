@@ -132,7 +132,7 @@ From the demo data:
 
 The finding's recommendation text is the rule's description: "Allowing HTTP traffic to storage
 accounts exposes data in transit. All access should be restricted to HTTPS." There is no generated
-fix step today; see [`whats-next.md`](whats-next.md).
+fix step today.
 
 ### What a scan does with it over time
 

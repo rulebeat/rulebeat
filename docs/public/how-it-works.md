@@ -61,7 +61,7 @@ scan, a run history row, a dashboard and a notification do not know or care whic
 finding.
 
 A third value, `log-analytics`, exists as a type and as a disabled tile in the rule picker. It does
-not run anything yet; see [`whats-next.md`](whats-next.md).
+not run anything yet.
 
 ## How a row becomes a finding
 
@@ -150,4 +150,4 @@ Azure fresh.
 ## Logs & activity
 
 Not available yet. The rule picker shows the option disabled so the shape of the product is honest
-about where it is going. See [`whats-next.md`](whats-next.md).
+about where it is going.

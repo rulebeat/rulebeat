@@ -32,8 +32,8 @@ There is no one-click fix. A finding tells you what failed, why (the rule's reco
 (a portal link) and, for pack rules, Microsoft's own guidance; you make the change in Azure with
 whatever identity and process you already use. The trade: RuleBeat cannot break anything, a
 compromised RuleBeat instance cannot change anything, and you can give it to a team without giving
-that team write access. Generated fix steps are on the list ([`whats-next.md`](whats-next.md)); they
-will still be steps you run, not actions RuleBeat takes.
+that team write access. Generated fix steps are planned; they will
+still be steps you run, not actions RuleBeat takes.
 
 ## Does it need Owner or Contributor?
 
@@ -90,8 +90,7 @@ and [`configure.md`](configure.md).
 
 ## Does it work on Azure Government or Azure China?
 
-Not today. The Azure public cloud endpoints are the only ones wired in. See
-[`whats-next.md`](whats-next.md).
+Not today. The Azure public cloud endpoints are the only ones wired in.
 
 ## Can I run more than one replica?
 
@@ -103,13 +102,13 @@ volume would double-fire schedules and contend for SQLite. See
 
 Not yet. Rules run against Azure Resource Graph (resource configuration) and Microsoft Graph
 (directory objects). The third kind, Logs & activity over Log Analytics, is designed and in build;
-the picker shows it as not yet available. See [`whats-next.md`](whats-next.md).
+the picker shows it as not yet available.
 
 ## Can I export or import rules?
 
 Findings export to CSV and JSON from the Scans page, and the audit log exports to CSV. Rules do not
 have an import or export feature today; a rule is edited in the product, and the built-in and pack
-rules arrive with the release. See [`whats-next.md`](whats-next.md).
+rules arrive with the release.
 
 ## How do I back it up?
 
