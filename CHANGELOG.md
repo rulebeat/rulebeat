@@ -6,6 +6,16 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The container image is now built against the dependency versions the manifests declare. The
+  build stage copied only the top-level `node_modules`, so a dependency npm placed inside
+  `packages/web` was absent while the app was compiled and resolution fell back to whatever
+  compatible copy happened to sit at the top level. `nodemailer` resolved this way to 8.0.11, a
+  package pulled in indirectly by something else, rather than the 9.0.5 the manifest pins, and
+  that is the copy the build traced into the image. Anyone relying on email notifications was
+  running a different version of it than the release notes described.
+
 ## [0.2.1] - 2026-08-24
 
 ### Security

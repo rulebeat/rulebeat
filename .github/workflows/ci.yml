@@ -104,6 +104,9 @@ jobs:
       - name: Test pull-request context resolution
         run: npm run test:pr-context
 
+      - name: Test builder dependency check
+        run: npm run test:builder-deps
+
       - name: Test CHANGELOG structural invariants
         run: npm run test:changelog-structure
 
