@@ -6,6 +6,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Microsoft sign-in could not be configured at all from the documented install. That install binds
+  to 127.0.0.1, so the redirect URI shown in Settings and in onboarding used that address, and
+  Microsoft rejects a redirect URI on an IP address. Both places now show the localhost form and
+  say what else has to match, instead of an address no app registration can accept.
+
 ## [0.2.2] - 2026-08-25
 
 ### Fixed
