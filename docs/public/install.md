@@ -17,6 +17,7 @@
    ```bash
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
+     -e AUTH_URL=http://localhost:3000 \
      ghcr.io/rulebeat/rulebeat:0.2.0
    ```
 
@@ -25,19 +26,20 @@
    ```powershell
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
+     -e AUTH_URL=http://localhost:3000 `
      ghcr.io/rulebeat/rulebeat:0.2.0
    ```
 
-   The port binding is deliberately loopback-only: RuleBeat holds a live Azure read credential
-   and has no TLS of its own, so it is reachable from this machine and nowhere else until you put
-   a reverse proxy in front of it. Reach it at `http://localhost:3000`.
+   Reach RuleBeat at `http://localhost:3000`. The port binding is deliberately loopback-only:
+   RuleBeat holds a live Azure read credential and has no TLS of its own, so it is reachable from
+   this machine and nowhere else until you put a reverse proxy in front of it.
 
-   Use `localhost`, not `127.0.0.1`. If you set up Microsoft sign-in, Entra ID accepts a redirect
-   URI only over HTTPS or on `http://localhost`, and refuses an IP address. Reaching RuleBeat at
-   `127.0.0.1` produces a redirect URI no app registration can be configured to match. To pin it
-   regardless of how you browse, add `-e AUTH_URL=http://localhost:3000` to the command above, or
-   set the same address in Settings → Sign-in → Public URL. A deployment behind a domain sets its
-   own public URL instead, as described in [`configure.md`](configure.md).
+   `AUTH_URL` is the address RuleBeat treats as its own. It is set here because Entra ID accepts a
+   Microsoft sign-in redirect URI only over HTTPS or on `http://localhost`, and refuses an IP
+   address: browsing `127.0.0.1` produces a redirect URI no app registration can be configured to
+   match. If you set up Microsoft sign-in, register
+   `http://localhost:3000/api/auth/callback/microsoft-entra-id` in Entra ID. A deployment behind a
+   domain sets `AUTH_URL` to that domain instead, as described in [`configure.md`](configure.md).
 
 2. Confirm the container reports healthy (it can take a few seconds to move past `starting`):
 
@@ -77,6 +79,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
+    environment:
+      AUTH_URL: http://localhost:3000
     volumes:
       - rulebeat-data:/app/packages/web/data
 volumes:
@@ -149,6 +153,7 @@ and can always see which version you're running.
    ```bash
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
+     -e AUTH_URL=http://localhost:3000 \
      ghcr.io/rulebeat/rulebeat:0.2.0
    ```
 
@@ -157,6 +162,7 @@ and can always see which version you're running.
    ```powershell
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
+     -e AUTH_URL=http://localhost:3000 `
      ghcr.io/rulebeat/rulebeat:0.2.0
    ```
 
