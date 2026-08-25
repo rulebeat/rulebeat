@@ -10,10 +10,16 @@
 // while the author still knows what the change means -- at release time that context is gone.
 //
 // Scope of the guarantee, stated honestly: this prevents an ACCIDENTAL omission. It is not an
-// adversarial control. A fork PR can edit this file or the workflow and report green. That edit is
-// visible in the diff and scripts/** is not exempt, so review is the mitigation. Running it under
-// pull_request_target to stop that would be strictly worse: the job would then execute
-// fork-authored code with a writable base-repo token.
+// adversarial control. A fork PR can edit this file or the workflow and report green; that edit is
+// plainly visible in the diff, so review is the mitigation. Running it under pull_request_target to
+// stop that would be strictly worse: the job would then execute fork-authored code with a writable
+// base-repo token.
+//
+// What counts as shipping is decided against the Dockerfile, not by intuition. The runtime image
+// contains only .next/standalone, .next/static, packages/web/public and packages/web/data/packs.
+// CI config, docs, tests and every scripts/ directory are therefore exempt: they cannot change what
+// a user's container does, and CHANGELOG.md is release notes for people running RuleBeat, not a log
+// of the repo's own tooling.
 //
 // Detection is parse-and-compare, not diff-hunk parsing. Markdown has no diff driver configured
 // here, so a hunk header is git's generic heuristic rather than the nearest "##"; and a rebase, a
@@ -54,10 +60,19 @@ const NON_SHIPPING = [
   /(^|\/)tests?\//,
   /\.test\.(ts|mts|mjs|js)$/,
   /\.spec\.(ts|mts|mjs|js)$/,
-  /^scripts\/.*\.test\.mjs$/,
-  /^scripts\/.*-test\.sh$/,
+  // Build and release tooling. Verified against the Dockerfile: the runtime stage copies only
+  // .next/standalone, .next/static, packages/web/public and packages/web/data/packs, and it
+  // explicitly deletes packages/web/scripts from the standalone output. Nothing under any
+  // scripts/ directory reaches the image, so changing it cannot change what the app does.
+  // (scripts/sync-pack.ts generates packs, but its committed output lands in
+  // packages/web/data/packs, which is classified as shipping in its own right.)
+  /^scripts\//,
+  /^packages\/[^/]+\/scripts\//,
   /^(LICENSE|NOTICE|\.gitignore|\.editorconfig)$/,
 ];
+
+/** Root and workspace manifests, where only some kinds of change reach the image. */
+const MANIFEST = /^(package\.json|packages\/[^/]+\/package\.json)$/;
 
 /**
  * @param {string} path repo-relative
@@ -65,6 +80,37 @@ const NON_SHIPPING = [
  */
 export function isShippingPath(path) {
   return !NON_SHIPPING.some((re) => re.test(path));
+}
+
+/**
+ * A manifest is where a dependency bump lives, so it has to count as shipping -- that is the exact
+ * case this whole gate was built for. But adding an npm script to it changes nothing in the image,
+ * and treating that as shipping would mean every CI or tooling PR needs a label.
+ *
+ * So: a manifest change ships unless the ONLY top-level key that differs is `scripts`. Anything
+ * touching dependencies, version, engines or workspaces still ships. Unparseable JSON on either
+ * side counts as shipping, because "I could not tell" must not mean "waved through".
+ *
+ * @param {string} baseText
+ * @param {string} headText
+ * @returns {boolean} true when the change can affect the image
+ */
+export function manifestChangeShips(baseText, headText) {
+  let base;
+  let head;
+  try {
+    base = JSON.parse(baseText);
+    head = JSON.parse(headText);
+  } catch {
+    return true;
+  }
+
+  const keys = new Set([...Object.keys(base), ...Object.keys(head)]);
+  for (const key of keys) {
+    if (key === 'scripts') continue;
+    if (JSON.stringify(base[key]) !== JSON.stringify(head[key])) return true;
+  }
+  return false;
 }
 
 /**
@@ -123,6 +169,7 @@ export function checkChangelogGate(input) {
     basePackageVersion,
     baseChangelog,
     headChangelog,
+    manifests = {},
   } = input;
 
   // A release PR touches all three manifests (shipping paths) and EMPTIES [Unreleased]: a net
@@ -155,7 +202,13 @@ export function checkChangelogGate(input) {
     };
   }
 
-  const shippingPaths = changedPaths.filter(isShippingPath);
+  const shippingPaths = changedPaths.filter((p) => {
+    if (!isShippingPath(p)) return false;
+    if (!MANIFEST.test(p)) return true;
+    const contents = manifests[p];
+    // No content supplied means no refinement is possible, so keep the conservative answer.
+    return contents ? manifestChangeShips(contents.base, contents.head) : true;
+  });
   if (shippingPaths.length === 0) {
     return { ok: true, reason: 'non-shipping', shippingPaths: [] };
   }
@@ -227,8 +280,11 @@ export function formatGateFailure(result) {
     '### If no entry belongs here',
     '',
     `A maintainer can apply the \`${SKIP_LABEL}\` label, which re-runs this check. That label means`,
-    '"this genuinely does not affect the shipped runtime" -- it is not a way past the check. Docs,',
-    'tests, and workflow-only changes are exempt automatically and need no label.',
+    '"this genuinely does not affect the shipped runtime" -- it is not a way past the check.',
+    '',
+    'Docs, tests, CI config and every `scripts/` directory are exempt automatically and need no',
+    'label: none of them is in the runtime image, which contains only the built app, its public',
+    'assets and its rule packs.',
     '',
   ].join('\n');
 }
@@ -283,6 +339,14 @@ function main() {
     basePackageVersion = '';
   }
 
+  // Only the manifests this PR actually touched, so no needless git calls.
+  const manifests = {};
+  for (const p of changedPaths) {
+    if (/^(package\.json|packages\/[^/]+\/package\.json)$/.test(p)) {
+      manifests[p] = { base: gitShowOrEmpty(baseSha, p), head: gitShowOrEmpty(headSha, p) };
+    }
+  }
+
   const result = checkChangelogGate({
     author: process.env.PR_AUTHOR ?? '',
     headRef: process.env.PR_HEAD_REF ?? '',
@@ -293,6 +357,7 @@ function main() {
     basePackageVersion,
     baseChangelog,
     headChangelog,
+    manifests,
   });
 
   if (result.ok) {

@@ -38,9 +38,12 @@ Use `Added` for a new capability, `Changed` for different behaviour, `Fixed` for
 for a vulnerability fix. Describe what a user would notice rather than what the diff does; the
 existing entries are the model.
 
-Changes to docs, tests, workflows and the top-level `brand/` kit are exempt automatically, so most
-first contributions need nothing here. The reason the check exists at all: only a pushed `vX.Y.Z`
-tag moves the `:latest` image, so a change with no entry has nothing to carry it into a release.
+Changes to docs, tests, CI config, build and release scripts, and the top-level `brand/` kit are
+exempt automatically, so most first contributions need nothing here. What matters is whether a file
+reaches the running container, not whether it changed in the repo.
+
+The reason the check exists at all: only a pushed `vX.Y.Z` tag moves the `:latest` image, so a
+change with no entry has nothing to carry it into a release.
 
 ## Bug reports
 

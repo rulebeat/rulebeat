@@ -191,17 +191,25 @@ test("the repo's own real CHANGELOG.md parses, and its shipped state matches pac
 });
 
 test('what release.mjs actually produces from the real CHANGELOG is a valid candidate', () => {
-  // Deliberately NOT "the real CHANGELOG is a valid candidate" -- during normal development
-  // [Unreleased] has content, and a candidate is only valid once bumpChangelog() has emptied it.
-  // Asserting on the live file would have meant a test that goes red the moment anyone records a
-  // change, which is the opposite of what this checks. Running the real release transformation
-  // here instead also proves the checker and bumpChangelog() agree about the shape of a release.
+  // Deliberately NOT "the real CHANGELOG is a valid candidate": a candidate is only valid once
+  // bumpChangelog() has emptied [Unreleased], so asserting on the live file would go red whenever
+  // work is pending. Running the real release transformation here instead also proves the checker
+  // and bumpChangelog() agree about the shape of a release.
+  //
+  // The pending entry is injected rather than assumed, because [Unreleased] is legitimately empty
+  // whenever everything is released -- which is exactly the state this repo is in between releases,
+  // and bumpChangelog() refuses an empty one. Same fixture approach as
+  // release-bump-changelog.test.mjs.
   const real = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
+  const withPendingWork = real.replace(
+    '## [Unreleased]\n',
+    '## [Unreleased]\n\n### Fixed\n- A real fix, shaped like this repo\'s own entries.\n'
+  );
   const previous = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
   const next = '99.0.0';
 
   const released = updateChangelogFooterLinks(
-    bumpChangelog(real, next, '2026-09-01'),
+    bumpChangelog(withPendingWork, next, '2026-09-01'),
     previous,
     next
   );
