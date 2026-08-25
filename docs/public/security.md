@@ -116,8 +116,8 @@ docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:latest --format '{{ j
 ```
 
 The CI pipeline that builds and scans every image is public: see
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
-[`.github/workflows/publish-image.yml`](../../.github/workflows/publish-image.yml). Every
+[`.github/workflows/ci.yml`](https://github.com/rulebeat/rulebeat/blob/main/.github/workflows/ci.yml) and
+[`.github/workflows/publish-image.yml`](https://github.com/rulebeat/rulebeat/blob/main/.github/workflows/publish-image.yml). Every
 third-party GitHub Action either workflow uses is pinned to a commit SHA rather than a mutable
 version tag, so a compromised or force-moved action tag cannot silently change what runs in either
 pipeline.
@@ -154,7 +154,7 @@ model.
 
 ## Reporting a vulnerability
 
-See [`SECURITY.md`](../../SECURITY.md) in the repository root.
+See [`SECURITY.md`](https://github.com/rulebeat/rulebeat/blob/main/SECURITY.md) in the repository root.
 
 ## What this page doesn't cover
 

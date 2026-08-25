@@ -1,0 +1,122 @@
+# MkDocs Material config for the public docs site, https://docs.rulebeat.com
+# (also reachable at https://rulebeat.github.io/rulebeat/ until DNS points the domain).
+#
+# docs/public/*.md is the source of truth and keeps rendering on plain GitHub; this file adapts it
+# unchanged: no front-matter, no moved files, and the <!-- count:* --> drift markers pass through
+# as invisible HTML comments (packages/web/tests/unit/docs-numbers-drift.test.ts still reads them
+# from source). Anchors are forced to GitHub's slug rules via pymdownx.slugs so every existing
+# #fragment link keeps working, and `mkdocs build --strict` (run by
+# .github/workflows/docs-site.yml) fails the build on any broken page link or anchor.
+#
+# Local preview:  pip install -r docs/requirements.txt && mkdocs serve -f docs/mkdocs.yml
+
+site_name: RuleBeat
+site_description: >-
+  RuleBeat runs the governance checks your team writes for Azure on a schedule,
+  tracks every finding over time, and never holds write access.
+site_url: https://docs.rulebeat.com/
+repo_url: https://github.com/rulebeat/rulebeat
+repo_name: rulebeat/rulebeat
+edit_uri: edit/main/docs/public/
+
+docs_dir: public # relative to this file -> docs/public
+site_dir: site # relative to this file -> docs/site (gitignored)
+
+theme:
+  name: material
+  custom_dir: overrides # relative to this file -> docs/overrides
+  # logo is superseded by overrides/partials/logo.html, which renders both wordmark variants and
+  # lets stylesheets/rulebeat.css show the one matching the active scheme; kept here so anything
+  # that reads theme.logo (e.g. the 404 page) still has a sane value.
+  logo: img/brand/rulebeat-wordmark-plain.svg
+  favicon: img/brand/favicon.ico
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: IBM Plex Mono
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    # Follow the OS by default, with a manual three-way toggle. `custom` emits no preset color
+    # rules, so stylesheets/rulebeat.css is the single source of truth for both schemes.
+    - media: '(prefers-color-scheme)'
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+# Bare paths: sidebar titles come from each page's own H1, so a retitled page cannot drift from
+# its nav label. Grouping and order mirror docs/public/README.md's index.
+nav:
+  - README.md
+  - Start here:
+      - install.md
+      - permissions.md
+      - scans-and-schedules.md
+  - Understand:
+      - how-it-works.md
+      - posture.md
+      - examples.md
+  - Operate:
+      - notifications.md
+      - dashboards.md
+      - suppressions.md
+      - rbac.md
+      - configure.md
+      - security.md
+      - troubleshooting.md
+  - Reference:
+      - authoring-rules.md
+      - directory-rules.md
+      - demo-mode.md
+      - faq.md
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  # GitHub's slug algorithm, not python-markdown's default: the default collapses runs of
+  # separators ("Logs & activity" -> logs-activity) where GitHub does not (-> logs--activity),
+  # and every existing cross-page #fragment link in these files was written against GitHub.
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+extra_css:
+  - stylesheets/rulebeat.css # relative to docs_dir
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/rulebeat/rulebeat
+
+# Raised from MkDocs' defaults (anchors and absolute_links default to `info`, which --strict
+# ignores) so `mkdocs build --strict` fails on any broken internal link OR anchor. External
+# https:// links are never fetched, so the absolute GitHub URLs in install.md/security.md cannot
+# false-positive.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

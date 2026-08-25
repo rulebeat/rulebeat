@@ -1,0 +1,6 @@
+# Build dependency of the docs site (docs/mkdocs.yml) and nothing else. It never ships in the
+# product image; the worst a bad version can do is a red docs build. Exact-pinned like everything
+# else in this repo, and the pip ecosystem entry in .github/dependabot.yml keeps the pin fresh.
+# Transitives (mkdocs, pymdown-extensions, jinja2, pygments, ...) arrive as its declared
+# dependencies and resolve at install time.
+mkdocs-material==9.7.7

@@ -1,0 +1,159 @@
+/* RuleBeat skin for mkdocs-material. Token values mirror packages/web/app/globals.css: change
+   them there first, then here. Schemes: default = light, slate = dark. The palette entries in
+   docs/mkdocs.yml use primary/accent `custom`, which emits no preset color rules, so this file
+   is the single source of truth for both schemes. */
+
+/* Inter Tight for headings. Material's `font:` key only loads the text and code families, and
+   an @import must be the first statement in the file. */
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&display=swap");
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f1f1ef; /* page ground */
+  --md-default-fg-color: #000000; /* ink */
+  --md-default-fg-color--light: #3a3a3a; /* ink-2: secondary text */
+  --md-default-fg-color--lighter: #55554f; /* muted */
+  --md-default-fg-color--lightest: #e2e2e0; /* border / hairlines */
+  --md-typeset-color: #000000;
+  --md-typeset-a-color: #000000; /* links are ink + underline, never red */
+  --md-accent-fg-color: #3a3a3a;
+  --md-accent-fg-color--transparent: rgba(58, 58, 58, 0.1);
+  /* Material couples "primary" to the header bar. The header sits on the page ground with ink
+     text (the product's primary action is ink, and red belongs to problems), so the primary slot
+     carries the background and the two wordmark variants swap with the scheme. */
+  --md-primary-fg-color: #f1f1ef;
+  --md-primary-fg-color--light: #ffffff;
+  --md-primary-fg-color--dark: #e2e2e0;
+  --md-primary-bg-color: #000000; /* text and icons on the header */
+  --md-primary-bg-color--light: #55554f;
+  --md-code-bg-color: #ffffff; /* surface */
+  --md-code-fg-color: #000000;
+  --md-typeset-table-color: #c6c6c3; /* rule-strong for table rules */
+  --md-footer-bg-color: #000000;
+  --md-footer-bg-color--dark: #000000;
+  --md-footer-fg-color: #f1f1ef;
+  /* Reserved: red marks problems only. */
+  --rb-red: #e3000f;
+  --rb-ok: #0f7b4f;
+  --rb-warn: #8a5a00;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0b0c0d;
+  --md-default-fg-color: #f4f4f2;
+  --md-default-fg-color--light: #c8cacc;
+  --md-default-fg-color--lighter: #a9adb1;
+  --md-default-fg-color--lightest: #26292c;
+  --md-typeset-color: #f4f4f2;
+  --md-typeset-a-color: #f4f4f2;
+  --md-accent-fg-color: #c8cacc;
+  --md-accent-fg-color--transparent: rgba(200, 202, 204, 0.1);
+  --md-primary-fg-color: #0b0c0d;
+  --md-primary-fg-color--light: #17191b;
+  --md-primary-fg-color--dark: #26292c;
+  --md-primary-bg-color: #f4f4f2;
+  --md-primary-bg-color--light: #a9adb1;
+  --md-code-bg-color: #17191b; /* dark surface */
+  --md-code-fg-color: #f4f4f2;
+  --md-typeset-table-color: #26292c;
+  --md-footer-bg-color: #17191b;
+  --md-footer-bg-color--dark: #17191b;
+  --md-footer-fg-color: #f4f4f2;
+  /* The light red vibrates on a dark ground; the app lifts it, so the docs do too. */
+  --rb-red: #ff453d;
+  --rb-ok: #3dd68c;
+  --rb-warn: #e5a93d;
+}
+
+/* Headings and the header title: Inter Tight, tight tracking like the app. */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6,
+.md-header__topic {
+  font-family: "Inter Tight", "Inter", system-ui, sans-serif;
+  letter-spacing: -0.022em;
+}
+
+/* Links: underlined ink. Color alone cannot mark them when link color equals text color. */
+.md-typeset a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.md-typeset a:hover {
+  color: var(--md-accent-fg-color);
+}
+
+/* The header sits on the page ground: a hairline instead of an elevation shadow. */
+.md-header {
+  box-shadow: none;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-tabs {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Hard corners everywhere, matching the app's --radius: 0. Extend this list if a rounded
+   Material surface slips through. */
+.md-typeset code,
+.md-typeset pre > code,
+.md-search__form,
+.md-search__input,
+.md-search__output,
+.md-typeset .admonition,
+.md-typeset details,
+.md-button,
+.md-top,
+.md-tooltip,
+.md-clipboard::after,
+.md-banner,
+.md-typeset table:not([class]) {
+  border-radius: 0 !important;
+}
+
+/* Code: no ligatures, like the app. */
+.md-typeset code,
+.md-typeset pre {
+  font-feature-settings: "calt" 0, "liga" 0;
+}
+
+/* Tables: lining figures for data. */
+.md-typeset table:not([class]) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Logo: size the wordmark and show the variant matching the active scheme
+   (pairs with overrides/partials/logo.html). */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  height: 1.1rem;
+  width: auto;
+}
+[data-md-color-scheme="default"] .rb-logo--dark {
+  display: none;
+}
+[data-md-color-scheme="slate"] .rb-logo--light {
+  display: none;
+}
+
+/* Admonitions (none in the content today; mapping reserved so future ones follow the product's
+   rule: red marks problems, everything else stays on hairline ink). */
+.md-typeset .admonition.warning,
+.md-typeset details.warning,
+.md-typeset .admonition.danger,
+.md-typeset details.danger {
+  border-color: var(--rb-red);
+}
+.md-typeset .warning > .admonition-title,
+.md-typeset .danger > .admonition-title {
+  background-color: color-mix(in srgb, var(--rb-red) 10%, transparent);
+}
+.md-typeset .warning > .admonition-title::before,
+.md-typeset .danger > .admonition-title::before {
+  background-color: var(--rb-red);
+}
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: var(--md-default-fg-color--lightest);
+}

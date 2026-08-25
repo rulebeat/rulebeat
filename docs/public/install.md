@@ -89,7 +89,7 @@ volumes:
   rulebeat-data:
 ```
 
-The repo's own [`docker-compose.yml`](../../docker-compose.yml) is the long-form version of this
+The repo's own [`docker-compose.yml`](https://github.com/rulebeat/rulebeat/blob/main/docker-compose.yml) is the long-form version of this
 file: it builds from source (`build: .`) and documents every environment variable RuleBeat reads,
 each one optional, with a comment saying what it's for. Use it as the reference when you want a
 deployment to [arrive pre-configured](#arriving-pre-configured).

@@ -1,0 +1,88 @@
+name: Docs site
+
+# Builds the MkDocs Material site from docs/public/ (config: docs/mkdocs.yml) and publishes it to
+# GitHub Pages, served at https://docs.rulebeat.com (and rulebeat.github.io/rulebeat until the
+# domain's DNS lands). Two jobs:
+#
+#   - docs-build-check ("Docs build"): strict build on every pull request. Deliberately NO paths:
+#     filter, for the same reason pr-checks.yml has none: a required status check whose workflow
+#     never runs leaves the PR stuck on "Expected" forever. The build takes well under a minute;
+#     running it on every PR is cheaper than that failure mode. --strict turns any broken internal
+#     link or anchor (docs/mkdocs.yml raises those validations to warn) into a failed build.
+#
+#   - docs-deploy ("Docs deploy"): push to main, paths-filtered (a deploy is not a PR gate, so a
+#     filter is safe here) plus workflow_dispatch for a manual re-publish. Uses the official Pages
+#     actions; repo Settings -> Pages -> Source must be "GitHub Actions" (set once).
+#
+# A skipped job satisfies a required check, so docs-build-check skipping on push-to-main is safe.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+jobs:
+  docs-build-check:
+    # This exact string is the check context to select in branch protection. Keep it unique across
+    # workflows: duplicate job names make a required check ambiguous.
+    name: Docs build
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout only; builds and discards, publishes nothing
+    concurrency:
+      group: docs-check-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # Inline on purpose: no root .python-version file (the changelog gate fails closed on
+          # unfamiliar root files, and nothing else in this repo is Python).
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - name: Install mkdocs-material
+        run: python -m pip install -r docs/requirements.txt
+      - name: Build (strict)
+        run: mkdocs build --strict -f docs/mkdocs.yml
+
+  docs-deploy:
+    name: Docs deploy
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write # deploy the built site to Pages
+      id-token: write # OIDC token deploy-pages uses to prove the deployment's origin
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: docs-deploy
+      # Never cancel a half-finished Pages deployment; a newer run queues behind it instead.
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - name: Install mkdocs-material
+        run: python -m pip install -r docs/requirements.txt
+      - name: Build (strict)
+        run: mkdocs build --strict -f docs/mkdocs.yml
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

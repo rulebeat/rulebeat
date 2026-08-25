@@ -257,7 +257,8 @@ SQLite database inside your own deployment; secrets you enter are encrypted at r
 [`docs/public/how-it-works.md`](docs/public/how-it-works.md) for the full request path, and
 [`docs/public/README.md`](docs/public/README.md) for the index of every guide: installation,
 configuration, authoring rules, posture, dashboards, suppressions, notifications, roles, security,
-troubleshooting and worked examples. [`docs/public/security.md`](docs/public/security.md) covers
+troubleshooting and worked examples. The same pages are published, searchable, at
+[docs.rulebeat.com](https://docs.rulebeat.com). [`docs/public/security.md`](docs/public/security.md) covers
 what RuleBeat reads, what it stores, and what it never does; [`SECURITY.md`](SECURITY.md) is how to
 report a vulnerability.
 
