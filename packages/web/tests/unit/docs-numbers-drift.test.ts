@@ -59,6 +59,14 @@ function countWidgetTemplates(): number {
   return (m[1]!.match(/^\s*type: '[a-z-]+',$/gm) ?? []).length;
 }
 
+/** Onboarding wizard steps: one `{ id: N, ... }` entry per step in the stepper's STEPS array. */
+function countOnboardingSteps(): number {
+  const src = readFileSync(join(WEB_ROOT, 'app', 'onboarding', 'onboarding-client.tsx'), 'utf8');
+  const m = src.match(/const STEPS: StepperStep\[\] = \[([\s\S]*?)\n\];/);
+  if (!m) throw new Error('could not find STEPS in onboarding-client.tsx');
+  return (m[1]!.match(/\{ id: \d+,/g) ?? []).length;
+}
+
 const allPackRules = [...packRules.values()].flat();
 const liveCounts: Record<string, number> = {
   'builtin-rules': BUILTIN_RULES.length,
@@ -66,6 +74,7 @@ const liveCounts: Record<string, number> = {
   'checks-total': BUILTIN_RULES.length + allPackRules.length,
   'credential-expiry-rules': BUILTIN_RULES.filter(r => r.queryBackend === 'microsoft-graph').length,
   'widget-types': countWidgetTemplates(),
+  'onboarding-steps': countOnboardingSteps(),
   'channel-types': countUnionMembers(join(WEB_ROOT, 'lib', 'db', 'notification-channels.ts'), 'NotificationChannelType'),
   'roles': ROLES.length,
   'graph-resource-types': GRAPH_RESOURCE_PATHS.length,
@@ -116,6 +125,7 @@ const REQUIRED: Array<[file: string, key: string]> = [
   ['docs/public/security.md', 'graph-resource-types'],
   ['docs/public/security.md', 'credential-expiry-rules'],
   ['docs/public/rbac.md', 'roles'],
+  ['docs/public/install.md', 'onboarding-steps'],
 ];
 
 describe('public docs state the same numbers the code ships', () => {
@@ -166,5 +176,23 @@ describe('public docs state the same numbers the code ships', () => {
     for (const [id, rules] of packRules) {
       expect(packManifest[id]?.policyCount, `pack-manifest.json policyCount for ${id}`).toBe(rules.length);
     }
+  });
+});
+
+// ---- Pinned image tags ---------------------------------------------------------------------------
+// The docs reference the image as `ghcr.io/rulebeat/rulebeat:latest` on purpose, so install and
+// upgrade commands never go stale between releases. A concrete `X.Y.Z` tag in a doc would drift
+// the moment the next release ships (0.1.0 survived the 0.2.0 release in nine places before the
+// docs switched to `:latest`), so its presence is itself the defect.
+
+const PINNED_IMAGE_TAG = /ghcr\.io\/rulebeat\/rulebeat:\d+\.\d+\.\d+/g;
+
+describe('docs reference the image by :latest, never a pinned version', () => {
+  it.each(DOC_FILES.map(file => [file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/'), file] as const))('%s has no pinned image tag', (rel, file) => {
+    const pins = [...readFileSync(file, 'utf8').matchAll(PINNED_IMAGE_TAG)].map(m => m[0]);
+    expect(pins, [
+      `${rel} pins ${pins.join(', ')} but the docs reference the image as :latest`,
+      'so commands never go stale between releases. Use :latest, or name the version in prose.',
+    ].join(' ')).toEqual([]);
   });
 });

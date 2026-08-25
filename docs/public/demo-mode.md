@@ -32,8 +32,10 @@ history, trends and finding lifecycles look like a tenant that has been scanned 
 - **4 subscriptions** (Contoso Platform Prod and Dev, Contoso Data & Analytics, Contoso Shared
   Services), each with a handful of resource groups and a few hundred resources in total across
   the common types (VMs, disks, NICs, storage accounts, key vaults, load balancers, and so on).
-- **48 enabled rules**: 13 built-in rules plus the 35 APRL pack rules whose resource types exist in
-  the synthetic estate. The rest of the pack is left disabled, as on a real install.
+- **Around 50 enabled rules**: 13 hand-picked built-in rules plus every APRL pack rule whose
+  resource types exist in the synthetic estate (about 35 of the pack's
+  <!-- count:pack-rules:aprl-v2 -->143). The rest of the pack is left disabled, as on a real
+  install.
 - **28 fictional app registrations** with secrets and certificates at various distances from
   expiry, so the two Directory rules produce critical, high and medium findings, including a few
   already-expired ones.
@@ -48,14 +50,47 @@ value in it came from a real tenant.
 
 ## How to run it
 
-From `packages/web` (or inside the container's working directory):
+Demo mode runs from a source checkout: the generator is a repo script that the published Docker
+image doesn't ship.
 
-```
-RULEBEAT_DEMO=1 npm run generate-demo
-```
+1. Clone and build once, from the repo root:
 
-then start the app however you normally do (`npm run dev`, the built `npm run start`, or the
-container) with `RULEBEAT_DEMO=1` in its environment.
+   ```
+   git clone https://github.com/rulebeat/rulebeat.git
+   cd rulebeat
+   npm install
+   npm run build:core
+   ```
+
+2. Generate the synthetic database, from `packages/web`.
+
+   bash or zsh:
+
+   ```bash
+   RULEBEAT_DEMO=1 npm run generate-demo
+   ```
+
+   PowerShell:
+
+   ```powershell
+   $env:RULEBEAT_DEMO = '1'; npm run generate-demo
+   ```
+
+3. Start the app with the same variable in its environment.
+
+   bash or zsh:
+
+   ```bash
+   RULEBEAT_DEMO=1 npm run dev
+   ```
+
+   PowerShell:
+
+   ```powershell
+   $env:RULEBEAT_DEMO = '1'; npm run dev
+   ```
+
+   The built `npm run start` works the same way, with the same variable set.
 
 `RULEBEAT_DEMO=1` does two things: it points the app at `data/demo.db` instead of `data/rulebeat.db`,
 and it turns on the anonymous read-only behaviour. The generator writes the synthetic database and

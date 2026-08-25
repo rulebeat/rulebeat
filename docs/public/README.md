@@ -36,7 +36,6 @@ Nothing here promises a feature that is not in the code; the forward list lives 
 
 | Page | What it answers |
 |---|---|
-| [`scans-and-schedules.md`](scans-and-schedules.md) | Manual runs, recurrence, targeting, run history and per-rule outcomes. |
 | [`notifications.md`](notifications.md) | Teams, Slack, generic webhook and email channels, per-schedule thresholds, retries, delivery history and the outbound URL guard. |
 | [`dashboards.md`](dashboards.md) | The widget catalog, filters, date windows, multiple dashboards, and what each widget can and cannot show. |
 | [`suppressions.md`](suppressions.md) | What suppressing a finding does and does not do, reasons, expiry, who can suppress, and how it shows in export. |
@@ -61,8 +60,9 @@ Nothing here promises a feature that is not in the code; the forward list lives 
   is a finding you chose to hide, with a reason and an optional expiry. **Posture** is the "X of Y
   passing" measure. **Pack** is a version-pinned external rule set. **Category** is the configurable
   grouping a rule belongs to.
-- Screenshots are taken from a real self-hosted install. Sample findings in
-  [`examples.md`](examples.md) come from demo mode's synthetic estate, and say so.
+- Screenshots come from demo mode's synthetic estate or from a fresh install with placeholder
+  values; no id, name or count in them belongs to a real tenant. Sample findings in
+  [`examples.md`](examples.md) come from the same synthetic estate, and say so.
 - Every number in these pages (rule counts, widget counts, role counts) is checked against the code
   by an automated test on every push, so a stale figure fails the build rather than staying stale.
 

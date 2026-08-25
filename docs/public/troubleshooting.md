@@ -5,15 +5,15 @@
 ## Start with the diagnostics page
 
 `/diagnostics` (admin-only, linked from Settings) answers the questions that would otherwise need
-a server log: is Azure reachable, is the background scheduler ticking, and is the resource-type
-schema cache healthy.
+a server log, on two cards: **Azure connectivity** (is Azure reachable) and **System** (which
+version is running, is the background scheduler ticking, and is the resource-type schema cache
+healthy).
 
-The Azure checks run only when you click Run, not automatically on page load, since they make live
-calls and can take a few seconds. The last result is kept so it survives a page refresh.
+### The Azure connectivity card
 
-### Azure connectivity checks
-
-Run in order, since a later check can only fail meaningfully if the ones before it pass:
+These checks run only when you click Run, not automatically on page load, since they make live
+calls and can take a few seconds. The last result is kept so it survives a page refresh. Four
+checks, in order, since a later check can only fail meaningfully if the ones before it pass:
 
 1. **Azure credential.** Can RuleBeat get a token at all? A failure here means the credential
    itself is wrong. See [`configure.md`](configure.md) for the five ways to supply one, and
@@ -32,20 +32,24 @@ Every check's summary is a hand-written, plain-language sentence. The real under
 can contain tenant IDs and correlation IDs you wouldn't want in a screenshot, always goes to the
 server log first.
 
-### Scheduler liveness
+### The System card
 
-Shows whether the background scheduler is enabled and when it last ticked. It ticks every 30
-seconds when running; if the "last tick" time is stale, the process may need a restart.
-`RULEBEAT_DISABLE_SCHEDULER=1` turns it off entirely, which is the expected state to see if you've
-set that variable deliberately. The one reason to set it today is running more than one replica,
-which isn't a supported topology; see [`install.md`](install.md#deployment-topology) for why.
+Local state, no Azure calls, so it loads on its own when the page opens. The card's title carries
+the running version (the same one the sidebar footer shows), which is what to quote in a bug
+report and what to compare against the
+[releases page](https://github.com/rulebeat/rulebeat/releases) when deciding whether to upgrade.
+Two rows below it:
 
-### Schema cache health
-
-Shows whether resource-type schemas (used by the rule builder to know what fields exist on a given
-resource type) are cached and how fresh the cache is. A stale individual entry is normal and
-self-heals on next use; the only state worth acting on is nothing cached at all, or the overall
-type list being stale, both of which resolve by clicking Refresh.
+- **Scheduled scans.** Whether the background scheduler is enabled and when it was last active. It
+  ticks every 30 seconds when running; if the last activity time is stale, the process may need a
+  restart. "Disabled at the server level" means `RULEBEAT_DISABLE_SCHEDULER` is set, which is the
+  expected state if you set it deliberately. The one reason to set it today is running more than
+  one replica, which isn't a supported topology; see
+  [`install.md`](install.md#deployment-topology) for why.
+- **Azure resource schemas.** Whether resource-type schemas (used by the rule builder to know what
+  fields exist on a given resource type) are cached and how fresh the cache is. A stale individual
+  entry is normal and self-heals on next use; the only state worth acting on is nothing cached at
+  all, or the overall type list being outdated, and the card says what resolves each.
 
 ## Common issues
 
@@ -57,14 +61,21 @@ to succeed but loops back.
 **A fresh Docker install won't build or start.** Check `docker compose logs` first; most first-boot
 failures show a clear error there. (The generated admin password is not in that log; it's written
 only to `data/initial-password.txt` in the data volume; see [install.md](install.md#first-sign-in).)
-`docker inspect rulebeat --format '{{.State.Health.Status}}'` shows the container's own liveness
-check (`/api/health`, unauthenticated); if it's stuck on `starting` or flips to `unhealthy`, the
-app process itself isn't answering HTTP, which points at the log rather than at Azure. The install
-examples set `--restart unless-stopped` (or `restart: unless-stopped` in Compose), so a crash
-recovers on its own; `RestartCount` climbing in `docker inspect` without settling means it's crash
-looping, and the log from just before each restart is where to look.
+Then ask Docker what its own liveness check (`/api/health`, unauthenticated) sees:
 
-**A schedule shows as due but never seems to run.** Check the scheduler liveness panel above.
+```
+docker inspect rulebeat --format '{{.State.Health.Status}}'
+```
+
+It prints one of `starting`, `healthy`, or `unhealthy`. `starting` for the first few seconds is
+normal; stuck on `starting` or flipped to `unhealthy` means the app process itself isn't answering
+HTTP, which points at the log rather than at Azure. The install examples set
+`--restart unless-stopped` (or `restart: unless-stopped` in Compose), so a crash recovers on its
+own; `RestartCount` climbing in `docker inspect` without settling means it's crash looping, and
+the log from just before each restart is where to look.
+
+**A schedule shows as due but never seems to run.** Check the System card's Scheduled scans row
+above.
 Also confirm no other manual or scheduled run is currently in progress: RuleBeat runs are
 serialized, so a long-running scan delays the next one rather than running it concurrently.
 
