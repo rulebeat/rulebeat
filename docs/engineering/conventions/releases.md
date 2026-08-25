@@ -144,8 +144,24 @@ carries source changes is an ordinary product change, and that is not hypothetic
 never the branch name alone.
 
 **A required check whose workflow never runs blocks every PR forever.** No `paths:` filter on
-`pr-checks.yml`, and `prepare-release.yml` must dispatch it against the release PR, because a
-`GITHUB_TOKEN`-created PR may get no automatic run at all.
+`pr-checks.yml`. This once said `prepare-release.yml` must dispatch it, on the belief that a
+`GITHUB_TOKEN`-created PR gets no automatic run: PR #30 showed "Checks 0" and that was read as
+"nothing ran". It means "runs exist but are awaiting approval". The runs were always being created,
+so the dispatch solved nothing and its own run attached to `main` rather than the PR head, where no
+required check could see it. A release PR needs a maintainer to press "Approve workflows to run",
+and that is what makes `Changelog entry` requireable at all.
+
+**One mechanism, not two.** Dispatching a workflow that also runs automatically produces two runs
+of the same check on the same commit, and branch protection takes the LATEST result per check name,
+so a flaky duplicate can overwrite a good result on a required check. The dispatches are gone.
+
+**"Checks 0" is not evidence that nothing ran.** It is indistinguishable from "every run is awaiting
+approval", and reading it as the former is what produced both workarounds above.
+
+**Nothing else merges into `main` between a release PR merging and its tag appearing.** `ci.yml`
+uses `cancel-in-progress` on a per-branch group, so a later merge cancels the release commit's own
+CI run, and both `tag-release.yml` and `publish-image.yml` wait for CI to have passed on exactly
+that commit. Cancelling it strands the release.
 
 ## Dependency notes and the bump
 
