@@ -7,7 +7,7 @@ import { Callout } from '@/components/ui/callout';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { SignInStatus, LocalSignInPolicy } from '@/lib/sign-in-config';
-import { redirectUriFor } from '@/lib/redirect-uri';
+import { redirectUriFor, isLoopbackIpOrigin, normalizeLoopbackOrigin } from '@/lib/redirect-uri';
 import {
   Check, Copy, KeyRound, Loader2, Lock, RefreshCw, ShieldAlert, Trash2,
 } from 'lucide-react';
@@ -127,9 +127,14 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
   // server-side -- otherwise this fell back to whatever address the browser happens to be on,
   // which is wrong the moment Settings is reached through anything other than the public URL
   // (an internal port-forward, a VPN address, localhost while testing).
-  const redirectUri = status.publicUrl
-    ? redirectUriFor(status.publicUrl)
-    : origin ? redirectUriFor(origin) : '';
+  const redirectOrigin = status.publicUrl || origin;
+  // Entra refuses a redirect URI on an IP literal, and install.md tells people to bind
+  // 127.0.0.1, so the origin they arrive on is one no app registration can be made to match.
+  // Show the localhost form, and say why, rather than a value that cannot be registered.
+  const originIsLoopbackIp = isLoopbackIpOrigin(redirectOrigin);
+  const redirectUri = redirectOrigin
+    ? redirectUriFor(normalizeLoopbackOrigin(redirectOrigin))
+    : '';
 
   function reset(next: SignInStatus) {
     setStatus(next);
@@ -348,6 +353,15 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
                   {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                 </Button>
               </div>
+              {originIsLoopbackIp && (
+                <p className="text-xs leading-relaxed text-destructive">
+                  Microsoft rejects a redirect URI on an IP address, so the one above uses
+                  localhost. Reach RuleBeat at{' '}
+                  <code className="font-mono">{normalizeLoopbackOrigin(redirectOrigin)}</code> and
+                  set Public URL below to the same address. Otherwise sign-in still sends{' '}
+                  <code className="font-mono">{redirectOrigin}</code> and Microsoft refuses it.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2 pt-1">

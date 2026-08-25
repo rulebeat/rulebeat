@@ -7,7 +7,7 @@ import { Callout } from '@/components/ui/callout';
 import { CodeBlock } from '@/components/ui/code-block';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import type { AzureConnectionStatus, AzureCredentialSource } from '@/lib/azure-credential';
-import { redirectUriFor } from '@/lib/redirect-uri';
+import { redirectUriFor, isLoopbackIpOrigin, normalizeLoopbackOrigin } from '@/lib/redirect-uri';
 import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
 
 /**
@@ -62,7 +62,10 @@ export function ConnectStep({
   // client render identical to the server's.
   const [origin, setOrigin] = useState('');
   useEffect(() => { setOrigin(window.location.origin); }, []);
-  const redirectUri = origin ? redirectUriFor(origin) : '';
+  // Entra refuses a redirect URI on an IP literal, and install.md tells people to bind
+  // 127.0.0.1, so show the localhost form and say why rather than an unregisterable value.
+  const originIsLoopbackIp = isLoopbackIpOrigin(origin);
+  const redirectUri = origin ? redirectUriFor(normalizeLoopbackOrigin(origin)) : '';
 
   async function handleContinue() {
     if (!enableSignIn) { onNext(); return; }
@@ -245,6 +248,14 @@ export function ConnectStep({
                   Add this redirect URI to the app registration’s Authentication settings in Entra
                   ID:{' '}
                   <code className="break-all font-mono text-ink">{redirectUri || '…'}</code>
+                </span>
+              )}
+              {enableSignIn && originIsLoopbackIp && (
+                <span className="block text-destructive">
+                  Microsoft rejects a redirect URI on an IP address, so the one above uses
+                  localhost. Reach RuleBeat at{' '}
+                  <code className="font-mono">{normalizeLoopbackOrigin(origin)}</code> so sign-in
+                  sends the same address, or set Public URL in Settings → Sign-in to match.
                 </span>
               )}
             </label>
