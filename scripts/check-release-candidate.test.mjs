@@ -16,6 +16,7 @@ import {
   newestReleasedHeader,
   unreleasedSectionLines,
   RELEASE_FILES,
+  releaseBranchChangedPaths,
 } from './check-release-candidate.mjs';
 import { bumpChangelog, updateChangelogFooterLinks } from './release.mjs';
 
@@ -243,4 +244,56 @@ test('the real CHANGELOG BEFORE a release is correctly not a valid candidate whe
   });
   assert.equal(result.ok, false);
   assert.match(result.errors.join('\n'), /not empty at this commit/);
+});
+
+// ------------------------------------------------------------ merge strategies
+//
+// Added after the v0.2.2 tagging run died on `329ad3d has 1 parent(s); expected a 2-parent merge
+// commit.` The function assumed the release PR merges as a merge commit. v0.2.0 did, the repository
+// squash-merges now, and nothing exercised the difference until a release depended on it.
+//
+// Driven through an injected runner rather than real git: the shapes being distinguished are
+// parent counts, and building four real repositories to produce four parent counts would test git.
+
+/** A fake `git` that answers rev-list from a fixed parent list and records what it was asked. */
+function fakeGit(parents, diffs = {}) {
+  const calls = [];
+  const run = (...args) => {
+    calls.push(args.join(' '));
+    if (args[0] === 'rev-list') return ['MERGE', ...parents].join(' ');
+    if (args[0] === 'merge-base') return 'BASE';
+    if (args[0] === 'diff') {
+      const key = `${args[3]}..${args[4]}`;
+      return diffs[key] ?? '';
+    }
+    return '';
+  };
+  run.calls = calls;
+  return run;
+}
+
+test('a squash merge is read as the commit own diff against its single parent', () => {
+  const run = fakeGit(['P1'], { 'P1..MERGE': 'CHANGELOG.md\npackage.json' });
+  assert.deepEqual(releaseBranchChangedPaths('MERGE', run), ['CHANGELOG.md', 'package.json']);
+  // No merge base exists to look for, and asking for one would fail on a single-parent commit.
+  assert.equal(
+    run.calls.some((c) => c.startsWith('merge-base')),
+    false
+  );
+});
+
+test('a merge commit is read from the branch point to the branch tip', () => {
+  const run = fakeGit(['MAIN', 'BRANCH'], { 'BASE..BRANCH': 'CHANGELOG.md' });
+  assert.deepEqual(releaseBranchChangedPaths('MERGE', run), ['CHANGELOG.md']);
+  assert.equal(run.calls.includes('merge-base MAIN BRANCH'), true);
+});
+
+test('an empty diff is an empty list, not a list containing one empty string', () => {
+  assert.deepEqual(releaseBranchChangedPaths('MERGE', fakeGit(['P1'])), []);
+  assert.deepEqual(releaseBranchChangedPaths('MERGE', fakeGit(['MAIN', 'BRANCH'])), []);
+});
+
+test('a root commit and an octopus merge are refused, since neither is a PR merge', () => {
+  assert.throws(() => releaseBranchChangedPaths('MERGE', fakeGit([])), /has 0 parent/);
+  assert.throws(() => releaseBranchChangedPaths('MERGE', fakeGit(['A', 'B', 'C'])), /has 3 parent/);
 });
