@@ -87,8 +87,6 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
 /** Opens a database with the pragmas the product runs with. Tests must use this, not `new Database`. */
 export function openDatabase(dbPath: string): Database.Database {
   const sqlite = new Database(dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
   // SQLite allows exactly one writer at a time; without this, a second process that opens the
   // same file while the first is mid-migration/seed gets an immediate SQLITE_BUSY instead of
   // waiting a moment for the lock to clear (see seedDefaultDashboard/seedOwnerAccount below for
@@ -96,8 +94,38 @@ export function openDatabase(dbPath: string): Database.Database {
   // own: with three of Next's page-data-collection workers racing through the full
   // migration+seed sequence at once (each its own handful of IMMEDIATE transactions), the last
   // worker can still be queued behind the other two for longer than 5s on CI's slower storage,
-  // so it hit SQLITE_BUSY instead of just waiting its turn.
+  // so it hit SQLITE_BUSY instead of just waiting its turn. First statement on the connection,
+  // ahead of the WAL pragma: setting a timeout takes no locks itself, and everything after this
+  // line can need one.
   sqlite.pragma('busy_timeout = 30000');
+  // The busy timeout does NOT cover the rollback-to-WAL conversion this pragma performs on a
+  // brand-new file. Converting needs the file's exclusive lock, and when two fresh processes
+  // race the conversion, the loser is holding a shared lock the winner needs gone while wanting
+  // a write lock the winner already claimed. SQLite resolves that the only way it can, by
+  // returning SQLITE_BUSY to the loser immediately, busy handler deliberately bypassed (measured
+  // at 4ms with a 30s timeout armed). That immediate throw out of `openDatabase` was the
+  // intermittent `next build` failure in the Docker builder (#51): whichever page-data worker
+  // lost the conversion race to the brand-new database died on its import of client.ts, taking
+  // the whole build with it.
+  //
+  // So SQLITE_BUSY from this one pragma is retried, not surfaced. A failed attempt holds no
+  // locks, the winner's conversion completes in milliseconds, and a later attempt finds the file
+  // already in WAL, which makes the pragma a no-op that needs no exclusive lock at all. The
+  // deadline mirrors the busy timeout above; any other error, and SQLITE_BUSY past the deadline,
+  // still throw.
+  const walDeadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      sqlite.pragma('journal_mode = WAL');
+      break;
+    } catch (err) {
+      if ((err as { code?: string }).code !== 'SQLITE_BUSY' || Date.now() >= walDeadline) throw err;
+      // Synchronous on purpose: openDatabase runs at module scope. Jitter keeps two losers from
+      // retrying in lockstep.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 + Math.floor(Math.random() * 40));
+    }
+  }
+  sqlite.pragma('foreign_keys = ON');
   // On a brand-new, still-empty database file, `journal_mode = WAL` above does not create the
   // `-wal` sidecar: SQLite has no existing page-1 header to convert yet, so it defers that until
   // the first write. A fresh install's very first writes are the migrations and the initial admin

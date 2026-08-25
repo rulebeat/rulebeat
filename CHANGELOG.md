@@ -12,6 +12,12 @@ All notable changes to RuleBeat are documented here. Format follows
   to 127.0.0.1, so the redirect URI shown in Settings and in onboarding used that address, and
   Microsoft rejects a redirect URI on an IP address. Both places now show the localhost form and
   say what else has to match, instead of an address no app registration can accept.
+- Opening a brand-new database no longer fails with `database is locked` when several processes
+  race to be the first. SQLite refuses the losing side of its WAL conversion immediately, before
+  the configured busy timeout is ever consulted, so the loser now retries the conversion instead
+  of dying on it. In practice the loser was one of `next build`'s parallel workers inside the
+  Docker image build, which failed the whole build often enough that releases could need a manual
+  CI re-run before they could be tagged.
 
 ## [0.2.2] - 2026-08-25
 
