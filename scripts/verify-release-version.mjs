@@ -8,6 +8,7 @@
 // Usage: node scripts/verify-release-version.mjs <vX.Y.Z or X.Y.Z>  (or set GITHUB_REF_NAME)
 
 import { readFileSync } from 'node:fs';
+import { checkChangelogStructure } from './check-changelog-structure.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -79,11 +80,18 @@ function main() {
   const packageVersions = readPackageVersions();
   const changelogText = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
 
-  const { ok, errors } = checkReleaseVersion({ version, packageVersions, changelogText });
+  const { errors } = checkReleaseVersion({ version, packageVersions, changelogText });
 
-  if (!ok) {
+  // Internal consistency of CHANGELOG.md itself, checked here rather than inside
+  // checkReleaseVersion() so that pure function's contract and its tests stay unchanged. Both run
+  // in tag-release.yml and publish-image.yml, so the invariants gate tagging AND promotion without
+  // touching either workflow. Errors are concatenated so one run reports everything wrong at once.
+  const structure = checkChangelogStructure(changelogText);
+  const allErrors = [...errors, ...structure.errors];
+
+  if (allErrors.length > 0) {
     console.error(`Tag v${version} does not match the repo's own version records:`);
-    for (const err of errors) console.error(`  - ${err}`);
+    for (const err of allErrors) console.error(`  - ${err}`);
     console.error(
       "\nFix package.json/CHANGELOG.md to agree with this tag, or delete and retag with the " +
         'right version, before this release can be promoted.'
@@ -91,7 +99,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`v${version} matches all three package.json files and CHANGELOG.md. OK.`);
+  console.log(`v${version} matches all three package.json files, and CHANGELOG.md is internally consistent. OK.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
