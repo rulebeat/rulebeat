@@ -15,6 +15,13 @@ All notable changes to RuleBeat are documented here. Format follows
   render. That failure now comes back as a normal result: the credential check fails with the
   same actionable wording used everywhere else, the checks that never ran say why they were
   skipped, and the raw Azure error still goes only to the server log.
+- Opening a dashboard no longer shows a "Save changes" button nobody earned. The grid reports
+  machine-made position changes through the same callback as a person's drag: the mount-time
+  compaction of the stored layout, the automatic fit-to-content pass, and the reset right after
+  Cancel. The 300ms window meant to filter those out lost the race whenever two of them
+  overlapped, which a fresh load with a dozen widgets does routinely. Unsaved-changes tracking
+  is now gated on edit mode, the only place dragging and resizing exist at all.
+
 ## [0.2.3] - 2026-08-25
 
 ### Fixed
