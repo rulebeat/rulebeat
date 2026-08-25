@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-25
+
 ### Fixed
 
 - The container image is now built against the dependency versions the manifests declare. The
@@ -23,6 +25,10 @@ All notable changes to RuleBeat are documented here. Format follows
   did not contain them. The build defect responsible is the one fixed above. This is the first
   image that carries the 9.0.5 the manifest pins. If you have email notifications configured and
   are running 0.2.1, upgrade.
+
+### Dependencies
+
+- Updated `@azure/arm-resources-subscriptions` from 2.1.0 to 3.0.0.
 
 ## [0.2.1] - 2026-08-24
 
@@ -126,7 +132,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rulebeat/rulebeat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rulebeat/rulebeat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0
