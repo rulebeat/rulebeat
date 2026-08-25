@@ -101,6 +101,9 @@ jobs:
       - name: Test changelog gate
         run: npm run test:changelog-gate
 
+      - name: Test pull-request context resolution
+        run: npm run test:pr-context
+
       - name: Test CHANGELOG structural invariants
         run: npm run test:changelog-structure
 

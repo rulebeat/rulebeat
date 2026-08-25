@@ -14,6 +14,8 @@ import {
   isShippingPath,
   parseUnreleasedBullets,
   manifestChangeShips,
+  isDependabotBump,
+  DEPENDABOT_AUTHOR,
   SKIP_LABEL,
 } from './check-changelog-entry.mjs';
 
@@ -238,6 +240,70 @@ test('a PR that only merged base entries in, adding none of its own, FAILS', () 
   });
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'missing-entry');
+});
+
+// ------------------------------------------------------------ dependency bumps
+
+/** Exactly what Dependabot touches when it bumps one package. */
+const DEPENDABOT_INPUT = Object.freeze({
+  ...BASE_INPUT,
+  author: DEPENDABOT_AUTHOR,
+  headRef: 'dependabot/npm_and_yarn/eslint-10.9.0',
+  labels: ['dependencies'],
+  changedPaths: ['package.json', 'package-lock.json'],
+});
+
+test('a pure Dependabot bump is exempt: the release derives the note from the manifests', () => {
+  const result = checkChangelogGate(DEPENDABOT_INPUT);
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'dependabot-bump');
+});
+
+test('a workspace manifest plus the lockfile is still a pure bump', () => {
+  assert.equal(
+    isDependabotBump({
+      ...DEPENDABOT_INPUT,
+      changedPaths: ['packages/core/package.json', 'packages/web/package.json', 'package-lock.json'],
+    }),
+    true
+  );
+});
+
+test('a Dependabot branch carrying SOURCE changes is NOT exempt', () => {
+  // The real case: @azure/arm-resourcegraph 5.0.0 moved its `timeout` option, so the bump needed
+  // an edit to resource-graph.ts. That edit changes behaviour and has to be recorded.
+  const result = checkChangelogGate({
+    ...DEPENDABOT_INPUT,
+    changedPaths: ['package.json', 'package-lock.json', 'packages/core/src/clients/resource-graph.ts'],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'missing-entry');
+  // Once the exemption declines to fire, the manifests and lockfile are shipping paths in their
+  // own right again, exactly as they are for any other author.
+  assert.deepEqual(result.shippingPaths, [
+    'package.json',
+    'package-lock.json',
+    'packages/core/src/clients/resource-graph.ts',
+  ]);
+});
+
+test('a human pushing to a dependabot/ branch is NOT exempt', () => {
+  assert.equal(isDependabotBump({ ...DEPENDABOT_INPUT, author: 'someone' }), false);
+});
+
+test('a FORK cannot claim Dependabot identity', () => {
+  assert.equal(
+    isDependabotBump({ ...DEPENDABOT_INPUT, headRepoFullName: 'attacker/rulebeat' }),
+    false
+  );
+});
+
+test('Dependabot on a branch that is not a dependabot/ branch is NOT exempt', () => {
+  assert.equal(isDependabotBump({ ...DEPENDABOT_INPUT, headRef: 'feature/sneaky' }), false);
+});
+
+test('the dependency exemption never fires on an empty path list', () => {
+  assert.equal(isDependabotBump({ ...DEPENDABOT_INPUT, changedPaths: [] }), false);
 });
 
 test('the no-changelog label exempts, and a lookalike label does not', () => {
