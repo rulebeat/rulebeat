@@ -12,7 +12,7 @@ the first question the editor asks is **"What does this rule check?"**, with thr
   itself (app registrations, service principals, users, groups) rather than Azure resources. See
   [`directory-rules.md`](directory-rules.md); the short version is further down this page.
 - **Logs & activity.** Not available yet. The option is visible in the picker so the shape of the
-  product is honest about where it is going; see [`whats-next.md`](whats-next.md).
+  product is honest about where it is going.
 
 ![The new rule picker asking what the rule checks, with three backends](img/rule-backend-picker.png)
 

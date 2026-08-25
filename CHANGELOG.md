@@ -168,7 +168,7 @@ First public release.
 
 - Guided remediation is not built. A finding shows the rule's own recommendation text and, for
   APRL rules, a link to Microsoft's upstream guidance. See
-  [`docs/public/whats-next.md`](docs/public/whats-next.md).
+  `docs/public/whats-next.md` (a page later retired).
 - Log Analytics rules are not offered. The engine supports the backend, but it can only target one
   tenant-wide workspace and has no visual builder, so it is not exposed in the rule editor or the
   query page in this release.

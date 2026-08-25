@@ -264,9 +264,9 @@ report a vulnerability.
 ## Status
 
 RuleBeat is in public beta. The core product (scanning, rules, dashboards, scheduling,
-notifications, RBAC, audit logging) is built and in daily use. What is designed but not yet built
-is listed honestly in [`docs/public/whats-next.md`](docs/public/whats-next.md), starting with Logs
-and activity rules and generated remediation steps.
+notifications, RBAC, audit logging) is built and in daily use. Logs and activity rules and
+generated remediation steps are designed but not yet built, and the docs say so plainly wherever
+they come up.
 
 The software is free, during beta and after; see License below. Right now this
 is a feedback-gathering phase. If something breaks, is confusing, or is missing something you would

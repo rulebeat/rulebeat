@@ -3,7 +3,7 @@
 This page answers: how do I show RuleBeat to someone, or look at it myself, without connecting an
 Azure tenant, and what exactly is a demo instance unable to do?
 
-There is no hosted demo today ([`whats-next.md`](whats-next.md)). Demo mode is how you run one
+There is no hosted demo today. Demo mode is how you run one
 yourself, for a team walkthrough, a screenshot, or a first look before requesting a service
 principal.
 
