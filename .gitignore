@@ -85,3 +85,6 @@ packages/web/data/*.db.backup-*
 # Generated first-boot admin password (also printed to logs, never source controlled)
 packages/web/data/initial-password.txt
 
+# MkDocs build output (docs/mkdocs.yml sets site_dir: site, which resolves next to the config)
+docs/site/
+
