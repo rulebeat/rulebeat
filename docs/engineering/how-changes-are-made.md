@@ -118,8 +118,10 @@ reaching the shipped image without adding an entry. It exists because the rule w
 seven times in one batch, and because the decision only makes sense at PR time, while the author
 still knows what the change means. At release time the context is gone.
 
-- Docs, tests, workflow and top-level `brand/` changes are exempt automatically. No label needed.
-  Anything not explicitly exempt counts as shipping, so an unfamiliar file type fails closed.
+- Docs, tests, CI config, `scripts/` and top-level `brand/` changes are exempt automatically, and
+  a manifest change that only adds an npm script is too. What counts is whether a file reaches the
+  runtime image, not whether it changed. Anything not explicitly exempt counts as shipping, so an
+  unfamiliar file type fails closed.
 - A maintainer can apply the `no-changelog` label for a shipping change that genuinely alters
   nothing a user would notice. It is a judgement, not a bypass.
 - A release PR is exempt, because a release empties `[Unreleased]` rather than adding to it.

@@ -13,6 +13,7 @@ import {
   formatGateFailure,
   isShippingPath,
   parseUnreleasedBullets,
+  manifestChangeShips,
   SKIP_LABEL,
 } from './check-changelog-entry.mjs';
 
@@ -56,6 +57,21 @@ test('unknown paths default to shipping, so a new file type fails closed', () =>
   assert.equal(isShippingPath('packages/web/app/page.tsx'), true);
 });
 
+test('no scripts/ directory ships, because none is in the runtime image', () => {
+  // The Dockerfile copies only .next/standalone, .next/static, packages/web/public and
+  // packages/web/data/packs, and deletes packages/web/scripts from the standalone output.
+  for (const p of [
+    'scripts/release.mjs',
+    'scripts/check-changelog-entry.mjs',
+    'scripts/sync-pack.ts',
+    'packages/web/scripts/seed-e2e.ts',
+  ]) {
+    assert.equal(isShippingPath(p), false, `${p} is not in the image`);
+  }
+  // But the packs it generates are committed, and those DO ship.
+  assert.equal(isShippingPath('packages/web/data/packs/aprl-v2.json'), true);
+});
+
 test('docs, workflows, tests and the top-level brand kit are exempt', () => {
   for (const p of [
     'docs/public/install.md',
@@ -64,8 +80,6 @@ test('docs, workflows, tests and the top-level brand kit are exempt', () => {
     'brand/icon/mark.svg',
     'packages/web/tests/unit/x.test.ts',
     'packages/core/src/engine/kql.test.ts',
-    'scripts/release-smoke-test.sh',
-    'scripts/check-changelog-entry.test.mjs',
     'LICENSE',
   ]) {
     assert.equal(isShippingPath(p), false, `${p} should be exempt`);
@@ -80,10 +94,52 @@ test('packages/web/public SHIPS even though a top-level brand/ path does not', (
   assert.equal(isShippingPath('brand/icon/mark.svg'), false);
 });
 
-test('the release files and the Dockerfile ship', () => {
+test('the Dockerfile and the manifests ship', () => {
   for (const p of ['Dockerfile', 'package.json', 'package-lock.json', 'packages/core/package.json']) {
     assert.equal(isShippingPath(p), true, `${p} should ship`);
   }
+});
+
+// -------------------------------------------------------------- manifest refinement
+
+test('a manifest dependency bump ships -- the case this whole gate exists for', () => {
+  const base = JSON.stringify({ version: '1.0.0', dependencies: { nodemailer: '^7.0.13' } });
+  const head = JSON.stringify({ version: '1.0.0', dependencies: { nodemailer: '^9.0.5' } });
+  assert.equal(manifestChangeShips(base, head), true);
+});
+
+test('a manifest change that only adds an npm script does NOT ship', () => {
+  // Otherwise every CI or tooling PR would need a label to get past its own npm script.
+  const base = JSON.stringify({ version: '1.0.0', scripts: { test: 'vitest' } });
+  const head = JSON.stringify({ version: '1.0.0', scripts: { test: 'vitest', lint: 'eslint' } });
+  assert.equal(manifestChangeShips(base, head), false);
+});
+
+test('a version bump in a manifest still ships', () => {
+  const base = JSON.stringify({ version: '1.0.0', scripts: { a: 'x' } });
+  const head = JSON.stringify({ version: '1.0.1', scripts: { a: 'x', b: 'y' } });
+  assert.equal(manifestChangeShips(base, head), true);
+});
+
+test('unparseable manifest JSON counts as shipping, never waved through', () => {
+  assert.equal(manifestChangeShips('{not json', '{"version":"1.0.0"}'), true);
+});
+
+test('a PR whose only shipping-looking file is a scripts-only manifest change passes', () => {
+  const base = JSON.stringify({ version: '0.2.1', scripts: { test: 'vitest' } });
+  const head = JSON.stringify({ version: '0.2.1', scripts: { test: 'vitest', gate: 'node --test' } });
+  const result = checkChangelogGate({
+    ...BASE_INPUT,
+    changedPaths: ['package.json', 'scripts/check-changelog-entry.mjs', '.github/workflows/ci.yml'],
+    manifests: { 'package.json': { base, head } },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'non-shipping');
+});
+
+test('without manifest contents the conservative answer is kept', () => {
+  const result = checkChangelogGate({ ...BASE_INPUT, changedPaths: ['package.json'] });
+  assert.equal(result.ok, false, 'no content supplied means no refinement is possible');
 });
 
 // ------------------------------------------------------------------- bullet parsing
@@ -256,18 +312,40 @@ test('the failure message truncates a very long file list', () => {
 
 // -------------------------------------------------------------- against the real file
 
-test("the repo's own CHANGELOG.md parses, and this very PR would satisfy the gate", () => {
+test("the repo's own CHANGELOG.md parses, even when nothing is pending", () => {
   const real = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
   const bullets = parseUnreleasedBullets(real);
   assert.ok(Array.isArray(bullets), 'the real CHANGELOG must have an [Unreleased] header');
+});
 
-  // Dogfooding: this change edits scripts/ (a shipping path) and records entries, so the gate it
-  // introduces must pass on it.
+test('this very PR passes the gate, and passes it as NON-SHIPPING', () => {
+  // Dogfooding, and the reason matters as much as the result. Everything this change touches --
+  // CI config, docs, and scripts/ -- is outside the runtime image, so it correctly needs no
+  // CHANGELOG entry at all. If a future edit here made it report `missing-entry` instead, that
+  // would mean the classification had drifted back to treating tooling as product.
+  const real = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
+  const manifestBefore = JSON.stringify({ version: '0.2.1', scripts: { test: 'vitest' } });
+  const manifestAfter = JSON.stringify({
+    version: '0.2.1',
+    scripts: { test: 'vitest', 'test:changelog-gate': 'node --test' },
+  });
+
   const result = checkChangelogGate({
     ...BASE_INPUT,
-    changedPaths: ['scripts/check-changelog-entry.mjs'],
-    baseChangelog: real.replace(/## \[Unreleased\]\n[\s\S]*?(?=## \[)/, '## [Unreleased]\n\n'),
+    changedPaths: [
+      'scripts/check-changelog-entry.mjs',
+      'scripts/check-changelog-entry.test.mjs',
+      '.github/workflows/pr-checks.yml',
+      '.github/pull_request_template.md',
+      'CONTRIBUTING.md',
+      'CLAUDE.md',
+      'docs/engineering/conventions/releases.md',
+      'package.json',
+    ],
+    manifests: { 'package.json': { base: manifestBefore, head: manifestAfter } },
+    baseChangelog: real,
     headChangelog: real,
   });
-  assert.equal(result.ok, true, 'this PR records its own changes');
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'non-shipping');
 });

@@ -69,6 +69,17 @@ write those entries was gone.
 **Unknown paths count as shipping.** The exemption list is explicit and everything else fails
 closed, so a file type nobody anticipated is never waved through by accident.
 
+**"Shipping" means present in the runtime image, decided against the Dockerfile rather than by
+intuition.** That image contains only `.next/standalone`, `.next/static`, `packages/web/public` and
+`packages/web/data/packs`. CI config, docs, tests and every `scripts/` directory are therefore
+exempt: `CHANGELOG.md` is release notes for people running RuleBeat, not a log of the repo's own
+tooling, and the release-integrity work itself was briefly logged there by mistake before this rule
+was written down.
+
+**A manifest change ships unless the only key that differs is `scripts`.** Dependency and version
+changes are exactly what the gate exists to catch, but adding an npm script reaches nothing, and
+treating it as shipping would make every tooling PR need a label.
+
 **`packages/web/public/**` ships; the top-level `brand/**` does not.** There are two `brand`
 directories, and only the source kit at the top level is inert. Reversing them would silently exempt
 every logo change in the running app.
