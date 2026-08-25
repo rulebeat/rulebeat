@@ -6,6 +6,15 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The onboarding access check now reports a credential that fails to authenticate as a failing
+  check. Resolving the credential happens before any individual check runs, so a bad client
+  secret made the whole endpoint answer with one generic server error, and the verify-access
+  step showed "Failed to run preflight checks" instead of the per-check list it exists to
+  render. That failure now comes back as a normal result: the credential check fails with the
+  same actionable wording used everywhere else, the checks that never ran say why they were
+  skipped, and the raw Azure error still goes only to the server log.
 ## [0.2.3] - 2026-08-25
 
 ### Fixed
