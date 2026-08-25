@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-25
+
 ### Changed
 
 - Documentation overhaul ahead of launch: the README rewritten around the current product,
@@ -177,7 +179,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/rulebeat/rulebeat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rulebeat/rulebeat/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rulebeat/rulebeat/compare/v0.2.0...v0.2.1
