@@ -3,15 +3,16 @@
   <img src="brand/lockup/rulebeat-lockup-306.png" alt="RuleBeat" width="153">
 </picture>
 
-RuleBeat runs the governance checks your team writes for Azure on a schedule, tracks every
-finding over time, and never holds write access.
+RuleBeat is a self-hosted governance scanner for Azure: a single Docker container you run in
+your own subscription. Your team writes rules that describe what should not exist in your estate,
+RuleBeat runs them on a schedule, and every finding is tracked from first seen to fixed.
 
-A check is a rule you author against Azure Resource Graph or Microsoft Graph, in a visual builder
-or as a raw query. Built-in and custom rules share one scan, history, suppression, dashboard and
+A rule is a check you author against Azure Resource Graph or Microsoft Graph, in a visual builder
+or as raw KQL. Built-in and custom rules share one scan, history, suppression, dashboard and
 notification workflow.
 
-Use Azure Policy when you are ready to enforce. Use RuleBeat to define and observe your standards
-first. It never blocks a deployment and never holds write credentials.
+RuleBeat is read-only by design. It scans with a Reader credential you provide, never holds write
+access, and never blocks a deployment.
 
 RuleBeat is open source (Apache-2.0) and free.
 
@@ -106,13 +107,15 @@ one optional, with a comment saying what it is for.
 
 ## The problem
 
-Azure Policy can block deployments and enforce compliance, but that is exactly the friction most
-platform teams want to avoid while they are still working out what "compliant" should mean for
-their own estate. Defender for Cloud and Azure Advisor are broad but shallow on custom governance,
-and neither lets you author your own checks against your own tags, naming conventions, or internal
-standards and then watch them over time. RuleBeat sits in between. It stays read-only, so it never
-gets in anyone's way, and it is rule-first, so you can express whatever "good" means for your
-environment and see exactly where reality diverges from it, scan after scan.
+Every platform team knows what should not exist in its Azure estate: resources nobody owns,
+storage open to the internet, names that break the convention, required tags that are missing.
+Azure gives those checks no first-class home. They live in someone's head, in a script only its
+author runs, or in a wiki page that went stale the month it was written, and they surface only
+when something breaks.
+
+RuleBeat is that home. Each rule describes one thing that should not exist, every scan finds where
+it does, and a rule that comes back clean is a standard being met. The history shows whether the
+estate is getting better or worse.
 
 ## What it does
 
@@ -163,10 +166,12 @@ environment and see exactly where reality diverges from it, scan after scan.
 
 ## Why not just use...
 
-- **Azure Policy.** Policy supports audit-only modes and can enforce once you are ready. RuleBeat
-  is built for the step before that: defining, observing and operationalizing your standards
-  without touching enforcement at all. Use Azure Policy when you are ready to enforce; use RuleBeat
-  to get there.
+- **Azure Policy.** Policy is Azure's enforcement layer: it evaluates definitions inside the
+  control plane and can audit, deny or modify a resource at deployment time. RuleBeat is
+  independent of it and does a different job: your own checks, run by your own service on a
+  schedule, with history, suppressions and dashboards. Teams run both, and neither needs the
+  other. What you learn in RuleBeat can inform a Policy definition, but nothing in RuleBeat
+  assumes you ever write one.
 - **Defender for Cloud or Azure Advisor.** Both are valuable and both are security-first or
   recommendation-first. Neither lets you write a check against your own tag standard, naming
   convention or internal rule and then schedule it, suppress the known cases and watch the trend.

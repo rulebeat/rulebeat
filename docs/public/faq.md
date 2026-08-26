@@ -7,13 +7,13 @@ verified hands-on.
 ## How is this different from Azure Policy?
 
 Azure Policy evaluates built-in and custom definitions against your resources and can audit, deny
-or modify them; it is the enforcement layer Microsoft provides, and nothing in RuleBeat replaces
-it. RuleBeat is for the step before enforcement: write the check your team actually means, in KQL
-or in the builder, run it on a schedule, watch the finding count over weeks, suppress the cases you
-have accepted, and only then decide what is worth turning into a Policy definition. RuleBeat never
-blocks a deployment, never modifies a resource and never holds the credentials that could. If you
-already know exactly what to enforce, use Policy. If you are still working out what your standard
-is, or you want history and suppressions on top of checks Policy does not express, use RuleBeat.
+or modify them; it is the enforcement layer Microsoft provides, and nothing in RuleBeat touches
+it. RuleBeat is independent: it runs with or without Policy, and neither needs the other. The jobs
+are different. Policy answers whether a resource may exist in that state; RuleBeat runs the checks
+you write yourself, on a schedule, with the finding history, suppressions and dashboards that show
+how posture changes over time. RuleBeat never blocks a deployment, never modifies a resource and
+never holds the credentials that could. If a check you have watched in RuleBeat turns out to be
+worth enforcing, writing the Policy definition is your call; nothing in RuleBeat assumes you will.
 See [`how-it-works.md`](how-it-works.md).
 
 ## How is this different from Defender for Cloud or Azure Advisor?
