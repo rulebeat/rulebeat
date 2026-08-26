@@ -12,7 +12,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { diffRuntimeDependencies, injectDependencyNotes, RUNTIME_MANIFESTS } from './release-dependency-notes.mjs';
 import { recommendBump, checkOverride } from './recommend-bump.mjs';
 
@@ -131,14 +131,22 @@ export function pinImageTags(text, version) {
   return text.replace(/ghcr\.io\/rulebeat\/rulebeat:(?:latest|\d+\.\d+\.\d+)/g, `ghcr.io/rulebeat/rulebeat:${version}`);
 }
 
-/** README.md plus every docs/public/*.md, the files pinImageTags rewrites at release time. */
+/**
+ * README.md plus every docs/public/*.md, the files pinImageTags rewrites at release time. Both
+ * are optional: the release smoke test runs this script against minimal fixture repos that carry
+ * neither, and a missing doc is simply not a rewrite target, not an error.
+ */
 export function imageRefDocPaths() {
-  return [
-    README,
-    ...readdirSync(PUBLIC_DOCS_DIR)
-      .filter((f) => f.endsWith('.md'))
-      .map((f) => resolve(PUBLIC_DOCS_DIR, f)),
-  ];
+  const paths = [];
+  if (existsSync(README)) paths.push(README);
+  if (existsSync(PUBLIC_DOCS_DIR)) {
+    paths.push(
+      ...readdirSync(PUBLIC_DOCS_DIR)
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => resolve(PUBLIC_DOCS_DIR, f))
+    );
+  }
+  return paths;
 }
 
 function readVersion(pkgPath) {
@@ -332,8 +340,7 @@ function main() {
       'packages/core/package.json',
       'packages/web/package.json',
       'CHANGELOG.md',
-      'README.md',
-      'docs/public',
+      ...imageRefDocPaths().map((p) => relative(root, p)),
     ],
     { cwd: root, stdio: 'inherit' }
   );
