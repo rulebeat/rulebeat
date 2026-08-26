@@ -29,6 +29,7 @@ unshipped, it says plainly that the thing does not exist yet.
 
 | Page | What it answers |
 |---|---|
+| [`why-run-rulebeat.md`](why-run-rulebeat.md) | What the visibility buys you, category by category: cost, security, compliance, identity, reliability, and how a team works on findings together. |
 | [`how-it-works.md`](how-it-works.md) | What happens between a rule and a finding: the two query engines, fingerprints, the finding lifecycle, coverage, and where data lives. |
 | [`posture.md`](posture.md) | What "X of Y passing" means exactly, what counts as unknown, and why the number can move when your estate did not. |
 | [`examples.md`](examples.md) | Four worked rules end to end: a tag standard with Applies to, a raw KQL storage check, a rule enabled from the APRL pack, and a Directory rule for expiring app secrets. |
