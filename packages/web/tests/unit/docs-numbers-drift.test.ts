@@ -180,19 +180,27 @@ describe('public docs state the same numbers the code ships', () => {
 });
 
 // ---- Pinned image tags ---------------------------------------------------------------------------
-// The docs reference the image as `ghcr.io/rulebeat/rulebeat:latest` on purpose, so install and
-// upgrade commands never go stale between releases. A concrete `X.Y.Z` tag in a doc would drift
-// the moment the next release ships (0.1.0 survived the 0.2.0 release in nine places before the
-// docs switched to `:latest`), so its presence is itself the defect.
+// The docs pin the image to the exact current version, never `:latest` (reversed 2026-08-26,
+// reversing the 0.2.4 switch to `:latest`). The 0.2.4-era worry was staleness: 0.1.0 survived the
+// 0.2.0 release in nine places. scripts/release.mjs's pinImageTags() now rewrites every image
+// reference inside the same release commit that bumps package.json, so a stale pin cannot ship,
+// and this test is the proof: any doc referencing `:latest`, or a version other than
+// package.json's, fails here. Pinning is back because a copied install command should be
+// reproducible and should match what the website's Install page renders from the release data.
+// Image tags carry no `v` prefix (publish-image.yml derives them as `${GITHUB_REF_NAME#v}`), so
+// the expected form is `:0.2.4`, not `:v0.2.4`.
 
-const PINNED_IMAGE_TAG = /ghcr\.io\/rulebeat\/rulebeat:\d+\.\d+\.\d+/g;
+const IMAGE_REF = /ghcr\.io\/rulebeat\/rulebeat:(?:latest|v?\d+\.\d+\.\d+)/g;
+const APP_VERSION = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 
-describe('docs reference the image by :latest, never a pinned version', () => {
-  it.each(DOC_FILES.map(file => [file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/'), file] as const))('%s has no pinned image tag', (rel, file) => {
-    const pins = [...readFileSync(file, 'utf8').matchAll(PINNED_IMAGE_TAG)].map(m => m[0]);
-    expect(pins, [
-      `${rel} pins ${pins.join(', ')} but the docs reference the image as :latest`,
-      'so commands never go stale between releases. Use :latest, or name the version in prose.',
+describe('docs pin the image to the current version, never :latest', () => {
+  it.each(DOC_FILES.map(file => [file.slice(REPO_ROOT.length + 1).replace(/\\/g, '/'), file] as const))('%s pins every image reference to the current version', (rel, file) => {
+    const refs = [...readFileSync(file, 'utf8').matchAll(IMAGE_REF)].map(m => m[0]);
+    const wrong = refs.filter(ref => ref !== `ghcr.io/rulebeat/rulebeat:${APP_VERSION}`);
+    expect(wrong, [
+      `${rel} references ${wrong.join(', ')} but the current version is ${APP_VERSION}.`,
+      'Docs pin the exact release tag; scripts/release.mjs rewrites them on every release.',
+      'Use the current version tag, or name a version in prose without the image path.',
     ].join(' ')).toEqual([]);
   });
 });
