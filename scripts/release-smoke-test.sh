@@ -34,6 +34,17 @@ write_pkg "$SCRATCH/package.json" "rulebeat-fixture"
 write_pkg "$SCRATCH/packages/core/package.json" "@rulebeat-fixture/core"
 write_pkg "$SCRATCH/packages/web/package.json" "@rulebeat-fixture/web"
 
+# Docs with image references, one floating and one stale-pinned: release.mjs must rewrite both
+# to the new version inside the release commit (pinImageTags). The atomic and deps fixtures
+# below carry no docs at all, which covers the docs-are-optional path.
+cat > "$SCRATCH/README.md" <<'EOF'
+Run `docker run ghcr.io/rulebeat/rulebeat:latest` to start.
+EOF
+mkdir -p "$SCRATCH/docs/public"
+cat > "$SCRATCH/docs/public/install.md" <<'EOF'
+docker run ghcr.io/rulebeat/rulebeat:0.1.0
+EOF
+
 cat > "$SCRATCH/CHANGELOG.md" <<'EOF'
 # Changelog
 
@@ -91,6 +102,19 @@ grep -q '^\[Unreleased\]: https://github.com/rulebeat/rulebeat/compare/v0.1.1\.\
 grep -q '^\[0.1.1\]: https://github.com/rulebeat/rulebeat/compare/v0.1.0\.\.\.v0.1.1$' "$SCRATCH/CHANGELOG.md"
 grep -q '^\[0.1.0\]: https://github.com/rulebeat/rulebeat/releases/tag/v0.1.0$' "$SCRATCH/CHANGELOG.md"
 log "CHANGELOG.md footer links correct"
+
+log "checking doc image references were pinned to the new version, inside the release commit"
+grep -q 'ghcr.io/rulebeat/rulebeat:0.1.1' "$SCRATCH/README.md"
+grep -q 'ghcr.io/rulebeat/rulebeat:0.1.1' "$SCRATCH/docs/public/install.md"
+if grep -Eq 'rulebeat:(latest|0\.1\.0)' "$SCRATCH/README.md" "$SCRATCH/docs/public/install.md"; then
+  echo "[release-smoke-test] FAIL: a doc still references :latest or the stale pin" >&2
+  exit 1
+fi
+if [[ -n "$(cd "$SCRATCH" && git status --porcelain)" ]]; then
+  echo "[release-smoke-test] FAIL: the doc rewrites were left uncommitted" >&2
+  exit 1
+fi
+log "doc image references pinned and committed"
 
 log "checking a commit and an annotated tag were created"
 (

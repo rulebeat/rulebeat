@@ -95,6 +95,9 @@ jobs:
       - name: Test CHANGELOG bump logic
         run: npm run test:release-changelog
 
+      - name: Test release image-tag pinning
+        run: npm run test:release-pin
+
       - name: Test release-candidate checker
         run: npm run test:release-candidate
 

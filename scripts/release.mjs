@@ -10,9 +10,9 @@
 // Usage: npm run release -- <patch|minor|major>
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { diffRuntimeDependencies, injectDependencyNotes, RUNTIME_MANIFESTS } from './release-dependency-notes.mjs';
 import { recommendBump, checkOverride } from './recommend-bump.mjs';
 
@@ -27,6 +27,8 @@ const CORE_PKG = resolve(root, 'packages/core/package.json');
 const WEB_PKG = resolve(root, 'packages/web/package.json');
 const CHANGELOG = resolve(root, 'CHANGELOG.md');
 const LOCKFILE = resolve(root, 'package-lock.json');
+const README = resolve(root, 'README.md');
+const PUBLIC_DOCS_DIR = resolve(root, 'docs/public');
 
 const VALID_BUMPS = new Set(['patch', 'minor', 'major', 'auto']);
 const REPO_URL = 'https://github.com/rulebeat/rulebeat';
@@ -107,6 +109,44 @@ export function updateChangelogFooterLinks(changelogText, previousVersion, newVe
   lines[unreleasedLinkIdx] = newUnreleasedLine;
   lines.splice(unreleasedLinkIdx + 1, 0, newVersionLine);
   return lines.join('\n');
+}
+
+/**
+ * Rewrites every pinned or floating image reference in a doc to the new release's image tag.
+ * The docs pin the exact version on purpose (a copied install command is reproducible, and the
+ * page always names the newest release); this rewrite, running inside the same release commit
+ * that bumps package.json, is what keeps a pin from ever going stale, the failure that pushed
+ * the docs to `:latest` for 0.2.4. Image tags carry no `v` prefix: publish-image.yml derives
+ * them as `${GITHUB_REF_NAME#v}`. `sha-<commit>` refs and bare `ghcr.io/rulebeat/rulebeat`
+ * prose mentions are deliberately not matched.
+ *
+ * The drift test (packages/web/tests/unit/docs-numbers-drift.test.ts) is the other half of the
+ * contract: it fails whenever a doc references `:latest` or a version other than package.json's.
+ *
+ * @param {string} text a doc's full content
+ * @param {string} version the new version, no `v` prefix (e.g. "0.2.5")
+ * @returns {string} the rewritten content
+ */
+export function pinImageTags(text, version) {
+  return text.replace(/ghcr\.io\/rulebeat\/rulebeat:(?:latest|\d+\.\d+\.\d+)/g, `ghcr.io/rulebeat/rulebeat:${version}`);
+}
+
+/**
+ * README.md plus every docs/public/*.md, the files pinImageTags rewrites at release time. Both
+ * are optional: the release smoke test runs this script against minimal fixture repos that carry
+ * neither, and a missing doc is simply not a rewrite target, not an error.
+ */
+export function imageRefDocPaths() {
+  const paths = [];
+  if (existsSync(README)) paths.push(README);
+  if (existsSync(PUBLIC_DOCS_DIR)) {
+    paths.push(
+      ...readdirSync(PUBLIC_DOCS_DIR)
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => resolve(PUBLIC_DOCS_DIR, f))
+    );
+  }
+  return paths;
 }
 
 function readVersion(pkgPath) {
@@ -264,7 +304,7 @@ function main() {
   // three manifests and the lockfile before ever reading the changelog, so an empty [Unreleased]
   // left a half-bumped tree behind. The snapshot is taken first and restored on any failure, which
   // keeps that promise without reimplementing npm's semver arithmetic here.
-  const restore = snapshot([ROOT_PKG, CORE_PKG, WEB_PKG, LOCKFILE, CHANGELOG]);
+  const restore = snapshot([ROOT_PKG, CORE_PKG, WEB_PKG, LOCKFILE, CHANGELOG, ...imageRefDocPaths()]);
   let version;
   try {
     execFileSync('npm', ['version', bump, '--no-git-tag-version'], { cwd: root, stdio: 'inherit' });
@@ -279,6 +319,12 @@ function main() {
     writeVersion(WEB_PKG, version);
     execFileSync('npm', ['install', '--package-lock-only'], { cwd: root, stdio: 'inherit' });
     writeFileSync(CHANGELOG, newChangelog);
+
+    for (const docPath of imageRefDocPaths()) {
+      const before = readFileSync(docPath, 'utf8');
+      const after = pinImageTags(before, version);
+      if (after !== before) writeFileSync(docPath, after);
+    }
   } catch (err) {
     restore();
     console.error(`\nRelease aborted, working tree restored unchanged.\n${err.message}`);
@@ -294,6 +340,7 @@ function main() {
       'packages/core/package.json',
       'packages/web/package.json',
       'CHANGELOG.md',
+      ...imageRefDocPaths().map((p) => relative(root, p)),
     ],
     { cwd: root, stdio: 'inherit' }
   );

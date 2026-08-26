@@ -6,6 +6,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Install and upgrade commands in the README and docs pin the exact release version again,
+  instead of `:latest`. The release script now rewrites the pinned tags in the same commit that
+  bumps the version, and a test fails the build if any doc names `:latest` or a stale version,
+  so the pins cannot go stale the way they did before 0.2.4.
+
 ## [0.2.4] - 2026-08-25
 
 ### Changed
