@@ -1,0 +1,46 @@
+# Tells rulebeat/website that something it mirrors has changed, so its
+# sync-content.yml workflow can pull the change and redeploy within minutes.
+# No schedule anywhere: the website syncs exactly when this repo produces
+# something new, and a quiet week produces zero runs on either side.
+#
+# Two triggers, two event types:
+# - "Publish image" completing successfully -> release-published. That
+#   workflow is what makes the pinned :vX.Y.Z image pullable, so firing here
+#   (rather than on the GitHub Release being created) means the website
+#   never advertises an install command that does not work yet.
+# - A push to main touching the public screenshots or the brand kit
+#   -> product-content, so the website's synced copies stay current.
+#
+# Needs the WEBSITE_SYNC_TOKEN Actions secret: a fine-grained PAT with
+# access to rulebeat/website only, permission Contents: read and write
+# (repository_dispatch requires it). Until the secret exists this workflow
+# fails loudly rather than silently doing nothing.
+name: Notify website
+
+on:
+  workflow_run:
+    workflows: ['Publish image']
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - 'docs/public/img/**'
+      - 'brand/**'
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Dispatch sync to rulebeat/website
+        env:
+          TOKEN: ${{ secrets.WEBSITE_SYNC_TOKEN }}
+          EVENT_TYPE: ${{ github.event_name == 'push' && 'product-content' || 'release-published' }}
+        run: |
+          curl -sS --fail -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/rulebeat/website/dispatches \
+            -d "{\"event_type\":\"$EVENT_TYPE\"}"
