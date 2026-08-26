@@ -21,8 +21,9 @@ See [`how-it-works.md`](how-it-works.md).
 Both produce recommendations Microsoft wrote, about security posture and Well-Architected best
 practice respectively. Neither lets you write a check against your own tag standard, naming rule or
 internal convention and then schedule it, suppress the known cases and watch the trend. RuleBeat's
-rules cover whatever you can query: cost hygiene, reliability, identity, governance and security
-alike. It also ships the Azure Proactive Resiliency Library as a pack, so the Microsoft-authored
+rules cover whatever you can query: cost hygiene, reliability, identity, compliance and security
+alike. What each of those buys you is spelled out in
+[`why-run-rulebeat.md`](why-run-rulebeat.md). It also ships the Azure Proactive Resiliency Library as a pack, so the Microsoft-authored
 reliability checks and your own run through one workflow. RuleBeat does not replace Defender's
 threat detection or Advisor's cost figures; it sits next to them.
 

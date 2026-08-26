@@ -118,6 +118,13 @@ RuleBeat is that home. Each rule describes one thing that should not exist, ever
 it does, and a rule that comes back clean is a standard being met. The history shows whether the
 estate is getting better or worse.
 
+The same mechanism pays out in every direction your rules point. Orphaned resources stop billing
+unnoticed. Quiet security misconfigurations surface before an incident does, and tag standards
+hold without anyone chasing people. App credentials get rotated before an integration fails, and
+Microsoft's resiliency guidance runs as scheduled checks instead of being read once. The long form
+of what each category buys you is in
+[`docs/public/why-run-rulebeat.md`](docs/public/why-run-rulebeat.md).
+
 ## What it does
 
 - **Rules you write, against two kinds of data.** A rule checks either *resource configuration*
@@ -176,7 +183,7 @@ estate is getting better or worse.
 - **Defender for Cloud or Azure Advisor.** Both are valuable and both are security-first or
   recommendation-first. Neither lets you write a check against your own tag standard, naming
   convention or internal rule and then schedule it, suppress the known cases and watch the trend.
-  RuleBeat's custom rules cover cost, reliability, identity and governance as well as security, and
+  RuleBeat's custom rules cover cost, reliability, identity and compliance as well as security, and
   it is self-hosted with no vendor telemetry.
 - **A spreadsheet or a one-off script.** Works fine until a second person needs to run it, or until
   you need history, scheduling, or an audit trail. RuleBeat gives you all three from day one.

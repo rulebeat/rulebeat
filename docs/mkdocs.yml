@@ -82,6 +82,7 @@ nav:
       - permissions.md
       - scans-and-schedules.md
   - Understand:
+      - why-run-rulebeat.md
       - how-it-works.md
       - posture.md
       - examples.md
