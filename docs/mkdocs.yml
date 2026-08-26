@@ -10,7 +10,11 @@
 #
 # Local preview:  pip install -r docs/requirements.txt && mkdocs serve -f docs/mkdocs.yml
 
-site_name: RuleBeat
+# "RuleBeat Docs", not "RuleBeat": the name renders beside the logo in the header and drawer, and
+# on a separate docs subdomain the label is what tells someone landing from a search result that
+# they are in the documentation, not the product site (the Stripe/GitHub/Cloudflare docs pattern).
+# It also reaches browser-tab titles and the OG card titles via overrides/main.html.
+site_name: RuleBeat Docs
 site_description: >-
   RuleBeat runs the governance checks your team writes for Azure on a schedule,
   tracks every finding over time, and never holds write access.
