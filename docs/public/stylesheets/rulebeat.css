@@ -25,8 +25,9 @@
   --md-primary-fg-color--dark: #e2e2e0;
   --md-primary-bg-color: #000000; /* text and icons on the header */
   --md-primary-bg-color--light: #55554f;
-  --md-code-bg-color: #ffffff; /* surface */
+  --md-code-bg-color: #ffffff; /* surface: block code sits on a raised card */
   --md-code-fg-color: #000000;
+  --rb-code-chip: #e7e7e4; /* inline code: a soft fill on the page ground, GitHub-style */
   --md-typeset-table-color: #c6c6c3; /* rule-strong for table rules */
   --md-footer-bg-color: #000000;
   --md-footer-bg-color--dark: #000000;
@@ -54,6 +55,7 @@
   --md-primary-bg-color--light: #a9adb1;
   --md-code-bg-color: #17191b; /* dark surface */
   --md-code-fg-color: #f4f4f2;
+  --rb-code-chip: #26292c;
   --md-typeset-table-color: #26292c;
   --md-footer-bg-color: #17191b;
   --md-footer-bg-color--dark: #17191b;
@@ -62,6 +64,16 @@
   --rb-red: #ff453d;
   --rb-ok: #3dd68c;
   --rb-warn: #e5a93d;
+}
+
+/* Type scale: Material's default body copy is 0.8rem (16px). Docs are read, not scanned, so the
+   body goes to 0.9rem (18px); every heading, table, list and code size in .md-typeset is em-based,
+   so the whole content column scales from this one rule. Nav and ToC get a smaller step up. */
+.md-typeset {
+  font-size: 0.9rem;
+}
+.md-nav {
+  font-size: 0.75rem;
 }
 
 /* Headings and the header title: Inter Tight, tight tracking like the app. */
@@ -116,6 +128,22 @@
 .md-typeset code,
 .md-typeset pre {
   font-feature-settings: "calt" 0, "liga" 0;
+}
+
+/* Inline code is a chip: a soft fill on the ground, no border, like the app's chips (and GitHub's
+   inline code). Block code overrides this below. */
+.md-typeset code {
+  background-color: var(--rb-code-chip);
+  padding: 0.1em 0.35em;
+}
+
+/* Block code is a snippet card: the surface color with a hairline. The line does structural work
+   here, delimiting verbatim content from prose, which is what keeps it within the "separation is
+   by ground" rule. Syntax token colors come from Material's own per-scheme highlight palette. */
+.md-typeset pre > code {
+  background-color: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  padding: 0.85em 1em;
 }
 
 /* Tables: lining figures for data. */

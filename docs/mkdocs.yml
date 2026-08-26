@@ -101,7 +101,16 @@ nav:
 
 markdown_extensions:
   - tables
-  - fenced_code
+  # Syntax-highlighted fences, like GitHub renders the same files: pymdownx.highlight runs Pygments
+  # over each ` ``` ` block (superfences supersedes the plain fenced_code extension, inlinehilite
+  # covers `#!lang`-prefixed inline code). Every language tag used in docs/public resolves to a
+  # real lexer, `kql` included (Pygments ships Kusto); an unknown tag would fall back to plain
+  # text, not fail the strict build. Pygments is a dependency of mkdocs-material, so
+  # requirements.txt is unchanged.
+  - pymdownx.highlight:
+      guess_lang: false
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
   # GitHub's slug algorithm, not python-markdown's default: the default collapses runs of
   # separators ("Logs & activity" -> logs-activity) where GitHub does not (-> logs--activity),
   # and every existing cross-page #fragment link in these files was written against GitHub.
