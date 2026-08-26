@@ -123,18 +123,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Logo: size the wordmark and show the variant matching the active scheme
-   (pairs with overrides/partials/logo.html). */
-.md-header__button.md-logo img,
-.md-nav__button.md-logo img {
-  height: 1.1rem;
-  width: auto;
-}
-[data-md-color-scheme="default"] .rb-logo--dark {
-  display: none;
-}
-[data-md-color-scheme="slate"] .rb-logo--light {
-  display: none;
+/* Logo: the brand tile is pure black on transparent, so the dark scheme just inverts it.
+   Material's own stylesheet handles the sizing, in the header and the nav drawer alike. */
+[data-md-color-scheme="slate"] .md-logo img {
+  filter: invert(1);
 }
 
 /* Admonitions (none in the content today; mapping reserved so future ones follow the product's
