@@ -1,22 +1,56 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="brand/lockup/rulebeat-lockup-dark-306.png">
-  <img src="brand/lockup/rulebeat-lockup-306.png" alt="RuleBeat" width="153">
+  <img src="brand/lockup/rulebeat-lockup-306.png" alt="RuleBeat" width="240">
 </picture>
 
-RuleBeat is a self-hosted governance scanner for Azure: a single Docker container you run in
-your own subscription. Your team writes rules that describe what should not exist in your estate,
-RuleBeat runs them on a schedule, and every finding is tracked from first seen to fixed.
+<h3>Azure governance checks you write, run on a schedule</h3>
+
+<p>
+A self-hosted governance scanner for Azure: one Docker container you run in your own subscription.<br>
+Your rules describe what should not exist in your estate. RuleBeat finds where it does,<br>
+and tracks every finding from first seen to fixed.
+</p>
+
+<p>
+<a href="https://docs.rulebeat.com"><b>Documentation</b></a>
+&nbsp;·&nbsp;
+<a href="#quick-start"><b>Quick start</b></a>
+&nbsp;·&nbsp;
+<a href="docs/public/demo-mode.md"><b>Demo mode</b></a>
+&nbsp;·&nbsp;
+<a href="https://github.com/rulebeat/rulebeat/issues/new"><b>Report a bug</b></a>
+&nbsp;·&nbsp;
+<a href="https://github.com/rulebeat/rulebeat/issues/new"><b>Request a feature</b></a>
+</p>
+
+<p>
+<a href="https://github.com/rulebeat/rulebeat/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/rulebeat/rulebeat/ci.yml?branch=main&amp;label=CI&amp;style=flat-square"></a>
+<a href="https://github.com/rulebeat/rulebeat/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/rulebeat/rulebeat?label=release&amp;color=1f6feb&amp;style=flat-square"></a>
+<a href="LICENSE"><img alt="Apache-2.0 licensed" src="https://img.shields.io/github/license/rulebeat/rulebeat?label=license&amp;color=1f6feb&amp;style=flat-square"></a>
+<a href="https://github.com/rulebeat/rulebeat/pkgs/container/rulebeat"><img alt="Container image on GitHub Container Registry" src="https://img.shields.io/badge/container-ghcr.io-2496ED?logo=docker&amp;logoColor=white&amp;style=flat-square"></a>
+</p>
+
+<p>
+<a href="https://docs.rulebeat.com"><img alt="Documentation" src="https://img.shields.io/badge/docs-docs.rulebeat.com-0a7d55?style=flat-square"></a>
+<a href="https://rulebeat.com"><img alt="Website" src="https://img.shields.io/badge/website-rulebeat.com-111111?style=flat-square"></a>
+<a href="CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-keep%20a%20changelog-e05d24?style=flat-square"></a>
+<a href="https://github.com/rulebeat/rulebeat/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/rulebeat/rulebeat?label=issues&amp;color=6f42c1&amp;style=flat-square"></a>
+</p>
+
+</div>
+
+![Dashboard overview with the Overall Posture ring, trend, and stat cards](docs/public/img/dashboard.png)
 
 A rule is a check you author against Azure Resource Graph or Microsoft Graph, in a visual builder
 or as raw KQL. Built-in and custom rules share one scan, history, suppression, dashboard and
 notification workflow.
 
 RuleBeat is read-only by design. It scans with a Reader credential you provide, never holds write
-access, and never blocks a deployment.
+access, and never blocks a deployment. It is open source (Apache-2.0) and free.
 
-RuleBeat is open source (Apache-2.0) and free.
-
-![Dashboard overview with the Overall Posture ring, trend, and stat cards](docs/public/img/dashboard.png)
+---
 
 **Contents:** [Quick start](#quick-start) · [The problem](#the-problem) ·
 [What it does](#what-it-does) · [Why not just use...](#why-not-just-use) ·
@@ -190,7 +224,13 @@ of what each category buys you is in
 
 ## A closer look
 
-![Results tab with a finding expanded](docs/public/img/findings.png)
+| | |
+|:--|:--|
+| ![Results tab with a finding expanded](docs/public/img/findings.png) | ![Visual rule builder showing a condition group mid-edit](docs/public/img/rule-builder.png) |
+| **Findings.** Every row a rule returns, with its age, severity and the rule's own recommendation. | **The rule builder.** Scope, resource type and conditions, round-tripping with the raw KQL. |
+| ![The Library page listing the APRL v2 pack rules alongside the built-in rules](docs/public/img/library.png) | ![The Run History tab listing scheduled runs with their duration, rule counts and findings](docs/public/img/run-history.png) |
+| **The library.** RuleBeat's own rules and the APRL pack, side by side. | **Run history.** What ran, how long it took, and whether the coverage was complete. |
+
 ![Walkthrough: the dashboard, findings, the rule library, a rule's detail, and run history](docs/public/img/walkthrough.gif)
 
 There is no hosted demo instance yet. The fastest way to see RuleBeat is to run it yourself; the
@@ -300,6 +340,8 @@ RuleBeat is free and stays that way regardless of sponsorship.
 [Sponsoring on GitHub](https://github.com/sponsors/abdohanafy) funds the time behind it: triaging
 issues, reviewing pull requests, writing new rules, and building out the pipeline beyond the core.
 It unlocks nothing in the software; see [`SPONSORS.md`](SPONSORS.md) for the full list.
+
+---
 
 ## License
 
