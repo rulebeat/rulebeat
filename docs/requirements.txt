@@ -4,3 +4,4 @@
 # Transitives (mkdocs, pymdown-extensions, jinja2, pygments, ...) arrive as its declared
 # dependencies and resolve at install time.
 mkdocs-material==9.7.7
+mkdocs-glightbox==0.5.2

@@ -100,6 +100,13 @@ nav:
       - demo-mode.md
       - faq.md
 
+# mkdocs-glightbox makes every image in docs/public clickable, opening a zoomed lightbox with no
+# markdown change needed: it rewrites rendered <img> tags at build time. Themed automatically to
+# Material's own light/dark scheme, so it needs no CSS here. requirements.txt pins the version.
+plugins:
+  - search
+  - glightbox
+
 markdown_extensions:
   - tables
   # Syntax-highlighted fences, like GitHub renders the same files: pymdownx.highlight runs Pygments
