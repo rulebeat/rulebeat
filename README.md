@@ -297,9 +297,9 @@ spaces is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
 ## Sponsors
 
 RuleBeat is free and stays that way regardless of sponsorship.
-[Sponsoring on GitHub](https://github.com/sponsors/abdohanafy) funds the maintenance time behind
-it: triaging issues, reviewing pull requests, writing new rules. See [`SPONSORS.md`](SPONSORS.md)
-for the full list.
+[Sponsoring on GitHub](https://github.com/sponsors/abdohanafy) funds the time behind it: triaging
+issues, reviewing pull requests, writing new rules, and building out the pipeline beyond the core.
+It unlocks nothing in the software; see [`SPONSORS.md`](SPONSORS.md) for the full list.
 
 ## License
 
