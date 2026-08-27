@@ -1,0 +1,4 @@
+# Puts the Sponsor button on the repository, linking to the maintainer's GitHub Sponsors profile.
+# The button only renders while Settings -> General -> Features -> Sponsorships stays enabled.
+# SPONSORS.md is the in-repo sponsor list; README's Sponsors section carries the message.
+github: abdohanafy
