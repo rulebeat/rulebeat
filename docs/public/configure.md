@@ -68,9 +68,9 @@ To reach it from elsewhere, put a reverse proxy in front that terminates TLS (ng
 or your cloud's load balancer), point it at `127.0.0.1:3000` without widening the Docker port
 binding, set `AUTH_URL` to the proxy's public HTTPS URL, and register the redirect URI under that
 same URL if Microsoft sign-in is configured. The same shape works inside Azure with managed pieces: a
-VNet-injected container group with no public IP, an Azure Files share mounted at
-`/app/packages/web/data`, and TLS terminated on an Application Gateway v2 probing `/api/health`.
-Azure Container Apps' built-in ingress is the lighter alternative.
+VNet-injected container group with no public IP, its data volume on a disk rather than a file share
+([`install.md`](install.md#deployment-topology)), and TLS terminated on an Application Gateway v2
+probing `/api/health`.
 
 With no reverse proxy at all, on a trusted internal network, you can widen the `ports:` entry to
 `"3000:3000"`, but that is an explicit choice rather than the shipped default.
