@@ -1,93 +1,76 @@
 # Frequently asked questions
 
-Short answers, each pointing at the page that has the long one. The comparisons name only
-Microsoft's own services; RuleBeat does not publish comparisons with third-party tools it has not
-verified hands-on.
+Short answers, each pointing at the page with the long one. The comparisons name only Microsoft's
+own services; RuleBeat does not publish comparisons with tools it has not used hands-on.
 
 ## How is this different from Azure Policy?
 
-Azure Policy evaluates built-in and custom definitions against your resources and can audit, deny
-or modify them; it is the enforcement layer Microsoft provides, and nothing in RuleBeat touches
-it. RuleBeat is independent: it runs with or without Policy, and neither needs the other. The jobs
-are different. Policy answers whether a resource may exist in that state; RuleBeat runs the checks
-you write yourself, on a schedule, with the finding history, suppressions and dashboards that show
-how posture changes over time. RuleBeat never blocks a deployment, never modifies a resource and
-never holds the credentials that could. If a check you have watched in RuleBeat turns out to be
-worth enforcing, writing the Policy definition is your call; nothing in RuleBeat assumes you will.
-See [`how-it-works.md`](how-it-works.md).
+Policy is Azure's enforcement layer: it decides whether a resource may exist in a given state, and
+can audit, deny or modify at deployment time. RuleBeat runs the checks you write yourself, on a
+schedule, and keeps the finding history, suppressions and dashboards that show how posture moves.
+It never blocks a deployment, never modifies a resource, and never holds the credentials that
+could. The two are independent and neither needs the other. See
+[`how-it-works.md`](how-it-works.md).
 
 ## How is this different from Defender for Cloud or Azure Advisor?
 
-Both produce recommendations Microsoft wrote, about security posture and Well-Architected best
-practice respectively. Neither lets you write a check against your own tag standard, naming rule or
-internal convention and then schedule it, suppress the known cases and watch the trend. RuleBeat's
-rules cover whatever you can query: cost hygiene, reliability, identity, compliance and security
-alike. What each of those buys you is spelled out in
-[`why-run-rulebeat.md`](why-run-rulebeat.md). It also ships the Azure Proactive Resiliency Library as a pack, so the Microsoft-authored
-reliability checks and your own run through one workflow. RuleBeat does not replace Defender's
-threat detection or Advisor's cost figures; it sits next to them.
+Both produce recommendations Microsoft wrote. Neither lets you write a check against your own tag
+standard, naming rule or internal convention and then schedule it, suppress the known cases and
+watch the trend. RuleBeat sits next to them and does not replace Defender's threat detection or
+Advisor's cost figures. See [`why-run-rulebeat.md`](why-run-rulebeat.md).
 
 ## What is the catch with read-only?
 
-There is no one-click fix. A finding tells you what failed, why (the rule's recommendation), where
-(a portal link) and, for pack rules, Microsoft's own guidance; you make the change in Azure with
-whatever identity and process you already use. The trade: RuleBeat cannot break anything, a
-compromised RuleBeat instance cannot change anything, and you can give it to a team without giving
-that team write access. Generated fix steps are planned; they will
-still be steps you run, not actions RuleBeat takes.
+There is no one-click fix. A finding tells you what failed, why, and where, with a portal link and
+Microsoft's own guidance on pack rules. You make the change with whatever identity and process you
+already use. The trade: RuleBeat cannot break anything, a compromised instance cannot change
+anything, and you can hand it to a team without handing them write access.
 
 ## Does it need Owner or Contributor?
 
-No. **Reader** on the subscriptions or management groups you want scanned, plus the Microsoft
-Graph application permission `Application.Read.All` if you want the two Directory rules about
-expiring app credentials. That is the complete list for a default install. Other Directory rules
-you write need the matching Graph read permission for their object type. See
-[`permissions.md`](permissions.md) and [`directory-rules.md`](directory-rules.md#permissions).
+No. **Reader** on the subscriptions or management groups you want scanned, plus the Microsoft Graph
+permission `Application.Read.All` if you want the built-in rules about expiring app credentials.
+Other Directory rules need the matching Graph read permission for their object type. See
+[`permissions.md`](permissions.md).
 
 ## Does anything leave my tenant?
 
-Only what you point it at. Outbound connections are Azure and Microsoft Graph (with your
-credential), the notification destinations you configure, and the SMTP server if you set up email.
-There is no telemetry, no update check, no usage ping and no external font or script loaded at
-runtime. See [`security.md`](security.md#no-telemetry).
+Only what you point it at: Azure and Microsoft Graph with your credential, the notification
+destinations you configure, and your SMTP server if you set up email. No telemetry, no update
+check, no usage ping, no external font or script at runtime. See
+[`security.md`](security.md#no-telemetry).
 
 ## Can I scan a whole management group?
 
-Yes. Grant Reader on the management group and every subscription under it becomes visible to the
-scanning identity; by default a scan covers every subscription that identity can read. A rule can
-additionally be scoped to particular management groups or subscriptions with the scope picker in
-the rule editor. Subscription lists above Azure's per-request limit are batched automatically. See
-[`permissions.md`](permissions.md) and [`authoring-rules.md`](authoring-rules.md#scope).
+Yes. Grant Reader on the management group and every subscription under it becomes visible. A rule
+can be scoped further with the scope picker. Subscription lists above Azure's per-request limit are
+batched automatically. See [`authoring-rules.md`](authoring-rules.md#scope).
 
 ## Why did my posture drop after upgrading?
 
-Because the formula got stricter. RuleBeat used to count a rule with zero findings as passing even
-if its query had never actually run or had failed. It now counts such a rule as **unknown**, shown
-separately and never added to passing. An install upgraded across that change shows a lower number
-the next morning, for the same estate. The history written under the old formula is tagged with
-its version and is not blended with the new one. See [`posture.md`](posture.md).
+The formula got stricter. A rule with zero findings whose query never ran or failed used to count
+as passing; it now counts as **unknown** and is never added to passing. History written under the
+old formula is tagged with its version and not blended with the new one. See
+[`posture.md`](posture.md).
 
 ## Why are the APRL pack rules disabled by default?
 
-<!-- count:pack-rules:aprl-v2 -->143 reliability rules turned on at once would make a first scan
-slow and its result unreadable, and not all of them fit every estate. They ship disabled so a fresh
-install starts with <!-- count:enabled-default -->12 enabled rules and you switch on the pack rules
-that apply to you. Some upstream recommendations also ship with placeholder queries; enabling one
-of those gives a "query failed" outcome rather than a finding, which the Rules tab shows. See
-[`examples.md`](examples.md#example-c-a-reliability-rule-from-the-aprl-pack).
+<!-- count:pack-rules:aprl-v2 -->143 reliability rules at once would make a first scan slow and its
+result unreadable, and not all of them fit every estate. A fresh install starts with
+<!-- count:enabled-default -->12 enabled rules and you switch on what applies to you. Some upstream
+recommendations ship with placeholder queries; enabling one gives a "query failed" outcome rather
+than a finding, which the Rules tab shows.
 
 ## Where is the admin password?
 
-In `data/initial-password.txt` inside the data volume, written on first boot. It is never printed
-to the container logs. You are forced to change it on first sign-in. See
-[`install.md`](install.md).
+In `data/initial-password.txt` inside the data volume, written on first boot and never printed to
+the container logs. You are forced to change it on first sign-in. See [`install.md`](install.md).
 
 ## Can I use my Microsoft Entra ID sign-in?
 
-Yes. Local accounts get you in on day one; an admin can then configure Microsoft Entra ID under
-Settings → Sign-in (or through environment variables) and choose whether the local form stays
-visible. Roles are assigned inside RuleBeat, not read from Entra groups. See [`rbac.md`](rbac.md)
-and [`configure.md`](configure.md).
+Yes. Local accounts get you in on day one; an admin can then configure Entra ID under Settings →
+Sign-in and choose whether the local form stays visible. Roles are assigned inside RuleBeat, not
+read from Entra groups. See [`rbac.md`](rbac.md).
 
 ## Does it work on Azure Government or Azure China?
 
@@ -101,23 +84,20 @@ volume would double-fire schedules and contend for SQLite. See
 
 ## Can I write a rule against sign-in logs, activity logs or diagnostic data?
 
-Not yet. Rules run against Azure Resource Graph (resource configuration) and Microsoft Graph
-(directory objects). The third kind, Logs & activity over Log Analytics, is designed and in build;
-the picker shows it as not yet available.
+Not yet. Rules run against Azure Resource Graph and Microsoft Graph. Logs & activity over Log
+Analytics is designed and in build; the picker shows it as not yet available.
 
 ## Can I export or import rules?
 
-Findings export to CSV and JSON from the Scans page, and the audit log exports to CSV. Rules do not
-have an import or export feature today; a rule is edited in the product, and the built-in and pack
-rules arrive with the release.
+Findings export to CSV and JSON, and the audit log to CSV. Rules have no import or export today.
 
 ## How do I back it up?
 
-Copy the data volume: the SQLite database, the encryption key and the auth secret live there
-together. A copy of the volume is a complete backup, and for the same reason it must be treated as
-sensitive. See [`configure.md`](configure.md) and [`security.md`](security.md).
+Copy the data volume. The SQLite database, the encryption key and the auth secret live there
+together, so a copy is a complete backup and must be treated as sensitive. See
+[`security.md`](security.md).
 
 ## Is it really free?
 
-RuleBeat is open source (Apache-2.0) and free. There is no paid tier of the software and no feature
-held back from the open version.
+Yes. Open source under Apache-2.0, with no paid tier and no feature held back from the open
+version.
