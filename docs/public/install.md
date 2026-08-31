@@ -138,6 +138,15 @@ workaround rather than a high-availability story. And SQLite is a single-writer 
 local volume mounted by one container and not built for concurrent writers across replicas even with
 the scheduler issue solved.
 
+The data volume also has to be a local filesystem. RuleBeat opens SQLite in WAL mode, which SQLite
+does not support over a network filesystem, so a Docker named volume on the host's own disk works,
+and so does a block device such as an Azure managed disk or a block-mode Kubernetes volume. A file
+share does not. Mount Azure Files, or any other SMB or NFS share, at `/app/packages/web/data` and the
+database cannot be opened at all, so the container fails on startup rather than running with less.
+That rules out the managed container platforms whose only persistent storage is a file share, among
+them Azure Container Apps, Azure App Service and Azure Container Instances. Those can still run
+RuleBeat on ephemeral storage, which is enough for a demo and loses the database on every restart.
+
 Scale the container vertically for now. Multi-replica support (leader election, a real database
 backend) is on the roadmap, not built.
 
