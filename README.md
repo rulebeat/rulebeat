@@ -101,6 +101,17 @@ shows whether the estate is getting better or worse.
 access, and never blocks a deployment. The cost is real: there is no one-click fix. Remediation stays
 your action under your own identity.
 
+## A closer look
+
+| | |
+|:--|:--|
+| ![Results tab with a finding expanded](docs/public/img/findings.png) | ![Visual rule builder showing a condition group mid-edit](docs/public/img/rule-builder.png) |
+| **Findings.** Every row a rule returns, with its age, severity and the rule's own recommendation. | **The rule builder.** Scope, resource type and conditions, round-tripping with the raw KQL. |
+| ![The Library page listing the APRL v2 pack rules alongside the built-in rules](docs/public/img/library.png) | ![The Run History tab listing scheduled runs with their duration, rule counts and findings](docs/public/img/run-history.png) |
+| **The library.** RuleBeat's own rules and the APRL pack, side by side. | **Run history.** What ran, how long it took, and whether the coverage was complete. |
+
+![Walkthrough: the dashboard, findings, the rule library, a rule's detail, and run history](docs/public/img/walkthrough.gif)
+
 ## Why not just use...
 
 - **Azure Policy.** Policy is Azure's enforcement layer: it evaluates definitions inside the control
@@ -114,8 +125,6 @@ your action under your own identity.
 - **A Workbook, a spreadsheet, or a one-off script.** Fine until a second person needs to run it, or
   until you need history, scheduling, or an audit trail. If one person owns the whole loop today,
   you probably do not need this.
-
-![Walkthrough: the dashboard, findings, the rule library, a rule's detail, and run history](docs/public/img/walkthrough.gif)
 
 ## Quick start
 
