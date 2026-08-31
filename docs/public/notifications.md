@@ -1,25 +1,17 @@
 # Notifications
 
-This page answers: how do I get told about new findings, through which channels, with what payload,
-and what RuleBeat does when a delivery fails. The short version: channels are an address book,
-schedules decide who gets notified about what, only *new* findings from *scheduled* runs are sent,
-and every attempt is recorded.
+Channels are an address book, schedules decide who hears about what, only *new* findings from
+*scheduled* runs are sent, and every attempt is recorded.
 
-## The model
+**Channels** live under Settings → Notifications: a name, a type and a destination, knowing nothing
+about schedules or severities. **Schedules** pick channels, and each assignment carries its own
+minimum severity and optionally which categories and subscriptions that channel should hear about, so
+one channel can serve several schedules at different thresholds.
 
-1. **Channels** live under Settings → Notifications: a name, a type and a destination. A channel
-   knows nothing about schedules or severities; it is an address.
-2. **Schedules** pick channels. When editing a schedule, choose which channels should notify for it,
-   the minimum severity that should trigger one, and optionally which categories and subscriptions
-   that channel should hear about from this schedule. The same channel can serve several schedules
-   at different thresholds and scopes.
-3. **A scheduled run finishes**, its findings are synced, and RuleBeat computes which findings are
-   *new* in that run (first seen now, not "still there"). For each assigned channel it applies that
-   assignment's category and subscription scope first, then its minimum severity, and sends one
-   message per channel if anything is left.
-
-Manual runs never notify, whatever they cover. A run that produced no new findings sends nothing.
-A finding that was already active does not get re-sent on the next run.
+When a scheduled run finishes and its findings are synced, RuleBeat works out which are *new* in that
+run (first seen now, not "still there"), applies each assignment's scope and then its severity, and
+sends one message per channel if anything is left. Manual runs never notify, a run with no new
+findings sends nothing, and an already-active finding is not re-sent.
 
 ## Channel types
 
@@ -27,27 +19,18 @@ A finding that was already active does not get re-sent on the next run.
 
 ![Settings, the new channel form with a name, a type dropdown and a destination URL](img/settings-notifications.png)
 
-### Microsoft Teams
+**Microsoft Teams.** Teams no longer accepts the old Office 365 connector webhooks, so RuleBeat posts
+an Adaptive Card (schema 1.5) to a **Power Automate Workflow** URL. In the Teams channel, open
+Workflows, use the template "Post to a channel when a webhook request is received", and paste the
+HTTPS URL it gives you.
 
-Teams no longer accepts the old Office 365 connector webhooks; RuleBeat posts an Adaptive Card to a
-**Power Automate Workflow** URL. In the Teams channel, open Workflows and use the template "Post to
-a channel when a webhook request is received"; the workflow gives you an HTTPS URL ending in a
-signature. Paste that as the channel's destination.
+**Slack.** Paste an Incoming Webhook URL. The message is Block Kit.
 
-The message is an Adaptive Card (schema 1.5) titled "RuleBeat: N new finding(s)", a summary line
-by severity ("2 critical, 5 high"), a table of the top five findings (severity, title, resource),
-"... and N more." when there are more, and an "Open in RuleBeat" button that lands on the Scans
-page filtered to new findings.
+**Email.** SMTP on the channel: host, port, TLS mode (none, STARTTLS, implicit), username, password,
+from address, comma-separated recipients. The password is stored encrypted like a webhook URL. Plain
+text only, with the top ten findings.
 
-### Slack
-
-Create an Incoming Webhook in your Slack app and paste its URL. The message is Block Kit: a header
-"RuleBeat: N new finding(s)", the severity summary, one section per finding for the top five, and a
-"View findings" button.
-
-### Generic webhook
-
-Any HTTPS endpoint that accepts JSON. RuleBeat POSTs `application/json` with this stable shape:
+**Generic webhook.** Any HTTPS endpoint accepting JSON. RuleBeat POSTs this stable shape:
 
 ```json
 {
@@ -71,80 +54,41 @@ Any HTTPS endpoint that accepts JSON. RuleBeat POSTs `application/json` with thi
 }
 ```
 
-`findings` carries at most the first 20; `totalNewFindings` is the real count. `counts` has a key
-only for severities that occurred. This is the payload to point an Azure Logic App, a ticketing
-webhook, or your own function at.
+`findings` carries at most the first 20 while `totalNewFindings` is the real count, and `counts` has
+a key only for severities that occurred. Point a Logic App, a ticketing webhook or your own function
+at it.
 
-### Email
+The Teams, Slack and email messages all carry the same header, a severity summary and a link back at
+`<public URL>/scans`, filtered to new findings over the last seven days. That public URL is the one
+under Settings → Sign-in (`AUTH_URL` in the environment), so set it before wiring channels or the
+links will be wrong. See [`configure.md`](configure.md).
 
-SMTP, configured on the channel: host, port, TLS mode (none, STARTTLS, or implicit TLS), username,
-password, from address, and one or more recipient addresses separated by commas. The password is
-stored encrypted like a webhook URL. The message is plain text with the subject "RuleBeat: N new
-finding(s)", the summary line, the top ten findings (severity, title, resource, category), and a
-link into RuleBeat. There is no HTML variant.
+## Test sends, retries and history
 
-## Scope and severity
+Settings → Notifications has a per-channel test that sends one sample finding through the real
+delivery path, against a saved channel or the values in the form. It needs the admin role.
 
-- **Scope** (categories, subscriptions): set where the channel is assigned to the schedule. A
-  security-team channel assigned with the security category only never hears about a cost finding
-  from that schedule. Empty scope means everything the schedule covers.
-- **Minimum severity**: set in the same place. Findings below it are dropped for that channel on
-  that schedule only.
+Webhook channels get up to **three attempts**, waiting 2 then 8 seconds, each timing out after 10. A
+network error, timeout, HTTP 429 or any 5xx is retried; any other 4xx is not, because a rejected
+request repeated is the same rejection. Email is a single attempt. Every attempt sequence is recorded
+per channel with its status and response detail, keeping the most recent 50.
 
-Both filters apply to the new findings of that run. Neither changes what the scan records; the
-findings are all still on the Scans page.
-
-## Links in messages
-
-Every message links back into RuleBeat at `<public URL>/scans`, filtered to new findings over the
-last seven days. The public URL is the one under Settings → Sign-in (or `AUTH_URL` in the
-environment); if it is wrong, the links will be wrong, so set it before wiring channels. See
-[`configure.md`](configure.md).
-
-## Test send
-
-Settings → Notifications has a test action per channel that sends one sample finding ("Test finding
-from RuleBeat") through the real delivery path, to a saved channel or to the values in the form
-before you save. It needs the admin role (`notifications:manage`), same as editing channels.
-
-## Retries and delivery history
-
-Webhook-type channels (Teams, Slack, generic) get up to **three attempts** with waits of 2 seconds
-and then 8 seconds between them. An attempt times out after 10 seconds. A network error, a timeout,
-an HTTP 429 or any 5xx is retried; any other 4xx is **not**, because a rejected request repeated is
-the same rejection. Email is a single attempt.
-
-Every attempt sequence, success or failure, is recorded per channel with its status and the
-response detail, and is viewable from Settings → Notifications. The history keeps the most recent
-50 entries per channel and prunes the rest. A notification that did not arrive is something you can
-look up, not something you have to guess about.
+Sending is an outbox rather than fire-and-forget: a run records that notifications are pending,
+dispatch happens, the run is marked sent. If the process restarts in between, startup recovery
+dispatches the pending ones. A restart delays a notification; it does not lose it.
 
 ## Where a destination is allowed to point
 
 Before any webhook request, RuleBeat resolves the destination hostname and refuses to send if it
-points anywhere private: loopback, RFC 1918 ranges, link-local (including the cloud metadata
-address 169.254.169.254), carrier-grade NAT, reserved and multicast ranges, and their IPv6
-equivalents, plus any scheme other than `http` or `https`. DNS resolution has a five-second limit
-and every returned address must be public. Redirects are not followed; a destination that answers
-with a redirect is treated as a refusal and is not retried. This is a guard against the server
-being used to probe its own network, and it applies to test sends as well as real ones. A corporate
-webhook receiver on a private address is therefore not reachable by design; put it behind a public
-hostname or use email.
-
-## What happens across a restart
-
-Sending is an outbox, not a fire-and-forget. A run records that it has notifications pending, the
-dispatch happens, and the run is marked sent. If the process restarts in between, startup recovery
-finds runs with pending notifications and dispatches them, and marks any run that was still
-"running" when the process died as an error ("Run did not complete. The server restarted or
-crashed while this scan was in progress."). So a restart delays a notification; it does not lose
-it, and it does not produce a silently half-finished run.
+points anywhere private: loopback, RFC 1918, link-local (including the metadata address
+169.254.169.254), carrier-grade NAT, reserved and multicast ranges and their IPv6 equivalents, plus
+any scheme other than `http` or `https`. Redirects are not followed, and a destination answering with
+one is treated as a refusal. This stops the server being used to probe its own network, and it
+applies to test sends too. A corporate receiver on a private address is unreachable by design; put it
+behind a public hostname or use email.
 
 ## What is not here
 
-- No digest or batching across runs: one message per channel per run.
-- No mute windows or quiet hours.
-- No per-rule routing; scope is by category and subscription.
-- No HTML email.
-- Notifications are about new findings only: a fixed finding, a failed run or a stale schedule does
-  not send anything today. The Scan Coverage dashboard widget is where a stopped schedule shows.
+No digest or batching across runs, no quiet hours, no per-rule routing, no HTML email. Notifications
+cover new findings only: a fixed finding, a failed run or a stale schedule sends nothing. The Scan
+Coverage widget is where a stopped schedule shows.

@@ -17,7 +17,7 @@ Three documents cover what this project asks of a change. Read them in this orde
   matches what you are touching, not just the closest one.
 - [`docs/engineering/codebase-map.md`](docs/engineering/codebase-map.md): where things live.
 
-Local setup is in the [README](README.md#local-development); the short version is `npm install`,
+Local setup is in the [README](README.md#documentation); the short version is `npm install`,
 `npm run build:core`, then `npm run dev`. Before opening a pull request, run the same gates CI
 runs, all from the repo root:
 

@@ -4,90 +4,59 @@
 
 ## Start with the diagnostics page
 
-`/diagnostics` (admin-only, linked from Settings) answers the questions that would otherwise need
-a server log, on two cards: **Azure connectivity** (is Azure reachable) and **System** (which
-version is running, is the background scheduler ticking, and is the resource-type schema cache
-healthy).
+`/diagnostics` (admin-only, linked from Settings) answers the questions that would otherwise need a
+server log, on two cards.
 
-### The Azure connectivity card
+**Azure connectivity** runs four checks, in order, since a later one can only fail meaningfully if
+the ones before it pass. They run when you click Run, not on page load, and the last result
+survives a refresh.
 
-These checks run only when you click Run, not automatically on page load, since they make live
-calls and can take a few seconds. The last result is kept so it survives a page refresh. Four
-checks, in order, since a later check can only fail meaningfully if the ones before it pass:
+1. **Azure credential.** Can RuleBeat get a token at all? A failure means the credential itself is
+   wrong ([`configure.md`](configure.md), [`permissions.md`](permissions.md)).
+2. **Subscription access.** How many subscriptions can this identity see? Zero means Reader is not
+   assigned anywhere it can reach.
+3. **Resource Graph.** Can it query, and does the subscription count match the previous check? A
+   mismatch usually means Reader is assigned somewhere Resource Graph has not indexed yet, which can
+   lag a fresh role assignment by a few minutes.
+4. **Microsoft Graph (Directory rules).** Optional. A warning here, not a failure, means Directory
+   rules are skipped and everything else works normally. Grant `Application.Read.All` to fix it.
 
-1. **Azure credential.** Can RuleBeat get a token at all? A failure here means the credential
-   itself is wrong. See [`configure.md`](configure.md) for the five ways to supply one, and
-   [`permissions.md`](permissions.md) for creating a service principal from scratch.
-2. **Subscription access.** How many subscriptions can this identity see? Zero means Reader isn't
-   assigned anywhere this credential can reach.
-3. **Resource Graph.** Can RuleBeat actually query Azure Resource Graph, and does the subscription
-   count it returns match what the previous check found? A mismatch usually means Reader is
-   assigned somewhere Resource Graph hasn't indexed yet, which can lag a fresh role assignment by a
-   few minutes.
-4. **Microsoft Graph (Directory rules).** Optional. A warning here (not a failure) means Directory
-   rules, including the two built-in identity checks, will be skipped; everything else still works
-   normally. Grant `Application.Read.All` (see [`permissions.md`](permissions.md)) to fix it.
+Every summary is a hand-written plain-language sentence. The real underlying error, which can carry
+tenant and correlation IDs you would not want in a screenshot, always goes to the server log first.
 
-Every check's summary is a hand-written, plain-language sentence. The real underlying error, which
-can contain tenant IDs and correlation IDs you wouldn't want in a screenshot, always goes to the
-server log first.
-
-### The System card
-
-Local state, no Azure calls, so it loads on its own when the page opens. The card's title carries
-the running version (the same one the sidebar footer shows), which is what to quote in a bug
-report and what to compare against the
-[releases page](https://github.com/rulebeat/rulebeat/releases) when deciding whether to upgrade.
-Two rows below it:
-
-- **Scheduled scans.** Whether the background scheduler is enabled and when it was last active. It
-  ticks every 30 seconds when running; if the last activity time is stale, the process may need a
-  restart. "Disabled at the server level" means `RULEBEAT_DISABLE_SCHEDULER` is set, which is the
-  expected state if you set it deliberately. The one reason to set it today is running more than
-  one replica, which isn't a supported topology; see
-  [`install.md`](install.md#deployment-topology) for why.
-- **Azure resource schemas.** Whether resource-type schemas (used by the rule builder to know what
-  fields exist on a given resource type) are cached and how fresh the cache is. A stale individual
-  entry is normal and self-heals on next use; the only state worth acting on is nothing cached at
-  all, or the overall type list being outdated, and the card says what resolves each.
+**System** is local state with no Azure calls, so it loads on its own. Its title carries the running
+version, which is what to quote in a bug report. Below it, **Scheduled scans** shows whether the
+scheduler is enabled and when it last ticked (every 30 seconds when running; "disabled at the server
+level" means `RULEBEAT_DISABLE_SCHEDULER` is set), and **Azure resource schemas** shows whether the
+rule builder's resource-type cache is populated and fresh. A stale individual entry is normal and
+self-heals; only an empty cache or an outdated type list is worth acting on.
 
 ## Common issues
 
-**Stuck on the sign-in page after entering credentials.** Confirm `AUTH_URL` (if set) matches how
-you're actually accessing the instance, including scheme and port. A mismatch between the
-configured URL and the request's actual origin is the most common cause of a sign-in that appears
-to succeed but loops back.
+**Stuck on the sign-in page after entering credentials.** Confirm `AUTH_URL` matches how you are
+actually reaching the instance, scheme and port included. A mismatch between the configured URL and
+the request's origin is the most common cause of a sign-in that appears to succeed but loops back.
 
-**A fresh Docker install won't build or start.** Check `docker compose logs` first; most first-boot
-failures show a clear error there. (The generated admin password is not in that log; it's written
-only to `data/initial-password.txt` in the data volume; see [install.md](install.md#first-sign-in).)
-Then ask Docker what its own liveness check (`/api/health`, unauthenticated) sees:
+**A fresh Docker install will not build or start.** Check `docker compose logs` first; most
+first-boot failures show a clear error there, and the generated admin password is never in it
+([install.md](install.md#first-sign-in)). Then ask Docker what its own liveness check sees:
 
 ```
 docker inspect rulebeat --format '{{.State.Health.Status}}'
 ```
 
-It prints one of `starting`, `healthy`, or `unhealthy`. `starting` for the first few seconds is
-normal; stuck on `starting` or flipped to `unhealthy` means the app process itself isn't answering
-HTTP, which points at the log rather than at Azure. The install examples set
-`--restart unless-stopped` (or `restart: unless-stopped` in Compose), so a crash recovers on its
-own; `RestartCount` climbing in `docker inspect` without settling means it's crash looping, and
-the log from just before each restart is where to look.
+`starting` for the first few seconds is normal. Stuck on `starting`, or `unhealthy`, means the app
+process is not answering HTTP, which points at the log rather than at Azure. `RestartCount` climbing
+without settling means it is crash looping, and the log from just before each restart is where to
+look.
 
-**A schedule shows as due but never seems to run.** Check the System card's Scheduled scans row
-above.
-Also confirm no other manual or scheduled run is currently in progress: RuleBeat runs are
-serialized, so a long-running scan delays the next one rather than running it concurrently.
+**A schedule shows as due but never runs.** Check the System card's Scheduled scans row, then
+confirm no other run is in progress: runs are serialized, so a long scan delays the next one.
 
-**A notification channel isn't firing.** Check its delivery history from Settings →
-Notifications. A channel's assigned severity threshold on the specific schedule that should be
-notifying is a common cause of "it's configured but nothing arrives": the schedule has to be
-explicitly assigned to that channel.
+**A notification channel is not firing.** Check its delivery history from Settings → Notifications.
+The usual cause of "configured but nothing arrives" is that the schedule was never assigned to the
+channel, or the severity threshold on that assignment is above what the run produced.
 
-## Logs
-
-RuleBeat logs to stdout, so `docker compose logs -f` (or your platform's log viewer) is where
-startup errors and scan failures show up (the generated admin password never is; see above). RuleBeat never
-returns a raw internal error to the browser; it logs the real error server-side and returns a
-stable, safe message instead. If something in the UI shows a generic error message, the log is
-where the specific cause is.
+RuleBeat logs to stdout, so `docker compose logs -f` is where startup errors and scan failures show
+up. It never returns a raw internal error to the browser: the real error goes to the log and a
+stable, safe message goes to the UI, so a generic message on screen means the log has the cause.

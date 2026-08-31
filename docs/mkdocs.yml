@@ -85,7 +85,6 @@ nav:
       - why-run-rulebeat.md
       - how-it-works.md
       - posture.md
-      - examples.md
   - Operate:
       - notifications.md
       - dashboards.md
