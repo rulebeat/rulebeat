@@ -110,9 +110,13 @@ principals including credential expiry, and grants no ability to change anything
 
 ## 4. Optional: Log Analytics Reader
 
-RuleBeat can query a Log Analytics workspace once one is connected in Settings → Log Analytics
-workspace. There is no separate identity: the same service principal queries it, so it needs one
-more role assignment, scoped to the workspace resource rather than the subscription.
+**You do not need this yet.** Log Analytics rules are built but paused: the new-rule picker shows
+**Logs & activity** as unavailable and the Query page does not offer it, because the backend
+supports one tenant-wide workspace and nothing else. A workspace you connect today cannot be
+queried by anything. Skip this section unless you want the access ready in advance.
+
+When it ships there is no separate identity: the same service principal queries the workspace, so
+it needs one more role assignment, scoped to the workspace resource rather than the subscription.
 
 bash or zsh:
 
@@ -129,9 +133,9 @@ az role assignment create --assignee <client-id> --role "Log Analytics Reader" `
 ```
 
 In the Portal: the workspace → **Access control (IAM)** → **Add role assignment** → role **Log
-Analytics Reader**, selecting the same app registration. Without the role RuleBeat still
-authenticates, but saving the workspace fails: it is verified with a real query before it is
-persisted, and that query is refused until the role is granted.
+Analytics Reader**, selecting the same app registration. Settings → Log Analytics workspace stores
+a workspace and verifies it with a real query before persisting it, so without the role the save is
+refused.
 
 ## Verifying it worked
 
