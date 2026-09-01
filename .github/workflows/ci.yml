@@ -335,3 +335,53 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: '1'
         run: cosign sign --yes "${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+
+  # The same web suite, second backend (issue #73). Its own job, in parallel with build-and-test,
+  # so the Postgres pass adds nothing to the main job's walltime and a Postgres-only failure is
+  # immediately attributable to the backend rather than to the change itself. Suites that assert
+  # the SQLite file, WAL or upgrade chain skip themselves on this backend; everything else runs
+  # unchanged, including the parity suite proving both backends return identical repository
+  # results. The core project is deliberately absent here: it never touches a database.
+  test-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rulebeat
+          POSTGRES_PASSWORD: rulebeat
+          POSTGRES_DB: rulebeat_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rulebeat -d rulebeat_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Web tests import @rulebeat/core through its built dist, same as everywhere else.
+      - name: Build core
+        run: npm run build:core
+
+      # RULEBEAT_TEST_PG_URL, not RULEBEAT_DATABASE_URL: tests/setup.ts only opts a run into the
+      # Postgres backend through the test-specific variable, so a developer's real
+      # RULEBEAT_DATABASE_URL can never be reached by a test run — this job goes through the same
+      # narrow door.
+      - name: Test (web suite against Postgres)
+        env:
+          RULEBEAT_TEST_PG_URL: postgres://rulebeat:rulebeat@localhost:5432/rulebeat_test
+        run: npx vitest run --project web

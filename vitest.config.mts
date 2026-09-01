@@ -40,6 +40,22 @@ export default defineConfig({
           name: 'web',
           root: web,
           include: ['tests/**/*.test.ts'],
+          // The SQLite upgrade chain (lib/db/migrate.ts, sample .db files, backfills) is
+          // deliberately not shared by the Postgres backend: Postgres starts empty, there is no
+          // data migration between backends (issue #73). These suites point RULEBEAT_DB_PATH at a
+          // sample file and then assert through the live singleton, which a Postgres-backed run
+          // never opens — so on the Postgres pass (RULEBEAT_TEST_PG_URL set) they are excluded
+          // rather than weakened. Every other suite runs on both backends.
+          exclude: process.env.RULEBEAT_TEST_PG_URL
+            ? [
+                '**/node_modules/**',
+                'tests/unit/db-migrations-golden.test.ts',
+                'tests/unit/db-upgrade-scan.test.ts',
+                'tests/unit/db-backfills.test.ts',
+                'tests/unit/demo-generator.test.ts',
+                'tests/unit/demo-mode.test.ts',
+              ]
+            : undefined,
           environment: 'node',
           // Every DB-backed suite opens its own temp database via tests/helpers/db.ts. Sharing one
           // process across files would share the module-level SQLite singleton too, so files must

@@ -7,25 +7,24 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeSchemaCache, writeResourceTypesCache, getSchemaCacheStatus } from '@/lib/schema-cache';
 import { getSchedulerStatus } from '@/lib/scheduler';
-import { db } from '@/lib/db/client';
-import { sql } from 'drizzle-orm';
+import { execRaw } from '../helpers/db';
 
 // ── Schema-cache helpers ─────────────────────────────────────────────────────
 
-function clearSchemaTables() {
-  db.run(sql`DELETE FROM schema_cache`);
-  db.run(sql`DELETE FROM resource_types_cache`);
+async function clearSchemaTables() {
+  await execRaw('DELETE FROM schema_cache');
+  await execRaw('DELETE FROM resource_types_cache');
 }
 
 /** Write a schema entry with a custom `cachedAt` timestamp by updating after insert. */
 async function writeSchemaAt(resourceType: string, cachedAt: string) {
   await writeSchemaCache(resourceType, ['prop1', 'prop2']);
-  db.run(sql.raw(`UPDATE schema_cache SET cached_at = '${cachedAt}' WHERE resource_type = '${resourceType}'`));
+  await execRaw(`UPDATE schema_cache SET cached_at = '${cachedAt}' WHERE resource_type = '${resourceType}'`);
 }
 
 async function writeTypesAt(types: string[], cachedAt: string) {
   await writeResourceTypesCache(types);
-  db.run(sql.raw(`UPDATE resource_types_cache SET cached_at = '${cachedAt}' WHERE id = 1`));
+  await execRaw(`UPDATE resource_types_cache SET cached_at = '${cachedAt}' WHERE id = 1`);
 }
 
 // ── Scheduler globals ────────────────────────────────────────────────────────

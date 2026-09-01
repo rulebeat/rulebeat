@@ -73,6 +73,16 @@ services:
       # Last resort: the secret in cleartext, straight from .env. Works everywhere, weakest option.
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
 
+      # ── Database backend ─────────────────────────────────────────────────────────────────────
+      # Unset (the default): RuleBeat keeps everything in a SQLite file on the rulebeat-data
+      # volume above. One container, no external database, exactly the install described at the
+      # top of this file. Set a postgres:// connection string to run against PostgreSQL instead.
+      # The optional `postgres` service at the bottom of this file is a worked example: put
+      # POSTGRES_PASSWORD and RULEBEAT_DATABASE_URL in .env and start with
+      #   docker compose --profile postgres up -d
+      # Switching backends is a fresh install: nothing is migrated between SQLite and Postgres.
+      RULEBEAT_DATABASE_URL: ${RULEBEAT_DATABASE_URL:-}
+
       # Encrypts credentials entered through the UI. Generated on first boot into the data volume if
       # unset — set it here to keep the key off the volume. Back it up either way; see .env.example.
       RULEBEAT_ENCRYPTION_KEY: ${RULEBEAT_ENCRYPTION_KEY:-}
@@ -81,8 +91,34 @@ services:
     # secrets:
     #   - azure_client_secret
 
+  # Optional PostgreSQL backend. Off by default: plain `docker compose up` never starts this and
+  # RuleBeat stays on SQLite. To opt in, set in .env:
+  #   POSTGRES_PASSWORD=<something long and random>
+  #   RULEBEAT_DATABASE_URL=postgres://rulebeat:<that password>@postgres:5432/rulebeat
+  # and start with: docker compose --profile postgres up -d
+  # RuleBeat creates its schema and seed data on first boot; the database only has to exist.
+  # This bundled server is for a single-machine self-host. On Azure, prefer a managed database
+  # (Azure Database for PostgreSQL) and point RULEBEAT_DATABASE_URL at it instead; then this
+  # profile is never used and RuleBeat remains the only container.
+  postgres:
+    image: postgres:17
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rulebeat
+      POSTGRES_DB: rulebeat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - rulebeat-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rulebeat -d rulebeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   rulebeat-data:
+  rulebeat-pg-data:
 
 # secrets:
 #   azure_client_secret:

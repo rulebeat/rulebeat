@@ -16,7 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse } from 'next/server';
 import { resetDb } from '../helpers/db';
 import { db } from '@/lib/db/client';
-import { users } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { users } from '@/lib/db/tables';
 import { eq } from 'drizzle-orm';
 import { createUser } from '@/lib/db/users';
 import { stampDemoDatabase, resetDemoModeCacheForTests, DEMO_VISITOR_ID } from '@/lib/demo';
@@ -35,12 +36,12 @@ const { requireRole, getCurrentUser } = await import('@/lib/api-auth');
 async function seedDemoVisitor(): Promise<void> {
   const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
   if ('error' in result) throw new Error(result.error);
-  db.update(users).set({ id: DEMO_VISITOR_ID }).where(eq(users.id, result.user.id)).run();
+  await execRun(db.update(users).set({ id: DEMO_VISITOR_ID }).where(eq(users.id, result.user.id)));
 }
 
 /** Simulates a tampered or misseeded row: the id the app looks up, promoted straight in the DB. */
-function tamperVisitorToAdmin(): void {
-  db.update(users).set({ role: 'admin' }).where(eq(users.id, DEMO_VISITOR_ID)).run();
+async function tamperVisitorToAdmin(): Promise<void> {
+  await execRun(db.update(users).set({ role: 'admin' }).where(eq(users.id, DEMO_VISITOR_ID)));
 }
 
 async function enableDemoMode(): Promise<void> {
@@ -126,7 +127,7 @@ describe('await requireRole() in demo mode: read only, no matter what', () => {
 
   it('still denies every write action after the visitor row is tampered to admin', async () => {
     await seedDemoVisitor();
-    tamperVisitorToAdmin();
+    await tamperVisitorToAdmin();
     await enableDemoMode();
 
     // Prove the tamper actually took, so a failure below is the guard, not a broken fixture.
@@ -142,7 +143,7 @@ describe('await requireRole() in demo mode: read only, no matter what', () => {
 
   it('still allows read after the visitor row is tampered to admin', async () => {
     await seedDemoVisitor();
-    tamperVisitorToAdmin();
+    await tamperVisitorToAdmin();
     await enableDemoMode();
 
     const result = await requireRole('read');

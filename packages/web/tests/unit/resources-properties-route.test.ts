@@ -3,9 +3,7 @@
  * "this type genuinely has no schema" (404), which previously both collapsed to the same 404.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sql } from 'drizzle-orm';
-import { resetDb } from '../helpers/db';
-import { db } from '@/lib/db/client';
+import { resetDb, execRaw } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { writeSchemaCache } from '@/lib/schema-cache';
@@ -26,13 +24,13 @@ vi.mock('@rulebeat/core', () => ({
 
 const { GET } = await import('@/app/api/resources/properties/route');
 
-function clearSchemaCache() {
-  db.run(sql`DELETE FROM schema_cache`);
+async function clearSchemaCache() {
+  await execRaw('DELETE FROM schema_cache');
 }
 
 async function writeSchemaAt(resourceType: string, fields: string[], cachedAt: string) {
   await writeSchemaCache(resourceType, fields);
-  db.run(sql.raw(`UPDATE schema_cache SET cached_at = '${cachedAt}' WHERE resource_type = '${resourceType}'`));
+  await execRaw(`UPDATE schema_cache SET cached_at = '${cachedAt}' WHERE resource_type = '${resourceType}'`);
 }
 
 function request(type: string): Request {
@@ -49,7 +47,7 @@ async function signInAsViewer(): Promise<void> {
 describe('GET /api/resources/properties (spec 008)', () => {
   beforeEach(async () => {
     await resetDb();
-    clearSchemaCache();
+    await clearSchemaCache();
     mockAuth.mockReset();
     fail = null;
     resolvedFields = [];

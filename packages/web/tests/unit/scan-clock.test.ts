@@ -22,7 +22,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { findingEvents } from '@/lib/db/schema';
+import { one as execOne, many as execMany } from '@/lib/db/exec';
+import { findingEvents } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { getSnapshots } from '@/lib/db/snapshots';
@@ -83,7 +84,7 @@ describe('await runCategoryScan() respects an injected now', () => {
     const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
 
     expect(newFindings).toHaveLength(1);
-    const event = db.select().from(findingEvents).where(eq(findingEvents.fingerprint, newFindings[0]!.fingerprint)).get();
+    const event = await execOne(db.select().from(findingEvents).where(eq(findingEvents.fingerprint, newFindings[0]!.fingerprint)));
 
     expect(event).toBeTruthy();
     expect(event!.type).toBe('created');
@@ -99,8 +100,8 @@ describe('await runCategoryScan() respects an injected now', () => {
     const resolveCtx = fakeTenantContext({ graphRows: [] });
     await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_2, ctx: resolveCtx });
 
-    const event = db.select().from(findingEvents)
-      .where(eq(findingEvents.fingerprint, fingerprint)).all()
+    const event = (await execMany(db.select().from(findingEvents)
+      .where(eq(findingEvents.fingerprint, fingerprint))))
       .find(e => e.type === 'resolved');
 
     expect(event).toBeTruthy();

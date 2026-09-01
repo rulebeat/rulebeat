@@ -10,7 +10,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
@@ -21,9 +22,9 @@ const LOGS_RULE_ID = 'test-logs-rule-under-identity';
 
 // Same idempotent-delete-then-insert pattern as scan-runner-taxonomy-dispatch.test.ts's
 // insertArgRuleUnderIdentity() — await resetDb() deliberately preserves the seeded rules table.
-function insertArgRuleUnderIdentity(): void {
-  db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)).run();
-  db.insert(rulesTable).values({
+async function insertArgRuleUnderIdentity(): Promise<void> {
+  await execRun(db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)));
+  await execRun(db.insert(rulesTable).values({
     id: ARG_RULE_ID,
     name: ARG_RULE_ID,
     description: 'a resource-graph rule filed under the identity category',
@@ -35,12 +36,12 @@ function insertArgRuleUnderIdentity(): void {
     conditions: JSON.stringify([]),
     rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
     type: 'custom',
-  }).run();
+  }));
 }
 
-function insertLogsRuleUnderIdentity(): void {
-  db.delete(rulesTable).where(eq(rulesTable.id, LOGS_RULE_ID)).run();
-  db.insert(rulesTable).values({
+async function insertLogsRuleUnderIdentity(): Promise<void> {
+  await execRun(db.delete(rulesTable).where(eq(rulesTable.id, LOGS_RULE_ID)));
+  await execRun(db.insert(rulesTable).values({
     id: LOGS_RULE_ID,
     name: LOGS_RULE_ID,
     description: 'a log-analytics rule filed under the identity category',
@@ -53,7 +54,7 @@ function insertLogsRuleUnderIdentity(): void {
     queryBackend: 'log-analytics',
     logsQuery: JSON.stringify({ kql: 'SigninLogs | where ResultType != 0', timeWindowDays: 30 }),
     type: 'custom',
-  }).run();
+  }));
 }
 
 async function identityCategory() {
@@ -76,8 +77,8 @@ function graphAppWithExpiringSecret(): Record<string, unknown>[] {
 describe('runCategoryScan dispatches log-analytics rules through runLawRules (spec 036)', () => {
   beforeEach(async () => {
     await resetDb();
-    insertArgRuleUnderIdentity();
-    insertLogsRuleUnderIdentity();
+    await insertArgRuleUnderIdentity();
+    await insertLogsRuleUnderIdentity();
   });
 
   it('runs resource-graph, microsoft-graph and log-analytics rules under the same category in one scan', async () => {

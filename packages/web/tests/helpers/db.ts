@@ -7,7 +7,7 @@
  * test starts from a known state. `resetDb()` is how.
  */
 import { sql } from 'drizzle-orm';
-import { db, pgDb } from '@/lib/db/client';
+import { db, dbReady, pgDb } from '@/lib/db/client';
 import { dbKind } from '@/lib/db/backend';
 
 /**
@@ -39,16 +39,13 @@ const CLEARABLE = [
  *
  *  Async for the Postgres backend (issue #73); on SQLite the body has no await, so it still
  *  completes synchronously and legacy un-awaited `resetDb()` calls stay correct there. On Postgres
- *  the spike's bootstrap creates only a subset of tables, so a missing table is skipped rather
- *  than failed. */
+ *  the helper waits for `dbReady` first — the bootstrap creates the schema asynchronously, and a
+ *  DELETE racing it would fail on a table that does not exist yet. */
 export async function resetDb(): Promise<void> {
   if (dbKind === 'pg') {
+    await dbReady;
     for (const table of CLEARABLE) {
-      try {
-        await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
-      } catch {
-        // Table not created by the Phase 0 bootstrap yet.
-      }
+      await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
     }
     return;
   }
@@ -60,6 +57,7 @@ export async function resetDb(): Promise<void> {
 /** Empties the rules table, for suites asserting exact rule counts. */
 export async function clearRules(): Promise<void> {
   if (dbKind === 'pg') {
+    await dbReady;
     await pgDb!.execute(sql.raw('DELETE FROM rules'));
     return;
   }
@@ -71,6 +69,7 @@ export async function clearRules(): Promise<void> {
 /** Empties the dashboards table, for suites testing the empty-gallery and default-promotion paths. */
 export async function clearDashboards(): Promise<void> {
   if (dbKind === 'pg') {
+    await dbReady;
     await pgDb!.execute(sql.raw('DELETE FROM dashboards'));
     return;
   }
@@ -80,11 +79,23 @@ export async function clearDashboards(): Promise<void> {
 /** Row count for a table — handy for "did this actually write anything" assertions. */
 export async function countRows(table: string): Promise<number> {
   if (dbKind === 'pg') {
+    await dbReady;
     const res = await pgDb!.execute(sql.raw(`SELECT COUNT(*) AS n FROM ${table}`));
     return Number((res.rows[0] as { n: unknown }).n);
   }
   const row = db.get<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM ${table}`));
   return row?.n ?? 0;
+}
+
+/** Executes one raw SQL statement on whichever backend is active. For test setup and the direct
+ *  column pokes assertions sometimes need; product code goes through `lib/db/exec.ts` instead. */
+export async function execRaw(statement: string): Promise<void> {
+  if (dbKind === 'pg') {
+    await dbReady;
+    await pgDb!.execute(sql.raw(statement));
+    return;
+  }
+  db.run(sql.raw(statement));
 }
 
 /** True when the table exists in the current schema. Used by the SQLite migration suite only. */

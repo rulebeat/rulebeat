@@ -4,9 +4,7 @@
  * outage indistinguishable from a real empty result on both the server and client.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sql } from 'drizzle-orm';
-import { resetDb } from '../helpers/db';
-import { db } from '@/lib/db/client';
+import { resetDb, execRaw } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { writeResourceTypesCache } from '@/lib/schema-cache';
@@ -26,13 +24,13 @@ vi.mock('@rulebeat/core', () => ({
 
 const { GET } = await import('@/app/api/resources/types/route');
 
-function clearTypesCache() {
-  db.run(sql`DELETE FROM resource_types_cache`);
+async function clearTypesCache() {
+  await execRaw('DELETE FROM resource_types_cache');
 }
 
 async function writeTypesAt(types: string[], cachedAt: string) {
   await writeResourceTypesCache(types);
-  db.run(sql.raw(`UPDATE resource_types_cache SET cached_at = '${cachedAt}'`));
+  await execRaw(`UPDATE resource_types_cache SET cached_at = '${cachedAt}'`);
 }
 
 async function signInAsViewer(): Promise<void> {
@@ -45,7 +43,7 @@ async function signInAsViewer(): Promise<void> {
 describe('GET /api/resources/types (spec 008)', () => {
   beforeEach(async () => {
     await resetDb();
-    clearTypesCache();
+    await clearTypesCache();
     mockAuth.mockReset();
     fail = null;
     await signInAsViewer();

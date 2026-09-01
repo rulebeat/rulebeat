@@ -8,6 +8,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
+- CI now proves the Postgres backend on every change: the whole web test suite runs a second time against a real PostgreSQL 17 service, and the backend parity suite grew to cover rules with their KQL, users, dashboards and suppressions alongside the findings lifecycle. docker-compose.yml gains an optional `postgres` profile, off by default so the single-container SQLite install is unchanged, with a matching `RULEBEAT_DATABASE_URL` entry in .env.example (issue #73, phase 3).
+
 - The whole app now runs on PostgreSQL: every database repository and every caller through the pages and API routes is asynchronous, so setting RULEBEAT_DATABASE_URL runs scans, dashboards, schedules, auth and audit against Postgres, not just the spike's three repositories (issue #73, phase 2). The SQLite default is unchanged and needs nothing.
 
 - The PostgreSQL backend now creates the complete schema and seeds the same built-in content as a fresh SQLite install: built-in rules, external pack rules, categories, the starter dashboard, onboarding state and the initial local admin account with its printed first password. The app itself still needs the remaining repository sweep before it fully runs on Postgres (issue #73, phase 1).
