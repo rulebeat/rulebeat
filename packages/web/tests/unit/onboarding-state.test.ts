@@ -24,7 +24,9 @@ function onboardingRow(sqlite: ReturnType<typeof open>): { status: string } | nu
 }
 
 describe('B3 · onboarding-v1 seeding', () => {
-  it('a genuinely fresh install (zero users) starts pending', async () => {
+  // 30s: whichever test builds the 'current' sample first pays for the full migration chain on a
+  // cold cache (about 10s on a containerised filesystem); every later makeSample('current') is fast.
+  it('a genuinely fresh install (zero users) starts pending', { timeout: 30_000 }, async () => {
     const sample = makeSample('current');
     upgradeInProcess(sample);
     const sqlite = open(sample.file);

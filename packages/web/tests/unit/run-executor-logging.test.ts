@@ -8,7 +8,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { resetDb, clearRules } from '../helpers/db';
 import { createScanLogger } from '@/lib/server-logger';
 
@@ -26,8 +27,8 @@ vi.mock('@/lib/azure-credential', () => ({
 
 const { executeTarget } = await import('@/lib/run-executor');
 
-function insertRule(id: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -39,14 +40,14 @@ function insertRule(id: string): void {
     conditions: JSON.stringify([]),
     rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
     type: 'custom',
-  }).run();
+  }));
 }
 
 describe('await executeTarget() wires runId into the production scan logger (spec 006)', () => {
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule('test-rule-logging');
+    await insertRule('test-rule-logging');
   });
 
   it('a captured console.log line carries the run\'s own id', async () => {

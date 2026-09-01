@@ -9,7 +9,8 @@ import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { loadRules } from '@/lib/rules';
@@ -22,8 +23,8 @@ const RULE_OUT_OF_SCOPE = 'test-rule-out-of-scope';
 const MARKER_OK = '// marker-ok';
 const MARKER_FAIL = '// marker-fail';
 
-function insertRule(id: string, marker: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, marker: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -35,7 +36,7 @@ function insertRule(id: string, marker: string): void {
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${marker}`,
     type: 'custom',
-  }).run();
+  }));
 }
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[]; failWith?: Error }>;
@@ -72,15 +73,14 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_OK, MARKER_OK);
-    insertRule(RULE_FAILS, MARKER_FAIL);
-    insertRule(RULE_OUT_OF_SCOPE, MARKER_OK);
+    await insertRule(RULE_OK, MARKER_OK);
+    await insertRule(RULE_FAILS, MARKER_FAIL);
+    await insertRule(RULE_OUT_OF_SCOPE, MARKER_OK);
     // Gives this rule real prior history, so the "untouched" assertion below proves the scan left
     // it alone rather than merely proving a null stayed null.
-    db.update(rulesTable)
+    await execRun(db.update(rulesTable)
       .set({ lastRunStatus: 'success', lastRunAt: '2026-01-01T00:00:00.000Z' })
-      .where(eq(rulesTable.id, RULE_OUT_OF_SCOPE))
-      .run();
+      .where(eq(rulesTable.id, RULE_OUT_OF_SCOPE)));
   });
 
   it('a rule whose query throws is stamped "failed"; one that returns cleanly is stamped "success" — both at this scan\'s finish time', async () => {

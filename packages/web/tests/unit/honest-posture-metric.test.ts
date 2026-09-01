@@ -9,7 +9,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable, postureSnapshots } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable, postureSnapshots } from '@/lib/db/tables';
 import { syncScanFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { SNAPSHOT_FORMULA_VERSION } from '@/lib/db/snapshots';
@@ -23,8 +24,8 @@ const RULE_UNKNOWN_NEVER_RUN = 'test-rule-unknown-never-run';
 const RULE_WITH_FINDING = 'test-rule-with-finding';
 const RULE_ACTIVITY = 'test-rule-activity';
 
-function insertRule(id: string, overrides: { lastRunStatus?: string | null; kind?: string; queryBackend?: string } = {}): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, overrides: { lastRunStatus?: string | null; kind?: string; queryBackend?: string } = {}): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -39,7 +40,7 @@ function insertRule(id: string, overrides: { lastRunStatus?: string | null; kind
     lastRunStatus: overrides.lastRunStatus ?? null,
     kind: overrides.kind ?? 'state',
     queryBackend: overrides.queryBackend ?? 'resource-graph',
-  }).run();
+  }));
 }
 
 function finding(ruleId: string, resourceSuffix: string): Finding {
@@ -67,13 +68,13 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_PASSING, { lastRunStatus: 'success' });
-    insertRule(RULE_UNKNOWN_FAILED, { lastRunStatus: 'failed' });
-    insertRule(RULE_UNKNOWN_NEVER_RUN, { lastRunStatus: null });
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+    await insertRule(RULE_UNKNOWN_FAILED, { lastRunStatus: 'failed' });
+    await insertRule(RULE_UNKNOWN_NEVER_RUN, { lastRunStatus: null });
     // Last run also errored, but an active finding makes it implicitly failing regardless —
     // proves unknownRules is specifically "zero findings, not proven", not "everything imperfect".
-    insertRule(RULE_WITH_FINDING, { lastRunStatus: 'failed' });
-    insertRule(RULE_ACTIVITY, { lastRunStatus: 'success', kind: 'activity', queryBackend: 'log-analytics' });
+    await insertRule(RULE_WITH_FINDING, { lastRunStatus: 'failed' });
+    await insertRule(RULE_ACTIVITY, { lastRunStatus: 'success', kind: 'activity', queryBackend: 'log-analytics' });
 
     await syncScanFindings({
       scanId: 's1',
@@ -125,8 +126,8 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
   // Comfortably before any `dateWindow: { mode: 'relative', days: 7 }` cutoff, whatever "today" is.
   const BASELINE_DATE = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
 
-  function baselineRow(category: string, passingRules: number, totalRules: number, formulaVersion: number): void {
-    db.insert(postureSnapshots).values({
+  async function baselineRow(category: string, passingRules: number, totalRules: number, formulaVersion: number): Promise<void> {
+    await execRun(db.insert(postureSnapshots).values({
       category,
       subscriptionId: '',
       date: BASELINE_DATE,
@@ -139,7 +140,7 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
       activeFindings: 0,
       severityCounts: '{}',
       updatedAt: new Date().toISOString(),
-    }).run();
+    }));
   }
 
   beforeEach(async () => {
@@ -150,9 +151,9 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
   it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in — this is the actual "-75%" bug', async () => {
     // security's only baseline row is old-formula and generous (10/10) — if it leaked into the
     // blend it would pull basePct from cost's honest 25% up toward ~79%, a wrong comparison point.
-    baselineRow('security', 10, 10, 1);
-    baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
-    insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
+    await baselineRow('security', 10, 10, 1);
+    await baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
 
     const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
@@ -162,8 +163,8 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
   });
 
   it('when the only baseline row is already honest, the delta still computes exactly as before', async () => {
-    baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
-    insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+    await baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
     const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
 

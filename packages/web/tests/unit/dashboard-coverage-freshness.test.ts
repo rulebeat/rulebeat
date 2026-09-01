@@ -8,7 +8,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
@@ -20,8 +21,8 @@ const RULE_FAIL = 'test-rule-fail';
 const MARKER_OK = '// marker-ok';
 const MARKER_FAIL = '// marker-fail';
 
-function insertRule(id: string, marker: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, marker: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -33,7 +34,7 @@ function insertRule(id: string, marker: string): void {
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${marker}`,
     type: 'custom',
-  }).run();
+  }));
 }
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[]; failWith?: Error }>;
@@ -64,8 +65,8 @@ describe('coverage-freshness widget data (spec 004)', () => {
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_OK, MARKER_OK);
-    insertRule(RULE_FAIL, MARKER_FAIL);
+    await insertRule(RULE_OK, MARKER_OK);
+    await insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
   it('reports the security category as partial, with the failed rule named, after a mixed scan', async () => {

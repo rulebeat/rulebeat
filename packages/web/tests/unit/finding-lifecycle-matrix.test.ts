@@ -22,7 +22,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq, asc } from 'drizzle-orm';
 import { computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { findingEvents as findingEventsTable } from '@/lib/db/schema';
+import { run as execRun, many as execMany } from '@/lib/db/exec';
+import { findingEvents as findingEventsTable } from '@/lib/db/tables';
 import { syncScanFindings, listFindings, deleteFindingsForRule } from '@/lib/db/findings';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { saveSuppressions } from '@/lib/suppressions';
@@ -67,11 +68,10 @@ function finding(resourceSuffix: string, overrides: Partial<Finding> & { ruleId?
   };
 }
 
-function eventsFor(fingerprint: string) {
-  return db.select().from(findingEventsTable)
+async function eventsFor(fingerprint: string) {
+  return (await execMany(db.select().from(findingEventsTable)
     .where(eq(findingEventsTable.fingerprint, fingerprint))
-    .orderBy(asc(findingEventsTable.occurredAt))
-    .all();
+    .orderBy(asc(findingEventsTable.occurredAt))));
 }
 
 function suppression(overrides: Partial<Suppression> & Pick<Suppression, 'fingerprint' | 'resourceId'>): Suppression {
@@ -96,7 +96,7 @@ describe('syncScanFindings — created / repeat / resolved / reactivated', () =>
     expect(row.resolvedAt).toBeUndefined();
     expect(row.timesSeen).toBe(1);
 
-    const events = eventsFor(f.fingerprint);
+    const events = await eventsFor(f.fingerprint);
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe('created');
     expect(events[0]!.occurredAt).toBe(d1);
@@ -114,7 +114,7 @@ describe('syncScanFindings — created / repeat / resolved / reactivated', () =>
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d2);
     expect(row.timesSeen).toBe(2);
-    expect(eventsFor(f.fingerprint)).toHaveLength(1);
+    expect(await eventsFor(f.fingerprint)).toHaveLength(1);
   });
 
   it('a finding that stops appearing resolves: status fixed, resolvedAt set, one resolved event', async () => {
@@ -129,7 +129,7 @@ describe('syncScanFindings — created / repeat / resolved / reactivated', () =>
     expect(row.status).toBe('fixed');
     expect(row.resolvedAt).toBe(d2);
 
-    const events = eventsFor(f.fingerprint);
+    const events = await eventsFor(f.fingerprint);
     expect(events.map(e => e.type)).toEqual(['created', 'resolved']);
   });
 
@@ -149,7 +149,7 @@ describe('syncScanFindings — created / repeat / resolved / reactivated', () =>
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d3);
 
-    const events = eventsFor(f.fingerprint);
+    const events = await eventsFor(f.fingerprint);
     expect(events.map(e => e.type)).toEqual(['created', 'resolved', 'reactivated']);
     expect(events[2]!.occurredAt).toBe(d3);
   });
@@ -190,12 +190,12 @@ describe('deleteFindingsForRule', () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     expect(await listFindings()).toHaveLength(1);
-    expect(eventsFor(f.fingerprint)).toHaveLength(1);
+    expect(await eventsFor(f.fingerprint)).toHaveLength(1);
 
     await deleteFindingsForRule(RULE_A);
 
     expect(await listFindings()).toHaveLength(0);
-    expect(eventsFor(f.fingerprint)).toHaveLength(0);
+    expect(await eventsFor(f.fingerprint)).toHaveLength(0);
   });
 });
 
@@ -203,24 +203,24 @@ describe('event-retention pruning', () => {
   it('prunes a finding_events row older than 180 days on the next non-silent sync', async () => {
     const f = finding('vm-old');
     await syncScanFindings({ scanId: 's0', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
-    expect(eventsFor(f.fingerprint)).toHaveLength(1);
+    expect(await eventsFor(f.fingerprint)).toHaveLength(1);
 
     // Seeding a 200-day-old event via syncScanFindings itself is impossible — its own prune step
     // would delete anything that old inside the very same call that inserted it. Insert directly
     // to simulate history that predates the 180-day retention window.
     const oldDate = daysAgo(200);
-    db.insert(findingEventsTable).values({
+    await execRun(db.insert(findingEventsTable).values({
       id: crypto.randomUUID(), fingerprint: f.fingerprint, ruleId: f.ruleId, category: CATEGORY,
       scanId: 'old-scan', type: 'created', occurredAt: oldDate,
-    }).run();
-    expect(eventsFor(f.fingerprint)).toHaveLength(2);
+    }));
+    expect(await eventsFor(f.fingerprint)).toHaveLength(2);
 
     // Any later non-silent sync's prune step runs unconditionally at the end of its transaction —
     // resolving f's own finding here also proves the just-written 'resolved' event survives while
     // the 200-day-old synthetic event for the same fingerprint gets pruned.
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: new Date().toISOString() });
 
-    const remaining = eventsFor(f.fingerprint);
+    const remaining = await eventsFor(f.fingerprint);
     expect(remaining.map(e => e.type)).toEqual(['created', 'resolved']);
     expect(remaining.some(e => e.occurredAt === oldDate)).toBe(false);
   });
@@ -234,7 +234,7 @@ describe('duplicate ARG rows sharing one fingerprint (RB-QA-019, fixed)', () => 
     expect(result.created).toEqual([f.fingerprint]);
     const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.timesSeen).toBe(1);
-    expect(eventsFor(f.fingerprint)).toHaveLength(1);
+    expect(await eventsFor(f.fingerprint)).toHaveLength(1);
   });
 
   it('a duplicate row for a currently-fixed finding reactivates it exactly once', async () => {
@@ -250,7 +250,7 @@ describe('duplicate ARG rows sharing one fingerprint (RB-QA-019, fixed)', () => 
     const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.timesSeen).toBe(2);
-    expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created', 'resolved', 'reactivated']);
+    expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created', 'resolved', 'reactivated']);
   });
 
   it('when duplicates differ in fields, the last occurrence in the array wins', async () => {

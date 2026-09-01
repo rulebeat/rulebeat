@@ -63,6 +63,19 @@ function fakeResponse(status: number, body = ''): Response {
   } as Response;
 }
 
+/** Advances fake timers until the dispatch settles. A fixed advance-then-await sequence assumes
+ *  the dispatch is already parked on its backoff sleep when the advance runs; on the Postgres
+ *  backend the dispatch awaits real network I/O between attempts, so the sleep may not exist yet
+ *  and the advance would fire into nothing, deadlocking the await. Pumping in steps until the
+ *  promise settles is backend-agnostic and still proves attempt N+1 only happens after the
+ *  backoff timer fires. */
+async function settleWithTimers<T>(p: Promise<T>): Promise<T> {
+  let settled = false;
+  const guarded = p.finally(() => { settled = true; });
+  while (!settled) await vi.advanceTimersByTimeAsync(1_000);
+  return guarded;
+}
+
 describe('dispatchNotifications retry/backoff', () => {
   let scheduleId: string;
   let channelId: string;
@@ -92,10 +105,7 @@ describe('dispatchNotifications retry/backoff', () => {
       .mockResolvedValueOnce(fakeResponse(200, 'ok'));
     vi.stubGlobal('fetch', fetchMock);
 
-    const promise = dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
-    await vi.advanceTimersByTimeAsync(2_000); // backoff before attempt 2
-    await vi.advanceTimersByTimeAsync(8_000); // backoff before attempt 3
-    await promise;
+    await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
@@ -122,10 +132,7 @@ describe('dispatchNotifications retry/backoff', () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('fetch failed: ECONNREFUSED'));
     vi.stubGlobal('fetch', fetchMock);
 
-    const promise = dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
-    await vi.advanceTimersByTimeAsync(2_000);
-    await vi.advanceTimersByTimeAsync(8_000);
-    await promise;
+    await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
@@ -170,9 +177,7 @@ describe('dispatchNotifications retry/backoff', () => {
       .mockResolvedValueOnce(fakeResponse(200, 'ok'));
     vi.stubGlobal('fetch', fetchMock);
 
-    const promise = dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
-    await vi.advanceTimersByTimeAsync(2_000);
-    await promise;
+    await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
 

@@ -8,7 +8,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
@@ -20,9 +21,9 @@ const ARG_RULE_ID = 'test-arg-rule-under-identity';
 // this suite depends on) intact — see tests/helpers/db.ts. await clearRules() would wipe those along with
 // this test's own rule, so instead delete just this rule by id before each insert, making the insert
 // idempotent across the two `it` blocks that share this file's database connection.
-function insertArgRuleUnderIdentity(): void {
-  db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)).run();
-  db.insert(rulesTable).values({
+async function insertArgRuleUnderIdentity(): Promise<void> {
+  await execRun(db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)));
+  await execRun(db.insert(rulesTable).values({
     id: ARG_RULE_ID,
     name: ARG_RULE_ID,
     description: 'a resource-graph rule filed under the identity category',
@@ -34,7 +35,7 @@ function insertArgRuleUnderIdentity(): void {
     conditions: JSON.stringify([]),
     rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
     type: 'custom',
-  }).run();
+  }));
 }
 
 async function identityCategory() {
@@ -57,7 +58,7 @@ function graphAppWithExpiringSecret(): Record<string, unknown>[] {
 describe("runCategoryScan dispatches by queryBackend, not category.isSpecial (spec 029)", () => {
   beforeEach(async () => {
     await resetDb();
-    insertArgRuleUnderIdentity();
+    await insertArgRuleUnderIdentity();
   });
 
   it('runs the resource-graph rule and the seeded microsoft-graph rule under the same category in one scan', async () => {

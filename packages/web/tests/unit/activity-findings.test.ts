@@ -13,7 +13,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq, asc } from 'drizzle-orm';
 import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { findingEvents as findingEventsTable } from '@/lib/db/schema';
+import { many as execMany } from '@/lib/db/exec';
+import { findingEvents as findingEventsTable } from '@/lib/db/tables';
 import { syncScanFindings, listFindings, getActivityOccurrenceCounts } from '@/lib/db/findings';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { saveSuppressions, loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
@@ -78,11 +79,10 @@ function stateFinding(resourceSuffix: string, overrides: Partial<Finding> & { ru
   };
 }
 
-function eventsFor(fingerprint: string) {
-  return db.select().from(findingEventsTable)
+async function eventsFor(fingerprint: string) {
+  return (await execMany(db.select().from(findingEventsTable)
     .where(eq(findingEventsTable.fingerprint, fingerprint))
-    .orderBy(asc(findingEventsTable.occurredAt))
-    .all();
+    .orderBy(asc(findingEventsTable.occurredAt))));
 }
 
 function suppression(overrides: Partial<Suppression> & Pick<Suppression, 'fingerprint'>): Suppression {
@@ -108,7 +108,7 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
     expect(row.resourceName).toBeUndefined();
     expect(row.timesSeen).toBe(1);
 
-    const events = eventsFor(f.fingerprint);
+    const events = await eventsFor(f.fingerprint);
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe('created');
   });
@@ -127,7 +127,7 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
     expect(row.lastSeenAt).toBe(d2);
     expect(row.timesSeen).toBe(2);
 
-    expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created', 'occurred']);
+    expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created', 'occurred']);
   });
 
   it('multiple repeat occurrences each record their own "occurred" event', async () => {
@@ -138,7 +138,7 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
 
     const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.timesSeen).toBe(3);
-    expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created', 'occurred', 'occurred']);
+    expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created', 'occurred', 'occurred']);
   });
 });
 
@@ -158,7 +158,7 @@ describe('syncScanFindings — an activity finding never resolves via the resolv
     const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.resolvedAt).toBeUndefined();
-    expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created']);
+    expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created']);
   });
 
   it('cross-contamination: a state finding from the same rule/category still resolves normally when a sibling activity finding does not', async () => {

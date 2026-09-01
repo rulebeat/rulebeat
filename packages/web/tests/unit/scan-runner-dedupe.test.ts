@@ -9,15 +9,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import { getCategory } from '@/lib/db/categories';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb, clearRules } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
 
 const RULE_ID = 'test-rule-dup';
 
-function insertRule(): void {
-  db.insert(rulesTable).values({
+async function insertRule(): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id: RULE_ID,
     name: RULE_ID,
     description: 'test rule',
@@ -29,7 +30,7 @@ function insertRule(): void {
     conditions: JSON.stringify([]),
     rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
     type: 'custom',
-  }).run();
+  }));
 }
 
 async function securityCategory() {
@@ -42,7 +43,7 @@ describe('runCategoryScan dedupes a rule returning the same resource twice (spec
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule();
+    await insertRule();
   });
 
   it('the saved scan summary has one finding and one severity count, not two', async () => {

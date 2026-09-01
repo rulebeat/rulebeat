@@ -15,6 +15,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
+import { sql } from 'drizzle-orm';
+import { dbKind } from '@/lib/db/backend';
+import { dbReady, pgDb } from '@/lib/db/client';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -166,15 +169,23 @@ describe('stored credentials · the secret never lands in plain text', () => {
     await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
 
     // Read the column directly. Asserting through the repository would only prove the repository is
-    // self-consistent, which is exactly what a broken implementation would also be.
-    const raw = new Database(process.env.RULEBEAT_DB_PATH!, { readonly: true });
-    try {
-      const row = raw.prepare('SELECT client_secret FROM azure_credentials').get() as { client_secret: string };
-      expect(row.client_secret).not.toContain(SECRET);
-      expect(isEncrypted(row.client_secret)).toBe(true);
-    } finally {
-      raw.close();
+    // self-consistent, which is exactly what a broken implementation would also be. On SQLite that
+    // means a second, independent connection to the same file; on Postgres a raw SQL read.
+    let stored: string;
+    if (dbKind === 'pg') {
+      await dbReady;
+      const res = await pgDb!.execute(sql.raw('SELECT client_secret FROM azure_credentials'));
+      stored = (res.rows[0] as { client_secret: string }).client_secret;
+    } else {
+      const raw = new Database(process.env.RULEBEAT_DB_PATH!, { readonly: true });
+      try {
+        stored = (raw.prepare('SELECT client_secret FROM azure_credentials').get() as { client_secret: string }).client_secret;
+      } finally {
+        raw.close();
+      }
     }
+    expect(stored).not.toContain(SECRET);
+    expect(isEncrypted(stored)).toBe(true);
   });
 
   it('reads the secret back correctly for actually calling Azure', async () => {

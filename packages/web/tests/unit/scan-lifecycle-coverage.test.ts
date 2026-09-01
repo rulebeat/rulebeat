@@ -13,7 +13,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import { computeFingerprint, type TenantContext } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { listFindings } from '@/lib/db/findings';
@@ -25,8 +26,8 @@ const RULE_FAIL = 'test-rule-fail';
 const MARKER_OK = '// marker-ok';
 const MARKER_FAIL = '// marker-fail';
 
-function insertRule(id: string, marker: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, marker: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -38,7 +39,7 @@ function insertRule(id: string, marker: string): void {
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${marker}`,
     type: 'custom',
-  }).run();
+  }));
 }
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[]; failWith?: Error }>;
@@ -80,8 +81,8 @@ describe('scan lifecycle coverage (spec 004)', () => {
     // The built-in APRL pack seeds enabled rules into 'security' too — clear the table so this
     // suite's fake ctx only ever has to answer for the two rules it explicitly wires up.
     await clearRules();
-    insertRule(RULE_OK, MARKER_OK);
-    insertRule(RULE_FAIL, MARKER_FAIL);
+    await insertRule(RULE_OK, MARKER_OK);
+    await insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
   it('a failed rule leaves its prior active finding untouched, while a still-succeeding rule keeps resolving', async () => {
@@ -125,9 +126,9 @@ describe('scan lifecycle coverage (spec 004)', () => {
   it('a capped rule (top-level take) also leaves its prior active finding untouched', async () => {
     const category = await securityCategory();
     // Overwrite rule-fail with a query that has a top-level `take` — capped, not failed.
-    db.delete(rulesTable).run();
-    insertRule(RULE_OK, MARKER_OK);
-    db.insert(rulesTable).values({
+    await execRun(db.delete(rulesTable));
+    await insertRule(RULE_OK, MARKER_OK);
+    await execRun(db.insert(rulesTable).values({
       id: RULE_FAIL,
       name: RULE_FAIL,
       description: 'test rule',
@@ -139,7 +140,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       conditions: JSON.stringify([]),
       rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${MARKER_FAIL} | take 5`,
       type: 'custom',
-    }).run();
+    }));
 
     const failRow = argRow({ name: 'vm-capped' });
     const failFingerprint = computeFingerprint(RULE_FAIL, failRow.id as string);

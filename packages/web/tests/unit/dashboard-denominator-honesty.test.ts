@@ -14,7 +14,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { syncScanFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { resetDb, clearRules } from '../helpers/db';
@@ -26,8 +27,8 @@ const RULE_MEDIUM = 'test-rule-medium';
 const RULE_TAGGED = 'test-rule-tagged';
 const RULE_UNTAGGED = 'test-rule-untagged';
 
-function insertRule(id: string, overrides: { severity?: Severity; tags?: string[] } = {}): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, overrides: { severity?: Severity; tags?: string[] } = {}): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -43,7 +44,7 @@ function insertRule(id: string, overrides: { severity?: Severity; tags?: string[
     lastRunStatus: 'success',
     kind: 'state',
     queryBackend: 'resource-graph',
-  }).run();
+  }));
 }
 
 function finding(ruleId: string, resourceSuffix: string, severity: Severity = 'medium'): Finding {
@@ -71,8 +72,8 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_HIGH, { severity: 'high' });
-    insertRule(RULE_MEDIUM, { severity: 'medium' });
+    await insertRule(RULE_HIGH, { severity: 'high' });
+    await insertRule(RULE_MEDIUM, { severity: 'medium' });
 
     await syncScanFindings({
       scanId: 's1',
@@ -121,8 +122,8 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_TAGGED, { tags: ['pci'] });
-    insertRule(RULE_UNTAGGED, {});
+    await insertRule(RULE_TAGGED, { tags: ['pci'] });
+    await insertRule(RULE_UNTAGGED, {});
 
     await syncScanFindings({
       scanId: 's1',
@@ -148,8 +149,8 @@ describe('dashboard denominator honesty: resourceGroups/subscriptions are delibe
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_HIGH, { severity: 'high' });
-    insertRule(RULE_MEDIUM, { severity: 'medium' });
+    await insertRule(RULE_HIGH, { severity: 'high' });
+    await insertRule(RULE_MEDIUM, { severity: 'medium' });
 
     await syncScanFindings({
       scanId: 's1',
@@ -174,7 +175,7 @@ describe('WidgetSummary.suppressedIncluded self-describes which mode produced th
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_HIGH, { severity: 'high' });
+    await insertRule(RULE_HIGH, { severity: 'high' });
   });
 
   it('is false when filters.includeSuppressed is omitted', async () => {

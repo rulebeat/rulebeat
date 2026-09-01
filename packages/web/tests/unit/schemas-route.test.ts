@@ -4,9 +4,7 @@
  * (thrown error vs. genuine empty result) to this route's per-type result array.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sql } from 'drizzle-orm';
-import { resetDb } from '../helpers/db';
-import { db } from '@/lib/db/client';
+import { resetDb, execRaw } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 
@@ -29,8 +27,8 @@ vi.mock('@rulebeat/core', () => ({
 
 const { POST } = await import('@/app/api/schemas/route');
 
-function clearSchemaCache() {
-  db.run(sql`DELETE FROM schema_cache`);
+async function clearSchemaCache() {
+  await execRaw('DELETE FROM schema_cache');
 }
 
 async function signInAsEditor(): Promise<void> {
@@ -43,7 +41,7 @@ async function signInAsEditor(): Promise<void> {
 describe('POST /api/schemas (P3-4b)', () => {
   beforeEach(async () => {
     await resetDb();
-    clearSchemaCache();
+    await clearSchemaCache();
     mockAuth.mockReset();
     for (const key of Object.keys(fieldsByType)) delete fieldsByType[key];
     await signInAsEditor();

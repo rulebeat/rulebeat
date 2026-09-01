@@ -8,7 +8,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { executeTarget } from '@/lib/run-executor';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
@@ -18,8 +19,8 @@ const RULE_FAIL = 'test-rule-fail';
 const MARKER_OK = '// marker-ok';
 const MARKER_FAIL = '// marker-fail';
 
-function insertRule(id: string, marker: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, marker: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -31,7 +32,7 @@ function insertRule(id: string, marker: string): void {
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${marker}`,
     type: 'custom',
-  }).run();
+  }));
 }
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[]; failWith?: Error }>;
@@ -62,8 +63,8 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
   beforeEach(async () => {
     await resetDb();
     await clearRules();
-    insertRule(RULE_OK, MARKER_OK);
-    insertRule(RULE_FAIL, MARKER_FAIL);
+    await insertRule(RULE_OK, MARKER_OK);
+    await insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
   it('maps a category coverage of partial to a run-level status of partial, without any thrown error', async () => {
@@ -87,7 +88,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
     // a genuine unexpected-exception path — distinct from the coverage 'failed'/'capped' outcome path
     // covered above, which never throws at all. Run History renders run.error directly (spec 004), so
     // this asserts the fix in run-executor.ts: raw error text is logged server-side, never returned.
-    db.insert(rulesTable).values({
+    await execRun(db.insert(rulesTable).values({
       id: 'test-rule-malformed',
       name: 'malformed',
       description: 'test rule',
@@ -98,7 +99,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
       resourceTypes: JSON.stringify([]),
       conditions: 'not-valid-json',
       type: 'custom',
-    }).run();
+    }));
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },

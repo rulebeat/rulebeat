@@ -10,7 +10,8 @@ import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
-import { rules as rulesTable } from '@/lib/db/schema';
+import { run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable } from '@/lib/db/tables';
 import { syncScanFindings, deleteFindingsForRule } from '@/lib/db/findings';
 import { startRun, finishRun, getRun } from '@/lib/schedule-runs';
 import { recoverInterruptedRuns, recoverPendingNotifications } from '@/lib/startup-recovery';
@@ -51,8 +52,8 @@ function finding(resourceSuffix: string, overrides: Partial<Finding> & { ruleId?
   };
 }
 
-function insertRule(id: string, marker: string): void {
-  db.insert(rulesTable).values({
+async function insertRule(id: string, marker: string): Promise<void> {
+  await execRun(db.insert(rulesTable).values({
     id,
     name: id,
     description: 'test rule',
@@ -64,7 +65,7 @@ function insertRule(id: string, marker: string): void {
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" ${marker}`,
     type: 'custom',
-  }).run();
+  }));
 }
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[] }>;
@@ -215,7 +216,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
   });
 
   it('persists notifyStatus: pending durably before the webhook resolves, then sent once it does', async () => {
-    insertRule(RULE_A, MARKER_OK);
+    await insertRule(RULE_A, MARKER_OK);
 
     let resolveFetch: (value: Response) => void = () => {};
     const fetchPromise = new Promise<Response>(resolve => { resolveFetch = resolve; });
@@ -239,7 +240,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
 
 describe('notifyStatus stays "none" when there is nothing to notify', () => {
   it('a manual run with new findings never sets notifyStatus, even though findings are new', async () => {
-    insertRule(RULE_A, MARKER_OK);
+    await insertRule(RULE_A, MARKER_OK);
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
@@ -251,7 +252,7 @@ describe('notifyStatus stays "none" when there is nothing to notify', () => {
   });
 
   it('a schedule run with zero new findings leaves notifyStatus none, and recovery finds nothing pending', async () => {
-    insertRule(RULE_A, MARKER_EMPTY);
+    await insertRule(RULE_A, MARKER_EMPTY);
     const scheduleId = `sched-${crypto.randomUUID()}`;
 
     const run = await executeTarget(
