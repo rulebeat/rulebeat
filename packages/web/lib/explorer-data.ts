@@ -24,12 +24,12 @@ export interface ExplorerData {
 
 // ---- Builder ----
 
-export function buildExplorerData(): ExplorerData {
+export async function buildExplorerData(): Promise<ExplorerData> {
   const rules = loadRules();
   const policyMap = new Map(rules.map(r => [r.id, r]));
   const categories = listCategories();
 
-  const all = listFindings();
+  const all = await listFindings();
 
   const findings: ExplorerFinding[] = all.map(f => {
     const rule = policyMap.get(f.ruleId);

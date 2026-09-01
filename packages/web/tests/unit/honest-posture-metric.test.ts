@@ -64,7 +64,7 @@ function finding(ruleId: string, resourceSuffix: string): Finding {
 }
 
 describe('the honest posture metric: passing / unknown / activity (spec 030)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_PASSING, { lastRunStatus: 'success' });
@@ -75,7 +75,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
     insertRule(RULE_WITH_FINDING, { lastRunStatus: 'failed' });
     insertRule(RULE_ACTIVITY, { lastRunStatus: 'success', kind: 'activity', queryBackend: 'log-analytics' });
 
-    syncScanFindings({
+    await syncScanFindings({
       scanId: 's1',
       category: CATEGORY,
       ranRuleIds: [RULE_WITH_FINDING],
@@ -84,15 +84,15 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
     });
   });
 
-  it('a rule with zero findings but a failed or never-run last status counts as unknown, never passing', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('a rule with zero findings but a failed or never-run last status counts as unknown, never passing', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     expect(summary.current.passingRules).toBe(1);
     expect(summary.current.unknownRules).toBe(2);
   });
 
-  it('an activity-kind rule is excluded from totalRules/passingRules and counted in activityRuleCount', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('an activity-kind rule is excluded from totalRules/passingRules and counted in activityRuleCount', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     // 4 state rules (passing, unknown-failed, unknown-never-run, with-finding) — the activity
     // rule is not one of them, no matter how healthy its own status looks.
@@ -100,8 +100,8 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
     expect(summary.current.activityRuleCount).toBe(1);
   });
 
-  it('perCategory carries the same passing/total its pct is rounded from (spec 033)', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('perCategory carries the same passing/total its pct is rounded from (spec 033)', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
     const mod = summary.perCategory.find(m => m.category === CATEGORY);
 
     expect(mod).toBeDefined();
@@ -110,8 +110,8 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
     expect(mod!.pct).toBe(25);
   });
 
-  it('perSubscription carries the same passingRules/totalRules its pct is rounded from (spec 033)', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('perSubscription carries the same passingRules/totalRules its pct is rounded from (spec 033)', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
     const sub = summary.perSubscription.find(s => s.subscriptionId === 'sub-1');
 
     expect(sub).toBeDefined();
@@ -142,30 +142,30 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
     }).run();
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
   });
 
-  it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in — this is the actual "-75%" bug', () => {
+  it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in — this is the actual "-75%" bug', async () => {
     // security's only baseline row is old-formula and generous (10/10) — if it leaked into the
     // blend it would pull basePct from cost's honest 25% up toward ~79%, a wrong comparison point.
     baselineRow('security', 10, 10, 1);
     baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
     insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
 
-    const summary = computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     expect(summary.baseline, 'the old-formula row should not have blanked the baseline entirely').not.toBeNull();
     expect(summary.baseline!.pct, 'the old-formula row leaked into the baseline blend').toBe(25);
     expect(summary.deltaPct).toBe(75);
   });
 
-  it('when the only baseline row is already honest, the delta still computes exactly as before', () => {
+  it('when the only baseline row is already honest, the delta still computes exactly as before', async () => {
     baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
     insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     expect(summary.baseline).not.toBeNull();
     expect(summary.baseline!.pct).toBe(75);

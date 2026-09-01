@@ -33,10 +33,10 @@ beforeAll(async () => {
 });
 
 describe('TS-25 · rebuilding finding history on upgrade', () => {
-  it('25-05 · reconstructs findings from scan history without inventing or losing any', () => {
-    const before = findingsRepo.listFindings();
-    findingsRepo.backfillFindings();
-    const after = findingsRepo.listFindings();
+  it('25-05 · reconstructs findings from scan history without inventing or losing any', async () => {
+    const before = await findingsRepo.listFindings();
+    await findingsRepo.backfillFindings();
+    const after = await findingsRepo.listFindings();
 
     // The sample already has a findings table, so the backfill must reconcile rather than duplicate.
     const resourceIds = after.map(f => f.resourceId);
@@ -44,41 +44,41 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
     expect(after.length, 'the backfill dropped existing findings').toBeGreaterThanOrEqual(before.length);
   });
 
-  it('25-05 · a finding that predates the upgrade keeps the age it already had', () => {
-    findingsRepo.backfillFindings();
-    const existing = findingsRepo.listFindings().find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+  it('25-05 · a finding that predates the upgrade keeps the age it already had', async () => {
+    await findingsRepo.backfillFindings();
+    const existing = (await findingsRepo.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(existing, 'the pre-existing finding vanished').toBeDefined();
     // The whole point. Rewriting this to the upgrade date would report a months-old, already-triaged
     // violation as if it appeared today.
     expect(existing!.firstSeenAt, 'the finding was aged back to the upgrade date').toBe(FIXED_DATES.firstSeen);
   });
 
-  it('25-13 · a scan record missing newer fields is restored, not fatal', () => {
+  it('25-13 · a scan record missing newer fields is restored, not fatal', async () => {
     // The sample's scan history was written in an older shape: no resourceType, no subscriptionId.
     // Those columns are NOT NULL today, so handing the record straight to the insert throws — and
     // this runs from instrumentation.ts at startup, which means an upgrade could fail to boot over
     // one old record. It must degrade instead, and keep as much of the history as it can.
-    findingsRepo.backfillFindings();
-    const restored = findingsRepo.listFindings().find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    await findingsRepo.backfillFindings();
+    const restored = (await findingsRepo.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(restored, 'the historical finding was dropped entirely').toBeDefined();
     // Recovered from the resource id rather than left blank, because a finding with no subscription
     // disappears from every subscription-filtered view.
     expect(restored!.subscriptionId).toBe('11111111-1111-1111-1111-111111111111');
   });
 
-  it('25-11 · running twice changes nothing, and the marker is what stops it', () => {
-    findingsRepo.backfillFindings();
-    const first = JSON.stringify(findingsRepo.listFindings());
+  it('25-11 · running twice changes nothing, and the marker is what stops it', async () => {
+    await findingsRepo.backfillFindings();
+    const first = JSON.stringify(await findingsRepo.listFindings());
 
     // The marker is set by the first run, so the second is a no-op...
-    expect(meta.getMeta('findings-backfilled-v1') ?? meta.getMeta('findings-backfill-v1')).toBeTruthy();
-    findingsRepo.backfillFindings();
-    expect(JSON.stringify(findingsRepo.listFindings())).toBe(first);
+    expect(await meta.getMeta('findings-backfilled-v1') ?? meta.getMeta('findings-backfill-v1')).toBeTruthy();
+    await findingsRepo.backfillFindings();
+    expect(JSON.stringify(await findingsRepo.listFindings())).toBe(first);
   });
 });
 
 describe('TS-25 · rebuilding trend history on upgrade', () => {
-  it('25-05 · approximating snapshots keeps the history already recorded', () => {
+  it('25-05 · approximating snapshots keeps the history already recorded', async () => {
     const before = snapshotsRepo.getSnapshots({ categories: ['cost'] }).length;
     snapshotsRepo.backfillSnapshots();
     const after = snapshotsRepo.getSnapshots({ categories: ['cost'] });
@@ -101,7 +101,7 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
     expect(freshRow!.formulaVersion).toBe(snapshotsRepo.SNAPSHOT_FORMULA_VERSION);
   });
 
-  it('25-11 · running twice does not double up the trend', () => {
+  it('25-11 · running twice does not double up the trend', async () => {
     snapshotsRepo.backfillSnapshots();
     const first = JSON.stringify(snapshotsRepo.getSnapshots({ categories: ['cost'] }));
     snapshotsRepo.backfillSnapshots();

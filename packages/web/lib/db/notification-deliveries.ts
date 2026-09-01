@@ -1,6 +1,7 @@
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { db } from './client';
-import { notificationDeliveries } from './schema';
+import { notificationDeliveries, deliveriesInsertionOrder } from './tables';
+import { many, run } from './exec';
 
 /**
  * History behind notificationChannels' single-value lastNotifiedAt/lastError columns — one row per
@@ -11,8 +12,9 @@ import { notificationDeliveries } from './schema';
  * occurredAt is millisecond-resolution, so two deliveries dispatched back-to-back (e.g. a schedule
  * fanning out to several channels at once) can land the same timestamp — ORDER BY occurredAt DESC
  * alone leaves their relative order unspecified. Every ordered query below breaks that tie with
- * SQLite's implicit rowid, which is monotonic on insert, so "newest first" stays true even under a
- * tie instead of depending on the query planner's incidental tie-break.
+ * `deliveriesInsertionOrder` (SQLite's implicit rowid, Postgres's `seq` bigserial — both monotonic
+ * on insert), so "newest first" stays true even under a tie instead of depending on the query
+ * planner's incidental tie-break.
  */
 
 const MAX_DELIVERIES_PER_CHANNEL = 50;
@@ -39,7 +41,7 @@ function rowToDelivery(row: Row): NotificationDelivery {
     scheduleId: row.scheduleId,
     runId: row.runId,
     occurredAt: row.occurredAt,
-    ok: row.ok === 1,
+    ok: row.ok,
     attempts: row.attempts,
     httpStatus: row.httpStatus,
     error: row.error,
@@ -58,44 +60,46 @@ export interface RecordDeliveryInput {
   findingsCount: number;
 }
 
-export function recordDelivery(input: RecordDeliveryInput): void {
-  db.insert(notificationDeliveries).values({
+export async function recordDelivery(input: RecordDeliveryInput): Promise<void> {
+  await run(db.insert(notificationDeliveries).values({
     id: globalThis.crypto.randomUUID(),
     channelId: input.channelId,
     scheduleId: input.scheduleId,
     runId: input.runId,
     occurredAt: new Date().toISOString(),
-    ok: input.ok ? 1 : 0,
+    ok: input.ok,
     attempts: input.attempts,
     httpStatus: input.httpStatus ?? null,
     error: input.error ?? null,
     findingsCount: input.findingsCount,
-  }).run();
+  }));
 
-  pruneOldDeliveries(input.channelId);
+  await pruneOldDeliveries(input.channelId);
 }
 
-export function listDeliveriesForChannel(channelId: string, limit = 20): NotificationDelivery[] {
-  return db.select().from(notificationDeliveries)
-    .where(eq(notificationDeliveries.channelId, channelId))
-    .orderBy(desc(notificationDeliveries.occurredAt), desc(sql`rowid`))
-    .limit(limit)
-    .all()
-    .map(rowToDelivery);
+export async function listDeliveriesForChannel(channelId: string, limit = 20): Promise<NotificationDelivery[]> {
+  const rows = await many(
+    db.select().from(notificationDeliveries)
+      .where(eq(notificationDeliveries.channelId, channelId))
+      .orderBy(desc(notificationDeliveries.occurredAt), desc(deliveriesInsertionOrder))
+      .limit(limit),
+  );
+  return rows.map(rowToDelivery);
 }
 
-export function deleteDeliveriesForChannel(channelId: string): void {
-  db.delete(notificationDeliveries).where(eq(notificationDeliveries.channelId, channelId)).run();
+export async function deleteDeliveriesForChannel(channelId: string): Promise<void> {
+  await run(db.delete(notificationDeliveries).where(eq(notificationDeliveries.channelId, channelId)));
 }
 
-function pruneOldDeliveries(channelId: string): void {
-  const rows = db.select({ id: notificationDeliveries.id }).from(notificationDeliveries)
-    .where(eq(notificationDeliveries.channelId, channelId))
-    .orderBy(desc(notificationDeliveries.occurredAt), desc(sql`rowid`))
-    .all();
+async function pruneOldDeliveries(channelId: string): Promise<void> {
+  const rows = await many(
+    db.select({ id: notificationDeliveries.id }).from(notificationDeliveries)
+      .where(eq(notificationDeliveries.channelId, channelId))
+      .orderBy(desc(notificationDeliveries.occurredAt), desc(deliveriesInsertionOrder)),
+  );
 
   const toDelete = rows.slice(MAX_DELIVERIES_PER_CHANNEL);
   for (const row of toDelete) {
-    db.delete(notificationDeliveries).where(eq(notificationDeliveries.id, row.id)).run();
+    await run(db.delete(notificationDeliveries).where(eq(notificationDeliveries.id, row.id)));
   }
 }

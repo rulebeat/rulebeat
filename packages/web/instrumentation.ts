@@ -30,7 +30,7 @@ export async function register() {
   // identical to a customer who genuinely had none.
   try {
     const { backfillFindings } = await import('./lib/db/findings');
-    backfillFindings();
+    await backfillFindings();
   } catch (err) {
     console.error('[startup] finding-history backfill failed:', err);
   }

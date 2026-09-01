@@ -61,7 +61,7 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
 }
 
 describe('coverage-freshness widget data (spec 004)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_OK, MARKER_OK);
@@ -78,7 +78,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    const summary = computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBe('partial');
@@ -95,15 +95,15 @@ describe('coverage-freshness widget data (spec 004)', () => {
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    const summary = computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBe('complete');
     expect(security?.lastScanIncompleteRules).toEqual([]);
   });
 
-  it('reports null coverage for a category that has never been scanned', () => {
-    const summary = computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('reports null coverage for a category that has never been scanned', async () => {
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBeNull();

@@ -342,7 +342,7 @@ export const notificationDeliveries = sqliteTable('notification_deliveries', {
   scheduleId: text('schedule_id').notNull(),
   runId: text('run_id').notNull(),
   occurredAt: text('occurred_at').notNull(),
-  ok: integer('ok').notNull(),              // 0/1
+  ok: integer('ok', { mode: 'boolean' }).notNull(),              // 0/1
   attempts: integer('attempts').notNull().default(1),
   httpStatus: integer('http_status'),
   error: text('error'),

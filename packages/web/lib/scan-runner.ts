@@ -137,7 +137,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
 
   saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
 
-  const { created, reactivated } = syncScanFindings({
+  const { created, reactivated } = await syncScanFindings({
     scanId,
     category: category.id,
     ranRuleIds,

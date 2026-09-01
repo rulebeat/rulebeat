@@ -75,7 +75,7 @@ function securityCategory() {
 }
 
 describe('scan lifecycle coverage (spec 004)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     // The built-in APRL pack seeds enabled rules into 'security' too — clear the table so this
     // suite's fake ctx only ever has to answer for the two rules it explicitly wires up.
@@ -97,7 +97,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    let findings = listFindings();
+    let findings = await listFindings();
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('active');
     expect(findings.find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
@@ -115,7 +115,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'failed' },
     ]);
 
-    findings = listFindings();
+    findings = await listFindings();
     // rule-ok genuinely found nothing this time — resolving it is correct, not a regression.
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('fixed');
     // rule-fail's query threw — its prior finding must survive, not be silently marked fixed.
@@ -148,7 +148,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [failRow] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect(listFindings().find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: the capped rule returns no rows this time — a real result set could easily still
     // contain the same resource, just past the take-5 cutoff, so this must not resolve it either.
@@ -161,7 +161,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
     expect(outcome.summary.incompleteRules).toEqual([
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'capped' },
     ]);
-    expect(listFindings().find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
   });
 
   it('a rule returning identity-less rows (spec 005) leaves its prior active finding untouched and reports invalid', async () => {
@@ -176,7 +176,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       ctx: makeCtx({ [MARKER_OK]: { rows: [okRow] }, [MARKER_FAIL]: { rows: [failRow] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect(listFindings().find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: rule-fail's query still runs fine but now returns a mix of a real row and one with no
     // usable id — a bad projection, not an ARG failure. Its result can't be trusted as exhaustive
@@ -195,7 +195,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'invalid' },
     ]);
 
-    const findings = listFindings();
+    const findings = await listFindings();
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('fixed');
     expect(findings.find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
   });
@@ -209,7 +209,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       ctx: makeCtx({ [MARKER_OK]: { rows: [row] }, [MARKER_FAIL]: { rows: [] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect(listFindings().find(f => f.fingerprint === fingerprint)?.status).toBe('active');
+    expect((await listFindings()).find(f => f.fingerprint === fingerprint)?.status).toBe('active');
 
     const outcome = await runCategoryScan(category, {
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [] } }),
@@ -218,6 +218,6 @@ describe('scan lifecycle coverage (spec 004)', () => {
 
     expect(outcome.summary.coverage).toBe('complete');
     expect(outcome.summary.incompleteRules).toEqual([]);
-    expect(listFindings().find(f => f.fingerprint === fingerprint)?.status).toBe('fixed');
+    expect((await listFindings()).find(f => f.fingerprint === fingerprint)?.status).toBe('fixed');
   });
 });

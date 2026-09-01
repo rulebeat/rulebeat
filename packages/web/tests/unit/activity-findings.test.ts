@@ -89,18 +89,18 @@ function suppression(overrides: Partial<Suppression> & Pick<Suppression, 'finger
   return { id: crypto.randomUUID(), reason: 'test', suppressedAt: '2026-01-01T00:00:00.000Z', ...overrides };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   resetDb();
 });
 
 describe('syncScanFindings — activity finding creation and repeat occurrence', () => {
-  it('creates an activity finding with kind, dimensionKey, and no resource fields; one created event', () => {
+  it('creates an activity finding with kind, dimensionKey, and no resource fields; one created event', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
-    const result = syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
+    const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
 
     expect(result).toEqual({ created: [f.fingerprint], reactivated: [], resolved: [] });
-    const row = listFindings().find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.kind).toBe('activity');
     expect(row.dimensionKey).toBe('principal-a');
     expect(row.resourceId).toBeUndefined();
@@ -113,15 +113,15 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
     expect(events[0]!.type).toBe('created');
   });
 
-  it('a repeat occurrence advances lastSeenAt/timesSeen and records an "occurred" event, not "created" or "reactivated"', () => {
+  it('a repeat occurrence advances lastSeenAt/timesSeen and records an "occurred" event, not "created" or "reactivated"', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
     const d2 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
-    const result = syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
+    const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
 
     expect(result).toEqual({ created: [], reactivated: [], resolved: [] });
-    const row = listFindings().find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d2);
@@ -130,38 +130,38 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
     expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created', 'occurred']);
   });
 
-  it('multiple repeat occurrences each record their own "occurred" event', () => {
+  it('multiple repeat occurrences each record their own "occurred" event', async () => {
     const f = activityFinding('principal-a');
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(4) });
-    syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(3) });
-    syncScanFindings({ scanId: 's3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(2) });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(4) });
+    await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(3) });
+    await syncScanFindings({ scanId: 's3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(2) });
 
-    const row = listFindings().find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.timesSeen).toBe(3);
     expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created', 'occurred', 'occurred']);
   });
 });
 
 describe('syncScanFindings — an activity finding never resolves via the resolve sweep (spec 034)', () => {
-  it('regression: a rule not re-reporting an activity finding this scan does not resolve it', () => {
+  it('regression: a rule not re-reporting an activity finding this scan does not resolve it', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
     const d2 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
 
     // The rule ran again (it's in ranRuleIds) but reported nothing this time. For a resource-scoped
     // rule that means "fixed"; for an activity rule going quiet says nothing about whether the
     // underlying pattern is still relevant, so it must stay active.
-    const result = syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
+    const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
 
     expect(result.resolved).toEqual([]);
-    const row = listFindings().find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.resolvedAt).toBeUndefined();
     expect(eventsFor(f.fingerprint).map(e => e.type)).toEqual(['created']);
   });
 
-  it('cross-contamination: a state finding from the same rule/category still resolves normally when a sibling activity finding does not', () => {
+  it('cross-contamination: a state finding from the same rule/category still resolves normally when a sibling activity finding does not', async () => {
     // Same rule id deliberately shared by both findings, to isolate that the resolve sweep's
     // kind:'state' filter — not some incidental per-rule scoping — is what protects the activity
     // finding.
@@ -169,61 +169,61 @@ describe('syncScanFindings — an activity finding never resolves via the resolv
     const state = stateFinding('vm-1', { ruleId: RULE_A });
     const d1 = daysAgo(3);
     const d2 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [activity, state], finishedAt: d1 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [activity, state], finishedAt: d1 });
 
-    const result = syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
+    const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
 
     expect(result.resolved).toEqual([state.fingerprint]);
-    expect(listFindings().find(r => r.fingerprint === activity.fingerprint)!.status).toBe('active');
-    expect(listFindings().find(r => r.fingerprint === state.fingerprint)!.status).toBe('fixed');
+    expect((await listFindings()).find(r => r.fingerprint === activity.fingerprint)!.status).toBe('active');
+    expect((await listFindings()).find(r => r.fingerprint === state.fingerprint)!.status).toBe('fixed');
   });
 });
 
 describe('getActivityOccurrenceCounts', () => {
-  it('counts only kind:\'activity\' events, excluding a kind:\'state\' finding\'s created event on the same day', () => {
+  it('counts only kind:\'activity\' events, excluding a kind:\'state\' finding\'s created event on the same day', async () => {
     const activity = activityFinding('principal-a');
     const state = stateFinding('vm-1');
     const d1 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A, RULE_B], findings: [activity, state], finishedAt: d1 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A, RULE_B], findings: [activity, state], finishedAt: d1 });
 
-    const counts = getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
     expect(counts.find(c => c.date === d1.slice(0, 10))?.count).toBe(1);
   });
 
-  it('a repeat occurrence adds a second data point on its own day', () => {
+  it('a repeat occurrence adds a second data point on its own day', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
     const d2 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
-    syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
+    await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
 
-    const counts = getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
     expect(counts.find(c => c.date === d1.slice(0, 10))?.count).toBe(1);
     expect(counts.find(c => c.date === d2.slice(0, 10))?.count).toBe(1);
   });
 
-  it('filters by category, ruleIds, subscriptions, and severities', () => {
+  it('filters by category, ruleIds, subscriptions, and severities', async () => {
     const f = activityFinding('principal-a', { severity: 'high', subscriptionId: 'sub-x' });
     const d1 = daysAgo(2);
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
     const day = d1.slice(0, 10);
     const since = daysAgo(5).slice(0, 10);
 
-    expect(getActivityOccurrenceCounts({ sinceDate: since, categories: [CATEGORY] }).find(c => c.date === day)?.count).toBe(1);
-    expect(getActivityOccurrenceCounts({ sinceDate: since, categories: ['cost'] }).find(c => c.date === day)).toBeUndefined();
-    expect(getActivityOccurrenceCounts({ sinceDate: since, ruleIds: [RULE_A] }).find(c => c.date === day)?.count).toBe(1);
-    expect(getActivityOccurrenceCounts({ sinceDate: since, ruleIds: ['nope'] }).find(c => c.date === day)).toBeUndefined();
-    expect(getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-x'] }).find(c => c.date === day)?.count).toBe(1);
-    expect(getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-other'] }).find(c => c.date === day)).toBeUndefined();
-    expect(getActivityOccurrenceCounts({ sinceDate: since, severities: ['high'] }).find(c => c.date === day)?.count).toBe(1);
-    expect(getActivityOccurrenceCounts({ sinceDate: since, severities: ['low'] }).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: [CATEGORY] })).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: ['cost'] })).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: [RULE_A] })).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: ['nope'] })).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-x'] })).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-other'] })).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['high'] })).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['low'] })).find(c => c.date === day)).toBeUndefined();
   });
 });
 
 describe('suppression round-trip with no resourceId (activity findings)', () => {
-  it('a suppression for an activity finding pattern persists and reloads with resourceId absent', () => {
+  it('a suppression for an activity finding pattern persists and reloads with resourceId absent', async () => {
     const f = activityFinding('principal-a');
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
     const loaded = loadSuppressions();
@@ -232,12 +232,12 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
     expect(isActiveSuppression(loaded[0]!)).toBe(true);
   });
 
-  it('queryActiveFindings excludes a suppressed activity finding by fingerprint alone', () => {
+  it('queryActiveFindings excludes a suppressed activity finding by fingerprint alone', async () => {
     const f = activityFinding('principal-a');
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
-    expect(queryActiveFindings(FILTERS).map(r => r.fingerprint)).not.toContain(f.fingerprint);
-    expect(queryActiveFindings({ ...FILTERS, includeSuppressed: true }).map(r => r.fingerprint)).toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
 });

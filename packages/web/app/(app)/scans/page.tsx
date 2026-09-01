@@ -54,7 +54,7 @@ export default async function ScansPage({
   // Load channels for anyone who can edit schedules — the summary type carries no URL so it's
   // safe to send to editors. Admins manage the destinations; editors just assign them.
   const initialNotificationChannels = activeTab === 'schedules' && can(role, 'schedules:write')
-    ? listChannels()
+    ? await listChannels()
     : undefined;
 
   // Rules tab's "N resources affected" column — same group-by-ruleId pattern as
@@ -63,7 +63,7 @@ export default async function ScansPage({
   let ruleFindingCounts: Record<string, number> | undefined;
   if (activeTab === 'rules') {
     ruleFindingCounts = {};
-    for (const f of queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } })) {
+    for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } })) {
       ruleFindingCounts[f.ruleId] = (ruleFindingCounts[f.ruleId] ?? 0) + 1;
     }
   }
@@ -85,6 +85,8 @@ export default async function ScansPage({
     }
   }
 
+  const explorerData = await buildExplorerData();
+
   return (
     <>
       <Header title="Scans" description="Every rule across every category. Filter, run, and review results" />
@@ -93,7 +95,7 @@ export default async function ScansPage({
         categories={categories}
         role={role}
         activeTab={activeTab}
-        explorerData={buildExplorerData()}
+        explorerData={explorerData}
         initialSuppressions={initialSuppressions}
         initialCategoryFilter={initialCategoryFilter}
         resultsInitialFilters={{

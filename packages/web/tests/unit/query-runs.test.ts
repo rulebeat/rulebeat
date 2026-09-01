@@ -28,7 +28,7 @@ async function signInAs(email: string): Promise<string> {
 }
 
 describe('GET /api/query/runs (spec 037 follow-up)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     mockAuth.mockReset();
   });
@@ -119,9 +119,9 @@ describe('GET /api/query/runs (spec 037 follow-up)', () => {
   });
 
   describe('demo mode', () => {
-    afterEach(() => {
+    afterEach(async () => {
       delete process.env.RULEBEAT_DEMO;
-      deleteMeta('demo-mode-v1');
+      await deleteMeta('demo-mode-v1');
       resetDemoModeCacheForTests();
     });
 

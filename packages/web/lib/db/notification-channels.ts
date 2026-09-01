@@ -1,8 +1,9 @@
 import { db } from './client';
-import { notificationChannels } from './schema';
+import { notificationChannels } from './tables';
 import { eq, asc } from 'drizzle-orm';
 import { decryptSecret, encryptSecret } from '@/lib/secret-box';
 import { deleteDeliveriesForChannel } from './notification-deliveries';
+import { many, one, run } from './exec';
 
 /**
  * Outbound notification channel address book. One row per destination URL; severity threshold
@@ -109,21 +110,24 @@ export function rowToStoredChannel(row: Row): StoredNotificationChannel | null {
   };
 }
 
-export function listChannels(): NotificationChannelSummary[] {
-  return db.select().from(notificationChannels)
-    .orderBy(asc(notificationChannels.createdAt))
-    .all().map(rowToSummary);
+export async function listChannels(): Promise<NotificationChannelSummary[]> {
+  const rows = await many(
+    db.select().from(notificationChannels).orderBy(asc(notificationChannels.createdAt)),
+  );
+  return rows.map(rowToSummary);
 }
 
-export function getChannelSummary(id: string): NotificationChannelSummary | null {
-  const row = db.select().from(notificationChannels)
-    .where(eq(notificationChannels.id, id)).get();
+export async function getChannelSummary(id: string): Promise<NotificationChannelSummary | null> {
+  const row = await one(
+    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)),
+  );
   return row ? rowToSummary(row) : null;
 }
 
-export function getStoredChannel(id: string): StoredNotificationChannel | null {
-  const row = db.select().from(notificationChannels)
-    .where(eq(notificationChannels.id, id)).get();
+export async function getStoredChannel(id: string): Promise<StoredNotificationChannel | null> {
+  const row = await one(
+    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)),
+  );
   return row ? rowToStoredChannel(row) : null;
 }
 
@@ -134,10 +138,10 @@ export interface SaveChannelInput {
   config?: EmailChannelConfig;      // required when type === 'email', absent otherwise
 }
 
-export function createChannel(input: SaveChannelInput): NotificationChannelSummary {
+export async function createChannel(input: SaveChannelInput): Promise<NotificationChannelSummary> {
   const now = new Date().toISOString();
   const id = globalThis.crypto.randomUUID();
-  db.insert(notificationChannels).values({
+  await run(db.insert(notificationChannels).values({
     id,
     name: input.name.trim(),
     type: input.type,
@@ -147,14 +151,15 @@ export function createChannel(input: SaveChannelInput): NotificationChannelSumma
     updatedAt: now,
     lastNotifiedAt: null,
     lastError: null,
-  }).run();
-  return rowToSummary(
-    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)).get()!,
+  }));
+  const row = await one(
+    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)),
   );
+  return rowToSummary(row!);
 }
 
-export function updateChannel(id: string, input: Partial<SaveChannelInput>): NotificationChannelSummary | null {
-  const row = db.select().from(notificationChannels).where(eq(notificationChannels.id, id)).get();
+export async function updateChannel(id: string, input: Partial<SaveChannelInput>): Promise<NotificationChannelSummary | null> {
+  const row = await one(db.select().from(notificationChannels).where(eq(notificationChannels.id, id)));
   if (!row) return null;
 
   const updates: Partial<Row> = { updatedAt: new Date().toISOString() };
@@ -163,25 +168,26 @@ export function updateChannel(id: string, input: Partial<SaveChannelInput>): Not
   if (input.url !== undefined && input.url.trim()) updates.url = encryptSecret(input.url.trim());
   if (input.config !== undefined) updates.config = input.config ? JSON.stringify(input.config) : null;
 
-  db.update(notificationChannels).set(updates).where(eq(notificationChannels.id, id)).run();
-  return rowToSummary(
-    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)).get()!,
+  await run(db.update(notificationChannels).set(updates).where(eq(notificationChannels.id, id)));
+  const updated = await one(
+    db.select().from(notificationChannels).where(eq(notificationChannels.id, id)),
   );
+  return rowToSummary(updated!);
 }
 
-export function deleteChannel(id: string): boolean {
-  const existing = db.select().from(notificationChannels).where(eq(notificationChannels.id, id)).get();
+export async function deleteChannel(id: string): Promise<boolean> {
+  const existing = await one(db.select().from(notificationChannels).where(eq(notificationChannels.id, id)));
   if (!existing) return false;
-  db.delete(notificationChannels).where(eq(notificationChannels.id, id)).run();
-  deleteDeliveriesForChannel(id);
+  await run(db.delete(notificationChannels).where(eq(notificationChannels.id, id)));
+  await deleteDeliveriesForChannel(id);
   return true;
 }
 
-export function recordChannelResult(id: string, result: { ok: boolean; error?: string }): void {
+export async function recordChannelResult(id: string, result: { ok: boolean; error?: string }): Promise<void> {
   const now = new Date().toISOString();
-  db.update(notificationChannels).set({
+  await run(db.update(notificationChannels).set({
     lastNotifiedAt: result.ok ? now : undefined,
     lastError: result.ok ? null : (result.error ?? 'Unknown error'),
     updatedAt: now,
-  }).where(eq(notificationChannels.id, id)).run();
+  }).where(eq(notificationChannels.id, id)));
 }

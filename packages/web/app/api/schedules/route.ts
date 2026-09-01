@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   // Validate notification links if provided
   const rawLinks = body.notificationLinks ?? [];
   for (const link of rawLinks) {
-    if (!link.channelId || !getChannelSummary(link.channelId)) {
+    if (!link.channelId || !(await getChannelSummary(link.channelId))) {
       return NextResponse.json({ error: `Notification channel not found: ${link.channelId}` }, { status: 400 });
     }
     if (!SEVERITIES.has(link.minSeverity as Severity)) {

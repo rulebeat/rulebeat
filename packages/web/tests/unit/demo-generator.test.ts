@@ -18,7 +18,7 @@ import { resolve, join } from 'node:path';
 import type { Rule } from '@rulebeat/core';
 import { runRules } from '@rulebeat/core';
 import { loadRules, setRulesEnabled } from '@/lib/rules';
-import { db } from '@/lib/db/client';
+import { db, rawSqlite } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
 import { scheduleRuns, findings } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -46,7 +46,7 @@ async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
 // which directory the test process happened to start in. runSeeds is INSERT OR IGNORE + UPDATE, so
 // this is safe to layer on top of whatever tests/setup.ts already seeded.
 const REAL_DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
-runSeeds(db.$client, REAL_DATA_DIR, { skipOwnerBootstrap: true });
+runSeeds(rawSqlite!, REAL_DATA_DIR, { skipOwnerBootstrap: true });
 
 // ── Determinism ─────────────────────────────────────────────────────────────────────────────────
 // Every downstream assertion in this file relies on the generator being a pure function of its

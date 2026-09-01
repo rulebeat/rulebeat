@@ -1,6 +1,7 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from './client';
-import { findings as findingsTable, findingEvents as findingEventsTable } from './schema';
+import { findings as findingsTable, findingEvents as findingEventsTable } from './tables';
+import { many, run, inTransaction } from './exec';
 import { loadScanHistory } from '../scan-history';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
@@ -92,24 +93,24 @@ function rowToRecord(row: Row): FindingRecord {
  *  a since-fixed finding was still real and new when a run first detected it, and notifying about it
  *  after the fact remains correct (spec 025). Fingerprints with no row (the rule was hard-deleted via
  *  deleteFindingsForRule()) are silently omitted, not errored. */
-export function getFindingsByFingerprints(fingerprints: string[]): FindingRecord[] {
+export async function getFindingsByFingerprints(fingerprints: string[]): Promise<FindingRecord[]> {
   if (fingerprints.length === 0) return [];
   const out: FindingRecord[] = [];
   for (const fpChunk of chunk(fingerprints, CHUNK_SIZE)) {
-    const rows = db.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)).all();
+    const rows = await many(db.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)));
     out.push(...rows.map(rowToRecord));
   }
   return out;
 }
 
-export function listFindings(opts: { status?: 'active' | 'fixed' } = {}): FindingRecord[] {
+export async function listFindings(opts: { status?: 'active' | 'fixed' } = {}): Promise<FindingRecord[]> {
   const rows = opts.status
-    ? db.select().from(findingsTable).where(eq(findingsTable.status, opts.status)).all()
-    : db.select().from(findingsTable).all();
+    ? await many(db.select().from(findingsTable).where(eq(findingsTable.status, opts.status)))
+    : await many(db.select().from(findingsTable));
   return rows.map(rowToRecord);
 }
 
-export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
+export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<SyncResult> {
   const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent } = opts;
   const findings = dedupeFindingsByFingerprint(rawFindings);
   const created: string[] = [];
@@ -120,7 +121,7 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
   // the activity-occurrences widget still gets one data point per scan that reported it.
   const occurred: string[] = [];
 
-  db.transaction((tx) => {
+  await inTransaction(async (tx) => {
     const seenFingerprints = findings.map(f => f.fingerprint);
     const seenSet = new Set(seenFingerprints);
     const resolvedRuleByFp = new Map<string, string>();
@@ -130,7 +131,7 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
     const existingByFp = new Map<string, Row>();
     for (const fpChunk of chunk(seenFingerprints, CHUNK_SIZE)) {
       if (fpChunk.length === 0) continue;
-      const rows = tx.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)).all();
+      const rows = await many(tx.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)));
       for (const r of rows) existingByFp.set(r.fingerprint, r);
     }
     for (const f of findings) {
@@ -142,7 +143,7 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
 
     // 2. Upsert every finding from this scan as active, refreshing denormalized display fields.
     for (const f of findings) {
-      tx.insert(findingsTable).values({
+      await run(tx.insert(findingsTable).values({
         fingerprint: f.fingerprint,
         ruleId: f.ruleId,
         category,
@@ -194,7 +195,7 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
           lastScanId: scanId,
           timesSeen: sql`${findingsTable.timesSeen} + 1`,
         },
-      }).run();
+      }));
     }
 
     // 3. Resolve: findings that were active for a rule this scan actually ran, but didn't
@@ -205,22 +206,24 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
     // still relevant, unlike a resource genuinely no longer matching a state rule's query.
     for (const ruleChunk of chunk(ranRuleIds, CHUNK_SIZE)) {
       if (ruleChunk.length === 0) continue;
-      const staleActive = tx.select({ fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId })
-        .from(findingsTable)
-        .where(and(
-          eq(findingsTable.category, category),
-          inArray(findingsTable.ruleId, ruleChunk),
-          eq(findingsTable.status, 'active'),
-          eq(findingsTable.kind, 'state'),
-        ))
-        .all();
+      const staleActive = await many(
+        tx.select({ fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId })
+          .from(findingsTable)
+          .where(and(
+            eq(findingsTable.category, category),
+            inArray(findingsTable.ruleId, ruleChunk),
+            eq(findingsTable.status, 'active'),
+            eq(findingsTable.kind, 'state'),
+          )),
+      );
       const toResolve = staleActive.filter(r => !seenSet.has(r.fingerprint));
       for (const r of toResolve) resolvedRuleByFp.set(r.fingerprint, r.ruleId);
       for (const resolveChunk of chunk(toResolve, CHUNK_SIZE)) {
         if (resolveChunk.length === 0) continue;
-        tx.update(findingsTable).set({ status: 'fixed', resolvedAt: finishedAt })
-          .where(inArray(findingsTable.fingerprint, resolveChunk.map(r => r.fingerprint)))
-          .run();
+        await run(
+          tx.update(findingsTable).set({ status: 'fixed', resolvedAt: finishedAt })
+            .where(inArray(findingsTable.fingerprint, resolveChunk.map(r => r.fingerprint))),
+        );
         resolved.push(...resolveChunk.map(r => r.fingerprint));
       }
     }
@@ -252,12 +255,12 @@ export function syncScanFindings(opts: SyncScanFindingsOptions): SyncResult {
       }
       if (events.length > 0) {
         for (const evChunk of chunk(events, CHUNK_SIZE)) {
-          tx.insert(findingEventsTable).values(evChunk).run();
+          await run(tx.insert(findingEventsTable).values(evChunk));
         }
       }
 
       const cutoff = new Date(Date.now() - EVENT_RETENTION_DAYS * 86_400_000).toISOString();
-      tx.delete(findingEventsTable).where(sql`${findingEventsTable.occurredAt} < ${cutoff}`).run();
+      await run(tx.delete(findingEventsTable).where(sql`${findingEventsTable.occurredAt} < ${cutoff}`));
     }
   });
 
@@ -274,14 +277,14 @@ export interface FindingEventCount { date: string; created: number; resolved: nu
  *  Caveat: the join reads the finding's *current* subscription/RG/severity, not event-time
  *  values — same convention as every live findings-sourced number. Days with no events are
  *  zero-filled between the first event and today so bar spacing stays honest. */
-export function getFindingEventCounts(opts: {
+export async function getFindingEventCounts(opts: {
   categories?: string[];
   ruleIds?: string[];
   subscriptions?: string[];
   resourceGroups?: string[];
   severities?: string[];
   sinceDate: string;
-}): FindingEventCount[] {
+}): Promise<FindingEventCount[]> {
   const conditions = [sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`];
   if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
@@ -293,11 +296,11 @@ export function getFindingEventCounts(opts: {
 
   const selection = { type: findingEventsTable.type, occurredAt: findingEventsTable.occurredAt };
   const rows = needsJoin
-    ? db.select(selection).from(findingEventsTable)
+    ? await many(db.select(selection).from(findingEventsTable)
         .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
-        .where(and(...conditions)).all()
-    : db.select(selection).from(findingEventsTable)
-        .where(and(...conditions)).all();
+        .where(and(...conditions)))
+    : await many(db.select(selection).from(findingEventsTable)
+        .where(and(...conditions)));
 
   const byDate = new Map<string, { created: number; resolved: number }>();
   for (const r of rows) {
@@ -330,14 +333,14 @@ export interface ActivityOccurrenceCount { date: string; count: number; }
  *  findings (both kinds get one on first sighting), so kind must always be checked to keep the
  *  two apart — 'occurred' events are activity-only by construction (syncScanFindings() step 4),
  *  but 'created' events are not. Same zero-fill-from-first-event-to-today convention. */
-export function getActivityOccurrenceCounts(opts: {
+export async function getActivityOccurrenceCounts(opts: {
   categories?: string[];
   ruleIds?: string[];
   subscriptions?: string[];
   resourceGroups?: string[];
   severities?: string[];
   sinceDate: string;
-}): ActivityOccurrenceCount[] {
+}): Promise<ActivityOccurrenceCount[]> {
   const conditions = [
     sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`,
     inArray(findingEventsTable.type, ['created', 'occurred']),
@@ -349,11 +352,12 @@ export function getActivityOccurrenceCounts(opts: {
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
 
-  const rows = db.select({ occurredAt: findingEventsTable.occurredAt })
-    .from(findingEventsTable)
-    .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
-    .where(and(...conditions))
-    .all();
+  const rows = await many(
+    db.select({ occurredAt: findingEventsTable.occurredAt })
+      .from(findingEventsTable)
+      .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
+      .where(and(...conditions)),
+  );
 
   const byDate = new Map<string, number>();
   for (const r of rows) {
@@ -372,18 +376,20 @@ export function getActivityOccurrenceCounts(opts: {
   return out;
 }
 
-export function deleteFindingsForRule(ruleId: string): void {
-  const affectedCategories = new Set(
+export async function deleteFindingsForRule(ruleId: string): Promise<void> {
+  const categoryRows = await many(
     db.select({ category: findingsTable.category }).from(findingsTable)
-      .where(eq(findingsTable.ruleId, ruleId)).all()
-      .map(r => r.category),
+      .where(eq(findingsTable.ruleId, ruleId)),
   );
+  const affectedCategories = new Set(categoryRows.map(r => r.category));
 
-  db.transaction((tx) => {
-    tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)).run();
-    tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)).run();
+  await inTransaction(async (tx) => {
+    await run(tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)));
+    await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
   });
 
+  // snapshots.ts is still synchronous SQLite-only code until the issue #73 Phase 2 sweep; on
+  // Postgres this call fails loudly rather than writing a wrong snapshot.
   for (const category of affectedCategories) upsertDailySnapshot(category);
 }
 
@@ -420,8 +426,8 @@ function restoreHistoricFinding(raw: Partial<Finding>, category: string): Findin
   } as Finding;
 }
 
-export function backfillFindings(): void {
-  if (getMeta(BACKFILL_MARKER)) return;
+export async function backfillFindings(): Promise<void> {
+  if (await getMeta(BACKFILL_MARKER)) return;
 
   const categories = listCategories();
   const allRules = loadRules();
@@ -447,7 +453,7 @@ export function backfillFindings(): void {
         const isLast = i === oldestFirst.length - 1;
         const findings = restore(scan);
         const ranRuleIds = Array.from(new Set(findings.map(f => f.ruleId)));
-        syncScanFindings({
+        await syncScanFindings({
           scanId: crypto.randomUUID(),
           category: category.id,
           ranRuleIds,
@@ -464,7 +470,7 @@ export function backfillFindings(): void {
       // last appeared in the blob) so rules disabled/removed since don't linger as false-active.
       const latest = oldestFirst[oldestFirst.length - 1];
       const currentRuleIds = enabledIdsByCategory.get(category.id) ?? [];
-      syncScanFindings({
+      await syncScanFindings({
         scanId: crypto.randomUUID(),
         category: category.id,
         ranRuleIds: currentRuleIds,
@@ -480,5 +486,5 @@ export function backfillFindings(): void {
     }
   }
 
-  setMeta(BACKFILL_MARKER, '1');
+  await setMeta(BACKFILL_MARKER, '1');
 }

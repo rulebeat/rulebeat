@@ -5,7 +5,7 @@ import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { loadScanHistory } from '../scan-history';
-import { getMeta, setMeta } from './meta';
+import { getMetaSync as getMeta, setMetaSync as setMeta } from './meta'; // sync SQLite-only until #73 Phase 2
 import { emptySeverityCounts } from '../severity';
 import type { Severity } from '../types';
 
