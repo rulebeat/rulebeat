@@ -28,11 +28,11 @@ async function main(): Promise<void> {
   // seeds onboarding as 'pending' and (app)/layout.tsx redirects every admin into the /onboarding
   // wizard. That wizard is its own untested surface, not this suite's concern — skip it so the
   // rest of the suite can sign in straight to a dashboard, the same as any already-onboarded install.
-  setOnboardingState({ status: 'skipped' });
+  await setOnboardingState({ status: 'skipped' });
 
-  const viewerResult = createUser({ email: viewerEmail, role: 'viewer' });
+  const viewerResult = await createUser({ email: viewerEmail, role: 'viewer' });
   if ('error' in viewerResult) throw new Error(`seed-e2e: could not create viewer user: ${viewerResult.error}`);
-  setPassword(viewerResult.user.id, hashPasswordSync(viewerPassword), { mustChangePassword: false });
+  await setPassword(viewerResult.user.id, hashPasswordSync(viewerPassword), { mustChangePassword: false });
 
   // seedOwnerAccount() (lib/db/migrate.ts) always forces a password change on first sign-in — real
   // and correct product behavior, already covered end-to-end by the Docker smoke test. Re-setting
@@ -41,11 +41,11 @@ async function main(): Promise<void> {
   const adminEmail = process.env.RULEBEAT_INITIAL_ADMIN;
   const adminPassword = process.env.RULEBEAT_INITIAL_PASSWORD;
   if (adminEmail && adminPassword) {
-    const admin = getUserByEmail(adminEmail.trim().toLowerCase());
-    if (admin) setPassword(admin.id, hashPasswordSync(adminPassword), { mustChangePassword: false });
+    const admin = await getUserByEmail(adminEmail.trim().toLowerCase());
+    if (admin) await setPassword(admin.id, hashPasswordSync(adminPassword), { mustChangePassword: false });
   }
 
-  const rules = loadRules();
+  const rules = await loadRules();
   const seedRule = rules.find(r => r.enabled) ?? rules[0];
   if (!seedRule) throw new Error('seed-e2e: no rules available to seed a finding against — built-ins did not seed');
 
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
     recommendation: 'No action needed — this is test fixture data.',
   });
 
-  syncScanFindings({
+  await syncScanFindings({
     scanId: 'e2e-seed-scan',
     category: seedRule.category,
     ranRuleIds: [seedRule.id],

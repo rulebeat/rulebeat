@@ -12,7 +12,7 @@ export async function GET(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const cat = getCategory(id);
+  const cat = await getCategory(id);
   if (!cat) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(cat);
 }
@@ -27,12 +27,12 @@ export async function PUT(
   const { id } = await params;
   const body = await parseJsonBody<{ label?: string; color?: string; icon?: string; sortOrder?: number }>(req);
   if (body instanceof NextResponse) return body;
-  const before = getCategory(id);
-  const result = updateCategory(id, body);
+  const before = await getCategory(id);
+  const result = await updateCategory(id, body);
   if (result === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'category.update',
     entityType: 'category',
@@ -52,12 +52,12 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const before = getCategory(id);
-  const result = deleteCategory(id);
+  const before = await getCategory(id);
+  const result = await deleteCategory(id);
   if (result === 'notfound') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (result === 'builtin') return NextResponse.json({ error: 'Built-in categories cannot be deleted.' }, { status: 403 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'category.delete',
     entityType: 'category',

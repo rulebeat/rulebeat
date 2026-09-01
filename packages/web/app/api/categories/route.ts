@@ -7,7 +7,7 @@ import { writeAudit } from '@/lib/db/audit';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(listCategories());
+  return NextResponse.json(await listCategories());
 }
 
 export async function POST(req: Request) {
@@ -18,10 +18,10 @@ export async function POST(req: Request) {
   if (body instanceof NextResponse) return body;
   if (!body.label?.trim()) return NextResponse.json({ error: 'Label is required.' }, { status: 400 });
 
-  const result = createCategory({ label: body.label, color: body.color, icon: body.icon });
+  const result = await createCategory({ label: body.label, color: body.color, icon: body.icon });
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'category.create',
     entityType: 'category',

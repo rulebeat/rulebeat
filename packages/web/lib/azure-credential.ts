@@ -143,7 +143,7 @@ const DEMO_MODE_MESSAGE =
   'This is a demo instance. It never connects to a real Azure tenant — every scan runs against '
   + 'synthetic data baked in ahead of time.';
 
-export function resolveAzureCredential(): ResolvedAzureCredential {
+export async function resolveAzureCredential(): Promise<ResolvedAzureCredential> {
   // The runtime half of the kill switch: every live Azure/Graph path in the app funnels through
   // this one function (tests/unit/azure-credential-chokepoint.test.ts proves no other file builds
   // a credential directly), so one branch here is provably total. It runs ahead of every other
@@ -151,7 +151,7 @@ export function resolveAzureCredential(): ResolvedAzureCredential {
   // in its environment must still never use it. AzureNotConfiguredError is deliberately reused
   // rather than a new error type: it is already the one type the API layer is allowed to surface
   // verbatim to the browser instead of routing through serverError().
-  if (isDemoMode()) throw new AzureNotConfiguredError(DEMO_MODE_MESSAGE);
+  if (await isDemoMode()) throw new AzureNotConfiguredError(DEMO_MODE_MESSAGE);
 
   const envSource = envCredentialSource();
 
@@ -186,7 +186,7 @@ export function resolveAzureCredential(): ResolvedAzureCredential {
     return { source: envSource, tenantId, credential: new EnvironmentCredential() };
   }
 
-  const stored = getActiveAzureCredential();
+  const stored = await getActiveAzureCredential();
   if (stored) {
     return {
       source: 'stored',
@@ -198,7 +198,7 @@ export function resolveAzureCredential(): ResolvedAzureCredential {
 
   // Nothing explicit. Fall back to the ambient identity — but a tenant id is still required, since
   // every ARG query and the sign-in configuration are both scoped to one.
-  const tenantId = env('AZURE_TENANT_ID') ?? getActiveAzureCredentialSummary()?.tenantId;
+  const tenantId = env('AZURE_TENANT_ID') ?? (await getActiveAzureCredentialSummary())?.tenantId;
   if (!tenantId) throw new AzureNotConfiguredError(NOT_CONFIGURED_MESSAGE);
 
   return { source: 'chain', tenantId, credential: new DefaultAzureCredential({ tenantId }) };
@@ -221,12 +221,13 @@ export function credentialFromClientSecret(
 }
 
 /** The credential alone, for the ARM routes that don't need a full tenant context. */
-export function getAzureCredential(): TokenCredential {
-  return resolveAzureCredential().credential;
+export async function getAzureCredential(): Promise<TokenCredential> {
+  return (await resolveAzureCredential()).credential;
 }
 
 export async function getAzureToken(scope = 'https://management.azure.com/.default'): Promise<string> {
-  const token = await getAzureCredential().getToken(scope, {
+  const credential = await getAzureCredential();
+  const token = await credential.getToken(scope, {
     abortSignal: AbortSignal.timeout(AZURE_CALL_TIMEOUT_MS),
   });
   if (!token) throw new Error('Azure returned no token for the configured credential.');
@@ -243,8 +244,8 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
  */
 export async function createTenantContext(logContext?: ScanLogContext): Promise<TenantContext> {
-  const { credential, tenantId } = resolveAzureCredential();
-  const logAnalyticsWorkspaceId = resolveLogAnalyticsWorkspaceId()?.workspaceId;
+  const { credential, tenantId } = await resolveAzureCredential();
+  const logAnalyticsWorkspaceId = (await resolveLogAnalyticsWorkspaceId())?.workspaceId;
   return buildTenantContext({ credential, tenantId, log: createScanLogger(logContext), logAnalyticsWorkspaceId });
 }
 
@@ -266,8 +267,8 @@ export interface AzureConnectionStatus {
 }
 
 /** Read-only description of the current connection, for the settings screen and diagnostics. */
-export function getAzureConnectionStatus(): AzureConnectionStatus {
-  const stored = getActiveAzureCredentialSummary();
+export async function getAzureConnectionStatus(): Promise<AzureConnectionStatus> {
+  const stored = await getActiveAzureCredentialSummary();
   const envSource = envCredentialSource();
 
   if (envSource) {

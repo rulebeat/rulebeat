@@ -388,9 +388,7 @@ export async function deleteFindingsForRule(ruleId: string): Promise<void> {
     await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
   });
 
-  // snapshots.ts is still synchronous SQLite-only code until the issue #73 Phase 2 sweep; on
-  // Postgres this call fails loudly rather than writing a wrong snapshot.
-  for (const category of affectedCategories) upsertDailySnapshot(category);
+  for (const category of affectedCategories) await upsertDailySnapshot(category);
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---
@@ -429,8 +427,8 @@ function restoreHistoricFinding(raw: Partial<Finding>, category: string): Findin
 export async function backfillFindings(): Promise<void> {
   if (await getMeta(BACKFILL_MARKER)) return;
 
-  const categories = listCategories();
-  const allRules = loadRules();
+  const categories = await listCategories();
+  const allRules = await loadRules();
   const enabledIdsByCategory = new Map<string, string[]>();
   for (const r of allRules) {
     if (!r.enabled) continue;
@@ -441,7 +439,7 @@ export async function backfillFindings(): Promise<void> {
   for (const category of categories) {
     // Per category, so one unreadable slice of history cannot cost the user every other category's.
     try {
-      const history = loadScanHistory(category.id); // newest-first
+      const history = await loadScanHistory(category.id); // newest-first
       if (history.length === 0) continue;
       const oldestFirst = [...history].reverse();
       const restore = (scan: { findings: Finding[] }) => scan.findings

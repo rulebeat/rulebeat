@@ -69,8 +69,8 @@ function finding(ruleId: string, resourceSuffix: string, severity: Severity = 'm
 
 describe('dashboard denominator honesty: severity/tag filters narrow rule scope, not just findings (spec 039, RB-RM-015)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
     insertRule(RULE_MEDIUM, { severity: 'medium' });
 
@@ -119,8 +119,8 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
 
 describe('dashboard denominator honesty: tag filter narrows rule scope the same way (spec 039, RB-RM-015)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_TAGGED, { tags: ['pci'] });
     insertRule(RULE_UNTAGGED, {});
 
@@ -146,8 +146,8 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
 
 describe('dashboard denominator honesty: resourceGroups/subscriptions are deliberately NOT applied to the denominator (spec 039 §2, out of scope)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
     insertRule(RULE_MEDIUM, { severity: 'medium' });
 
@@ -172,8 +172,8 @@ describe('dashboard denominator honesty: resourceGroups/subscriptions are delibe
 
 describe('WidgetSummary.suppressedIncluded self-describes which mode produced the numbers (spec 039, RB-RM-016)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
   });
 

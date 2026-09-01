@@ -30,14 +30,14 @@ export async function GET() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(getAzureConnectionStatus());
+  return NextResponse.json(await getAzureConnectionStatus());
 }
 
 export async function PUT(req: Request) {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const status = getAzureConnectionStatus();
+  const status = await getAzureConnectionStatus();
   if (status.managedByEnv) {
     // Saving would appear to work and then change nothing, since env wins at resolution time.
     return NextResponse.json({
@@ -77,16 +77,16 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const saved = saveAzureCredential({
+    const saved = await saveAzureCredential({
       name: body.name,
       tenantId,
       clientId,
       clientSecret,
       createdBy: actor.email,
     });
-    markAzureCredentialVerified(saved.id, verification.subscriptionCount);
+    await markAzureCredentialVerified(saved.id, verification.subscriptionCount);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'azure_connection.save',
       entityType: 'azure_connection',
@@ -96,7 +96,7 @@ export async function PUT(req: Request) {
       details: { fields: ['tenantId', 'clientId', 'clientSecret'], subscriptionCount: verification.subscriptionCount },
     });
 
-    return NextResponse.json(getAzureConnectionStatus());
+    return NextResponse.json(await getAzureConnectionStatus());
   } catch (err) {
     return serverError('Failed to save the Azure connection', err);
   }
@@ -106,21 +106,21 @@ export async function DELETE() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const status = getAzureConnectionStatus();
+  const status = await getAzureConnectionStatus();
   if (!status.stored) {
     return NextResponse.json({ error: 'There is no stored Azure connection to remove.' }, { status: 404 });
   }
 
   try {
-    deleteAzureCredential(status.stored.id);
-    writeAudit({
+    await deleteAzureCredential(status.stored.id);
+    await writeAudit({
       actor,
       action: 'azure_connection.delete',
       entityType: 'azure_connection',
       entityId: status.stored.id,
       summary: `Removed the stored Azure connection for tenant ${status.stored.tenantId}`,
     });
-    return NextResponse.json(getAzureConnectionStatus());
+    return NextResponse.json(await getAzureConnectionStatus());
   } catch (err) {
     return serverError('Failed to remove the Azure connection', err);
   }

@@ -12,10 +12,10 @@ export async function POST(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const schedule = getSchedule(id);
+  const schedule = await getSchedule(id);
   if (!schedule) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'schedule.run',
     entityType: 'schedule',

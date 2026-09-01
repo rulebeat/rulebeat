@@ -43,11 +43,11 @@ const sourceFiles = SCANNED_DIRS
 const SCRIPTS_IMPORT = /from\s+['"](?:@\/scripts|(?:\.\.\/)+scripts)(?:\/|['"])/;
 
 describe('product code never imports from scripts/', () => {
-  it('found the source files at all (guards against this suite silently testing nothing)', () => {
+  it('found the source files at all (guards against this suite silently testing nothing)', async () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
   });
 
-  it('nothing under app/ or lib/ imports from scripts/', () => {
+  it('nothing under app/ or lib/ imports from scripts/', async () => {
     const offenders = sourceFiles
       .filter(f => SCRIPTS_IMPORT.test(f.source))
       .map(f => f.rel.split(sep).join('/'));

@@ -41,12 +41,12 @@ const sourceFiles = SCANNED_DIRS
 const PASSWORD_PRIMITIVES = /\b(scrypt|scryptSync|bcrypt|argon2|pbkdf2|pbkdf2Sync)\b/;
 
 describe('Password hashing has exactly one construction site', () => {
-  it('found the source files at all (guards against this suite silently testing nothing)', () => {
+  it('found the source files at all (guards against this suite silently testing nothing)', async () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
     expect(sourceFiles.some(f => f.rel === join('lib', 'password.ts'))).toBe(true);
   });
 
-  it('no file outside lib/password.ts or lib/secret-box.ts touches a password/KDF primitive', () => {
+  it('no file outside lib/password.ts or lib/secret-box.ts touches a password/KDF primitive', async () => {
     const offenders = sourceFiles
       .filter(f => !ALLOWED.has(f.rel) && PASSWORD_PRIMITIVES.test(f.source))
       .map(f => f.rel.split(sep).join('/'));
@@ -58,13 +58,13 @@ describe('Password hashing has exactly one construction site', () => {
     ].join(' ')).toEqual([]);
   });
 
-  it('lib/password.ts really does use scrypt, so the ban above is not vacuous', () => {
+  it('lib/password.ts really does use scrypt, so the ban above is not vacuous', async () => {
     const source = sourceFiles.find(f => f.rel === join('lib', 'password.ts'))!.source;
     expect(source).toMatch(/\bscrypt\b/);
     expect(source).toMatch(/\bscryptSync\b/);
   });
 
-  it('lib/secret-box.ts really does use scryptSync too, so its allowlisting is not vacuous', () => {
+  it('lib/secret-box.ts really does use scryptSync too, so its allowlisting is not vacuous', async () => {
     const source = sourceFiles.find(f => f.rel === join('lib', 'secret-box.ts'))!.source;
     expect(source).toMatch(/\bscryptSync\b/);
   });

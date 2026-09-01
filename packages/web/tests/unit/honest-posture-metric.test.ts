@@ -65,8 +65,8 @@ function finding(ruleId: string, resourceSuffix: string): Finding {
 
 describe('the honest posture metric: passing / unknown / activity (spec 030)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_PASSING, { lastRunStatus: 'success' });
     insertRule(RULE_UNKNOWN_FAILED, { lastRunStatus: 'failed' });
     insertRule(RULE_UNKNOWN_NEVER_RUN, { lastRunStatus: null });
@@ -143,8 +143,8 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
   }
 
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
   });
 
   it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in — this is the actual "-75%" bug', async () => {

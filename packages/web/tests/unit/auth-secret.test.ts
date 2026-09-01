@@ -36,7 +36,7 @@ function secretFile(dir: string, contents: string): string {
   return path;
 }
 
-afterEach(() => {
+afterEach(async () => {
   if (ORIGINAL_AUTH_SECRET === undefined) delete process.env.AUTH_SECRET;
   else process.env.AUTH_SECRET = ORIGINAL_AUTH_SECRET;
   if (ORIGINAL_AUTH_SECRET_FILE === undefined) delete process.env.AUTH_SECRET_FILE;
@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('getAuthSecret', () => {
-  it('env wins over any file', () => {
+  it('env wins over any file', async () => {
     withThrowawayDir(dir => {
       process.env.AUTH_SECRET = 'the-configured-secret';
       expect(getAuthSecret()).toBe('the-configured-secret');
@@ -55,7 +55,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('with no env set, generates and persists a key file at 0600', () => {
+  it('with no env set, generates and persists a key file at 0600', async () => {
     withThrowawayDir(dir => {
       const secret = getAuthSecret();
       expect(secret.length).toBeGreaterThan(20);
@@ -71,7 +71,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('is stable across repeated calls in the same process', () => {
+  it('is stable across repeated calls in the same process', async () => {
     withThrowawayDir(() => {
       const first = getAuthSecret();
       const second = getAuthSecret();
@@ -79,7 +79,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('reads a pre-existing file rather than overwriting it', () => {
+  it('reads a pre-existing file rather than overwriting it', async () => {
     withThrowawayDir(() => {
       const first = getAuthSecret();
       resetAuthSecretForTests(); // simulate a fresh process re-reading the same data dir
@@ -95,7 +95,7 @@ describe('getAuthSecret', () => {
 
   // spec 023: AUTH_SECRET_FILE — a mounted-secret path, same precedence as AZURE_CLIENT_SECRET_FILE
   // in lib/azure-credential.ts.
-  it('AUTH_SECRET_FILE wins over a simultaneously-set AUTH_SECRET', () => {
+  it('AUTH_SECRET_FILE wins over a simultaneously-set AUTH_SECRET', async () => {
     withThrowawayDir(dir => {
       const path = secretFile(dir, 'from-the-mounted-file\n');
       process.env.AUTH_SECRET_FILE = path;
@@ -104,7 +104,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('AUTH_SECRET_FILE alone is read, trimmed, and used — never falls through to generation', () => {
+  it('AUTH_SECRET_FILE alone is read, trimmed, and used — never falls through to generation', async () => {
     withThrowawayDir(dir => {
       const path = secretFile(dir, '  from-the-mounted-file  \n');
       process.env.AUTH_SECRET_FILE = path;
@@ -113,7 +113,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('an empty or whitespace-only AUTH_SECRET_FILE throws', () => {
+  it('an empty or whitespace-only AUTH_SECRET_FILE throws', async () => {
     withThrowawayDir(dir => {
       const path = secretFile(dir, '   \n');
       process.env.AUTH_SECRET_FILE = path;

@@ -17,14 +17,14 @@ export async function PUT(
   if (body instanceof NextResponse) return body;
   if (!isRole(body.role)) return NextResponse.json({ error: 'Unknown role.' }, { status: 400 });
 
-  const before = getUser(id);
-  const result = updateUserRole(id, body.role);
+  const before = await getUser(id);
+  const result = await updateUserRole(id, body.role);
   if (result === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Refusing to demote the last admin — otherwise a single click locks everyone out of a
   // self-hosted install with no recovery path short of editing SQLite by hand.
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'user.role_change',
     entityType: 'user',
@@ -44,14 +44,14 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const before = getUser(id);
-  const result = deleteUser(id);
+  const before = await getUser(id);
+  const result = await deleteUser(id);
   if (result === 'notfound') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (result === 'last-admin') {
     return NextResponse.json({ error: 'This is the only admin. Promote someone else to admin first.' }, { status: 409 });
   }
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'user.remove',
     entityType: 'user',

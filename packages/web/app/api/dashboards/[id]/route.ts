@@ -9,7 +9,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
-  const d = getDashboard(id);
+  const d = await getDashboard(id);
   if (!d) return Response.json({ error: 'Not found' }, { status: 404 });
   return Response.json(d);
 }
@@ -22,17 +22,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body instanceof NextResponse) return body;
 
   if (body.isDefault) {
-    const ok = setDefaultDashboard(id);
+    const ok = await setDefaultDashboard(id);
     if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
     // isDefault-only request — return the (now-updated) dashboard without touching other fields.
-    return Response.json(getDashboard(id));
+    return Response.json(await getDashboard(id));
   }
 
-  const before = getDashboard(id);
-  const result = updateDashboard(id, body);
+  const before = await getDashboard(id);
+  const result = await updateDashboard(id, body);
   if (result === null) return Response.json({ error: 'Not found' }, { status: 404 });
   if ('error' in result) return Response.json({ error: result.error }, { status: 409 });
 
@@ -43,7 +43,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     (body.description !== undefined && body.description !== before.description)
   );
   if (renamed) {
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'dashboard.rename',
       entityType: 'dashboard',
@@ -59,11 +59,11 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const actor = await requireRole('dashboards:write');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
-  const before = getDashboard(id);
-  const ok = deleteDashboard(id);
+  const before = await getDashboard(id);
+  const ok = await deleteDashboard(id);
   if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'dashboard.delete',
     entityType: 'dashboard',

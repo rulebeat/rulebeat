@@ -9,7 +9,7 @@ export default async function QueryPage() {
   const user = await getCurrentUser();
   if (!can(user?.role ?? 'viewer', 'rules:validate')) notFound();
 
-  const categories = listCategories();
+  const categories = await listCategories();
   const defaultCategoryId = categories[0]?.id ?? '';
 
   return (

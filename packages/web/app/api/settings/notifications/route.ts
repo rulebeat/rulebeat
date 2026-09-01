@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     }
     try {
       const channel = await createChannel({ name, type: 'email', url, config: body.config as EmailChannelConfig });
-      writeAudit({
+      await writeAudit({
         actor,
         action: 'notification_channel.create',
         entityType: 'notification_channel',
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
 
   try {
     const channel = await createChannel({ name, type: type as NotificationChannelType, url });
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'notification_channel.create',
       entityType: 'notification_channel',
@@ -164,7 +164,7 @@ export async function PUT(req: Request) {
     });
     if (!updated) return NextResponse.json({ error: 'Channel not found.' }, { status: 404 });
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'notification_channel.update',
       entityType: 'notification_channel',
@@ -191,7 +191,7 @@ export async function DELETE(req: Request) {
 
   try {
     await deleteChannel(id);
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'notification_channel.delete',
       entityType: 'notification_channel',

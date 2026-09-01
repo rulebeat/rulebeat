@@ -8,6 +8,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
+- The whole app now runs on PostgreSQL: every database repository and every caller through the pages and API routes is asynchronous, so setting RULEBEAT_DATABASE_URL runs scans, dashboards, schedules, auth and audit against Postgres, not just the spike's three repositories (issue #73, phase 2). The SQLite default is unchanged and needs nothing.
+
 - The PostgreSQL backend now creates the complete schema and seeds the same built-in content as a fresh SQLite install: built-in rules, external pack rules, categories, the starter dashboard, onboarding state and the initial local admin account with its printed first password. The app itself still needs the remaining repository sweep before it fully runs on Postgres (issue #73, phase 1).
 
 - Groundwork for an optional PostgreSQL backend (issue #73, Phase 0 spike). RuleBeat can now open

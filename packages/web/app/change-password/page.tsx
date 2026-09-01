@@ -9,12 +9,12 @@ import { ChangePasswordClient } from './change-password-client';
 export default async function ChangePasswordPage() {
   // The demo visitor has no local_accounts row, so `!account` below already redirects away — this
   // is the same explicit belt-and-suspenders as onboarding's guard, not load-bearing on its own.
-  if (isDemoMode()) notFound();
+  if (await isDemoMode()) notFound();
 
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
 
-  const account = getLocalAccount(user.id);
+  const account = await getLocalAccount(user.id);
   if (!account) redirect('/dashboard'); // nothing to change — this user has no local password
 
   return <ChangePasswordClient email={user.email} mustChangePassword={account.mustChangePassword} />;

@@ -30,21 +30,21 @@ function clearTypesCache() {
   db.run(sql`DELETE FROM resource_types_cache`);
 }
 
-function writeTypesAt(types: string[], cachedAt: string) {
-  writeResourceTypesCache(types);
+async function writeTypesAt(types: string[], cachedAt: string) {
+  await writeResourceTypesCache(types);
   db.run(sql.raw(`UPDATE resource_types_cache SET cached_at = '${cachedAt}'`));
 }
 
 async function signInAsViewer(): Promise<void> {
-  const result = createUser({ email: 'viewer@example.com', role: 'viewer' });
+  const result = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('GET /api/resources/types (spec 008)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     clearTypesCache();
     mockAuth.mockReset();
     fail = null;
@@ -69,7 +69,7 @@ describe('GET /api/resources/types (spec 008)', () => {
 
   it('still serves the stale cache immediately when the background refresh throws', async () => {
     const staleDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
-    writeTypesAt(['microsoft.storage/storageaccounts'], staleDate);
+    await writeTypesAt(['microsoft.storage/storageaccounts'], staleDate);
     fail = new Error('ECONNRESET');
 
     const res = await GET();

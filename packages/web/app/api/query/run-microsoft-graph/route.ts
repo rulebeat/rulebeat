@@ -51,8 +51,8 @@ export async function POST(req: Request) {
     const capped = rows.length > RESPONSE_ROW_CAP;
     const sample = capped ? rows.slice(0, RESPONSE_ROW_CAP) : rows;
 
-    if (savedQueryId) touchSavedQueryLastRun(savedQueryId, actor.id);
-    writeAudit({
+    if (savedQueryId) await touchSavedQueryLastRun(savedQueryId, actor.id);
+    await writeAudit({
       actor,
       action: 'query.run',
       entityType: 'query',
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         ? `Ran a microsoft-graph query (${RESPONSE_ROW_CAP} of ${rows.length} rows shown)`
         : `Ran a microsoft-graph query (${rows.length} rows)`,
     });
-    recordQueryRun({
+    await recordQueryRun({
       queryBackend: 'microsoft-graph', graphQuery, savedQueryId, ownerId: actor.id,
       count: rows.length, capped, truncated: false,
     });
@@ -69,15 +69,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ count: rows.length, capped, truncated: false, rows: sample });
   } catch (err) {
     if (err instanceof GraphTruncatedError) {
-      if (savedQueryId) touchSavedQueryLastRun(savedQueryId, actor.id);
-      writeAudit({
+      if (savedQueryId) await touchSavedQueryLastRun(savedQueryId, actor.id);
+      await writeAudit({
         actor,
         action: 'query.run',
         entityType: 'query',
         entityId: savedQueryId,
         summary: `Ran a microsoft-graph query (truncated after ${err.rowsSeen} rows)`,
       });
-      recordQueryRun({
+      await recordQueryRun({
         queryBackend: 'microsoft-graph', graphQuery, savedQueryId, ownerId: actor.id,
         count: err.rowsSeen, capped: false, truncated: true,
       });

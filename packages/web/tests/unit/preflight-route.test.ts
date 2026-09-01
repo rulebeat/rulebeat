@@ -1,7 +1,7 @@
 /**
  * GET /api/diagnostics/preflight, spec'd off the docs-pass finding: a credential that fails to
  * authenticate made the whole route 500 ("Failed to run preflight checks"), because
- * `createTenantContext()` resolves the credential and its subscription list before `runPreflight()`
+ * `await createTenantContext()` resolves the credential and its subscription list before `await runPreflight()`
  * ever gets a context — so the per-check rendering the onboarding step is built around never
  * appeared for exactly the failure it exists to explain. The route must fold that failure into the
  * normal `PreflightResult` shape instead: the credential check fails with the curated wording, the
@@ -26,14 +26,14 @@ vi.mock('@/lib/azure-credential', async () => {
 const { GET } = await import('@/app/api/diagnostics/preflight/route');
 
 async function signInAsAdmin(): Promise<void> {
-  const result = createUser({ email: 'admin@example.com', role: 'admin' });
+  const result = await createUser({ email: 'admin@example.com', role: 'admin' });
   if ('error' in result) throw new Error(result.error);
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('GET /api/diagnostics/preflight', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsAdmin();
   });

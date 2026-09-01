@@ -12,9 +12,9 @@ export default async function DashboardPage({ params }: Props) {
   // never collide with this string, so it's a safe, deterministic way to exercise the route's
   // error boundary without a dedicated test-only route.
   if (id === '__e2e-throw__') throw new Error('e2e-triggered render error');
-  const dashboard = getDashboard(id);
+  const dashboard = await getDashboard(id);
   if (!dashboard) notFound();
-  const dashboards = listDashboards();
+  const dashboards = await listDashboards();
 
   return (
     <>
@@ -31,6 +31,6 @@ export default async function DashboardPage({ params }: Props) {
 
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
-  const dashboard = getDashboard(id);
+  const dashboard = await getDashboard(id);
   return { title: dashboard ? `${dashboard.name} — RuleBeat` : 'Dashboard — RuleBeat' };
 }

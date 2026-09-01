@@ -11,12 +11,12 @@ export async function warmSchemaCache(): Promise<void> {
     const ctx = await createTenantContext();
 
     // 1. Resource types list (1-day TTL)
-    const typesCached = readResourceTypesCache();
+    const typesCached = await readResourceTypesCache();
     if (!typesCached || typesCached.stale) {
       try {
         const types = await getAllResourceTypes(ctx);
         if (types.length > 0) {
-          writeResourceTypesCache(types);
+          await writeResourceTypesCache(types);
           console.log(`[RuleBeat] Resource types: ${types.length} types cached`);
         }
       } catch {
@@ -28,12 +28,12 @@ export async function warmSchemaCache(): Promise<void> {
     let warmed = 0;
     let skipped = 0;
     for (const type of COMMON_RESOURCE_TYPES) {
-      const cached = readSchemaCache(type);
+      const cached = await readSchemaCache(type);
       if (cached && !cached.stale) { skipped++; continue; }
       try {
         const fields = await getResourceTypeFields(type, ctx);
         if (fields.length > 0) {
-          writeSchemaCache(type, fields);
+          await writeSchemaCache(type, fields);
           warmed++;
         }
       } catch {

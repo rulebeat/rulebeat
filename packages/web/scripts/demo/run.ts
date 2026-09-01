@@ -18,16 +18,16 @@ import { replay, TOTAL_DAYS } from './replay';
 // rulebeat.db vs demo.db. A static top-level import here would be hoisted ahead of the env-var
 // assignment and silently open the real database instead.
 
-function seedDemoVisitor(): void {
-  const result = createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
+async function seedDemoVisitor(): Promise<void> {
+  const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
   if ('error' in result) throw new Error(`Failed to seed demo visitor: ${result.error}`);
   db.update(users).set({ id: DEMO_VISITOR_ID }).where(eq(users.id, result.user.id)).run();
 }
 
-function seedDemoSchedule(): string {
+async function seedDemoSchedule(): Promise<string> {
   const startAt = new Date();
   startAt.setHours(9, 0, 0, 0);
-  const result = createSchedule({
+  const result = await createSchedule({
     name: 'Daily posture scan',
     targetType: 'all',
     targetValues: [],
@@ -51,26 +51,26 @@ export async function runGenerator(): Promise<void> {
   console.log(`  ${estate.resources.length} resources across 4 subscriptions`);
 
   console.log('Curating rules...');
-  const allRules = loadRules();
+  const allRules = await loadRules();
   const aprlRuleIds = allRules.filter(r => r.pack === 'aprl-v2').map(r => r.id);
   const aprlFixtures = buildAprlFixtures(allRules);
 
   // Reset every APRL rule to disabled, then enable exactly the curated, fixture-backed subset —
   // never trust whatever subset shipped enabled-by-default, since it wasn't chosen with this
   // estate's resource types in mind.
-  setRulesEnabled(aprlRuleIds, false);
-  setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
-  setRulesEnabled(CORE_RULE_IDS, true);
+  await setRulesEnabled(aprlRuleIds, false);
+  await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
+  await setRulesEnabled(CORE_RULE_IDS, true);
   console.log(`  ${CORE_RULE_IDS.length} core rules + ${aprlFixtures.length} APRL rules enabled`);
 
   const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];
   const fixturesByRuleId = new Map(fixtures.map(f => [f.ruleId, f]));
 
   console.log('Seeding demo visitor account and schedule...');
-  seedDemoVisitor();
-  const scheduleId = seedDemoSchedule();
+  await seedDemoVisitor();
+  const scheduleId = await seedDemoSchedule();
 
-  const curatedRules = loadRules();
+  const curatedRules = await loadRules();
 
   console.log(`Replaying ${TOTAL_DAYS} simulated days of scans...`);
   await replay({
@@ -86,6 +86,6 @@ export async function runGenerator(): Promise<void> {
     },
   });
 
-  stampDemoDatabase();
+  await stampDemoDatabase();
   console.log('Demo database generated successfully.');
 }

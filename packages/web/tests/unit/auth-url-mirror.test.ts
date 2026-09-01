@@ -19,7 +19,7 @@ async function loadWithEnv(authUrl: string | undefined) {
   return import('@/lib/sign-in-config');
 }
 
-afterEach(() => {
+afterEach(async () => {
   if (original === undefined) delete process.env.AUTH_URL;
   else process.env.AUTH_URL = original;
 });

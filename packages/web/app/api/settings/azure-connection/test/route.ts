@@ -41,11 +41,11 @@ export async function POST(req: Request) {
           ),
           source: 'entered' as const,
         }
-      : resolveAzureCredential();
+      : await resolveAzureCredential();
 
     const result = await verifyAzureCredential(credential);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'azure_connection.test',
       entityType: 'azure_connection',

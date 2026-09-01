@@ -3,7 +3,7 @@
  *
  * `TenantContext.queryARG` and `TenantContext.graphGet` are the only two doors any rule query goes
  * through (resource-graph and microsoft-graph rules respectively, spec 032), and `runRules()`,
- * `runGraphRules()` and `runCategoryScan()` all accept the context as a parameter. That means the
+ * `runGraphRules()` and `await runCategoryScan()` all accept the context as a parameter. That means the
  * whole scan pipeline can be exercised end to end with no Azure account, no credentials and no
  * network: hand it one of these instead of the real thing. `queryLogs` (spec 035) joins them as a
  * third door, used so far only by `lib/preflight.ts`'s Log Analytics check — no rule engine reads it
@@ -68,7 +68,7 @@ interface FakeOptions {
   logsFailWith?: Error;
   /**
    * `TenantContext.graphGet` is required by its type — every real context built by
-   * `createTenantContext()` implements it unconditionally (spec 032). Set this to omit it from the
+   * `await createTenantContext()` implements it unconditionally (spec 032). Set this to omit it from the
    * fake anyway, for the one test that needs to prove `runGraphRules()`'s "this tenant context has
    * no Graph access configured" guard fires for a context that violates its own type at runtime.
    */

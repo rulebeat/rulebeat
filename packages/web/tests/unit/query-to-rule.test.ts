@@ -11,7 +11,7 @@ import { defaultVisualQuery } from '@/components/rules/visual-query-builder';
 
 describe('buildRuleFromQuery (spec 037)', () => {
   describe('base fields, shared across every backend', () => {
-    it('starts blank, disabled, and custom-typed, regardless of backend', () => {
+    it('starts blank, disabled, and custom-typed, regardless of backend', async () => {
       const rule = buildRuleFromQuery({ backend: 'microsoft-graph', defaultCategoryId: 'security', graphQuery: { path: 'users' } });
       expect(rule.id).toBe('');
       expect(rule.name).toBe('');
@@ -22,19 +22,19 @@ describe('buildRuleFromQuery (spec 037)', () => {
       expect(rule.conditions).toEqual([]);
     });
 
-    it('uses the page default category when one is available', () => {
+    it('uses the page default category when one is available', async () => {
       const rule = buildRuleFromQuery({ backend: 'microsoft-graph', defaultCategoryId: 'security', graphQuery: { path: 'users' } });
       expect(rule.category).toBe('security');
     });
 
-    it('falls back to "compliance" when no category exists yet (defaultCategoryId is empty)', () => {
+    it('falls back to "compliance" when no category exists yet (defaultCategoryId is empty)', async () => {
       const rule = buildRuleFromQuery({ backend: 'microsoft-graph', defaultCategoryId: '', graphQuery: { path: 'users' } });
       expect(rule.category).toBe('compliance');
     });
   });
 
   describe('resource-graph backend', () => {
-    it('carries the scope, visual query, raw KQL, and parses resource types / project columns from CSV', () => {
+    it('carries the scope, visual query, raw KQL, and parses resource types / project columns from CSV', async () => {
       const visualQuery = defaultVisualQuery();
       const rule = buildRuleFromQuery({
         backend: 'resource-graph',
@@ -56,7 +56,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
       expect(rule.logsQuery).toBeUndefined();
     });
 
-    it('falls back to a resource-level scope when no scope was resolved yet', () => {
+    it('falls back to a resource-level scope when no scope was resolved yet', async () => {
       const rule = buildRuleFromQuery({
         backend: 'resource-graph',
         defaultCategoryId: 'compliance',
@@ -69,7 +69,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
       expect(rule.scope).toEqual({ level: 'resource' });
     });
 
-    it('produces an empty resourceTypes/projectColumns array from blank CSV text, not [""]', () => {
+    it('produces an empty resourceTypes/projectColumns array from blank CSV text, not [""]', async () => {
       const rule = buildRuleFromQuery({
         backend: 'resource-graph',
         defaultCategoryId: 'compliance',
@@ -85,7 +85,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
   });
 
   describe('microsoft-graph backend', () => {
-    it('forces a subscription-level scope and carries the graph query, leaving ARG/Logs fields unset', () => {
+    it('forces a subscription-level scope and carries the graph query, leaving ARG/Logs fields unset', async () => {
       const rule = buildRuleFromQuery({
         backend: 'microsoft-graph',
         defaultCategoryId: 'identity',
@@ -103,7 +103,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
   });
 
   describe('log-analytics backend', () => {
-    it('forces a subscription-level scope and a 30-day window not collected on the query page', () => {
+    it('forces a subscription-level scope and a 30-day window not collected on the query page', async () => {
       const rule = buildRuleFromQuery({
         backend: 'log-analytics',
         defaultCategoryId: 'reliability',
@@ -122,7 +122,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
     // saveAsRule() hands this object to JSON.stringify() for sessionStorage, and
     // readQueryPrefill() JSON.parses it straight back into a Rule — a value that mutates
     // under that round trip would silently corrupt the prefill.
-    it('is unchanged by JSON.stringify -> JSON.parse for every backend', () => {
+    it('is unchanged by JSON.stringify -> JSON.parse for every backend', async () => {
       const rules = [
         buildRuleFromQuery({
           backend: 'resource-graph', defaultCategoryId: 'compliance',

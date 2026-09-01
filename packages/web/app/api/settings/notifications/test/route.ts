@@ -100,7 +100,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const href = buildAbsoluteHref('/scans?tab=results');
+  const href = await buildAbsoluteHref('/scans?tab=results');
   const payload = buildPayload(type, SAMPLE_FINDINGS, href, SAMPLE_RUN);
 
   try {
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
         await assertSafeEmailHost(emailConfig);
       } catch (err) {
         const message = err instanceof SsrfGuardError ? err.message : 'SMTP host is not allowed.';
-        writeAudit({
+        await writeAudit({
           actor,
           action: 'notification_channel.test',
           entityType: 'notification_channel',
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
         });
       } catch (err) {
         if (err instanceof SsrfGuardError) {
-          writeAudit({
+          await writeAudit({
             actor,
             action: 'notification_channel.test',
             entityType: 'notification_channel',
@@ -175,7 +175,7 @@ export async function POST(req: Request) {
       }
     }
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'notification_channel.test',
       entityType: 'notification_channel',
@@ -189,7 +189,7 @@ export async function POST(req: Request) {
     if (ok) return NextResponse.json({ ok: true });
     return NextResponse.json({ ok: false, error: errorMsg ?? 'Delivery failed.' }, { status: 400 });
   } catch (err) {
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'notification_channel.test',
       entityType: 'notification_channel',

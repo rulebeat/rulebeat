@@ -9,17 +9,17 @@ import { checkRowsHaveIdentity, probeRuleIdentitySample } from '@/lib/rule-ident
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
 
 describe('checkRowsHaveIdentity()', () => {
-  it('is valid when every row has a non-empty string id', () => {
+  it('is valid when every row has a non-empty string id', async () => {
     const result = checkRowsHaveIdentity([argRow({ name: 'vm-1' }), argRow({ name: 'vm-2' })]);
     expect(result).toEqual({ valid: true, invalidCount: 0 });
   });
 
-  it('counts a missing id property as invalid', () => {
+  it('counts a missing id property as invalid', async () => {
     const result = checkRowsHaveIdentity([{ name: 'no-id-at-all' }]);
     expect(result).toEqual({ valid: false, invalidCount: 1 });
   });
 
-  it('counts null, empty-string, and whitespace-only id as invalid, not just an absent property', () => {
+  it('counts null, empty-string, and whitespace-only id as invalid, not just an absent property', async () => {
     const result = checkRowsHaveIdentity([
       { id: null, name: 'a' },
       { id: '', name: 'b' },
@@ -29,12 +29,12 @@ describe('checkRowsHaveIdentity()', () => {
     expect(result).toEqual({ valid: false, invalidCount: 3 });
   });
 
-  it('is valid (vacuously) for an empty row set', () => {
+  it('is valid (vacuously) for an empty row set', async () => {
     expect(checkRowsHaveIdentity([])).toEqual({ valid: true, invalidCount: 0 });
   });
 });
 
-describe('probeRuleIdentitySample()', () => {
+describe('await probeRuleIdentitySample()', () => {
   it('blocks when the sampled rows confirm a missing resource id', async () => {
     const ctx = fakeTenantContext({ rows: [{ name: 'no-id' }] });
     const result = await probeRuleIdentitySample('resources | summarize count() by type', ctx);

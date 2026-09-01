@@ -129,11 +129,11 @@ const REQUIRED: Array<[file: string, key: string]> = [
 ];
 
 describe('public docs state the same numbers the code ships', () => {
-  it('found count markers at all (guards against this suite silently testing nothing)', () => {
+  it('found count markers at all (guards against this suite silently testing nothing)', async () => {
     expect(occurrences.length).toBeGreaterThan(8);
   });
 
-  it('derived live counts look sane (guards against a broken source read)', () => {
+  it('derived live counts look sane (guards against a broken source read)', async () => {
     expect(liveCounts['builtin-rules']).toBeGreaterThan(5);
     expect(liveCounts['widget-types']).toBeGreaterThan(5);
     expect(liveCounts['pack-rules:aprl-v2']).toBeGreaterThan(100);
@@ -141,7 +141,7 @@ describe('public docs state the same numbers the code ships', () => {
     expect(liveCounts['visual-operators']).toBeGreaterThan(20);
   });
 
-  it('every marker names a key this test knows how to derive', () => {
+  it('every marker names a key this test knows how to derive', async () => {
     const unknown = occurrences.filter(o => !(o.key in liveCounts)).map(o => `${o.file}: count:${o.key}`);
     expect(unknown, [
       'These docs carry a <!-- count:KEY --> marker with a key this test cannot derive. Either the',
@@ -149,7 +149,7 @@ describe('public docs state the same numbers the code ships', () => {
     ].join(' ')).toEqual([]);
   });
 
-  it('every marker is followed by a number this test can read', () => {
+  it('every marker is followed by a number this test can read', async () => {
     const unreadable = occurrences.filter(o => resolveToken(o.token) === undefined).map(o => `${o.file}: count:${o.key} -> "${o.token}"`);
     expect(unreadable, 'A count marker must sit directly before digits or a number word (zero..twenty).').toEqual([]);
   });
@@ -172,7 +172,7 @@ describe('public docs state the same numbers the code ships', () => {
     ].join(' ')).toBe(live);
   });
 
-  it('pack rule counts agree with pack-manifest.json policyCount', () => {
+  it('pack rule counts agree with pack-manifest.json policyCount', async () => {
     for (const [id, rules] of packRules) {
       expect(packManifest[id]?.policyCount, `pack-manifest.json policyCount for ${id}`).toBe(rules.length);
     }

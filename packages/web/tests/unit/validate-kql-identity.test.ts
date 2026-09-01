@@ -29,15 +29,15 @@ function postRequest(kql: string): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('POST /api/rules/validate-kql — identity guard (spec 005)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
   });
@@ -64,7 +64,7 @@ describe('POST /api/rules/validate-kql — identity guard (spec 005)', () => {
 
 describe('POST /api/rules/validate-kql — 400 error unwrapping (spec 006)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
   });

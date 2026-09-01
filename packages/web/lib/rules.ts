@@ -1,10 +1,11 @@
 import { eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
-import { rules as rulesTable } from './db/schema';
+import { rules as rulesTable } from './db/tables';
+import { many, run, inTransaction } from './db/exec';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleShape, RuleType, VisualQuery } from '@rulebeat/core';
 
-export function loadRules(): Rule[] {
-  return db.select().from(rulesTable).all().map(rowToRule);
+export async function loadRules(): Promise<Rule[]> {
+  return (await many(db.select().from(rulesTable))).map(rowToRule);
 }
 
 /**
@@ -33,16 +34,16 @@ export function deriveShape(appliesTo: VisualQuery | undefined): RuleShape {
  * Unknown ids are reported rather than failing the batch — a stale browser tab must not 404 the
  * whole request over one id that no longer exists.
  */
-export function setRulesEnabled(ids: string[], enabled: boolean): { updatedIds: string[]; notFoundIds: string[] } {
+export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<{ updatedIds: string[]; notFoundIds: string[] }> {
   if (ids.length === 0) return { updatedIds: [], notFoundIds: [] };
 
-  const existingIds = db.select({ id: rulesTable.id }).from(rulesTable)
-    .where(inArray(rulesTable.id, ids)).all().map(r => r.id);
+  const existingIds = (await many(db.select({ id: rulesTable.id }).from(rulesTable)
+    .where(inArray(rulesTable.id, ids)))).map(r => r.id);
   const existingSet = new Set(existingIds);
   const notFoundIds = ids.filter(id => !existingSet.has(id));
 
   if (existingIds.length > 0) {
-    db.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)).run();
+    await run(db.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)));
   }
 
   return { updatedIds: existingIds, notFoundIds };
@@ -56,9 +57,9 @@ export function setRulesEnabled(ids: string[], enabled: boolean): { updatedIds: 
  * Rules outside `ids` (disabled, or excluded by a targeted scan's own rule list) are left untouched,
  * so their last known status still reflects their own last real run.
  */
-export function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus, at: string): void {
+export async function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus, at: string): Promise<void> {
   if (ids.length === 0) return;
-  db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)).run();
+  await run(db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
 }
 
 /**
@@ -70,21 +71,21 @@ export function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus
  * simply absent from `counts` and left untouched here — its last known count stays displayed rather
  * than disappearing, the same precedent setRulesLastRunStatus already sets for rules outside a scan.
  */
-export function setRulePopulationCounts(counts: Record<string, number>): void {
+export async function setRulePopulationCounts(counts: Record<string, number>): Promise<void> {
   const entries = Object.entries(counts);
   if (entries.length === 0) return;
-  db.transaction((tx) => {
+  await inTransaction(async (tx) => {
     for (const [id, count] of entries) {
-      tx.update(rulesTable).set({ lastPopulationCount: count }).where(eq(rulesTable.id, id)).run();
+      await run(tx.update(rulesTable).set({ lastPopulationCount: count }).where(eq(rulesTable.id, id)));
     }
   });
 }
 
-export function saveRules(rules: Rule[]): void {
-  db.transaction((tx) => {
-    tx.delete(rulesTable).run();
+export async function saveRules(rules: Rule[]): Promise<void> {
+  await inTransaction(async (tx) => {
+    await run(tx.delete(rulesTable));
     for (const r of rules) {
-      tx.insert(rulesTable).values(ruleToRow(r)).run();
+      await run(tx.insert(rulesTable).values(ruleToRow(r)));
     }
   });
 }
@@ -102,21 +103,21 @@ export interface OnboardingRuleSummary {
  * visual-query blob are several KB each, and the picker only ever needs id/category/severity/enabled
  * to compute counts and build the id lists `PATCH /api/rules/bulk` takes.
  */
-export function listRuleSummaries(): OnboardingRuleSummary[] {
-  return loadRules().map(r => ({ id: r.id, category: r.category, severity: r.severity, enabled: r.enabled }));
+export async function listRuleSummaries(): Promise<OnboardingRuleSummary[]> {
+  return (await loadRules()).map(r => ({ id: r.id, category: r.category, severity: r.severity, enabled: r.enabled }));
 }
 
 export function allTagsFromRules(rules: Rule[]): string[] {
   return [...new Set(rules.flatMap(r => r.tags ?? []))].sort((a, b) => a.localeCompare(b));
 }
 
-export function isNameTaken(name: string, excludeId?: string): boolean {
-  const all = loadRules();
+export async function isNameTaken(name: string, excludeId?: string): Promise<boolean> {
+  const all = await loadRules();
   return all.some(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);
 }
 
-export function duplicateRule(id: string): Rule | null {
-  const all = loadRules();
+export async function duplicateRule(id: string): Promise<Rule | null> {
+  const all = await loadRules();
   const original = all.find(r => r.id === id);
   if (!original) return null;
 
@@ -136,7 +137,7 @@ export function duplicateRule(id: string): Rule | null {
     enabled: false,
   };
 
-  saveRules([...all, copy]);
+  await saveRules([...all, copy]);
   return copy;
 }
 

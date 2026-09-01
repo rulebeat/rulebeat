@@ -1,8 +1,8 @@
 /**
- * Spec 004 — scan lifecycle correctness, end to end through runCategoryScan().
+ * Spec 004 — scan lifecycle correctness, end to end through (await runCategoryScan()).
  *
  * The bug this spec fixes: a rule whose ARG query throws (or is capped/truncated) used to be
- * indistinguishable from a rule that legitimately found nothing — syncScanFindings() would resolve
+ * indistinguishable from a rule that legitimately found nothing — await syncScanFindings() would resolve
  * ("fix") every one of that rule's previously-active findings. The actual fix lives in scan-runner.ts
  * narrowing `ranRuleIds` to only rules whose outcome was 'success' (see runner-outcomes.test.ts for
  * the outcome-classification unit tests); this suite proves that narrowing reaches all the way
@@ -68,24 +68,24 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
   };
 }
 
-function securityCategory() {
-  const category = getCategory('security');
+async function securityCategory() {
+  const category = await getCategory('security');
   expect(category, "expected the seeded 'security' category to exist").toBeTruthy();
   return category!;
 }
 
 describe('scan lifecycle coverage (spec 004)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     // The built-in APRL pack seeds enabled rules into 'security' too — clear the table so this
     // suite's fake ctx only ever has to answer for the two rules it explicitly wires up.
-    clearRules();
+    await clearRules();
     insertRule(RULE_OK, MARKER_OK);
     insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
   it('a failed rule leaves its prior active finding untouched, while a still-succeeding rule keeps resolving', async () => {
-    const category = securityCategory();
+    const category = await securityCategory();
     const okRow = argRow({ name: 'vm-ok' });
     const failRow = argRow({ name: 'vm-fail' });
     const okFingerprint = computeFingerprint(RULE_OK, okRow.id as string);
@@ -123,7 +123,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
   });
 
   it('a capped rule (top-level take) also leaves its prior active finding untouched', async () => {
-    const category = securityCategory();
+    const category = await securityCategory();
     // Overwrite rule-fail with a query that has a top-level `take` — capped, not failed.
     db.delete(rulesTable).run();
     insertRule(RULE_OK, MARKER_OK);
@@ -165,7 +165,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
   });
 
   it('a rule returning identity-less rows (spec 005) leaves its prior active finding untouched and reports invalid', async () => {
-    const category = securityCategory();
+    const category = await securityCategory();
     const okRow = argRow({ name: 'vm-ok' });
     const failRow = argRow({ name: 'vm-fail' });
     const okFingerprint = computeFingerprint(RULE_OK, okRow.id as string);
@@ -201,7 +201,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
   });
 
   it('regression guard: when every rule succeeds, an unseen finding still resolves', async () => {
-    const category = securityCategory();
+    const category = await securityCategory();
     const row = argRow({ name: 'vm-both-ok' });
     const fingerprint = computeFingerprint(RULE_OK, row.id as string);
 

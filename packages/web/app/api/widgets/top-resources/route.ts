@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
   const findings = await queryActiveFindings(filters);
-  const categoryColorById = new Map(listCategories().map(c => [c.id, c.color]));
+  const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();
   for (const f of findings) {

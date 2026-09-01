@@ -38,12 +38,12 @@ export async function executeTarget(
     now?: Date;
   },
 ): Promise<ScheduleRun> {
-  const categoryIds = resolveCategoriesForSchedule(target);
+  const categoryIds = await resolveCategoriesForSchedule(target);
   const scopedRuleIdsByCategory = (target.targetType === 'tags' || target.targetType === 'rules')
-    ? groupRuleIdsByCategory(resolveRulesForSchedule(target))
+    ? groupRuleIdsByCategory(await resolveRulesForSchedule(target))
     : null;
 
-  const run = startRun({
+  const run = await startRun({
     scheduleId: opts.scheduleId ?? '',
     triggeredBy: opts.triggeredBy,
     categories: categoryIds,
@@ -65,7 +65,7 @@ export async function executeTarget(
     // normally in that case. That must still surface as a partial run, not a silent 'success'.
     const partialCategories: string[] = [];
 
-    const categoriesById = new Map(listCategories().map(c => [c.id, c]));
+    const categoriesById = new Map((await listCategories()).map(c => [c.id, c]));
     for (const categoryId of categoryIds) {
       const category = categoriesById.get(categoryId);
       if (!category) continue;
@@ -86,7 +86,7 @@ export async function executeTarget(
         // crash before the next category starts would otherwise leave these findings with no
         // fingerprint ever recorded against the run, so recovery would have nothing to notify
         // from (spec 025).
-        recordCategoryProgress(run.id, {
+        await recordCategoryProgress(run.id, {
           totalFindings: outcome.summary.findings.length,
           newFindings: outcome.newFindings.length,
           newFindingFingerprints: categoryFingerprints,
@@ -106,7 +106,7 @@ export async function executeTarget(
       messages.push(`${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }
     const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.length > 0;
-    finishRun(run.id, {
+    await finishRun(run.id, {
       status,
       totalFindings,
       newFindings,
@@ -118,11 +118,12 @@ export async function executeTarget(
     });
 
     if (willNotify) {
-      void dispatchAndMarkSent(getRun(run.id)!, allNewFindings).catch(() => {});
+      const finished = (await getRun(run.id))!;
+      void dispatchAndMarkSent(finished, allNewFindings).catch(() => {});
     }
   } catch (err) {
     console.error(`[RuleBeat] scan run ${run.id} failed:`, err);
-    finishRun(run.id, {
+    await finishRun(run.id, {
       status: 'error',
       totalFindings: 0,
       newFindings: 0,
@@ -133,5 +134,5 @@ export async function executeTarget(
     });
   }
 
-  return getRun(run.id)!;
+  return (await getRun(run.id))!;
 }

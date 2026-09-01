@@ -62,14 +62,14 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
 
 describe('coverage-freshness widget data (spec 004)', () => {
   beforeEach(async () => {
-    resetDb();
-    clearRules();
+    await resetDb();
+    await clearRules();
     insertRule(RULE_OK, MARKER_OK);
     insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
   it('reports the security category as partial, with the failed rule named, after a mixed scan', async () => {
-    const category = getCategory('security')!;
+    const category = (await getCategory('security'))!;
     await runCategoryScan(category, {
       ctx: makeCtx({
         [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
@@ -86,7 +86,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
   });
 
   it('reports complete coverage and no incomplete rules after a fully clean scan', async () => {
-    const category = getCategory('security')!;
+    const category = (await getCategory('security'))!;
     await runCategoryScan(category, {
       ctx: makeCtx({
         [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },

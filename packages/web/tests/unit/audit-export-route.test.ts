@@ -14,14 +14,14 @@ vi.mock('@/auth', () => ({
 
 const exportRoute = await import('@/app/api/audit/export/route');
 
-function makeUser(email: string, role: AppUser['role']): AppUser {
-  const result = createUser({ email, role });
+async function makeUser(email: string, role: AppUser["role"]): Promise<AppUser> {
+  const result = await createUser({ email, role });
   if ('error' in result) throw new Error(result.error);
   return result.user;
 }
 
-beforeEach(() => {
-  resetDb();
+beforeEach(async () => {
+  await resetDb();
   mockAuth.mockReset();
 });
 
@@ -33,7 +33,7 @@ describe('GET /api/audit/export', () => {
   });
 
   it('rejects a non-admin caller', async () => {
-    const viewer = makeUser('viewer@example.com', 'viewer');
+    const viewer = await makeUser('viewer@example.com', 'viewer');
     mockAuth.mockResolvedValue({ user: { uid: viewer.id } });
 
     const res = await exportRoute.GET();
@@ -41,11 +41,11 @@ describe('GET /api/audit/export', () => {
   });
 
   it('returns every row as CSV, beyond the 200-row UI cap, with the right headers', async () => {
-    const admin = makeUser('admin@example.com', 'admin');
+    const admin = await makeUser('admin@example.com', 'admin');
     mockAuth.mockResolvedValue({ user: { uid: admin.id } });
 
     for (let i = 0; i < 205; i++) {
-      writeAudit({ actor: admin, action: 'rule.create', summary: `entry ${i}` });
+      await writeAudit({ actor: admin, action: 'rule.create', summary: `entry ${i}` });
     }
 
     const res = await exportRoute.GET();
@@ -60,10 +60,10 @@ describe('GET /api/audit/export', () => {
   });
 
   it('quotes a comma/quote-bearing value and doubles embedded quotes', async () => {
-    const admin = makeUser('admin2@example.com', 'admin');
+    const admin = await makeUser('admin2@example.com', 'admin');
     mockAuth.mockResolvedValue({ user: { uid: admin.id } });
 
-    writeAudit({
+    await writeAudit({
       actor: admin,
       action: 'rule.create',
       summary: 'A rule named "Cost, and compliance"',
@@ -75,10 +75,10 @@ describe('GET /api/audit/export', () => {
   });
 
   it('escapes a formula-injection value with a leading apostrophe', async () => {
-    const admin = makeUser('admin3@example.com', 'admin');
+    const admin = await makeUser('admin3@example.com', 'admin');
     mockAuth.mockResolvedValue({ user: { uid: admin.id } });
 
-    writeAudit({
+    await writeAudit({
       actor: admin,
       action: 'rule.create',
       summary: "=cmd|' /C calc'!A1",

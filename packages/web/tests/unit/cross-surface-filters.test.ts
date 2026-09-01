@@ -5,7 +5,7 @@
  * parseWidgetFiltersFromSearchParams) round-trips.
  *
  * Three real, independent implementations are exercised directly (never re-implemented here):
- *  - queryActiveFindings() (lib/dashboard-data.ts) — what a dashboard widget counts
+ *  - await queryActiveFindings() (lib/dashboard-data.ts) — what a dashboard widget counts
  *  - matchesExplorerFilters() (lib/explorer-filters.ts) — what the Results tab shows, extracted
  *    this session from findings-explorer-client.tsx's inline `passesGlobalFilters` closure so it's
  *    unit-testable outside a React render (see that file's `passesGlobalFilters` for the wiring)
@@ -72,16 +72,16 @@ function finding(overrides: Partial<Finding> & { ruleId: string; category: strin
 
 // Mirrors findings-explorer-client.tsx's useState initializers reading `initialFilters` (itself
 // built by scans/page.tsx from searchParams) plus its default WidgetFilters -> component-state
-// mapping. `queryActiveFindings()` always scopes to the DB's persisted status:'active', which is
+// mapping. `await queryActiveFindings()` always scopes to the DB's persisted status:'active', which is
 // exactly the Results tab's default status:'open' (active + new, never fixed) — the two are the
 // same underlying set by construction, not by coincidence, so 'open' is the only status tested here.
-function toExplorerState(filters: WidgetFilters): ExplorerFilterState {
+async function toExplorerState(filters: WidgetFilters): Promise<ExplorerFilterState> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   return {
     showSuppressed: !!filters.includeSuppressed,
     suppressedFingerprints: filters.includeSuppressed
       ? new Set()
-      : new Set(loadSuppressions().filter(isActiveSuppression).map(s => s.fingerprint)),
+      : new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint)),
     categories: new Set(filters.categories ?? []),
     severities: new Set(filters.severities ?? []),
     status: 'open',
@@ -97,7 +97,7 @@ function toExplorerState(filters: WidgetFilters): ExplorerFilterState {
 }
 
 async function explorerFingerprints(filters: WidgetFilters): Promise<Set<string>> {
-  const state = toExplorerState(filters);
+  const state = await toExplorerState(filters);
   return new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
 }
 
@@ -112,12 +112,12 @@ function sorted(s: Set<string>): string[] {
 let fpCritical: string, fpHigh: string, fpMedium: string, fpCost: string;
 
 beforeEach(async () => {
-  resetDb();
-  // clearRules(), not `saveRules([...loadRules(), ...])`: this file's beforeEach re-inserts the
-  // same fixed rule ids (RULE_A/B/C) on every test, and resetDb() deliberately leaves the `rules`
+  await resetDb();
+  // await clearRules(), not `await saveRules([...loadRules(), ...])`: this file's beforeEach re-inserts the
+  // same fixed rule ids (RULE_A/B/C) on every test, and await resetDb() deliberately leaves the `rules`
   // table alone (see tests/helpers/db.ts) — appending would collide on the 2nd test in this file.
-  clearRules();
-  saveRules([
+  await clearRules();
+  await saveRules([
     testRule(RULE_A, 'security', ['baseline']),
     testRule(RULE_B, 'security', ['cost-hygiene']),
     testRule(RULE_C, 'cost', ['cost-hygiene']),
@@ -146,7 +146,7 @@ beforeEach(async () => {
   });
 
   // Permanently suppress `high` — every agreement test below must therefore never see fpHigh.
-  saveSuppressions([{ id: crypto.randomUUID(), fingerprint: high.fingerprint, resourceId: high.resourceId, reason: 'test', suppressedAt: '2026-01-01T00:00:00.000Z' } satisfies Suppression]);
+  await saveSuppressions([{ id: crypto.randomUUID(), fingerprint: high.fingerprint, resourceId: high.resourceId, reason: 'test', suppressedAt: '2026-01-01T00:00:00.000Z' } satisfies Suppression]);
 });
 
 function widgetFilters(overrides: Partial<WidgetFilters> = {}): WidgetFilters {
@@ -296,7 +296,7 @@ describe('widget click-throughs and multi-category dashboard filters (RB-QA-020,
     // the same shared parser scans/page.tsx uses, feed it into matchesExplorerFilters, and check
     // it lands on the exact same fingerprint set the dashboard widget counted.
     const parsedCategories = parseCategoryParam(params.get('category') ?? undefined);
-    const state = toExplorerState(filters);
+    const state = await toExplorerState(filters);
     state.categories = new Set(parsedCategories);
     const exp = new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
     expect(sorted(dash)).toEqual(sorted(exp));

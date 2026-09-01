@@ -1,11 +1,12 @@
 import { eq, and, inArray, gte, lte, lt, desc } from 'drizzle-orm';
 import { db } from './client';
-import { postureSnapshots as snapshotsTable, findings as findingsTable } from './schema';
+import { postureSnapshots as snapshotsTable, findings as findingsTable } from './tables';
+import { many, run } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { loadScanHistory } from '../scan-history';
-import { getMetaSync as getMeta, setMetaSync as setMeta } from './meta'; // sync SQLite-only until #73 Phase 2
+import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
 import type { Severity } from '../types';
 
@@ -67,30 +68,29 @@ function toDateKey(d: Date): string {
  *  finding in this category (same "only knowable via live findings" limitation as
  *  dashboard-data.ts's `perSubscription`: a subscription that reaches zero findings simply stops
  *  getting a fresh row rather than writing an explicit 100%/0-findings row). */
-export function upsertDailySnapshot(categoryId: string, now: Date = new Date()): void {
-  const category = getCategory(categoryId);
+export async function upsertDailySnapshot(categoryId: string, now: Date = new Date()): Promise<void> {
+  const category = await getCategory(categoryId);
   if (!category) return;
 
-  const enabledRules = loadRules().filter(r => r.enabled && r.category === categoryId);
+  const enabledRules = (await loadRules()).filter(r => r.enabled && r.category === categoryId);
   const stateRules = enabledRules.filter(r => (r.kind ?? 'state') === 'state');
   const stateRuleIds = new Set(stateRules.map(r => r.id));
   const ruleById = new Map(enabledRules.map(r => [r.id, r]));
   const totalRules = stateRules.length;
   const activityRuleCount = enabledRules.length - stateRules.length;
 
-  const activeRows = db.select().from(findingsTable)
-    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active')))
-    .all();
+  const activeRows = await many(db.select().from(findingsTable)
+    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'))));
 
   const suppressedFingerprints = new Set(
-    loadSuppressions().filter(isActiveSuppression).map(s => s.fingerprint),
+    (await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint),
   );
   const visible = activeRows.filter(f => !suppressedFingerprints.has(f.fingerprint));
 
   const date = toDateKey(now);
   const updatedAt = now.toISOString();
 
-  function upsertRow(subscriptionId: string, rows: typeof visible): void {
+  async function upsertRow(subscriptionId: string, rows: typeof visible): Promise<void> {
     const severityCounts = emptySeverityCounts();
     for (const f of rows) {
       const sev = f.severity as Severity;
@@ -110,7 +110,7 @@ export function upsertDailySnapshot(categoryId: string, now: Date = new Date()):
     }
     const posturePct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
 
-    db.insert(snapshotsTable).values({
+    await run(db.insert(snapshotsTable).values({
       category: categoryId,
       subscriptionId,
       date,
@@ -126,45 +126,44 @@ export function upsertDailySnapshot(categoryId: string, now: Date = new Date()):
     }).onConflictDoUpdate({
       target: [snapshotsTable.category, snapshotsTable.subscriptionId, snapshotsTable.date],
       set: { posturePct, passingRules, totalRules, unknownRules, activityRuleCount, formulaVersion: SNAPSHOT_FORMULA_VERSION, activeFindings: rows.length, severityCounts: JSON.stringify(severityCounts), updatedAt },
-    }).run();
+    }));
   }
 
-  upsertRow('', visible);
+  await upsertRow('', visible);
 
   const subIds = new Set(visible.map(f => f.subscriptionId).filter(Boolean));
   for (const subId of subIds) {
-    upsertRow(subId, visible.filter(f => f.subscriptionId === subId));
+    await upsertRow(subId, visible.filter(f => f.subscriptionId === subId));
   }
 
   const cutoff = toDateKey(new Date(now.getTime() - RETENTION_DAYS * 86_400_000));
-  db.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)).run();
+  await run(db.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)));
 }
 
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row — the only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
  *  subscription's own trend history instead. */
-export function getSnapshots(opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): DailySnapshot[] {
+export async function getSnapshots(opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
   const conditions = [eq(snapshotsTable.subscriptionId, opts.subscriptionId ?? '')];
   if (opts.categories && opts.categories.length > 0) conditions.push(inArray(snapshotsTable.category, opts.categories));
   if (opts.sinceDate) conditions.push(gte(snapshotsTable.date, opts.sinceDate));
 
-  const rows = db.select().from(snapshotsTable).where(and(...conditions)).orderBy(snapshotsTable.date).all();
+  const rows = await many(db.select().from(snapshotsTable).where(and(...conditions)).orderBy(snapshotsTable.date));
 
   return rows.map(rowToSnapshot);
 }
 
 /** Latest row per category on or before `onOrBefore` — used as the delta baseline. Defaults to
  *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline. */
-export function getBaselineSnapshots(categories: string[], onOrBefore: string, subscriptionId?: string): DailySnapshot[] {
+export async function getBaselineSnapshots(categories: string[], onOrBefore: string, subscriptionId?: string): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
-  const rows = db.select().from(snapshotsTable)
+  const rows = await many(db.select().from(snapshotsTable)
     .where(and(
       inArray(snapshotsTable.category, categories),
       eq(snapshotsTable.subscriptionId, subscriptionId ?? ''),
       lte(snapshotsTable.date, onOrBefore),
     ))
-    .orderBy(desc(snapshotsTable.date))
-    .all();
+    .orderBy(desc(snapshotsTable.date)));
 
   const seen = new Set<string>();
   const out: DailySnapshot[] = [];
@@ -181,12 +180,12 @@ export function getBaselineSnapshots(categories: string[], onOrBefore: string, s
 /** Approximates historical daily snapshots from the scan-blob history (last scan of each day
  *  wins) so trend charts aren't empty on upgrade. Then writes an accurate "today" row for every
  *  category from the live findings table, which supersedes the blob-derived approximation. */
-export function backfillSnapshots(): void {
-  if (getMeta(BACKFILL_MARKER)) return;
+export async function backfillSnapshots(): Promise<void> {
+  if (await getMeta(BACKFILL_MARKER)) return;
 
-  const categories = listCategories();
+  const categories = await listCategories();
   for (const category of categories) {
-    const history = loadScanHistory(category.id); // newest-first
+    const history = await loadScanHistory(category.id); // newest-first
     if (history.length === 0) continue;
 
     const byDay = new Map<string, (typeof history)[number]>();
@@ -205,7 +204,7 @@ export function backfillSnapshots(): void {
         const sev = f.severity as Severity;
         if (sev in severityCounts) severityCounts[sev]++;
       }
-      db.insert(snapshotsTable).values({
+      await run(db.insert(snapshotsTable).values({
         category: category.id,
         subscriptionId: '',
         date: day,
@@ -219,15 +218,15 @@ export function backfillSnapshots(): void {
         activeFindings: scan.findings.length,
         severityCounts: JSON.stringify(severityCounts),
         updatedAt: scan.finishedAt,
-      }).onConflictDoNothing().run();
+      }).onConflictDoNothing());
     }
   }
 
   // Write an accurate "today" row for every category from live state — supersedes any
   // blob-derived approximation for today specifically.
   for (const category of categories) {
-    upsertDailySnapshot(category.id);
+    await upsertDailySnapshot(category.id);
   }
 
-  setMeta(BACKFILL_MARKER, '1');
+  await setMeta(BACKFILL_MARKER, '1');
 }

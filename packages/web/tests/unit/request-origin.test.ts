@@ -11,7 +11,7 @@ import { correctedRequestUrl } from '../../lib/request-origin';
 const h = (entries: Record<string, string>) => new Headers(entries);
 
 describe('correctedRequestUrl', () => {
-  it('rewrites a 0.0.0.0 origin from x-forwarded-host, keeping path and query', () => {
+  it('rewrites a 0.0.0.0 origin from x-forwarded-host, keeping path and query', async () => {
     expect(
       correctedRequestUrl('http://0.0.0.0:3000/api/auth/signin?callbackUrl=%2Fscans', h({
         'x-forwarded-host': 'localhost:3000',
@@ -19,13 +19,13 @@ describe('correctedRequestUrl', () => {
     ).toBe('http://localhost:3000/api/auth/signin?callbackUrl=%2Fscans');
   });
 
-  it('rewrites the IPv6 unspecified address the same way', () => {
+  it('rewrites the IPv6 unspecified address the same way', async () => {
     expect(
       correctedRequestUrl('http://[::]:3000/signin', h({ 'x-forwarded-host': 'localhost:3000' })),
     ).toBe('http://localhost:3000/signin');
   });
 
-  it('honours x-forwarded-proto https and a portless public host', () => {
+  it('honours x-forwarded-proto https and a portless public host', async () => {
     expect(
       correctedRequestUrl('http://0.0.0.0:3000/api/auth/callback/microsoft-entra-id', h({
         'x-forwarded-host': 'rulebeat.example.com',
@@ -34,7 +34,7 @@ describe('correctedRequestUrl', () => {
     ).toBe('https://rulebeat.example.com/api/auth/callback/microsoft-entra-id');
   });
 
-  it('takes the first hop of a comma-separated forwarded chain', () => {
+  it('takes the first hop of a comma-separated forwarded chain', async () => {
     expect(
       correctedRequestUrl('http://0.0.0.0:3000/x', h({
         'x-forwarded-host': 'public.example.com, internal-lb:8080',
@@ -42,35 +42,35 @@ describe('correctedRequestUrl', () => {
     ).toBe('http://public.example.com/x');
   });
 
-  it('falls back to the host header when nothing forwarded', () => {
+  it('falls back to the host header when nothing forwarded', async () => {
     expect(
       correctedRequestUrl('http://0.0.0.0:3000/x', h({ host: 'localhost:3000' })),
     ).toBe('http://localhost:3000/x');
   });
 
-  it('leaves localhost alone: it is a browsable origin, not a bind address', () => {
+  it('leaves localhost alone: it is a browsable origin, not a bind address', async () => {
     expect(
       correctedRequestUrl('http://localhost:3000/x', h({ 'x-forwarded-host': 'other.example' })),
     ).toBeNull();
   });
 
-  it('leaves a private IP alone for the same reason', () => {
+  it('leaves a private IP alone for the same reason', async () => {
     expect(
       correctedRequestUrl('http://10.0.0.4:3000/x', h({ 'x-forwarded-host': 'other.example' })),
     ).toBeNull();
   });
 
-  it('refuses a forwarded host that is itself unspecified', () => {
+  it('refuses a forwarded host that is itself unspecified', async () => {
     expect(
       correctedRequestUrl('http://0.0.0.0:3000/x', h({ 'x-forwarded-host': '0.0.0.0:3000' })),
     ).toBeNull();
   });
 
-  it('returns null when no header knows the real host', () => {
+  it('returns null when no header knows the real host', async () => {
     expect(correctedRequestUrl('http://0.0.0.0:3000/x', h({}))).toBeNull();
   });
 
-  it('returns null for junk it cannot parse', () => {
+  it('returns null for junk it cannot parse', async () => {
     expect(correctedRequestUrl('not a url', h({ 'x-forwarded-host': 'localhost' }))).toBeNull();
     expect(correctedRequestUrl('http://0.0.0.0:3000/x', h({ 'x-forwarded-host': 'not a host' }))).toBeNull();
   });

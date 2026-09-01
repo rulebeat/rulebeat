@@ -27,14 +27,14 @@ export async function GET() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(getLogAnalyticsWorkspaceStatus());
+  return NextResponse.json(await getLogAnalyticsWorkspaceStatus());
 }
 
 export async function PUT(req: Request) {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const status = getLogAnalyticsWorkspaceStatus();
+  const status = await getLogAnalyticsWorkspaceStatus();
   if (status.managedByEnv) {
     // Saving would appear to work and then change nothing, since env wins at resolution time.
     return NextResponse.json({
@@ -59,7 +59,7 @@ export async function PUT(req: Request) {
   // worst state to leave an install in, same reasoning as the Azure connection route.
   let verification;
   try {
-    verification = await verifyLogAnalyticsWorkspace(getAzureCredential(), workspaceId);
+    verification = await verifyLogAnalyticsWorkspace(await getAzureCredential(), workspaceId);
   } catch (err) {
     if (err instanceof AzureNotConfiguredError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
@@ -71,14 +71,14 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const saved = saveLogAnalyticsWorkspace({
+    const saved = await saveLogAnalyticsWorkspace({
       name: body.name,
       workspaceId,
       createdBy: actor.email,
     });
-    markLogAnalyticsWorkspaceVerified(saved.id);
+    await markLogAnalyticsWorkspaceVerified(saved.id);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'log_analytics_workspace.save',
       entityType: 'log_analytics_workspace',
@@ -87,7 +87,7 @@ export async function PUT(req: Request) {
       details: { fields: ['workspaceId'] },
     });
 
-    return NextResponse.json(getLogAnalyticsWorkspaceStatus());
+    return NextResponse.json(await getLogAnalyticsWorkspaceStatus());
   } catch (err) {
     return serverError('Failed to save the Log Analytics workspace', err);
   }
@@ -97,21 +97,21 @@ export async function DELETE() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const status = getLogAnalyticsWorkspaceStatus();
+  const status = await getLogAnalyticsWorkspaceStatus();
   if (!status.stored) {
     return NextResponse.json({ error: 'There is no stored Log Analytics workspace to remove.' }, { status: 404 });
   }
 
   try {
-    deleteLogAnalyticsWorkspace(status.stored.id);
-    writeAudit({
+    await deleteLogAnalyticsWorkspace(status.stored.id);
+    await writeAudit({
       actor,
       action: 'log_analytics_workspace.delete',
       entityType: 'log_analytics_workspace',
       entityId: status.stored.id,
       summary: `Removed the stored Log Analytics workspace ${status.stored.workspaceId}`,
     });
-    return NextResponse.json(getLogAnalyticsWorkspaceStatus());
+    return NextResponse.json(await getLogAnalyticsWorkspaceStatus());
   } catch (err) {
     return serverError('Failed to remove the Log Analytics workspace', err);
   }

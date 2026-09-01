@@ -27,23 +27,23 @@ export interface SignInIdentity {
  * every admin being removed is `RULEBEAT_INITIAL_ADMIN` + restart, which pre-creates the row so
  * that person's sign-in lands in path 2 above, not here.
  */
-export function provisionUser(identity: SignInIdentity): AppUser | null {
+export async function provisionUser(identity: SignInIdentity): Promise<AppUser | null> {
   const email = identity.email.trim().toLowerCase();
 
-  let user = getUserByOid(identity.oid);
+  let user = await getUserByOid(identity.oid);
 
   if (user) {
-    touchLastSeen(user.id, identity.name);
+    await touchLastSeen(user.id, identity.name);
   } else {
-    const invited = email ? getUserByEmail(email) : null;
+    const invited = email ? await getUserByEmail(email) : null;
     if (invited) {
-      linkOid(invited.id, identity.oid, identity.name);
-      user = getUser(invited.id);
+      await linkOid(invited.id, identity.oid, identity.name);
+      user = await getUser(invited.id);
       if (user) {
         // Distinguishable from the generic auth.sign_in line written below — a pre-created row's
         // first claim is exactly the moment P4-2's binding race can go wrong, so it gets its own
         // notable audit entry rather than blending into every other sign-in.
-        writeAudit({
+        await writeAudit({
           actor: user,
           action: 'user.invite_claimed',
           entityType: 'user',
@@ -65,13 +65,13 @@ export function provisionUser(identity: SignInIdentity): AppUser | null {
 
   if (!user) return null;
 
-  writeSignInAudit(user);
+  await writeSignInAudit(user);
   return user;
 }
 
 /** Records a successful sign-in. Shared by the Entra path above and the local-account path. */
-export function writeSignInAudit(user: Pick<AppUser, 'id' | 'email'>): void {
-  writeAudit({
+export async function writeSignInAudit(user: Pick<AppUser, 'id' | 'email'>): Promise<void> {
+  await writeAudit({
     actor: user,
     action: 'auth.sign_in',
     entityType: 'auth',

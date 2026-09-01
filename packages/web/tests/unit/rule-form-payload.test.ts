@@ -25,7 +25,7 @@ const FIELDS: RuleFormQueryFields = {
 };
 
 describe('deriveDedicatedEditorFields · rule-form.tsx save-gate payload shape (spec 036)', () => {
-  it('resource-graph: keeps the ARG visual/appliesTo/rawKql fields, nulls both dedicated-editor fields', () => {
+  it('resource-graph: keeps the ARG visual/appliesTo/rawKql fields, nulls both dedicated-editor fields', async () => {
     const result = deriveDedicatedEditorFields('resource-graph', FIELDS);
     expect(result.usesDedicatedEditor).toBe(false);
     expect(result.visualQuery).toBe(VISUAL_QUERY);
@@ -35,7 +35,7 @@ describe('deriveDedicatedEditorFields · rule-form.tsx save-gate payload shape (
     expect(result.logsQuery).toBeUndefined();
   });
 
-  it('microsoft-graph: nulls the ARG fields, sends graphQuery, still nulls logsQuery', () => {
+  it('microsoft-graph: nulls the ARG fields, sends graphQuery, still nulls logsQuery', async () => {
     const result = deriveDedicatedEditorFields('microsoft-graph', FIELDS);
     expect(result.usesDedicatedEditor).toBe(true);
     expect(result.visualQuery).toBeUndefined();
@@ -45,7 +45,7 @@ describe('deriveDedicatedEditorFields · rule-form.tsx save-gate payload shape (
     expect(result.logsQuery).toBeUndefined();
   });
 
-  it('log-analytics: nulls the ARG fields, sends logsQuery, still nulls graphQuery — the case the pre-fix code missed', () => {
+  it('log-analytics: nulls the ARG fields, sends logsQuery, still nulls graphQuery — the case the pre-fix code missed', async () => {
     const result = deriveDedicatedEditorFields('log-analytics', FIELDS);
     expect(result.usesDedicatedEditor).toBe(true);
     expect(result.visualQuery).toBeUndefined();
@@ -55,7 +55,7 @@ describe('deriveDedicatedEditorFields · rule-form.tsx save-gate payload shape (
     expect(result.logsQuery).toEqual(FIELDS.logsQuery);
   });
 
-  it('an empty (whitespace-only) rawKql collapses to undefined, not a blank string, for a resource-graph rule', () => {
+  it('an empty (whitespace-only) rawKql collapses to undefined, not a blank string, for a resource-graph rule', async () => {
     const result = deriveDedicatedEditorFields('resource-graph', { ...FIELDS, rawKql: '' });
     expect(result.rawKql).toBeUndefined();
   });

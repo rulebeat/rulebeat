@@ -33,8 +33,8 @@ import { fakeTenantContext } from '../helpers/fake-azure';
 const SIMULATED_DAY_1 = new Date('2026-05-01T09:00:00.000Z');
 const SIMULATED_DAY_2 = new Date('2026-05-02T09:00:00.000Z');
 
-function identityCategory() {
-  const category = getCategory('identity');
+async function identityCategory() {
+  const category = await getCategory('identity');
   expect(category, "expected the seeded 'identity' category to exist").toBeTruthy();
   return category!;
 }
@@ -53,14 +53,14 @@ function expiringAppFixture(days: number, keyId: string) {
   };
 }
 
-beforeEach(() => {
-  resetDb();
+beforeEach(async () => {
+  await resetDb();
 });
 
-describe('runCategoryScan() respects an injected now', () => {
+describe('await runCategoryScan() respects an injected now', () => {
   it('stamps the scan summary startedAt/finishedAt from opts.now, not the real clock', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k1'));
-    const { summary } = await runCategoryScan(identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    const { summary } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
 
     expect(summary.startedAt).toBe(SIMULATED_DAY_1.toISOString());
     expect(summary.finishedAt).toBe(SIMULATED_DAY_1.toISOString());
@@ -70,7 +70,7 @@ describe('runCategoryScan() respects an injected now', () => {
   it('defaults to the real clock when no now is passed', async () => {
     const before = Date.now();
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k2'));
-    const { summary } = await runCategoryScan(identityCategory(), { ctx });
+    const { summary } = await runCategoryScan(await identityCategory(), { ctx });
     const after = Date.now();
 
     const started = new Date(summary.startedAt).getTime();
@@ -80,7 +80,7 @@ describe('runCategoryScan() respects an injected now', () => {
 
   it('stamps finding_events.occurred_at from opts.now — the correctness fix', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k3'));
-    const { newFindings } = await runCategoryScan(identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
 
     expect(newFindings).toHaveLength(1);
     const event = db.select().from(findingEvents).where(eq(findingEvents.fingerprint, newFindings[0]!.fingerprint)).get();
@@ -92,12 +92,12 @@ describe('runCategoryScan() respects an injected now', () => {
 
   it('stamps a resolved event from the resolving scan\'s own now, not the creating scan\'s', async () => {
     const createCtx = fakeTenantContext(expiringAppFixture(10, 'k4'));
-    const { newFindings } = await runCategoryScan(identityCategory(), { now: SIMULATED_DAY_1, ctx: createCtx });
+    const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx: createCtx });
     const fingerprint = newFindings[0]!.fingerprint;
 
     // Day 2: the same app, no more expiring credentials — the finding resolves.
     const resolveCtx = fakeTenantContext({ graphRows: [] });
-    await runCategoryScan(identityCategory(), { now: SIMULATED_DAY_2, ctx: resolveCtx });
+    await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_2, ctx: resolveCtx });
 
     const event = db.select().from(findingEvents)
       .where(eq(findingEvents.fingerprint, fingerprint)).all()
@@ -109,15 +109,15 @@ describe('runCategoryScan() respects an injected now', () => {
 
   it('passes opts.now through to the daily snapshot it writes', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k5'));
-    await runCategoryScan(identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
 
-    const snapshots = getSnapshots({ categories: ['identity'] });
+    const snapshots = await getSnapshots({ categories: ['identity'] });
     const dateKey = SIMULATED_DAY_1.toISOString().slice(0, 10);
     expect(snapshots.some(s => s.date === dateKey)).toBe(true);
   });
 });
 
-describe('executeTarget() threads opts.now and opts.ctx end to end', () => {
+describe('await executeTarget() threads opts.now and opts.ctx end to end', () => {
   it('stamps the schedule_runs row from opts.now, not the real clock', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k6'));
     const run = await executeTarget(

@@ -42,9 +42,9 @@ function postRequest(body: Record<string, unknown>): Request {
 }
 
 async function signInAs(email: string): Promise<string> {
-  const result = createUser({ email, role: 'editor' });
+  const result = await createUser({ email, role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
   return result.user.id;
 }
@@ -53,7 +53,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
   let userId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -145,7 +145,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
   it('writes a query.run audit entry with a row-count summary on the good path', async () => {
     fakeCtx = fakeTenantContext({ rows: [{ id: 'r1' }, { id: 'r2' }] });
     await POST(postRequest({ kql: 'resources' }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0].action).toBe('query.run');
     expect(entries[0].entityType).toBe('query');
@@ -157,20 +157,20 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     const rows = Array.from({ length: 512 }, (_, i) => ({ id: `r${i}` }));
     fakeCtx = fakeTenantContext({ rows });
     await POST(postRequest({ kql: 'resources' }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].summary).toBe('Ran a resource-graph query (500 of 512 rows shown)');
   });
 
   it('names the truncation point in the audit summary when Azure truncated the result', async () => {
     fakeCtx = fakeTenantContext({ failWith: new ResourceGraphTruncatedError(999) });
     await POST(postRequest({ kql: 'resources' }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].summary).toBe('Ran a resource-graph query (truncated after 999 rows)');
   });
 
   it("touches a saved query's lastRunAt and links the audit entry to it when savedQueryId is passed", async () => {
     const userId = await signInAs('owner@example.com');
-    const saved = createSavedQuery({
+    const saved = await createSavedQuery({
       name: 'My query', queryBackend: 'resource-graph', rawKql: 'resources', visibility: 'private',
       ownerId: userId, ownerEmail: 'owner@example.com',
     });
@@ -179,8 +179,8 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     fakeCtx = fakeTenantContext({ rows: [] });
     await POST(postRequest({ kql: 'resources', savedQueryId: saved.id }));
 
-    expect(getSavedQuery(saved.id, userId)?.lastRunAt).toBeTruthy();
-    const entries = listAllAuditEntries();
+    expect((await getSavedQuery(saved.id, userId))?.lastRunAt).toBeTruthy();
+    const entries = await listAllAuditEntries();
     expect(entries[0].entityId).toBe(saved.id);
   });
 
@@ -188,7 +188,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ rows: [{ id: 'r1' }, { id: 'r2' }] });
       await POST(postRequest({ kql: 'resources' }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].queryBackend).toBe('resource-graph');
       expect(runs[0].rawKql).toBe('resources');
@@ -200,25 +200,25 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     it('records a truncated run as capped:false, truncated:true', async () => {
       fakeCtx = fakeTenantContext({ failWith: new ResourceGraphTruncatedError(4321) });
       await POST(postRequest({ kql: 'resources' }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].truncated).toBe(true);
       expect(runs[0].count).toBe(4321);
     });
 
     it('links savedQueryId onto the recorded run when one was passed', async () => {
-      const saved = createSavedQuery({
+      const saved = await createSavedQuery({
         name: 'My query', queryBackend: 'resource-graph', rawKql: 'resources', visibility: 'private',
         ownerId: userId, ownerEmail: 'editor@example.com',
       });
       fakeCtx = fakeTenantContext({ rows: [] });
       await POST(postRequest({ kql: 'resources', savedQueryId: saved.id }));
-      expect(listQueryRuns(userId)[0].savedQueryId).toBe(saved.id);
+      expect((await listQueryRuns(userId))[0].savedQueryId).toBe(saved.id);
     });
 
     it('does not record anything on a 400 (no kql)', async () => {
       await POST(postRequest({}));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
 
     it('does not record anything when the query itself fails (502)', async () => {
@@ -226,7 +226,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
       err.statusCode = 500;
       fakeCtx = fakeTenantContext({ failWith: err });
       await POST(postRequest({ kql: 'resources' }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
 
     it('caps history at 20 runs per owner, newest first', async () => {
@@ -234,7 +234,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
       for (let i = 0; i < 23; i++) {
         await POST(postRequest({ kql: `resources | where name == "q${i}"` }));
       }
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(20);
       expect(runs[0].rawKql).toBe('resources | where name == "q22"');
     });
@@ -249,7 +249,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
 
     it('blocks the run with a read-only 403, never reaching Azure', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ rows: [{ id: 'r1' }] });
 
@@ -260,12 +260,12 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
 
     it('does not record run history either', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ rows: [{ id: 'r1' }] });
 
       await POST(postRequest({ kql: 'resources' }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
   });
 });

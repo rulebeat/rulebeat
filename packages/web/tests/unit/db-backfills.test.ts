@@ -79,9 +79,9 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
 
 describe('TS-25 · rebuilding trend history on upgrade', () => {
   it('25-05 · approximating snapshots keeps the history already recorded', async () => {
-    const before = snapshotsRepo.getSnapshots({ categories: ['cost'] }).length;
-    snapshotsRepo.backfillSnapshots();
-    const after = snapshotsRepo.getSnapshots({ categories: ['cost'] });
+    const before = (await snapshotsRepo.getSnapshots({ categories: ['cost'] })).length;
+    await snapshotsRepo.backfillSnapshots();
+    const after = await snapshotsRepo.getSnapshots({ categories: ['cost'] });
 
     expect(after.length, 'existing trend history was dropped').toBeGreaterThanOrEqual(before);
     // The fixture's own snapshot row must come through untouched — it is real recorded history, not
@@ -93,7 +93,7 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
     // never silently upgraded to look like an honest row it never was.
     expect(original!.formulaVersion, 'a pre-existing row must not be mistaken for an honest one').toBe(1);
 
-    // backfillSnapshots() also writes a fresh "today" row per category via upsertDailySnapshot —
+    // await backfillSnapshots() also writes a fresh "today" row per category via upsertDailySnapshot —
     // that one IS computed under the current formula and must say so.
     const today = new Date().toISOString().slice(0, 10);
     const freshRow = after.find(s => s.date === today);
@@ -102,9 +102,9 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
   });
 
   it('25-11 · running twice does not double up the trend', async () => {
-    snapshotsRepo.backfillSnapshots();
-    const first = JSON.stringify(snapshotsRepo.getSnapshots({ categories: ['cost'] }));
-    snapshotsRepo.backfillSnapshots();
-    expect(JSON.stringify(snapshotsRepo.getSnapshots({ categories: ['cost'] }))).toBe(first);
+    await snapshotsRepo.backfillSnapshots();
+    const first = JSON.stringify(await snapshotsRepo.getSnapshots({ categories: ['cost'] }));
+    await snapshotsRepo.backfillSnapshots();
+    expect(JSON.stringify(await snapshotsRepo.getSnapshots({ categories: ['cost'] }))).toBe(first);
   });
 });

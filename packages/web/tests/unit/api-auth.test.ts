@@ -11,14 +11,14 @@ vi.mock('@/auth', () => ({
 
 const { requireRole } = await import('@/lib/api-auth');
 
-function makeUser(email: string): AppUser {
-  const result = createUser({ email, role: 'admin' });
+async function makeUser(email: string): Promise<AppUser> {
+  const result = await createUser({ email, role: 'admin' });
   if ('error' in result) throw new Error(result.error);
   return result.user;
 }
 
-beforeEach(() => {
-  resetDb();
+beforeEach(async () => {
+  await resetDb();
   mockAuth.mockReset();
 });
 
@@ -26,8 +26,8 @@ beforeEach(() => {
 // (app/(app)/layout.tsx), never the API — a still-temporary password kept working forever there.
 describe('requireRole and a forced password change', () => {
   it('blocks a normal action while mustChangePassword is set', async () => {
-    const user = makeUser('owner@example.com');
-    setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
+    const user = await makeUser('owner@example.com');
+    await setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
     mockAuth.mockResolvedValue({ user: { uid: user.id } });
 
     const result = await requireRole('rules:write');
@@ -36,8 +36,8 @@ describe('requireRole and a forced password change', () => {
   });
 
   it('still allows account:self so the password can actually be changed', async () => {
-    const user = makeUser('owner2@example.com');
-    setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
+    const user = await makeUser('owner2@example.com');
+    await setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
     mockAuth.mockResolvedValue({ user: { uid: user.id } });
 
     const result = await requireRole('account:self');
@@ -45,8 +45,8 @@ describe('requireRole and a forced password change', () => {
   });
 
   it('allows normal actions again once the flag is cleared', async () => {
-    const user = makeUser('owner3@example.com');
-    setPassword(user.id, 'irrelevant-hash', { mustChangePassword: false });
+    const user = await makeUser('owner3@example.com');
+    await setPassword(user.id, 'irrelevant-hash', { mustChangePassword: false });
     mockAuth.mockResolvedValue({ user: { uid: user.id } });
 
     const result = await requireRole('rules:write');

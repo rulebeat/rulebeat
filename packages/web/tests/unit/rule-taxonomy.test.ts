@@ -10,19 +10,19 @@ import { describe, expect, it } from 'vitest';
 import { canDuplicateRule } from '@/lib/rule-taxonomy';
 
 describe('canDuplicateRule (spec 029)', () => {
-  it('allows duplicating a resource-graph rule', () => {
+  it('allows duplicating a resource-graph rule', async () => {
     expect(canDuplicateRule({ queryBackend: 'resource-graph' })).toBe(true);
   });
 
-  it('defaults to true when queryBackend is undefined (legacy rows predate the field)', () => {
+  it('defaults to true when queryBackend is undefined (legacy rows predate the field)', async () => {
     expect(canDuplicateRule({ queryBackend: undefined })).toBe(true);
   });
 
-  it('allows duplicating a microsoft-graph rule (spec 032)', () => {
+  it('allows duplicating a microsoft-graph rule (spec 032)', async () => {
     expect(canDuplicateRule({ queryBackend: 'microsoft-graph' })).toBe(true);
   });
 
-  it('allows duplicating a log-analytics rule (spec 036)', () => {
+  it('allows duplicating a log-analytics rule (spec 036)', async () => {
     expect(canDuplicateRule({ queryBackend: 'log-analytics' })).toBe(true);
   });
 });

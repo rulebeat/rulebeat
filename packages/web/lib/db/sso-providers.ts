@@ -1,6 +1,7 @@
 import { db } from './client';
-import { ssoProviders } from './schema';
+import { ssoProviders } from './tables';
 import { eq } from 'drizzle-orm';
+import { one, run, inTransaction } from './exec';
 import { decryptSecret, encryptSecret } from '@/lib/secret-box';
 
 /**
@@ -57,8 +58,8 @@ function rowToSummary(row: Row): SsoProviderSummary {
 }
 
 /** The single stored provider, if any — today's model is "at most one SSO provider configured". */
-export function getStoredSsoProviderSummary(): SsoProviderSummary | null {
-  const row = db.select().from(ssoProviders).limit(1).get();
+export async function getStoredSsoProviderSummary(): Promise<SsoProviderSummary | null> {
+  const row = await one(db.select().from(ssoProviders).limit(1));
   return row ? rowToSummary(row) : null;
 }
 
@@ -69,8 +70,8 @@ export function getStoredSsoProviderSummary(): SsoProviderSummary | null {
  * `getActiveAzureCredential` — the caller falls through to "not configured" rather than handing
  * back ciphertext that would fail every sign-in with a baffling error.
  */
-export function getStoredSsoProvider(): StoredSsoProvider | null {
-  const row = db.select().from(ssoProviders).limit(1).get();
+export async function getStoredSsoProvider(): Promise<StoredSsoProvider | null> {
+  const row = await one(db.select().from(ssoProviders).limit(1));
   if (!row) return null;
 
   const clientSecret = decryptSecret(row.clientSecret);
@@ -93,16 +94,16 @@ export interface SaveSsoProviderInput {
  * client-credentials check can't see the redirect URI, which is the most common Entra setup
  * failure, so a green tick here would be no guarantee the login button actually works.
  */
-export function saveSsoProvider(input: SaveSsoProviderInput): SsoProviderSummary {
+export async function saveSsoProvider(input: SaveSsoProviderInput): Promise<SsoProviderSummary> {
   const now = new Date().toISOString();
   const tenantId = input.tenantId.trim();
   const clientId = input.clientId.trim();
 
-  return db.transaction(tx => {
-    const existing = tx.select().from(ssoProviders).limit(1).get();
+  return inTransaction(async (tx) => {
+    const existing = await one(tx.select().from(ssoProviders).limit(1));
 
     if (existing) {
-      tx.update(ssoProviders).set({
+      await run(tx.update(ssoProviders).set({
         provider: input.provider,
         tenantId,
         clientId,
@@ -111,13 +112,14 @@ export function saveSsoProvider(input: SaveSsoProviderInput): SsoProviderSummary
         lastVerifiedAt: null,
         updatedAt: now,
         ...(input.createdBy ? { createdBy: input.createdBy } : {}),
-      }).where(eq(ssoProviders.id, existing.id)).run();
+      }).where(eq(ssoProviders.id, existing.id)));
 
-      return rowToSummary(tx.select().from(ssoProviders).where(eq(ssoProviders.id, existing.id)).get()!);
+      const updated = await one(tx.select().from(ssoProviders).where(eq(ssoProviders.id, existing.id)));
+      return rowToSummary(updated!);
     }
 
     const id = globalThis.crypto.randomUUID();
-    tx.insert(ssoProviders).values({
+    await run(tx.insert(ssoProviders).values({
       id,
       provider: input.provider,
       tenantId,
@@ -128,16 +130,17 @@ export function saveSsoProvider(input: SaveSsoProviderInput): SsoProviderSummary
       createdAt: now,
       updatedAt: now,
       createdBy: input.createdBy ?? null,
-    }).run();
+    }));
 
-    return rowToSummary(tx.select().from(ssoProviders).where(eq(ssoProviders.id, id)).get()!);
+    const created = await one(tx.select().from(ssoProviders).where(eq(ssoProviders.id, id)));
+    return rowToSummary(created!);
   });
 }
 
-export function deleteSsoProvider(id: string): boolean {
-  const existing = db.select().from(ssoProviders).where(eq(ssoProviders.id, id)).get();
+export async function deleteSsoProvider(id: string): Promise<boolean> {
+  const existing = await one(db.select().from(ssoProviders).where(eq(ssoProviders.id, id)));
   if (!existing) return false;
-  db.delete(ssoProviders).where(eq(ssoProviders.id, id)).run();
+  await run(db.delete(ssoProviders).where(eq(ssoProviders.id, id)));
   return true;
 }
 
@@ -146,9 +149,9 @@ export function deleteSsoProvider(id: string): boolean {
  * `signIn` callback — a real OAuth round trip is a strictly stronger proof than any probe this
  * product could run ahead of time.
  */
-export function markSsoProviderVerified(id: string): void {
-  db.update(ssoProviders).set({
+export async function markSsoProviderVerified(id: string): Promise<void> {
+  await run(db.update(ssoProviders).set({
     isActive: true,
     lastVerifiedAt: new Date().toISOString(),
-  }).where(eq(ssoProviders.id, id)).run();
+  }).where(eq(ssoProviders.id, id)));
 }

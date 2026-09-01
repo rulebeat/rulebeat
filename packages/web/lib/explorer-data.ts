@@ -25,9 +25,9 @@ export interface ExplorerData {
 // ---- Builder ----
 
 export async function buildExplorerData(): Promise<ExplorerData> {
-  const rules = loadRules();
+  const rules = await loadRules();
   const policyMap = new Map(rules.map(r => [r.id, r]));
-  const categories = listCategories();
+  const categories = await listCategories();
 
   const all = await listFindings();
 

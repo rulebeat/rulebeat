@@ -11,15 +11,15 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const all = loadSuppressions();
+  const all = await loadSuppressions();
   const target = all.find(s => s.id === id);
   const filtered = all.filter(s => s.id !== id);
   if (filtered.length === all.length) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-  saveSuppressions(filtered);
+  await saveSuppressions(filtered);
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'suppression.delete',
     entityType: 'suppression',

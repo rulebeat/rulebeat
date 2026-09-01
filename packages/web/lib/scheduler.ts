@@ -19,11 +19,11 @@ function schedulerGlobals(): SchedulerGlobals {
   return globalThis as typeof globalThis & SchedulerGlobals;
 }
 
-export function startScheduler(): void {
+export async function startScheduler(): Promise<void> {
   if (process.env.RULEBEAT_DISABLE_SCHEDULER === '1') return;
   // Demo mode is read-only (see lib/demo.ts) — a ticking scheduler would mutate the curated
   // synthetic estate every visitor is meant to see the same version of.
-  if (isDemoMode()) return;
+  if (await isDemoMode()) return;
   const g = schedulerGlobals();
   if (g.__rulebeatSchedulerStarted) return;
   g.__rulebeatSchedulerStarted = true;
@@ -57,7 +57,7 @@ async function tickOnce(): Promise<void> {
   busy = true;
   try {
     const now = new Date().toISOString();
-    const due = listDueSchedules(now);
+    const due = await listDueSchedules(now);
     for (const schedule of due) {
       try {
         await runOnce(schedule);
@@ -103,5 +103,5 @@ async function runOnce(schedule: Schedule): Promise<void> {
     { triggeredBy: 'schedule', scheduleId: schedule.id },
   );
   const nextRunAt = computeNextRun(schedule, new Date())?.toISOString() ?? null;
-  setNextRun(schedule.id, nextRunAt, startedAtIso);
+  await setNextRun(schedule.id, nextRunAt, startedAtIso);
 }

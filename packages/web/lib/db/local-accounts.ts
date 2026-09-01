@@ -1,6 +1,7 @@
 import { db } from './client';
-import { localAccounts, users } from './schema';
+import { localAccounts, users } from './tables';
 import { eq, count } from 'drizzle-orm';
+import { many, one, run } from './exec';
 
 /**
  * Local username/password credentials — the break-glass path that exists so RuleBeat can never
@@ -35,14 +36,15 @@ function rowToAccount(row: Row): LocalAccount {
   };
 }
 
-export function getLocalAccount(userId: string): LocalAccount | null {
-  const row = db.select().from(localAccounts).where(eq(localAccounts.userId, userId)).get();
+export async function getLocalAccount(userId: string): Promise<LocalAccount | null> {
+  const row = await one(db.select().from(localAccounts).where(eq(localAccounts.userId, userId)));
   return row ? rowToAccount(row) : null;
 }
 
 /** Which users currently have a local password — for the Users table's status badge. */
-export function listUserIdsWithPassword(): string[] {
-  return db.select({ userId: localAccounts.userId }).from(localAccounts).all().map(r => r.userId);
+export async function listUserIdsWithPassword(): Promise<string[]> {
+  const rows = await many(db.select({ userId: localAccounts.userId }).from(localAccounts));
+  return rows.map(r => r.userId);
 }
 
 /** True while a lockout from too many failed attempts is still in effect. */
@@ -55,22 +57,22 @@ export function isLockedOut(account: Pick<LocalAccount, 'lockedUntil'>): boolean
  * a fresh password is a fresh start, and an admin resetting a locked-out user's password is the
  * normal way that lockout gets lifted early.
  */
-export function setPassword(userId: string, passwordHash: string, opts: { mustChangePassword: boolean }): void {
+export async function setPassword(userId: string, passwordHash: string, opts: { mustChangePassword: boolean }): Promise<void> {
   const now = new Date().toISOString();
-  const existing = db.select().from(localAccounts).where(eq(localAccounts.userId, userId)).get();
+  const existing = await one(db.select().from(localAccounts).where(eq(localAccounts.userId, userId)));
 
   if (existing) {
-    db.update(localAccounts).set({
+    await run(db.update(localAccounts).set({
       passwordHash,
       mustChangePassword: opts.mustChangePassword,
       failedAttempts: 0,
       lockedUntil: null,
       passwordUpdatedAt: now,
-    }).where(eq(localAccounts.userId, userId)).run();
+    }).where(eq(localAccounts.userId, userId)));
     return;
   }
 
-  db.insert(localAccounts).values({
+  await run(db.insert(localAccounts).values({
     userId,
     passwordHash,
     mustChangePassword: opts.mustChangePassword,
@@ -78,12 +80,12 @@ export function setPassword(userId: string, passwordHash: string, opts: { mustCh
     lockedUntil: null,
     passwordUpdatedAt: now,
     createdAt: now,
-  }).run();
+  }));
 }
 
 /** Removes a user's local password entirely — they can only reach RuleBeat through SSO. */
-export function clearPassword(userId: string): void {
-  db.delete(localAccounts).where(eq(localAccounts.userId, userId)).run();
+export async function clearPassword(userId: string): Promise<void> {
+  await run(db.delete(localAccounts).where(eq(localAccounts.userId, userId)));
 }
 
 /**
@@ -91,8 +93,8 @@ export function clearPassword(userId: string): void {
  * No-op if the user has no local account at all — the caller (`authorize()`) still burns a dummy
  * password verification in that case, so timing doesn't reveal which emails exist.
  */
-export function recordFailedAttempt(userId: string): void {
-  const account = getLocalAccount(userId);
+export async function recordFailedAttempt(userId: string): Promise<void> {
+  const account = await getLocalAccount(userId);
   if (!account) return;
 
   const failedAttempts = account.failedAttempts + 1;
@@ -100,24 +102,26 @@ export function recordFailedAttempt(userId: string): void {
     ? new Date(Date.now() + LOCKOUT_MS).toISOString()
     : account.lockedUntil;
 
-  db.update(localAccounts).set({ failedAttempts, lockedUntil })
-    .where(eq(localAccounts.userId, userId)).run();
+  await run(db.update(localAccounts).set({ failedAttempts, lockedUntil })
+    .where(eq(localAccounts.userId, userId)));
 }
 
 /** Resets the failure counter and any lockout — called after a successful sign-in. */
-export function clearFailedAttempts(userId: string): void {
-  db.update(localAccounts).set({ failedAttempts: 0, lockedUntil: null })
-    .where(eq(localAccounts.userId, userId)).run();
+export async function clearFailedAttempts(userId: string): Promise<void> {
+  await run(db.update(localAccounts).set({ failedAttempts: 0, lockedUntil: null })
+    .where(eq(localAccounts.userId, userId)));
 }
 
 /**
  * How many admins currently have a local password set — the number that must stay above zero
  * before local sign-in can be restricted, or an install could lock itself out of its own tool.
  */
-export function countAdminsWithPassword(): number {
-  return db.select({ n: count() })
-    .from(localAccounts)
-    .innerJoin(users, eq(users.id, localAccounts.userId))
-    .where(eq(users.role, 'admin'))
-    .get()?.n ?? 0;
+export async function countAdminsWithPassword(): Promise<number> {
+  const row = await one(
+    db.select({ n: count() })
+      .from(localAccounts)
+      .innerJoin(users, eq(users.id, localAccounts.userId))
+      .where(eq(users.role, 'admin')),
+  );
+  return row?.n ?? 0;
 }

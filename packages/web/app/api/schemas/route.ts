@@ -12,7 +12,7 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  const cached = listCachedSchemas();
+  const cached = await listCachedSchemas();
   const cachedTypes = new Set(cached.map(e => e.resourceType));
   const missing = COMMON_RESOURCE_TYPES.filter(t => !cachedTypes.has(t));
 
@@ -36,7 +36,7 @@ export async function POST() {
     try {
       const fields = await getResourceTypeFields(type, ctx);
       if (fields.length > 0) {
-        writeSchemaCache(type, fields);
+        await writeSchemaCache(type, fields);
         results.push({ type, status: 'ok', count: fields.length });
       } else {
         // Azure answered but this type genuinely has no properties — not a failure to reach Azure.
@@ -49,7 +49,7 @@ export async function POST() {
   }
 
   const okCount = results.filter(r => r.status === 'ok').length;
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'schema_cache.refresh',
     entityType: 'schema_cache',

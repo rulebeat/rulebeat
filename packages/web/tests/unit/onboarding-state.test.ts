@@ -7,8 +7,8 @@
  * wizard on their next page load, which would break this project's standing rule that an upgrade
  * must never disturb a user's configuration or settings.
  *
- * `getOnboardingState()`'s tolerant parse is tested against the *live* db (via `setMeta` directly),
- * not a sample file — `resetDb()` deliberately never clears `meta`, so this is the one state a test
+ * `await getOnboardingState()`'s tolerant parse is tested against the *live* db (via `setMeta` directly),
+ * not a sample file — `await resetDb()` deliberately never clears `meta`, so this is the one state a test
  * has to set up explicitly rather than inherit from a clean slate.
  */
 import { describe, expect, it } from 'vitest';
@@ -65,15 +65,15 @@ describe('B3 · onboarding-v1 seeding', () => {
   });
 
   it('a malformed stored value degrades to skipped rather than throwing', async () => {
-    // Tests the tolerant parse in lib/onboarding.ts directly, against the live test db — resetDb()
+    // Tests the tolerant parse in lib/onboarding.ts directly, against the live test db — await resetDb()
     // never clears meta, so this state has to be set up explicitly rather than inherited.
-    setOnboardingState({ status: 'pending' }); // sanity: writes valid JSON via the normal path first
+    await setOnboardingState({ status: 'pending' }); // sanity: writes valid JSON via the normal path first
     expect(await getMeta('onboarding-v1')).not.toBeNull();
 
     // Now corrupt it the way a bare JSON.parse (the deliberate break) would choke on.
     await setMeta('onboarding-v1', 'not valid json{');
 
-    expect(() => getOnboardingState()).not.toThrow();
-    expect(getOnboardingState().status).toBe('skipped');
+    await expect(getOnboardingState()).resolves.toBeDefined();
+    expect((await getOnboardingState()).status).toBe('skipped');
   });
 });

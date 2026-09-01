@@ -10,5 +10,5 @@ import { getSystemDiagnostics } from '@/lib/diagnostics';
 export async function GET() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(getSystemDiagnostics());
+  return NextResponse.json(await getSystemDiagnostics());
 }

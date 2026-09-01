@@ -46,7 +46,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   const findings: Finding[] = [];
   const incompleteRules: IncompleteRule[] = [];
 
-  let enabledRules = loadRules().filter(r => r.enabled && r.category === category.id);
+  let enabledRules = (await loadRules()).filter(r => r.enabled && r.category === category.id);
   if (opts.ruleIds) {
     const allowed = new Set(opts.ruleIds);
     enabledRules = enabledRules.filter(r => allowed.has(r.id));
@@ -135,7 +135,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     incompleteRules,
   };
 
-  saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
+  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
 
   const { created, reactivated } = await syncScanFindings({
     scanId,
@@ -151,14 +151,14 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status
   // since every rule sharing an outcome gets the same UPDATE; rules outside this scan's scope
   // (disabled, or excluded by a targeted run) are never touched.
-  setRulesLastRunStatus(successRuleIds, 'success', summary.finishedAt);
+  await setRulesLastRunStatus(successRuleIds, 'success', summary.finishedAt);
   for (const status of ['failed', 'capped', 'invalid'] as const) {
     const ids = incompleteRules.filter(r => r.status === status).map(r => r.ruleId);
-    setRulesLastRunStatus(ids, status, summary.finishedAt);
+    await setRulesLastRunStatus(ids, status, summary.finishedAt);
   }
-  setRulePopulationCounts(populationCounts);
+  await setRulePopulationCounts(populationCounts);
 
-  upsertDailySnapshot(category.id, opts.now);
+  await upsertDailySnapshot(category.id, opts.now);
 
   return { summary, newFindings };
 }

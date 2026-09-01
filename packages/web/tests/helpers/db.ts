@@ -58,24 +58,36 @@ export async function resetDb(): Promise<void> {
 }
 
 /** Empties the rules table, for suites asserting exact rule counts. */
-export function clearRules(): void {
+export async function clearRules(): Promise<void> {
+  if (dbKind === 'pg') {
+    await pgDb!.execute(sql.raw('DELETE FROM rules'));
+    return;
+  }
   db.run(sql`PRAGMA foreign_keys = OFF`);
   db.run(sql`DELETE FROM rules`);
   db.run(sql`PRAGMA foreign_keys = ON`);
 }
 
 /** Empties the dashboards table, for suites testing the empty-gallery and default-promotion paths. */
-export function clearDashboards(): void {
+export async function clearDashboards(): Promise<void> {
+  if (dbKind === 'pg') {
+    await pgDb!.execute(sql.raw('DELETE FROM dashboards'));
+    return;
+  }
   db.run(sql`DELETE FROM dashboards`);
 }
 
 /** Row count for a table — handy for "did this actually write anything" assertions. */
-export function countRows(table: string): number {
+export async function countRows(table: string): Promise<number> {
+  if (dbKind === 'pg') {
+    const res = await pgDb!.execute(sql.raw(`SELECT COUNT(*) AS n FROM ${table}`));
+    return Number((res.rows[0] as { n: unknown }).n);
+  }
   const row = db.get<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM ${table}`));
   return row?.n ?? 0;
 }
 
-/** True when the table exists in the current schema. Used by the migration suite. */
+/** True when the table exists in the current schema. Used by the SQLite migration suite only. */
 export function tableExists(table: string): boolean {
   const row = db.get<{ n: number }>(
     sql`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ${table}`,
@@ -83,7 +95,7 @@ export function tableExists(table: string): boolean {
   return (row?.n ?? 0) > 0;
 }
 
-/** Column names on a table, for asserting a migration added what it should have. */
+/** Column names on a table, for asserting a migration added what it should have. SQLite only. */
 export function columnsOf(table: string): string[] {
   const rows = db.all<{ name: string }>(sql.raw(`PRAGMA table_info(${table})`));
   return rows.map(r => r.name);

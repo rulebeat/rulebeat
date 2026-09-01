@@ -50,9 +50,9 @@ function putRequest(body: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
@@ -60,7 +60,7 @@ const VALID_LQ: LogAnalyticsQuery = { kql: 'SigninLogs | where ResultType != 0',
 
 describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -68,12 +68,12 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
   });
 
   it('rejects a log-analytics rule with no logsQuery at all', async () => {
-    const before = loadRules().length;
+    const before = (await loadRules()).length;
     const res = await POST(postRequest(baseBody({ queryBackend: 'log-analytics' })));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/needs a.*query/);
-    expect(loadRules().length).toBe(before);
+    expect((await loadRules()).length).toBe(before);
   });
 
   it('rejects a logsQuery with an empty/blank kql', async () => {
@@ -117,7 +117,7 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
     const res = await POST(postRequest(baseBody({ queryBackend: 'log-analytics', logsQuery: VALID_LQ })));
     expect(res.status).toBe(201);
     const json = await res.json();
-    const saved = loadRules().find(r => r.id === json.id);
+    const saved = (await loadRules()).find(r => r.id === json.id);
     expect(saved?.queryBackend).toBe('log-analytics');
     expect(saved?.logsQuery).toEqual(VALID_LQ);
     // deriveKind() maps log-analytics to 'activity' and both other backends to 'state' — unlike
@@ -134,7 +134,7 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
     const res = await POST(postRequest(baseBody({ queryBackend: 'log-analytics', logsQuery: lq })));
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(loadRules().find(r => r.id === json.id)?.logsQuery).toEqual(lq);
+    expect((await loadRules()).find(r => r.id === json.id)?.logsQuery).toEqual(lq);
   });
 
   it('fails open and still saves when the Log Analytics probe cannot connect to Azure at all', async () => {
@@ -160,15 +160,15 @@ describe('PUT /api/rules/[id] — Log Analytics backend guard (spec 036)', () =>
   let customRuleId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
     await signInAsEditor();
 
     customRuleId = globalThis.crypto.randomUUID();
-    saveRules([
-      ...loadRules(),
+    await saveRules([
+      ...await loadRules(),
       {
         id: customRuleId,
         name: 'existing custom logs rule',
@@ -200,7 +200,7 @@ describe('PUT /api/rules/[id] — Log Analytics backend guard (spec 036)', () =>
       { params: Promise.resolve({ id: customRuleId }) },
     );
     expect(res.status).toBe(400);
-    expect(loadRules().find(r => r.id === customRuleId)?.logsQuery).toEqual(VALID_LQ);
+    expect((await loadRules()).find(r => r.id === customRuleId)?.logsQuery).toEqual(VALID_LQ);
   });
 
   it('saves an edit whose new logsQuery is valid', async () => {
@@ -211,6 +211,6 @@ describe('PUT /api/rules/[id] — Log Analytics backend guard (spec 036)', () =>
       { params: Promise.resolve({ id: customRuleId }) },
     );
     expect(res.status).toBe(200);
-    expect(loadRules().find(r => r.id === customRuleId)?.logsQuery).toEqual(newLq);
+    expect((await loadRules()).find(r => r.id === customRuleId)?.logsQuery).toEqual(newLq);
   });
 });

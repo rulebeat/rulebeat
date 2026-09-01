@@ -1,4 +1,3 @@
-import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';

@@ -46,7 +46,7 @@ describe('spec 016 · aprl-v2.json survives two parse/regenerate cycles unchange
   const rules = (JSON.parse(readFileSync(PACK_PATH, 'utf-8')) as PackRule[])
     .filter(r => typeof r.rawKql === 'string' && r.rawKql.trim().length > 0);
 
-  it('the pack has real rules to sweep', () => {
+  it('the pack has real rules to sweep', async () => {
     expect(rules.length).toBeGreaterThan(100);
   });
 
@@ -54,7 +54,7 @@ describe('spec 016 · aprl-v2.json survives two parse/regenerate cycles unchange
   const real = rules.filter(r => r.rawKql!.trim() !== PLACEHOLDER);
   const placeholders = rules.filter(r => r.rawKql!.trim() === PLACEHOLDER);
 
-  it('the real/placeholder split actually covers the pack', () => {
+  it('the real/placeholder split actually covers the pack', async () => {
     // Guards against the predicate regressing back to matching every commented rule (spec 027).
     expect(real.length).toBeGreaterThan(100);
   });

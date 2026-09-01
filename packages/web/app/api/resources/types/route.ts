@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 async function fetchAndCache(): Promise<string[]> {
   const ctx = await createTenantContext();
   const types = await getAllResourceTypes(ctx);
-  if (types.length > 0) writeResourceTypesCache(types);
+  if (types.length > 0) await writeResourceTypesCache(types);
   return types;
 }
 
@@ -18,7 +18,7 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  const cached = readResourceTypesCache();
+  const cached = await readResourceTypesCache();
 
   if (cached && !cached.stale) {
     return NextResponse.json({ types: cached.types, source: 'cache' });

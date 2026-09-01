@@ -29,7 +29,7 @@ function upgradedDump(shape: (typeof SHAPES)[number], how: 'startup' | 'in-proce
 
 describe('TS-25 · the upgrade produces a recorded, stable result', () => {
   for (const shape of SHAPES) {
-    it(`25-02 · ${shape} upgrades to a known state`, () => {
+    it(`25-02 · ${shape} upgrades to a known state`, async () => {
       expect(upgradedDump(shape, 'startup')).toMatchSnapshot();
     }, 60_000);
   }
@@ -46,7 +46,7 @@ describe('TS-25 · calling the migrations directly is the same as starting the a
    * ordering difference between the two paths could show up in one lineage and not another.
    */
   for (const shape of SHAPES) {
-    it(`25-02 · ${shape} ends up identical either way`, () => {
+    it(`25-02 · ${shape} ends up identical either way`, async () => {
       expect(upgradedDump(shape, 'in-process')).toBe(upgradedDump(shape, 'startup'));
     }, 60_000);
   }

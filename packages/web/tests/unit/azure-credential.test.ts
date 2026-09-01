@@ -59,44 +59,44 @@ function secretFile(contents: string): string {
 
 let savedEnv: Record<string, string | undefined>;
 
-function clearStoredCredentials(): void {
-  for (const c of listAzureCredentials()) deleteAzureCredential(c.id);
+async function clearStoredCredentials(): Promise<void> {
+  for (const c of await listAzureCredentials()) await deleteAzureCredential(c.id);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   savedEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]));
   for (const k of ENV_KEYS) delete process.env[k];
-  clearStoredCredentials();
+  await clearStoredCredentials();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const [k, v] of Object.entries(savedEnv)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-  clearStoredCredentials();
+  await clearStoredCredentials();
 });
 
 describe('secret-box · encryption at rest', () => {
-  it('round-trips a secret', () => {
+  it('round-trips a secret', async () => {
     const sealed = encryptSecret(SECRET);
     expect(sealed).not.toContain(SECRET);
     expect(isEncrypted(sealed)).toBe(true);
     expect(decryptSecret(sealed)).toBe(SECRET);
   });
 
-  it('produces a different ciphertext each time, so equal secrets are not recognisable', () => {
+  it('produces a different ciphertext each time, so equal secrets are not recognisable', async () => {
     expect(encryptSecret(SECRET)).not.toBe(encryptSecret(SECRET));
   });
 
-  it('refuses a tampered ciphertext rather than returning corrupted plaintext', () => {
+  it('refuses a tampered ciphertext rather than returning corrupted plaintext', async () => {
     const [prefix, iv, tag, ct] = encryptSecret(SECRET).split(':');
     const flipped = Buffer.from(ct!, 'base64');
     flipped[0] ^= 0xff;
     expect(decryptSecret([prefix, iv, tag, flipped.toString('base64')].join(':'))).toBeNull();
   });
 
-  it('returns null — not a throw — when the key has changed', () => {
+  it('returns null — not a throw — when the key has changed', async () => {
     const sealed = encryptSecret(SECRET);
     const original = process.env.RULEBEAT_ENCRYPTION_KEY;
     try {
@@ -111,7 +111,7 @@ describe('secret-box · encryption at rest', () => {
     }
   });
 
-  it('rejects malformed input without throwing', () => {
+  it('rejects malformed input without throwing', async () => {
     expect(decryptSecret('')).toBeNull();
     expect(decryptSecret('not-encrypted-at-all')).toBeNull();
     expect(decryptSecret('v1:only:three')).toBeNull();
@@ -124,7 +124,7 @@ describe('secret-box · encryption at rest', () => {
     const originalKey = process.env.RULEBEAT_ENCRYPTION_KEY;
     const originalKeyFile = process.env.RULEBEAT_ENCRYPTION_KEY_FILE;
 
-    afterEach(() => {
+    afterEach(async () => {
       if (originalKey === undefined) delete process.env.RULEBEAT_ENCRYPTION_KEY;
       else process.env.RULEBEAT_ENCRYPTION_KEY = originalKey;
       if (originalKeyFile === undefined) delete process.env.RULEBEAT_ENCRYPTION_KEY_FILE;
@@ -132,7 +132,7 @@ describe('secret-box · encryption at rest', () => {
       resetSecretBoxForTests();
     });
 
-    it('wins over a simultaneously-set RULEBEAT_ENCRYPTION_KEY', () => {
+    it('wins over a simultaneously-set RULEBEAT_ENCRYPTION_KEY', async () => {
       process.env.RULEBEAT_ENCRYPTION_KEY_FILE = secretFile('from-the-mounted-key-file\n');
       process.env.RULEBEAT_ENCRYPTION_KEY = 'the-plain-env-key';
       resetSecretBoxForTests();
@@ -145,7 +145,7 @@ describe('secret-box · encryption at rest', () => {
       expect(decryptSecret(sealed)).toBe(SECRET);
     });
 
-    it('round-trips a secret using the file alone', () => {
+    it('round-trips a secret using the file alone', async () => {
       process.env.RULEBEAT_ENCRYPTION_KEY_FILE = secretFile('  from-the-mounted-key-file  \n');
       delete process.env.RULEBEAT_ENCRYPTION_KEY;
       resetSecretBoxForTests();
@@ -153,7 +153,7 @@ describe('secret-box · encryption at rest', () => {
       expect(decryptSecret(sealed)).toBe(SECRET);
     });
 
-    it('throws rather than encrypting with an empty key file', () => {
+    it('throws rather than encrypting with an empty key file', async () => {
       process.env.RULEBEAT_ENCRYPTION_KEY_FILE = secretFile('   \n');
       resetSecretBoxForTests();
       expect(() => encryptSecret(SECRET)).toThrow(/RULEBEAT_ENCRYPTION_KEY_FILE/);
@@ -162,8 +162,8 @@ describe('secret-box · encryption at rest', () => {
 });
 
 describe('stored credentials · the secret never lands in plain text', () => {
-  it('writes ciphertext to the database column, not the secret', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+  it('writes ciphertext to the database column, not the secret', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
 
     // Read the column directly. Asserting through the repository would only prove the repository is
     // self-consistent, which is exactly what a broken implementation would also be.
@@ -177,71 +177,71 @@ describe('stored credentials · the secret never lands in plain text', () => {
     }
   });
 
-  it('reads the secret back correctly for actually calling Azure', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    expect(getActiveAzureCredential()?.clientSecret).toBe(SECRET);
+  it('reads the secret back correctly for actually calling Azure', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    expect((await getActiveAzureCredential())?.clientSecret).toBe(SECRET);
   });
 
-  it('has no secret field at all on the shape the API returns', () => {
-    const summary = saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+  it('has no secret field at all on the shape the API returns', async () => {
+    const summary = await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     // Not "the field is empty" — the field does not exist, so no handler can leak it by forgetting
     // to strip it.
     expect(Object.keys(summary)).not.toContain('clientSecret');
     expect(JSON.stringify(summary)).not.toContain(SECRET);
-    expect(JSON.stringify(getAzureConnectionStatus())).not.toContain(SECRET);
+    expect(JSON.stringify(await getAzureConnectionStatus())).not.toContain(SECRET);
   });
 
-  it('keeps exactly one credential active when a second is saved', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: 'a-newer-secret' });
+  it('keeps exactly one credential active when a second is saved', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: 'a-newer-secret' });
 
-    expect(listAzureCredentials().filter(c => c.isActive)).toHaveLength(1);
-    expect(getActiveAzureCredential()?.clientSecret).toBe('a-newer-secret');
+    expect((await listAzureCredentials()).filter(c => c.isActive)).toHaveLength(1);
+    expect((await getActiveAzureCredential())?.clientSecret).toBe('a-newer-secret');
   });
 
-  it('clears the previous verification when the secret is replaced', () => {
-    const first = saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+  it('clears the previous verification when the secret is replaced', async () => {
+    const first = await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     expect(first.lastVerifiedAt).toBeNull();
     // A credential that was verified an hour ago proves nothing about the one just typed in.
-    const second = saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: 'rotated' });
+    const second = await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: 'rotated' });
     expect(second.lastVerifiedAt).toBeNull();
   });
 });
 
 describe('credential resolution order', () => {
-  it('uses the ambient chain when only a tenant is configured', () => {
+  it('uses the ambient chain when only a tenant is configured', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
-    const resolved = resolveAzureCredential();
+    const resolved = await resolveAzureCredential();
     expect(resolved.source).toBe('chain');
     expect(resolved.tenantId).toBe(TENANT);
   });
 
-  it('prefers an environment service principal over the ambient chain', () => {
+  it('prefers an environment service principal over the ambient chain', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
-    expect(resolveAzureCredential().source).toBe('env-secret');
+    expect((await resolveAzureCredential()).source).toBe('env-secret');
   });
 
-  it('prefers a federated token over a client secret, since it is the keyless option', () => {
+  it('prefers a federated token over a client secret, since it is the keyless option', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
     process.env.AZURE_FEDERATED_TOKEN_FILE = '/var/run/secrets/azure/token';
-    expect(resolveAzureCredential().source).toBe('env-federated');
+    expect((await resolveAzureCredential()).source).toBe('env-federated');
   });
 
-  it('prefers a mounted secret file over the same secret in a variable', () => {
+  it('prefers a mounted secret file over the same secret in a variable', async () => {
     // The variable is visible in `docker inspect`; the mounted file is not. When a deployment
     // supplies both — which happens mid-migration from one to the other — the safer one must win.
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
     process.env.AZURE_CLIENT_SECRET_FILE = secretFile(SECRET);
-    expect(resolveAzureCredential().source).toBe('env-secret-file');
+    expect((await resolveAzureCredential()).source).toBe('env-secret-file');
   });
 
-  it('strips the trailing newline that `echo > file` leaves behind', () => {
+  it('strips the trailing newline that `echo > file` leaves behind', async () => {
     // Entra rejects a secret with a stray newline and reports only "invalid client secret", which
     // sends people looking at the app registration instead of at the extra byte. Asserted against
     // the reader itself, since a credential object won't hand back the secret it was built with.
@@ -249,66 +249,66 @@ describe('credential resolution order', () => {
     expect(readSecretFile(secretFile(`  ${SECRET}  `))).toBe(SECRET);
   });
 
-  it('rejects an empty secret file instead of authenticating with an empty string', () => {
+  it('rejects an empty secret file instead of authenticating with an empty string', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET_FILE = secretFile('   \n');
-    expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
+    await expect(resolveAzureCredential()).rejects.toThrow(AzureNotConfiguredError);
   });
 
-  it('prefers a certificate over a client secret', () => {
+  it('prefers a certificate over a client secret', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
     process.env.AZURE_CLIENT_CERTIFICATE_PATH = '/run/secrets/rulebeat.pem';
-    expect(resolveAzureCredential().source).toBe('env-certificate');
+    expect((await resolveAzureCredential()).source).toBe('env-certificate');
   });
 
-  it('uses a stored credential when the environment has none', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    const resolved = resolveAzureCredential();
+  it('uses a stored credential when the environment has none', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    const resolved = await resolveAzureCredential();
     expect(resolved.source).toBe('stored');
     expect(resolved.tenantId).toBe(TENANT);
     expect(resolved.storedCredentialId).toBeDefined();
   });
 
-  it('lets the environment override a stored credential', () => {
+  it('lets the environment override a stored credential', async () => {
     // The load-bearing case: an IaC or Marketplace deployment must not be quietly redirected by
     // something an admin typed into the UI, or the same template stops being reproducible.
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     process.env.AZURE_TENANT_ID = '33333333-3333-3333-3333-333333333333';
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = 'from-the-environment';
 
-    const resolved = resolveAzureCredential();
+    const resolved = await resolveAzureCredential();
     expect(resolved.source).toBe('env-secret');
     expect(resolved.tenantId).toBe('33333333-3333-3333-3333-333333333333');
   });
 
-  it('ignores an empty environment variable rather than treating it as configured', () => {
+  it('ignores an empty environment variable rather than treating it as configured', async () => {
     // docker-compose writes `AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}`, which sets an empty string on
     // every deployment that does not use a service principal.
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = '';
     process.env.AZURE_CLIENT_SECRET = '';
-    expect(resolveAzureCredential().source).toBe('chain');
+    expect((await resolveAzureCredential()).source).toBe('chain');
   });
 
-  it('needs a client id as well as a secret before it counts as configured', () => {
+  it('needs a client id as well as a secret before it counts as configured', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
-    expect(resolveAzureCredential().source).toBe('chain');
+    expect((await resolveAzureCredential()).source).toBe('chain');
   });
 
-  it('takes the tenant from the stored credential when the environment sets none', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    expect(resolveAzureCredential().tenantId).toBe(TENANT);
+  it('takes the tenant from the stored credential when the environment sets none', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    expect((await resolveAzureCredential()).tenantId).toBe(TENANT);
   });
 
-  it('throws a named, actionable error when nothing is configured at all', () => {
-    expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
+  it('throws a named, actionable error when nothing is configured at all', async () => {
+    await expect(resolveAzureCredential()).rejects.toThrow(AzureNotConfiguredError);
     try {
-      resolveAzureCredential();
+      await resolveAzureCredential();
     } catch (err) {
       // The API layer lets this one message through to the browser (lib/api-error.ts), so it has to
       // say what to do and must not name a tenant or subscription.
@@ -319,39 +319,39 @@ describe('credential resolution order', () => {
 });
 
 describe('connection status', () => {
-  it('reports nothing configured when nothing is', () => {
-    const status = getAzureConnectionStatus();
+  it('reports nothing configured when nothing is', async () => {
+    const status = await getAzureConnectionStatus();
     expect(status.configured).toBe(false);
     expect(status.source).toBeNull();
   });
 
-  it('marks the connection as environment-managed so the UI can disable the form', () => {
+  it('marks the connection as environment-managed so the UI can disable the form', async () => {
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;
 
-    const status = getAzureConnectionStatus();
+    const status = await getAzureConnectionStatus();
     expect(status.managedByEnv).toBe(true);
     expect(status.configured).toBe(true);
     // Offering an editable field that resolution will ignore is worse than offering no field.
     expect(status.source).toBe('env-secret');
   });
 
-  it('does not mark a stored credential as environment-managed', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    const status = getAzureConnectionStatus();
+  it('does not mark a stored credential as environment-managed', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+    const status = await getAzureConnectionStatus();
     expect(status.managedByEnv).toBe(false);
     expect(status.source).toBe('stored');
   });
 
-  it('reports an unreadable stored secret as not configured, and says why', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+  it('reports an unreadable stored secret as not configured, and says why', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     const original = process.env.RULEBEAT_ENCRYPTION_KEY;
     try {
       process.env.RULEBEAT_ENCRYPTION_KEY = 'the-key-was-rotated-or-the-volume-replaced';
       resetSecretBoxForTests();
 
-      const status = getAzureConnectionStatus();
+      const status = await getAzureConnectionStatus();
       expect(status.configured).toBe(false);
       expect(status.stored?.secretUnreadable).toBe(true);
       // "No data yet" and "this is broken for a specific reason" must not look the same.
@@ -362,8 +362,8 @@ describe('connection status', () => {
     }
   });
 
-  it('falls back to the ambient chain when a stored secret cannot be read', () => {
-    saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
+  it('falls back to the ambient chain when a stored secret cannot be read', async () => {
+    await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     process.env.AZURE_TENANT_ID = TENANT;
     const original = process.env.RULEBEAT_ENCRYPTION_KEY;
     try {
@@ -371,7 +371,7 @@ describe('connection status', () => {
       resetSecretBoxForTests();
       // Handing the ciphertext to Azure would fail authentication with a baffling error; trying the
       // managed identity instead at least has a chance of working.
-      expect(resolveAzureCredential().source).toBe('chain');
+      expect((await resolveAzureCredential()).source).toBe('chain');
     } finally {
       process.env.RULEBEAT_ENCRYPTION_KEY = original;
       resetSecretBoxForTests();

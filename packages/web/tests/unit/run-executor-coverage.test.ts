@@ -1,7 +1,7 @@
 /**
  * Spec 004 — a category's coverage: 'partial' must surface as a run-level status: 'partial', even
- * though runCategoryScan() returns normally (no thrown error) in that case. Before this fix,
- * executeTarget()'s status formula only looked at thrown exceptions, so a rule that failed or
+ * though await runCategoryScan() returns normally (no thrown error) in that case. Before this fix,
+ * await executeTarget()'s status formula only looked at thrown exceptions, so a rule that failed or
  * returned a capped result inside an otherwise-successful scan produced a silent 'success' run.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -58,10 +58,10 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
   };
 }
 
-describe('executeTarget() partial coverage (spec 004)', () => {
-  beforeEach(() => {
-    resetDb();
-    clearRules();
+describe('await executeTarget() partial coverage (spec 004)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    await clearRules();
     insertRule(RULE_OK, MARKER_OK);
     insertRule(RULE_FAIL, MARKER_FAIL);
   });
@@ -83,7 +83,7 @@ describe('executeTarget() partial coverage (spec 004)', () => {
   });
 
   it('never leaks a raw thrown error to run.error — only a client-safe summary reaches the UI', async () => {
-    // Malformed rule data makes loadRules() throw synchronously inside runCategoryScan, reproducing
+    // Malformed rule data makes await loadRules() throw synchronously inside runCategoryScan, reproducing
     // a genuine unexpected-exception path — distinct from the coverage 'failed'/'capped' outcome path
     // covered above, which never throws at all. Run History renders run.error directly (spec 004), so
     // this asserts the fix in run-executor.ts: raw error text is logged server-side, never returned.

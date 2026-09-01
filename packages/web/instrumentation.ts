@@ -11,7 +11,7 @@ export async function register() {
   // operator's own value, so this must stay the first thing that touches it.
   try {
     const { getPublicUrl, syncAuthUrlMirror } = await import('./lib/sign-in-config');
-    syncAuthUrlMirror(getPublicUrl());
+    syncAuthUrlMirror(await getPublicUrl());
   } catch (err) {
     console.error('[startup] could not read the configured public URL:', err);
   }
@@ -37,7 +37,7 @@ export async function register() {
 
   try {
     const { backfillSnapshots } = await import('./lib/db/snapshots');
-    backfillSnapshots();
+    await backfillSnapshots();
   } catch (err) {
     console.error('[startup] trend-history backfill failed:', err);
   }
@@ -47,7 +47,7 @@ export async function register() {
   // run left pending before the crash.
   try {
     const { recoverInterruptedRuns } = await import('./lib/startup-recovery');
-    recoverInterruptedRuns();
+    await recoverInterruptedRuns();
   } catch (err) {
     console.error('[startup] interrupted-run recovery failed:', err);
   }
@@ -60,5 +60,5 @@ export async function register() {
   }
 
   const { startScheduler } = await import('./lib/scheduler');
-  startScheduler();
+  await startScheduler();
 }

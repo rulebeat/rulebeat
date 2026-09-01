@@ -8,7 +8,7 @@ import { isRole } from '@/lib/rbac';
 export async function GET() {
   const actor = await requireRole('users:manage');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(listUsers());
+  return NextResponse.json(await listUsers());
 }
 
 export async function POST(req: Request) {
@@ -21,10 +21,10 @@ export async function POST(req: Request) {
   if (!isRole(body.role)) return NextResponse.json({ error: 'Unknown role.' }, { status: 400 });
 
   // The row is created without an oid; it gets linked when this person first signs in.
-  const result = createUser({ email: body.email, role: body.role });
+  const result = await createUser({ email: body.email, role: body.role });
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'user.invite',
     entityType: 'user',

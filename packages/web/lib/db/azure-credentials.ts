@@ -1,6 +1,7 @@
 import { db } from './client';
-import { azureCredentials } from './schema';
+import { azureCredentials } from './tables';
 import { eq, asc } from 'drizzle-orm';
+import { many, one, run, inTransaction } from './exec';
 import { decryptSecret, encryptSecret } from '@/lib/secret-box';
 
 /**
@@ -63,14 +64,15 @@ function rowToSummary(row: Row): AzureCredentialSummary {
   };
 }
 
-export function listAzureCredentials(): AzureCredentialSummary[] {
-  return db.select().from(azureCredentials)
-    .orderBy(asc(azureCredentials.createdAt))
-    .all().map(rowToSummary);
+export async function listAzureCredentials(): Promise<AzureCredentialSummary[]> {
+  const rows = await many(
+    db.select().from(azureCredentials).orderBy(asc(azureCredentials.createdAt)),
+  );
+  return rows.map(rowToSummary);
 }
 
-export function getActiveAzureCredentialSummary(): AzureCredentialSummary | null {
-  const row = db.select().from(azureCredentials).where(eq(azureCredentials.isActive, true)).get();
+export async function getActiveAzureCredentialSummary(): Promise<AzureCredentialSummary | null> {
+  const row = await one(db.select().from(azureCredentials).where(eq(azureCredentials.isActive, true)));
   return row ? rowToSummary(row) : null;
 }
 
@@ -81,8 +83,8 @@ export function getActiveAzureCredentialSummary(): AzureCredentialSummary | null
  * ciphertext that would fail authentication with a baffling error — the caller falls through to the
  * next credential source, and the UI reports the credential as needing re-entry.
  */
-export function getActiveAzureCredential(): StoredAzureCredential | null {
-  const row = db.select().from(azureCredentials).where(eq(azureCredentials.isActive, true)).get();
+export async function getActiveAzureCredential(): Promise<StoredAzureCredential | null> {
+  const row = await one(db.select().from(azureCredentials).where(eq(azureCredentials.isActive, true)));
   if (!row) return null;
 
   const clientSecret = decryptSecret(row.clientSecret);
@@ -103,18 +105,19 @@ export interface SaveAzureCredentialInput {
  * Stores (or replaces) the active credential. Any previously active row is deactivated in the same
  * transaction, so "the active credential" can never be ambiguous.
  */
-export function saveAzureCredential(input: SaveAzureCredentialInput): AzureCredentialSummary {
+export async function saveAzureCredential(input: SaveAzureCredentialInput): Promise<AzureCredentialSummary> {
   const now = new Date().toISOString();
   const tenantId = input.tenantId.trim();
   const clientId = input.clientId.trim();
   const name = input.name?.trim() || `Tenant ${tenantId}`;
 
-  return db.transaction(tx => {
-    const existing = tx.select().from(azureCredentials)
-      .where(eq(azureCredentials.isActive, true)).get();
+  return inTransaction(async (tx) => {
+    const existing = await one(
+      tx.select().from(azureCredentials).where(eq(azureCredentials.isActive, true)),
+    );
 
     if (existing) {
-      tx.update(azureCredentials).set({
+      await run(tx.update(azureCredentials).set({
         name,
         tenantId,
         clientId,
@@ -124,15 +127,16 @@ export function saveAzureCredential(input: SaveAzureCredentialInput): AzureCrede
         lastVerifiedAt: null,
         lastVerifiedSubscriptions: null,
         ...(input.createdBy ? { createdBy: input.createdBy } : {}),
-      }).where(eq(azureCredentials.id, existing.id)).run();
+      }).where(eq(azureCredentials.id, existing.id)));
 
-      return rowToSummary(
-        tx.select().from(azureCredentials).where(eq(azureCredentials.id, existing.id)).get()!,
+      const updated = await one(
+        tx.select().from(azureCredentials).where(eq(azureCredentials.id, existing.id)),
       );
+      return rowToSummary(updated!);
     }
 
     const id = globalThis.crypto.randomUUID();
-    tx.insert(azureCredentials).values({
+    await run(tx.insert(azureCredentials).values({
       id,
       name,
       tenantId,
@@ -144,25 +148,26 @@ export function saveAzureCredential(input: SaveAzureCredentialInput): AzureCrede
       createdAt: now,
       updatedAt: now,
       createdBy: input.createdBy ?? null,
-    }).run();
+    }));
 
-    return rowToSummary(
-      tx.select().from(azureCredentials).where(eq(azureCredentials.id, id)).get()!,
+    const created = await one(
+      tx.select().from(azureCredentials).where(eq(azureCredentials.id, id)),
     );
+    return rowToSummary(created!);
   });
 }
 
-export function deleteAzureCredential(id: string): boolean {
-  const existing = db.select().from(azureCredentials).where(eq(azureCredentials.id, id)).get();
+export async function deleteAzureCredential(id: string): Promise<boolean> {
+  const existing = await one(db.select().from(azureCredentials).where(eq(azureCredentials.id, id)));
   if (!existing) return false;
-  db.delete(azureCredentials).where(eq(azureCredentials.id, id)).run();
+  await run(db.delete(azureCredentials).where(eq(azureCredentials.id, id)));
   return true;
 }
 
 /** Records that this credential really reached Azure, and how much it could see. */
-export function markAzureCredentialVerified(id: string, subscriptionCount: number): void {
-  db.update(azureCredentials).set({
+export async function markAzureCredentialVerified(id: string, subscriptionCount: number): Promise<void> {
+  await run(db.update(azureCredentials).set({
     lastVerifiedAt: new Date().toISOString(),
     lastVerifiedSubscriptions: subscriptionCount,
-  }).where(eq(azureCredentials.id, id)).run();
+  }).where(eq(azureCredentials.id, id)));
 }

@@ -18,14 +18,14 @@ export async function PATCH(req: Request) {
   const enableIds = body.enable ?? [];
   const disableIds = body.disable ?? [];
 
-  const enabledResult = setRulesEnabled(enableIds, true);
-  const disabledResult = setRulesEnabled(disableIds, false);
+  const enabledResult = await setRulesEnabled(enableIds, true);
+  const disabledResult = await setRulesEnabled(disableIds, false);
 
   const updated = enabledResult.updatedIds.length + disabledResult.updatedIds.length;
   const notFound = [...enabledResult.notFoundIds, ...disabledResult.notFoundIds];
 
   if (updated > 0) {
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'rule.bulk_update',
       entityType: 'rule',

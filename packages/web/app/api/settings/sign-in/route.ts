@@ -29,7 +29,7 @@ export async function GET() {
   const actor = await requireRole('auth:manage');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(getSignInStatus());
+  return NextResponse.json(await getSignInStatus());
 }
 
 export async function PUT(req: Request) {
@@ -59,12 +59,12 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: 'The public URL must use http or https.' }, { status: 400 });
       }
       const normalized = `${parsed.protocol}//${parsed.host}`;
-      setPublicUrl(normalized);
+      await setPublicUrl(normalized);
       // Same call instrumentation.ts makes at boot, so the new value takes effect immediately
       // rather than on the next restart, which is what the Settings copy promises. It is a no-op
       // when the operator set AUTH_URL in the environment themselves.
       syncAuthUrlMirror(normalized);
-      writeAudit({
+      await writeAudit({
         actor,
         action: 'sign_in_config.public_url_set',
         entityType: 'sign_in_config',
@@ -72,9 +72,9 @@ export async function PUT(req: Request) {
         details: { publicUrl: normalized },
       });
     } else {
-      setPublicUrl(null);
+      await setPublicUrl(null);
       syncAuthUrlMirror(null);
-      writeAudit({
+      await writeAudit({
         actor,
         action: 'sign_in_config.public_url_clear',
         entityType: 'sign_in_config',
@@ -90,15 +90,15 @@ export async function PUT(req: Request) {
     // The lockout guard that matters most on this screen: restricting local sign-in while no
     // admin can actually use it would lock the install out of its own console, with no recovery
     // short of RULEBEAT_FORCE_LOCAL_SIGNIN or editing SQLite by hand.
-    if (body.localSignInPolicy !== 'always' && countAdminsWithPassword() === 0) {
+    if (body.localSignInPolicy !== 'always' && await countAdminsWithPassword() === 0) {
       return NextResponse.json({
         error: 'At least one admin needs a local password before local sign-in can be restricted. '
           + 'Set one for yourself or another admin in the Users table first.',
       }, { status: 409 });
     }
 
-    setLocalSignInPolicy(body.localSignInPolicy);
-    writeAudit({
+    await setLocalSignInPolicy(body.localSignInPolicy);
+    await writeAudit({
       actor,
       action: 'sign_in_config.policy_change',
       entityType: 'sign_in_config',
@@ -111,7 +111,7 @@ export async function PUT(req: Request) {
   const changingProvider = reuseAzureConnection
     || body.tenantId !== undefined || body.clientId !== undefined || body.clientSecret !== undefined;
   if (changingProvider) {
-    const status = getSignInStatus();
+    const status = await getSignInStatus();
     if (status.managedByEnv) {
       // Saving would appear to work and then change nothing, since env wins at resolution time.
       return NextResponse.json({
@@ -127,7 +127,7 @@ export async function PUT(req: Request) {
     if (reuseAzureConnection) {
       // Copies the already-encrypted Azure connection credential straight through, server-side —
       // the secret never travels to the browser for this path, unlike the manual-entry one below.
-      const azureCred = getActiveAzureCredential();
+      const azureCred = await getActiveAzureCredential();
       if (!azureCred) {
         return NextResponse.json({
           error: 'No Azure connection is configured to reuse. Connect Azure first, or enter '
@@ -161,7 +161,7 @@ export async function PUT(req: Request) {
     }
 
     try {
-      saveSsoProvider({
+      await saveSsoProvider({
         provider: 'microsoft-entra-id',
         tenantId,
         clientId,
@@ -169,7 +169,7 @@ export async function PUT(req: Request) {
         createdBy: actor.email,
       });
 
-      writeAudit({
+      await writeAudit({
         actor,
         action: 'sign_in_config.save',
         entityType: 'sign_in_config',
@@ -184,28 +184,28 @@ export async function PUT(req: Request) {
     }
   }
 
-  return NextResponse.json(getSignInStatus());
+  return NextResponse.json(await getSignInStatus());
 }
 
 export async function DELETE() {
   const actor = await requireRole('auth:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const status = getSignInStatus();
+  const status = await getSignInStatus();
   if (!status.stored) {
     return NextResponse.json({ error: 'There is no stored sign-in configuration to remove.' }, { status: 404 });
   }
 
   try {
-    deleteSsoProvider(status.stored.id);
-    writeAudit({
+    await deleteSsoProvider(status.stored.id);
+    await writeAudit({
       actor,
       action: 'sign_in_config.delete',
       entityType: 'sign_in_config',
       entityId: status.stored.id,
       summary: `Removed the stored Microsoft sign-in configuration for tenant ${status.stored.tenantId}`,
     });
-    return NextResponse.json(getSignInStatus());
+    return NextResponse.json(await getSignInStatus());
   } catch (err) {
     return serverError('Failed to remove sign-in configuration', err);
   }

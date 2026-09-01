@@ -77,7 +77,7 @@ async function runChecks(page: Page, routeLabel: string) {
 }
 
 for (const theme of THEMES) {
-  test.describe(`accessibility sweep — ${theme} theme`, () => {
+  test.describe(`accessibility sweep — ${theme} theme`, async () => {
     for (const route of ROUTES) {
       test(`${route} has no serious axe violations, no overflow, no console errors`, async ({ page }) => {
         const consoleErrors = await collectConsoleErrors(page);

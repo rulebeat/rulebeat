@@ -8,7 +8,7 @@ import type { DashboardConfig } from '@/lib/types';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json(listDashboards());
+  return Response.json(await listDashboards());
 }
 
 export async function POST(req: Request) {
@@ -19,8 +19,8 @@ export async function POST(req: Request) {
   if (body instanceof NextResponse) return body;
 
   if (body.template === 'starter') {
-    const dashboard = createStarterDashboard();
-    writeAudit({
+    const dashboard = await createStarterDashboard();
+    await writeAudit({
       actor,
       action: 'dashboard.create',
       entityType: 'dashboard',
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
 
-  const result = createDashboard({
+  const result = await createDashboard({
     name: body.name.trim(),
     description: body.description,
     config: body.config ?? { autoRefresh: 0, widgets: [] },
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 
   if ('error' in result) return Response.json({ error: result.error }, { status: 409 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'dashboard.create',
     entityType: 'dashboard',

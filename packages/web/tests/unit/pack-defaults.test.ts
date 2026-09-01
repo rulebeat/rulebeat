@@ -36,7 +36,7 @@ function seed(sqlite: Database.Database): void {
 }
 
 describe('B3 · the committed pack JSON default', () => {
-  it('every rule in data/packs/aprl-v2.json defaults to enabled: false', () => {
+  it('every rule in data/packs/aprl-v2.json defaults to enabled: false', async () => {
     const packPath = join(REAL_DATA_DIR, 'packs', 'aprl-v2.json');
     const rules = JSON.parse(readFileSync(packPath, 'utf-8')) as Array<{ enabled: boolean }>;
     expect(rules.length).toBeGreaterThan(100);
@@ -45,7 +45,7 @@ describe('B3 · the committed pack JSON default', () => {
 });
 
 describe('B3 · a fresh install starts quiet', () => {
-  it('exactly 12 rules are enabled — the builtin core set plus the two identity checks, none of APRL', () => {
+  it('exactly 12 rules are enabled — the builtin core set plus the two identity checks, none of APRL', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);
@@ -62,7 +62,7 @@ describe('B3 · a fresh install starts quiet', () => {
     }
   });
 
-  it('re-seeding never re-disables a rule an admin already turned on (the upgrade guarantee)', () => {
+  it('re-seeding never re-disables a rule an admin already turned on (the upgrade guarantee)', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);
@@ -91,7 +91,7 @@ describe('spec 031 · taxonomy defaults for real pack-seeded rules', () => {
   // falling back), would slip past every other spec 031 test in this suite, since all of them save
   // rules through lib/rules.ts rather than through this seeding path. Run against the real, committed
   // aprl-v2.json (via the same seed() helper as the tests above), not a synthesised stand-in.
-  it('every real aprl-v2 rule seeds with shape detect, kind state, and no applies_to', () => {
+  it('every real aprl-v2 rule seeds with shape detect, kind state, and no applies_to', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);

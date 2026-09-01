@@ -2,7 +2,7 @@
  * TS-04 · Permission enforcement — the "no route is left unguarded" half.
  *
  * The product's whole authorization story rests on one rule: every API route calls
- * `requireRole(action)`. Nothing in the type system enforces that, so it currently holds because
+ * `await requireRole(action)`. Nothing in the type system enforces that, so it currently holds because
  * whoever adds a route remembers. This suite makes forgetting impossible — it reads the route
  * files on disk, so a new unguarded route fails the build the moment it's committed, without
  * anyone having to write a test for it.
@@ -67,11 +67,11 @@ function declaredActions(source: string): string[] {
 }
 
 describe('TS-04 · every API route is guarded', () => {
-  it('found the API routes at all (guards against this suite silently testing nothing)', () => {
+  it('found the API routes at all (guards against this suite silently testing nothing)', async () => {
     expect(routeFiles.length).toBeGreaterThan(20);
   });
 
-  it('04-18..28 · every route calls requireRole', () => {
+  it('04-18..28 · every route calls requireRole', async () => {
     const unguarded = guarded
       .filter(r => !r.source.includes('requireRole'))
       .map(r => r.rel.split(sep).join('/'));
@@ -83,7 +83,7 @@ describe('TS-04 · every API route is guarded', () => {
     ].join(' ')).toEqual([]);
   });
 
-  it('every route declares an action that exists in the permission model', () => {
+  it('every route declares an action that exists in the permission model', async () => {
     const bad: string[] = [];
     for (const r of guarded) {
       for (const action of declaredActions(r.source)) {
@@ -95,7 +95,7 @@ describe('TS-04 · every API route is guarded', () => {
     expect(bad, 'These routes guard on an action that is not in lib/rbac.ts').toEqual([]);
   });
 
-  it('a route that exports a mutating verb guards it with more than plain read access', () => {
+  it('a route that exports a mutating verb guards it with more than plain read access', async () => {
     const tooWeak: string[] = [];
     for (const r of guarded) {
       const verbs = exportedVerbs(r.source);
@@ -110,7 +110,7 @@ describe('TS-04 · every API route is guarded', () => {
     expect(tooWeak, 'These routes mutate data but only require read access').toEqual([]);
   });
 
-  it('every route file exports at least one HTTP verb (no dead route files)', () => {
+  it('every route file exports at least one HTTP verb (no dead route files)', async () => {
     const empty = routeFiles
       .filter(r => exportedVerbs(r.source).length === 0 && !UNGUARDED_BY_DESIGN.has(r.rel))
       .map(r => r.rel.split(sep).join('/'));
@@ -152,12 +152,12 @@ describe('TS-04 · the actions the sensitive routes require', () => {
   ];
 
   for (const [route, action] of PINNED) {
-    it(`app/api/${route} requires '${action}'`, () => {
+    it(`app/api/${route} requires '${action}'`, async () => {
       expect(actionsFor(route)).toContain(action);
     });
   }
 
-  it("admin-only routes are not reachable by an editor", () => {
+  it("admin-only routes are not reachable by an editor", async () => {
     const adminOnly: Action[] = ['users:manage', 'audit:read', 'categories:write', 'azure:manage', 'auth:manage', 'notifications:manage'];
     for (const action of adminOnly) {
       expect(can('editor' as Role, action)).toBe(false);

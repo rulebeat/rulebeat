@@ -16,8 +16,8 @@ import * as pg from './schema.pg';
  * because `schema.pg.ts` is column-for-column identical to `schema.ts` (same names, same
  * nullability, same text/integer storage shapes).
  *
- * Only repositories already ported to the async dual-backend style import from here. Everything
- * else still imports `./schema` directly and stays SQLite-only until the Phase 2 sweep.
+ * Every repository imports its tables from here. Only the SQLite migration chain (migrate.ts,
+ * client.ts) and the pg bootstrap/seeds touch a dialect's schema module directly.
  */
 function pick<K extends keyof typeof sqlite & keyof typeof pg>(name: K): (typeof sqlite)[K] {
   return (dbKind === 'pg' ? pg[name] : sqlite[name]) as unknown as (typeof sqlite)[K];

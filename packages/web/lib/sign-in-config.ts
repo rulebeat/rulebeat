@@ -1,7 +1,7 @@
 import Credentials from 'next-auth/providers/credentials';
 import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
 import { fetchWithRetry } from '@rulebeat/core';
-import { getMetaSync as getMeta, setMetaSync as setMeta, deleteMetaSync as deleteMeta } from '@/lib/db/meta'; // sync SQLite-only until #73 Phase 2
+import { getMeta, setMeta, deleteMeta } from '@/lib/db/meta';
 import {
   getStoredSsoProvider,
   getStoredSsoProviderSummary,
@@ -35,24 +35,24 @@ function isLocalSignInPolicy(value: unknown): value is LocalSignInPolicy {
   return value === 'always' || value === 'break-glass' || value === 'disabled';
 }
 
-export function getLocalSignInPolicy(): LocalSignInPolicy {
-  const stored = getMeta(LOCAL_POLICY_KEY);
+export async function getLocalSignInPolicy(): Promise<LocalSignInPolicy> {
+  const stored = await getMeta(LOCAL_POLICY_KEY);
   return isLocalSignInPolicy(stored) ? stored : 'always';
 }
 
-export function setLocalSignInPolicy(policy: LocalSignInPolicy): void {
-  setMeta(LOCAL_POLICY_KEY, policy);
+export async function setLocalSignInPolicy(policy: LocalSignInPolicy): Promise<void> {
+  await setMeta(LOCAL_POLICY_KEY, policy);
 }
 
 /** The URL this install is reachable at, for `AUTH_URL`/redirect-URI display. Null = not set. */
-export function getPublicUrl(): string | null {
+export async function getPublicUrl(): Promise<string | null> {
   return getMeta(PUBLIC_URL_KEY);
 }
 
-export function setPublicUrl(url: string | null): void {
+export async function setPublicUrl(url: string | null): Promise<void> {
   const trimmed = url?.trim();
-  if (trimmed) setMeta(PUBLIC_URL_KEY, trimmed);
-  else deleteMeta(PUBLIC_URL_KEY);
+  if (trimmed) await setMeta(PUBLIC_URL_KEY, trimmed);
+  else await deleteMeta(PUBLIC_URL_KEY);
 }
 
 /* next-auth reads the public URL from `process.env.AUTH_URL`, so a URL configured in Settings has
@@ -124,11 +124,11 @@ export interface ResolvedSignInConfig extends EnvSignInConfig {
  * reason: a provider built from stored values silently ignores env if both are somehow present
  * (Auth.js's own env-var handling applies with `??=`), so precedence has to be enforced here.
  */
-export function resolveSignInConfig(): ResolvedSignInConfig | null {
+export async function resolveSignInConfig(): Promise<ResolvedSignInConfig | null> {
   const fromEnv = envSignInConfig();
   if (fromEnv) return { ...fromEnv, source: 'env' };
 
-  const stored = getStoredSsoProvider();
+  const stored = await getStoredSsoProvider();
   if (stored) {
     return {
       tenantId: stored.tenantId,
@@ -159,12 +159,12 @@ export interface SignInStatus {
 }
 
 /** Read-only description of sign-in configuration, for the settings screen and /signin. */
-export function getSignInStatus(): SignInStatus {
-  const stored = getStoredSsoProviderSummary();
+export async function getSignInStatus(): Promise<SignInStatus> {
+  const stored = await getStoredSsoProviderSummary();
   const fromEnv = envSignInConfig();
-  const localSignInPolicy = getLocalSignInPolicy();
-  const publicUrl = getPublicUrl();
-  const azureConnection = getActiveAzureCredentialSummary();
+  const localSignInPolicy = await getLocalSignInPolicy();
+  const publicUrl = await getPublicUrl();
+  const azureConnection = await getActiveAzureCredentialSummary();
 
   if (fromEnv) {
     return {
@@ -260,7 +260,7 @@ export async function probeTenant(tenantId: string): Promise<{ ok: true } | { ok
  * everyone out, since `RULEBEAT_INITIAL_ADMIN` only grants a role, not a password.
  */
 export async function authorizeLocalAccount(credentials: Partial<Record<string, unknown>>) {
-  if (getLocalSignInPolicy() === 'disabled' && env('RULEBEAT_FORCE_LOCAL_SIGNIN') !== 'true') {
+  if ((await getLocalSignInPolicy()) === 'disabled' && env('RULEBEAT_FORCE_LOCAL_SIGNIN') !== 'true') {
     return null;
   }
 
@@ -276,8 +276,8 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
       import('@/lib/db/audit'),
     ]);
 
-  const user = getUserByEmail(email);
-  const account = user ? localAccounts.getLocalAccount(user.id) : null;
+  const user = await getUserByEmail(email);
+  const account = user ? await localAccounts.getLocalAccount(user.id) : null;
 
   // Unbounded and attacker- or accident-reachable: a nonexistent email, or a real user with no
   // local password (e.g. an SSO-only user on the local form). Neither is a bounded, real account
@@ -299,8 +299,8 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
 
   const valid = await verifyPassword(password, account.passwordHash);
   if (!valid) {
-    localAccounts.recordFailedAttempt(user.id);
-    writeAudit({
+    await localAccounts.recordFailedAttempt(user.id);
+    await writeAudit({
       actor: user,
       action: 'auth.sign_in_failed',
       entityType: 'auth',
@@ -310,10 +310,10 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
     return null;
   }
 
-  localAccounts.clearFailedAttempts(user.id);
-  touchLastSeen(user.id);
+  await localAccounts.clearFailedAttempts(user.id);
+  await touchLastSeen(user.id);
   const { writeSignInAudit } = await import('@/lib/provision-user');
-  writeSignInAudit(user);
+  await writeSignInAudit(user);
 
   return { id: user.id, email: user.email, name: user.name ?? undefined };
 }
@@ -331,7 +331,7 @@ export async function buildProviders() {
     }),
   ];
 
-  const resolved = resolveSignInConfig();
+  const resolved = await resolveSignInConfig();
   if (resolved) {
     providers.push(MicrosoftEntraID({
       clientId: resolved.clientId,

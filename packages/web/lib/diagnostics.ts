@@ -9,11 +9,11 @@ export interface SystemDiagnostics {
   checkedAt: string;
 }
 
-export function getSystemDiagnostics(): SystemDiagnostics {
+export async function getSystemDiagnostics(): Promise<SystemDiagnostics> {
   return {
     version: getAppVersion(),
     scheduler: getSchedulerStatus(),
-    schemaCache: getSchemaCacheStatus(),
+    schemaCache: await getSchemaCacheStatus(),
     checkedAt: new Date().toISOString(),
   };
 }

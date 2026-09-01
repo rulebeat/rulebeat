@@ -4,15 +4,15 @@ import { createScanLogger } from '@/lib/server-logger';
 describe('createScanLogger()', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     logSpy.mockRestore();
   });
 
-  it('writes one JSON.parse-able console.log line carrying the message, context, and fields', () => {
+  it('writes one JSON.parse-able console.log line carrying the message, context, and fields', async () => {
     const log = createScanLogger({ runId: 'r1' });
 
     log('msg', { ruleId: 'x' });
@@ -30,7 +30,7 @@ describe('createScanLogger()', () => {
     expect(typeof parsed.ts).toBe('string');
   });
 
-  it('carries an explicit level through unchanged instead of defaulting to info', () => {
+  it('carries an explicit level through unchanged instead of defaulting to info', async () => {
     const log = createScanLogger({ runId: 'r1' });
 
     log('boom', { level: 'error' });
@@ -39,7 +39,7 @@ describe('createScanLogger()', () => {
     expect(parsed.level).toBe('error');
   });
 
-  it('writes a valid line even with no fields and no context at all', () => {
+  it('writes a valid line even with no fields and no context at all', async () => {
     const log = createScanLogger();
 
     log('bare message');

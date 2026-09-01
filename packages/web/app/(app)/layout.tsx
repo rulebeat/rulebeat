@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // presentation only — the route and its API enforce the role themselves.
   const user = await getCurrentUser();
 
-  // getCurrentUser() returns null both for no session and for a session whose epoch claim no
+  // await getCurrentUser() returns null both for no session and for a session whose epoch claim no
   // longer matches the DB (spec 020 — a local-password mutation happened since this token was
   // issued). proxy.ts's authorized callback only checks that the JWT carries a uid claim, which a
   // stale token still does, so this is the one place page loads actually enforce "signed out" for
@@ -27,13 +27,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // A temporary password (the first-boot owner account, or an admin-reset one) must be replaced
   // before anything else in the app is reachable — /change-password lives outside this route
   // group specifically so this redirect doesn't loop back into itself.
-  if (user && getLocalAccount(user.id)?.mustChangePassword) redirect('/change-password');
+  if (user && (await getLocalAccount(user.id))?.mustChangePassword) redirect('/change-password');
 
   // Must come after the mustChangePassword redirect above: requireRole blocks every action except
   // account:self while a temporary password is set (RB-QA-017), so onboarding's own API calls would
   // 403 if this ran first. Gated on the action, not role === 'admin' — lib/rbac.ts is the one place
   // that mapping lives.
-  if (user && can(user.role, 'azure:manage') && isOnboardingPending()) redirect('/onboarding');
+  if (user && can(user.role, 'azure:manage') && await isOnboardingPending()) redirect('/onboarding');
 
   return (
     <div className="relative flex flex-col h-screen overflow-hidden bg-background">

@@ -23,15 +23,15 @@ function req(url: string, method: string, body: unknown): Request {
 }
 
 async function signInAsAdmin(): Promise<void> {
-  const result = createUser({ email: 'admin@example.com', role: 'admin' });
+  const result = await createUser({ email: 'admin@example.com', role: 'admin' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('notification channel routes — SSRF hardening (spec 021)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsAdmin();
     // literal public IP used for the "unaffected" case below needs no resolver, but keep a safe
