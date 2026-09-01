@@ -89,7 +89,9 @@ posture figure ([`posture.md`](posture.md)).
 
 ## Where data lives
 
-Everything is one SQLite database in `data/` (or the Docker named volume): rules and their KQL,
+Everything is one database: a SQLite file in `data/` (or the Docker named volume) by default, or
+the PostgreSQL database named by `RULEBEAT_DATABASE_URL`
+([`install.md`](install.md#deployment-topology)). Either way it holds rules and their KQL,
 findings, scans, schedules and runs, suppressions, dashboards, users, the audit log, notification
 channels and delivery history, posture snapshots. Three kinds of field are encrypted with AES-256-GCM
 before they are written, and [`security.md`](security.md) spells out what that does and does not

@@ -124,6 +124,24 @@ admin is locked out at once with no way back short of `RULEBEAT_FORCE_LOCAL_SIGN
 change the key, restart, and re-save each stored credential. None are silently lost; they need
 entering again once they read back as unreadable.
 
+## Database backend
+
+`RULEBEAT_DATABASE_URL` switches storage from the built-in SQLite file to a PostgreSQL database.
+Leave it unset (the default) and everything lives in one SQLite file in the data volume, the right
+choice for a typical single-host install. Set a `postgres://` connection string and RuleBeat
+creates its schema and seed data there on first boot instead; the database only has to exist and
+be reachable. This is the one setting with no console equivalent, because the app has to know
+where its database is before it can read any settings.
+
+`RULEBEAT_DATABASE_URL_FILE` mounts the connection string as a file, the same `*_FILE` convention
+as the secrets above, since the string carries the database password. It is read once at startup,
+so replacing the file needs a restart.
+
+Switching backends is a fresh install: nothing is migrated between SQLite and Postgres in either
+direction. The supported topology stays one replica either way, and a stateless no-volume
+deployment needs `AUTH_SECRET` and `RULEBEAT_ENCRYPTION_KEY` set alongside the URL. See
+[`install.md`](install.md#deployment-topology).
+
 ## Scan history retention
 
 `SCAN_HISTORY_LIMIT` caps how many runs are kept per category in Run History, defaulting to 90, with

@@ -48,7 +48,7 @@
 | `packages/web/lib/severity.ts` | `SEVERITY_ORDER`, `emptySeverityCounts()`: canonical severity ordering, shared by scan-runner/dashboard-data/snapshots |
 | `packages/web/lib/rule-description.ts` | `splitLearnMore()` splits a rule description's optional trailing `\nLearn more: <url>` marker into text + link |
 | `packages/web/lib/toggle-set.ts` | `toggleInSet()`: shared add/remove toggle for `Set`-based filter state |
-| `packages/web/lib/rules.ts` | `loadRules`/`saveRules`/`isNameTaken`/`duplicateRule`/`allTagsFromRules`: the SQLite repository layer. `setRulesEnabled(ids, enabled)` is a single `UPDATE ... WHERE id IN (...)`, deliberately not `saveRules()` (delete + reinsert), for onboarding step 3's bulk toggle. `listRuleSummaries()` is the light `{id,category,severity,enabled}` projection that feeds it, never the full `Rule[]` with KQL/visual-query blobs |
+| `packages/web/lib/rules.ts` | `loadRules`/`saveRules`/`isNameTaken`/`duplicateRule`/`allTagsFromRules`: the rules repository layer. `setRulesEnabled(ids, enabled)` is a single `UPDATE ... WHERE id IN (...)`, deliberately not `saveRules()` (delete + reinsert), for onboarding step 3's bulk toggle. `listRuleSummaries()` is the light `{id,category,severity,enabled}` projection that feeds it, never the full `Rule[]` with KQL/visual-query blobs |
 | `packages/web/lib/builtin-rules.ts` | 13 built-in rules, fixed literal UUID `id` each (no `builtin::` prefix), seeded on startup |
 | `packages/web/lib/rule-filters.ts` | `matchesRuleSearch()`: shared search predicate used by both Library and Scans |
 | `packages/web/components/ui/checklist-dropdown.tsx` | Shared `ChecklistPanel` portal behind two triggers: `ChecklistDropdown` (toolbar) and `ColumnFilterIcon` (table column funnel) |
@@ -60,8 +60,14 @@
 | `scripts/sync-pack.ts` | Generic pack sync runner |
 | `scripts/packs/aprl-v2.ts` | APRL v2 pack transform |
 | `tsconfig.scripts.json` | TS config for `scripts/` (Node types, path alias for web types) |
-| `packages/web/lib/db/schema.ts` | Drizzle schema: `rules`, `scans`, `suppressions`, `dashboards`, `categories`, `findings`, `finding_events`, `schedules`, `schedule_runs`, `posture_snapshots`, `azure_credentials`, `meta` |
-| `packages/web/lib/db/client.ts` | Opens the connection and exports `db`. Thin by design: it calls `runMigrations` then `runSeeds` from `./migrate` at import time, and that order is asserted by the upgrade tests |
+| `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin: `rules`, `scans`, `suppressions`, `dashboards`, `categories`, `findings`, `finding_events`, `schedules`, `schedule_runs`, `posture_snapshots`, `azure_credentials`, `meta` |
+| `packages/web/lib/db/schema.pg.ts` | The Postgres twin of `schema.ts`: same tables, column names and nullability, `pgTable` instead of `sqliteTable`. Timestamps and JSON stay text so ordering and row mappers match byte-for-byte |
+| `packages/web/lib/db/backend.ts` | Reads `RULEBEAT_DATABASE_URL` (and `_FILE`) once and exports `dbKind` ('sqlite' or 'pg'), the one place the backend is decided |
+| `packages/web/lib/db/tables.ts` | Exports the active backend's table objects plus the insertion-order tiebreak column (`rowid` on SQLite, `seq` on pg). Repositories and tests import tables from here, never from a schema twin |
+| `packages/web/lib/db/exec.ts` | The exec seam: `many()`/`one()`/`run()`/`inTransaction()` hide `.all()`/`.get()`/`.run()` vs awaited pg builders, and every helper awaits `dbReady` first |
+| `packages/web/lib/db/pg/bootstrap.ts` | Postgres DDL: creates the full schema with `CREATE TABLE IF NOT EXISTS` on first boot. Postgres never runs `migrate.ts` |
+| `packages/web/lib/db/pg/seeds.ts` | Postgres seed path mirroring `runSeeds`' ordered sequence with `onConflict*` upserts |
+| `packages/web/lib/db/client.ts` | The composition root: opens SQLite (then `runMigrations` and `runSeeds` from `./migrate` at import time, order asserted by the upgrade tests) or a pg Pool (then `bootstrapPg` and `seedPg`, behind the exported `dbReady` promise), and exports `db` |
 | `packages/web/lib/db/migrate.ts` | `openDatabase`/`runMigrations`/`runSeeds`: every schema change and seed the app applies on startup, extracted from `client.ts` so they can be run against a database other than the live one. **Statement order is load-bearing:** a `RENAME COLUMN` must precede the `ADD COLUMN` that would otherwise create the same name and strand the old column's data |
 | `packages/web/lib/db/categories.ts` | Category repository CRUD (builtin-protected) |
 | `packages/web/app/globals.css` | **The only source of colour in the app.** Grid design tokens, defined twice (light + dark) and exposed via Tailwind 4 `@theme inline`; `--radius: 0px`; the `label-grid`/`numeral-grid`/`scroll-x`/`scroll-y`/`scroll-both` utilities. See the Design system note in `CLAUDE.md` before adding a colour |
@@ -198,7 +204,8 @@
 | `packages/web/lib/db/saved-queries.ts` | `getSavedQuery()`, on the schema's first per-user-owned table; returns `null` for both a nonexistent row and an existent-but-private-to-someone-else one, so a direct lookup 404s rather than 403ing (see the lesson in `docs/engineering/conventions/data.md`) |
 | `packages/web/lib/query-to-rule.ts` | `buildRuleFromQuery()` converts a query-page snapshot into a draft `Rule` for the "Save as rule" flow |
 | `vitest.config.mts` | Two projects (`core`, `web`), both `node` env, since browser behaviour is Playwright's job rather than jsdom's. `.mts` because the root package isn't ESM. Web project is `fileParallelism: false` (shared DB singleton) |
-| `packages/web/tests/setup.ts` | Sets `RULEBEAT_DB_PATH` to a temp file **before** any repository import. `lib/db/client.ts` connects at import time, so nothing later can redirect it |
+| `packages/web/tests/setup.ts` | Sets `RULEBEAT_DB_PATH` to a temp file **before** any repository import. `lib/db/client.ts` connects at import time, so nothing later can redirect it. Under `RULEBEAT_TEST_PG_URL` it flips the backend to Postgres and resets the `public` schema per test file |
+| `packages/web/tests/unit/pg-parity.test.ts` | Backend parity: the same repository calls (meta, the findings lifecycle, rules round-trips, users, dashboards, suppressions) asserted on whichever backend the run selects; the pg CI run is what makes it bite |
 | `packages/web/tests/helpers/fake-azure.ts` | `fakeTenantContext()`, with no mocking library needed since `queryARG` is already injectable via `TenantContext`. Its `credential` throws, so a test can't reach real Azure |
 | `packages/web/tests/helpers/db.ts` | `resetDb()` clears mutable tables only. `rules`/`categories`/`dashboards` are seeded on import by private functions, so wiping them yields a state no install is ever in |
 | `packages/web/tests/unit/route-guards.test.ts` | Architecture test: reads every `app/api/**/route.ts` off disk and fails if one skips `requireRole` or under-guards a mutating verb. Adding a route means adding the guard |
