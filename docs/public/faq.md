@@ -78,8 +78,16 @@ Not today. The Azure public cloud endpoints are the only ones wired in.
 
 ## Can I run more than one replica?
 
-Not supported today: one container, one data volume, one in-process scheduler. Two replicas on one
-volume would double-fire schedules and contend for SQLite. See
+Not supported today: one container and one in-process scheduler. Two replicas would both run
+every due schedule, because scheduling has no cross-instance coordination, and in SQLite mode they
+would also contend for one database file. Running on PostgreSQL does not change the answer yet.
+See [`install.md`](install.md#deployment-topology).
+
+## Can I use PostgreSQL instead of SQLite?
+
+Yes. Set `RULEBEAT_DATABASE_URL` to a `postgres://` connection string and RuleBeat creates its
+schema and seed data there on first boot; leave it unset and the built-in SQLite file stays the
+default. Switching backends is a fresh install, nothing is migrated between the two. See
 [`install.md`](install.md#deployment-topology).
 
 ## Can I write a rule against sign-in logs, activity logs or diagnostic data?
@@ -93,9 +101,11 @@ Findings export to CSV and JSON, and the audit log to CSV. Rules have no import 
 
 ## How do I back it up?
 
-Copy the data volume. The SQLite database, the encryption key and the auth secret live there
-together, so a copy is a complete backup and must be treated as sensitive. See
-[`security.md`](security.md).
+In SQLite mode, copy the data volume. The database, the encryption key and the auth secret live
+there together, so a copy is a complete backup and must be treated as sensitive. In Postgres mode,
+back up the database with your database server's own tooling, and keep the data volume (or the
+`AUTH_SECRET` and `RULEBEAT_ENCRYPTION_KEY` values, if you set them in the environment) backed up
+beside it, because the keys never live in the database. See [`security.md`](security.md).
 
 ## Is it really free?
 

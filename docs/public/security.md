@@ -23,8 +23,10 @@ inventory.
 
 ## What is stored, and what is encrypted
 
-Everything lives in a SQLite database inside your own deployment, in the single named volume the
-compose file mounts. Nothing is synced to a service RuleBeat operates.
+Everything lives inside your own deployment: by default in a SQLite database in the single named
+volume the compose file mounts, or in the PostgreSQL database you point `RULEBEAT_DATABASE_URL` at
+([`install.md`](install.md#deployment-topology)). Nothing is synced to a service RuleBeat
+operates.
 
 Exactly three kinds of field are AES-256-GCM ciphertext: the Azure client secret, the Entra ID (SSO)
 client secret, and every notification channel's destination detail (webhook URLs, SMTP passwords).
@@ -38,11 +40,12 @@ of the volume carries both the ciphertext and the key that opens it. To get the 
 property, set `RULEBEAT_ENCRYPTION_KEY` from a secret store outside the volume
 ([`configure.md`](configure.md#azure-scanning-credential)), and back the key up the same way you back
 up the volume, or every stored secret must be re-entered on restore. There is no published, tested
-backup and restore procedure yet beyond copying the volume.
+backup and restore procedure yet beyond copying the volume in SQLite mode, or your database
+server's own dump tooling in Postgres mode.
 
 Encryption at rest covers the database travelling somewhere without its key: a support bundle, a
 copied backup, a leaked snapshot. It does not protect against someone who already has access to the
-running container or its host. On Linux, RuleBeat sets the database, its `-wal`/`-shm` sidecars and
+running container or its host. On Linux, RuleBeat sets the SQLite database, its `-wal`/`-shm` sidecars and
 the generated `auth.key`, `encryption.key` and `initial-password.txt` to `0600` on every startup,
 which is a floor rather than a full answer: root on the host, a shell in the container, or access to
 the volume all read the file directly. That threat model is part of why the credential paths with no

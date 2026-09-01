@@ -114,3 +114,13 @@ than the product.
 **The Edit tool can silently introduce Unicode smart quotes into JSX, breaking TS with cascading `TS1127` errors.** Replace U+201C/U+201D with plain ASCII quotes via a script.
 
 **Independent per-resource violation odds across hundreds of resources make "zero violators for this rule" statistically impossible, even at low individual rates.** The demo generator's tenant-wide posture stat only counts a rule as passing with zero findings anywhere, so it needed a separate per-*rule* "clean" coin flip, not just per-resource odds, to avoid pinning at 0%.
+
+## The two database backends in tests and CI
+
+**The web suite runs twice in CI: once on SQLite, once against a real PostgreSQL 17 service container with `RULEBEAT_TEST_PG_URL` set.** That variable is test-only: `tests/setup.ts` flips the backend under it and drops and recreates the `public` schema per test file, while normal runs delete the whole `RULEBEAT_DATABASE_URL` family so a developer's environment can never flip a test run's backend by accident.
+
+**A test reaches the database only through the exec seam (`lib/db/exec.ts`) or the helpers in `tests/helpers/db.ts` (`resetDb`, `clearRules`, `execRaw`, `countRows`), and imports tables from `lib/db/tables`, never `lib/db/schema`.** A direct `.all()`/`.get()`/`.run()` or a `schema.ts` import passes on SQLite and fails the pg run.
+
+**Suites that assert the SQLite upgrade chain itself are excluded from the pg run in `vitest.config.mts`, not weakened.** Postgres starts empty and shares no migration path, so `db-migrations-golden`, `db-upgrade-scan`, `db-backfills`, `demo-generator` and `demo-mode` are SQLite-only by design. A suite that builds its own standalone SQLite files (the migration and fixture suites) still runs on both backends, because it never touches the live singleton.
+
+**Fake timers deadlock against real async I/O.** A fixed advance-then-await sequence assumes the code under test is already parked on its timer when the advance runs; on Postgres it may still be awaiting database I/O, so the advance fires into nothing and the await hangs. Pump timers in steps until the promise settles instead (`notification-dispatch-retry.test.ts`'s `settleWithTimers`).
