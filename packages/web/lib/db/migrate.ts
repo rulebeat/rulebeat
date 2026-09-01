@@ -1041,6 +1041,21 @@ export function runMigrations(sqlite: Database.Database): void {
  * `initial-password.txt` into that real directory on every run. The upgrade-suite fixtures call
  * `runMigrations`/`runSeeds` directly against their own throwaway `dataDir` and are unaffected.
  */
+// Shared with the Postgres seed path (lib/db/pg/seeds.ts), which seeds the same built-in
+// categories (minus the SQLite-only is_special column).
+export const BUILTIN_CATEGORIES = [
+  { id: 'compliance',  label: 'Compliance',  color: '#3b82f6', icon: 'Tag',        sortOrder: 1, isSpecial: false },
+  { id: 'cost',        label: 'Cost',         color: '#f97316', icon: 'Trash2',     sortOrder: 2, isSpecial: false },
+  { id: 'security',    label: 'Security',     color: '#0d9488', icon: 'ShieldCheck',sortOrder: 3, isSpecial: false },
+  { id: 'identity',    label: 'Identity',     color: '#8b5cf6', icon: 'KeyRound',   sortOrder: 4, isSpecial: true  },
+  { id: 'reliability', label: 'Reliability',  color: '#22c55e', icon: 'Activity',   sortOrder: 5, isSpecial: false },
+];
+// Security's old seeded default, red — red means "something is wrong" everywhere else in the
+// product (severity, destructive actions), so a category permanently flagged red trained people
+// to stop reading the colour as an alarm. Migrated away below, but only for installs that still
+// have the exact untouched old default — an admin who already chose their own colour keeps it.
+export const OLD_SECURITY_RED = '#ef4444';
+
 export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { skipOwnerBootstrap?: boolean } = {}): void {
   // Seed from legacy JSON files on first run (one-time migration)
   seedFromJson();
@@ -1247,19 +1262,6 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
   }
 
   function seedCategories() {
-    const BUILTIN_CATEGORIES = [
-      { id: 'compliance',  label: 'Compliance',  color: '#3b82f6', icon: 'Tag',        sortOrder: 1, isSpecial: false },
-      { id: 'cost',        label: 'Cost',         color: '#f97316', icon: 'Trash2',     sortOrder: 2, isSpecial: false },
-      { id: 'security',    label: 'Security',     color: '#0d9488', icon: 'ShieldCheck',sortOrder: 3, isSpecial: false },
-      { id: 'identity',    label: 'Identity',     color: '#8b5cf6', icon: 'KeyRound',   sortOrder: 4, isSpecial: true  },
-      { id: 'reliability', label: 'Reliability',  color: '#22c55e', icon: 'Activity',   sortOrder: 5, isSpecial: false },
-    ];
-    // Security's old seeded default, red — red means "something is wrong" everywhere else in the
-    // product (severity, destructive actions), so a category permanently flagged red trained people
-    // to stop reading the colour as an alarm. Migrated away below, but only for installs that still
-    // have the exact untouched old default — an admin who already chose their own colour keeps it.
-    const OLD_SECURITY_RED = '#ef4444';
-
     const insert = sqlite.prepare(`
       INSERT OR IGNORE INTO categories (id, label, color, icon, sort_order, is_builtin, is_special, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
