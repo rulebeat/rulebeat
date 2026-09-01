@@ -8,6 +8,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
+- The PostgreSQL backend now creates the complete schema and seeds the same built-in content as a fresh SQLite install: built-in rules, external pack rules, categories, the starter dashboard, onboarding state and the initial local admin account with its printed first password. The app itself still needs the remaining repository sweep before it fully runs on Postgres (issue #73, phase 1).
+
 - Groundwork for an optional PostgreSQL backend (issue #73, Phase 0 spike). RuleBeat can now open
   either its built-in SQLite database (the default, unchanged) or a PostgreSQL database named by
   the new `RULEBEAT_DATABASE_URL` setting (`RULEBEAT_DATABASE_URL_FILE` for Docker secrets). In

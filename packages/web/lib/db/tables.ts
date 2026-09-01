@@ -23,19 +23,40 @@ function pick<K extends keyof typeof sqlite & keyof typeof pg>(name: K): (typeof
   return (dbKind === 'pg' ? pg[name] : sqlite[name]) as unknown as (typeof sqlite)[K];
 }
 
-export const meta = pick('meta');
+export const rules = pick('rules');
+export const scans = pick('scans');
+export const suppressions = pick('suppressions');
+export const schemaCache = pick('schemaCache');
+export const resourceTypesCache = pick('resourceTypesCache');
+export const dashboards = pick('dashboards');
 export const categories = pick('categories');
+export const schedules = pick('schedules');
+export const meta = pick('meta');
+export const users = pick('users');
+export const azureCredentials = pick('azureCredentials');
+export const logAnalyticsWorkspaces = pick('logAnalyticsWorkspaces');
+export const localAccounts = pick('localAccounts');
+export const ssoProviders = pick('ssoProviders');
+export const auditLog = pick('auditLog');
 export const findings = pick('findings');
 export const findingEvents = pick('findingEvents');
 export const postureSnapshots = pick('postureSnapshots');
 export const notificationChannels = pick('notificationChannels');
+export const scheduleNotificationChannels = pick('scheduleNotificationChannels');
+export const scheduleRuns = pick('scheduleRuns');
 export const notificationDeliveries = pick('notificationDeliveries');
+export const savedQueries = pick('savedQueries');
+export const queryRuns = pick('queryRuns');
 
 /**
- * Insertion-order tiebreak for `notification_deliveries`, for ORDER BY clauses that must stay
- * stable when rapid inserts share a millisecond `occurredAt`. SQLite uses its implicit rowid
- * (monotonic on insert, no schema change); Postgres has no rowid, so its twin carries an explicit
- * `seq` bigserial instead.
+ * Insertion-order tiebreaks, for ORDER BY clauses that must stay stable when rapid inserts share
+ * a millisecond timestamp. SQLite uses its implicit rowid (monotonic on insert, no schema
+ * change); Postgres has no rowid, so the pg twins of these three tables carry an explicit `seq`
+ * bigserial instead.
  */
 export const deliveriesInsertionOrder: SQL =
   dbKind === 'pg' ? sql`${pg.notificationDeliveries.seq}` : sql`rowid`;
+export const savedQueriesInsertionOrder: SQL =
+  dbKind === 'pg' ? sql`${pg.savedQueries.seq}` : sql`rowid`;
+export const queryRunsInsertionOrder: SQL =
+  dbKind === 'pg' ? sql`${pg.queryRuns.seq}` : sql`rowid`;

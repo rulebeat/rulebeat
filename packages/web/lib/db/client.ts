@@ -11,6 +11,7 @@ import { openDatabase, runMigrations, runSeeds } from './migrate';
 import { isDemoEnv } from '../demo-env';
 import { databaseUrl, dbKind } from './backend';
 import { bootstrapPg } from './pg/bootstrap';
+import { seedPg } from './pg/seeds';
 
 // turbopackIgnore: this directory holds runtime-generated state (the SQLite db, schema cache),
 // not code — without the hint, Next's build-time file tracer can't prove that and falls back to
@@ -34,8 +35,13 @@ if (dbKind === 'pg') {
   // `dbReady` and every query path in exec.ts awaits it before touching the database. A failed
   // bootstrap therefore rejects the first query loudly instead of racing it.
   const pool = new Pool({ connectionString: databaseUrl! });
-  pgDrizzle = drizzlePg(pool, { schema: pgSchema });
-  ready = bootstrapPg(pgDrizzle);
+  const pgInstance = drizzlePg(pool, { schema: pgSchema });
+  pgDrizzle = pgInstance;
+  // Schema first, then the same built-in content a fresh SQLite install gets; both idempotent. A
+  // failure rejects dbReady, so the first query fails loudly instead of running against a missing
+  // or unseeded schema.
+  ready = bootstrapPg(pgInstance).then(() =>
+    seedPg(pgInstance, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST }));
 } else {
   // SQLite mode: the default, byte-identical to the behaviour before Postgres support existed.
 
