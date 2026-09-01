@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const findings = queryActiveFindings(filters);
+  const findings = await queryActiveFindings(filters);
   const categoryColorById = new Map(listCategories().map(c => [c.id, c.color]));
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();

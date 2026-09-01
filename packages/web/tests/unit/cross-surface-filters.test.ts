@@ -96,13 +96,13 @@ function toExplorerState(filters: WidgetFilters): ExplorerFilterState {
   };
 }
 
-function explorerFingerprints(filters: WidgetFilters): Set<string> {
+async function explorerFingerprints(filters: WidgetFilters): Promise<Set<string>> {
   const state = toExplorerState(filters);
-  return new Set(buildExplorerData().findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
+  return new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
 }
 
-function dashboardFingerprints(filters: WidgetFilters): Set<string> {
-  return new Set(queryActiveFindings(filters).map(f => f.fingerprint));
+async function dashboardFingerprints(filters: WidgetFilters): Promise<Set<string>> {
+  return new Set((await queryActiveFindings(filters)).map(f => f.fingerprint));
 }
 
 function sorted(s: Set<string>): string[] {
@@ -111,7 +111,7 @@ function sorted(s: Set<string>): string[] {
 
 let fpCritical: string, fpHigh: string, fpMedium: string, fpCost: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   resetDb();
   // clearRules(), not `saveRules([...loadRules(), ...])`: this file's beforeEach re-inserts the
   // same fixed rule ids (RULE_A/B/C) on every test, and resetDb() deliberately leaves the `rules`
@@ -131,16 +131,16 @@ beforeEach(() => {
   fpCritical = critical.fingerprint; fpHigh = high.fingerprint; fpMedium = medium.fingerprint;
   fpCost = cost.fingerprint;
 
-  syncScanFindings({
+  await syncScanFindings({
     scanId: 's1', category: 'security', ranRuleIds: [RULE_A, RULE_B],
     findings: [critical, high, medium, toBeFixed], finishedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
   });
-  syncScanFindings({
+  await syncScanFindings({
     scanId: 's1b', category: 'cost', ranRuleIds: [RULE_C],
     findings: [cost], finishedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
   });
   // Drop toBeFixed from the next security sync so it resolves.
-  syncScanFindings({
+  await syncScanFindings({
     scanId: 's2', category: 'security', ranRuleIds: [RULE_A, RULE_B],
     findings: [critical, high, medium], finishedAt: new Date(Date.now() - 1 * 86_400_000).toISOString(),
   });
@@ -154,72 +154,72 @@ function widgetFilters(overrides: Partial<WidgetFilters> = {}): WidgetFilters {
 }
 
 describe('dashboard vs. explorer agreement', () => {
-  it('no filters: both surfaces show every active, non-suppressed finding', () => {
+  it('no filters: both surfaces show every active, non-suppressed finding', async () => {
     const filters = widgetFilters();
-    const dash = dashboardFingerprints(filters);
-    const exp = explorerFingerprints(filters);
+    const dash = await dashboardFingerprints(filters);
+    const exp = await explorerFingerprints(filters);
     expect(sorted(dash)).toEqual(sorted(exp));
     expect(sorted(dash)).toEqual([fpCost, fpCritical, fpMedium].sort());
   });
 
-  it('category filter', () => {
+  it('category filter', async () => {
     const filters = widgetFilters({ categories: ['security'] });
-    expect(sorted(dashboardFingerprints(filters))).toEqual(sorted(explorerFingerprints(filters)));
-    expect(sorted(dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
+    expect(sorted(await dashboardFingerprints(filters))).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(sorted(await dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
   });
 
-  it('severity filter, combined with suppression: a suppressed finding never resurfaces just because its severity matches', () => {
+  it('severity filter, combined with suppression: a suppressed finding never resurfaces just because its severity matches', async () => {
     const filters = widgetFilters({ severities: ['critical', 'high'] });
-    const dash = dashboardFingerprints(filters);
-    const exp = explorerFingerprints(filters);
+    const dash = await dashboardFingerprints(filters);
+    const exp = await explorerFingerprints(filters);
     expect(sorted(dash)).toEqual(sorted(exp));
     expect(dash.has(fpHigh)).toBe(false); // suppressed, even though its severity matches
     expect(sorted(dash)).toEqual([fpCritical]);
   });
 
-  it('subscription filter', () => {
+  it('subscription filter', async () => {
     const filters = widgetFilters({ subscriptions: ['sub-2'] });
-    expect(sorted(dashboardFingerprints(filters))).toEqual(sorted(explorerFingerprints(filters)));
-    expect(sorted(dashboardFingerprints(filters))).toEqual([fpCost, fpMedium].sort());
+    expect(sorted(await dashboardFingerprints(filters))).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(sorted(await dashboardFingerprints(filters))).toEqual([fpCost, fpMedium].sort());
   });
 
-  it('resource group filter', () => {
+  it('resource group filter', async () => {
     const filters = widgetFilters({ resourceGroups: ['rg-1'] });
-    expect(sorted(dashboardFingerprints(filters))).toEqual(sorted(explorerFingerprints(filters)));
-    expect(sorted(dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
+    expect(sorted(await dashboardFingerprints(filters))).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(sorted(await dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
   });
 
-  it('tag filter spans categories (rule tags, not finding.category)', () => {
+  it('tag filter spans categories (rule tags, not finding.category)', async () => {
     const filters = widgetFilters({ tags: ['cost-hygiene'] });
-    expect(sorted(dashboardFingerprints(filters))).toEqual(sorted(explorerFingerprints(filters)));
-    expect(sorted(dashboardFingerprints(filters))).toEqual([fpCost, fpMedium].sort());
+    expect(sorted(await dashboardFingerprints(filters))).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(sorted(await dashboardFingerprints(filters))).toEqual([fpCost, fpMedium].sort());
   });
 
-  it('a single-rule click-through (ruleIds) matches the rule\'s own findings only', () => {
+  it('a single-rule click-through (ruleIds) matches the rule\'s own findings only', async () => {
     const filters = widgetFilters({ ruleIds: [RULE_A] });
-    const dash = dashboardFingerprints(filters);
-    const exp = explorerFingerprints(filters);
+    const dash = await dashboardFingerprints(filters);
+    const exp = await explorerFingerprints(filters);
     expect(sorted(dash)).toEqual(sorted(exp));
     expect(sorted(dash)).toEqual([fpCritical]); // fpHigh is RULE_A too, but suppressed
   });
 
-  it('includeSuppressed brings the suppressed finding back on both surfaces', () => {
+  it('includeSuppressed brings the suppressed finding back on both surfaces', async () => {
     const filters = widgetFilters({ includeSuppressed: true });
-    const dash = dashboardFingerprints(filters);
-    const exp = explorerFingerprints(filters);
+    const dash = await dashboardFingerprints(filters);
+    const exp = await explorerFingerprints(filters);
     expect(sorted(dash)).toEqual(sorted(exp));
     expect(dash.has(fpHigh)).toBe(true);
   });
 
-  it('a combined multi-dimension filter (as a real widget would build) still agrees', () => {
+  it('a combined multi-dimension filter (as a real widget would build) still agrees', async () => {
     const filters = widgetFilters({ categories: ['security'], severities: ['critical', 'medium'], resourceGroups: ['rg-1'] });
-    expect(sorted(dashboardFingerprints(filters))).toEqual(sorted(explorerFingerprints(filters)));
-    expect(sorted(dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
+    expect(sorted(await dashboardFingerprints(filters))).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(sorted(await dashboardFingerprints(filters))).toEqual([fpCritical, fpMedium].sort());
   });
 });
 
 describe('recency classification (getRecencyStatus / isWithinRange)', () => {
-  it('a finding first seen 3 days ago reads as "new" inside a 7d window and "ongoing" inside a 1d window', () => {
+  it('a finding first seen 3 days ago reads as "new" inside a 7d window and "ongoing" inside a 1d window', async () => {
     const firstSeenAt = new Date(Date.now() - 3 * 86_400_000).toISOString();
     const wide = resolveDateWindow({ mode: 'relative', days: 7 });
     const narrow = resolveDateWindow({ mode: 'relative', days: 1 });
@@ -227,13 +227,13 @@ describe('recency classification (getRecencyStatus / isWithinRange)', () => {
     expect(getRecencyStatus({ status: 'active', firstSeenAt }, narrow.from, narrow.to)).toBe('active');
   });
 
-  it('a fixed finding reads as "fixed" regardless of window', () => {
+  it('a fixed finding reads as "fixed" regardless of window', async () => {
     const firstSeenAt = new Date().toISOString();
     const { from, to } = resolveDateWindow({ mode: 'relative', days: 30 });
     expect(getRecencyStatus({ status: 'fixed', firstSeenAt }, from, to)).toBe('fixed');
   });
 
-  it('isWithinRange is inclusive on both ends', () => {
+  it('isWithinRange is inclusive on both ends', async () => {
     expect(isWithinRange('2026-06-05T10:00:00.000Z', '2026-06-01', '2026-06-10')).toBe(true);
     expect(isWithinRange('2026-06-01T00:00:00.000Z', '2026-06-01', '2026-06-10')).toBe(true);
     expect(isWithinRange('2026-06-10T23:59:59.000Z', '2026-06-01', '2026-06-10')).toBe(true);
@@ -242,7 +242,7 @@ describe('recency classification (getRecencyStatus / isWithinRange)', () => {
 });
 
 describe('date window never changes which findings count as "open"', () => {
-  it('relative 1d, 7d, 30d, and a custom range all select the same open fingerprint set', () => {
+  it('relative 1d, 7d, 30d, and a custom range all select the same open fingerprint set', async () => {
     const base = [fpCost, fpCritical, fpMedium].sort();
     for (const dateWindow of [
       { mode: 'relative' as const, days: 1 },
@@ -251,8 +251,8 @@ describe('date window never changes which findings count as "open"', () => {
       { mode: 'custom' as const, from: '2020-01-01', to: '2020-01-02' },
     ]) {
       const filters = widgetFilters({ dateWindow });
-      expect(sorted(dashboardFingerprints(filters))).toEqual(base);
-      expect(sorted(explorerFingerprints(filters))).toEqual(base);
+      expect(sorted(await dashboardFingerprints(filters))).toEqual(base);
+      expect(sorted(await explorerFingerprints(filters))).toEqual(base);
     }
   });
 });
@@ -265,7 +265,7 @@ describe('buildScansHref only ever emits params scans/page.tsx actually parses',
     'severity', 'subscription', 'rg', 'location', 'tags', 'window', 'from', 'to', 'q',
   ]);
 
-  it('every param buildScansHref can produce is in the known set', () => {
+  it('every param buildScansHref can produce is in the known set', async () => {
     const filters = widgetFilters({
       categories: ['security'], severities: ['critical'], subscriptions: ['sub-1'],
       resourceGroups: ['rg-1'], tags: ['baseline'], ruleIds: [RULE_A],
@@ -280,7 +280,7 @@ describe('buildScansHref only ever emits params scans/page.tsx actually parses',
 });
 
 describe('widget click-throughs and multi-category dashboard filters (RB-QA-020, fixed)', () => {
-  it('a dashboard filtered to two categories still scopes the click-through to those categories', () => {
+  it('a dashboard filtered to two categories still scopes the click-through to those categories', async () => {
     // Reproduces components/dashboard/widgets/{posture-ring,severity-breakdown,stat-card,
     // top-resources}-widget.tsx, none of which pass a `category` override to buildScansHref — see
     // grep of every buildScansHref call site. dashboard-filter-bar.tsx lets a user multi-select
@@ -288,7 +288,7 @@ describe('widget click-throughs and multi-category dashboard filters (RB-QA-020,
     const filters = widgetFilters({ categories: ['security', 'cost'] });
     const href = buildScansHref(filters); // no per-widget category override, same as those widgets
 
-    const dash = dashboardFingerprints(filters); // correctly scoped to security+cost only
+    const dash = await dashboardFingerprints(filters); // correctly scoped to security+cost only
     const params = new URLSearchParams(href.split('?')[1]);
     expect(params.get('category')).toBe('security,cost');
 
@@ -298,13 +298,13 @@ describe('widget click-throughs and multi-category dashboard filters (RB-QA-020,
     const parsedCategories = parseCategoryParam(params.get('category') ?? undefined);
     const state = toExplorerState(filters);
     state.categories = new Set(parsedCategories);
-    const exp = new Set(buildExplorerData().findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
+    const exp = new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
     expect(sorted(dash)).toEqual(sorted(exp));
   });
 });
 
 describe('WidgetFilters serialization round-trips', () => {
-  it('buildSummaryParams -> parseWidgetFiltersFromSearchParams recovers every dimension', () => {
+  it('buildSummaryParams -> parseWidgetFiltersFromSearchParams recovers every dimension', async () => {
     const original = widgetFilters({
       categories: ['security', 'cost'], subscriptions: ['sub-1', 'sub-2'], resourceGroups: ['rg-1'],
       tags: ['baseline', 'cost-hygiene'], severities: ['critical', 'high'], ruleIds: [RULE_A, RULE_B],
@@ -315,23 +315,23 @@ describe('WidgetFilters serialization round-trips', () => {
     expect(roundTripped).toEqual(original);
   });
 
-  it('round-trips a custom date window', () => {
+  it('round-trips a custom date window', async () => {
     const original = widgetFilters({ dateWindow: { mode: 'custom', from: '2026-02-01', to: '2026-02-14' } });
     const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(original));
     expect(roundTripped.dateWindow).toEqual(original.dateWindow);
   });
 
-  it('an empty filter set round-trips to the same effective (empty) filters', () => {
+  it('an empty filter set round-trips to the same effective (empty) filters', async () => {
     const original = widgetFilters();
     const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(original));
-    expect(sorted(dashboardFingerprints(roundTripped))).toEqual(sorted(dashboardFingerprints(original)));
+    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual(sorted(await dashboardFingerprints(original)));
   });
 
-  it('mergeWidgetFilters composed with the serialization round-trip still agrees with explorer filtering', () => {
+  it('mergeWidgetFilters composed with the serialization round-trip still agrees with explorer filtering', async () => {
     const dashboardLevel = widgetFilters({ subscriptions: ['sub-1'] });
     const merged = mergeWidgetFilters(dashboardLevel, { category: 'security', severities: ['critical'] });
     const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(merged));
-    expect(sorted(dashboardFingerprints(roundTripped))).toEqual(sorted(explorerFingerprints(roundTripped)));
-    expect(sorted(dashboardFingerprints(roundTripped))).toEqual([fpCritical]);
+    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual(sorted(await explorerFingerprints(roundTripped)));
+    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual([fpCritical]);
   });
 });

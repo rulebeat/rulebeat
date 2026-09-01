@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const findings = queryActiveFindings(filters);
+  const findings = await queryActiveFindings(filters);
   const ruleById = new Map(loadRules().map(r => [r.id, r]));
   const categoryColorById = new Map(listCategories().map(c => [c.id, c.color]));
 

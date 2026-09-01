@@ -11,7 +11,7 @@ export async function GET() {
   const categories = listCategories();
   const allRules = loadRules();
   const tags = Array.from(new Set(allRules.flatMap(r => r.tags ?? []))).sort((a, b) => a.localeCompare(b));
-  const allFindings = listFindings();
+  const allFindings = await listFindings();
   // Raw subscription ids only — display-name enrichment happens client-side via
   // /api/azure/subscriptions, same as findings-explorer-client.tsx does today.
   const subscriptions = Array.from(new Set(allFindings.map(f => f.subscriptionId).filter(Boolean))).sort();

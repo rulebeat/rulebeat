@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '20'), 200);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const all = queryActiveFindings(filters);
+  const all = await queryActiveFindings(filters);
   // Recent findings feed: newest-first by when each finding first appeared.
   all.sort((a, b) => new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime());
 

@@ -98,13 +98,13 @@ function fakeResponse(status: number, body = ''): Response {
   } as Response;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   resetDb();
   clearRules();
 });
 
 describe('recoverInterruptedRuns (pass 1)', () => {
-  it('flips a stale "running" row to "error" with finishedAt and a client-safe recovery message', () => {
+  it('flips a stale "running" row to "error" with finishedAt and a client-safe recovery message', async () => {
     const run = startRun({ scheduleId: '', triggeredBy: 'manual', categories: [CATEGORY] });
     expect(run.status).toBe('running');
 
@@ -123,23 +123,23 @@ describe('recoverPendingNotifications (pass 2)', () => {
   let scheduleId: string;
   let channelId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     scheduleId = `sched-${crypto.randomUUID()}`;
-    channelId = createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' }).id;
+    channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
     setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
     deleteLinksForSchedule(scheduleId);
-    deleteChannel(channelId);
+    await deleteChannel(channelId);
   });
 
   it('dispatches a pending run whose fingerprints resolve to real findings, then marks it sent', async () => {
     const f = finding('vm-1');
-    syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
 
     const run = startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
     finishRun(run.id, {
@@ -176,8 +176,8 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
   it('marks a pending run sent without dispatching when its fingerprints belong to a hard-deleted rule', async () => {
     const f = finding('vm-2');
-    syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
-    deleteFindingsForRule(RULE_A);
+    await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
+    await deleteFindingsForRule(RULE_A);
 
     const run = startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
     finishRun(run.id, {
@@ -200,18 +200,18 @@ describe('executeTarget() live path (notifyStatus persisted before + after dispa
   let scheduleId: string;
   let channelId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     scheduleId = `sched-${crypto.randomUUID()}`;
-    channelId = createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' }).id;
+    channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
     setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
     deleteLinksForSchedule(scheduleId);
-    deleteChannel(channelId);
+    await deleteChannel(channelId);
   });
 
   it('persists notifyStatus: pending durably before the webhook resolves, then sent once it does', async () => {

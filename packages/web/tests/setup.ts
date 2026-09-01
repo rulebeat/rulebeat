@@ -16,6 +16,24 @@ import { afterAll } from 'vitest';
 const dir = mkdtempSync(join(tmpdir(), 'rulebeat-test-'));
 
 process.env.RULEBEAT_DB_PATH = join(dir, 'test.db');
+
+// Backend selection (issue #73). A normal run must never inherit a developer's RULEBEAT_DATABASE_URL
+// and silently test against their Postgres; only the test-specific RULEBEAT_TEST_PG_URL opts a run
+// into the Postgres backend, and that run starts from an empty schema so `lib/db/client.ts`'s
+// bootstrap recreates the tables fresh for every test file (vitest isolates module registries per
+// file, so the import-time bootstrap re-runs each time).
+if (process.env.RULEBEAT_TEST_PG_URL) {
+  process.env.RULEBEAT_DATABASE_URL = process.env.RULEBEAT_TEST_PG_URL;
+  delete process.env.RULEBEAT_DATABASE_URL_FILE;
+  const { Client } = await import('pg');
+  const client = new Client({ connectionString: process.env.RULEBEAT_TEST_PG_URL });
+  await client.connect();
+  await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  await client.end();
+} else {
+  delete process.env.RULEBEAT_DATABASE_URL;
+  delete process.env.RULEBEAT_DATABASE_URL_FILE;
+}
 process.env.AZURE_TENANT_ID ??= '00000000-0000-0000-0000-000000000001';
 process.env.AUTH_SECRET ??= 'test-secret-not-used-for-anything-real';
 process.env.AUTH_URL ??= 'http://localhost:3000';

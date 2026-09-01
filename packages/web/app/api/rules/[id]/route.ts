@@ -192,7 +192,7 @@ export async function DELETE(
   if (target.type === 'builtin') return NextResponse.json({ error: 'Built-in rules cannot be deleted.' }, { status: 403 });
 
   saveRules(allRules.filter(r => r.id !== id));
-  deleteFindingsForRule(id);
+  await deleteFindingsForRule(id);
 
   writeAudit({
     actor,

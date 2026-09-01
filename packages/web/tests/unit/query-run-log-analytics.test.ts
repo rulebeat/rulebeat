@@ -191,9 +191,9 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
   });
 
   describe('demo mode', () => {
-    afterEach(() => {
+    afterEach(async () => {
       delete process.env.RULEBEAT_DEMO;
-      deleteMeta('demo-mode-v1');
+      await deleteMeta('demo-mode-v1');
       resetDemoModeCacheForTests();
     });
 

@@ -39,7 +39,7 @@ describe('notification channel routes — SSRF hardening (spec 021)', () => {
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     resetDnsLookupForTests();
   });
 
@@ -73,7 +73,7 @@ describe('notification channel routes — SSRF hardening (spec 021)', () => {
   });
 
   it('PUT rejects updating a channel\'s url to a private address, leaving it unchanged', async () => {
-    const channel = createChannel({ name: 'Real webhook', type: 'webhook', url: 'https://93.184.216.34/hook' });
+    const channel = await createChannel({ name: 'Real webhook', type: 'webhook', url: 'https://93.184.216.34/hook' });
 
     const res = await PUT(req('http://localhost/api/settings/notifications', 'PUT', {
       id: channel.id,
@@ -83,19 +83,19 @@ describe('notification channel routes — SSRF hardening (spec 021)', () => {
     const json = await res.json();
     expect(json.error).toMatch(/not a public address/i);
 
-    const stored = getChannelSummary(channel.id);
+    const stored = await getChannelSummary(channel.id);
     expect(stored?.urlHost).toBe('93.184.216.34');
   });
 
   it('PUT with only a name change is unaffected by the guard', async () => {
-    const channel = createChannel({ name: 'Real webhook', type: 'webhook', url: 'https://93.184.216.34/hook' });
+    const channel = await createChannel({ name: 'Real webhook', type: 'webhook', url: 'https://93.184.216.34/hook' });
 
     const res = await PUT(req('http://localhost/api/settings/notifications', 'PUT', {
       id: channel.id,
       name: 'Renamed webhook',
     }));
     expect(res.status).toBe(200);
-    const stored = getChannelSummary(channel.id);
+    const stored = await getChannelSummary(channel.id);
     expect(stored?.name).toBe('Renamed webhook');
     expect(stored?.urlHost).toBe('93.184.216.34');
   });

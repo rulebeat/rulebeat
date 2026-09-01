@@ -19,6 +19,8 @@ export default async function SettingsPage() {
 
   const categories = listCategories();
 
+  const initialChannels = manageNotifications ? await listChannels() : null;
+
   return (
     <>
       <Header title="Settings" description="Configure categories, users, and organizational structure" />
@@ -31,7 +33,7 @@ export default async function SettingsPage() {
           initialUsersWithPassword={manageUsers ? listUserIdsWithPassword() : []}
           initialAzureStatus={manageAzure ? getAzureConnectionStatus() : null}
           initialSignInStatus={manageAuth ? getSignInStatus() : null}
-          initialChannels={manageNotifications ? listChannels() : null}
+          initialChannels={initialChannels}
         />
       </main>
     </>

@@ -23,64 +23,64 @@ import { getMeta, deleteMeta } from '@/lib/db/meta';
 
 const STAMP_KEY = 'demo-mode-v1';
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.RULEBEAT_DEMO;
-  deleteMeta(STAMP_KEY);
+  await deleteMeta(STAMP_KEY);
   resetDemoModeCacheForTests();
 });
 
 describe('isDemoEnv() — gate 1, the environment variable in isolation', () => {
-  it('is false when unset', () => {
+  it('is false when unset', async () => {
     delete process.env.RULEBEAT_DEMO;
     expect(isDemoEnv()).toBe(false);
   });
 
-  it('is false for anything other than the literal "1"', () => {
+  it('is false for anything other than the literal "1"', async () => {
     process.env.RULEBEAT_DEMO = 'true';
     expect(isDemoEnv()).toBe(false);
   });
 
-  it('is true for "1"', () => {
+  it('is true for "1"', async () => {
     process.env.RULEBEAT_DEMO = '1';
     expect(isDemoEnv()).toBe(true);
   });
 });
 
 describe('isDemoMode() — the two-gate truth table', () => {
-  it('env unset, no stamp → false', () => {
+  it('env unset, no stamp → false', async () => {
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
     expect(isDemoMode()).toBe(false);
   });
 
-  it('env set, no stamp → false — the env var alone must not be enough', () => {
+  it('env set, no stamp → false — the env var alone must not be enough', async () => {
     process.env.RULEBEAT_DEMO = '1';
     resetDemoModeCacheForTests();
-    expect(getMeta(STAMP_KEY)).toBeNull();
+    expect(await getMeta(STAMP_KEY)).toBeNull();
     expect(isDemoMode()).toBe(false);
   });
 
-  it('stamp present, env unset → false — the stamp alone must not be enough', () => {
+  it('stamp present, env unset → false — the stamp alone must not be enough', async () => {
     stampDemoDatabase();
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
     expect(isDemoMode()).toBe(false);
   });
 
-  it('env set and stamped → true', () => {
+  it('env set and stamped → true', async () => {
     process.env.RULEBEAT_DEMO = '1';
     stampDemoDatabase();
     resetDemoModeCacheForTests();
     expect(isDemoMode()).toBe(true);
   });
 
-  it('caches the stamp lookup until resetDemoModeCacheForTests() runs', () => {
+  it('caches the stamp lookup until resetDemoModeCacheForTests() runs', async () => {
     process.env.RULEBEAT_DEMO = '1';
     stampDemoDatabase();
     resetDemoModeCacheForTests();
     expect(isDemoMode()).toBe(true);
 
-    deleteMeta(STAMP_KEY);
+    await deleteMeta(STAMP_KEY);
     // Nothing in the real app ever removes the stamp mid-process, so this isn't a real scenario —
     // it's here to pin the caching behaviour itself: the earlier `true` lookup stays cached.
     expect(isDemoMode()).toBe(true);
@@ -91,7 +91,7 @@ describe('isDemoMode() — the two-gate truth table', () => {
 });
 
 describe('DEMO_VISITOR_ID', () => {
-  it('is the fixed id lib/api-auth.ts looks up for an anonymous demo visitor', () => {
+  it('is the fixed id lib/api-auth.ts looks up for an anonymous demo visitor', async () => {
     expect(DEMO_VISITOR_ID).toBe('demo-visitor');
   });
 });
@@ -122,7 +122,7 @@ function startRealClientIn(dir: string, env: Record<string, string>): { status: 
 }
 
 describe('lib/db/client.ts really does route to demo.db under RULEBEAT_DEMO=1', () => {
-  it('opens data/rulebeat.db, never demo.db, when the env var is unset', () => {
+  it('opens data/rulebeat.db, never demo.db, when the env var is unset', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rb-demo-client-'));
     const { status, stderr } = startRealClientIn(dir, {});
     expect(status, stderr).toBe(0);
@@ -130,7 +130,7 @@ describe('lib/db/client.ts really does route to demo.db under RULEBEAT_DEMO=1', 
     expect(existsSync(join(dir, 'data', 'demo.db'))).toBe(false);
   }, 30_000);
 
-  it('opens data/demo.db, never rulebeat.db, when RULEBEAT_DEMO=1', () => {
+  it('opens data/demo.db, never rulebeat.db, when RULEBEAT_DEMO=1', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rb-demo-client-'));
     const { status, stderr } = startRealClientIn(dir, { RULEBEAT_DEMO: '1' });
     expect(status, stderr).toBe(0);

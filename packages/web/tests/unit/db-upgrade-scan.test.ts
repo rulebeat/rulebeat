@@ -63,7 +63,7 @@ async function scanWith(rows: Record<string, unknown>[]): Promise<FakeTenantCont
 }
 
 describe('TS-25 · scanning after an upgrade', () => {
-  it('25-10 · the upgraded rules still load and still generate their own KQL', () => {
+  it('25-10 · the upgraded rules still load and still generate their own KQL', async () => {
     const mine = rules.loadRules().find(r => r.name === RULE.name);
     expect(mine, 'the custom rule did not survive the upgrade').toBeDefined();
     expect(mine!.rawKql, 'the rule would now ask Azure a different question').toBe(RULE.rawKql);
@@ -93,13 +93,13 @@ describe('TS-25 · scanning after an upgrade', () => {
   });
 
   it('25-10 · a finding that still exists keeps its age and its count', async () => {
-    const before = findings.listFindings().find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const before = (await findings.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(before, 'the pre-upgrade finding is missing').toBeDefined();
     const timesSeenBefore = before!.timesSeen;
 
     await scanWith([argRow({ id: ACTIVE_RESOURCE_ID, name: 'vm-legacy-01' })]);
 
-    const matching = findings.listFindings().filter(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const matching = (await findings.listFindings()).filter(f => f.resourceId === ACTIVE_RESOURCE_ID);
     // One row, not two. A second row for the same resource means the scan failed to recognise its
     // own finding — which is what happens if the fingerprint it computes no longer matches the one
     // on disk.
@@ -109,12 +109,12 @@ describe('TS-25 · scanning after an upgrade', () => {
     expect(matching[0]!.status).toBe('active');
   });
 
-  it('25-10 · the fingerprint a scan computes matches the one stored before the upgrade', () => {
+  it('25-10 · the fingerprint a scan computes matches the one stored before the upgrade', async () => {
     // Stated directly, because it underpins the test above and every suppression in the product:
     // findings are keyed by sha256(ruleId::resourceId), recomputed on every scan. If an upgrade
     // rewrites a rule's id, every fingerprint derived from it silently stops matching.
     const rule = rules.loadRules().find(r => r.name === RULE.name)!;
-    const stored = findings.listFindings().find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const stored = (await findings.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(stored).toBeDefined();
     expect(computeFingerprint(rule.id, ACTIVE_RESOURCE_ID)).toBe(stored!.fingerprint);
   });

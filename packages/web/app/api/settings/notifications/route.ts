@@ -32,7 +32,7 @@ export async function GET() {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(listChannels());
+  return NextResponse.json(await listChannels());
 }
 
 export async function POST(req: Request) {
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
     try {
-      const channel = createChannel({ name, type: 'email', url, config: body.config as EmailChannelConfig });
+      const channel = await createChannel({ name, type: 'email', url, config: body.config as EmailChannelConfig });
       writeAudit({
         actor,
         action: 'notification_channel.create',
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const channel = createChannel({ name, type: type as NotificationChannelType, url });
+    const channel = await createChannel({ name, type: type as NotificationChannelType, url });
     writeAudit({
       actor,
       action: 'notification_channel.create',
@@ -122,7 +122,7 @@ export async function PUT(req: Request) {
   const id = body.id?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });
 
-  const existing = getChannelSummary(id);
+  const existing = await getChannelSummary(id);
   if (!existing) return NextResponse.json({ error: 'Channel not found.' }, { status: 404 });
 
   const effectiveType = (body.type?.trim() ?? existing.type) as NotificationChannelType;
@@ -156,7 +156,7 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const updated = updateChannel(id, {
+    const updated = await updateChannel(id, {
       name: body.name,
       type: body.type as NotificationChannelType | undefined,
       url: body.url,
@@ -186,11 +186,11 @@ export async function DELETE(req: Request) {
   const id = searchParams.get('id')?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id query parameter is required.' }, { status: 400 });
 
-  const existing = getChannelSummary(id);
+  const existing = await getChannelSummary(id);
   if (!existing) return NextResponse.json({ error: 'Channel not found.' }, { status: 404 });
 
   try {
-    deleteChannel(id);
+    await deleteChannel(id);
     writeAudit({
       actor,
       action: 'notification_channel.delete',

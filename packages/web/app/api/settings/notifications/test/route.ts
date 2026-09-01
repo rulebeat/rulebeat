@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   let channelId: string | undefined;
 
   if (body.id) {
-    const channel = getStoredChannel(body.id);
+    const channel = await getStoredChannel(body.id);
     if (!channel) {
       return NextResponse.json({ error: 'Channel not found or secret is unreadable.' }, { status: 404 });
     }

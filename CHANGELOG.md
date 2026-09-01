@@ -6,6 +6,15 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Groundwork for an optional PostgreSQL backend (issue #73, Phase 0 spike). RuleBeat can now open
+  either its built-in SQLite database (the default, unchanged) or a PostgreSQL database named by
+  the new `RULEBEAT_DATABASE_URL` setting (`RULEBEAT_DATABASE_URL_FILE` for Docker secrets). In
+  this phase only the meta, findings and notification repositories run on both backends; the rest
+  of the app still requires SQLite and fails loudly if pointed at Postgres. Leave the variable
+  unset and nothing changes. Adds one runtime dependency to the web package: `pg` (node-postgres).
+
 ### Changed
 
 - Install and upgrade commands in the README and docs pin the exact release version again,

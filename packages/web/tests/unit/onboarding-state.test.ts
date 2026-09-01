@@ -24,7 +24,7 @@ function onboardingRow(sqlite: ReturnType<typeof open>): { status: string } | nu
 }
 
 describe('B3 · onboarding-v1 seeding', () => {
-  it('a genuinely fresh install (zero users) starts pending', () => {
+  it('a genuinely fresh install (zero users) starts pending', async () => {
     const sample = makeSample('current');
     upgradeInProcess(sample);
     const sqlite = open(sample.file);
@@ -35,7 +35,7 @@ describe('B3 · onboarding-v1 seeding', () => {
     }
   });
 
-  it('a database that already has users is skipped, never pending', () => {
+  it('a database that already has users is skipped, never pending', async () => {
     const sample = makeSample('current');
     addUsers(sample.file);
     upgradeInProcess(sample);
@@ -47,7 +47,7 @@ describe('B3 · onboarding-v1 seeding', () => {
     }
   });
 
-  it('re-seeding never mutates an already-decided value', () => {
+  it('re-seeding never mutates an already-decided value', async () => {
     const sample = makeSample('current');
     upgradeInProcess(sample);
 
@@ -64,14 +64,14 @@ describe('B3 · onboarding-v1 seeding', () => {
     expect(after?.status).toBe('done');
   });
 
-  it('a malformed stored value degrades to skipped rather than throwing', () => {
+  it('a malformed stored value degrades to skipped rather than throwing', async () => {
     // Tests the tolerant parse in lib/onboarding.ts directly, against the live test db — resetDb()
     // never clears meta, so this state has to be set up explicitly rather than inherited.
     setOnboardingState({ status: 'pending' }); // sanity: writes valid JSON via the normal path first
-    expect(getMeta('onboarding-v1')).not.toBeNull();
+    expect(await getMeta('onboarding-v1')).not.toBeNull();
 
     // Now corrupt it the way a bare JSON.parse (the deliberate break) would choke on.
-    setMeta('onboarding-v1', 'not valid json{');
+    await setMeta('onboarding-v1', 'not valid json{');
 
     expect(() => getOnboardingState()).not.toThrow();
     expect(getOnboardingState().status).toBe('skipped');

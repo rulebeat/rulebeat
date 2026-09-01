@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // be able to resolve — the default project-root tracing would miss it entirely.
   output: 'standalone',
   outputFileTracingRoot: path.join(__dirname, '../../'),
-  serverExternalPackages: ['better-sqlite3', 'nodemailer'],
+  serverExternalPackages: ['better-sqlite3', 'nodemailer', 'pg'],
   async headers() {
     return [
       {

@@ -1,7 +1,7 @@
 import Credentials from 'next-auth/providers/credentials';
 import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
 import { fetchWithRetry } from '@rulebeat/core';
-import { getMeta, setMeta, deleteMeta } from '@/lib/db/meta';
+import { getMetaSync as getMeta, setMetaSync as setMeta, deleteMetaSync as deleteMeta } from '@/lib/db/meta'; // sync SQLite-only until #73 Phase 2
 import {
   getStoredSsoProvider,
   getStoredSsoProviderSummary,

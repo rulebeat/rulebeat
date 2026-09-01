@@ -68,13 +68,13 @@ function finding(ruleId: string, resourceSuffix: string, severity: Severity = 'm
 }
 
 describe('dashboard denominator honesty: severity/tag filters narrow rule scope, not just findings (spec 039, RB-RM-015)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
     insertRule(RULE_MEDIUM, { severity: 'medium' });
 
-    syncScanFindings({
+    await syncScanFindings({
       scanId: 's1',
       category: CATEGORY,
       ranRuleIds: [RULE_HIGH, RULE_MEDIUM],
@@ -83,15 +83,15 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
     });
   });
 
-  it('with no severity filter, totalRules counts both rules and passingRules counts only the clean one', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('with no severity filter, totalRules counts both rules and passingRules counts only the clean one', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     expect(summary.current.totalRules).toBe(2);
     expect(summary.current.passingRules).toBe(1);
   });
 
-  it('filtering by severity:high narrows totalRules to just the high-severity rule, not the whole category', () => {
-    const summary = computeWidgetSummary(
+  it('filtering by severity:high narrows totalRules to just the high-severity rule, not the whole category', async () => {
+    const summary = await computeWidgetSummary(
       { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
       30,
     );
@@ -103,8 +103,8 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
     expect(summary.current.passingRules).toBe(0);
   });
 
-  it('the same narrowing applies to perCategory, which the pct is rounded from', () => {
-    const summary = computeWidgetSummary(
+  it('the same narrowing applies to perCategory, which the pct is rounded from', async () => {
+    const summary = await computeWidgetSummary(
       { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
       30,
     );
@@ -118,13 +118,13 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
 });
 
 describe('dashboard denominator honesty: tag filter narrows rule scope the same way (spec 039, RB-RM-015)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_TAGGED, { tags: ['pci'] });
     insertRule(RULE_UNTAGGED, {});
 
-    syncScanFindings({
+    await syncScanFindings({
       scanId: 's1',
       category: CATEGORY,
       ranRuleIds: [RULE_TAGGED, RULE_UNTAGGED],
@@ -133,8 +133,8 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
     });
   });
 
-  it('filtering by tag narrows totalRules to just the tagged rule', () => {
-    const summary = computeWidgetSummary(
+  it('filtering by tag narrows totalRules to just the tagged rule', async () => {
+    const summary = await computeWidgetSummary(
       { categories: [CATEGORY], tags: ['pci'], dateWindow: { mode: 'relative', days: 7 } },
       30,
     );
@@ -145,13 +145,13 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
 });
 
 describe('dashboard denominator honesty: resourceGroups/subscriptions are deliberately NOT applied to the denominator (spec 039 §2, out of scope)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
     insertRule(RULE_MEDIUM, { severity: 'medium' });
 
-    syncScanFindings({
+    await syncScanFindings({
       scanId: 's1',
       category: CATEGORY,
       ranRuleIds: [RULE_HIGH, RULE_MEDIUM],
@@ -160,8 +160,8 @@ describe('dashboard denominator honesty: resourceGroups/subscriptions are delibe
     });
   });
 
-  it('a resourceGroups-only filter leaves totalRules at the full category count', () => {
-    const summary = computeWidgetSummary(
+  it('a resourceGroups-only filter leaves totalRules at the full category count', async () => {
+    const summary = await computeWidgetSummary(
       { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
       30,
     );
@@ -171,20 +171,20 @@ describe('dashboard denominator honesty: resourceGroups/subscriptions are delibe
 });
 
 describe('WidgetSummary.suppressedIncluded self-describes which mode produced the numbers (spec 039, RB-RM-016)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetDb();
     clearRules();
     insertRule(RULE_HIGH, { severity: 'high' });
   });
 
-  it('is false when filters.includeSuppressed is omitted', () => {
-    const summary = computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+  it('is false when filters.includeSuppressed is omitted', async () => {
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
     expect(summary.suppressedIncluded).toBe(false);
   });
 
-  it('is true when filters.includeSuppressed is true', () => {
-    const summary = computeWidgetSummary(
+  it('is true when filters.includeSuppressed is true', async () => {
+    const summary = await computeWidgetSummary(
       { categories: [CATEGORY], includeSuppressed: true, dateWindow: { mode: 'relative', days: 7 } },
       30,
     );

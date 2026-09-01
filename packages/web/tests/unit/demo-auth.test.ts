@@ -49,15 +49,15 @@ function enableDemoMode(): void {
   resetDemoModeCacheForTests();
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   resetDb();
   mockAuth.mockReset();
   mockAuth.mockResolvedValue(null); // anonymous by default — every test opts into a session
 });
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.RULEBEAT_DEMO;
-  deleteMeta(STAMP_KEY);
+  await deleteMeta(STAMP_KEY);
   resetDemoModeCacheForTests();
 });
 

@@ -107,9 +107,9 @@ describe('/api/query/saved (spec 037)', () => {
     });
 
     describe('demo mode', () => {
-      afterEach(() => {
+      afterEach(async () => {
         delete process.env.RULEBEAT_DEMO;
-        deleteMeta('demo-mode-v1');
+        await deleteMeta('demo-mode-v1');
         resetDemoModeCacheForTests();
       });
 
@@ -190,9 +190,9 @@ describe('/api/query/saved (spec 037)', () => {
     });
 
     describe('demo mode', () => {
-      afterEach(() => {
+      afterEach(async () => {
         delete process.env.RULEBEAT_DEMO;
-        deleteMeta('demo-mode-v1');
+        await deleteMeta('demo-mode-v1');
         resetDemoModeCacheForTests();
       });
 

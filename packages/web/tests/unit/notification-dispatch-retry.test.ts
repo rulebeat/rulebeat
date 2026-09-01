@@ -67,9 +67,9 @@ describe('dispatchNotifications retry/backoff', () => {
   let scheduleId: string;
   let channelId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     scheduleId = `sched-${globalThis.crypto.randomUUID()}`;
-    channelId = createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' }).id;
+    channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
     setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     vi.useFakeTimers();
     // spec 021: sendWebhook now SSRF-guards the destination before fetching, so example.test must
@@ -77,12 +77,12 @@ describe('dispatchNotifications retry/backoff', () => {
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
     deleteLinksForSchedule(scheduleId);
-    deleteChannel(channelId);
+    await deleteChannel(channelId);
   });
 
   it('retries transient 500s with backoff, then records success on the attempt that works', async () => {
@@ -99,7 +99,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ ok: true, attempts: 3, httpStatus: 200 });
   });
@@ -112,7 +112,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ ok: false, attempts: 1, httpStatus: 400 });
     expect(history[0].error).toContain('400');
@@ -129,7 +129,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ ok: false, attempts: 3, httpStatus: null });
     expect(history[0].error).toContain('ECONNREFUSED');
@@ -144,7 +144,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ ok: false, attempts: 1, httpStatus: null });
     expect(history[0].error).toMatch(/not a public address/i);
@@ -158,7 +158,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ ok: false, attempts: 1, httpStatus: null });
     expect(history[0].error).toMatch(/refusing to follow a redirect/i);
@@ -176,7 +176,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
-    const history = listDeliveriesForChannel(channelId);
+    const history = await listDeliveriesForChannel(channelId);
     expect(history[0]).toMatchObject({ ok: true, attempts: 2, httpStatus: 200 });
   });
 });

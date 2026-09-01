@@ -7,7 +7,8 @@
  * test starts from a known state. `resetDb()` is how.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@/lib/db/client';
+import { db, pgDb } from '@/lib/db/client';
+import { dbKind } from '@/lib/db/backend';
 
 /**
  * Tables `resetDb()` empties, child-before-parent so foreign keys never block a delete.
@@ -34,8 +35,23 @@ const CLEARABLE = [
   'query_runs',
 ] as const;
 
-/** Resets the mutable state a test creates, leaving the seeded baseline intact. */
-export function resetDb(): void {
+/** Resets the mutable state a test creates, leaving the seeded baseline intact.
+ *
+ *  Async for the Postgres backend (issue #73); on SQLite the body has no await, so it still
+ *  completes synchronously and legacy un-awaited `resetDb()` calls stay correct there. On Postgres
+ *  the spike's bootstrap creates only a subset of tables, so a missing table is skipped rather
+ *  than failed. */
+export async function resetDb(): Promise<void> {
+  if (dbKind === 'pg') {
+    for (const table of CLEARABLE) {
+      try {
+        await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
+      } catch {
+        // Table not created by the Phase 0 bootstrap yet.
+      }
+    }
+    return;
+  }
   db.run(sql`PRAGMA foreign_keys = OFF`);
   for (const table of CLEARABLE) db.run(sql.raw(`DELETE FROM ${table}`));
   db.run(sql`PRAGMA foreign_keys = ON`);

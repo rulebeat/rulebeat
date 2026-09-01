@@ -40,7 +40,7 @@ export async function PUT(
   const rawLinks = body.notificationLinks;
   if (rawLinks !== undefined) {
     for (const link of rawLinks) {
-      if (!link.channelId || !getChannelSummary(link.channelId)) {
+      if (!link.channelId || !(await getChannelSummary(link.channelId))) {
         return NextResponse.json({ error: `Notification channel not found: ${link.channelId}` }, { status: 400 });
       }
       if (!SEVERITIES.has(link.minSeverity as Severity)) {

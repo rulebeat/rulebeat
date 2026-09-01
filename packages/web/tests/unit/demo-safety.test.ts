@@ -30,12 +30,12 @@ const ENV_KEYS = [
 const savedEnv: Record<string, string | undefined> = {};
 for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
 
-afterEach(() => {
+afterEach(async () => {
   for (const key of ENV_KEYS) {
     if (savedEnv[key] === undefined) delete process.env[key];
     else process.env[key] = savedEnv[key];
   }
-  deleteMeta(STAMP_KEY);
+  await deleteMeta(STAMP_KEY);
   resetDemoModeCacheForTests();
 });
 
@@ -47,7 +47,7 @@ function enableDemoMode(): void {
 }
 
 describe('the kill switch beats a fully-specified environment credential', () => {
-  it('resolveAzureCredential() throws even with a valid client-secret env credential present', () => {
+  it('resolveAzureCredential() throws even with a valid client-secret env credential present', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
@@ -56,7 +56,7 @@ describe('the kill switch beats a fully-specified environment credential', () =>
     expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
   });
 
-  it('resolveAzureCredential() throws even with a federated-identity env credential present', () => {
+  it('resolveAzureCredential() throws even with a federated-identity env credential present', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_FEDERATED_TOKEN_FILE = '/var/run/secrets/azure/tokens/azure-identity-token';
@@ -65,12 +65,12 @@ describe('the kill switch beats a fully-specified environment credential', () =>
     expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
   });
 
-  it('the thrown error names the demo instance, not the usual "not configured" message', () => {
+  it('the thrown error names the demo instance, not the usual "not configured" message', async () => {
     enableDemoMode();
     expect(() => resolveAzureCredential()).toThrow(/demo instance/i);
   });
 
-  it('getAzureCredential(), the ARM-routes entry point, throws the same way', () => {
+  it('getAzureCredential(), the ARM-routes entry point, throws the same way', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
@@ -90,7 +90,7 @@ describe('the kill switch beats a fully-specified environment credential', () =>
 });
 
 describe('an incomplete demo configuration does not accidentally trip the switch', () => {
-  it('the env var alone, with no stamp, leaves real credential resolution untouched', () => {
+  it('the env var alone, with no stamp, leaves real credential resolution untouched', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';

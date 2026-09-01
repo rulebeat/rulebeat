@@ -94,15 +94,15 @@ function suppressedFingerprintSet(filters: WidgetFilters): Set<string> {
 
 /** Active findings matching every dimension in `filters`. Excludes actively-suppressed
  *  fingerprints unless `filters.includeSuppressed`. */
-export function queryActiveFindings(filters: WidgetFilters): FindingRecord[] {
-  const all = listFindings({ status: 'active' });
+export async function queryActiveFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
+  const all = await listFindings({ status: 'active' });
   const ruleById = new Map(loadRules().map(r => [r.id, r]));
   const suppressed = suppressedFingerprintSet(filters);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
 }
 
-function queryFixedFindings(filters: WidgetFilters): FindingRecord[] {
-  const all = listFindings({ status: 'fixed' });
+async function queryFixedFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
+  const all = await listFindings({ status: 'fixed' });
   const ruleById = new Map(loadRules().map(r => [r.id, r]));
   const suppressed = suppressedFingerprintSet(filters);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
@@ -215,7 +215,7 @@ export interface WidgetSummary {
  *  single subscription — snapshots are recorded per category × subscription (Phase 5); any
  *  RG/tag/severity/rule filter, or more than one subscription at once, makes "trend over time"
  *  ill-defined at that granularity since it isn't recorded). */
-export function computeWidgetSummary(filters: WidgetFilters, trendDays: number): WidgetSummary {
+export async function computeWidgetSummary(filters: WidgetFilters, trendDays: number): Promise<WidgetSummary> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   const allCategories = listCategories();
   const allRules = loadRules();
@@ -224,7 +224,7 @@ export function computeWidgetSummary(filters: WidgetFilters, trendDays: number):
     ? allCategories.filter(c => filters.categories!.includes(c.id))
     : allCategories;
 
-  const activeFindings = queryActiveFindings(filters);
+  const activeFindings = await queryActiveFindings(filters);
 
   const severityCounts = emptySeverityCounts();
   for (const f of activeFindings) {
@@ -274,7 +274,7 @@ export function computeWidgetSummary(filters: WidgetFilters, trendDays: number):
   const pct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
 
   const newInWindow = activeFindings.filter(f => isWithinRange(f.firstSeenAt, from, to)).length;
-  const fixedFindings = queryFixedFindings(filters);
+  const fixedFindings = await queryFixedFindings(filters);
   const fixedInWindow = fixedFindings.filter(f => isWithinRange(f.resolvedAt, from, to)).length;
 
   // Findings-sourced, not snapshot-sourced: net lifecycle change over the window, using the same
@@ -352,7 +352,7 @@ export function computeWidgetSummary(filters: WidgetFilters, trendDays: number):
     if (eventRuleIds.length === 0) eventRuleIds = ['__no-matching-rule__'];
   }
   const eventCategoryIds = filters.categories?.length ? filters.categories : allCategories.map(c => c.id);
-  const newVsFixedTrend = getFindingEventCounts({
+  const newVsFixedTrend = await getFindingEventCounts({
     categories: eventCategoryIds,
     ruleIds: eventRuleIds,
     subscriptions: filters.subscriptions,
@@ -360,7 +360,7 @@ export function computeWidgetSummary(filters: WidgetFilters, trendDays: number):
     severities: filters.severities,
     sinceDate: daysAgo(trendDays),
   });
-  const activityTrend = getActivityOccurrenceCounts({
+  const activityTrend = await getActivityOccurrenceCounts({
     categories: eventCategoryIds,
     ruleIds: eventRuleIds,
     subscriptions: filters.subscriptions,

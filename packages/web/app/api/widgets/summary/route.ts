@@ -15,6 +15,6 @@ export async function GET(req: Request) {
   const trendDaysParam = searchParams.get('trendDays');
   const trendDays = trendDaysParam ? (parseInt(trendDaysParam, 10) || 30) : 30;
 
-  const summary = computeWidgetSummary(filters, trendDays);
+  const summary = await computeWidgetSummary(filters, trendDays);
   return Response.json(summary);
 }

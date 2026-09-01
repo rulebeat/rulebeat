@@ -1,5 +1,5 @@
 import { isDemoEnv } from './demo-env';
-import { getMeta, setMeta } from './db/meta';
+import { getMetaSync as getMeta, setMetaSync as setMeta } from './db/meta'; // sync SQLite-only until #73 Phase 2
 
 export { isDemoEnv } from './demo-env';
 

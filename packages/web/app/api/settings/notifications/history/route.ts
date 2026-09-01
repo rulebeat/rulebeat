@@ -12,5 +12,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'channelId query parameter is required.' }, { status: 400 });
   }
 
-  return NextResponse.json(listDeliveriesForChannel(channelId));
+  return NextResponse.json(await listDeliveriesForChannel(channelId));
 }

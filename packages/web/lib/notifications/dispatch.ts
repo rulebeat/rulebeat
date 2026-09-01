@@ -172,8 +172,8 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
         result = await sendWebhook(channel, payload.body);
       }
 
-      recordChannelResult(channel.id, { ok: result.ok, error: result.error ?? undefined });
-      recordDelivery({
+      await recordChannelResult(channel.id, { ok: result.ok, error: result.error ?? undefined });
+      await recordDelivery({
         channelId: channel.id,
         scheduleId: run.scheduleId,
         runId: run.id,

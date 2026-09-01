@@ -56,7 +56,7 @@ export async function recoverPendingNotifications(): Promise<number> {
 
   for (const run of pending) {
     const findings = run.newFindingFingerprints.length > 0
-      ? getFindingsByFingerprints(run.newFindingFingerprints)
+      ? await getFindingsByFingerprints(run.newFindingFingerprints)
       : [];
     await dispatchAndMarkSent(run, findings);
   }

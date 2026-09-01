@@ -1,4 +1,4 @@
-import { getMeta, setMeta } from './db/meta';
+import { getMetaSync as getMeta, setMetaSync as setMeta } from './db/meta'; // sync SQLite-only until #73 Phase 2
 
 /**
  * Tracks the first-run setup wizard (B3). Backed by a single `meta` row so the marker survives
