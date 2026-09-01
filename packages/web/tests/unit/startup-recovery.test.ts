@@ -99,19 +99,19 @@ function fakeResponse(status: number, body = ''): Response {
 }
 
 beforeEach(async () => {
-  resetDb();
-  clearRules();
+  await resetDb();
+  await clearRules();
 });
 
 describe('recoverInterruptedRuns (pass 1)', () => {
   it('flips a stale "running" row to "error" with finishedAt and a client-safe recovery message', async () => {
-    const run = startRun({ scheduleId: '', triggeredBy: 'manual', categories: [CATEGORY] });
+    const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: [CATEGORY] });
     expect(run.status).toBe('running');
 
-    const recovered = recoverInterruptedRuns();
+    const recovered = await recoverInterruptedRuns();
     expect(recovered).toBe(1);
 
-    const after = getRun(run.id)!;
+    const after = (await getRun(run.id))!;
     expect(after.status).toBe('error');
     expect(after.finishedAt).not.toBeNull();
     expect(after.error).toBe('Run did not complete. The server restarted or crashed while this scan was in progress.');
@@ -126,14 +126,14 @@ describe('recoverPendingNotifications (pass 2)', () => {
   beforeEach(async () => {
     scheduleId = `sched-${crypto.randomUUID()}`;
     channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
-    setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
+    await setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
-    deleteLinksForSchedule(scheduleId);
+    await deleteLinksForSchedule(scheduleId);
     await deleteChannel(channelId);
   });
 
@@ -141,8 +141,8 @@ describe('recoverPendingNotifications (pass 2)', () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
 
-    const run = startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
-    finishRun(run.id, {
+    const run = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
+    await finishRun(run.id, {
       status: 'success', totalFindings: 1, newFindings: 1,
       newFindingFingerprints: [f.fingerprint], durationMs: 100, notifyStatus: 'pending',
     });
@@ -154,12 +154,12 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(getRun(run.id)!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
   });
 
   it('leaves an already-sent run untouched — no re-dispatch', async () => {
-    const run = startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
-    finishRun(run.id, {
+    const run = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
+    await finishRun(run.id, {
       status: 'success', totalFindings: 0, newFindings: 0,
       newFindingFingerprints: [], durationMs: 100, notifyStatus: 'sent',
     });
@@ -171,7 +171,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(getRun(run.id)!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
   });
 
   it('marks a pending run sent without dispatching when its fingerprints belong to a hard-deleted rule', async () => {
@@ -179,8 +179,8 @@ describe('recoverPendingNotifications (pass 2)', () => {
     await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: new Date().toISOString() });
     await deleteFindingsForRule(RULE_A);
 
-    const run = startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
-    finishRun(run.id, {
+    const run = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
+    await finishRun(run.id, {
       status: 'success', totalFindings: 1, newFindings: 1,
       newFindingFingerprints: [f.fingerprint], durationMs: 100, notifyStatus: 'pending',
     });
@@ -192,25 +192,25 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(1);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(getRun(run.id)!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
   });
 });
 
-describe('executeTarget() live path (notifyStatus persisted before + after dispatch)', () => {
+describe('await executeTarget() live path (notifyStatus persisted before + after dispatch)', () => {
   let scheduleId: string;
   let channelId: string;
 
   beforeEach(async () => {
     scheduleId = `sched-${crypto.randomUUID()}`;
     channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
-    setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
+    await setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
-    deleteLinksForSchedule(scheduleId);
+    await deleteLinksForSchedule(scheduleId);
     await deleteChannel(channelId);
   });
 
@@ -227,13 +227,13 @@ describe('executeTarget() live path (notifyStatus persisted before + after dispa
       { triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
     );
 
-    // executeTarget() fires dispatch without awaiting it — give the microtask queue a chance to
+    // await executeTarget() fires dispatch without awaiting it — give the microtask queue a chance to
     // reach the (deliberately unresolved) fetch call before asserting the durable outbox state.
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(getRun(run.id)!.notifyStatus).toBe('pending');
+    await vi.waitFor(async () => expect(fetchMock).toHaveBeenCalled());
+    expect((await getRun(run.id))!.notifyStatus).toBe('pending');
 
     resolveFetch(fakeResponse(200, 'ok'));
-    await vi.waitFor(() => expect(getRun(run.id)!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
   });
 });
 

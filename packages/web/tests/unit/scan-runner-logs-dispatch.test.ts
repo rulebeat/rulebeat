@@ -1,5 +1,5 @@
 /**
- * Spec 036 — runCategoryScan()'s queryBackend partitioning (spec 029) extends to a third backend,
+ * Spec 036 — await runCategoryScan()'s queryBackend partitioning (spec 029) extends to a third backend,
  * 'log-analytics', with no special-casing: a log-analytics rule filed under 'identity' runs through
  * runLawRules() side by side with an ordinary resource-graph rule and the seeded microsoft-graph
  * rule in the same category and the same scan, and a Log Analytics failure isolates to only that
@@ -20,7 +20,7 @@ const ARG_RULE_ID = 'test-arg-rule-under-identity-logs';
 const LOGS_RULE_ID = 'test-logs-rule-under-identity';
 
 // Same idempotent-delete-then-insert pattern as scan-runner-taxonomy-dispatch.test.ts's
-// insertArgRuleUnderIdentity() — resetDb() deliberately preserves the seeded rules table.
+// insertArgRuleUnderIdentity() — await resetDb() deliberately preserves the seeded rules table.
 function insertArgRuleUnderIdentity(): void {
   db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)).run();
   db.insert(rulesTable).values({
@@ -56,8 +56,8 @@ function insertLogsRuleUnderIdentity(): void {
   }).run();
 }
 
-function identityCategory() {
-  const category = getCategory('identity');
+async function identityCategory() {
+  const category = await getCategory('identity');
   expect(category, "expected the seeded 'identity' category to exist").toBeTruthy();
   return category!;
 }
@@ -74,14 +74,14 @@ function graphAppWithExpiringSecret(): Record<string, unknown>[] {
 }
 
 describe('runCategoryScan dispatches log-analytics rules through runLawRules (spec 036)', () => {
-  beforeEach(() => {
-    resetDb();
+  beforeEach(async () => {
+    await resetDb();
     insertArgRuleUnderIdentity();
     insertLogsRuleUnderIdentity();
   });
 
   it('runs resource-graph, microsoft-graph and log-analytics rules under the same category in one scan', async () => {
-    const category = identityCategory();
+    const category = await identityCategory();
     const ctx = fakeTenantContext({
       rows: [argRow()],
       graphRows: graphAppWithExpiringSecret(),
@@ -107,7 +107,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
   });
 
   it('a failed Log Analytics call leaves the resource-graph and microsoft-graph rules in the same category unaffected', async () => {
-    const category = identityCategory();
+    const category = await identityCategory();
     const ctx = fakeTenantContext({
       rows: [argRow()],
       graphRows: graphAppWithExpiringSecret(),

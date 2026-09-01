@@ -9,7 +9,7 @@ function fakeResponse(status: number, body: string): Response {
   return new Response(body, { status });
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllGlobals();
 });
 

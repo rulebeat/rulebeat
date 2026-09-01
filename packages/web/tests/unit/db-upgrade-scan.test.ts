@@ -54,7 +54,7 @@ beforeAll(async () => {
 
 /** A scan of the upgraded database, returning every ARG query it issued along the way. */
 async function scanWith(rows: Record<string, unknown>[]): Promise<FakeTenantContext> {
-  const category = categories.listCategories().find(c => c.id === RULE.category);
+  const category = (await categories.listCategories()).find(c => c.id === RULE.category);
   expect(category, `category ${RULE.category} is missing after the upgrade`).toBeDefined();
 
   const ctx = fakeTenantContext({ rows, subscriptionIds: [TEST_SUB_A] });
@@ -64,7 +64,7 @@ async function scanWith(rows: Record<string, unknown>[]): Promise<FakeTenantCont
 
 describe('TS-25 · scanning after an upgrade', () => {
   it('25-10 · the upgraded rules still load and still generate their own KQL', async () => {
-    const mine = rules.loadRules().find(r => r.name === RULE.name);
+    const mine = (await rules.loadRules()).find(r => r.name === RULE.name);
     expect(mine, 'the custom rule did not survive the upgrade').toBeDefined();
     expect(mine!.rawKql, 'the rule would now ask Azure a different question').toBe(RULE.rawKql);
     expect(mine!.enabled).toBe(true);
@@ -82,14 +82,14 @@ describe('TS-25 · scanning after an upgrade', () => {
   it('25-10 · pre-upgrade scan history is added to, not replaced', async () => {
     // The fixture's history was recorded against a different category than the one being scanned,
     // which is the point: a new scan must not disturb history it has nothing to do with.
-    const otherCategoryBefore = history.listScanMetas('cost').length;
+    const otherCategoryBefore = (await history.listScanMetas('cost')).length;
     expect(otherCategoryBefore, 'history from before the upgrade was dropped').toBeGreaterThan(0);
 
-    const before = history.listScanMetas(RULE.category).length;
+    const before = (await history.listScanMetas(RULE.category)).length;
     await scanWith([]);
 
-    expect(history.listScanMetas(RULE.category).length, 'the new scan did not record a run').toBe(before + 1);
-    expect(history.listScanMetas('cost').length, 'the scan clobbered unrelated history').toBe(otherCategoryBefore);
+    expect((await history.listScanMetas(RULE.category)).length, 'the new scan did not record a run').toBe(before + 1);
+    expect((await history.listScanMetas('cost')).length, 'the scan clobbered unrelated history').toBe(otherCategoryBefore);
   });
 
   it('25-10 · a finding that still exists keeps its age and its count', async () => {
@@ -113,7 +113,7 @@ describe('TS-25 · scanning after an upgrade', () => {
     // Stated directly, because it underpins the test above and every suppression in the product:
     // findings are keyed by sha256(ruleId::resourceId), recomputed on every scan. If an upgrade
     // rewrites a rule's id, every fingerprint derived from it silently stops matching.
-    const rule = rules.loadRules().find(r => r.name === RULE.name)!;
+    const rule = (await rules.loadRules()).find(r => r.name === RULE.name)!;
     const stored = (await findings.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(stored).toBeDefined();
     expect(computeFingerprint(rule.id, ACTIVE_RESOURCE_ID)).toBe(stored!.fingerprint);
@@ -125,10 +125,10 @@ describe('TS-25 · scanning after an upgrade', () => {
       argRow({ id: SUPPRESSED_RESOURCE_ID, name: 'stlegacy001' }),
     ]);
 
-    const rule = rules.loadRules().find(r => r.name === RULE.name)!;
+    const rule = (await rules.loadRules()).find(r => r.name === RULE.name)!;
     const suppressedFingerprint = computeFingerprint(rule.id, SUPPRESSED_RESOURCE_ID);
     const { loadSuppressions } = await import('@/lib/suppressions');
-    const active = loadSuppressions().map(s => s.fingerprint);
+    const active = (await loadSuppressions()).map(s => s.fingerprint);
 
     expect(
       active.includes(suppressedFingerprint),

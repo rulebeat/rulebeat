@@ -29,7 +29,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
 
         // Resolved fresh rather than read off a module-scope constant: the tenant this install
         // trusts can now change at runtime (Settings → Sign-in), not just at process start.
-        const resolved = resolveSignInConfig();
+        const resolved = await resolveSignInConfig();
         if (!resolved) return false;
 
         const p = profile as EntraProfile | undefined;
@@ -43,7 +43,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
         // database to load any earlier than the moment a sign-in actually needs it.
         const { provisionUser } = await import('@/lib/provision-user');
         const email = user.email ?? p.email ?? p.preferred_username ?? '';
-        const provisioned = provisionUser({ oid: p.oid, email, name: user.name ?? p.name });
+        const provisioned = await provisionUser({ oid: p.oid, email, name: user.name ?? p.name });
         if (!provisioned) return false;
 
         // A stored-but-unverified row proves itself here: a real OAuth round trip is a strictly
@@ -51,7 +51,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
         // the client secret and the tenant all at once). Env-managed config has no row to flip.
         if (resolved.source === 'stored' && resolved.storedProviderId) {
           const { markSsoProviderVerified } = await import('@/lib/db/sso-providers');
-          markSsoProviderVerified(resolved.storedProviderId);
+          await markSsoProviderVerified(resolved.storedProviderId);
         }
 
         // Normalize to our own users.id. The Entra provider otherwise leaves user.id as
@@ -71,7 +71,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
           // carries our own sessionEpoch column, and a stale value here would defeat the whole
           // point of spec 020's invalidation mechanism.
           const { getUser } = await import('@/lib/db/users');
-          token.epoch = getUser(user.id)?.sessionEpoch ?? 0;
+          token.epoch = (await getUser(user.id))?.sessionEpoch ?? 0;
         }
         return token;
       },

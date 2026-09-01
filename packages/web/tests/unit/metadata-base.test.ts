@@ -19,7 +19,7 @@ function setEnv(value: string | undefined) {
   else process.env.AUTH_URL = value;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   requestHeaders.clear();
   setEnv(undefined);
 });

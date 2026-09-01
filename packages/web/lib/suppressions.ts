@@ -1,16 +1,17 @@
 import { db } from './db/client';
-import { suppressions as suppressionsTable } from './db/schema';
+import { suppressions as suppressionsTable } from './db/tables';
+import { many, run, inTransaction } from './db/exec';
 import type { Suppression } from './types';
 
-export function loadSuppressions(): Suppression[] {
-  return db.select().from(suppressionsTable).all().map(rowToSuppression);
+export async function loadSuppressions(): Promise<Suppression[]> {
+  return (await many(db.select().from(suppressionsTable))).map(rowToSuppression);
 }
 
-export function saveSuppressions(sups: Suppression[]): void {
-  db.transaction((tx) => {
-    tx.delete(suppressionsTable).run();
+export async function saveSuppressions(sups: Suppression[]): Promise<void> {
+  await inTransaction(async (tx) => {
+    await run(tx.delete(suppressionsTable));
     for (const s of sups) {
-      tx.insert(suppressionsTable).values(suppressionToRow(s)).run();
+      await run(tx.insert(suppressionsTable).values(suppressionToRow(s)));
     }
   });
 }

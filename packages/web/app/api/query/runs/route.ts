@@ -6,5 +6,5 @@ export async function GET() {
   const actor = await requireRole('rules:validate');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(listQueryRuns(actor.id));
+  return NextResponse.json(await listQueryRuns(actor.id));
 }

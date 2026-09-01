@@ -1,6 +1,7 @@
 import { db } from './client';
-import { schedules } from './schema';
+import { schedules } from './tables';
 import { eq } from 'drizzle-orm';
+import { many, one, run } from './exec';
 import { listCategories } from './categories';
 import { loadRules } from '../rules';
 import { deleteLinksForSchedule } from './schedule-notification-channels';
@@ -49,31 +50,32 @@ function rowToSchedule(row: typeof schedules.$inferSelect): Schedule {
   };
 }
 
-export function listSchedules(): Schedule[] {
-  return db.select().from(schedules).all().map(rowToSchedule);
+export async function listSchedules(): Promise<Schedule[]> {
+  const rows = await many(db.select().from(schedules));
+  return rows.map(rowToSchedule);
 }
 
-export function getSchedule(id: string): Schedule | null {
-  const row = db.select().from(schedules).where(eq(schedules.id, id)).get();
+export async function getSchedule(id: string): Promise<Schedule | null> {
+  const row = await one(db.select().from(schedules).where(eq(schedules.id, id)));
   return row ? rowToSchedule(row) : null;
 }
 
-export function listDueSchedules(nowIso: string): Schedule[] {
-  return listSchedules().filter(s => s.enabled && s.nextRunAt !== null && s.nextRunAt <= nowIso);
+export async function listDueSchedules(nowIso: string): Promise<Schedule[]> {
+  return (await listSchedules()).filter(s => s.enabled && s.nextRunAt !== null && s.nextRunAt <= nowIso);
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
-function validateTarget(targetType: ScheduleTargetType, targetValues: string[]): string | null {
+async function validateTarget(targetType: ScheduleTargetType, targetValues: string[]): Promise<string | null> {
   if (targetType === 'all') return null;
   if (targetValues.length === 0) return 'At least one target is required.';
   if (targetType === 'categories') {
-    const known = new Set(listCategories().map(c => c.id));
+    const known = new Set((await listCategories()).map(c => c.id));
     const unknown = targetValues.find(v => !known.has(v));
     if (unknown) return `Unknown category: "${unknown}"`;
   }
   if (targetType === 'rules') {
-    const known = new Set(loadRules().map(r => r.id));
+    const known = new Set((await loadRules()).map(r => r.id));
     const unknown = targetValues.find(v => !known.has(v));
     if (unknown) return `Unknown rule: "${unknown}"`;
   }
@@ -230,10 +232,10 @@ export interface ScheduleBody {
   enabled?: boolean;
 }
 
-export function createSchedule(data: ScheduleInput): { schedule: Schedule } | { error: string } {
+export async function createSchedule(data: ScheduleInput): Promise<{ schedule: Schedule } | { error: string }> {
   if (!data.name.trim()) return { error: 'Name is required.' };
 
-  const targetError = validateTarget(data.targetType, data.targetValues);
+  const targetError = await validateTarget(data.targetType, data.targetValues);
   if (targetError) return { error: targetError };
 
   const recurrenceError = validateRecurrence(data);
@@ -244,7 +246,7 @@ export function createSchedule(data: ScheduleInput): { schedule: Schedule } | { 
   const id = crypto.randomUUID();
   const nextRunAt = enabled ? computeNextRun(data, new Date())?.toISOString() ?? null : null;
 
-  db.insert(schedules).values({
+  await run(db.insert(schedules).values({
     id,
     name: data.name.trim(),
     targetType: data.targetType,
@@ -261,13 +263,13 @@ export function createSchedule(data: ScheduleInput): { schedule: Schedule } | { 
     lastRunAt: null,
     createdAt: now,
     updatedAt: now,
-  }).run();
+  }));
 
-  return { schedule: getSchedule(id)! };
+  return { schedule: (await getSchedule(id))! };
 }
 
-export function updateSchedule(id: string, data: Partial<ScheduleInput>): { schedule: Schedule } | { error: string } | null {
-  const existing = getSchedule(id);
+export async function updateSchedule(id: string, data: Partial<ScheduleInput>): Promise<{ schedule: Schedule } | { error: string } | null> {
+  const existing = await getSchedule(id);
   if (!existing) return null;
 
   const merged: ScheduleInput = {
@@ -286,7 +288,7 @@ export function updateSchedule(id: string, data: Partial<ScheduleInput>): { sche
 
   if (!merged.name.trim()) return { error: 'Name cannot be empty.' };
 
-  const targetError = validateTarget(merged.targetType, merged.targetValues);
+  const targetError = await validateTarget(merged.targetType, merged.targetValues);
   if (targetError) return { error: targetError };
 
   const recurrenceError = validateRecurrence(merged);
@@ -294,7 +296,7 @@ export function updateSchedule(id: string, data: Partial<ScheduleInput>): { sche
 
   const nextRunAt = merged.enabled ? computeNextRun(merged, new Date())?.toISOString() ?? null : null;
 
-  db.update(schedules).set({
+  await run(db.update(schedules).set({
     name: merged.name.trim(),
     targetType: merged.targetType,
     targetValues: JSON.stringify(merged.targetType === 'all' ? [] : merged.targetValues),
@@ -308,27 +310,27 @@ export function updateSchedule(id: string, data: Partial<ScheduleInput>): { sche
     enabled: merged.enabled,
     nextRunAt,
     updatedAt: new Date().toISOString(),
-  }).where(eq(schedules.id, id)).run();
+  }).where(eq(schedules.id, id)));
 
-  return { schedule: getSchedule(id)! };
+  return { schedule: (await getSchedule(id))! };
 }
 
-export function deleteSchedule(id: string): boolean {
-  const existing = getSchedule(id);
+export async function deleteSchedule(id: string): Promise<boolean> {
+  const existing = await getSchedule(id);
   if (!existing) return false;
-  deleteLinksForSchedule(id);
-  db.delete(schedules).where(eq(schedules.id, id)).run();
+  await deleteLinksForSchedule(id);
+  await run(db.delete(schedules).where(eq(schedules.id, id)));
   return true;
 }
 
 /** Advances a schedule after a run. A null nextRunAt means the recurrence has no more
  *  occurrences (a one-off that just fired, or a recurring schedule past its end date) —
  *  the schedule is disabled rather than left enabled with nothing left to do. */
-export function setNextRun(id: string, nextRunAt: string | null, lastRunAt?: string): void {
-  db.update(schedules).set({
+export async function setNextRun(id: string, nextRunAt: string | null, lastRunAt?: string): Promise<void> {
+  await run(db.update(schedules).set({
     nextRunAt,
     ...(nextRunAt === null && { enabled: false }),
     ...(lastRunAt !== undefined && { lastRunAt }),
     updatedAt: new Date().toISOString(),
-  }).where(eq(schedules.id, id)).run();
+  }).where(eq(schedules.id, id)));
 }

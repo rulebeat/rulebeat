@@ -19,7 +19,7 @@ const widgetFiles = readdirSync(WIDGETS_DIR)
   .filter(name => name.endsWith('-widget.tsx'));
 
 describe('every dashboard widget uses the shared unavailable-state contract', () => {
-  it('found widget files at all (guards against this suite silently testing nothing)', () => {
+  it('found widget files at all (guards against this suite silently testing nothing)', async () => {
     expect(widgetFiles.length).toBeGreaterThanOrEqual(11);
   });
 

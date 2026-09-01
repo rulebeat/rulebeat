@@ -8,7 +8,7 @@ import type { Suppression } from '@/lib/types';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(loadSuppressions());
+  return NextResponse.json(await loadSuppressions());
 }
 
 export async function POST(req: Request) {
@@ -30,13 +30,13 @@ export async function POST(req: Request) {
     ...(body.expiresAt ? { expiresAt: body.expiresAt } : {}),
   };
 
-  const all = loadSuppressions();
+  const all = await loadSuppressions();
   all.push(suppression);
-  saveSuppressions(all);
+  await saveSuppressions(all);
 
   // Suppression is the most consequential action in the product — it makes a real risk disappear
   // from the dashboard — so the reason and expiry are recorded alongside the actor.
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'suppression.create',
     entityType: 'suppression',

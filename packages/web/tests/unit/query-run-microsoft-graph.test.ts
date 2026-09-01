@@ -41,9 +41,9 @@ function postRequest(body: Record<string, unknown>): Request {
 }
 
 async function signInAsEditor(): Promise<string> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
   return result.user.id;
 }
@@ -54,7 +54,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
   let userId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -144,7 +144,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
   it('writes a query.run audit entry with a row-count summary on the good path', async () => {
     fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
     await POST(postRequest({ graphQuery: VALID_GQ }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].action).toBe('query.run');
     expect(entries[0].entityType).toBe('query');
     expect(entries[0].summary).toBe('Ran a microsoft-graph query (1 rows)');
@@ -153,7 +153,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
   it('names the truncation point in the audit summary when Azure truncated the result', async () => {
     fakeCtx = fakeTenantContext({ graphFailWith: new GraphTruncatedError(250) });
     await POST(postRequest({ graphQuery: VALID_GQ }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].summary).toBe('Ran a microsoft-graph query (truncated after 250 rows)');
   });
 
@@ -161,7 +161,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
       await POST(postRequest({ graphQuery: VALID_GQ }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].queryBackend).toBe('microsoft-graph');
       expect(runs[0].graphQuery).toEqual(VALID_GQ);
@@ -172,7 +172,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
     it('records a truncated run as capped:false, truncated:true', async () => {
       fakeCtx = fakeTenantContext({ graphFailWith: new GraphTruncatedError(500) });
       await POST(postRequest({ graphQuery: VALID_GQ }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].truncated).toBe(true);
       expect(runs[0].count).toBe(500);
@@ -180,13 +180,13 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
 
     it('does not record anything on a 400 (shape-invalid path)', async () => {
       await POST(postRequest({ graphQuery: { path: 'directoryObjects' } }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
 
     it('does not record anything when the query itself fails (502)', async () => {
       fakeCtx = fakeTenantContext({ graphFailWith: new Error('Graph API 429: Too many requests') });
       await POST(postRequest({ graphQuery: VALID_GQ }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
   });
 
@@ -199,7 +199,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
 
     it('blocks the run with a read-only 403, never reaching Azure', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
 
@@ -210,12 +210,12 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
 
     it('does not record run history either', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
 
       await POST(postRequest({ graphQuery: VALID_GQ }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
   });
 });

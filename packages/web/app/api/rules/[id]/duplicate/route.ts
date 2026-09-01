@@ -12,10 +12,10 @@ export async function POST(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const copy = duplicateRule(id);
+  const copy = await duplicateRule(id);
   if (!copy) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'rule.duplicate',
     entityType: 'rule',

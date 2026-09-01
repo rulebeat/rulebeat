@@ -15,21 +15,21 @@ import { OnboardingClient } from './onboarding-client';
 export default async function OnboardingPage() {
   // A demo visitor's viewer role already fails the can(azure:manage) check below and would land on
   // /dashboard, but this route wires a real Azure connect step to a credential that
-  // resolveAzureCredential() throws on in demo mode — 404 outright rather than lean on a redirect
+  // await resolveAzureCredential() throws on in demo mode — 404 outright rather than lean on a redirect
   // that exists for an unrelated reason to also cover this case.
-  if (isDemoMode()) notFound();
+  if (await isDemoMode()) notFound();
 
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
-  if (getLocalAccount(user.id)?.mustChangePassword) redirect('/change-password');
+  if ((await getLocalAccount(user.id))?.mustChangePassword) redirect('/change-password');
   if (!can(user.role, 'azure:manage')) redirect('/dashboard');
 
   return (
     <OnboardingClient
-      azureStatus={getAzureConnectionStatus()}
-      categories={listCategories()}
-      ruleSummaries={listRuleSummaries()}
-      onboarding={getOnboardingState()}
+      azureStatus={await getAzureConnectionStatus()}
+      categories={await listCategories()}
+      ruleSummaries={await listRuleSummaries()}
+      onboarding={await getOnboardingState()}
     />
   );
 }

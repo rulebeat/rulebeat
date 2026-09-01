@@ -16,22 +16,22 @@ function widgetFilters(overrides: Partial<WidgetFilters> = {}): WidgetFilters {
 }
 
 describe('buildScansHref · category param', () => {
-  it('emits no category param when the filters carry zero categories', () => {
+  it('emits no category param when the filters carry zero categories', async () => {
     const href = buildScansHref(widgetFilters());
     expect(new URLSearchParams(href.split('?')[1]).has('category')).toBe(false);
   });
 
-  it('emits a single category value unjoined', () => {
+  it('emits a single category value unjoined', async () => {
     const href = buildScansHref(widgetFilters({ categories: ['security'] }));
     expect(new URLSearchParams(href.split('?')[1]).get('category')).toBe('security');
   });
 
-  it('comma-joins two or more categories', () => {
+  it('comma-joins two or more categories', async () => {
     const href = buildScansHref(widgetFilters({ categories: ['security', 'cost', 'identity'] }));
     expect(new URLSearchParams(href.split('?')[1]).get('category')).toBe('security,cost,identity');
   });
 
-  it('a per-widget category override wins over a multi-category dashboard filter', () => {
+  it('a per-widget category override wins over a multi-category dashboard filter', async () => {
     // coverage-freshness-widget.tsx:67 does exactly this — one Link per category row, each
     // overriding to its own single category regardless of how the dashboard filter bar is set.
     const href = buildScansHref(widgetFilters({ categories: ['security', 'cost'] }), { category: 'identity' });
@@ -40,20 +40,20 @@ describe('buildScansHref · category param', () => {
 });
 
 describe('parseCategoryParam', () => {
-  it('returns an empty list for undefined', () => {
+  it('returns an empty list for undefined', async () => {
     expect(parseCategoryParam(undefined)).toEqual([]);
   });
 
-  it('treats "all" as no filter, matching the sentinel every other category param uses', () => {
+  it('treats "all" as no filter, matching the sentinel every other category param uses', async () => {
     expect(parseCategoryParam('all')).toEqual([]);
   });
 
-  it('splits a comma-joined list, dropping empty segments', () => {
+  it('splits a comma-joined list, dropping empty segments', async () => {
     expect(parseCategoryParam('security,cost,identity')).toEqual(['security', 'cost', 'identity']);
     expect(parseCategoryParam('security,,cost')).toEqual(['security', 'cost']);
   });
 
-  it('round-trips through buildScansHref for 0/1/2+ categories', () => {
+  it('round-trips through buildScansHref for 0/1/2+ categories', async () => {
     for (const categories of [[], ['security'], ['security', 'cost']]) {
       const href = buildScansHref(widgetFilters({ categories }));
       const params = new URLSearchParams(href.split('?')[1]);

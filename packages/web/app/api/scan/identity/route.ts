@@ -9,10 +9,10 @@ export async function POST() {
   const actor = await requireRole('scans:run');
   if (actor instanceof NextResponse) return actor;
 
-  const category = getCategory('identity');
+  const category = await getCategory('identity');
   if (!category) return NextResponse.json({ error: 'Identity category not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'scan.run',
     entityType: 'scan',

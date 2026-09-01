@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from './db/client';
-import { schemaCache as schemaCacheTable, resourceTypesCache as resourceTypesCacheTable } from './db/schema';
+import { schemaCache as schemaCacheTable, resourceTypesCache as resourceTypesCacheTable } from './db/tables';
+import { many, one, run } from './db/exec';
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;    // 7 days
 const TYPES_TTL_MS = 24 * 60 * 60 * 1000;  // 1 day
@@ -35,12 +36,11 @@ export const COMMON_RESOURCE_TYPES = [
   'microsoft.managedidentity/userassignedidentities',
 ];
 
-export function readSchemaCache(resourceType: string): { entry: SchemaCacheEntry; stale: boolean } | null {
-  const row = db
+export async function readSchemaCache(resourceType: string): Promise<{ entry: SchemaCacheEntry; stale: boolean } | null> {
+  const row = await one(db
     .select()
     .from(schemaCacheTable)
-    .where(eq(schemaCacheTable.resourceType, resourceType.toLowerCase()))
-    .get();
+    .where(eq(schemaCacheTable.resourceType, resourceType.toLowerCase())));
   if (!row) return null;
   const fields = JSON.parse(row.fields) as string[];
   if (fields.length === 0) return null; // empty entry → treat as miss, re-fetch from ARM
@@ -54,9 +54,9 @@ export function readSchemaCache(resourceType: string): { entry: SchemaCacheEntry
   return { entry, stale };
 }
 
-export function writeSchemaCache(resourceType: string, fields: string[]): void {
+export async function writeSchemaCache(resourceType: string, fields: string[]): Promise<void> {
   const now = new Date().toISOString();
-  db.insert(schemaCacheTable).values({
+  await run(db.insert(schemaCacheTable).values({
     resourceType: resourceType.toLowerCase(),
     fields: JSON.stringify(fields),
     cachedAt: now,
@@ -64,27 +64,27 @@ export function writeSchemaCache(resourceType: string, fields: string[]): void {
   }).onConflictDoUpdate({
     target: schemaCacheTable.resourceType,
     set: { fields: JSON.stringify(fields), cachedAt: now, fieldCount: fields.length },
-  }).run();
+  }));
 }
 
-export function readResourceTypesCache(): { types: string[]; stale: boolean; cachedAt: string } | null {
-  const row = db.select().from(resourceTypesCacheTable).where(eq(resourceTypesCacheTable.id, 1)).get();
+export async function readResourceTypesCache(): Promise<{ types: string[]; stale: boolean; cachedAt: string } | null> {
+  const row = await one(db.select().from(resourceTypesCacheTable).where(eq(resourceTypesCacheTable.id, 1)));
   if (!row) return null;
   const stale = Date.now() - new Date(row.cachedAt).getTime() > TYPES_TTL_MS;
   return { types: JSON.parse(row.types) as string[], stale, cachedAt: row.cachedAt };
 }
 
-export function writeResourceTypesCache(types: string[]): void {
+export async function writeResourceTypesCache(types: string[]): Promise<void> {
   const now = new Date().toISOString();
-  db.insert(resourceTypesCacheTable).values({ id: 1, types: JSON.stringify(types), cachedAt: now })
+  await run(db.insert(resourceTypesCacheTable).values({ id: 1, types: JSON.stringify(types), cachedAt: now })
     .onConflictDoUpdate({
       target: resourceTypesCacheTable.id,
       set: { types: JSON.stringify(types), cachedAt: now },
-    }).run();
+    }));
 }
 
-export function listCachedSchemas(): SchemaCacheEntry[] {
-  return db.select().from(schemaCacheTable).all().map(row => ({
+export async function listCachedSchemas(): Promise<SchemaCacheEntry[]> {
+  return (await many(db.select().from(schemaCacheTable))).map(row => ({
     resourceType: row.resourceType,
     fields: JSON.parse(row.fields) as string[],
     cachedAt: row.cachedAt,
@@ -102,9 +102,9 @@ export interface SchemaCacheStatus {
   staleSchemaCount: number;
 }
 
-export function getSchemaCacheStatus(): SchemaCacheStatus {
-  const typesCache = readResourceTypesCache();
-  const schemas = listCachedSchemas();
+export async function getSchemaCacheStatus(): Promise<SchemaCacheStatus> {
+  const typesCache = await readResourceTypesCache();
+  const schemas = await listCachedSchemas();
   const now = Date.now();
   const cachedAts = schemas.map(s => s.cachedAt).sort();
   return {

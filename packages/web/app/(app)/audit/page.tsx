@@ -18,8 +18,8 @@ export default async function AuditPage() {
       />
       <main className="flex-1 p-8">
         <AuditClient
-          initialEntries={listAuditEntries({ limit: PAGE_SIZE })}
-          initialTotal={countAuditEntries()}
+          initialEntries={await listAuditEntries({ limit: PAGE_SIZE })}
+          initialTotal={await countAuditEntries()}
         />
       </main>
     </>

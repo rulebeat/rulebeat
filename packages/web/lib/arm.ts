@@ -12,7 +12,7 @@ import { getAzureCredential, getAzureToken, resolveAzureCredential } from '@/lib
  * UI would have been ignored here while working everywhere else.
  */
 
-export function getArmCredential(): TokenCredential {
+export function getArmCredential(): Promise<TokenCredential> {
   return getAzureCredential();
 }
 
@@ -21,8 +21,8 @@ export function getArmToken(): Promise<string> {
 }
 
 /** The tenant every ARM call in this app is scoped to. */
-export function getArmTenantId(): string {
-  return resolveAzureCredential().tenantId;
+export async function getArmTenantId(): Promise<string> {
+  return (await resolveAzureCredential()).tenantId;
 }
 
 export async function armFetch<T>(url: string, token: string): Promise<T> {

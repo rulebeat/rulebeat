@@ -13,7 +13,7 @@ import type { QueryBackend, Rule } from '@rulebeat/core';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(loadRules());
+  return NextResponse.json(await loadRules());
 }
 
 export async function POST(req: Request) {
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const body = await parseJsonBody<Omit<Rule, 'id'>>(req);
   if (body instanceof NextResponse) return body;
 
-  if (isNameTaken(body.name)) {
+  if (await isNameTaken(body.name)) {
     return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
 
@@ -112,9 +112,9 @@ export async function POST(req: Request) {
     shape: deriveShape(body.appliesTo),
     kind: deriveKind(queryBackend),
   };
-  saveRules([...loadRules(), rule]);
+  await saveRules([...await loadRules(), rule]);
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'rule.create',
     entityType: 'rule',

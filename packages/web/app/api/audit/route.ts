@@ -11,10 +11,10 @@ export async function GET(req: Request) {
   const offset = Number(searchParams.get('offset') ?? 0);
 
   return NextResponse.json({
-    entries: listAuditEntries({
+    entries: await listAuditEntries({
       limit: Number.isFinite(limit) ? limit : 50,
       offset: Number.isFinite(offset) ? offset : 0,
     }),
-    total: countAuditEntries(),
+    total: await countAuditEntries(),
   });
 }

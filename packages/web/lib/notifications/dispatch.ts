@@ -13,8 +13,8 @@ import { buildPayload } from './format';
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [2_000, 8_000]; // delay before attempt 2, then before attempt 3
 
-export function buildAbsoluteHref(path: string): string {
-  const base = getPublicUrl();
+export async function buildAbsoluteHref(path: string): Promise<string> {
+  const base = await getPublicUrl();
   if (base) return base.replace(/\/$/, '') + path;
   return path;
 }
@@ -142,14 +142,14 @@ async function sendEmail(channel: StoredNotificationChannel, subject: string, te
  * applying the severity threshold, so a channel scoped to "Security" never fires for Cost findings.
  */
 export async function dispatchNotifications(run: ScheduleRun, newFindings: Finding[]): Promise<void> {
-  const channels = getChannelsForSchedule(run.scheduleId);
+  const channels = await getChannelsForSchedule(run.scheduleId);
   if (channels.length === 0) return;
 
   const scansPath = buildScansHref(
     { categories: [], severities: [], subscriptions: [], resourceGroups: [], tags: [], ruleIds: [], dateWindow: { mode: 'relative', days: 7 } },
     { status: 'new' },
   );
-  const href = buildAbsoluteHref(scansPath);
+  const href = await buildAbsoluteHref(scansPath);
 
   await Promise.allSettled(
     channels.map(async channel => {
@@ -201,5 +201,5 @@ export async function dispatchAndMarkSent(run: ScheduleRun, findings: Finding[])
   if (findings.length > 0) {
     await dispatchNotifications(run, findings);
   }
-  markNotifySent(run.id);
+  await markNotifySent(run.id);
 }

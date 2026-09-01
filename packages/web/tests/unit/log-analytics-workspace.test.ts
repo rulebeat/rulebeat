@@ -27,132 +27,132 @@ const ENV_KEY = 'RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID';
 
 let savedEnv: string | undefined;
 
-function clearStoredWorkspaces(): void {
-  for (const w of listLogAnalyticsWorkspaces()) deleteLogAnalyticsWorkspace(w.id);
+async function clearStoredWorkspaces(): Promise<void> {
+  for (const w of await listLogAnalyticsWorkspaces()) await deleteLogAnalyticsWorkspace(w.id);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   savedEnv = process.env[ENV_KEY];
   delete process.env[ENV_KEY];
-  clearStoredWorkspaces();
+  await clearStoredWorkspaces();
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (savedEnv === undefined) delete process.env[ENV_KEY];
   else process.env[ENV_KEY] = savedEnv;
-  clearStoredWorkspaces();
+  await clearStoredWorkspaces();
 });
 
 describe('stored workspace · single-active-row invariant', () => {
-  it('creates a new active row when none exists', () => {
-    const saved = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+  it('creates a new active row when none exists', async () => {
+    const saved = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     expect(saved.isActive).toBe(true);
     expect(saved.workspaceId).toBe(WORKSPACE_A);
-    expect(getActiveLogAnalyticsWorkspace()?.id).toBe(saved.id);
+    expect((await getActiveLogAnalyticsWorkspace())?.id).toBe(saved.id);
   });
 
-  it('replaces the active row rather than adding a second one', () => {
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_B });
+  it('replaces the active row rather than adding a second one', async () => {
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_B });
 
-    expect(listLogAnalyticsWorkspaces()).toHaveLength(1);
-    expect(listLogAnalyticsWorkspaces().filter(w => w.isActive)).toHaveLength(1);
-    expect(getActiveLogAnalyticsWorkspace()?.workspaceId).toBe(WORKSPACE_B);
+    expect(await listLogAnalyticsWorkspaces()).toHaveLength(1);
+    expect((await listLogAnalyticsWorkspaces()).filter(w => w.isActive)).toHaveLength(1);
+    expect((await getActiveLogAnalyticsWorkspace())?.workspaceId).toBe(WORKSPACE_B);
   });
 
-  it('clears lastVerifiedAt when the workspace id is replaced', () => {
-    const first = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    markLogAnalyticsWorkspaceVerified(first.id);
-    expect(getActiveLogAnalyticsWorkspace()?.lastVerifiedAt).not.toBeNull();
+  it('clears lastVerifiedAt when the workspace id is replaced', async () => {
+    const first = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    await markLogAnalyticsWorkspaceVerified(first.id);
+    expect((await getActiveLogAnalyticsWorkspace())?.lastVerifiedAt).not.toBeNull();
 
     // A verification against the old workspace id proves nothing about the new one.
-    const second = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_B });
+    const second = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_B });
     expect(second.lastVerifiedAt).toBeNull();
   });
 
-  it('markLogAnalyticsWorkspaceVerified records a timestamp on the right row', () => {
-    const saved = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+  it('markLogAnalyticsWorkspaceVerified records a timestamp on the right row', async () => {
+    const saved = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     expect(saved.lastVerifiedAt).toBeNull();
-    markLogAnalyticsWorkspaceVerified(saved.id);
-    expect(getActiveLogAnalyticsWorkspace()?.lastVerifiedAt).not.toBeNull();
+    await markLogAnalyticsWorkspaceVerified(saved.id);
+    expect((await getActiveLogAnalyticsWorkspace())?.lastVerifiedAt).not.toBeNull();
   });
 
-  it('deletes the stored row, leaving nothing active', () => {
-    const saved = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    expect(deleteLogAnalyticsWorkspace(saved.id)).toBe(true);
-    expect(getActiveLogAnalyticsWorkspace()).toBeNull();
-    expect(listLogAnalyticsWorkspaces()).toHaveLength(0);
+  it('deletes the stored row, leaving nothing active', async () => {
+    const saved = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    expect(await deleteLogAnalyticsWorkspace(saved.id)).toBe(true);
+    expect(await getActiveLogAnalyticsWorkspace()).toBeNull();
+    expect(await listLogAnalyticsWorkspaces()).toHaveLength(0);
   });
 
-  it('reports false deleting a row that does not exist', () => {
-    expect(deleteLogAnalyticsWorkspace('not-a-real-id')).toBe(false);
+  it('reports false deleting a row that does not exist', async () => {
+    expect(await deleteLogAnalyticsWorkspace('not-a-real-id')).toBe(false);
   });
 
-  it('defaults the name from the workspace id when none is given', () => {
-    const saved = saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+  it('defaults the name from the workspace id when none is given', async () => {
+    const saved = await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     expect(saved.name).toContain(WORKSPACE_A);
   });
 });
 
 describe('resolveLogAnalyticsWorkspaceId · resolution order', () => {
-  it('returns null when nothing is configured', () => {
-    expect(resolveLogAnalyticsWorkspaceId()).toBeNull();
+  it('returns null when nothing is configured', async () => {
+    expect(await resolveLogAnalyticsWorkspaceId()).toBeNull();
   });
 
-  it('uses the stored workspace when the environment has none', () => {
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    const resolved = resolveLogAnalyticsWorkspaceId();
+  it('uses the stored workspace when the environment has none', async () => {
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    const resolved = await resolveLogAnalyticsWorkspaceId();
     expect(resolved?.source).toBe('stored');
     expect(resolved?.workspaceId).toBe(WORKSPACE_A);
     expect(resolved?.storedWorkspaceRowId).toBeDefined();
   });
 
-  it('prefers the environment variable over a stored workspace', () => {
+  it('prefers the environment variable over a stored workspace', async () => {
     // The load-bearing case, same as the Azure credential: a template deployment that names a
     // workspace in its environment must not be silently overridden by something typed into Settings.
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     process.env[ENV_KEY] = ENV_WORKSPACE;
 
-    const resolved = resolveLogAnalyticsWorkspaceId();
+    const resolved = await resolveLogAnalyticsWorkspaceId();
     expect(resolved?.source).toBe('env');
     expect(resolved?.workspaceId).toBe(ENV_WORKSPACE);
     expect(resolved?.storedWorkspaceRowId).toBeUndefined();
   });
 
-  it('ignores an empty environment variable rather than treating it as configured', () => {
+  it('ignores an empty environment variable rather than treating it as configured', async () => {
     process.env[ENV_KEY] = '';
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    expect(resolveLogAnalyticsWorkspaceId()?.source).toBe('stored');
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    expect((await resolveLogAnalyticsWorkspaceId())?.source).toBe('stored');
   });
 
-  it('has no ambient chain fallback — unconfigured stays unconfigured', () => {
-    // Unlike resolveAzureCredential(), there is no DefaultAzureCredential-style discovery for a
+  it('has no ambient chain fallback — unconfigured stays unconfigured', async () => {
+    // Unlike await resolveAzureCredential(), there is no DefaultAzureCredential-style discovery for a
     // workspace id: either one is named, or the caller gets null, never a guess.
-    expect(resolveLogAnalyticsWorkspaceId()).toBeNull();
+    expect(await resolveLogAnalyticsWorkspaceId()).toBeNull();
   });
 });
 
 describe('getLogAnalyticsWorkspaceStatus', () => {
-  it('reports not configured when nothing is set', () => {
-    const status = getLogAnalyticsWorkspaceStatus();
+  it('reports not configured when nothing is set', async () => {
+    const status = await getLogAnalyticsWorkspaceStatus();
     expect(status.configured).toBe(false);
     expect(status.source).toBeNull();
     expect(status.managedByEnv).toBe(false);
     expect(status.stored).toBeNull();
   });
 
-  it('marks the workspace as environment-managed so the UI can lock the form', () => {
+  it('marks the workspace as environment-managed so the UI can lock the form', async () => {
     process.env[ENV_KEY] = ENV_WORKSPACE;
-    const status = getLogAnalyticsWorkspaceStatus();
+    const status = await getLogAnalyticsWorkspaceStatus();
     expect(status.configured).toBe(true);
     expect(status.managedByEnv).toBe(true);
     expect(status.source).toBe('env');
     expect(status.workspaceId).toBe(ENV_WORKSPACE);
   });
 
-  it('reports a stored workspace as configured and not environment-managed', () => {
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
-    const status = getLogAnalyticsWorkspaceStatus();
+  it('reports a stored workspace as configured and not environment-managed', async () => {
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    const status = await getLogAnalyticsWorkspaceStatus();
     expect(status.configured).toBe(true);
     expect(status.managedByEnv).toBe(false);
     expect(status.source).toBe('stored');
@@ -160,12 +160,12 @@ describe('getLogAnalyticsWorkspaceStatus', () => {
     expect(status.stored?.workspaceId).toBe(WORKSPACE_A);
   });
 
-  it('still surfaces the stored row even when the environment is what is actually active', () => {
+  it('still surfaces the stored row even when the environment is what is actually active', async () => {
     // managedByEnv means "env wins at resolution time", not "nothing is stored" — the settings
     // screen still needs to show what would take over if the env var were removed.
-    saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
+    await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     process.env[ENV_KEY] = ENV_WORKSPACE;
-    const status = getLogAnalyticsWorkspaceStatus();
+    const status = await getLogAnalyticsWorkspaceStatus();
     expect(status.managedByEnv).toBe(true);
     expect(status.stored?.workspaceId).toBe(WORKSPACE_A);
   });

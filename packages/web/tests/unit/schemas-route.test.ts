@@ -34,15 +34,15 @@ function clearSchemaCache() {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('POST /api/schemas (P3-4b)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     clearSchemaCache();
     mockAuth.mockReset();
     for (const key of Object.keys(fieldsByType)) delete fieldsByType[key];

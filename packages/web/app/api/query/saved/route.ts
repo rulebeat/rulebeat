@@ -12,7 +12,7 @@ export async function GET() {
   const actor = await requireRole('rules:validate');
   if (actor instanceof NextResponse) return actor;
 
-  return NextResponse.json(listSavedQueries(actor.id));
+  return NextResponse.json(await listSavedQueries(actor.id));
 }
 
 export async function POST(req: Request) {
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'A log-analytics query needs a logsQuery.' }, { status: 400 });
   }
 
-  const saved = createSavedQuery({
+  const saved = await createSavedQuery({
     name: body.name.trim(),
     queryBackend: body.queryBackend,
     scope: body.scope,
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     ownerEmail: actor.email,
   });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'query.save',
     entityType: 'query',

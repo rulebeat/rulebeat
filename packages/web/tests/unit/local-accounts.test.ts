@@ -6,69 +6,69 @@ import {
   isLockedOut, listUserIdsWithPassword, recordFailedAttempt, setPassword,
 } from '@/lib/db/local-accounts';
 
-function makeUser(email: string, role: AppUser['role'] = 'viewer'): AppUser {
-  const result = createUser({ email, role });
+async function makeUser(email: string, role: AppUser['role'] = 'viewer'): Promise<AppUser> {
+  const result = await createUser({ email, role });
   if ('error' in result) throw new Error(result.error);
   return result.user;
 }
 
-beforeEach(() => {
-  resetDb();
+beforeEach(async () => {
+  await resetDb();
 });
 
 describe('setPassword / getLocalAccount', () => {
-  it('creates a local account with the requested mustChangePassword flag', () => {
-    const user = makeUser('owner@example.com', 'admin');
-    setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
+  it('creates a local account with the requested mustChangePassword flag', async () => {
+    const user = await makeUser('owner@example.com', 'admin');
+    await setPassword(user.id, 'irrelevant-hash', { mustChangePassword: true });
 
-    const account = getLocalAccount(user.id);
+    const account = await getLocalAccount(user.id);
     expect(account?.mustChangePassword).toBe(true);
     expect(account?.failedAttempts).toBe(0);
   });
 
-  it('a self-service change clears the forced flag', () => {
-    const user = makeUser('owner2@example.com', 'admin');
-    setPassword(user.id, 'temp-hash', { mustChangePassword: true });
-    expect(getLocalAccount(user.id)?.mustChangePassword).toBe(true);
+  it('a self-service change clears the forced flag', async () => {
+    const user = await makeUser('owner2@example.com', 'admin');
+    await setPassword(user.id, 'temp-hash', { mustChangePassword: true });
+    expect((await getLocalAccount(user.id))?.mustChangePassword).toBe(true);
 
-    setPassword(user.id, 'chosen-hash', { mustChangePassword: false });
-    expect(getLocalAccount(user.id)?.mustChangePassword).toBe(false);
+    await setPassword(user.id, 'chosen-hash', { mustChangePassword: false });
+    expect((await getLocalAccount(user.id))?.mustChangePassword).toBe(false);
   });
 
-  it('setting a new password clears any prior lockout state', () => {
-    const user = makeUser('reset-me@example.com');
-    setPassword(user.id, 'hash-1', { mustChangePassword: false });
-    for (let i = 0; i < 5; i++) recordFailedAttempt(user.id);
-    expect(isLockedOut(getLocalAccount(user.id)!)).toBe(true);
+  it('setting a new password clears any prior lockout state', async () => {
+    const user = await makeUser('reset-me@example.com');
+    await setPassword(user.id, 'hash-1', { mustChangePassword: false });
+    for (let i = 0; i < 5; i++) await recordFailedAttempt(user.id);
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);
 
-    setPassword(user.id, 'hash-2', { mustChangePassword: true });
-    const account = getLocalAccount(user.id)!;
+    await setPassword(user.id, 'hash-2', { mustChangePassword: true });
+    const account = (await getLocalAccount(user.id))!;
     expect(account.failedAttempts).toBe(0);
     expect(isLockedOut(account)).toBe(false);
   });
 
-  it('getLocalAccount returns null for a user with no local password', () => {
-    const user = makeUser('sso-only@example.com');
-    expect(getLocalAccount(user.id)).toBeNull();
+  it('getLocalAccount returns null for a user with no local password', async () => {
+    const user = await makeUser('sso-only@example.com');
+    expect(await getLocalAccount(user.id)).toBeNull();
   });
 });
 
 describe('lockout', () => {
-  it('does not lock out before the threshold', () => {
-    const user = makeUser('almost-locked@example.com');
-    setPassword(user.id, 'hash', { mustChangePassword: false });
-    for (let i = 0; i < 4; i++) recordFailedAttempt(user.id);
-    expect(isLockedOut(getLocalAccount(user.id)!)).toBe(false);
+  it('does not lock out before the threshold', async () => {
+    const user = await makeUser('almost-locked@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    for (let i = 0; i < 4; i++) await recordFailedAttempt(user.id);
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(false);
   });
 
-  it('locks out once the failure threshold is reached', () => {
-    const user = makeUser('will-be-locked@example.com');
-    setPassword(user.id, 'hash', { mustChangePassword: false });
-    for (let i = 0; i < 5; i++) recordFailedAttempt(user.id);
-    expect(isLockedOut(getLocalAccount(user.id)!)).toBe(true);
+  it('locks out once the failure threshold is reached', async () => {
+    const user = await makeUser('will-be-locked@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    for (let i = 0; i < 5; i++) await recordFailedAttempt(user.id);
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);
   });
 
-  it('isLockedOut treats a future lockedUntil as locked and a past one as expired', () => {
+  it('isLockedOut treats a future lockedUntil as locked and a past one as expired', async () => {
     const future = new Date(Date.now() + 60_000).toISOString();
     const past = new Date(Date.now() - 60_000).toISOString();
     expect(isLockedOut({ lockedUntil: future })).toBe(true);
@@ -76,78 +76,78 @@ describe('lockout', () => {
     expect(isLockedOut({ lockedUntil: null })).toBe(false);
   });
 
-  it('a successful sign-in resets the failure counter', () => {
-    const user = makeUser('recovers@example.com');
-    setPassword(user.id, 'hash', { mustChangePassword: false });
-    recordFailedAttempt(user.id);
-    recordFailedAttempt(user.id);
-    expect(getLocalAccount(user.id)!.failedAttempts).toBe(2);
+  it('a successful sign-in resets the failure counter', async () => {
+    const user = await makeUser('recovers@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    await recordFailedAttempt(user.id);
+    await recordFailedAttempt(user.id);
+    expect((await getLocalAccount(user.id))!.failedAttempts).toBe(2);
 
-    clearFailedAttempts(user.id);
-    const account = getLocalAccount(user.id)!;
+    await clearFailedAttempts(user.id);
+    const account = (await getLocalAccount(user.id))!;
     expect(account.failedAttempts).toBe(0);
     expect(account.lockedUntil).toBeNull();
   });
 
-  it('recordFailedAttempt is a no-op for a user with no local account', () => {
-    const user = makeUser('no-local-account@example.com');
-    expect(() => recordFailedAttempt(user.id)).not.toThrow();
-    expect(getLocalAccount(user.id)).toBeNull();
+  it('recordFailedAttempt is a no-op for a user with no local account', async () => {
+    const user = await makeUser('no-local-account@example.com');
+    await expect(recordFailedAttempt(user.id)).resolves.toBeUndefined();
+    expect(await getLocalAccount(user.id)).toBeNull();
   });
 });
 
 describe('clearPassword', () => {
-  it('removes the local account entirely', () => {
-    const user = makeUser('remove-me@example.com');
-    setPassword(user.id, 'hash', { mustChangePassword: false });
-    expect(getLocalAccount(user.id)).not.toBeNull();
+  it('removes the local account entirely', async () => {
+    const user = await makeUser('remove-me@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    expect(await getLocalAccount(user.id)).not.toBeNull();
 
-    clearPassword(user.id);
-    expect(getLocalAccount(user.id)).toBeNull();
+    await clearPassword(user.id);
+    expect(await getLocalAccount(user.id)).toBeNull();
   });
 });
 
 describe('deleting a user', () => {
-  it('cascades away their local account', () => {
-    const user = makeUser('doomed@example.com');
-    setPassword(user.id, 'hash', { mustChangePassword: false });
-    expect(getLocalAccount(user.id)).not.toBeNull();
+  it('cascades away their local account', async () => {
+    const user = await makeUser('doomed@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    expect(await getLocalAccount(user.id)).not.toBeNull();
 
-    deleteUser(user.id);
-    expect(getLocalAccount(user.id)).toBeNull();
+    await deleteUser(user.id);
+    expect(await getLocalAccount(user.id)).toBeNull();
   });
 });
 
 describe('countAdminsWithPassword / listUserIdsWithPassword', () => {
-  it('counts only admins that actually have a local password', () => {
-    const admin1 = makeUser('admin1@example.com', 'admin');
-    const admin2 = makeUser('admin2@example.com', 'admin');
-    makeUser('viewer-with-password@example.com', 'viewer');
+  it('counts only admins that actually have a local password', async () => {
+    const admin1 = await makeUser('admin1@example.com', 'admin');
+    const admin2 = await makeUser('admin2@example.com', 'admin');
+    await makeUser('viewer-with-password@example.com', 'viewer');
 
-    expect(countAdminsWithPassword()).toBe(0);
+    expect(await countAdminsWithPassword()).toBe(0);
 
-    setPassword(admin1.id, 'hash', { mustChangePassword: false });
-    expect(countAdminsWithPassword()).toBe(1);
+    await setPassword(admin1.id, 'hash', { mustChangePassword: false });
+    expect(await countAdminsWithPassword()).toBe(1);
 
-    setPassword(admin2.id, 'hash', { mustChangePassword: false });
-    expect(countAdminsWithPassword()).toBe(2);
+    await setPassword(admin2.id, 'hash', { mustChangePassword: false });
+    expect(await countAdminsWithPassword()).toBe(2);
 
-    clearPassword(admin1.id);
-    expect(countAdminsWithPassword()).toBe(1);
+    await clearPassword(admin1.id);
+    expect(await countAdminsWithPassword()).toBe(1);
   });
 
-  it('a viewer with a local password does not count as an admin with one', () => {
-    const viewer = makeUser('just-a-viewer@example.com', 'viewer');
-    setPassword(viewer.id, 'hash', { mustChangePassword: false });
-    expect(countAdminsWithPassword()).toBe(0);
+  it('a viewer with a local password does not count as an admin with one', async () => {
+    const viewer = await makeUser('just-a-viewer@example.com', 'viewer');
+    await setPassword(viewer.id, 'hash', { mustChangePassword: false });
+    expect(await countAdminsWithPassword()).toBe(0);
   });
 
-  it('lists exactly the user ids that currently have a local password', () => {
-    const withPw = makeUser('has-password@example.com');
-    const withoutPw = makeUser('no-password@example.com');
-    setPassword(withPw.id, 'hash', { mustChangePassword: false });
+  it('lists exactly the user ids that currently have a local password', async () => {
+    const withPw = await makeUser('has-password@example.com');
+    const withoutPw = await makeUser('no-password@example.com');
+    await setPassword(withPw.id, 'hash', { mustChangePassword: false });
 
-    const ids = listUserIdsWithPassword();
+    const ids = await listUserIdsWithPassword();
     expect(ids).toContain(withPw.id);
     expect(ids).not.toContain(withoutPw.id);
   });

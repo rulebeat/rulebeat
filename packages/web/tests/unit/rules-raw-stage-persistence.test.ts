@@ -41,15 +41,15 @@ function ruleWithRawStage(): Rule {
 }
 
 describe('spec 016 · RawStage survives lib/rules.ts persistence', () => {
-  beforeEach(() => {
-    clearRules();
+  beforeEach(async () => {
+    await clearRules();
   });
 
-  it('round-trips a visualQuery containing a RawStage byte-identical', () => {
+  it('round-trips a visualQuery containing a RawStage byte-identical', async () => {
     const rule = ruleWithRawStage();
-    saveRules([rule]);
+    await saveRules([rule]);
 
-    const reloaded = loadRules().find(r => r.id === rule.id);
+    const reloaded = (await loadRules()).find(r => r.id === rule.id);
     expect(reloaded).toBeDefined();
     expect(reloaded!.visualQuery).toEqual(rule.visualQuery);
 

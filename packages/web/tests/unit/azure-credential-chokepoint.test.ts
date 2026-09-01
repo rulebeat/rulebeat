@@ -54,12 +54,12 @@ const CREDENTIAL_CLASSES = [
 ];
 
 describe('Azure credentials have exactly one construction site', () => {
-  it('found the source files at all (guards against this suite silently testing nothing)', () => {
+  it('found the source files at all (guards against this suite silently testing nothing)', async () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
     expect(sourceFiles.some(f => f.rel === RESOLVER)).toBe(true);
   });
 
-  it('no file outside lib/azure-credential.ts constructs an Azure credential', () => {
+  it('no file outside lib/azure-credential.ts constructs an Azure credential', async () => {
     const pattern = new RegExp(`new\\s+(${CREDENTIAL_CLASSES.join('|')})\\s*\\(`);
 
     const offenders = sourceFiles
@@ -69,12 +69,12 @@ describe('Azure credentials have exactly one construction site', () => {
     expect(offenders, [
       'These files build an Azure credential directly, which bypasses credential resolution —',
       'so a credential set in the environment or entered in Settings → Azure connection would be',
-      'ignored here while working everywhere else. Use resolveAzureCredential(),',
-      'getAzureCredential() or createTenantContext() from lib/azure-credential.ts instead.',
+      'ignored here while working everywhere else. Use await resolveAzureCredential(),',
+      'await getAzureCredential() or await createTenantContext() from lib/azure-credential.ts instead.',
     ].join(' ')).toEqual([]);
   });
 
-  it('the resolver really does construct the credentials, so the ban is not vacuous', () => {
+  it('the resolver really does construct the credentials, so the ban is not vacuous', async () => {
     // Without this, deleting every `new ...Credential(` in the codebase would make the test above
     // pass while the product could no longer authenticate at all.
     const resolver = sourceFiles.find(f => f.rel === RESOLVER)!.source;
@@ -83,22 +83,22 @@ describe('Azure credentials have exactly one construction site', () => {
     expect(resolver).toMatch(/new\s+WorkloadIdentityCredential\s*\(/);
   });
 
-  it('nothing calls buildTenantContext() with no arguments', () => {
+  it('nothing calls buildTenantContext() with no arguments', async () => {
     // The subtler bypass: core's `buildTenantContext()` builds its *own* DefaultAzureCredential when
     // given none, so this compiles, runs, and quietly ignores both the environment and the stored
-    // credential. `createTenantContext()` is the web app's entry point.
+    // credential. `await createTenantContext()` is the web app's entry point.
     const offenders = sourceFiles
       .filter(f => f.rel !== RESOLVER && /buildTenantContext\s*\(\s*\)/.test(f.source))
       .map(f => f.rel.split(sep).join('/'));
 
     expect(offenders, [
       'These files call buildTenantContext() with no credential, which makes core build its own',
-      'and ignore RuleBeat’s configured one. Call createTenantContext() from',
+      'and ignore RuleBeat’s configured one. Call await createTenantContext() from',
       'lib/azure-credential.ts instead.',
     ].join(' ')).toEqual([]);
   });
 
-  it('no file reads a credential secret from the environment outside the resolver', () => {
+  it('no file reads a credential secret from the environment outside the resolver', async () => {
     // A second reader of the secret is a second place it can be logged or returned.
     //
     // Matches an actual `process.env` read, not the bare name: the settings card legitimately

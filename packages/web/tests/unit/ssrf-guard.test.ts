@@ -9,7 +9,7 @@ import {
   resetDnsLookupForTests,
 } from '@/lib/ssrf-guard';
 
-afterEach(() => {
+afterEach(async () => {
   resetDnsLookupForTests();
   vi.unstubAllGlobals();
 });

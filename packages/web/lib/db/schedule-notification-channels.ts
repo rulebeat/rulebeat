@@ -1,6 +1,7 @@
 import { db } from './client';
-import { scheduleNotificationChannels, notificationChannels } from './schema';
+import { scheduleNotificationChannels, notificationChannels } from './tables';
 import { eq, inArray } from 'drizzle-orm';
+import { many, run, inTransaction } from './exec';
 import { rowToStoredChannel, type StoredNotificationChannel } from './notification-channels';
 import type { Severity } from '@/lib/types';
 
@@ -12,30 +13,32 @@ export interface ScheduleChannelLink {
 }
 
 /** Returns the notification links configured for a schedule. */
-export function listLinksForSchedule(scheduleId: string): ScheduleChannelLink[] {
-  return db.select().from(scheduleNotificationChannels)
-    .where(eq(scheduleNotificationChannels.scheduleId, scheduleId))
-    .all()
-    .map(row => ({
-      channelId: row.channelId,
-      minSeverity: row.minSeverity as Severity,
-      categoryIds: row.categoryIds ? JSON.parse(row.categoryIds) as string[] : null,
-      subscriptionIds: row.subscriptionIds ? JSON.parse(row.subscriptionIds) as string[] : null,
-    }));
+export async function listLinksForSchedule(scheduleId: string): Promise<ScheduleChannelLink[]> {
+  const rows = await many(
+    db.select().from(scheduleNotificationChannels)
+      .where(eq(scheduleNotificationChannels.scheduleId, scheduleId)),
+  );
+  return rows.map(row => ({
+    channelId: row.channelId,
+    minSeverity: row.minSeverity as Severity,
+    categoryIds: row.categoryIds ? JSON.parse(row.categoryIds) as string[] : null,
+    subscriptionIds: row.subscriptionIds ? JSON.parse(row.subscriptionIds) as string[] : null,
+  }));
 }
 
 /**
  * Atomically replaces all notification links for a schedule.
  * Called on every schedule save — passing an empty array clears all links.
  */
-export function setLinksForSchedule(scheduleId: string, links: ScheduleChannelLink[]): void {
-  db.transaction(tx => {
-    tx.delete(scheduleNotificationChannels)
-      .where(eq(scheduleNotificationChannels.scheduleId, scheduleId))
-      .run();
+export async function setLinksForSchedule(scheduleId: string, links: ScheduleChannelLink[]): Promise<void> {
+  await inTransaction(async (tx) => {
+    await run(
+      tx.delete(scheduleNotificationChannels)
+        .where(eq(scheduleNotificationChannels.scheduleId, scheduleId)),
+    );
 
     if (links.length > 0) {
-      tx.insert(scheduleNotificationChannels).values(
+      await run(tx.insert(scheduleNotificationChannels).values(
         links.map(l => ({
           scheduleId,
           channelId: l.channelId,
@@ -43,34 +46,36 @@ export function setLinksForSchedule(scheduleId: string, links: ScheduleChannelLi
           categoryIds: l.categoryIds ? JSON.stringify(l.categoryIds) : null,
           subscriptionIds: l.subscriptionIds ? JSON.stringify(l.subscriptionIds) : null,
         })),
-      ).run();
+      ));
     }
   });
 }
 
 /** Removes all notification links for a schedule. Called by deleteSchedule(). */
-export function deleteLinksForSchedule(scheduleId: string): void {
-  db.delete(scheduleNotificationChannels)
-    .where(eq(scheduleNotificationChannels.scheduleId, scheduleId))
-    .run();
+export async function deleteLinksForSchedule(scheduleId: string): Promise<void> {
+  await run(
+    db.delete(scheduleNotificationChannels)
+      .where(eq(scheduleNotificationChannels.scheduleId, scheduleId)),
+  );
 }
 
 /**
  * Returns the resolved channels (with decrypted URLs/passwords) assigned to a schedule, each
  * carrying its per-schedule minSeverity and scope. Used by the dispatcher.
  */
-export function getChannelsForSchedule(
+export async function getChannelsForSchedule(
   scheduleId: string,
-): Array<StoredNotificationChannel & { minSeverity: Severity; categoryIds: string[] | null; subscriptionIds: string[] | null }> {
+): Promise<Array<StoredNotificationChannel & { minSeverity: Severity; categoryIds: string[] | null; subscriptionIds: string[] | null }>> {
   if (!scheduleId) return [];
 
-  const links = listLinksForSchedule(scheduleId);
+  const links = await listLinksForSchedule(scheduleId);
   if (links.length === 0) return [];
 
   const channelIds = links.map(l => l.channelId);
-  const rows = db.select().from(notificationChannels)
-    .where(inArray(notificationChannels.id, channelIds))
-    .all();
+  const rows = await many(
+    db.select().from(notificationChannels)
+      .where(inArray(notificationChannels.id, channelIds)),
+  );
 
   const linkById = new Map(links.map(l => [l.channelId, l]));
 

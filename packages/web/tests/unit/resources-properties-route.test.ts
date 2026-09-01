@@ -30,8 +30,8 @@ function clearSchemaCache() {
   db.run(sql`DELETE FROM schema_cache`);
 }
 
-function writeSchemaAt(resourceType: string, fields: string[], cachedAt: string) {
-  writeSchemaCache(resourceType, fields);
+async function writeSchemaAt(resourceType: string, fields: string[], cachedAt: string) {
+  await writeSchemaCache(resourceType, fields);
   db.run(sql.raw(`UPDATE schema_cache SET cached_at = '${cachedAt}' WHERE resource_type = '${resourceType}'`));
 }
 
@@ -40,15 +40,15 @@ function request(type: string): Request {
 }
 
 async function signInAsViewer(): Promise<void> {
-  const result = createUser({ email: 'viewer@example.com', role: 'viewer' });
+  const result = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('GET /api/resources/properties (spec 008)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     clearSchemaCache();
     mockAuth.mockReset();
     fail = null;
@@ -83,7 +83,7 @@ describe('GET /api/resources/properties (spec 008)', () => {
 
   it('still serves the stale cache immediately when the background refresh throws', async () => {
     const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
-    writeSchemaAt('microsoft.compute/virtualmachines', ['id', 'name'], staleDate);
+    await writeSchemaAt('microsoft.compute/virtualmachines', ['id', 'name'], staleDate);
     fail = new Error('ECONNRESET');
 
     const res = await GET(request('microsoft.compute/virtualmachines'));

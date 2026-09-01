@@ -17,8 +17,8 @@ export async function GET() {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  // Building the context is where a bad credential actually surfaces — createTenantContext()
-  // resolves the credential and its subscription list, and runPreflight() below only ever probes
+  // Building the context is where a bad credential actually surfaces — await createTenantContext()
+  // resolves the credential and its subscription list, and await runPreflight() below only ever probes
   // with a context that already exists. So this failure gets the per-check treatment too: a 200
   // whose credential check failed, not a wholesale 500 that hides the one answer the person on the
   // onboarding step came for. "Nothing configured at all" stays the actionable 503 the setup
@@ -35,7 +35,7 @@ export async function GET() {
   }
 
   try {
-    const status = getAzureConnectionStatus();
+    const status = await getAzureConnectionStatus();
     const result = await runPreflight({ ctx, clientId: status.clientId ?? undefined });
     return NextResponse.json(result);
   } catch (err) {

@@ -1,6 +1,7 @@
 import { db } from './client';
-import { savedQueries } from './schema';
-import { eq, or, desc, sql } from 'drizzle-orm';
+import { savedQueries, savedQueriesInsertionOrder } from './tables';
+import { eq, or, desc } from 'drizzle-orm';
+import { many, one, run } from './exec';
 import type {
   SavedQuery, QueryBackend, QueryVisibility, RuleScope, VisualQuery, GraphQuery, LogAnalyticsQuery,
 } from '@/lib/types';
@@ -44,10 +45,10 @@ export interface CreateSavedQueryInput {
   ownerEmail: string;
 }
 
-export function createSavedQuery(input: CreateSavedQueryInput): SavedQuery {
+export async function createSavedQuery(input: CreateSavedQueryInput): Promise<SavedQuery> {
   const id = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
-  db.insert(savedQueries).values({
+  await run(db.insert(savedQueries).values({
     id,
     name: input.name,
     queryBackend: input.queryBackend,
@@ -62,16 +63,18 @@ export function createSavedQuery(input: CreateSavedQueryInput): SavedQuery {
     createdAt: now,
     updatedAt: now,
     lastRunAt: null,
-  }).run();
-  return getSavedQuery(id, input.ownerId)!;
+  }));
+  return (await getSavedQuery(id, input.ownerId))!;
 }
 
 /** Every row visible to `viewerId`: their own (private or shared) plus everyone else's shared ones. */
-export function listSavedQueries(viewerId: string): SavedQuery[] {
-  return db.select().from(savedQueries)
-    .where(or(eq(savedQueries.ownerId, viewerId), eq(savedQueries.visibility, 'shared')))
-    .orderBy(desc(savedQueries.updatedAt), desc(sql`rowid`))
-    .all().map(rowToSavedQuery);
+export async function listSavedQueries(viewerId: string): Promise<SavedQuery[]> {
+  const rows = await many(
+    db.select().from(savedQueries)
+      .where(or(eq(savedQueries.ownerId, viewerId), eq(savedQueries.visibility, 'shared')))
+      .orderBy(desc(savedQueries.updatedAt), desc(savedQueriesInsertionOrder)),
+  );
+  return rows.map(rowToSavedQuery);
 }
 
 /**
@@ -79,18 +82,18 @@ export function listSavedQueries(viewerId: string): SavedQuery[] {
  * private query owned by someone else must read back exactly like a missing one (404), never a 403
  * that would confirm its existence.
  */
-export function getSavedQuery(id: string, viewerId: string): SavedQuery | null {
-  const row = db.select().from(savedQueries).where(eq(savedQueries.id, id)).get();
+export async function getSavedQuery(id: string, viewerId: string): Promise<SavedQuery | null> {
+  const row = await one(db.select().from(savedQueries).where(eq(savedQueries.id, id)));
   if (!row) return null;
   if (row.visibility !== 'shared' && row.ownerId !== viewerId) return null;
   return rowToSavedQuery(row);
 }
 
 /** Only the owner may delete — 'shared' controls read visibility, not write access. */
-export function deleteSavedQuery(id: string, viewerId: string): boolean {
-  const row = db.select().from(savedQueries).where(eq(savedQueries.id, id)).get();
+export async function deleteSavedQuery(id: string, viewerId: string): Promise<boolean> {
+  const row = await one(db.select().from(savedQueries).where(eq(savedQueries.id, id)));
   if (!row || row.ownerId !== viewerId) return false;
-  db.delete(savedQueries).where(eq(savedQueries.id, id)).run();
+  await run(db.delete(savedQueries).where(eq(savedQueries.id, id)));
   return true;
 }
 
@@ -99,7 +102,7 @@ export function deleteSavedQuery(id: string, viewerId: string): boolean {
  * when the query isn't visible to the caller, so an arbitrary id passed to a run request can't be
  * used to probe for existence or write to a query the caller can't otherwise see.
  */
-export function touchSavedQueryLastRun(id: string, viewerId: string): void {
-  if (!getSavedQuery(id, viewerId)) return;
-  db.update(savedQueries).set({ lastRunAt: new Date().toISOString() }).where(eq(savedQueries.id, id)).run();
+export async function touchSavedQueryLastRun(id: string, viewerId: string): Promise<void> {
+  if (!await getSavedQuery(id, viewerId)) return;
+  await run(db.update(savedQueries).set({ lastRunAt: new Date().toISOString() }).where(eq(savedQueries.id, id)));
 }

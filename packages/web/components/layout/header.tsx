@@ -56,7 +56,7 @@ export async function Header({ title, description }: HeaderProps) {
         ) : (
           // No session and demo mode: this is an anonymous visitor, not someone who failed to sign
           // in. Fills the slot the avatar/name/sign-out block would otherwise leave empty.
-          isDemoMode() && (
+          (await isDemoMode()) && (
             <span className="whitespace-nowrap text-xs font-medium text-ink-2">
               Browsing as viewer
             </span>

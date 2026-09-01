@@ -56,11 +56,11 @@ function unsafeJsonCalls(lines: string[]): number[] {
 }
 
 describe("RB-QA-018 · no route parses req.json() without a guard against malformed JSON", () => {
-  it('found the API routes at all (guards against this suite silently testing nothing)', () => {
+  it('found the API routes at all (guards against this suite silently testing nothing)', async () => {
     expect(routeFiles.length).toBeGreaterThan(20);
   });
 
-  it('every raw req.json() call is either parseJsonBody() or wrapped in its own try/catch', () => {
+  it('every raw req.json() call is either parseJsonBody() or wrapped in its own try/catch', async () => {
     const offenders: string[] = [];
     for (const r of routeFiles) {
       for (const lineNo of unsafeJsonCalls(r.lines)) {

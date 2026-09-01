@@ -34,18 +34,18 @@ function putRequest(body: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
-// resetDb() deliberately leaves the rules table alone (it's seeded baseline, not per-test mutable
+// await resetDb() deliberately leaves the rules table alone (it's seeded baseline, not per-test mutable
 // state — see tests/helpers/db.ts), so a RULE_ID row inserted by an earlier test in this file
 // survives into the next one. Filter it out before inserting the fixture, or the second describe
-// block's beforeEach hits a UNIQUE constraint on the id when saveRules() re-inserts everything.
-function seedExistingRule(rule: Rule = existingRule()): void {
-  saveRules([...loadRules().filter(r => r.id !== RULE_ID), rule]);
+// block's beforeEach hits a UNIQUE constraint on the id when await saveRules() re-inserts everything.
+async function seedExistingRule(rule: Rule = existingRule()): Promise<void> {
+  await saveRules([...(await loadRules()).filter(r => r.id !== RULE_ID), rule]);
 }
 
 // A minimal Applies-to that compiles to a real filter (isnotempty(tostring(tags))) — hasCompilableFilter
@@ -91,10 +91,10 @@ function existingRule(): Rule {
 
 describe('PUT /api/rules/[id] cannot change queryBackend/kind (spec 029)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
-    seedExistingRule();
+    await seedExistingRule();
   });
 
   it("keeps the existing rule's queryBackend and kind even when the request body asks for different values", async () => {
@@ -119,7 +119,7 @@ describe('PUT /api/rules/[id] cannot change queryBackend/kind (spec 029)', () =>
     const res = await PUT(putRequest(body), { params: Promise.resolve({ id: RULE_ID }) });
     expect(res.status).toBe(200);
 
-    const saved = loadRules().find(r => r.id === RULE_ID);
+    const saved = (await loadRules()).find(r => r.id === RULE_ID);
     expect(saved?.queryBackend).toBe('log-analytics');
     expect(saved?.kind).toBe('activity');
     // the rest of the edit did go through — this isn't a rejected save, just a pinned taxonomy
@@ -130,10 +130,10 @@ describe('PUT /api/rules/[id] cannot change queryBackend/kind (spec 029)', () =>
 
 describe('PUT /api/rules/[id] derives shape from the incoming appliesTo (spec 031)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
-    seedExistingRule();
+    await seedExistingRule();
   });
 
   it("flips shape from 'assert' to 'detect' when an edit removes appliesTo", async () => {
@@ -157,7 +157,7 @@ describe('PUT /api/rules/[id] derives shape from the incoming appliesTo (spec 03
     const res = await PUT(putRequest(body), { params: Promise.resolve({ id: RULE_ID }) });
     expect(res.status).toBe(200);
 
-    const saved = loadRules().find(r => r.id === RULE_ID);
+    const saved = (await loadRules()).find(r => r.id === RULE_ID);
     expect(saved?.shape).toBe('detect');
     expect(saved?.appliesTo).toBeUndefined();
   });
@@ -165,7 +165,7 @@ describe('PUT /api/rules/[id] derives shape from the incoming appliesTo (spec 03
   it("flips shape from 'detect' to 'assert' when an edit adds appliesTo", async () => {
     // Start this one test from a plain detect-shape rule with no appliesTo, overriding the
     // assert-shape fixture beforeEach saved.
-    seedExistingRule({ ...existingRule(), shape: 'detect', appliesTo: undefined });
+    await seedExistingRule({ ...existingRule(), shape: 'detect', appliesTo: undefined });
 
     const body = {
       id: RULE_ID,
@@ -187,7 +187,7 @@ describe('PUT /api/rules/[id] derives shape from the incoming appliesTo (spec 03
     const res = await PUT(putRequest(body), { params: Promise.resolve({ id: RULE_ID }) });
     expect(res.status).toBe(200);
 
-    const saved = loadRules().find(r => r.id === RULE_ID);
+    const saved = (await loadRules()).find(r => r.id === RULE_ID);
     expect(saved?.shape).toBe('assert');
   });
 });

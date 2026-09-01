@@ -54,10 +54,10 @@ function upgradeShape(shape: ShapeName): Upgraded {
 
 describe.each(SHAPES)('TS-25 · %s · the upgraded database is usable', shape => {
   let up: Upgraded;
-  beforeAll(() => { up = upgradeShape(shape); });
+  beforeAll(async () => { up = upgradeShape(shape); });
   afterAll(() => up.sqlite.close());
 
-  it('25-02 · every table the app declares exists, with every column it expects', () => {
+  it('25-02 · every table the app declares exists, with every column it expects', async () => {
     const missing: string[] = [];
     for (const { name, columns } of SCHEMA_TABLES) {
       if (!tableExists(up.sqlite, name)) { missing.push(`table ${name}`); continue; }
@@ -69,7 +69,7 @@ describe.each(SHAPES)('TS-25 · %s · the upgraded database is usable', shape =>
     expect(missing, 'schema declares these but the upgrade did not produce them').toEqual([]);
   });
 
-  it('25-02 · the app can actually read every table afterwards', () => {
+  it('25-02 · the app can actually read every table afterwards', async () => {
     const db = drizzle(up.sqlite, { schema });
     const failed: string[] = [];
     for (const { table, name } of SCHEMA_TABLES) {
@@ -78,7 +78,7 @@ describe.each(SHAPES)('TS-25 · %s · the upgraded database is usable', shape =>
     expect(failed, 'these tables exist but cannot be queried').toEqual([]);
   });
 
-  it('25-02 · no half-finished migration scaffolding is left behind', () => {
+  it('25-02 · no half-finished migration scaffolding is left behind', async () => {
     expect(tableExists(up.sqlite, 'compliance_snapshots_new')).toBe(false);
   });
 });
@@ -90,10 +90,10 @@ const POPULATED = SHAPES.filter(s => s !== 'current');
 
 describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
   let up: Upgraded;
-  beforeAll(() => { up = upgradeShape(shape); });
+  beforeAll(async () => { up = upgradeShape(shape); });
   afterAll(() => up.sqlite.close());
 
-  it('25-03 · every rule that went in is still there, exactly once', () => {
+  it('25-03 · every rule that went in is still there, exactly once', async () => {
     const after = readRules(up.sqlite);
     const names = after.map(r => r.name);
 
@@ -104,7 +104,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     expect([...new Set(duplicated)], 'rules duplicated by the upgrade').toEqual([]);
   });
 
-  it('25-04 · custom rules keep their logic, their type and their KQL', () => {
+  it('25-04 · custom rules keep their logic, their type and their KQL', async () => {
     // populate.ts seeds every custom rule with the same canned legacy conditions/condition_groups,
     // and only includes raw_kql in the INSERT at all for shapes where cols.hasRawKql is true (see
     // RuleColumns there). For a shape that predates raw_kql (policies-era), spec 031's migration
@@ -151,7 +151,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     }
   });
 
-  it('25-05 · scan history and the finding lifecycle are preserved', () => {
+  it('25-05 · scan history and the finding lifecycle are preserved', async () => {
     const scans = rowsIfPresent(up.sqlite, 'scans');
     expect(scans.length, 'scan history was dropped').toBeGreaterThan(0);
 
@@ -179,7 +179,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     }
   });
 
-  it('25-11 · pre-existing scan rows default to complete coverage (spec 004)', () => {
+  it('25-11 · pre-existing scan rows default to complete coverage (spec 004)', async () => {
     // These scans predate the coverage column entirely — every one of them ran through the old
     // all-or-nothing lifecycle, so 'complete' with no incomplete rules is the only correct default.
     // A NULL or empty string here would make every pre-upgrade scan row unreadable as a ScanSummary.
@@ -191,7 +191,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     }
   });
 
-  it('25-05 · every rule a finding points at still exists', () => {
+  it('25-05 · every rule a finding points at still exists', async () => {
     const ruleIds = new Set(readRules(up.sqlite).map(r => r.id));
     const dangling = rowsIfPresent(up.sqlite, 'findings')
       .map(f => String(f.rule_id))
@@ -199,7 +199,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     expect([...new Set(dangling)], 'findings point at rules that no longer exist').toEqual([]);
   });
 
-  it('25-06 · dashboards keep their widgets, layout and filters', () => {
+  it('25-06 · dashboards keep their widgets, layout and filters', async () => {
     const dashboards = rowsIfPresent(up.sqlite, 'dashboards');
     const mine = dashboards.find(d => d.id === up.built.dashboardId);
     expect(mine, 'the user dashboard is gone').toBeDefined();
@@ -215,7 +215,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     expect(config.filters).toEqual({ category: 'cost', dateWindow: { mode: 'relative', days: 7 } });
   });
 
-  it('25-09 · a suppression still refers to a finding that exists', () => {
+  it('25-09 · a suppression still refers to a finding that exists', async () => {
     if (!up.built.suppressionFingerprint) return;
 
     const suppressions = rowsIfPresent(up.sqlite, 'suppressions');
@@ -235,7 +235,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     ).toBe(true);
   });
 
-  it('25-14 · every pre-029 ARG rule defaults to resource-graph / detect / state', () => {
+  it('25-14 · every pre-029 ARG rule defaults to resource-graph / detect / state', async () => {
     // The two identity checks are the one deliberate exception — see the dedicated case below —
     // so they're excluded here rather than asserted against the ARG default.
     const IDENTITY_IDS = new Set(['cred:app-secret-expiring', 'cred:app-cert-expiring']);
@@ -248,7 +248,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     }
   });
 
-  it('25-15 · every pre-036 rule has a null logs_query, undisturbed by the new column (spec 036)', () => {
+  it('25-15 · every pre-036 rule has a null logs_query, undisturbed by the new column (spec 036)', async () => {
     // Mirrors 25-14's shape: no fixture predates spec 036, so every rule in every upgraded shape
     // must land with an untouched, empty logs_query — proving the migration that adds the column
     // does not somehow backfill or corrupt it for rows that never had one.
@@ -260,7 +260,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     }
   });
 
-  it('25-14 · the identity checks exist as ordinary microsoft-graph rules after the upgrade (spec 029)', () => {
+  it('25-14 · the identity checks exist as ordinary microsoft-graph rules after the upgrade (spec 029)', async () => {
     const rules = readRules(up.sqlite);
     for (const id of ['cred:app-secret-expiring', 'cred:app-cert-expiring']) {
       const rule = rules.find(r => r.id === id);
@@ -280,7 +280,7 @@ describe('TS-25 · a historical identity finding resolves once spec 029 seeds it
   const RULE_ID = 'cred:app-secret-expiring';
   const RESOURCE_ID = '/providers/Microsoft.aad/applications/aaaa1111-0000-0000-0000-000000000000/secrets/sync-secret';
 
-  it('25-14 · the finding survives and now points at a real builtin rule', () => {
+  it('25-14 · the finding survives and now points at a real builtin rule', async () => {
     const sample = makeSample('pre-rbac');
     const fp = fingerprintFor(RULE_ID, RESOURCE_ID);
 
@@ -321,10 +321,10 @@ describe('TS-25 · a historical identity finding resolves once spec 029 seeds it
 
 describe('TS-25 · schedules survive the move off the cron model', () => {
   let up: Upgraded;
-  beforeAll(() => { up = upgradeShape('cron-schedules'); });
+  beforeAll(async () => { up = upgradeShape('cron-schedules'); });
   afterAll(() => up.sqlite.close());
 
-  it('25-07 · both schedules are still present, with their names and targeting', () => {
+  it('25-07 · both schedules are still present, with their names and targeting', async () => {
     const schedules = rowsIfPresent(up.sqlite, 'schedules');
     expect(schedules.map(s => s.name).sort()).toEqual(['Everything, weekly', 'Nightly cost sweep']);
 
@@ -336,7 +336,7 @@ describe('TS-25 · schedules survive the move off the cron model', () => {
     expect(weekly.target_type).toBe('all');
   });
 
-  it('25-07 · migrated schedules arrive switched off rather than guessed at', () => {
+  it('25-07 · migrated schedules arrive switched off rather than guessed at', async () => {
     // Deliberate: the old cron model does not map onto the new recurrence model, so the upgrade
     // preserves the schedule but leaves it disabled for the user to confirm. A scan firing at a time
     // nobody chose is worse than one visibly paused. QA-TEST-PLAN 25-07 was corrected to match.
@@ -345,11 +345,11 @@ describe('TS-25 · schedules survive the move off the cron model', () => {
     expect(schedules.every(s => s.next_run_at === null)).toBe(true);
   });
 
-  it('25-07 · run history from before the upgrade is kept', () => {
-    expect(countRows(up.sqlite, 'schedule_runs')).toBe(1);
+  it('25-07 · run history from before the upgrade is kept', async () => {
+    expect(await countRows(up.sqlite, 'schedule_runs')).toBe(1);
   });
 
-  it('25-05 · snapshot history survives the table being rebuilt', () => {
+  it('25-05 · snapshot history survives the table being rebuilt', async () => {
     const snapshots = rowsIfPresent(up.sqlite, 'posture_snapshots');
     expect(snapshots.length, 'trend history was lost in the table rebuild').toBe(1);
     expect(snapshots[0]!.category).toBe('cost');
@@ -361,7 +361,7 @@ describe('TS-25 · schedules survive the move off the cron model', () => {
 
 describe('TS-25 · users and access', () => {
   const savedAdmin = process.env.RULEBEAT_INITIAL_ADMIN;
-  afterAll(() => {
+  afterAll(async () => {
     if (savedAdmin === undefined) delete process.env.RULEBEAT_INITIAL_ADMIN;
     else process.env.RULEBEAT_INITIAL_ADMIN = savedAdmin;
   });
@@ -371,7 +371,7 @@ describe('TS-25 · users and access', () => {
   // gets a bootstrapped local owner account instead — see the console-first-config plan — so
   // there is a way in even with no environment configured at all. Kept in place (not deleted) so
   // the reason for the assertion flip stays visible in the same file it was made in.
-  it('25-08 · a pre-RBAC install with no bootstrap variable gets a local owner account, not a silent Entra grant', () => {
+  it('25-08 · a pre-RBAC install with no bootstrap variable gets a local owner account, not a silent Entra grant', async () => {
     delete process.env.RULEBEAT_INITIAL_ADMIN;
     const up = upgradeShape('pre-rbac');
     try {
@@ -389,19 +389,19 @@ describe('TS-25 · users and access', () => {
     } finally { up.sqlite.close(); }
   });
 
-  it('25-08 · upgrading twice never creates a second owner account', () => {
+  it('25-08 · upgrading twice never creates a second owner account', async () => {
     delete process.env.RULEBEAT_INITIAL_ADMIN;
     const sample = makeSample('pre-rbac');
     upgradeInProcess(sample);
     upgradeInProcess(sample);
     const sqlite = open(sample.file);
     try {
-      expect(countRows(sqlite, 'users')).toBe(1);
-      expect(countRows(sqlite, 'local_accounts')).toBe(1);
+      expect(await countRows(sqlite, 'users')).toBe(1);
+      expect(await countRows(sqlite, 'local_accounts')).toBe(1);
     } finally { sqlite.close(); }
   });
 
-  it('25-08 · an install that already has users never gets an extra owner account or password file', () => {
+  it('25-08 · an install that already has users never gets an extra owner account or password file', async () => {
     // The project's standing rule: an upgrade must never disturb a user's existing configuration.
     // addUsers() seeds two real rows (ADMIN_USER, VIEWER_USER) before the upgrade runs, so this
     // exercises the actual "not zero users" branch rather than an empty fixture.
@@ -411,16 +411,16 @@ describe('TS-25 · users and access', () => {
     upgradeInProcess(sample);
     const sqlite = open(sample.file);
     try {
-      expect(countRows(sqlite, 'users')).toBe(2);
-      expect(countRows(sqlite, 'local_accounts')).toBe(0);
+      expect(await countRows(sqlite, 'users')).toBe(2);
+      expect(await countRows(sqlite, 'local_accounts')).toBe(0);
     } finally { sqlite.close(); }
   });
 
   // Spec 020: addUsers() builds a `users` table with no session_epoch column at all — the shape
   // every pre-spec-020 install is really in. If the idempotent ALTER didn't apply its DEFAULT to
   // existing rows (only to future inserts), every current session in the world would start
-  // mismatching on the very next getCurrentUser() call and everyone would be logged out at once.
-  it('25-12 · existing user rows default to session epoch 0, not NULL, after the ALTER (spec 020)', () => {
+  // mismatching on the very next await getCurrentUser() call and everyone would be logged out at once.
+  it('25-12 · existing user rows default to session epoch 0, not NULL, after the ALTER (spec 020)', async () => {
     delete process.env.RULEBEAT_INITIAL_ADMIN;
     const sample = makeSample('current');
     addUsers(sample.file);
@@ -433,7 +433,7 @@ describe('TS-25 · users and access', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-08 · the bootstrap variable creates exactly one admin on a fresh install', () => {
+  it('25-08 · the bootstrap variable creates exactly one admin on a fresh install', async () => {
     process.env.RULEBEAT_INITIAL_ADMIN = 'boss@example.com';
     const up = upgradeShape('pre-rbac');
     try {

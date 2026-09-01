@@ -1,23 +1,23 @@
 import { eq, desc } from 'drizzle-orm';
 import { db } from './db/client';
-import { scans as scansTable } from './db/schema';
+import { scans as scansTable } from './db/tables';
+import { many, one, run } from './db/exec';
 import type { ScanSummary, ScanMeta } from './types';
 
 const MAX_HISTORY = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
 
-export function loadScanHistory(module: string): ScanSummary[] {
-  return db
+export async function loadScanHistory(module: string): Promise<ScanSummary[]> {
+  return (await many(db
     .select()
     .from(scansTable)
     .where(eq(scansTable.module, module))
     .orderBy(desc(scansTable.startedAt))
-    .limit(MAX_HISTORY)
-    .all()
+    .limit(MAX_HISTORY)))
     .map(rowToScanSummary);
 }
 
-export function getScanById(id: string): ScanSummary | null {
-  const row = db.select().from(scansTable).where(eq(scansTable.id, id)).get();
+export async function getScanById(id: string): Promise<ScanSummary | null> {
+  const row = await one(db.select().from(scansTable).where(eq(scansTable.id, id)));
   return row ? rowToScanSummary(row) : null;
 }
 
@@ -57,35 +57,33 @@ function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>): ScanMeta
 
 /** History list without the findings blob — avoids deserializing every scan's full finding
  *  array just to render a clickable history list. */
-export function listScanMetas(module: string, limit = 20): ScanMeta[] {
-  return db
+export async function listScanMetas(module: string, limit = 20): Promise<ScanMeta[]> {
+  return (await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)
     .where(eq(scansTable.module, module))
     .orderBy(desc(scansTable.startedAt))
-    .limit(limit)
-    .all()
+    .limit(limit)))
     .map(rowToScanMeta);
 }
 
 /** All per-category scan rows produced by a single run execution (schedule_runs.id) — the
  *  Run History detail drill-down. Excludes the findings blob for the same reason as listScanMetas. */
-export function getScansForRun(runId: string): ScanMeta[] {
-  return db
+export async function getScansForRun(runId: string): Promise<ScanMeta[]> {
+  return (await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)
     .where(eq(scansTable.runId, runId))
-    .orderBy(desc(scansTable.startedAt))
-    .all()
+    .orderBy(desc(scansTable.startedAt))))
     .map(rowToScanMeta);
 }
 
-export function saveScanResult(
+export async function saveScanResult(
   module: string,
   summary: ScanSummary,
   opts: { triggeredBy?: 'manual' | 'schedule'; scheduleId?: string; id?: string; runId?: string } = {},
-): void {
-  db.insert(scansTable).values({
+): Promise<void> {
+  await run(db.insert(scansTable).values({
     id: opts.id ?? crypto.randomUUID(),
     module: summary.module,
     startedAt: summary.startedAt,
@@ -100,9 +98,9 @@ export function saveScanResult(
     runId: opts.runId ?? null,
     coverage: summary.coverage,
     incompleteRules: JSON.stringify(summary.incompleteRules),
-  }).run();
+  }));
 
-  pruneOldScans(module);
+  await pruneOldScans(module);
 }
 
 // --- helpers ---
@@ -126,16 +124,15 @@ function rowToScanSummary(row: Row): ScanSummary {
   };
 }
 
-function pruneOldScans(module: string): void {
-  const rows = db
+async function pruneOldScans(module: string): Promise<void> {
+  const rows = await many(db
     .select({ id: scansTable.id })
     .from(scansTable)
     .where(eq(scansTable.module, module))
-    .orderBy(desc(scansTable.startedAt))
-    .all();
+    .orderBy(desc(scansTable.startedAt)));
 
   const toDelete = rows.slice(MAX_HISTORY);
   for (const row of toDelete) {
-    db.delete(scansTable).where(eq(scansTable.id, row.id)).run();
+    await run(db.delete(scansTable).where(eq(scansTable.id, row.id)));
   }
 }

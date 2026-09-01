@@ -1,8 +1,8 @@
 /**
  * Spec 017 (RB-QA-019) — a rule whose ARG query returns the same resource twice in one page must
- * count as one finding everywhere, not just in the findings lifecycle table. syncScanFindings()
+ * count as one finding everywhere, not just in the findings lifecycle table. await syncScanFindings()
  * already dedupes for the lifecycle table on its own (see finding-lifecycle-matrix.test.ts); this
- * suite proves runCategoryScan() also dedupes the saved scan blob / counts / newFindings before
+ * suite proves await runCategoryScan() also dedupes the saved scan blob / counts / newFindings before
  * that point is ever reached — the gap Codex's challenge of the spec 017 plan identified.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -32,21 +32,21 @@ function insertRule(): void {
   }).run();
 }
 
-function securityCategory() {
-  const category = getCategory('security');
+async function securityCategory() {
+  const category = await getCategory('security');
   expect(category, "expected the seeded 'security' category to exist").toBeTruthy();
   return category!;
 }
 
 describe('runCategoryScan dedupes a rule returning the same resource twice (spec 017)', () => {
-  beforeEach(() => {
-    resetDb();
-    clearRules();
+  beforeEach(async () => {
+    await resetDb();
+    await clearRules();
     insertRule();
   });
 
   it('the saved scan summary has one finding and one severity count, not two', async () => {
-    const category = securityCategory();
+    const category = await securityCategory();
     const row = argRow({ name: 'vm-dup' });
     const fingerprint = computeFingerprint(RULE_ID, row.id as string);
 

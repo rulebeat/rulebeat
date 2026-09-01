@@ -17,13 +17,13 @@ export default async function RuleDetailPage({
   const { id } = await params;
   const { edit } = await searchParams;
   const decodedId = decodeURIComponent(id);
-  const allRules = loadRules();
+  const allRules = await loadRules();
   const rule = allRules.find(r => r.id === decodedId);
   if (!rule) notFound();
 
   const initialEditing = edit === 'true';
   const allTags = allTagsFromRules(allRules);
-  const categories = listCategories();
+  const categories = await listCategories();
   const user = await getCurrentUser();
 
   const descriptionText = splitLearnMore(rule.description).text;

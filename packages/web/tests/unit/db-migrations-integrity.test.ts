@@ -67,7 +67,7 @@ function insertRule(sqlite: Database, over: Record<string, unknown>): void {
 // ── Column renames: order decides whether data survives ───────────────────────
 
 describe('TS-25 · renaming a column must carry its data', () => {
-  it('25-04 · source → type keeps each row\'s own provenance', () => {
+  it('25-04 · source → type keeps each row\'s own provenance', async () => {
     const sample = sampleWith(RULES_LEGACY, sqlite => {
       insertRule(sqlite, { id: 'a', name: 'a builtin', source: 'builtin' });
       insertRule(sqlite, { id: 'b', name: 'a community rule', source: 'community' });
@@ -112,7 +112,7 @@ describe('TS-25 · renaming a column must carry its data', () => {
   // kill-switch that stripped `join` from every parsed condition before compiling left an 'and'-based
   // version of these two tests fully green. 'or' has no such collision with the fallback.
 
-  it('25-04 · rule_groups → condition_groups compiles into raw_kql and clears the legacy column', () => {
+  it('25-04 · rule_groups → condition_groups compiles into raw_kql and clears the legacy column', async () => {
     const groups = [{
       id: 'g1',
       conditions: [
@@ -141,7 +141,7 @@ describe('TS-25 · renaming a column must carry its data', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-04 · rules → conditions compiles into raw_kql and clears the legacy column', () => {
+  it('25-04 · rules → conditions compiles into raw_kql and clears the legacy column', async () => {
     const conditions = [
       { field: 'location', operator: 'equals', value: 'westeurope' },
       { field: 'name', operator: 'equals', value: 'x', join: 'or' },
@@ -182,17 +182,17 @@ describe('TS-25 · the group → tags backfill', () => {
     } finally { sqlite.close(); }
   }
 
-  it('25-04 · a group becomes a one-element tag list', () => {
+  it('25-04 · a group becomes a one-element tag list', async () => {
     expect(tagsAfterMigrating([{ id: 'a', group_name: 'Production' }]).a).toBe('["Production"]');
   });
 
-  it('25-04 · a group containing a quote produces valid JSON', () => {
+  it('25-04 · a group containing a quote produces valid JSON', async () => {
     const tags = tagsAfterMigrating([{ id: 'a', group_name: 'Prod "A"' }]).a;
     expect(() => JSON.parse(tags!)).not.toThrow();
     expect(JSON.parse(tags!)).toEqual(['Prod "A"']);
   });
 
-  it('25-04 · tags a user already set are left alone', () => {
+  it('25-04 · tags a user already set are left alone', async () => {
     // The guard that protects this is the WHERE clause. Without it an upgrade would silently discard
     // whatever tagging a user had done since.
     const sample = sampleWith(RULES_LEGACY, sqlite => insertRule(sqlite, { id: 'a', group_name: 'Ignored' }));
@@ -208,11 +208,11 @@ describe('TS-25 · the group → tags backfill', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-04 · a blank group does not become a tag', () => {
+  it('25-04 · a blank group does not become a tag', async () => {
     expect(tagsAfterMigrating([{ id: 'a', group_name: '   ' }]).a).toBeNull();
   });
 
-  it('25-11 · upgrading twice does not nest the tag list inside itself', () => {
+  it('25-11 · upgrading twice does not nest the tag list inside itself', async () => {
     const sample = sampleWith(RULES_LEGACY, sqlite => insertRule(sqlite, { id: 'a', group_name: 'Production' }));
     for (let i = 0; i < 3; i++) {
       const sqlite = open(sample.file);
@@ -230,7 +230,7 @@ describe('TS-25 · the group → tags backfill', () => {
 // ── The two identity checks seed exactly once, taxonomy intact (spec 029) ────
 
 describe('TS-25 · the identity rules seed exactly once (spec 029)', () => {
-  it('25-14 · upgrading three times leaves exactly one row per identity check, taxonomy unchanged', () => {
+  it('25-14 · upgrading three times leaves exactly one row per identity check, taxonomy unchanged', async () => {
     const sample = makeSample('pre-rbac');
     for (let i = 0; i < 3; i++) upgradeInProcess(sample);
 
@@ -254,7 +254,7 @@ describe('TS-25 · rewriting a rule id', () => {
   const OLD_ID = 'builtin::tag-environment';
   const NEW_ID = 'db175338-5c33-484a-bcf5-24f20e3bc60c';
 
-  it('25-03 · a user\'s edited rule wins over a stand-in already sitting at the new id', () => {
+  it('25-03 · a user\'s edited rule wins over a stand-in already sitting at the new id', async () => {
     // This is the corrupted shape a previously-interrupted upgrade leaves behind: the rename did not
     // finish, seeding then re-created the built-in under its new id, and now both exist. The row
     // carrying the user's changes is the one that must survive.
@@ -274,7 +274,7 @@ describe('TS-25 · rewriting a rule id', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-03 · one failing rename does not abandon the rest', () => {
+  it('25-03 · one failing rename does not abandon the rest', async () => {
     // Each pair is renamed in its own try/catch precisely so a single bad one cannot abort the loop
     // and leave every later rule to be re-seeded as a duplicate. Nothing proved that until now.
     const sample = sampleWith(RULES_LEGACY, sqlite => {
@@ -307,7 +307,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
    * fingerprint the new id produces — matching each row exactly rather than inferring, so nothing
    * whose fingerprint was not derived from the old id is touched.
    */
-  it('25-05 · every finding\'s fingerprint still matches its rule', () => {
+  it('25-05 · every finding\'s fingerprint still matches its rule', async () => {
     const sample = makeSample('legacy-rules');
     upgradeInProcess(sample);
     const sqlite = open(sample.file);
@@ -323,7 +323,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-09 · a suppression still silences the same violation after its rule is renamed', () => {
+  it('25-09 · a suppression still silences the same violation after its rule is renamed', async () => {
     // The user-visible half of the same fix. A suppression stores only a fingerprint and a resource
     // id, so if the fingerprint is not carried across the rename, an accepted risk quietly starts
     // alerting again on the next scan — with nothing anywhere to say why.
@@ -347,7 +347,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
     } finally { sqlite.close(); }
   });
 
-  it('25-05 · a lineage whose rule ids never change keeps its findings addressable', () => {
+  it('25-05 · a lineage whose rule ids never change keeps its findings addressable', async () => {
     // The same assertion where no rename happens, proving the failure above is caused by the rename
     // and not by the fixtures or the fingerprint formula.
     const sample = makeSample('pre-rbac');
@@ -380,7 +380,7 @@ describe('TS-25 · no legacy identifier survives anywhere', () => {
   }
 
   for (const shape of ['policies-era', 'legacy-rules'] as const) {
-    it(`25-05 · ${shape} leaves no old-scheme rule id behind`, () => {
+    it(`25-05 · ${shape} leaves no old-scheme rule id behind`, async () => {
       const sample = makeSample(shape);
       upgradeInProcess(sample);
       const sqlite = open(sample.file);
@@ -446,7 +446,7 @@ describe('TS-25 · an interrupted upgrade recovers on the next start', () => {
   ];
 
   for (const c of CASES) {
-    it(`25-13 · ${c.name}`, () => {
+    it(`25-13 · ${c.name}`, async () => {
       const sample = sampleWith(c.ddl, c.seed);
       const sqlite = migrateOnly(sample);
       try {
@@ -466,7 +466,7 @@ describe('TS-25 · an interrupted upgrade recovers on the next start', () => {
 
 describe('TS-25 · upgrading is repeatable', () => {
   for (const shape of ['policies-era', 'legacy-rules', 'cron-schedules', 'pre-rbac', 'current'] as const) {
-    it(`25-11 · ${shape} · a second and third start change nothing`, () => {
+    it(`25-11 · ${shape} · a second and third start change nothing`, async () => {
       const sample = makeSample(shape);
       upgradeInProcess(sample);
 
@@ -494,7 +494,7 @@ describe('TS-25 · upgrading is repeatable', () => {
 // ── Seeding must never precede the schema it writes into ─────────────────────
 
 describe('TS-25 · seeding runs against an already-migrated schema', () => {
-  it('25-02 · seeding a legacy-shaped database writes built-ins with their modern columns', () => {
+  it('25-02 · seeding a legacy-shaped database writes built-ins with their modern columns', async () => {
     // `runSeeds` inserts into columns (type, pack, raw_kql) that only exist because `runMigrations`
     // added them. Calling them out of order fails loudly here rather than on a customer's machine.
     const sample = sampleWith(RULES_LEGACY, sqlite => insertRule(sqlite, { id: 'a', name: 'mine' }));
@@ -554,7 +554,7 @@ function insertModernRule(sqlite: Database, over: Record<string, unknown>): void
 }
 
 describe('TS-25 · a rule survives the last-run-status column addition (spec 030)', () => {
-  it('spec 030 · name, raw KQL and enabled state are untouched; the new columns land present and NULL', () => {
+  it('spec 030 · name, raw KQL and enabled state are untouched; the new columns land present and NULL', async () => {
     const sample = sampleWith(RULES_PRE_LAST_RUN_STATUS, sqlite => insertModernRule(sqlite, {
       id: 'r1',
       name: 'My VM rule',

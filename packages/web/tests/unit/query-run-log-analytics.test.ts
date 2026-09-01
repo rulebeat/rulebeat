@@ -43,9 +43,9 @@ function postRequest(body: Record<string, unknown>): Request {
 }
 
 async function signInAsEditor(): Promise<string> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
   return result.user.id;
 }
@@ -54,7 +54,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
   let userId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -143,7 +143,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
   it('writes a query.run audit entry with a row-count summary on the good path', async () => {
     fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }, { a: 2 }, { a: 3 }] });
     await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].action).toBe('query.run');
     expect(entries[0].entityType).toBe('query');
     expect(entries[0].summary).toBe('Ran a log-analytics query (3 rows)');
@@ -152,7 +152,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
   it('names the truncation point in the audit summary when Azure truncated the result', async () => {
     fakeCtx = fakeTenantContext({ logsFailWith: new LogAnalyticsTruncatedError(77) });
     await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-    const entries = listAllAuditEntries();
+    const entries = await listAllAuditEntries();
     expect(entries[0].summary).toBe('Ran a log-analytics query (truncated after 77 rows)');
   });
 
@@ -160,7 +160,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }, { a: 2 }, { a: 3 }] });
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].queryBackend).toBe('log-analytics');
       expect(runs[0].logsQuery?.kql).toBe('Heartbeat');
@@ -171,7 +171,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
     it('records a truncated run as capped:false, truncated:true', async () => {
       fakeCtx = fakeTenantContext({ logsFailWith: new LogAnalyticsTruncatedError(300) });
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      const runs = listQueryRuns(userId);
+      const runs = await listQueryRuns(userId);
       expect(runs).toHaveLength(1);
       expect(runs[0].truncated).toBe(true);
       expect(runs[0].count).toBe(300);
@@ -180,13 +180,13 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
     it('does not record anything when no workspace is configured (400)', async () => {
       fakeCtx = fakeTenantContext({});
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat | take 1' } }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
 
     it('does not record anything when the query itself fails (502)', async () => {
       fakeCtx = fakeTenantContext({ logsFailWith: new Error('correlationId aaaa-bbbb workspace 123') });
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
   });
 
@@ -199,7 +199,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
 
     it('blocks the run with a read-only 403, never reaching Azure', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }] });
 
@@ -210,12 +210,12 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
 
     it('does not record run history either', async () => {
       process.env.RULEBEAT_DEMO = '1';
-      stampDemoDatabase();
+      await stampDemoDatabase();
       resetDemoModeCacheForTests();
       fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }] });
 
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      expect(listQueryRuns(userId)).toHaveLength(0);
+      expect(await listQueryRuns(userId)).toHaveLength(0);
     });
   });
 });

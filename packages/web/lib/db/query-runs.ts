@@ -1,14 +1,15 @@
 import { db } from './client';
-import { queryRuns } from './schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { queryRuns, queryRunsInsertionOrder } from './tables';
+import { eq, desc } from 'drizzle-orm';
+import { many, run } from './exec';
 import type { QueryRun, QueryBackend, RuleScope, GraphQuery, LogAnalyticsQuery } from '@/lib/types';
 
 /**
  * Recent run history for the live query page (spec 037 follow-up). Always fully personal — no
  * visibility split like saved-queries.ts — so deleteUser() removes every row outright. Modeled on
  * notification-deliveries.ts's prune-after-insert pattern: ranAt is millisecond-resolution, so two
- * runs in the same tick can share a timestamp; every ordered query breaks that tie with SQLite's
- * implicit rowid, which is monotonic on insert.
+ * runs in the same tick can share a timestamp; every ordered query breaks that tie with the
+ * insertion-order column (SQLite's implicit rowid, Postgres's seq), which is monotonic on insert.
  */
 
 const MAX_RUNS_PER_OWNER = 20;
@@ -53,9 +54,9 @@ export interface RecordQueryRunInput {
  * Best-effort, like writeAudit() — a history-table hiccup must never turn an otherwise-successful
  * query response into a 500, so failures are logged and swallowed rather than thrown.
  */
-export function recordQueryRun(input: RecordQueryRunInput): void {
+export async function recordQueryRun(input: RecordQueryRunInput): Promise<void> {
   try {
-    db.insert(queryRuns).values({
+    await run(db.insert(queryRuns).values({
       id: globalThis.crypto.randomUUID(),
       queryBackend: input.queryBackend,
       scope: input.scope ? JSON.stringify(input.scope) : null,
@@ -68,9 +69,9 @@ export function recordQueryRun(input: RecordQueryRunInput): void {
       savedQueryId: input.savedQueryId ?? null,
       ownerId: input.ownerId,
       ranAt: new Date().toISOString(),
-    }).run();
+    }));
 
-    pruneOldRuns(input.ownerId);
+    await pruneOldRuns(input.ownerId);
   } catch (err) {
     console.error(JSON.stringify({
       ts: new Date().toISOString(),
@@ -82,22 +83,25 @@ export function recordQueryRun(input: RecordQueryRunInput): void {
 }
 
 /** Newest first, capped at `limit` — the caller's own runs only, there is no shared history. */
-export function listQueryRuns(ownerId: string, limit = MAX_RUNS_PER_OWNER): QueryRun[] {
-  return db.select().from(queryRuns)
-    .where(eq(queryRuns.ownerId, ownerId))
-    .orderBy(desc(queryRuns.ranAt), desc(sql`rowid`))
-    .limit(limit)
-    .all().map(rowToQueryRun);
+export async function listQueryRuns(ownerId: string, limit = MAX_RUNS_PER_OWNER): Promise<QueryRun[]> {
+  const rows = await many(
+    db.select().from(queryRuns)
+      .where(eq(queryRuns.ownerId, ownerId))
+      .orderBy(desc(queryRuns.ranAt), desc(queryRunsInsertionOrder))
+      .limit(limit),
+  );
+  return rows.map(rowToQueryRun);
 }
 
-function pruneOldRuns(ownerId: string): void {
-  const rows = db.select({ id: queryRuns.id }).from(queryRuns)
-    .where(eq(queryRuns.ownerId, ownerId))
-    .orderBy(desc(queryRuns.ranAt), desc(sql`rowid`))
-    .all();
+async function pruneOldRuns(ownerId: string): Promise<void> {
+  const rows = await many(
+    db.select({ id: queryRuns.id }).from(queryRuns)
+      .where(eq(queryRuns.ownerId, ownerId))
+      .orderBy(desc(queryRuns.ranAt), desc(queryRunsInsertionOrder)),
+  );
 
   const toDelete = rows.slice(MAX_RUNS_PER_OWNER);
   for (const row of toDelete) {
-    db.delete(queryRuns).where(eq(queryRuns.id, row.id)).run();
+    await run(db.delete(queryRuns).where(eq(queryRuns.id, row.id)));
   }
 }

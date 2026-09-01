@@ -43,7 +43,7 @@ export async function GET() {
   if (actor instanceof NextResponse) return actor;
 
   try {
-    const tenantId = getArmTenantId();
+    const tenantId = await getArmTenantId();
     const token = await getArmToken();
 
     const data = await armFetch<{

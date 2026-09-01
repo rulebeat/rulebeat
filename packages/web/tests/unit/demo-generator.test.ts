@@ -42,7 +42,7 @@ async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
 // this repo's own `npm test`/`npm run test:web` invoke from the repo root — a directory with no
 // data/packs/ of its own (see pack-defaults.test.ts, which hits the same thing and works around it
 // the same way). Re-run runSeeds against the *real*, __dirname-anchored data dir on top of the
-// ambient test db so loadRules() below actually returns the committed aprl-v2 pack regardless of
+// ambient test db so await loadRules() below actually returns the committed aprl-v2 pack regardless of
 // which directory the test process happened to start in. runSeeds is INSERT OR IGNORE + UPDATE, so
 // this is safe to layer on top of whatever tests/setup.ts already seeded.
 const REAL_DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
@@ -54,19 +54,19 @@ runSeeds(rawSqlite!, REAL_DATA_DIR, { skipOwnerBootstrap: true });
 // would be impossible.
 
 describe('determinism', () => {
-  it('buildEstate() produces byte-identical output across calls', () => {
+  it('buildEstate() produces byte-identical output across calls', async () => {
     const a = buildEstate();
     const b = buildEstate();
     expect(a.resources).toEqual(b.resources);
   });
 
-  it('buildIdentityApps() produces byte-identical output across calls', () => {
+  it('buildIdentityApps() produces byte-identical output across calls', async () => {
     const a = buildIdentityApps();
     const b = buildIdentityApps();
     expect(a).toEqual(b);
   });
 
-  it('the estate is non-trivial and spans more than one resource type', () => {
+  it('the estate is non-trivial and spans more than one resource type', async () => {
     const estate = buildEstate();
     expect(estate.resources.length).toBeGreaterThan(100);
     const types = new Set(estate.resources.map(r => r.type));
@@ -80,11 +80,11 @@ describe('determinism', () => {
 // worth testing directly since a wrong split here silently mis-shapes a fixture's fake ARG rows.
 
 describe('extractProjectColumns()', () => {
-  it('returns [] when the query has no project clause', () => {
+  it('returns [] when the query has no project clause', async () => {
     expect(extractProjectColumns('resources | where type == "x"')).toEqual([]);
   });
 
-  it('bare column names get alias === expr', () => {
+  it('bare column names get alias === expr', async () => {
     const cols = extractProjectColumns('resources\n| project id, name, tags');
     expect(cols).toEqual([
       { alias: 'id', expr: 'id' },
@@ -93,24 +93,24 @@ describe('extractProjectColumns()', () => {
     ]);
   });
 
-  it('splits alias = expr on a single "="', () => {
+  it('splits alias = expr on a single "="', async () => {
     const cols = extractProjectColumns("resources\n| project minTls = properties.minimumTlsVersion");
     expect(cols).toEqual([{ alias: 'minTls', expr: 'properties.minimumTlsVersion' }]);
   });
 
-  it('does not mistake "==", "!=", "<=", ">=" for an assignment', () => {
+  it('does not mistake "==", "!=", "<=", ">=" for an assignment', async () => {
     const cols = extractProjectColumns("resources\n| project isOld = createdDate <= ago(30d)");
     expect(cols).toEqual([{ alias: 'isOld', expr: 'createdDate <= ago(30d)' }]);
   });
 
-  it('does not split a comma nested inside a function call or array literal', () => {
+  it('does not split a comma nested inside a function call or array literal', async () => {
     const cols = extractProjectColumns("resources\n| project tag = strcat('a:', tostring(props[0]))");
     expect(cols).toHaveLength(1);
     expect(cols[0].alias).toBe('tag');
     expect(cols[0].expr).toBe("strcat('a:', tostring(props[0]))");
   });
 
-  it('uses the last | project line when a query has more than one', () => {
+  it('uses the last | project line when a query has more than one', async () => {
     const cols = extractProjectColumns(
       'resources\n| project id, name, extra\n| project id, name',
     );
@@ -121,21 +121,21 @@ describe('extractProjectColumns()', () => {
 // ── violation-engine.ts ─────────────────────────────────────────────────────────────────────────
 
 describe('isViolatingOnDay()', () => {
-  it('is a pure function of (rule, resource, day) — repeated calls agree', () => {
+  it('is a pure function of (rule, resource, day) — repeated calls agree', async () => {
     const calls = Array.from({ length: 5 }, () =>
       isViolatingOnDay('rule-a', 'high', 'resource-1', 10, 60),
     );
     expect(new Set(calls).size).toBe(1);
   });
 
-  it('different resources under the same rule/day are not all forced the same way', () => {
+  it('different resources under the same rule/day are not all forced the same way', async () => {
     const resourceIds = Array.from({ length: 300 }, (_, i) => `resource-${i}`);
     const results = resourceIds.map(id => isViolatingOnDay('rule-a', 'medium', id, 30, 60));
     expect(results.some(v => v)).toBe(true);
     expect(results.some(v => !v)).toBe(true);
   });
 
-  it('selection rate is roughly severity-ordered: critical rarest, low most common', () => {
+  it('selection rate is roughly severity-ordered: critical rarest, low most common', async () => {
     const resourceIds = Array.from({ length: 2000 }, (_, i) => `res-${i}`);
     const rateFor = (severity: 'critical' | 'high' | 'medium' | 'low') =>
       resourceIds.filter(id => isViolatingOnDay('rate-check', severity, id, 30, 60)).length / resourceIds.length;
@@ -156,7 +156,7 @@ describe('isViolatingOnDay()', () => {
     expect(low).toBeLessThan(0.4);
   });
 
-  it('produces at least one resource whose answer changes between day 0 and the final day', () => {
+  it('produces at least one resource whose answer changes between day 0 and the final day', async () => {
     // Proves the lifecycle patterns (resolved-partway / new-partway / resolved-reactivated) actually
     // fire, not just the static "steady" case — a demo where nothing ever changes would make the
     // trend/new-vs-fixed dashboard widgets show a flat line.
@@ -172,7 +172,7 @@ describe('isViolatingOnDay()', () => {
 });
 
 describe('rowsForRuleOnDay()', () => {
-  it('only returns rows for candidates isViolatingOnDay selected, shaped by buildRow', () => {
+  it('only returns rows for candidates isViolatingOnDay selected, shaped by buildRow', async () => {
     const estate = buildEstate();
     const candidates = estate.resources.filter(r => r.type === 'microsoft.compute/disks').slice(0, 50);
     const fixture: RuleFixture = CORE_FIXTURES.find(f => f.ruleId === '7a25444f-90c1-4c4e-b6dc-3076a857dfa8')!;
@@ -195,8 +195,8 @@ describe('rowsForRuleOnDay()', () => {
 // tests/setup.ts already isolates per file.
 
 describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
-  it('curates a non-empty subset of aprl-v2 rules whose resource types the estate can produce', () => {
-    const rules = loadRules();
+  it('curates a non-empty subset of aprl-v2 rules whose resource types the estate can produce', async () => {
+    const rules = await loadRules();
     const aprlRules = rules.filter(r => r.pack === 'aprl-v2');
     expect(aprlRules.length).toBeGreaterThan(50); // the pack itself; sanity that seeding ran
 
@@ -208,9 +208,9 @@ describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
     }
   });
 
-  it('every curated fixture\'s buildRow runs without throwing against a matching estate resource', () => {
+  it('every curated fixture\'s buildRow runs without throwing against a matching estate resource', async () => {
     const estate = buildEstate();
-    const rules = loadRules();
+    const rules = await loadRules();
     const fixtures = buildAprlFixtures(rules);
     const byType = new Map<string, (typeof estate.resources)[number]>();
     for (const r of estate.resources) if (!byType.has(r.type)) byType.set(r.type, r);
@@ -225,8 +225,8 @@ describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
     expect(exercised).toBeGreaterThan(0);
   });
 
-  it('no APRL fixture reuses a core rule id — the fixturesByRuleId Map must not silently drop one', () => {
-    const rules = loadRules();
+  it('no APRL fixture reuses a core rule id — the fixturesByRuleId Map must not silently drop one', async () => {
+    const rules = await loadRules();
     const aprlFixtures = buildAprlFixtures(rules);
     const aprlIds = new Set(aprlFixtures.map(f => f.ruleId));
     for (const coreId of CORE_RULE_IDS) expect(aprlIds.has(coreId)).toBe(false);
@@ -288,7 +288,7 @@ describe('createFakeContext() query/graph mismatches are caught, not silently em
     expect(() => assertNoQueryFailures(ctx, 0)).toThrow(/query failure/);
   });
 
-  it('assertNoQueryFailures() passes clean when no failures were logged', () => {
+  it('assertNoQueryFailures() passes clean when no failures were logged', async () => {
     const ctx = createFakeContext({
       estate, identityApps, day: 0, totalDays: 5,
       rules: [], fixturesByRuleId: new Map(),
@@ -326,7 +326,7 @@ describe('createFakeContext() query/graph mismatches are caught, not silently em
 // ── replay(): the real integration, at a small scale ───────────────────────────────────────────
 // Reproduces run.ts's own rule-curation steps (loadRules → filter aprl-v2 → buildAprlFixtures →
 // setRulesEnabled) against the ambient test database, then replays a handful of simulated days
-// through the real executeTarget()/runCategoryScan()/runRules() pipeline — the same path the full
+// through the real await executeTarget()/await runCategoryScan()/runRules() pipeline — the same path the full
 // 60-day `npm run generate-demo` run already proved works by hand. A small totalDays keeps this
 // fast while still exercising every category, including identity.
 
@@ -335,16 +335,16 @@ describe('replay() — small-scale integration against the real scan pipeline', 
     const estate = buildEstate();
     const identityApps = buildIdentityApps();
 
-    const allRules = loadRules();
+    const allRules = await loadRules();
     const aprlRuleIds = allRules.filter(r => r.pack === 'aprl-v2').map(r => r.id);
     const aprlFixtures = buildAprlFixtures(allRules);
-    setRulesEnabled(aprlRuleIds, false);
-    setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
-    setRulesEnabled(CORE_RULE_IDS, true);
+    await setRulesEnabled(aprlRuleIds, false);
+    await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
+    await setRulesEnabled(CORE_RULE_IDS, true);
 
     const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];
     const fixturesByRuleId = new Map(fixtures.map(f => [f.ruleId, f]));
-    const curatedRules = loadRules();
+    const curatedRules = await loadRules();
 
     const totalDays = 5;
     const scheduleId = 'demo-generator-test-schedule';

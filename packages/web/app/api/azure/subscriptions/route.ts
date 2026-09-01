@@ -12,14 +12,14 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  // Demo mode never touches Azure — resolveAzureCredential() would throw anyway (the chokepoint's
+  // Demo mode never touches Azure — await resolveAzureCredential() would throw anyway (the chokepoint's
   // own kill switch, lib/azure-credential.ts) — but short-circuiting here means the subscription
   // picker degrades gracefully to the fixed demo list instead of surfacing an error where a
   // working picker belongs.
-  if (isDemoMode()) return NextResponse.json(DEMO_SUBSCRIPTIONS);
+  if (await isDemoMode()) return NextResponse.json(DEMO_SUBSCRIPTIONS);
 
   try {
-    const credential = getArmCredential();
+    const credential = await getArmCredential();
     const client = new SubscriptionClient(credential);
 
     const subs: { id: string; name: string }[] = [];

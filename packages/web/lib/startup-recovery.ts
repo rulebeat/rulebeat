@@ -17,12 +17,12 @@ const RECOVERY_ERROR_MESSAGE =
  * schedule-triggered and has any, `notifyStatus` is set to `'pending'` in the same write, handing
  * those findings to pass 2 exactly as if a live run had crashed between finishing and dispatching.
  */
-export function recoverInterruptedRuns(): number {
-  const stale = listRunningRuns();
+export async function recoverInterruptedRuns(): Promise<number> {
+  const stale = await listRunningRuns();
 
   for (const run of stale) {
     const willNotify = run.triggeredBy === 'schedule' && run.newFindingFingerprints.length > 0;
-    finishRun(run.id, {
+    await finishRun(run.id, {
       status: 'error',
       totalFindings: run.totalFindings,
       newFindings: run.newFindings,
@@ -52,7 +52,7 @@ export function recoverInterruptedRuns(): number {
  * loop on the same row forever.
  */
 export async function recoverPendingNotifications(): Promise<number> {
-  const pending = listPendingNotificationRuns();
+  const pending = await listPendingNotificationRuns();
 
   for (const run of pending) {
     const findings = run.newFindingFingerprints.length > 0

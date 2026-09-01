@@ -121,11 +121,11 @@ const ALLOWED_FAINT_FILES = new Set([
 const INK_MUTED_CEILING = 171;
 
 describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the rest (spec 002)', () => {
-  it('found the source files at all (guards against this suite silently testing nothing)', () => {
+  it('found the source files at all (guards against this suite silently testing nothing)', async () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
   });
 
-  it('no call site stacks label-grid/label-grid-strong with an ink-muted or ink-2 colour class', () => {
+  it('no call site stacks label-grid/label-grid-strong with an ink-muted or ink-2 colour class', async () => {
     // label-grid already sets its own colour (ink-2) — stacking an ink class on top is either
     // redundant or silently fighting the utility. This is the contradiction spec 002's challenge
     // found in review, grounded directly in a test rather than left in prose.
@@ -143,7 +143,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     ].join(' ')).toEqual([]);
   });
 
-  it('text-ink-muted stays at or below its post-sweep ceiling', () => {
+  it('text-ink-muted stays at or below its post-sweep ceiling', async () => {
     const total = sourceFiles.reduce(
       (n, f) => n + (f.lines.join('\n').match(/text-ink-muted/g)?.length ?? 0),
       0,
@@ -157,7 +157,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     ].join(' ')).toBeLessThanOrEqual(INK_MUTED_CEILING);
   });
 
-  it('every text-ink-faint call site lives in a hand-checked file', () => {
+  it('every text-ink-faint call site lives in a hand-checked file', async () => {
     const offenders = sourceFiles
       .filter(f => !ALLOWED_FAINT_FILES.has(f.rel) && f.lines.some(l => /text-ink-faint\b/.test(l)))
       .map(f => f.rel);
@@ -170,7 +170,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     ].join(' ')).toEqual([]);
   });
 
-  it('the faint allowlist is not vacuous (guards against this suite silently testing nothing)', () => {
+  it('the faint allowlist is not vacuous (guards against this suite silently testing nothing)', async () => {
     expect(ALLOWED_FAINT_FILES.size).toBeGreaterThan(10);
     const faintFilesFound = sourceFiles.filter(f => f.lines.some(l => /text-ink-faint\b/.test(l)));
     expect(faintFilesFound.length).toBeGreaterThan(0);
@@ -209,7 +209,7 @@ function subFloorFontSizes(line: string): number[] {
 }
 
 describe('type floor: text-xs (12px) is the minimum outside the named label-grid exception (spec 013)', () => {
-  it('no call site uses a font-size below 12px that is not in TYPE_FLOOR_ALLOWLIST', () => {
+  it('no call site uses a font-size below 12px that is not in TYPE_FLOOR_ALLOWLIST', async () => {
     const offenders: string[] = [];
     for (const file of sourceFiles) {
       file.lines.forEach((line, i) => {
@@ -226,7 +226,7 @@ describe('type floor: text-xs (12px) is the minimum outside the named label-grid
     ].join(' ')).toEqual([]);
   });
 
-  it('the type-floor allowlist is not vacuous (guards against this suite silently testing nothing)', () => {
+  it('the type-floor allowlist is not vacuous (guards against this suite silently testing nothing)', async () => {
     expect(TYPE_FLOOR_ALLOWLIST.size).toBeGreaterThan(0);
     const matched = sourceFiles.some(file =>
       file.lines.some((line, i) => subFloorFontSizes(line).length > 0 && TYPE_FLOOR_ALLOWLIST.has(`${file.rel}:${i + 1}`)),

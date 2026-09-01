@@ -7,7 +7,7 @@ import { getOnboardingState, setOnboardingState } from '@/lib/onboarding';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(getOnboardingState());
+  return NextResponse.json(await getOnboardingState());
 }
 
 /**
@@ -23,8 +23,8 @@ export async function PUT(req: Request) {
   if (body instanceof NextResponse) return body;
 
   if (body.action === 'skip') {
-    const result = setOnboardingState({ status: 'skipped' });
-    writeAudit({
+    const result = await setOnboardingState({ status: 'skipped' });
+    await writeAudit({
       actor,
       action: 'onboarding.skip',
       entityType: 'onboarding',
@@ -33,12 +33,12 @@ export async function PUT(req: Request) {
     return NextResponse.json(result);
   }
   if (body.action === 'complete') {
-    const result = setOnboardingState({
+    const result = await setOnboardingState({
       status: 'done',
       completedAt: new Date().toISOString(),
       completedBy: actor.email,
     });
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'onboarding.complete',
       entityType: 'onboarding',
@@ -47,7 +47,7 @@ export async function PUT(req: Request) {
     return NextResponse.json(result);
   }
   if (body.action === 'step' && typeof body.lastStep === 'number') {
-    return NextResponse.json(setOnboardingState({ lastStep: body.lastStep }));
+    return NextResponse.json(await setOnboardingState({ lastStep: body.lastStep }));
   }
-  return NextResponse.json(getOnboardingState());
+  return NextResponse.json(await getOnboardingState());
 }

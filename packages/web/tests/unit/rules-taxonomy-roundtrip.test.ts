@@ -44,7 +44,7 @@ const appliesTo: VisualQuery = {
 };
 
 describe('deriveKind() (spec 029)', () => {
-  it('derives state for resource-graph and microsoft-graph, activity only for log-analytics', () => {
+  it('derives state for resource-graph and microsoft-graph, activity only for log-analytics', async () => {
     const cases: Array<[QueryBackend, RuleKind]> = [
       ['resource-graph', 'state'],
       ['microsoft-graph', 'state'],
@@ -57,75 +57,75 @@ describe('deriveKind() (spec 029)', () => {
 });
 
 describe('deriveShape() (spec 031)', () => {
-  it('derives detect when appliesTo is absent, assert when present', () => {
+  it('derives detect when appliesTo is absent, assert when present', async () => {
     expect(deriveShape(undefined)).toBe('detect');
     expect(deriveShape(appliesTo)).toBe('assert');
   });
 });
 
 describe('spec 029 · queryBackend/shape/kind round-trip through lib/rules.ts', () => {
-  beforeEach(() => {
-    clearRules();
+  beforeEach(async () => {
+    await clearRules();
   });
 
   it.each([
     ['resource-graph', 'state'],
     ['microsoft-graph', 'state'],
     ['log-analytics', 'activity'],
-  ] as const)('a %s rule reloads with kind %s', (queryBackend, expectedKind) => {
-    saveRules([baseRule({ queryBackend })]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+  ] as const)('a %s rule reloads with kind %s', async (queryBackend, expectedKind) => {
+    await saveRules([baseRule({ queryBackend })]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded).toBeDefined();
     expect(reloaded!.queryBackend).toBe(queryBackend);
     expect(reloaded!.kind).toBe(expectedKind);
   });
 
-  it('defaults queryBackend to resource-graph and shape to detect when both are omitted', () => {
-    saveRules([baseRule()]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+  it('defaults queryBackend to resource-graph and shape to detect when both are omitted', async () => {
+    await saveRules([baseRule()]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.queryBackend).toBe('resource-graph');
     expect(reloaded!.shape).toBe('detect');
     expect(reloaded!.kind).toBe('state');
   });
 
-  it('recomputes kind from queryBackend even when the input Rule carries a stale/forged kind', () => {
+  it('recomputes kind from queryBackend even when the input Rule carries a stale/forged kind', async () => {
     const forged = baseRule({ queryBackend: 'log-analytics', kind: 'state' });
-    saveRules([forged]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+    await saveRules([forged]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.kind).toBe('activity');
   });
 });
 
 describe('spec 031 · appliesTo/shape round-trip through lib/rules.ts', () => {
-  beforeEach(() => {
-    clearRules();
+  beforeEach(async () => {
+    await clearRules();
   });
 
-  it('a rule with no appliesTo reloads with shape detect and no appliesTo', () => {
-    saveRules([baseRule()]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+  it('a rule with no appliesTo reloads with shape detect and no appliesTo', async () => {
+    await saveRules([baseRule()]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.appliesTo).toBeUndefined();
     expect(reloaded!.shape).toBe('detect');
   });
 
-  it('a rule with appliesTo reloads with shape assert and the population query intact', () => {
-    saveRules([baseRule({ appliesTo })]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+  it('a rule with appliesTo reloads with shape assert and the population query intact', async () => {
+    await saveRules([baseRule({ appliesTo })]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.shape).toBe('assert');
     expect(reloaded!.appliesTo).toEqual(appliesTo);
   });
 
-  it('recomputes shape from appliesTo even when the input Rule carries a stale/forged shape', () => {
+  it('recomputes shape from appliesTo even when the input Rule carries a stale/forged shape', async () => {
     const forged = baseRule({ appliesTo, shape: 'detect' });
-    saveRules([forged]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+    await saveRules([forged]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.shape).toBe('assert');
   });
 
-  it('recomputes shape to detect when appliesTo is absent, even when the input Rule forges shape assert', () => {
+  it('recomputes shape to detect when appliesTo is absent, even when the input Rule forges shape assert', async () => {
     const forged = baseRule({ shape: 'assert' });
-    saveRules([forged]);
-    const reloaded = loadRules().find(r => r.id === RULE_ID);
+    await saveRules([forged]);
+    const reloaded = (await loadRules()).find(r => r.id === RULE_ID);
     expect(reloaded!.shape).toBe('detect');
   });
 });

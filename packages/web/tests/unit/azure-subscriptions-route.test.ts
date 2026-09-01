@@ -32,15 +32,15 @@ vi.mock('@azure/arm-resources-subscriptions', () => ({
 const { GET } = await import('@/app/api/azure/subscriptions/route');
 
 async function signInAsViewer(): Promise<void> {
-  const result = createUser({ email: 'viewer@example.com', role: 'viewer' });
+  const result = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('GET /api/azure/subscriptions', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     fail = null;
     await signInAsViewer();

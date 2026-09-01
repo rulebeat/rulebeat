@@ -11,7 +11,7 @@ async function fetchAndCache(resourceType: string): Promise<string[] | null> {
   const ctx = await createTenantContext();
   const fields = await getResourceTypeFields(resourceType, ctx);
   if (fields.length === 0) return null;
-  writeSchemaCache(resourceType, fields);
+  await writeSchemaCache(resourceType, fields);
   return fields;
 }
 
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const resourceType = searchParams.get('type')?.toLowerCase().trim();
   if (!resourceType) return NextResponse.json({ error: 'type is required' }, { status: 400 });
 
-  const cached = readSchemaCache(resourceType);
+  const cached = await readSchemaCache(resourceType);
 
   // Fresh cache — instant response
   if (cached && !cached.stale) {

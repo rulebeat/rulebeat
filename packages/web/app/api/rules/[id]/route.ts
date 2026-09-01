@@ -20,7 +20,7 @@ export async function PUT(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const allRules = loadRules();
+  const allRules = await loadRules();
   const idx = allRules.findIndex(r => r.id === id);
   if (idx === -1) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
@@ -54,9 +54,9 @@ export async function PUT(
       tags: body.tags ?? (body.group ? [body.group] : existing.tags),
       graphQuery,
     };
-    saveRules(allRules);
+    await saveRules(allRules);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'rule.update',
       entityType: 'rule',
@@ -75,7 +75,7 @@ export async function PUT(
   const body = await parseJsonBody<Rule>(req);
   if (body instanceof NextResponse) return body;
 
-  if (isNameTaken(body.name, id)) {
+  if (await isNameTaken(body.name, id)) {
     return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
 
@@ -162,9 +162,9 @@ export async function PUT(
     lastRunAt: existing.lastRunAt,
     lastPopulationCount: existing.lastPopulationCount,
   };
-  saveRules(allRules);
+  await saveRules(allRules);
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'rule.update',
     entityType: 'rule',
@@ -185,16 +185,16 @@ export async function DELETE(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const allRules = loadRules();
+  const allRules = await loadRules();
   const target = allRules.find(r => r.id === id);
 
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (target.type === 'builtin') return NextResponse.json({ error: 'Built-in rules cannot be deleted.' }, { status: 403 });
 
-  saveRules(allRules.filter(r => r.id !== id));
+  await saveRules(allRules.filter(r => r.id !== id));
   await deleteFindingsForRule(id);
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'rule.delete',
     entityType: 'rule',

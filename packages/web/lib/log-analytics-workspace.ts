@@ -37,11 +37,11 @@ function env(name: string): string | undefined {
 /** Env always wins over the stored row, same reasoning as `resolveAzureCredential()` — a template
  *  deployment that names a workspace in its environment must never be overridden by a stray Settings
  *  entry. Returns null when nothing is configured; there is no third source to fall back to. */
-export function resolveLogAnalyticsWorkspaceId(): ResolvedLogAnalyticsWorkspace | null {
+export async function resolveLogAnalyticsWorkspaceId(): Promise<ResolvedLogAnalyticsWorkspace | null> {
   const envWorkspaceId = env('RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID');
   if (envWorkspaceId) return { workspaceId: envWorkspaceId, source: 'env' };
 
-  const stored = getActiveLogAnalyticsWorkspace();
+  const stored = await getActiveLogAnalyticsWorkspace();
   if (stored) return { workspaceId: stored.workspaceId, source: 'stored', storedWorkspaceRowId: stored.id };
 
   return null;
@@ -66,8 +66,8 @@ const NOT_CONFIGURED_MESSAGE = [
 ].join(' ');
 
 /** Read-only description of the current workspace, for the settings screen and diagnostics. */
-export function getLogAnalyticsWorkspaceStatus(): LogAnalyticsWorkspaceStatus {
-  const stored = getActiveLogAnalyticsWorkspace();
+export async function getLogAnalyticsWorkspaceStatus(): Promise<LogAnalyticsWorkspaceStatus> {
+  const stored = await getActiveLogAnalyticsWorkspace();
   const envWorkspaceId = env('RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID');
 
   if (envWorkspaceId) {

@@ -17,7 +17,7 @@ export default async function SettingsPage() {
   const manageAuth = can(role, 'auth:manage');
   const manageNotifications = can(role, 'notifications:manage');
 
-  const categories = listCategories();
+  const categories = await listCategories();
 
   const initialChannels = manageNotifications ? await listChannels() : null;
 
@@ -29,10 +29,10 @@ export default async function SettingsPage() {
           initialCategories={categories}
           role={role}
           currentUserId={user?.id ?? ''}
-          initialUsers={manageUsers ? listUsers() : []}
-          initialUsersWithPassword={manageUsers ? listUserIdsWithPassword() : []}
-          initialAzureStatus={manageAzure ? getAzureConnectionStatus() : null}
-          initialSignInStatus={manageAuth ? getSignInStatus() : null}
+          initialUsers={manageUsers ? await listUsers() : []}
+          initialUsersWithPassword={manageUsers ? await listUserIdsWithPassword() : []}
+          initialAzureStatus={manageAzure ? await getAzureConnectionStatus() : null}
+          initialSignInStatus={manageAuth ? await getSignInStatus() : null}
           initialChannels={initialChannels}
         />
       </main>

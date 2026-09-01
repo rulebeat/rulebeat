@@ -5,7 +5,7 @@ import { can } from '@/lib/rbac';
 import { SuppressionsClient } from './suppressions-client';
 
 export default async function SuppressionsPage() {
-  const suppressions = loadSuppressions();
+  const suppressions = await loadSuppressions();
   const user = await getCurrentUser();
   return (
     <>

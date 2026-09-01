@@ -1,4 +1,4 @@
-import { getMetaSync as getMeta, setMetaSync as setMeta } from './db/meta'; // sync SQLite-only until #73 Phase 2
+import { getMeta, setMeta } from './db/meta';
 
 /**
  * Tracks the first-run setup wizard (B3). Backed by a single `meta` row so the marker survives
@@ -33,8 +33,8 @@ function isOnboardingStatus(value: unknown): value is OnboardingStatus {
  * Tolerant parse. A malformed or missing row degrades to `skipped` rather than throwing — a corrupt
  * meta value must never be able to trap every admin in the wizard or 500 the whole app shell.
  */
-export function getOnboardingState(): OnboardingState {
-  const raw = getMeta(META_KEY);
+export async function getOnboardingState(): Promise<OnboardingState> {
+  const raw = await getMeta(META_KEY);
   if (!raw) return DEFAULT_STATE;
   try {
     const parsed = JSON.parse(raw) as Partial<OnboardingState>;
@@ -50,12 +50,12 @@ export function getOnboardingState(): OnboardingState {
   }
 }
 
-export function setOnboardingState(patch: Partial<OnboardingState>): OnboardingState {
-  const next = { ...getOnboardingState(), ...patch };
-  setMeta(META_KEY, JSON.stringify(next));
+export async function setOnboardingState(patch: Partial<OnboardingState>): Promise<OnboardingState> {
+  const next = { ...(await getOnboardingState()), ...patch };
+  await setMeta(META_KEY, JSON.stringify(next));
   return next;
 }
 
-export function isOnboardingPending(): boolean {
-  return getOnboardingState().status === 'pending';
+export async function isOnboardingPending(): Promise<boolean> {
+  return (await getOnboardingState()).status === 'pending';
 }

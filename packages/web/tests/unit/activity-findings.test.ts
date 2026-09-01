@@ -90,7 +90,7 @@ function suppression(overrides: Partial<Suppression> & Pick<Suppression, 'finger
 }
 
 beforeEach(async () => {
-  resetDb();
+  await resetDb();
 });
 
 describe('syncScanFindings — activity finding creation and repeat occurrence', () => {
@@ -224,9 +224,9 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
   it('a suppression for an activity finding pattern persists and reloads with resourceId absent', async () => {
     const f = activityFinding('principal-a');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
-    saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
-    const loaded = loadSuppressions();
+    const loaded = await loadSuppressions();
     expect(loaded).toHaveLength(1);
     expect(loaded[0]!.resourceId).toBeUndefined();
     expect(isActiveSuppression(loaded[0]!)).toBe(true);
@@ -235,7 +235,7 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
   it('queryActiveFindings excludes a suppressed activity finding by fingerprint alone', async () => {
     const f = activityFinding('principal-a');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
-    saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
     expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
     expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).map(r => r.fingerprint)).toContain(f.fingerprint);

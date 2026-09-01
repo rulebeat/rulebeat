@@ -58,15 +58,15 @@ function putRequest(body: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('POST /api/rules — Applies-to shape derivation and guard (spec 031)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
   });
@@ -85,7 +85,7 @@ describe('POST /api/rules — Applies-to shape derivation and guard (spec 031)',
     const json = await res.json();
     expect(json.shape).toBe('assert');
     expect(json.appliesTo).toEqual(appliesTo);
-    expect(loadRules().find(r => r.id === json.id)?.shape).toBe('assert');
+    expect((await loadRules()).find(r => r.id === json.id)?.shape).toBe('assert');
   });
 
   it('ignores a forged shape on the request body and derives it from appliesTo instead', async () => {
@@ -96,12 +96,12 @@ describe('POST /api/rules — Applies-to shape derivation and guard (spec 031)',
   });
 
   it('rejects an appliesTo with no compilable filter and does not persist the rule', async () => {
-    const before = loadRules().length;
+    const before = (await loadRules()).length;
     const res = await POST(postRequest(baseBody({ appliesTo: emptyAppliesTo })));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/Applies-to/);
-    expect(loadRules().length).toBe(before);
+    expect((await loadRules()).length).toBe(before);
   });
 });
 
@@ -110,24 +110,24 @@ describe('PUT /api/rules/[id] — Applies-to shape derivation and guard (spec 03
   let assertRuleId: string;
 
   beforeEach(async () => {
-    resetDb();
-    // resetDb() deliberately preserves the seeded rules baseline (see its own comment) — clear it
+    await resetDb();
+    // await resetDb() deliberately preserves the seeded rules baseline (see its own comment) — clear it
     // outright so this file's fixed-name fixtures below can never collide with a prior test's rows
     // or with a seeded built-in, across runs within this describe block.
-    clearRules();
+    await clearRules();
     mockAuth.mockReset();
     await signInAsEditor();
 
     detectRuleId = globalThis.crypto.randomUUID();
     assertRuleId = globalThis.crypto.randomUUID();
-    saveRules([
+    await saveRules([
       { ...baseBody({ name: 'existing detect rule' }), id: detectRuleId },
       { ...baseBody({ name: 'existing assert rule', appliesTo }), id: assertRuleId },
     ]);
   });
 
   it('flips shape from detect to assert when an edit adds appliesTo', async () => {
-    expect(loadRules().find(r => r.id === detectRuleId)?.shape).toBe('detect');
+    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('detect');
     const res = await PUT(
       putRequest({ ...baseBody({ name: 'existing detect rule', appliesTo }), id: detectRuleId }),
       { params: Promise.resolve({ id: detectRuleId }) },
@@ -135,11 +135,11 @@ describe('PUT /api/rules/[id] — Applies-to shape derivation and guard (spec 03
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.shape).toBe('assert');
-    expect(loadRules().find(r => r.id === detectRuleId)?.shape).toBe('assert');
+    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('assert');
   });
 
   it('flips shape from assert back to detect when an edit removes appliesTo', async () => {
-    expect(loadRules().find(r => r.id === assertRuleId)?.shape).toBe('assert');
+    expect((await loadRules()).find(r => r.id === assertRuleId)?.shape).toBe('assert');
     const res = await PUT(
       putRequest({ ...baseBody({ name: 'existing assert rule' }), id: assertRuleId }),
       { params: Promise.resolve({ id: assertRuleId }) },
@@ -148,7 +148,7 @@ describe('PUT /api/rules/[id] — Applies-to shape derivation and guard (spec 03
     const json = await res.json();
     expect(json.shape).toBe('detect');
     expect(json.appliesTo).toBeUndefined();
-    expect(loadRules().find(r => r.id === assertRuleId)?.shape).toBe('detect');
+    expect((await loadRules()).find(r => r.id === assertRuleId)?.shape).toBe('detect');
   });
 
   it('rejects an edit whose new appliesTo has no compilable filter, leaving the stored rule untouched', async () => {
@@ -159,7 +159,7 @@ describe('PUT /api/rules/[id] — Applies-to shape derivation and guard (spec 03
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/Applies-to/);
-    expect(loadRules().find(r => r.id === detectRuleId)?.shape).toBe('detect');
-    expect(loadRules().find(r => r.id === detectRuleId)?.appliesTo).toBeUndefined();
+    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('detect');
+    expect((await loadRules()).find(r => r.id === detectRuleId)?.appliesTo).toBeUndefined();
   });
 });

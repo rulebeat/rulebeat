@@ -3,7 +3,7 @@
  *
  * A one-time schedule's `once` branch returned its `startAt` unconditionally instead of only when
  * `startAt` is strictly after `from` — so after `runOnce()` writes that same past timestamp back via
- * `setNextRun()`, `listDueSchedules()` keeps selecting it and the scheduler's 30s tick can fire it
+ * `await setNextRun()`, `await listDueSchedules()` keeps selecting it and the scheduler's 30s tick can fire it
  * again indefinitely.
  *
  * The monthly branch computed the target month by calling `addMonths()` on a Date that still carried
@@ -43,14 +43,14 @@ function base(overrides: Partial<RecurrenceInput>): RecurrenceInput {
 }
 
 describe('computeNextRun · once', () => {
-  it('returns the start time when it has not happened yet', () => {
+  it('returns the start time when it has not happened yet', async () => {
     const start = local(2026, 5, 1);
     const s = base({ recurrenceType: 'once', startAt: start.toISOString() });
     const next = computeNextRun(s, local(2026, 4, 1));
     expect(next?.getTime()).toBe(start.getTime());
   });
 
-  it('returns null once the one-off has already fired, so it cannot run again', () => {
+  it('returns null once the one-off has already fired, so it cannot run again', async () => {
     const start = local(2026, 0, 1);
     const s = base({ recurrenceType: 'once', startAt: start.toISOString() });
     // `runOnce()` calls computeNextRun(schedule, new Date()) *after* the run — `from` is now after start.
@@ -58,7 +58,7 @@ describe('computeNextRun · once', () => {
     expect(next).toBeNull();
   });
 
-  it('returns null evaluated exactly at the start instant (not strictly after)', () => {
+  it('returns null evaluated exactly at the start instant (not strictly after)', async () => {
     const start = local(2026, 0, 1);
     const s = base({ recurrenceType: 'once', startAt: start.toISOString() });
     const next = computeNextRun(s, start);
@@ -67,7 +67,7 @@ describe('computeNextRun · once', () => {
 });
 
 describe('computeNextRun · monthly, short-month clamping', () => {
-  it('does not skip February for a schedule anchored on the 31st', () => {
+  it('does not skip February for a schedule anchored on the 31st', async () => {
     const start = local(2026, 0, 31);
     const s = base({ recurrenceType: 'monthly', interval: 1, dayOfMonth: 31, startAt: start.toISOString() });
     const next = computeNextRun(s, local(2026, 0, 31, 10));
@@ -76,7 +76,7 @@ describe('computeNextRun · monthly, short-month clamping', () => {
     expect(next?.getDate()).toBe(28);
   });
 
-  it('clamps to the 29th in a leap-year February', () => {
+  it('clamps to the 29th in a leap-year February', async () => {
     const start = local(2027, 11, 31);
     const s = base({ recurrenceType: 'monthly', interval: 1, dayOfMonth: 31, startAt: start.toISOString() });
     const next = computeNextRun(s, local(2028, 0, 31, 10));
@@ -85,7 +85,7 @@ describe('computeNextRun · monthly, short-month clamping', () => {
     expect(next?.getDate()).toBe(29);
   });
 
-  it('walks every month from a 31st-anchored schedule without ever throwing the month backward', () => {
+  it('walks every month from a 31st-anchored schedule without ever throwing the month backward', async () => {
     const start = local(2026, 0, 31);
     const s = base({ recurrenceType: 'monthly', interval: 1, dayOfMonth: 31, startAt: start.toISOString() });
     let from = local(2026, 0, 1);
@@ -102,7 +102,7 @@ describe('computeNextRun · monthly, short-month clamping', () => {
     }
   });
 
-  it('clamps a 30th-anchored schedule for 30-day months without skipping', () => {
+  it('clamps a 30th-anchored schedule for 30-day months without skipping', async () => {
     const start = local(2026, 0, 30);
     const s = base({ recurrenceType: 'monthly', interval: 1, dayOfMonth: 30, startAt: start.toISOString() });
     // Jan 30 -> Feb (clamped to 28) -> should still land in Feb, not skip to March.

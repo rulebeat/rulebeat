@@ -70,7 +70,7 @@ describe('dispatchNotifications retry/backoff', () => {
   beforeEach(async () => {
     scheduleId = `sched-${globalThis.crypto.randomUUID()}`;
     channelId = (await createChannel({ name: 'Test channel', type: 'webhook', url: 'https://example.test/hook' })).id;
-    setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
+    await setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     vi.useFakeTimers();
     // spec 021: sendWebhook now SSRF-guards the destination before fetching, so example.test must
     // resolve to a public address via the injectable resolver instead of a real (and blocked) lookup.
@@ -81,7 +81,7 @@ describe('dispatchNotifications retry/backoff', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     resetDnsLookupForTests();
-    deleteLinksForSchedule(scheduleId);
+    await deleteLinksForSchedule(scheduleId);
     await deleteChannel(channelId);
   });
 

@@ -13,10 +13,10 @@ export async function POST(
   if (actor instanceof NextResponse) return actor;
 
   const { category: slug } = await params;
-  const category = getCategory(slug);
+  const category = await getCategory(slug);
   if (!category) return NextResponse.json({ error: `Unknown category: ${slug}` }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'scan.run',
     entityType: 'scan',

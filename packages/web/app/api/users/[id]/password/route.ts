@@ -20,7 +20,7 @@ export async function PUT(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const target = getUser(id);
+  const target = await getUser(id);
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   let body: { password?: string } = {};
@@ -30,7 +30,7 @@ export async function PUT(
     /* an empty body means "generate one" */
   }
 
-  const hadAccount = !!getLocalAccount(id);
+  const hadAccount = !!await getLocalAccount(id);
   const generated = !body.password;
   // A generated password is a random 16-char base64url string — always well past the 15-char
   // floor and never a real word, so it trivially clears the same validator an admin-typed one has
@@ -45,10 +45,10 @@ export async function PUT(
   try {
     // Forced on every admin-set password — whoever actually knows the new value has to prove
     // that by choosing their own on next sign-in, same as the first-boot owner account.
-    setPassword(id, await hashPassword(password), { mustChangePassword: true });
-    bumpSessionEpoch(id);
+    await setPassword(id, await hashPassword(password), { mustChangePassword: true });
+    await bumpSessionEpoch(id);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: hadAccount ? 'user.password_reset' : 'user.password_set',
       entityType: 'local_account',
@@ -72,17 +72,17 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const target = getUser(id);
+  const target = await getUser(id);
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  if (!getLocalAccount(id)) {
+  if (!await getLocalAccount(id)) {
     return NextResponse.json({ error: 'This user has no local password to remove.' }, { status: 404 });
   }
 
   try {
-    clearPassword(id);
-    bumpSessionEpoch(id);
-    writeAudit({
+    await clearPassword(id);
+    await bumpSessionEpoch(id);
+    await writeAudit({
       actor,
       action: 'user.password_removed',
       entityType: 'local_account',

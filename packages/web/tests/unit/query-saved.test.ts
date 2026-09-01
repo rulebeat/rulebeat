@@ -1,10 +1,10 @@
 /**
  * Spec 037 — /api/query/saved (GET/POST) and /api/query/saved/[id] (GET/DELETE), the live-query
  * page's save/list/load/delete surface. Covers the two properties the routes' own comments call out
- * as deliberate: getSavedQuery() (and therefore GET .../[id]) returns 404 identically for "doesn't
+ * as deliberate: await getSavedQuery() (and therefore GET .../[id]) returns 404 identically for "doesn't
  * exist" and "exists but is a private query owned by someone else" — never 403, so existence can't be
  * probed — and visibility only ever controls *read* access: a non-owner can GET a shared query but
- * can never DELETE it, because deleteSavedQuery() re-checks strict ownership on its own.
+ * can never DELETE it, because await deleteSavedQuery() re-checks strict ownership on its own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
@@ -29,9 +29,9 @@ function idParams(id: string) {
 }
 
 async function signInAs(email: string): Promise<string> {
-  const result = createUser({ email, role: 'editor' });
+  const result = await createUser({ email, role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
   return result.user.id;
 }
@@ -48,7 +48,7 @@ let ownerId: string;
 
 describe('/api/query/saved (spec 037)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     ownerId = await signInAs('owner@example.com');
   });
@@ -101,7 +101,7 @@ describe('/api/query/saved (spec 037)', () => {
 
     it('writes a query.save audit entry naming the backend, name, and visibility', async () => {
       await createSaved(postRequest('http://localhost/api/query/saved', VALID_ARG_BODY));
-      const entries = listAllAuditEntries();
+      const entries = await listAllAuditEntries();
       expect(entries[0].action).toBe('query.save');
       expect(entries[0].summary).toBe('Saved a resource-graph query "My saved query" (private)');
     });
@@ -115,7 +115,7 @@ describe('/api/query/saved (spec 037)', () => {
 
       it('blocks creating a saved query with a read-only 403', async () => {
         process.env.RULEBEAT_DEMO = '1';
-        stampDemoDatabase();
+        await stampDemoDatabase();
         resetDemoModeCacheForTests();
         const res = await createSaved(postRequest('http://localhost/api/query/saved', VALID_ARG_BODY));
         expect(res.status).toBe(403);
@@ -181,7 +181,7 @@ describe('/api/query/saved (spec 037)', () => {
       const delRes = await deleteSaved(new Request(`http://localhost/api/query/saved/${id}`, { method: 'DELETE' }), idParams(id));
       expect(delRes.status).toBe(200);
 
-      const entries = listAllAuditEntries();
+      const entries = await listAllAuditEntries();
       const deleteEntry = entries.find(e => e.action === 'query.delete');
       expect(deleteEntry?.summary).toBe('Deleted a resource-graph query "to delete"');
 
@@ -201,7 +201,7 @@ describe('/api/query/saved (spec 037)', () => {
         const { id } = await created.json();
 
         process.env.RULEBEAT_DEMO = '1';
-        stampDemoDatabase();
+        await stampDemoDatabase();
         resetDemoModeCacheForTests();
 
         const res = await deleteSaved(new Request(`http://localhost/api/query/saved/${id}`, { method: 'DELETE' }), idParams(id));

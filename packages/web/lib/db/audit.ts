@@ -1,6 +1,7 @@
 import { db } from './client';
-import { auditLog } from './schema';
+import { auditLog } from './tables';
 import { desc, count } from 'drizzle-orm';
+import { many, one, run } from './exec';
 import type { AppUser } from './users';
 
 export type AuditAction =
@@ -76,15 +77,15 @@ export interface WriteAuditInput {
 }
 
 /**
- * Records one action. Synchronous (better-sqlite3) and never throws — a failed audit write must
- * not turn a successful operation into an error response for the user. A failure is no longer
- * silent: it goes to stdout in the same structured shape lib/server-logger.ts's createScanLogger()
- * uses, so an operator watching logs (or piping them to their own aggregator) still sees it even
- * though the row itself is lost.
+ * Records one action. Best-effort and never throws — a failed audit write must not turn a
+ * successful operation into an error response for the user. A failure is no longer silent: it
+ * goes to stdout in the same structured shape lib/server-logger.ts's createScanLogger() uses, so
+ * an operator watching logs (or piping them to their own aggregator) still sees it even though
+ * the row itself is lost.
  */
-export function writeAudit(input: WriteAuditInput): void {
+export async function writeAudit(input: WriteAuditInput): Promise<void> {
   try {
-    db.insert(auditLog).values({
+    await run(db.insert(auditLog).values({
       id: globalThis.crypto.randomUUID(),
       actorId: input.actor.id,
       actorEmail: input.actor.email,
@@ -94,7 +95,7 @@ export function writeAudit(input: WriteAuditInput): void {
       summary: input.summary,
       details: input.details ? JSON.stringify(input.details) : null,
       occurredAt: new Date().toISOString(),
-    }).run();
+    }));
   } catch (err) {
     console.error(JSON.stringify({
       ts: new Date().toISOString(),
@@ -123,24 +124,28 @@ export function logAuthEvent(message: string, fields?: Record<string, unknown>):
   }));
 }
 
-export function listAuditEntries(opts: { limit?: number; offset?: number } = {}): AuditEntry[] {
+export async function listAuditEntries(opts: { limit?: number; offset?: number } = {}): Promise<AuditEntry[]> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
-  return db.select().from(auditLog)
-    .orderBy(desc(auditLog.occurredAt))
-    .limit(limit).offset(offset)
-    .all().map(rowToEntry);
+  const rows = await many(
+    db.select().from(auditLog)
+      .orderBy(desc(auditLog.occurredAt))
+      .limit(limit).offset(offset),
+  );
+  return rows.map(rowToEntry);
 }
 
 /** Every row, unpaginated — for CSV export. listAuditEntries() stays capped at 200 for the UI. */
-export function listAllAuditEntries(): AuditEntry[] {
-  return db.select().from(auditLog)
-    .orderBy(desc(auditLog.occurredAt))
-    .all().map(rowToEntry);
+export async function listAllAuditEntries(): Promise<AuditEntry[]> {
+  const rows = await many(
+    db.select().from(auditLog).orderBy(desc(auditLog.occurredAt)),
+  );
+  return rows.map(rowToEntry);
 }
 
-export function countAuditEntries(): number {
-  return db.select({ n: count() }).from(auditLog).get()?.n ?? 0;
+export async function countAuditEntries(): Promise<number> {
+  const row = await one(db.select({ n: count() }).from(auditLog));
+  return row?.n ?? 0;
 }
 
 /**

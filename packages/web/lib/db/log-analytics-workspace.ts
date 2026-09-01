@@ -1,6 +1,7 @@
 import { db } from './client';
-import { logAnalyticsWorkspaces } from './schema';
+import { logAnalyticsWorkspaces } from './tables';
 import { eq, asc } from 'drizzle-orm';
+import { many, one, run, inTransaction } from './exec';
 
 /**
  * The default Log Analytics workspace entered through the UI. See `lib/log-analytics-workspace.ts`
@@ -38,15 +39,17 @@ function rowToSummary(row: Row): LogAnalyticsWorkspaceSummary {
   };
 }
 
-export function listLogAnalyticsWorkspaces(): LogAnalyticsWorkspaceSummary[] {
-  return db.select().from(logAnalyticsWorkspaces)
-    .orderBy(asc(logAnalyticsWorkspaces.createdAt))
-    .all().map(rowToSummary);
+export async function listLogAnalyticsWorkspaces(): Promise<LogAnalyticsWorkspaceSummary[]> {
+  const rows = await many(
+    db.select().from(logAnalyticsWorkspaces).orderBy(asc(logAnalyticsWorkspaces.createdAt)),
+  );
+  return rows.map(rowToSummary);
 }
 
-export function getActiveLogAnalyticsWorkspace(): LogAnalyticsWorkspaceSummary | null {
-  const row = db.select().from(logAnalyticsWorkspaces)
-    .where(eq(logAnalyticsWorkspaces.isActive, true)).get();
+export async function getActiveLogAnalyticsWorkspace(): Promise<LogAnalyticsWorkspaceSummary | null> {
+  const row = await one(
+    db.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.isActive, true)),
+  );
   return row ? rowToSummary(row) : null;
 }
 
@@ -60,32 +63,34 @@ export interface SaveLogAnalyticsWorkspaceInput {
  * Stores (or replaces) the active workspace. Any previously active row is deactivated in the same
  * transaction, so "the active workspace" can never be ambiguous.
  */
-export function saveLogAnalyticsWorkspace(input: SaveLogAnalyticsWorkspaceInput): LogAnalyticsWorkspaceSummary {
+export async function saveLogAnalyticsWorkspace(input: SaveLogAnalyticsWorkspaceInput): Promise<LogAnalyticsWorkspaceSummary> {
   const now = new Date().toISOString();
   const workspaceId = input.workspaceId.trim();
   const name = input.name?.trim() || `Workspace ${workspaceId}`;
 
-  return db.transaction(tx => {
-    const existing = tx.select().from(logAnalyticsWorkspaces)
-      .where(eq(logAnalyticsWorkspaces.isActive, true)).get();
+  return inTransaction(async (tx) => {
+    const existing = await one(
+      tx.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.isActive, true)),
+    );
 
     if (existing) {
-      tx.update(logAnalyticsWorkspaces).set({
+      await run(tx.update(logAnalyticsWorkspaces).set({
         name,
         workspaceId,
         updatedAt: now,
         // A new workspace id invalidates whatever the last check proved.
         lastVerifiedAt: null,
         ...(input.createdBy ? { createdBy: input.createdBy } : {}),
-      }).where(eq(logAnalyticsWorkspaces.id, existing.id)).run();
+      }).where(eq(logAnalyticsWorkspaces.id, existing.id)));
 
-      return rowToSummary(
-        tx.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, existing.id)).get()!,
+      const updated = await one(
+        tx.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, existing.id)),
       );
+      return rowToSummary(updated!);
     }
 
     const id = globalThis.crypto.randomUUID();
-    tx.insert(logAnalyticsWorkspaces).values({
+    await run(tx.insert(logAnalyticsWorkspaces).values({
       id,
       name,
       workspaceId,
@@ -94,24 +99,25 @@ export function saveLogAnalyticsWorkspace(input: SaveLogAnalyticsWorkspaceInput)
       createdAt: now,
       updatedAt: now,
       createdBy: input.createdBy ?? null,
-    }).run();
+    }));
 
-    return rowToSummary(
-      tx.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)).get()!,
+    const created = await one(
+      tx.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)),
     );
+    return rowToSummary(created!);
   });
 }
 
-export function deleteLogAnalyticsWorkspace(id: string): boolean {
-  const existing = db.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)).get();
+export async function deleteLogAnalyticsWorkspace(id: string): Promise<boolean> {
+  const existing = await one(db.select().from(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)));
   if (!existing) return false;
-  db.delete(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)).run();
+  await run(db.delete(logAnalyticsWorkspaces).where(eq(logAnalyticsWorkspaces.id, id)));
   return true;
 }
 
 /** Records that this workspace really answered a query. */
-export function markLogAnalyticsWorkspaceVerified(id: string): void {
-  db.update(logAnalyticsWorkspaces).set({
+export async function markLogAnalyticsWorkspaceVerified(id: string): Promise<void> {
+  await run(db.update(logAnalyticsWorkspaces).set({
     lastVerifiedAt: new Date().toISOString(),
-  }).where(eq(logAnalyticsWorkspaces.id, id)).run();
+  }).where(eq(logAnalyticsWorkspaces.id, id)));
 }

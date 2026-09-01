@@ -17,7 +17,7 @@ function redirectResponse(location: string): Response {
 }
 
 describe('fixCallbackUrlOrigin', () => {
-  it('rewrites callbackUrl to the redirect origin when they mismatch (the reported bug)', () => {
+  it('rewrites callbackUrl to the redirect origin when they mismatch (the reported bug)', async () => {
     const response = redirectResponse(
       'http://myhost.example:8080/signin?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fdashboard',
     );
@@ -27,7 +27,7 @@ describe('fixCallbackUrlOrigin', () => {
     );
   });
 
-  it('preserves the callbackUrl path and query, only replacing scheme+host', () => {
+  it('preserves the callbackUrl path and query, only replacing scheme+host', async () => {
     const response = redirectResponse(
       'https://myhost.example/signin?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fscans%3Ftab%3Dhistory',
     );
@@ -39,28 +39,28 @@ describe('fixCallbackUrlOrigin', () => {
     expect(callbackUrl.searchParams.get('tab')).toBe('history');
   });
 
-  it('leaves the response untouched when the origins already match', () => {
+  it('leaves the response untouched when the origins already match', async () => {
     const location = 'http://localhost:3000/signin?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fdashboard';
     const response = redirectResponse(location);
     const fixed = fixCallbackUrlOrigin(response);
     expect(fixed.headers.get('location')).toBe(location);
   });
 
-  it('leaves the response untouched when there is no Location header (authenticated pass-through)', () => {
+  it('leaves the response untouched when there is no Location header (authenticated pass-through)', async () => {
     const response = new Response(null, { status: 200 });
     const fixed = fixCallbackUrlOrigin(response);
     expect(fixed.headers.get('location')).toBeNull();
     expect(fixed.status).toBe(200);
   });
 
-  it('leaves the response untouched when the redirect has no callbackUrl param', () => {
+  it('leaves the response untouched when the redirect has no callbackUrl param', async () => {
     const location = 'http://myhost.example/signin';
     const response = redirectResponse(location);
     const fixed = fixCallbackUrlOrigin(response);
     expect(fixed.headers.get('location')).toBe(location);
   });
 
-  it('preserves other headers on the response (e.g. session cookies)', () => {
+  it('preserves other headers on the response (e.g. session cookies)', async () => {
     const response = new Response(null, {
       status: 307,
       headers: {

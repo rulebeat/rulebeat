@@ -17,7 +17,7 @@ function fakeResponse(status: number, body = '{}'): Response {
   return new Response(body, { status });
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

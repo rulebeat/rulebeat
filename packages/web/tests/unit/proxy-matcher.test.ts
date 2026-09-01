@@ -42,7 +42,7 @@ describe('proxy matcher', () => {
   });
 
   // The container liveness probe must be reachable with no session, same as the brand images above.
-  it('leaves /api/health unguarded, so a container orchestrator can probe it with no session', () => {
+  it('leaves /api/health unguarded, so a container orchestrator can probe it with no session', async () => {
     expect(guards('/api/health')).toBe(false);
   });
 

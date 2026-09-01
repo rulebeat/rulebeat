@@ -17,9 +17,9 @@ export async function GET(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const schedule = getSchedule(id);
+  const schedule = await getSchedule(id);
   if (!schedule) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json({ ...schedule, notificationLinks: listLinksForSchedule(id) });
+  return NextResponse.json({ ...schedule, notificationLinks: await listLinksForSchedule(id) });
 }
 
 export async function PUT(
@@ -34,7 +34,7 @@ export async function PUT(
     notificationLinks?: Array<{ channelId: string; minSeverity: string; categoryIds?: string[] | null; subscriptionIds?: string[] | null }>;
   }>(req);
   if (body instanceof NextResponse) return body;
-  const before = getSchedule(id);
+  const before = await getSchedule(id);
 
   // Validate notification links if provided
   const rawLinks = body.notificationLinks;
@@ -49,12 +49,12 @@ export async function PUT(
     }
   }
 
-  const result = updateSchedule(id, body);
+  const result = await updateSchedule(id, body);
   if (result === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
   if (rawLinks !== undefined) {
-    setLinksForSchedule(id, rawLinks.map(l => ({
+    await setLinksForSchedule(id, rawLinks.map(l => ({
       channelId: l.channelId,
       minSeverity: l.minSeverity as Severity,
       categoryIds: l.categoryIds ?? null,
@@ -62,7 +62,7 @@ export async function PUT(
     })));
   }
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'schedule.update',
     entityType: 'schedule',
@@ -74,7 +74,7 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json({ ...result.schedule, notificationLinks: listLinksForSchedule(id) });
+  return NextResponse.json({ ...result.schedule, notificationLinks: await listLinksForSchedule(id) });
 }
 
 export async function DELETE(
@@ -85,11 +85,11 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const before = getSchedule(id);
-  const deleted = deleteSchedule(id);
+  const before = await getSchedule(id);
+  const deleted = await deleteSchedule(id);
   if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'schedule.delete',
     entityType: 'schedule',

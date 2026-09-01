@@ -2,8 +2,8 @@
  * Codex review Phase 5, item 2: the complete finding lifecycle matrix.
  *
  * scan-lifecycle-coverage.test.ts already covers the dangerous partial-scan transition (spec
- * 004/005) through the full runCategoryScan() pipeline. This suite is the rest of the matrix
- * Codex asked for, unit-level against syncScanFindings() itself (lib/db/findings.ts) plus the
+ * 004/005) through the full await runCategoryScan() pipeline. This suite is the rest of the matrix
+ * Codex asked for, unit-level against await syncScanFindings() itself (lib/db/findings.ts) plus the
  * suppression-window behaviour findings pass through at read time (lib/dashboard-data.ts):
  *  - created / repeat / resolved / reactivated, and what happens to firstSeenAt/lastSeenAt/
  *    resolvedAt/timesSeen at each transition
@@ -12,7 +12,7 @@
  *  - the 500-row CHUNK_SIZE boundary, on both the findings side and the ranRuleIds side
  *  - a rule's findings and events both disappearing when the rule is deleted
  *  - event-retention pruning (findings.ts prunes finding_events older than 180 days on every sync)
- *  - expired vs. permanent suppressions, read through queryActiveFindings()
+ *  - expired vs. permanent suppressions, read through await queryActiveFindings()
  *
  * Duplicate ARG rows sharing one fingerprint within a single scan are covered below (RB-QA-019,
  * fixed via dedupeFindingsByFingerprint()) — one sighting per fingerprint regardless of how many
@@ -79,7 +79,7 @@ function suppression(overrides: Partial<Suppression> & Pick<Suppression, 'finger
 }
 
 beforeEach(async () => {
-  resetDb();
+  await resetDb();
 });
 
 describe('syncScanFindings — created / repeat / resolved / reactivated', () => {
@@ -280,7 +280,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
   it('a permanent suppression (no expiresAt) excludes the finding from active results', async () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
-    saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
 
     expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
   });
@@ -289,7 +289,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
     const future = new Date(Date.now() + 30 * 86_400_000).toISOString();
-    saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: future })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: future })]);
 
     expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
   });
@@ -298,7 +298,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
     const past = new Date(Date.now() - 1 * 86_400_000).toISOString();
-    saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: past })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: past })]);
 
     expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
@@ -306,7 +306,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
   it('filters.includeSuppressed bypasses even a permanent suppression', async () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
-    saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
 
     expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).map(r => r.fingerprint)).toContain(f.fingerprint);
   });

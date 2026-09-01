@@ -87,24 +87,24 @@ function matchesFilters(
   return true;
 }
 
-function suppressedFingerprintSet(filters: WidgetFilters): Set<string> {
+async function suppressedFingerprintSet(filters: WidgetFilters): Promise<Set<string>> {
   if (filters.includeSuppressed) return new Set();
-  return new Set(loadSuppressions().filter(isActiveSuppression).map(s => s.fingerprint));
+  return new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
 }
 
 /** Active findings matching every dimension in `filters`. Excludes actively-suppressed
  *  fingerprints unless `filters.includeSuppressed`. */
 export async function queryActiveFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
   const all = await listFindings({ status: 'active' });
-  const ruleById = new Map(loadRules().map(r => [r.id, r]));
-  const suppressed = suppressedFingerprintSet(filters);
+  const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
+  const suppressed = await suppressedFingerprintSet(filters);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
 }
 
 async function queryFixedFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
   const all = await listFindings({ status: 'fixed' });
-  const ruleById = new Map(loadRules().map(r => [r.id, r]));
-  const suppressed = suppressedFingerprintSet(filters);
+  const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
+  const suppressed = await suppressedFingerprintSet(filters);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
 }
 
@@ -217,8 +217,8 @@ export interface WidgetSummary {
  *  ill-defined at that granularity since it isn't recorded). */
 export async function computeWidgetSummary(filters: WidgetFilters, trendDays: number): Promise<WidgetSummary> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
-  const allCategories = listCategories();
-  const allRules = loadRules();
+  const allCategories = await listCategories();
+  const allRules = await loadRules();
   const ruleById = new Map(allRules.map(r => [r.id, r]));
   const targetCategories = filters.categories?.length
     ? allCategories.filter(c => filters.categories!.includes(c.id))
@@ -285,10 +285,10 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // Latest snapshot row per target category — used both for per-category lastScanAt and the
   // overall lastScanAt below. A category with no snapshot row yet has never been scanned.
   const categoryIds = targetCategories.map(c => c.id);
-  const latestSnapshots = getBaselineSnapshots(categoryIds, today());
+  const latestSnapshots = await getBaselineSnapshots(categoryIds, today());
   const latestByCategory = new Map(latestSnapshots.map(s => [s.category, s]));
 
-  const perCategory = targetCategories.map(cat => {
+  const perCategory = await Promise.all(targetCategories.map(async cat => {
     const { stateRuleIds } = enabledRuleIdsForCategory(cat, allRules, filters);
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
@@ -296,7 +296,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const catPct = catTotal === 0 ? null : Math.round((catPassing / catTotal) * 100);
     // A high posture % is misleading if the scan behind it didn't finish — the coverage-freshness
     // widget must show that alongside recency, not just "how long ago" (spec 004).
-    const [lastScan] = listScanMetas(cat.id, 1);
+    const [lastScan] = await listScanMetas(cat.id, 1);
     return {
       category: cat.id,
       label: cat.label,
@@ -309,7 +309,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       lastScanCoverage: lastScan?.coverage ?? null,
       lastScanIncompleteRules: lastScan?.incompleteRules ?? [],
     };
-  });
+  }));
 
   const lastScanAt = perCategory.reduce<string | null>((max, m) => {
     if (!m.lastScanAt) return max;
@@ -390,7 +390,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   const trendCategoryIds = filters.categories?.length ? filters.categories : allCategories.map(c => c.id);
   const trendSubscriptionId = filters.subscriptions?.length === 1 ? filters.subscriptions[0] : undefined;
-  const snaps = getSnapshots({ categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: daysAgo(trendDays) });
+  const snaps = await getSnapshots({ categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: daysAgo(trendDays) });
   const trend = aggregateSnapshotsByDate(snaps);
   const trendByCategory = groupSnapshotsByCategory(snaps);
 
@@ -400,7 +400,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // (the "-75% vs baseline" bug). A category with no honest baseline yet is excluded from the
   // blend entirely rather than blanking the whole widget; it reappears once enough days of
   // honest-formula snapshots accumulate.
-  const honestBaselineSnaps = getBaselineSnapshots(trendCategoryIds, from, trendSubscriptionId)
+  const honestBaselineSnaps = (await getBaselineSnapshots(trendCategoryIds, from, trendSubscriptionId))
     .filter(s => s.formulaVersion === SNAPSHOT_FORMULA_VERSION);
   let baseline: WidgetSummary['baseline'] = null;
   let deltaPct: number | null = null;

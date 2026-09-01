@@ -1,7 +1,7 @@
 /**
  * Spec 036 — POST /api/rules/validate-logs, mirroring validate-graph.test.ts's coverage of its
  * Graph sibling (see app/api/rules/validate-graph route and its test for the pattern this follows).
- * Two error sources are distinct here and must not be conflated: createTenantContext() throwing
+ * Two error sources are distinct here and must not be conflated: await createTenantContext() throwing
  * AzureNotConfiguredError means no Azure credential at all (503, azure_not_configured) versus
  * ctx.queryLogs() throwing LogAnalyticsNotConfiguredError means a working credential but no
  * workspace ID set (400, since that's something the person validating a query can fix themselves —
@@ -42,9 +42,9 @@ function postRequest(logsQuery: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
@@ -52,7 +52,7 @@ const VALID_LQ: LogAnalyticsQuery = { kql: 'SigninLogs | where ResultType != 0',
 
 describe('POST /api/rules/validate-logs (spec 036)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;

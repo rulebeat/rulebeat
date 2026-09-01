@@ -36,7 +36,7 @@ async function createDashboard(page: Page, name: string): Promise<string> {
   return body.id;
 }
 
-test.describe('mutation feedback contract (spec 014)', () => {
+test.describe('mutation feedback contract (spec 014)', async () => {
   test('toggling a schedule surfaces an error on a bad response and on a dropped request', async ({ page }) => {
     await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
     const name = `e2e-toggle-${Date.now()}`;

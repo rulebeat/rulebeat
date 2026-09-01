@@ -27,7 +27,7 @@ import { createUser, bumpSessionEpoch, type AppUser } from '@/lib/db/users';
  * and password chokepoint tests do.
  */
 describe('auth-secret.ts reads AUTH_SECRET the way the edge/proxy bundler can see', () => {
-  it('uses a static `process.env.AUTH_SECRET`, never a dynamic `process.env[...]` lookup', () => {
+  it('uses a static `process.env.AUTH_SECRET`, never a dynamic `process.env[...]` lookup', async () => {
     const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'lib', 'auth-secret.ts');
     const source = readFileSync(path, 'utf8');
     expect(source).toMatch(/process\.env\.AUTH_SECRET/);
@@ -37,7 +37,7 @@ describe('auth-secret.ts reads AUTH_SECRET the way the edge/proxy bundler can se
   // spec 023: AUTH_SECRET_FILE is read by the same module, so it needs the identical guarantee —
   // a dynamic lookup here would silently resolve to `undefined` in the edge bundle exactly like
   // the original AUTH_SECRET bug, just for the file variant instead.
-  it('uses a static `process.env.AUTH_SECRET_FILE`, never a dynamic `process.env[...]` lookup', () => {
+  it('uses a static `process.env.AUTH_SECRET_FILE`, never a dynamic `process.env[...]` lookup', async () => {
     const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'lib', 'auth-secret.ts');
     const source = readFileSync(path, 'utf8');
     expect(source).toMatch(/process\.env\.AUTH_SECRET_FILE/);
@@ -46,16 +46,16 @@ describe('auth-secret.ts reads AUTH_SECRET the way the edge/proxy bundler can se
 });
 
 describe('auth.config.ts (the DB-free half used by the proxy)', () => {
-  it('pages.signIn and pages.error both point at /signin', () => {
+  it('pages.signIn and pages.error both point at /signin', async () => {
     expect(authConfig.pages?.signIn).toBe('/signin');
     expect(authConfig.pages?.error).toBe('/signin');
   });
 
-  it('trustHost is explicitly true', () => {
+  it('trustHost is explicitly true', async () => {
     expect(authConfig.trustHost).toBe(true);
   });
 
-  it('has no providers of its own', () => {
+  it('has no providers of its own', async () => {
     expect(authConfig.providers).toEqual([]);
   });
 
@@ -64,23 +64,23 @@ describe('auth.config.ts (the DB-free half used by the proxy)', () => {
     // The real signature is `({ request, auth }) => ...`; every case here only needs `auth`.
     const call = (auth: unknown) => authorized({ auth } as never);
 
-    it('is false with no session at all', () => {
+    it('is false with no session at all', async () => {
       expect(call(undefined)).toBe(false);
     });
 
-    it('is false for a session with no user', () => {
+    it('is false for a session with no user', async () => {
       expect(call({})).toBe(false);
     });
 
-    it('is false for a user with no uid', () => {
+    it('is false for a user with no uid', async () => {
       expect(call({ user: {} })).toBe(false);
     });
 
-    it('is false for a legacy token carrying the old oid claim but no uid', () => {
+    it('is false for a legacy token carrying the old oid claim but no uid', async () => {
       expect(call({ user: { oid: 'legacy-entra-oid' } })).toBe(false);
     });
 
-    it('is true once uid is present', () => {
+    it('is true once uid is present', async () => {
       expect(call({ user: { uid: 'user-row-id' } })).toBe(true);
     });
   });
@@ -123,12 +123,12 @@ describe('auth.config.ts (the DB-free half used by the proxy)', () => {
 describe('auth.ts (the full config auth routes use)', () => {
   // This describe block wants "SSO is fully configured" — set explicitly, not inherited from
   // tests/setup.ts, so the sign-in-config resolution-order tests elsewhere mean something.
-  beforeAll(() => {
+  beforeAll(async () => {
     process.env.AUTH_MICROSOFT_ENTRA_ID_ID = 'test-client-id';
     process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET = 'test-client-secret';
     process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID = '00000000-0000-0000-0000-000000000001';
   });
-  afterAll(() => {
+  afterAll(async () => {
     delete process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
     delete process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET;
     delete process.env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID;
@@ -160,16 +160,16 @@ describe('auth.ts (the full config auth routes use)', () => {
   });
 
   describe('callbacks.jwt (spec 020 — stamps the session-epoch claim)', () => {
-    function makeUser(email: string): AppUser {
-      const result = createUser({ email, role: 'viewer' });
+    async function makeUser(email: string): Promise<AppUser> {
+      const result = await createUser({ email, role: 'viewer' });
       if ('error' in result) throw new Error(result.error);
       return result.user;
     }
 
-    beforeAll(() => { resetDb(); });
+    beforeAll(async () => { await resetDb(); });
 
     it('stamps token.epoch from a fresh DB read on initial sign-in', async () => {
-      const user = makeUser('jwt-epoch@example.com');
+      const user = await makeUser('jwt-epoch@example.com');
       const full = await buildAuthConfig();
       const token = await full.callbacks!.jwt!({
         token: {},
@@ -180,8 +180,8 @@ describe('auth.ts (the full config auth routes use)', () => {
     });
 
     it('reflects a bump that happened before this sign-in', async () => {
-      const user = makeUser('jwt-epoch-bumped@example.com');
-      bumpSessionEpoch(user.id);
+      const user = await makeUser('jwt-epoch-bumped@example.com');
+      await bumpSessionEpoch(user.id);
       const full = await buildAuthConfig();
       const token = await full.callbacks!.jwt!({
         token: {},

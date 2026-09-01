@@ -37,7 +37,7 @@ export async function GET() {
   const actor = await requireRole('audit:read');
   if (actor instanceof NextResponse) return actor;
 
-  const entries = listAllAuditEntries();
+  const entries = await listAllAuditEntries();
   const csv = [HEADERS.join(','), ...entries.map(entryToRow)].join('\n');
 
   return new NextResponse(csv, {

@@ -9,7 +9,7 @@ import { signIn } from './helpers';
  * exempted per the spec (verified by hand — see §2 Risks) since triggering a genuine root-layout
  * failure isn't reachable the same way from outside the app.
  */
-test.describe('route error and not-found surfaces (spec 015)', () => {
+test.describe('route error and not-found surfaces (spec 015)', async () => {
   test('an explicit notFound() call renders the branded not-found page', async ({ page }) => {
     await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
     await page.goto(`${ADMIN_URL}/dashboards/does-not-exist`);

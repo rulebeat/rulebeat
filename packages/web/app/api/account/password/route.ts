@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: strength.error }, { status: 400 });
   }
 
-  const account = getLocalAccount(actor.id);
+  const account = await getLocalAccount(actor.id);
   if (!account) {
     return NextResponse.json({ error: 'This account has no local password to change.' }, { status: 400 });
   }
@@ -45,10 +45,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    setPassword(actor.id, await hashPassword(newPassword), { mustChangePassword: false });
+    await setPassword(actor.id, await hashPassword(newPassword), { mustChangePassword: false });
     // Invalidates the actor's own current token too — change-password-client.tsx redirects to
     // /signin rather than attempting to keep this session alive, which is the point (spec 020).
-    bumpSessionEpoch(actor.id);
+    await bumpSessionEpoch(actor.id);
 
     // Best-effort: the file only exists on an install that just bootstrapped its owner account,
     // and its only purpose was to hand over this exact password.
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
       /* best effort */
     }
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'user.password_set',
       entityType: 'local_account',

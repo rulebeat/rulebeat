@@ -8,8 +8,8 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  const categories = listCategories();
-  const allRules = loadRules();
+  const categories = await listCategories();
+  const allRules = await loadRules();
   const tags = Array.from(new Set(allRules.flatMap(r => r.tags ?? []))).sort((a, b) => a.localeCompare(b));
   const allFindings = await listFindings();
   // Raw subscription ids only — display-name enrichment happens client-side via

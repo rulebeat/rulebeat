@@ -1,7 +1,7 @@
 /**
  * WS2g · demo mode's runtime kill switch.
  *
- * `resolveAzureCredential()` (lib/azure-credential.ts) checks `isDemoMode()` before anything else,
+ * `await resolveAzureCredential()` (lib/azure-credential.ts) checks `await isDemoMode()` before anything else,
  * including before its own "environment always wins" resolution order — a demo deployment that
  * also happens to carry a real, fully-specified service principal in its environment must still
  * never be able to use it. This suite proves that ordering directly, rather than trusting the
@@ -39,51 +39,51 @@ afterEach(async () => {
   resetDemoModeCacheForTests();
 });
 
-/** Turns on the full two-gate isDemoMode(), the same way the generator does. */
-function enableDemoMode(): void {
+/** Turns on the full two-gate await isDemoMode(), the same way the generator does. */
+async function enableDemoMode(): Promise<void> {
   process.env.RULEBEAT_DEMO = '1';
-  stampDemoDatabase();
+  await stampDemoDatabase();
   resetDemoModeCacheForTests();
 }
 
 describe('the kill switch beats a fully-specified environment credential', () => {
-  it('resolveAzureCredential() throws even with a valid client-secret env credential present', async () => {
+  it('await resolveAzureCredential() throws even with a valid client-secret env credential present', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
-    enableDemoMode();
+    await enableDemoMode();
 
-    expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
+    await expect(resolveAzureCredential()).rejects.toThrow(AzureNotConfiguredError);
   });
 
-  it('resolveAzureCredential() throws even with a federated-identity env credential present', async () => {
+  it('await resolveAzureCredential() throws even with a federated-identity env credential present', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_FEDERATED_TOKEN_FILE = '/var/run/secrets/azure/tokens/azure-identity-token';
-    enableDemoMode();
+    await enableDemoMode();
 
-    expect(() => resolveAzureCredential()).toThrow(AzureNotConfiguredError);
+    await expect(resolveAzureCredential()).rejects.toThrow(AzureNotConfiguredError);
   });
 
   it('the thrown error names the demo instance, not the usual "not configured" message', async () => {
-    enableDemoMode();
-    expect(() => resolveAzureCredential()).toThrow(/demo instance/i);
+    await enableDemoMode();
+    await expect(resolveAzureCredential()).rejects.toThrow(/demo instance/i);
   });
 
-  it('getAzureCredential(), the ARM-routes entry point, throws the same way', async () => {
+  it('await getAzureCredential(), the ARM-routes entry point, throws the same way', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
-    enableDemoMode();
+    await enableDemoMode();
 
-    expect(() => getAzureCredential()).toThrow(AzureNotConfiguredError);
+    await expect(getAzureCredential()).rejects.toThrow(AzureNotConfiguredError);
   });
 
-  it('createTenantContext(), the scan-pipeline entry point, rejects the same way', async () => {
+  it('await createTenantContext(), the scan-pipeline entry point, rejects the same way', async () => {
     process.env.AZURE_TENANT_ID = '00000000-0000-0000-0000-000000000099';
     process.env.AZURE_CLIENT_ID = '00000000-0000-0000-0000-0000000000aa';
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
-    enableDemoMode();
+    await enableDemoMode();
 
     await expect(createTenantContext()).rejects.toThrow(AzureNotConfiguredError);
   });
@@ -96,10 +96,10 @@ describe('an incomplete demo configuration does not accidentally trip the switch
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
     process.env.RULEBEAT_DEMO = '1';
     resetDemoModeCacheForTests();
-    // Deliberately no stampDemoDatabase() call: isDemoMode() is false here, same as WS2g's
+    // Deliberately no await stampDemoDatabase() call: await isDemoMode() is false here, same as WS2g's
     // demo-mode.test.ts truth table — this just re-confirms the credential resolver reads the same
     // gate rather than its own, weaker check of RULEBEAT_DEMO alone.
-    const resolved = resolveAzureCredential();
+    const resolved = await resolveAzureCredential();
     expect(resolved.source).toBe('env-secret');
   });
 });

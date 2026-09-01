@@ -21,7 +21,7 @@ const RAW_KQL = [
 ].join('\n');
 
 describe('spec 016 · isVisualQueryStale', () => {
-  it('flags a pre-fix stored visualQuery (missing the union raw stage) as stale', () => {
+  it('flags a pre-fix stored visualQuery (missing the union raw stage) as stale', async () => {
     // Simulates a blob saved before the union fix: a filter stage but no RawStage for the union —
     // exactly what the old parser would have produced and stored.
     const staleStoredVisualQuery = {
@@ -40,7 +40,7 @@ describe('spec 016 · isVisualQueryStale', () => {
     expect(stale).toBe(true);
   });
 
-  it('does not flag a freshly-parsed visualQuery (with its union raw stage) as stale', () => {
+  it('does not flag a freshly-parsed visualQuery (with its union raw stage) as stale', async () => {
     const parsed = parseKqlToVisualQuery(RAW_KQL);
 
     const stale = isVisualQueryStale({

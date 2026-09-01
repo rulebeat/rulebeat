@@ -7,19 +7,19 @@ import { describe, expect, it } from 'vitest';
 import { classifySchemaStatus } from '@/lib/schema-fetch-status';
 
 describe('classifySchemaStatus', () => {
-  it('classifies a successful response as ok regardless of status code', () => {
+  it('classifies a successful response as ok regardless of status code', async () => {
     expect(classifySchemaStatus(true, 200)).toBe('ok');
   });
 
-  it('classifies a 404 as not-found', () => {
+  it('classifies a 404 as not-found', async () => {
     expect(classifySchemaStatus(false, 404)).toBe('not-found');
   });
 
-  it('classifies a 503 as unavailable', () => {
+  it('classifies a 503 as unavailable', async () => {
     expect(classifySchemaStatus(false, 503)).toBe('unavailable');
   });
 
-  it('classifies a 500 as unavailable', () => {
+  it('classifies a 500 as unavailable', async () => {
     expect(classifySchemaStatus(false, 500)).toBe('unavailable');
   });
 });

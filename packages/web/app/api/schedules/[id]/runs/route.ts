@@ -11,7 +11,7 @@ export async function GET(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  if (!getSchedule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!await getSchedule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json(listRuns(id, 20));
+  return NextResponse.json(await listRuns(id, 20));
 }

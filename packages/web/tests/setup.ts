@@ -65,7 +65,7 @@ delete process.env.AZURE_FEDERATED_TOKEN_FILE;
 // credential vars above.
 delete process.env.RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID;
 
-// Nor demo mode. `isDemoMode()` also requires a database stamp, but a suite that doesn't know to
+// Nor demo mode. `await isDemoMode()` also requires a database stamp, but a suite that doesn't know to
 // clean up its own RULEBEAT_DEMO=1 (or one that crashes before its afterEach runs) must not leak
 // that into every test file that runs after it in the same process.
 delete process.env.RULEBEAT_DEMO;
@@ -75,7 +75,7 @@ delete process.env.RULEBEAT_DEMO;
 process.env.RULEBEAT_ENCRYPTION_KEY ??= 'test-encryption-key-not-used-for-anything-real';
 delete process.env.RULEBEAT_ENCRYPTION_KEY_FILE;
 
-afterAll(() => {
+afterAll(async () => {
   try {
     rmSync(dir, { recursive: true, force: true });
   } catch {

@@ -27,14 +27,14 @@ export async function POST(req: Request) {
 
   try {
     const typedTenantId = body.tenantId?.trim();
-    const tenantId = typedTenantId || resolveSignInConfig()?.tenantId;
+    const tenantId = typedTenantId || (await resolveSignInConfig())?.tenantId;
     if (!tenantId) {
       return NextResponse.json({ ok: false, error: 'No tenant ID to test. Enter one first.' }, { status: 400 });
     }
 
     const result = await probeTenant(tenantId);
 
-    writeAudit({
+    await writeAudit({
       actor,
       action: 'sign_in_config.test',
       entityType: 'sign_in_config',

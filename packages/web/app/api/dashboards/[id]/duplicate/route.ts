@@ -7,10 +7,10 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   const actor = await requireRole('dashboards:write');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
-  const copy = duplicateDashboard(id);
+  const copy = await duplicateDashboard(id);
   if (!copy) return Response.json({ error: 'Not found' }, { status: 404 });
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'dashboard.duplicate',
     entityType: 'dashboard',

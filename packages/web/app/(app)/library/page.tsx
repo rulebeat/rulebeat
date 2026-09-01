@@ -23,8 +23,8 @@ export default async function LibraryPage({
   searchParams: Promise<{ section?: string }>;
 }) {
   const { section } = await searchParams;
-  const rules = loadRules() as unknown as Rule[];
-  const categories = listCategories();
+  const rules = await loadRules() as unknown as Rule[];
+  const categories = await listCategories();
   const cookieStore = await cookies();
   const initialSidebarPinned = cookieStore.get('sidebar:library')?.value !== 'false';
   const user = await getCurrentUser();

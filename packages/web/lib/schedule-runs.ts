@@ -1,6 +1,7 @@
 import { eq, desc } from 'drizzle-orm';
 import { db } from './db/client';
-import { scheduleRuns } from './db/schema';
+import { scheduleRuns } from './db/tables';
+import { many, one, run } from './db/exec';
 import type { ScheduleTargetType } from './db/schedules';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
@@ -61,11 +62,11 @@ export interface StartRunOptions {
   now?: Date;
 }
 
-export function startRun(opts: StartRunOptions): ScheduleRun {
+export async function startRun(opts: StartRunOptions): Promise<ScheduleRun> {
   const id = crypto.randomUUID();
   const startedAt = (opts.now ?? new Date()).toISOString();
 
-  db.insert(scheduleRuns).values({
+  await run(db.insert(scheduleRuns).values({
     id,
     scheduleId: opts.scheduleId,
     triggeredBy: opts.triggeredBy,
@@ -81,14 +82,14 @@ export function startRun(opts: StartRunOptions): ScheduleRun {
     error: null,
     durationMs: null,
     notifyStatus: 'none',
-  }).run();
+  }));
 
-  pruneOldRuns(opts.scheduleId);
+  await pruneOldRuns(opts.scheduleId);
 
-  return rowToRun(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).get()!);
+  return rowToRun((await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id))))!);
 }
 
-export function finishRun(id: string, patch: {
+export async function finishRun(id: string, patch: {
   status: ScheduleRunStatus;
   totalFindings: number;
   newFindings: number;
@@ -98,8 +99,8 @@ export function finishRun(id: string, patch: {
   notifyStatus?: NotifyStatus;
   /** Injected by the demo generator to stamp a replayed run at its simulated date. */
   now?: Date;
-}): void {
-  db.update(scheduleRuns).set({
+}): Promise<void> {
+  await run(db.update(scheduleRuns).set({
     finishedAt: (patch.now ?? new Date()).toISOString(),
     status: patch.status,
     totalFindings: patch.totalFindings,
@@ -108,14 +109,14 @@ export function finishRun(id: string, patch: {
     error: patch.error ?? null,
     durationMs: patch.durationMs,
     notifyStatus: patch.notifyStatus ?? 'none',
-  }).where(eq(scheduleRuns.id, id)).run();
+  }).where(eq(scheduleRuns.id, id)));
 }
 
 /** Marks a run's notification outbox entry closed — the attempt was made, whatever its per-channel
  * outcome (tracked separately in notification_deliveries). Called by both the live dispatch path and
  * the startup recovery pass, so there is exactly one place that decides "this entry is done." */
-export function markNotifySent(id: string): void {
-  db.update(scheduleRuns).set({ notifyStatus: 'sent' }).where(eq(scheduleRuns.id, id)).run();
+export async function markNotifySent(id: string): Promise<void> {
+  await run(db.update(scheduleRuns).set({ notifyStatus: 'sent' }).where(eq(scheduleRuns.id, id)));
 }
 
 /** Durably appends one category's new-finding fingerprints and totals to a still-running run's row,
@@ -123,72 +124,69 @@ export function markNotifySent(id: string): void {
  * once at the end in finishRun(). Closes the gap where a crash between categories left findings that
  * were already durable in `findings` with no fingerprint ever recorded against the run, so recovery
  * had nothing to notify from (spec 025). */
-export function recordCategoryProgress(id: string, delta: {
+export async function recordCategoryProgress(id: string, delta: {
   totalFindings: number;
   newFindings: number;
   newFindingFingerprints: string[];
-}): void {
-  const row = db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).get();
+}): Promise<void> {
+  const row = await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)));
   if (!row) return;
 
   const existingFingerprints = row.newFindingFingerprints ? JSON.parse(row.newFindingFingerprints) as string[] : [];
   const mergedFingerprints = Array.from(new Set([...existingFingerprints, ...delta.newFindingFingerprints]));
 
-  db.update(scheduleRuns).set({
+  await run(db.update(scheduleRuns).set({
     totalFindings: row.totalFindings + delta.totalFindings,
     newFindings: row.newFindings + delta.newFindings,
     newFindingFingerprints: JSON.stringify(mergedFingerprints),
-  }).where(eq(scheduleRuns.id, id)).run();
+  }).where(eq(scheduleRuns.id, id)));
 }
 
 /** Runs for a single schedule (used by the Schedules tab's "last run" column). */
-export function listRuns(scheduleId: string, limit = 20): ScheduleRun[] {
-  return db.select().from(scheduleRuns)
+export async function listRuns(scheduleId: string, limit = 20): Promise<ScheduleRun[]> {
+  return (await many(db.select().from(scheduleRuns)
     .where(eq(scheduleRuns.scheduleId, scheduleId))
     .orderBy(desc(scheduleRuns.startedAt))
-    .limit(limit)
-    .all()
+    .limit(limit)))
     .map(rowToRun);
 }
 
 /** Every run across every schedule AND manual "Run Scan" executions — the unified Run History. */
-export function listAllRuns(limit = 50): ScheduleRun[] {
-  return db.select().from(scheduleRuns)
+export async function listAllRuns(limit = 50): Promise<ScheduleRun[]> {
+  return (await many(db.select().from(scheduleRuns)
     .orderBy(desc(scheduleRuns.startedAt))
-    .limit(limit)
-    .all()
+    .limit(limit)))
     .map(rowToRun);
 }
 
-export function getRun(id: string): ScheduleRun | null {
-  const row = db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).get();
+export async function getRun(id: string): Promise<ScheduleRun | null> {
+  const row = await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)));
   return row ? rowToRun(row) : null;
 }
 
-export function getLatestRun(scheduleId: string): ScheduleRun | null {
-  return listRuns(scheduleId, 1)[0] ?? null;
+export async function getLatestRun(scheduleId: string): Promise<ScheduleRun | null> {
+  return (await listRuns(scheduleId, 1))[0] ?? null;
 }
 
 /** Every row still `status: 'running'` — at process start, that can only mean a previous process
  *  died mid-scan (this process hasn't started a run yet). Feeds `recoverInterruptedRuns()`. */
-export function listRunningRuns(): ScheduleRun[] {
-  return db.select().from(scheduleRuns).where(eq(scheduleRuns.status, 'running')).all().map(rowToRun);
+export async function listRunningRuns(): Promise<ScheduleRun[]> {
+  return (await many(db.select().from(scheduleRuns).where(eq(scheduleRuns.status, 'running')))).map(rowToRun);
 }
 
 /** Every row still `notifyStatus: 'pending'` — its notification batch was due but never confirmed
  *  dispatched. Feeds `recoverPendingNotifications()`. */
-export function listPendingNotificationRuns(): ScheduleRun[] {
-  return db.select().from(scheduleRuns).where(eq(scheduleRuns.notifyStatus, 'pending')).all().map(rowToRun);
+export async function listPendingNotificationRuns(): Promise<ScheduleRun[]> {
+  return (await many(db.select().from(scheduleRuns).where(eq(scheduleRuns.notifyStatus, 'pending')))).map(rowToRun);
 }
 
-function pruneOldRuns(scheduleId: string): void {
-  const rows = db.select({ id: scheduleRuns.id }).from(scheduleRuns)
+async function pruneOldRuns(scheduleId: string): Promise<void> {
+  const rows = await many(db.select({ id: scheduleRuns.id }).from(scheduleRuns)
     .where(eq(scheduleRuns.scheduleId, scheduleId))
-    .orderBy(desc(scheduleRuns.startedAt))
-    .all();
+    .orderBy(desc(scheduleRuns.startedAt)));
 
   const toDelete = rows.slice(MAX_RUNS_PER_BUCKET);
   for (const row of toDelete) {
-    db.delete(scheduleRuns).where(eq(scheduleRuns.id, row.id)).run();
+    await run(db.delete(scheduleRuns).where(eq(scheduleRuns.id, row.id)));
   }
 }

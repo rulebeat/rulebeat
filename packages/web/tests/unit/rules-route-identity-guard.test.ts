@@ -48,15 +48,15 @@ function putRequest(body: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
 describe('POST /api/rules — identity guard (spec 005)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -66,13 +66,13 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
   it('blocks and does not persist a rawKql rule whose sample rows have no id', async () => {
     fakeCtx = fakeTenantContext({ rows: [{ name: 'no-id' }] });
     const body = baseBody({ rawKql: 'resources | summarize count() by type' });
-    const before = loadRules().length;
+    const before = (await loadRules()).length;
 
     const res = await POST(postRequest(body));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/no resource id/);
-    expect(loadRules().length).toBe(before);
+    expect((await loadRules()).length).toBe(before);
   });
 
   it('saves a rawKql rule whose sample rows all carry an id', async () => {
@@ -82,7 +82,7 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
     const res = await POST(postRequest(body));
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(loadRules().some(r => r.id === json.id)).toBe(true);
+    expect((await loadRules()).some(r => r.id === json.id)).toBe(true);
   });
 
   it('fails open and still saves when the probe cannot connect to Azure at all', async () => {
@@ -94,7 +94,7 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
   });
 
   it('never probes a GUI-built rule that has no rawKql', async () => {
-    // fakeCtx stays null — if the route tried to probe, createTenantContext() would throw calling
+    // fakeCtx stays null — if the route tried to probe, await createTenantContext() would throw calling
     // queryARG on null, which is exactly what proves the probe was skipped.
     const body = baseBody();
     const res = await POST(postRequest(body));
@@ -106,15 +106,15 @@ describe('PUT /api/rules/[id] — identity guard (spec 005)', () => {
   let ruleId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
     await signInAsEditor();
 
     ruleId = globalThis.crypto.randomUUID();
-    saveRules([
-      ...loadRules(),
+    await saveRules([
+      ...await loadRules(),
       {
         id: ruleId,
         name: 'existing custom rule',
@@ -139,13 +139,13 @@ describe('PUT /api/rules/[id] — identity guard (spec 005)', () => {
     fakeCtx = fakeTenantContext({ rows: [{ name: 'no-id' }] });
     const res = await put({ rawKql: 'resources | summarize count() by type' });
     expect(res.status).toBe(400);
-    expect(loadRules().find(r => r.id === ruleId)?.rawKql).toBe('resources | where type == "microsoft.compute/virtualmachines"');
+    expect((await loadRules()).find(r => r.id === ruleId)?.rawKql).toBe('resources | where type == "microsoft.compute/virtualmachines"');
   });
 
   it('saves an edit whose new rawKql samples rows that all carry an id', async () => {
     fakeCtx = fakeTenantContext({ rows: [argRow()] });
     const res = await put({ rawKql: 'resources | where type == "microsoft.compute/disks"' });
     expect(res.status).toBe(200);
-    expect(loadRules().find(r => r.id === ruleId)?.rawKql).toBe('resources | where type == "microsoft.compute/disks"');
+    expect((await loadRules()).find(r => r.id === ruleId)?.rawKql).toBe('resources | where type == "microsoft.compute/disks"');
   });
 });

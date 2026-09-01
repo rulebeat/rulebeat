@@ -17,7 +17,7 @@ let dir: string | null = null;
 let a: DatabaseType | null = null;
 let b: DatabaseType | null = null;
 
-afterEach(() => {
+afterEach(async () => {
   a?.close();
   b?.close();
   a = null;
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe('WAL-bootstrap throwaway table · concurrent openers', () => {
-  it('does not throw when two connections interleave the create/drop on the same fresh file', () => {
+  it('does not throw when two connections interleave the create/drop on the same fresh file', async () => {
     dir = mkdtempSync(join(tmpdir(), 'rb-wal-bootstrap-'));
     const dbPath = join(dir, 'rulebeat.db');
 

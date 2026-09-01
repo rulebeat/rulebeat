@@ -31,25 +31,25 @@ export default async function ScansPage({
     category: sectionParam, tab: tabParam, scan: scanId, run: runId, compare, compareCategory, status, ruleId,
     severity, subscription, rg, location, tags, window, from, to, q,
   } = await searchParams;
-  const categories = listCategories();
+  const categories = await listCategories();
   const user = await getCurrentUser();
   const role = user?.role ?? 'viewer';
 
   const activeTab: TabKey = (tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
-  const initialSuppressions = loadSuppressions() as Suppression[];
+  const initialSuppressions = await loadSuppressions() as Suppression[];
   const initialCategoryFilter = parseCategoryParam(sectionParam);
 
-  let runDetail: { run: NonNullable<ReturnType<typeof getRun>>; scans: ReturnType<typeof getScansForRun> } | null = null;
+  let runDetail: { run: NonNullable<Awaited<ReturnType<typeof getRun>>>; scans: Awaited<ReturnType<typeof getScansForRun>> } | null = null;
   let snapshotScan: ScanSummary | null = null;
   let compareScans: [ScanSummary, ScanSummary] | null = null;
-  let compareCategoryScans: ReturnType<typeof listScanMetas> | undefined;
+  let compareCategoryScans: Awaited<ReturnType<typeof listScanMetas>> | undefined;
 
   const initialSchedules = activeTab === 'schedules'
-    ? listSchedules().map(s => ({
+    ? await Promise.all((await listSchedules()).map(async s => ({
         ...s,
-        lastRun: getLatestRun(s.id),
-        notificationLinks: listLinksForSchedule(s.id),
-      }))
+        lastRun: await getLatestRun(s.id),
+        notificationLinks: await listLinksForSchedule(s.id),
+      })))
     : undefined;
   // Load channels for anyone who can edit schedules — the summary type carries no URL so it's
   // safe to send to editors. Admins manage the destinations; editors just assign them.
@@ -71,16 +71,16 @@ export default async function ScansPage({
   if (activeTab === 'history') {
     if (compare) {
       const [idA, idB] = compare.split('..');
-      const scanA = idA ? getScanById(idA) : null;
-      const scanB = idB ? getScanById(idB) : null;
+      const scanA = idA ? await getScanById(idA) : null;
+      const scanB = idB ? await getScanById(idB) : null;
       if (scanA && scanB) compareScans = [scanA, scanB];
     } else if (compareCategory) {
-      compareCategoryScans = listScanMetas(compareCategory, 20);
+      compareCategoryScans = await listScanMetas(compareCategory, 20);
     } else if (runId) {
-      const run = getRun(runId);
+      const run = await getRun(runId);
       if (run) {
-        runDetail = { run, scans: getScansForRun(runId) };
-        if (scanId) snapshotScan = getScanById(scanId);
+        runDetail = { run, scans: await getScansForRun(runId) };
+        if (scanId) snapshotScan = await getScanById(scanId);
       }
     }
   }
@@ -91,7 +91,7 @@ export default async function ScansPage({
     <>
       <Header title="Scans" description="Every rule across every category. Filter, run, and review results" />
       <ScansClient
-        policies={loadRules() as unknown as Rule[]}
+        policies={await loadRules() as unknown as Rule[]}
         categories={categories}
         role={role}
         activeTab={activeTab}
@@ -112,7 +112,7 @@ export default async function ScansPage({
           to,
           search: q,
         }}
-        runs={activeTab === 'history' ? listAllRuns(50) : undefined}
+        runs={activeTab === 'history' ? await listAllRuns(50) : undefined}
         runDetail={runDetail}
         snapshotScan={snapshotScan}
         compareCategorySlug={compareCategory}

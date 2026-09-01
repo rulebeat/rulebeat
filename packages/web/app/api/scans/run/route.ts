@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   const since = new URL(req.url).searchParams.get('since');
-  const latest = listAllRuns(1)[0] ?? null;
+  const latest = (await listAllRuns(1))[0] ?? null;
   return NextResponse.json({ run: latest && (!since || latest.startedAt >= since) ? latest : null });
 }
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   const targetValues = body.targetValues ?? [];
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'scan.run',
     entityType: 'scan',

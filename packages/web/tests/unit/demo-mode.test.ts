@@ -1,7 +1,7 @@
 /**
  * WS2g · demo mode's two-gate switch.
  *
- * `isDemoMode()` (lib/demo.ts) requires both `RULEBEAT_DEMO=1` (lib/demo-env.ts, gate 1) and the
+ * `await isDemoMode()` (lib/demo.ts) requires both `RULEBEAT_DEMO=1` (lib/demo-env.ts, gate 1) and the
  * `demo-mode-v1` stamp in the database's own `meta` table (gate 2, written only by the generator).
  * Neither gate is meaningful alone — the truth table below proves that directly, against the
  * ambient test database that `tests/setup.ts` already points at a throwaway file.
@@ -46,47 +46,47 @@ describe('isDemoEnv() — gate 1, the environment variable in isolation', () => 
   });
 });
 
-describe('isDemoMode() — the two-gate truth table', () => {
+describe('await isDemoMode() — the two-gate truth table', () => {
   it('env unset, no stamp → false', async () => {
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
-    expect(isDemoMode()).toBe(false);
+    expect(await isDemoMode()).toBe(false);
   });
 
   it('env set, no stamp → false — the env var alone must not be enough', async () => {
     process.env.RULEBEAT_DEMO = '1';
     resetDemoModeCacheForTests();
     expect(await getMeta(STAMP_KEY)).toBeNull();
-    expect(isDemoMode()).toBe(false);
+    expect(await isDemoMode()).toBe(false);
   });
 
   it('stamp present, env unset → false — the stamp alone must not be enough', async () => {
-    stampDemoDatabase();
+    await stampDemoDatabase();
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
-    expect(isDemoMode()).toBe(false);
+    expect(await isDemoMode()).toBe(false);
   });
 
   it('env set and stamped → true', async () => {
     process.env.RULEBEAT_DEMO = '1';
-    stampDemoDatabase();
+    await stampDemoDatabase();
     resetDemoModeCacheForTests();
-    expect(isDemoMode()).toBe(true);
+    expect(await isDemoMode()).toBe(true);
   });
 
   it('caches the stamp lookup until resetDemoModeCacheForTests() runs', async () => {
     process.env.RULEBEAT_DEMO = '1';
-    stampDemoDatabase();
+    await stampDemoDatabase();
     resetDemoModeCacheForTests();
-    expect(isDemoMode()).toBe(true);
+    expect(await isDemoMode()).toBe(true);
 
     await deleteMeta(STAMP_KEY);
     // Nothing in the real app ever removes the stamp mid-process, so this isn't a real scenario —
     // it's here to pin the caching behaviour itself: the earlier `true` lookup stays cached.
-    expect(isDemoMode()).toBe(true);
+    expect(await isDemoMode()).toBe(true);
 
     resetDemoModeCacheForTests();
-    expect(isDemoMode()).toBe(false);
+    expect(await isDemoMode()).toBe(false);
   });
 });
 

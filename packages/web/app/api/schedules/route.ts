@@ -14,11 +14,11 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  const schedules = listSchedules().map(s => ({
+  const schedules = await Promise.all((await listSchedules()).map(async s => ({
     ...s,
-    lastRun: getLatestRun(s.id),
-    notificationLinks: listLinksForSchedule(s.id),
-  }));
+    lastRun: await getLatestRun(s.id),
+    notificationLinks: await listLinksForSchedule(s.id),
+  })));
   return NextResponse.json(schedules);
 }
 
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const result = createSchedule({
+  const result = await createSchedule({
     name: body.name,
     targetType: body.targetType,
     targetValues: body.targetValues ?? [],
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
   if (rawLinks.length > 0) {
-    setLinksForSchedule(result.schedule.id, rawLinks.map(l => ({
+    await setLinksForSchedule(result.schedule.id, rawLinks.map(l => ({
       channelId: l.channelId,
       minSeverity: l.minSeverity as Severity,
       categoryIds: l.categoryIds ?? null,
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     })));
   }
 
-  writeAudit({
+  await writeAudit({
     actor,
     action: 'schedule.create',
     entityType: 'schedule',
@@ -86,6 +86,6 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ...result.schedule,
-    notificationLinks: listLinksForSchedule(result.schedule.id),
+    notificationLinks: await listLinksForSchedule(result.schedule.id),
   }, { status: 201 });
 }

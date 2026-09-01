@@ -16,7 +16,7 @@ import { openDatabase } from '@/lib/db/migrate';
 let dir: string | null = null;
 let sqlite: Database | null = null;
 
-afterEach(() => {
+afterEach(async () => {
   sqlite?.close();
   sqlite = null;
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe.skipIf(process.platform === 'win32')('openDatabase · file permissions', () => {
-  it('sets 0600 on a freshly created database file', () => {
+  it('sets 0600 on a freshly created database file', async () => {
     dir = mkdtempSync(join(tmpdir(), 'rb-db-perms-'));
     const dbPath = join(dir, 'rulebeat.db');
     sqlite = openDatabase(dbPath);
@@ -33,7 +33,7 @@ describe.skipIf(process.platform === 'win32')('openDatabase · file permissions'
     expect(mode).toBe(0o600);
   });
 
-  it('sets 0600 on the -wal sidecar once WAL mode creates it', () => {
+  it('sets 0600 on the -wal sidecar once WAL mode creates it', async () => {
     dir = mkdtempSync(join(tmpdir(), 'rb-db-perms-'));
     const dbPath = join(dir, 'rulebeat.db');
     sqlite = openDatabase(dbPath);
@@ -44,7 +44,7 @@ describe.skipIf(process.platform === 'win32')('openDatabase · file permissions'
     expect(mode).toBe(0o600);
   });
 
-  it('re-tightens permissions on an existing database the next time it is opened', () => {
+  it('re-tightens permissions on an existing database the next time it is opened', async () => {
     dir = mkdtempSync(join(tmpdir(), 'rb-db-perms-'));
     const dbPath = join(dir, 'rulebeat.db');
     sqlite = openDatabase(dbPath);

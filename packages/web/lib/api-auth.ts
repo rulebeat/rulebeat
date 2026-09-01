@@ -22,9 +22,9 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     // the full isDemoMode() (env *and* the database's own demo-mode-v1 stamp), not isDemoEnv()
     // alone — an incompletely-configured demo must fall through to "no user" like any other
     // anonymous request, never silently grant access to whatever demo.db happens to contain.
-    return isDemoMode() ? getUser(DEMO_VISITOR_ID) : null;
+    return (await isDemoMode()) ? getUser(DEMO_VISITOR_ID) : null;
   }
-  const dbUser = getUser(uid);
+  const dbUser = await getUser(uid);
   if (!dbUser) return null;
   // A token minted before this claim existed carries no epoch at all (`undefined`), which must
   // match a fresh row's default of 0 — otherwise every session in the world goes stale the moment
@@ -49,7 +49,7 @@ export async function requireRole(action: Action): Promise<AppUser | NextRespons
   // normal can() lookup below, so the guarantee never rests on the seeded visitor row's stored role
   // staying 'viewer'. (It does stay 'viewer'; this is the belt to that suspenders, and it's what
   // proves the read-only promise even against a row someone tampered with directly in the database.)
-  if (isDemoMode() && action !== 'read') {
+  if ((await isDemoMode()) && action !== 'read') {
     return NextResponse.json({ error: 'This is a read-only demo. Nothing here can be changed.' }, { status: 403 });
   }
 
@@ -60,7 +60,7 @@ export async function requireRole(action: Action): Promise<AppUser | NextRespons
   // or an admin reset) must be replaced before anything else is reachable. Without this, the API
   // never enforced it at all — a script using the printed password got permanent full access
   // without ever being forced to rotate off it (RB-QA-017).
-  if (action !== 'account:self' && getLocalAccount(user.id)?.mustChangePassword) {
+  if (action !== 'account:self' && (await getLocalAccount(user.id))?.mustChangePassword) {
     return NextResponse.json({ error: 'You must set a new password before doing anything else.' }, { status: 403 });
   }
   return user;

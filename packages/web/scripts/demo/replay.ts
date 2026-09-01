@@ -32,7 +32,7 @@ export interface ReplayOptions {
   onDay?: (day: number, totalDays: number) => void;
 }
 
-/** Runs `executeTarget()` once per simulated day, oldest first, each against a fake context scoped
+/** Runs `await executeTarget()` once per simulated day, oldest first, each against a fake context scoped
  *  to that day — the same shared execution path a real scheduled scan uses, so every downstream
  *  table (findings, finding_events, scan_history, posture_snapshots, schedule_runs) fills in
  *  exactly as it would from 60 days of a real 'all'-target daily schedule. */

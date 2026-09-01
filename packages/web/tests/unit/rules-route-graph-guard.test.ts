@@ -50,9 +50,9 @@ function putRequest(body: unknown): Request {
 }
 
 async function signInAsEditor(): Promise<void> {
-  const result = createUser({ email: 'editor@example.com', role: 'editor' });
+  const result = await createUser({ email: 'editor@example.com', role: 'editor' });
   if ('error' in result) throw new Error(result.error);
-  setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
+  await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
@@ -61,7 +61,7 @@ const NON_ALLOWLISTED_GQ = { path: 'directoryObjects' } as unknown as GraphQuery
 
 describe('POST /api/rules — Graph backend guard (spec 032)', () => {
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -73,12 +73,12 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
     // itself was rejected outright. It still 400s here, but now for an ordinary validation reason
     // (no logsQuery on the request), not because the backend can't be authored. The full logsQuery
     // validation surface has its own dedicated coverage in rules-route-logs-guard.test.ts.
-    const before = loadRules().length;
+    const before = (await loadRules()).length;
     const res = await POST(postRequest(baseBody({ queryBackend: 'log-analytics' })));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/needs a.*query/);
-    expect(loadRules().length).toBe(before);
+    expect((await loadRules()).length).toBe(before);
   });
 
   it('rejects a microsoft-graph rule with no graphQuery at all', async () => {
@@ -109,7 +109,7 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
     const res = await POST(postRequest(baseBody({ queryBackend: 'microsoft-graph', graphQuery: VALID_GQ })));
     expect(res.status).toBe(201);
     const json = await res.json();
-    const saved = loadRules().find(r => r.id === json.id);
+    const saved = (await loadRules()).find(r => r.id === json.id);
     expect(saved?.queryBackend).toBe('microsoft-graph');
     expect(saved?.graphQuery).toEqual(VALID_GQ);
     expect(saved?.kind).toBe('state');
@@ -132,7 +132,7 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
     const res = await POST(postRequest(baseBody()));
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(loadRules().find(r => r.id === json.id)?.queryBackend).toBe('resource-graph');
+    expect((await loadRules()).find(r => r.id === json.id)?.queryBackend).toBe('resource-graph');
   });
 });
 
@@ -141,7 +141,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
   let builtinGraphRuleId: string;
 
   beforeEach(async () => {
-    resetDb();
+    await resetDb();
     mockAuth.mockReset();
     connectError = null;
     fakeCtx = null;
@@ -149,8 +149,8 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
 
     customRuleId = globalThis.crypto.randomUUID();
     builtinGraphRuleId = globalThis.crypto.randomUUID();
-    saveRules([
-      ...loadRules(),
+    await saveRules([
+      ...await loadRules(),
       {
         id: customRuleId,
         name: 'existing custom graph rule',
@@ -196,7 +196,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
       { params: Promise.resolve({ id: customRuleId }) },
     );
     expect(res.status).toBe(400);
-    expect(loadRules().find(r => r.id === customRuleId)?.graphQuery).toEqual(VALID_GQ);
+    expect((await loadRules()).find(r => r.id === customRuleId)?.graphQuery).toEqual(VALID_GQ);
   });
 
   it('saves an edit whose new graphQuery is valid', async () => {
@@ -207,7 +207,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
       { params: Promise.resolve({ id: customRuleId }) },
     );
     expect(res.status).toBe(200);
-    expect(loadRules().find(r => r.id === customRuleId)?.graphQuery).toEqual(newGq);
+    expect((await loadRules()).find(r => r.id === customRuleId)?.graphQuery).toEqual(newGq);
   });
 
   it('allows editing graphQuery on a builtin microsoft-graph rule (Decision 1 — identity checks become fully editable)', async () => {
@@ -218,7 +218,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
       { params: Promise.resolve({ id: builtinGraphRuleId }) },
     );
     expect(res.status).toBe(200);
-    expect(loadRules().find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(newGq);
+    expect((await loadRules()).find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(newGq);
   });
 
   it('rejects an invalid-shape graphQuery edit on a builtin microsoft-graph rule, leaving it untouched', async () => {
@@ -227,7 +227,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
       { params: Promise.resolve({ id: builtinGraphRuleId }) },
     );
     expect(res.status).toBe(400);
-    expect(loadRules().find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(VALID_GQ);
+    expect((await loadRules()).find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(VALID_GQ);
   });
 
   it('still allows an enabled-only edit on a builtin microsoft-graph rule with no graphQuery in the body', async () => {
@@ -236,7 +236,7 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
       { params: Promise.resolve({ id: builtinGraphRuleId }) },
     );
     expect(res.status).toBe(200);
-    const saved = loadRules().find(r => r.id === builtinGraphRuleId);
+    const saved = (await loadRules()).find(r => r.id === builtinGraphRuleId);
     expect(saved?.enabled).toBe(false);
     expect(saved?.graphQuery).toEqual(VALID_GQ);
   });

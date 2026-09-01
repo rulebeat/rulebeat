@@ -19,9 +19,9 @@ export default async function NewRulePage({
   const user = await getCurrentUser();
   if (!can(user?.role ?? 'viewer', 'rules:write')) notFound();
 
-  const allRules = loadRules();
+  const allRules = await loadRules();
   const allTags = allTagsFromRules(allRules);
-  const categories = listCategories();
+  const categories = await listCategories();
 
   let prefilled: Rule | undefined;
   if (copyFrom) {

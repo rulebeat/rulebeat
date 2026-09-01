@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { CategoryBadge } from '@/components/findings/category-badge';
 
 describe('CategoryBadge (spec 033)', () => {
-  it('renders the category label and a colour swatch when the category is known', () => {
+  it('renders the category label and a colour swatch when the category is known', async () => {
     const el = CategoryBadge({
       id: 'security',
       categories: [{ id: 'security', label: 'Security', color: '#10b981' }],
@@ -21,7 +21,7 @@ describe('CategoryBadge (spec 033)', () => {
     expect(swatch.props.style.backgroundColor).toBe('#10b981');
   });
 
-  it('falls back to the raw id with no swatch when the category list has not loaded yet', () => {
+  it('falls back to the raw id with no swatch when the category list has not loaded yet', async () => {
     // Recent Findings fetches /api/widgets/filter-options client-side; categories is [] until it
     // resolves. Must degrade to the id, not crash or show nothing, during that window.
     const el = CategoryBadge({ id: 'security', categories: [] });

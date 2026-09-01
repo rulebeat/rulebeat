@@ -1,7 +1,7 @@
 /**
- * Spec 030 — runCategoryScan() must persist each rule's own last-run outcome, so a later "zero
+ * Spec 030 — await runCategoryScan() must persist each rule's own last-run outcome, so a later "zero
  * findings" can be told apart from "this rule has never successfully run" (an always-erroring rule
- * would otherwise read identically to an always-passing one). See setRulesLastRunStatus() in
+ * would otherwise read identically to an always-passing one). See await setRulesLastRunStatus() in
  * lib/rules.ts and its call site in lib/scan-runner.ts.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -62,16 +62,16 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
   };
 }
 
-function lastRunOf(id: string): { status: string | undefined; at: string | undefined } {
-  const rule = loadRules().find(r => r.id === id);
+async function lastRunOf(id: string): Promise<{ status: string | undefined; at: string | undefined }> {
+  const rule = (await loadRules()).find(r => r.id === id);
   expect(rule, `expected rule ${id} to exist`).toBeTruthy();
   return { status: rule!.lastRunStatus, at: rule!.lastRunAt };
 }
 
 describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)', () => {
-  beforeEach(() => {
-    resetDb();
-    clearRules();
+  beforeEach(async () => {
+    await resetDb();
+    await clearRules();
     insertRule(RULE_OK, MARKER_OK);
     insertRule(RULE_FAILS, MARKER_FAIL);
     insertRule(RULE_OUT_OF_SCOPE, MARKER_OK);
@@ -84,7 +84,7 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
   });
 
   it('a rule whose query throws is stamped "failed"; one that returns cleanly is stamped "success" — both at this scan\'s finish time', async () => {
-    const category = getCategory('security')!;
+    const category = (await getCategory('security'))!;
     const outcome = await runCategoryScan(category, {
       ctx: makeCtx({
         [MARKER_OK]: { rows: [] },
@@ -93,17 +93,17 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
       ruleIds: [RULE_OK, RULE_FAILS],
     });
 
-    expect(lastRunOf(RULE_OK)).toEqual({ status: 'success', at: outcome.summary.finishedAt });
-    expect(lastRunOf(RULE_FAILS)).toEqual({ status: 'failed', at: outcome.summary.finishedAt });
+    expect(await lastRunOf(RULE_OK)).toEqual({ status: 'success', at: outcome.summary.finishedAt });
+    expect(await lastRunOf(RULE_FAILS)).toEqual({ status: 'failed', at: outcome.summary.finishedAt });
   });
 
   it('a rule excluded from this scan by opts.ruleIds keeps its prior last-run status untouched', async () => {
-    const category = getCategory('security')!;
+    const category = (await getCategory('security'))!;
     await runCategoryScan(category, {
       ctx: makeCtx({ [MARKER_OK]: { rows: [] } }),
       ruleIds: [RULE_OK], // RULE_OUT_OF_SCOPE is deliberately not included
     });
 
-    expect(lastRunOf(RULE_OUT_OF_SCOPE)).toEqual({ status: 'success', at: '2026-01-01T00:00:00.000Z' });
+    expect(await lastRunOf(RULE_OUT_OF_SCOPE)).toEqual({ status: 'success', at: '2026-01-01T00:00:00.000Z' });
   });
 });

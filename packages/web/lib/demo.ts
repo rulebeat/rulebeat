@@ -1,5 +1,5 @@
 import { isDemoEnv } from './demo-env';
-import { getMetaSync as getMeta, setMetaSync as setMeta } from './db/meta'; // sync SQLite-only until #73 Phase 2
+import { getMeta, setMeta } from './db/meta';
 
 export { isDemoEnv } from './demo-env';
 
@@ -16,8 +16,8 @@ const DEMO_STAMP_KEY = 'demo-mode-v1';
 export const DEMO_VISITOR_ID = 'demo-visitor';
 
 // `isDemoMode()` is called on every guarded request (auth, credential resolution, page gates), so
-// the stamp is cached after the first read rather than hitting SQLite every time. Nothing in the
-// product ever removes the stamp once written, so there is no invalidation path to build.
+// the stamp is cached after the first read rather than hitting the database every time. Nothing in
+// the product ever removes the stamp once written, so there is no invalidation path to build.
 let cachedStamped: boolean | null = null;
 
 /**
@@ -32,15 +32,15 @@ let cachedStamped: boolean | null = null;
  * is set by anything in the running app; only `scripts/generate-demo.ts` writes the stamp, and only
  * a deployer sets the environment variable.
  */
-export function isDemoMode(): boolean {
+export async function isDemoMode(): Promise<boolean> {
   if (!isDemoEnv()) return false;
   if (cachedStamped !== null) return cachedStamped;
-  return (cachedStamped = getMeta(DEMO_STAMP_KEY) !== null);
+  return (cachedStamped = (await getMeta(DEMO_STAMP_KEY)) !== null);
 }
 
 /** Called by the generator once the synthetic estate is fully written — never by the running app. */
-export function stampDemoDatabase(): void {
-  setMeta(DEMO_STAMP_KEY, '1');
+export async function stampDemoDatabase(): Promise<void> {
+  await setMeta(DEMO_STAMP_KEY, '1');
   cachedStamped = null;
 }
 
