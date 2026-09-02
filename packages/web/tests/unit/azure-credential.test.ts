@@ -355,6 +355,19 @@ describe('connection status', () => {
     expect(status.source).toBe('stored');
   });
 
+  it('reports the host chain (managed identity or az login) as configured but not environment-managed', async () => {
+    // Only the tenant is set: the managed-identity shape on Azure, or a developer's `az login`.
+    // The UI has to treat this as "nothing to type" without claiming the environment supplies a
+    // credential, because it does not (issue #89).
+    process.env.AZURE_TENANT_ID = TENANT;
+    const status = await getAzureConnectionStatus();
+    expect(status.configured).toBe(true);
+    expect(status.source).toBe('chain');
+    expect(status.managedByEnv).toBe(false);
+    expect(status.tenantId).toBe(TENANT);
+    expect(status.clientId).toBeNull();
+  });
+
   it('reports an unreadable stored secret as not configured, and says why', async () => {
     await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
     const original = process.env.RULEBEAT_ENCRYPTION_KEY;
