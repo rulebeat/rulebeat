@@ -74,3 +74,5 @@ appending.
 **A new execution backend gets its own engine, not a branch inside the shared one.** `graph-runner.ts` staying separate from `runner.ts` kept ARG's ARM-shaped assumptions off a backend that doesn't share them, and made per-rule failure isolation a property of the engine itself rather than a branch someone could forget to wrap.
 
 **User-facing copy must not read as AI-written.** No em dashes joining clauses, no hedging filler, no rule-of-three adjective lists. Don't default a status indicator to a permanently-visible colored box for the normal case. Reserve full callouts for problems or actionable detail.
+
+**Nothing in a branch name, commit trailer, pull request body or issue identifies a tool, a session, a person or an environment.** A tool-prefixed branch carrying an environment name, plus `Claude-Session:` and tool `Co-Authored-By` trailers, reached the public repo because the agent harness suggested them and the rule was not written down. See [`../how-changes-are-made.md`](../how-changes-are-made.md#branches-commits-and-what-becomes-public).
