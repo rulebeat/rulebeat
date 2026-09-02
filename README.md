@@ -167,8 +167,8 @@ To see it without an Azure tenant at all, run [demo mode](docs/public/demo-mode.
 The app binds to `127.0.0.1` on purpose, because RuleBeat holds a live Azure read credential; to
 reach it from another machine put a reverse proxy with TLS in front
 ([configure.md](docs/public/configure.md#exposing-it-beyond-localhost)). Docker Compose, upgrading,
-backup, the optional PostgreSQL backend, and building from source are all in
-[`docs/public/install.md`](docs/public/install.md).
+backup, the optional [PostgreSQL backend](docs/public/install.md#run-it-on-postgresql), and
+building from source are all in [`docs/public/install.md`](docs/public/install.md).
 
 ## Connect Azure
 
