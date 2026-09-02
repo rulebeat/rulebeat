@@ -1,15 +1,18 @@
-# Tells rulebeat/website that something it mirrors has changed, so its
+# Tells rulebeat/website that public media it mirrors has changed, so its
 # sync-content.yml workflow can pull the change and redeploy within minutes.
 # No schedule anywhere: the website syncs exactly when this repo produces
 # something new, and a quiet week produces zero runs on either side.
 #
-# Two triggers, two event types:
-# - "Publish image" completing successfully -> release-published. That
-#   workflow is what makes the pinned :vX.Y.Z image pullable, so firing here
-#   (rather than on the GitHub Release being created) means the website
-#   never advertises an install command that does not work yet.
-# - A push to main touching the public screenshots or the brand kit
-#   -> product-content, so the website's synced copies stay current.
+# One trigger, one event type: a push to main touching the public
+# screenshots or the brand kit -> product-content, so the website's synced
+# copies stay current.
+#
+# The release-published dispatch does NOT live here. It used to, behind a
+# workflow_run trigger on "Publish image" completing, but that trigger can
+# never fire: tag-release.yml starts Publish image with the built-in
+# GITHUB_TOKEN, and GitHub's anti-recursion rule stops a GITHUB_TOKEN-started
+# run's completion from emitting workflow_run events. It now fires from the
+# end of publish-image.yml itself, after promotion succeeds.
 #
 # Needs the WEBSITE_SYNC_TOKEN Actions secret: a fine-grained PAT with
 # access to rulebeat/website only, permission Contents: read and write
@@ -18,9 +21,6 @@
 name: Notify website
 
 on:
-  workflow_run:
-    workflows: ['Publish image']
-    types: [completed]
   push:
     branches: [main]
     paths:
@@ -32,12 +32,11 @@ permissions: {}
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Dispatch sync to rulebeat/website
         env:
           TOKEN: ${{ secrets.WEBSITE_SYNC_TOKEN }}
-          EVENT_TYPE: ${{ github.event_name == 'push' && 'product-content' || 'release-published' }}
+          EVENT_TYPE: product-content
         run: |
           curl -sS --fail -X POST \
             -H "Authorization: Bearer $TOKEN" \
