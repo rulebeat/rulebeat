@@ -21,6 +21,7 @@ credential choices described in [Azure scanning credential](#azure-scanning-cred
 | Variable | Required when | What it does | Value |
 |---|---|---|---|
 | **Database** | | | |
+| `RULEBEAT_DATABASE_BACKEND` | No volume (set it to `postgres`) | Names the backend on purpose. `postgres` refuses to start when the connection string is missing, so a lost variable can never silently boot SQLite inside the container; `sqlite` refuses a connection string. Unset selects by the URL alone. | `postgres` or `sqlite`. [Details](#database-backend) |
 | `RULEBEAT_DATABASE_URL` | Postgres mode | Stores everything in the PostgreSQL database named here instead of the built-in SQLite file. The one setting with no console equivalent. | `postgres://user:password@host:5432/rulebeat`, plus `?sslmode=require` when the server enforces TLS. [Details](#database-backend) |
 | `RULEBEAT_DATABASE_URL_FILE` | Never | The same connection string read from a mounted file, keeping the password out of the environment. | A file path |
 | **Session and encryption** | | | |
@@ -59,6 +60,9 @@ files RuleBeat would otherwise generate on first boot do not survive a restart. 
 replace them:
 
 - `RULEBEAT_DATABASE_URL`, because SQLite needs a local disk and a file share is not one.
+- `RULEBEAT_DATABASE_BACKEND=postgres`, so that if the URL ever goes missing from the running
+  revision the app refuses to start instead of quietly running on a SQLite file that the next
+  restart deletes. That is exactly how one install lost its first day of scans.
 - `AUTH_SECRET`, or every restart signs everyone out.
 - `RULEBEAT_ENCRYPTION_KEY`, or every restart makes every credential stored through the console
   unreadable.
@@ -215,6 +219,19 @@ where its database is before it can read any settings.
 `RULEBEAT_DATABASE_URL_FILE` mounts the connection string as a file, the same `*_FILE` convention
 as the secrets above, since the string carries the database password. It is read once at startup,
 so replacing the file needs a restart.
+
+`RULEBEAT_DATABASE_BACKEND` names the backend on purpose, with the values `postgres` and
+`sqlite`. It exists because, to the app, "the connection string is missing" and "I chose SQLite"
+look the same. On a platform with no persistent volume that difference is the whole database: a
+Container Apps install whose URL never reached the running revision booted SQLite inside the
+container, worked, and lost everything on the first restart. With `postgres` set, an empty
+connection string is a startup failure with the reason in the log, and the platform's restart
+loop makes it visible. With `sqlite` set, a connection string is a contradiction and also fails.
+Unset keeps selection by the URL alone, so an empty environment still boots SQLite.
+
+Whichever way it was chosen, the boot log prints one `[startup] storage:` line naming the
+backend, and the Diagnostics page shows the same under System, with the host, port, database
+and user for Postgres or the file path for SQLite. The password is never shown.
 
 Switching backends is a fresh install: nothing is migrated between SQLite and Postgres in either
 direction. The supported topology stays one replica either way, and a stateless no-volume

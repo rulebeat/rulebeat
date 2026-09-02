@@ -25,6 +25,9 @@ if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 let sqliteHandle: ReturnType<typeof openDatabase> | null = null;
 let sqliteDrizzle: BetterSQLite3Database<typeof schema> | null = null;
+
+/** The SQLite file this process opened, for the boot log and Diagnostics. Null in Postgres mode. */
+export let sqliteFilePath: string | null = null;
 let pgDrizzle: NodePgDatabase<typeof pgSchema> | null = null;
 let ready: Promise<void> = Promise.resolve();
 
@@ -60,6 +63,7 @@ if (dbKind === 'pg') {
   // real tenant's data: the process never even opens rulebeat.db.
   const DEFAULT_DB_NAME = isDemoEnv() ? 'demo.db' : 'rulebeat.db';
   const DB_PATH = process.env.RULEBEAT_DB_PATH ?? join(DATA_DIR, DEFAULT_DB_NAME);
+  sqliteFilePath = DB_PATH;
 
   if (DB_PATH !== ':memory:') {
     const dbDir = dirname(DB_PATH);

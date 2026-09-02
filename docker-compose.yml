@@ -82,6 +82,9 @@ services:
       #   docker compose --profile postgres up -d
       # Switching backends is a fresh install: nothing is migrated between SQLite and Postgres.
       RULEBEAT_DATABASE_URL: ${RULEBEAT_DATABASE_URL:-}
+      # Optional here, required on a host with no volume: "postgres" makes a missing URL a startup
+      # failure instead of a silent SQLite fallback; "sqlite" refuses a URL. See configure.md.
+      RULEBEAT_DATABASE_BACKEND: ${RULEBEAT_DATABASE_BACKEND:-}
 
       # Encrypts credentials entered through the UI. Generated on first boot into the data volume if
       # unset — set it here to keep the key off the volume. Back it up either way; see .env.example.
