@@ -116,9 +116,18 @@ Then let RuleBeat reach it: private access on your VNet, or public access with a
 the app's outbound IP. Azure enforces TLS, so append `?sslmode=require` to the connection string.
 
 **A Postgres container next to RuleBeat.** The single-machine self-host shape. One Compose file
-describes both containers (two services in one file, never a file per container). Save this as
-`docker-compose.yml`, choose a strong password for both placeholders, and run
-`docker compose up -d`:
+describes both containers (two services in one file, never a file per container). The password
+does not belong in that file: anyone who can read the file, or a commit of it, would have the
+database password. Instead, create a `.env` file next to it holding the one secret, and keep
+`.env` out of version control:
+
+```
+POSTGRES_PASSWORD=<something long and random>
+```
+
+Then save this as `docker-compose.yml` and run `docker compose up -d`. Compose reads `.env`
+automatically and substitutes `${POSTGRES_PASSWORD}` in both places, so the compose file never
+contains the password and is safe to share or commit:
 
 ```yaml
 services:
@@ -129,7 +138,7 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       AUTH_URL: http://localhost:3000
-      RULEBEAT_DATABASE_URL: postgres://rulebeat:<password>@postgres:5432/rulebeat
+      RULEBEAT_DATABASE_URL: postgres://rulebeat:${POSTGRES_PASSWORD}@postgres:5432/rulebeat
     volumes:
       - rulebeat-data:/app/packages/web/data
     depends_on:
@@ -141,7 +150,7 @@ services:
     environment:
       POSTGRES_USER: rulebeat
       POSTGRES_DB: rulebeat
-      POSTGRES_PASSWORD: <password>
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - rulebeat-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -160,6 +169,12 @@ Compose puts both containers on one network, so the app reaches the database at 
 same service behind an optional profile: set `POSTGRES_PASSWORD` and `RULEBEAT_DATABASE_URL` in
 `.env` and start with `docker compose --profile postgres up -d`; a plain `docker compose up`
 stays on SQLite.
+
+Either way the password still reaches the containers as an environment value, which anyone who can
+run `docker inspect` on the host can read. To keep it out of the environment entirely, mount it as
+a Docker secret and use the file variants both sides support: `RULEBEAT_DATABASE_URL_FILE` for
+RuleBeat ([configure.md](configure.md#database-backend)) and `POSTGRES_PASSWORD_FILE` for the
+postgres image.
 
 Without Compose, the same pair works with `docker run`, but the two containers must share a Docker
 network and address each other by container name, because `localhost` inside the RuleBeat container
@@ -180,6 +195,10 @@ docker run -d --name rulebeat --restart unless-stopped --network rulebeat-net \
   -e "RULEBEAT_DATABASE_URL=postgres://rulebeat:<password>@rulebeat-postgres:5432/rulebeat" \
   ghcr.io/rulebeat/rulebeat:0.3.0
 ```
+
+These inline `-e` values also land the password in your shell history, so treat this pair as a
+quick trial and prefer the Compose file with `.env`, or the `*_FILE` secrets, for anything that
+stays running.
 
 **A server you already run.** Any reachable PostgreSQL works: another VM, another cloud, a shared
 cluster. Create an empty database and a user that owns it, and add `?sslmode=require` to the
@@ -203,9 +222,10 @@ generated first password still live under `data/` unless you supply them by envi
 it mounted, or go fully stateless with the three variables described in
 [Deployment topology](#deployment-topology). Backup moves from copying one file to `pg_dump`
 ([How do I back it up?](faq.md#how-do-i-back-it-up)). Switching backends later is a fresh install:
-nothing is migrated between SQLite and Postgres in either direction. To keep the database password
-out of plain environment variables, `RULEBEAT_DATABASE_URL_FILE` mounts the connection string as a
-file ([configure.md](configure.md#database-backend)).
+nothing is migrated between SQLite and Postgres in either direction. Anywhere this command is saved rather
+than typed once (a script, a unit file, a pipeline), prefer `RULEBEAT_DATABASE_URL_FILE`, which
+mounts the connection string as a file instead of putting the password in the environment
+([configure.md](configure.md#database-backend)).
 
 ## First sign-in
 
