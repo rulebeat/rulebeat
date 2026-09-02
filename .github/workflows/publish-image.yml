@@ -149,3 +149,22 @@ jobs:
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "$t"
           done
+
+      # The website's release sync is dispatched from here, not from a workflow_run trigger on
+      # this workflow finishing: tag-release.yml starts this workflow with the built-in
+      # GITHUB_TOKEN, and GitHub's anti-recursion rule means a GITHUB_TOKEN-started run's
+      # completion never emits the workflow_run event, so a listener downstream would simply
+      # never fire (and never did). The WEBSITE_SYNC_TOKEN PAT is not subject to that rule.
+      # Runs only for a real version tag, and only after promotion and signature verification
+      # succeeded, so the website never advertises an install command that does not work yet.
+      # notify-website.yml still owns the product-content dispatch for screenshots and brand.
+      - name: Notify website (release-published)
+        if: github.ref_type == 'tag'
+        env:
+          TOKEN: ${{ secrets.WEBSITE_SYNC_TOKEN }}
+        run: |
+          curl -sS --fail -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/rulebeat/website/dispatches \
+            -d '{"event_type":"release-published"}'
