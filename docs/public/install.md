@@ -11,7 +11,7 @@ bash or zsh:
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
   -v rulebeat-data:/app/packages/web/data \
   -e AUTH_URL=http://localhost:3000 \
-  ghcr.io/rulebeat/rulebeat:0.2.4
+  ghcr.io/rulebeat/rulebeat:0.3.0
 ```
 
 PowerShell:
@@ -20,7 +20,7 @@ PowerShell:
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
   -v rulebeat-data:/app/packages/web/data `
   -e AUTH_URL=http://localhost:3000 `
-  ghcr.io/rulebeat/rulebeat:0.2.4
+  ghcr.io/rulebeat/rulebeat:0.3.0
 ```
 
 Confirm it reports healthy (a few seconds to move past `starting`), then continue with
@@ -47,7 +47,7 @@ Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.2.4
+    image: ghcr.io/rulebeat/rulebeat:0.3.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -117,7 +117,7 @@ in the console, so a template deployment never falls back to a setup screen. The
 A running instance shows its version in the sidebar footer and on the Diagnostics page; the
 [releases page](https://github.com/rulebeat/rulebeat/releases) shows the newest and what changed.
 
-1. `docker pull ghcr.io/rulebeat/rulebeat:0.2.4`
+1. `docker pull ghcr.io/rulebeat/rulebeat:0.3.0`
 2. `docker stop rulebeat && docker rm rulebeat` (the data volume is untouched)
 3. Start the new one with the same `docker run` command as the install above.
 
