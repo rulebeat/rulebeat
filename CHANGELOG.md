@@ -8,6 +8,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
+- The sign-in page shows the running version under the sign-in panel, the same value the sidebar footer and Diagnostics show after signing in, so checking that an upgrade took no longer needs a sign-in first (issue #92).
 - `RULEBEAT_DATABASE_BACKEND` names the storage backend on purpose: `postgres` refuses to start when the connection string is missing, with the reason in the log, instead of silently booting a SQLite database inside the container that the next restart deletes; `sqlite` refuses a connection string. Unset keeps today's selection by `RULEBEAT_DATABASE_URL`, so existing installs are unaffected. The boot log now prints one `[startup] storage:` line naming the active backend, and the Diagnostics page shows the same under System, with host, port, database and user for Postgres or the file path for SQLite, never the password (issue #91).
 
 ### Changed
