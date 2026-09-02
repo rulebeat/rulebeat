@@ -15,7 +15,9 @@ name: PR checks
 # read-only token here, which is all this needs -- it makes no API writes at all.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    # `edited` is here for the Public footprint job, which reads the PR description: fixing a
+    # description that carried an attribution footer must re-run the check without a push.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
   # prepare-release.yml dispatches this against its own release PR. A GITHUB_TOKEN-created PR does
   # not reliably get automatic workflow runs, and once "Changelog entry" is a required check, a
   # release PR with no run at all can never merge.
