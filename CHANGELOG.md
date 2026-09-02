@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-02
+
 ### Added
 
 - The sign-in page shows the running version under the sign-in panel, the same value the sidebar footer and Diagnostics show after signing in, so checking that an upgrade took no longer needs a sign-in first (issue #92).
@@ -220,7 +222,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/rulebeat/rulebeat/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rulebeat/rulebeat/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/rulebeat/rulebeat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rulebeat/rulebeat/compare/v0.2.2...v0.2.3

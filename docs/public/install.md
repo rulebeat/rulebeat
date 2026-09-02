@@ -11,7 +11,7 @@ bash or zsh:
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
   -v rulebeat-data:/app/packages/web/data \
   -e AUTH_URL=http://localhost:3000 \
-  ghcr.io/rulebeat/rulebeat:0.3.0
+  ghcr.io/rulebeat/rulebeat:0.4.0
 ```
 
 PowerShell:
@@ -20,7 +20,7 @@ PowerShell:
 docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
   -v rulebeat-data:/app/packages/web/data `
   -e AUTH_URL=http://localhost:3000 `
-  ghcr.io/rulebeat/rulebeat:0.3.0
+  ghcr.io/rulebeat/rulebeat:0.4.0
 ```
 
 Confirm it reports healthy (a few seconds to move past `starting`), then continue with
@@ -47,7 +47,7 @@ Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.3.0
+    image: ghcr.io/rulebeat/rulebeat:0.4.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -137,7 +137,7 @@ contains the password and is safe to share or commit:
 ```yaml
 services:
   rulebeat:
-    image: ghcr.io/rulebeat/rulebeat:0.3.0
+    image: ghcr.io/rulebeat/rulebeat:0.4.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -198,7 +198,7 @@ docker run -d --name rulebeat --restart unless-stopped --network rulebeat-net \
   -v rulebeat-data:/app/packages/web/data \
   -e AUTH_URL=http://localhost:3000 \
   -e "RULEBEAT_DATABASE_URL=postgres://rulebeat:<password>@rulebeat-postgres:5432/rulebeat" \
-  ghcr.io/rulebeat/rulebeat:0.3.0
+  ghcr.io/rulebeat/rulebeat:0.4.0
 ```
 
 These inline `-e` values also land the password in your shell history, so treat this pair as a
@@ -219,7 +219,7 @@ docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
   -v rulebeat-data:/app/packages/web/data \
   -e AUTH_URL=http://localhost:3000 \
   -e "RULEBEAT_DATABASE_URL=postgres://rulebeat:<password>@<host>:5432/rulebeat?sslmode=require" \
-  ghcr.io/rulebeat/rulebeat:0.3.0
+  ghcr.io/rulebeat/rulebeat:0.4.0
 ```
 
 The data volume stays useful in Postgres mode: the auth secret, the encryption key and the
@@ -254,7 +254,7 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
 
 3. **Create the Container App.** Container Apps, Create; a new environment is fine. On the Container
    tab choose image source "Docker Hub or other registries", image type Public, and enter the image
-   `ghcr.io/rulebeat/rulebeat:0.3.0`, which the portal splits into a registry login server of
+   `ghcr.io/rulebeat/rulebeat:0.4.0`, which the portal splits into a registry login server of
    `ghcr.io` and the rest as image and tag. Give it 1 vCPU and 2 GiB. Add these environment
    variables, using "Reference a secret" for the connection string so the password is stored as a
    Container Apps secret rather than a plain value:
@@ -337,7 +337,7 @@ in the console, so a template deployment never falls back to a setup screen. The
 A running instance shows its version in the sidebar footer and on the Diagnostics page; the
 [releases page](https://github.com/rulebeat/rulebeat/releases) shows the newest and what changed.
 
-1. `docker pull ghcr.io/rulebeat/rulebeat:0.3.0`
+1. `docker pull ghcr.io/rulebeat/rulebeat:0.4.0`
 2. `docker stop rulebeat && docker rm rulebeat` (the data volume is untouched)
 3. Start the new one with the same `docker run` command as the install above.
 
