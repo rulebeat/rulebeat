@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { CodeBlock } from '@/components/ui/code-block';
 import { FieldHint, Input, Label } from '@/components/ui/input';
-import type { AzureConnectionStatus, AzureCredentialSource } from '@/lib/azure-credential';
+import type { AzureConnectionStatus } from '@/lib/azure-credential';
+import { ambientCredentialCopy, credentialIsAmbient } from '@/lib/azure-connection-ui';
 import { redirectUriFor, isLoopbackIpOrigin, normalizeLoopbackOrigin } from '@/lib/redirect-uri';
 import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
 
@@ -14,11 +15,15 @@ import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
  * Onboarding step 1 — connect Azure.
  *
  * Two shapes, decided in the plan for this feature:
- *  - `managedByEnv`: the credential comes from environment variables. Rather than skipping this step
+ *  - ambient (`credentialIsAmbient`): the credential comes from environment variables, or from the
+ *    host itself as a managed identity or an `az login` session. Rather than skipping this step
  *    entirely (the launch plan's original wording), it renders a read-only confirmation with a
- *    Verify button — a template deployment whose service principal was never granted Reader
- *    authenticates fine and sees zero subscriptions, and skipping the step means that install only
- *    discovers the problem at 3am on its first scheduled scan. One round trip, one button.
+ *    Verify button: a template deployment whose service principal was never granted Reader, or a
+ *    managed identity with no role assignment, authenticates fine and sees zero subscriptions, and
+ *    skipping the step means that install only discovers the problem at 3am on its first scheduled
+ *    scan. One round trip, one button. The host-chain case used to fall through to the form below
+ *    because the branch keyed on `managedByEnv` alone, which left a managed-identity install with
+ *    nothing it could type and a Continue button that never enabled (issue #89).
  *  - otherwise: the same tenant/client/secret form as Settings → Azure connection, saved through the
  *    same verify-before-persist endpoint.
  */
@@ -154,14 +159,14 @@ export function ConnectStep({
           </Callout>
         )}
 
-        {status.managedByEnv ? (
+        {credentialIsAmbient(status) ? (
           <>
-            {/* Not a warning: a credential coming from the environment is the
+            {/* Not a warning: a credential coming from the environment or the host is the
                 recommended shape, so it states the fact on a plain ground. */}
             <div className="space-y-1.5 border border-border bg-surface-sunken px-3.5 py-3 text-xs">
               <div className="flex items-start gap-2 text-ink-2">
                 <Lock className="mt-0.5 size-3.5 shrink-0 text-ink-muted" />
-                <span>{ENV_SOURCE_LABEL[status.source ?? 'chain']} is supplying this credential from the environment.</span>
+                <span>{ambientCredentialCopy(status)}</span>
               </div>
               {status.tenantId && (
                 <p className="break-all font-mono text-ink">
@@ -274,12 +279,3 @@ export function ConnectStep({
     </Card>
   );
 }
-
-const ENV_SOURCE_LABEL: Record<AzureCredentialSource, string> = {
-  'env-federated': 'Workload identity federation',
-  'env-certificate': 'A service principal certificate',
-  'env-secret-file': 'A service principal secret (mounted file)',
-  'env-secret': 'A service principal secret (environment variable)',
-  stored: 'A credential stored in RuleBeat',
-  chain: 'Managed identity or Azure CLI sign-in',
-};

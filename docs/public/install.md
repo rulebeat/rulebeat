@@ -278,10 +278,10 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
    ([Microsoft Entra ID sign-in](configure.md#microsoft-entra-id-sign-in-optional)).
 
 5. **First sign-in.** Open the application URL and sign in as `admin@rulebeat.local` with the third
-   value from step 2; it forces a change. The wizard's Connect Azure step asks for a service
-   principal, and with a managed identity there is none to enter, so choose Skip for now. Settings
-   → Azure connection then reports "Managed identity or Azure CLI sign-in" as the source, and a
-   first run from the Scans page confirms it reaches your subscriptions.
+   value from step 2; it forces a change. The wizard's Connect Azure step recognises the managed
+   identity and shows it with a Verify button instead of a service principal form: press Verify
+   to confirm it reaches your subscriptions, then Continue through the remaining steps to the
+   first scan.
 
 Directory rules need the Microsoft Graph `Application.Read.All` permission on that identity. The
 portal cannot grant an application permission to a managed identity, and the `az ad app permission`
