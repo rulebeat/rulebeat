@@ -40,7 +40,7 @@ than `127.0.0.1` because Entra ID accepts a sign-in redirect URI only over HTTPS
 Everything (the SQLite database, the generated admin password, the auth secret, the encryption key)
 lives in the `rulebeat-data` named volume. Back that up, not the container. To store everything in
 your own PostgreSQL instead of the bundled SQLite, see
-[Deployment topology](#deployment-topology).
+[Run it on PostgreSQL](#run-it-on-postgresql).
 
 Prefer Compose? Save this as `docker-compose.yml` and run `docker compose up -d`:
 
@@ -53,6 +53,9 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       AUTH_URL: http://localhost:3000
+      # To use PostgreSQL instead of the bundled SQLite, add the connection string here;
+      # see "Run it on PostgreSQL" below.
+      # RULEBEAT_DATABASE_URL: postgres://rulebeat:<password>@<host>:5432/rulebeat
     volumes:
       - rulebeat-data:/app/packages/web/data
 volumes:
@@ -76,6 +79,133 @@ release keeps its own version tag on the
 [releases page](https://github.com/rulebeat/rulebeat/releases). Every published image is signed and
 carries an SBOM and build provenance you can verify yourself; see
 [Verifying a published image](security.md#verifying-a-published-image).
+
+## Run it on PostgreSQL
+
+The quick start above needs nothing from this section: SQLite is the default and the right choice
+for a typical single-host install. Set `RULEBEAT_DATABASE_URL` to a `postgres://` connection string
+and RuleBeat stores everything in a PostgreSQL database you provide instead. RuleBeat itself stays
+one container either way; Postgres is a database it connects to, not a second RuleBeat.
+
+### Prepare the database
+
+RuleBeat needs an empty database and a user allowed to create tables in it, nothing more. On first
+boot it creates its schema and seeds the same built-in content a fresh SQLite install gets, with no
+extensions and no superuser involved. Any supported PostgreSQL release works; the examples here and
+RuleBeat's own CI use PostgreSQL 17. The connection string always has the same shape:
+
+```
+postgres://user:password@host:5432/rulebeat
+```
+
+Where the database runs is up to you. Three common homes for it:
+
+**Azure Database for PostgreSQL (managed).** The natural pairing when RuleBeat itself runs on Azure
+Container Apps, App Service or Container Instances, where SQLite mode cannot mount its volume (see
+[Deployment topology](#deployment-topology)). The smallest burstable tier is enough; RuleBeat
+writes a scan summary per run plus finding updates, not a stream. Create a flexible server with a
+database named `rulebeat`:
+
+```bash
+az postgres flexible-server create --resource-group <rg> --name <server-name> \
+  --tier Burstable --sku-name Standard_B1ms --database-name rulebeat \
+  --admin-user rulebeat --admin-password <password>
+```
+
+Then let RuleBeat reach it: private access on your VNet, or public access with a firewall rule for
+the app's outbound IP. Azure enforces TLS, so append `?sslmode=require` to the connection string.
+
+**A Postgres container next to RuleBeat.** The single-machine self-host shape. One Compose file
+describes both containers (two services in one file, never a file per container). Save this as
+`docker-compose.yml`, choose a strong password for both placeholders, and run
+`docker compose up -d`:
+
+```yaml
+services:
+  rulebeat:
+    image: ghcr.io/rulebeat/rulebeat:0.3.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      AUTH_URL: http://localhost:3000
+      RULEBEAT_DATABASE_URL: postgres://rulebeat:<password>@postgres:5432/rulebeat
+    volumes:
+      - rulebeat-data:/app/packages/web/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rulebeat
+      POSTGRES_DB: rulebeat
+      POSTGRES_PASSWORD: <password>
+    volumes:
+      - rulebeat-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rulebeat -d rulebeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  rulebeat-data:
+  rulebeat-pg-data:
+```
+
+Compose puts both containers on one network, so the app reaches the database at the hostname
+`postgres`. Building from source instead? The repo's own
+[`docker-compose.yml`](https://github.com/rulebeat/rulebeat/blob/main/docker-compose.yml) has the
+same service behind an optional profile: set `POSTGRES_PASSWORD` and `RULEBEAT_DATABASE_URL` in
+`.env` and start with `docker compose --profile postgres up -d`; a plain `docker compose up`
+stays on SQLite.
+
+Without Compose, the same pair works with `docker run`, but the two containers must share a Docker
+network and address each other by container name, because `localhost` inside the RuleBeat container
+is the container itself, not your machine:
+
+```bash
+docker network create rulebeat-net
+
+docker run -d --name rulebeat-postgres --restart unless-stopped --network rulebeat-net \
+  -v rulebeat-pg-data:/var/lib/postgresql/data \
+  -e POSTGRES_USER=rulebeat -e POSTGRES_DB=rulebeat -e POSTGRES_PASSWORD=<password> \
+  postgres:17
+
+docker run -d --name rulebeat --restart unless-stopped --network rulebeat-net \
+  -p 127.0.0.1:3000:3000 \
+  -v rulebeat-data:/app/packages/web/data \
+  -e AUTH_URL=http://localhost:3000 \
+  -e "RULEBEAT_DATABASE_URL=postgres://rulebeat:<password>@rulebeat-postgres:5432/rulebeat" \
+  ghcr.io/rulebeat/rulebeat:0.3.0
+```
+
+**A server you already run.** Any reachable PostgreSQL works: another VM, another cloud, a shared
+cluster. Create an empty database and a user that owns it, and add `?sslmode=require` to the
+connection string if the server enforces TLS.
+
+### Point RuleBeat at it
+
+For the managed and existing-server options, the install is the quick start command plus one
+variable (in PowerShell, swap the trailing `\` for a backtick):
+
+```bash
+docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
+  -v rulebeat-data:/app/packages/web/data \
+  -e AUTH_URL=http://localhost:3000 \
+  -e "RULEBEAT_DATABASE_URL=postgres://rulebeat:<password>@<host>:5432/rulebeat?sslmode=require" \
+  ghcr.io/rulebeat/rulebeat:0.3.0
+```
+
+The data volume stays useful in Postgres mode: the auth secret, the encryption key and the
+generated first password still live under `data/` unless you supply them by environment, so keep
+it mounted, or go fully stateless with the three variables described in
+[Deployment topology](#deployment-topology). Backup moves from copying one file to `pg_dump`
+([How do I back it up?](faq.md#how-do-i-back-it-up)). Switching backends later is a fresh install:
+nothing is migrated between SQLite and Postgres in either direction. To keep the database password
+out of plain environment variables, `RULEBEAT_DATABASE_URL_FILE` mounts the connection string as a
+file ([configure.md](configure.md#database-backend)).
 
 ## First sign-in
 
@@ -135,9 +265,8 @@ The supported shape is **one replica**, with either of two storage backends. The
 in the data volume: one container, one volume, no external database, exactly what the quick start
 above runs. Setting `RULEBEAT_DATABASE_URL` to a `postgres://` connection string switches storage
 to a PostgreSQL database you provide instead: Azure Database for PostgreSQL, any other server you
-run, or the optional `postgres` profile in the repo's
-[`docker-compose.yml`](https://github.com/rulebeat/rulebeat/blob/main/docker-compose.yml)
-(`docker compose --profile postgres up -d`) for a single-machine self-host. RuleBeat itself stays
+run, or a Postgres container next to RuleBeat for a single-machine self-host. The worked
+commands for each are in [Run it on PostgreSQL](#run-it-on-postgresql). RuleBeat itself stays
 one container in both modes; Postgres is a database it connects to, not a second RuleBeat.
 
 On first boot against an empty Postgres database RuleBeat creates its schema and seeds the same
