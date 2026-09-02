@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- The sign-in page shows the running version under the sign-in panel, the same value the sidebar footer and Diagnostics show after signing in, so checking that an upgrade took no longer needs a sign-in first (issue #92).
+
 ### Changed
 
 - Every environment variable RuleBeat reads is now explained once, in a reference table at the top of `docs/public/configure.md` with a "required when" column, and `.env.example` is a short index that points into that table instead of repeating the explanations. `docs/public/install.md` gains an Azure Container Apps walkthrough for the portal that names the variables a deployment with no data volume must set (`AUTH_SECRET`, `RULEBEAT_ENCRYPTION_KEY`, `RULEBEAT_INITIAL_PASSWORD`) and how to produce the values without a local terminal. `SCAN_HISTORY_LIMIT` was the one variable missing from `.env.example` and is now listed.

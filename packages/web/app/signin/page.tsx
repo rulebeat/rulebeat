@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import { getSignInStatus } from '@/lib/sign-in-config';
+import { getAppVersion } from '@/lib/version';
 import { SignInClient } from './signin-client';
 
 export default async function SignInPage() {
@@ -19,6 +20,7 @@ export default async function SignInPage() {
       <SignInClient
         ssoConfigured={status.configured}
         showLocalForm={showLocalForm}
+        version={getAppVersion()}
       />
     </Suspense>
   );

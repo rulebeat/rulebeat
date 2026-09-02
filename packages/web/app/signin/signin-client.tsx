@@ -17,10 +17,12 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export function SignInClient({
-  ssoConfigured, showLocalForm,
+  ssoConfigured, showLocalForm, version,
 }: {
   ssoConfigured: boolean;
   showLocalForm: boolean;
+  /** Shown under the panel so an operator can read the running version without signing in. */
+  version: string;
 }) {
   const searchParams = useSearchParams();
   const oauthError = searchParams.get('error');
@@ -111,6 +113,11 @@ export function SignInClient({
             <br />Nothing is synced to a service RuleBeat operates.
           </p>
         </div>
+
+        {/* Same style and source as the sidebar footer, so the version an operator reads here is
+            the one they would read after signing in. Nothing else about the deployment belongs on
+            this unauthenticated page (issue #92). */}
+        <p className="label-grid mt-6 text-center" data-testid="signin-version">RuleBeat v{version}</p>
       </div>
     </div>
   );
