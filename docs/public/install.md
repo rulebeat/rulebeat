@@ -114,6 +114,11 @@ az postgres flexible-server create --resource-group <rg> --name <server-name> \
 
 Then let RuleBeat reach it: private access on your VNet, or public access with a firewall rule for
 the app's outbound IP. Azure enforces TLS, so append `?sslmode=require` to the connection string.
+Those same platforms have no data volume, so alongside the URL set `AUTH_SECRET`,
+`RULEBEAT_ENCRYPTION_KEY` and `RULEBEAT_INITIAL_PASSWORD`, or the first restart signs everyone
+out and loses the generated keys
+([Running with no persistent volume](configure.md#running-with-no-persistent-volume)).
+[Azure Container Apps](#azure-container-apps) below walks through the whole thing in the portal.
 
 **A Postgres container next to RuleBeat.** The single-machine self-host shape. One Compose file
 describes both containers (two services in one file, never a file per container). The password
@@ -227,6 +232,65 @@ than typed once (a script, a unit file, a pipeline), prefer `RULEBEAT_DATABASE_U
 mounts the connection string as a file instead of putting the password in the environment
 ([configure.md](configure.md#database-backend)).
 
+### Azure Container Apps
+
+The portal walkthrough for the managed pairing: RuleBeat on Container Apps, its database on Azure
+Database for PostgreSQL, no volume, and no local terminal needed. The shape suits a dev or team
+tenant; a production install would put the database on private access and TLS in front of the
+app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
+
+1. **Create the database.** Azure Database for PostgreSQL flexible servers, Create. Workload type
+   Development, PostgreSQL 17, compute Burstable `Standard_B1ms`, authentication PostgreSQL only,
+   admin user `rulebeat` with a long password. Under Networking choose Public access and tick
+   "Allow public access from any Azure service within Azure to this server". Once it deploys, open
+   Settings, Databases, Add and create a database named `rulebeat`. The portal does not create it
+   for you.
+
+2. **Make three random values.** Open Cloud Shell from the portal's top bar, choose Bash, and run
+   `openssl rand -base64 32` three times, or use a password manager's generator. They become
+   `AUTH_SECRET`, `RULEBEAT_ENCRYPTION_KEY` and `RULEBEAT_INITIAL_PASSWORD`
+   ([Making a random value](configure.md#making-a-random-value)). Keep the first two somewhere
+   durable; losing the encryption key makes every credential saved through the console unreadable.
+
+3. **Create the Container App.** Container Apps, Create; a new environment is fine. On the Container
+   tab choose image source "Docker Hub or other registries", image type Public, and enter the image
+   `ghcr.io/rulebeat/rulebeat:0.3.0`, which the portal splits into a registry login server of
+   `ghcr.io` and the rest as image and tag. Give it 1 vCPU and 2 GiB. Add these environment
+   variables, using "Reference a secret" for the connection string so the password is stored as a
+   Container Apps secret rather than a plain value:
+
+   | Name | Value |
+   |---|---|
+   | `RULEBEAT_DATABASE_URL` | `postgres://rulebeat:<password>@<server-name>.postgres.database.azure.com:5432/rulebeat?sslmode=require` |
+   | `AUTH_SECRET` | first value from step 2 |
+   | `RULEBEAT_ENCRYPTION_KEY` | second value from step 2 |
+   | `RULEBEAT_INITIAL_PASSWORD` | third value from step 2 |
+   | `AZURE_TENANT_ID` | the tenant to scan |
+
+   On the Ingress tab enable ingress, accept traffic from anywhere, HTTP, target port 3000. Create.
+
+4. **Settings on the new app.** Under Scale set minimum and maximum replicas both to 1: RuleBeat
+   runs exactly one replica, and scaling to zero would stop the scheduler. Under Identity turn on
+   System assigned, then Azure role assignments, Add: scope Subscription, role Reader, once per
+   subscription to scan. RuleBeat picks that identity up with nothing else set. When you want
+   Microsoft sign-in, add `AUTH_URL` set to the application URL from the Overview page as a new
+   revision, and register the redirect URI under it
+   ([Microsoft Entra ID sign-in](configure.md#microsoft-entra-id-sign-in-optional)).
+
+5. **First sign-in.** Open the application URL and sign in as `admin@rulebeat.local` with the third
+   value from step 2; it forces a change. The wizard's Connect Azure step asks for a service
+   principal, and with a managed identity there is none to enter, so choose Skip for now. Settings
+   → Azure connection then reports "Managed identity or Azure CLI sign-in" as the source, and a
+   first run from the Scans page confirms it reaches your subscriptions.
+
+Directory rules need the Microsoft Graph `Application.Read.All` permission on that identity. The
+portal cannot grant an application permission to a managed identity, and the `az ad app permission`
+commands in [`permissions.md`](permissions.md) target an app registration, so on a managed
+identity it takes a Graph app-role assignment through PowerShell or the Graph API. Skip Directory
+rules until then; every Resource Graph rule works with Reader alone. The generated first password
+is never involved here because step 2 chose one, so the `docker exec` step under
+[First sign-in](#first-sign-in) does not apply.
+
 ## First sign-in
 
 1. Read the generated admin password. It is written to `data/initial-password.txt` inside the data
@@ -314,7 +378,9 @@ every stored secret unreadable, so either keep the volume mounted or set the two
 file matters on a truly volume-less deployment: the generated first admin password is written to
 `data/initial-password.txt` inside the container, so read it with `docker exec` (or your platform's
 console) before the container is replaced, or set `RULEBEAT_INITIAL_PASSWORD` so there is nothing
-generated to lose.
+generated to lose. The four variables, what each one replaces, and how to produce the values are
+in [Running with no persistent volume](configure.md#running-with-no-persistent-volume); the
+portal steps are under [Azure Container Apps](#azure-container-apps).
 
 **Both modes run a single replica.** Postgres removes SQLite's single-writer constraint, but the
 background scheduler has no cross-instance coordination: each replica's 30-second poll loop and

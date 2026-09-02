@@ -184,8 +184,9 @@ Managed identity and workload identity federation are both supported and both be
 secret exists to leak; a mounted secret file beats a plain environment variable. The ranked list, the
 exact `az` commands, the Portal steps, and the optional Microsoft Graph permission for Directory
 rules are in [`permissions.md`](docs/public/permissions.md) and
-[`configure.md`](docs/public/configure.md), which also covers signing your team in with Microsoft
-Entra ID instead of a shared password.
+[`configure.md`](docs/public/configure.md), which opens with a reference table of every
+environment variable and also covers signing your team in with Microsoft Entra ID instead of a
+shared password.
 
 ## Documentation
 

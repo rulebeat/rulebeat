@@ -11,6 +11,79 @@ Two variables are not part of a normal production install: `RULEBEAT_DEMO=1`
 scheduler polling. The only reason to set the latter is running more than one replica, which is not a
 supported topology ([`install.md`](install.md#deployment-topology)).
 
+## Environment variable reference
+
+Every variable RuleBeat reads, in one table. The column that matters for an install is
+**Required when**: for a Docker install with its data volume, the answer is never. The sections
+after the table explain each variable in full. Options 1 to 5 under Azure scanning are the ranked
+credential choices described in [Azure scanning credential](#azure-scanning-credential).
+
+| Variable | Required when | What it does | Value |
+|---|---|---|---|
+| **Database** | | | |
+| `RULEBEAT_DATABASE_URL` | Postgres mode | Stores everything in the PostgreSQL database named here instead of the built-in SQLite file. The one setting with no console equivalent. | `postgres://user:password@host:5432/rulebeat`, plus `?sslmode=require` when the server enforces TLS. [Details](#database-backend) |
+| `RULEBEAT_DATABASE_URL_FILE` | Never | The same connection string read from a mounted file, keeping the password out of the environment. | A file path |
+| **Session and encryption** | | | |
+| `AUTH_SECRET` | No volume (Container Apps, App Service, Container Instances) | Signs the session cookie. Generated into `data/auth.key` when unset, which a volume-less container loses on every restart, signing everyone out. | Any 32 or more random characters. [Making a random value](#making-a-random-value) |
+| `AUTH_SECRET_FILE` | Never | The same value from a mounted file. Wins over `AUTH_SECRET`. | A file path |
+| `RULEBEAT_ENCRYPTION_KEY` | No volume | Encrypts every credential entered through the console. Generated into `data/encryption.key` when unset; lose it and every stored credential becomes unreadable. | Any 32 or more random characters. [Details](#encryption-key-for-stored-secrets) |
+| `RULEBEAT_ENCRYPTION_KEY_FILE` | Never | The same value from a mounted file. Wins over `RULEBEAT_ENCRYPTION_KEY`. | A file path |
+| **First admin** | | | |
+| `RULEBEAT_INITIAL_PASSWORD` | No volume | Password for the seeded local admin, `admin@rulebeat.local`, instead of a generated one written to `data/initial-password.txt`. Changed on first sign-in either way. | At least 15 characters |
+| `RULEBEAT_INITIAL_ADMIN` | Never | Work email that becomes an admin on first Microsoft sign-in, and the recovery path if every admin is removed. | An email address. [Details](#local-sign-in-and-the-first-admin) |
+| `RULEBEAT_FORCE_LOCAL_SIGNIN` | Never | Brings the local password form back when Microsoft sign-in breaks under a local sign-in policy of `disabled`. | `true` |
+| **Public URL** | | | |
+| `AUTH_URL` | Microsoft sign-in behind a proxy or on a platform hostname | The address people reach RuleBeat at, used to build the Microsoft sign-in redirect. Can be set from Settings → Sign-in instead. | `https://rulebeat.example.com`. [Details](#sign-in) |
+| **Azure scanning** (pick one option, or connect from Settings → Azure connection) | | | |
+| `AZURE_TENANT_ID` | Option 1, and any pre-configured deploy | The tenant to scan. With a managed identity it is the only variable to set. | A tenant id (GUID). [Details](#azure-scanning-credential) |
+| `AZURE_CLIENT_ID` | Options 2 to 5 | The app registration RuleBeat scans as. | A client id (GUID) |
+| `AZURE_FEDERATED_TOKEN_FILE` | Option 2 | Token file for workload identity federation. | A file path |
+| `AZURE_CLIENT_CERTIFICATE_PATH` | Option 3 | Certificate for the app registration. | A file path |
+| `AZURE_CLIENT_CERTIFICATE_PASSWORD` | Option 3, protected certificate | Password for that certificate. | The password |
+| `AZURE_CLIENT_SECRET_FILE` | Option 4 | Client secret read from a mounted file, re-read on every use. | A file path |
+| `AZURE_CLIENT_SECRET` | Option 5, last resort | Client secret in plain text. | The secret value |
+| **Microsoft sign-in** (all three together, or configure from Settings → Sign-in) | | | |
+| `AUTH_MICROSOFT_ENTRA_ID_ID` | Pre-configured deploy | Client id of the sign-in app registration. | A client id (GUID). [Details](#microsoft-entra-id-sign-in-optional) |
+| `AUTH_MICROSOFT_ENTRA_ID_SECRET` | Pre-configured deploy | Its client secret. | The secret value |
+| `AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE` | Never | The same secret from a mounted file. Wins over the plain variable. | A file path |
+| `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID` | Pre-configured deploy | The tenant people sign in from. | A tenant id (GUID) |
+| **Behaviour** | | | |
+| `SCAN_HISTORY_LIMIT` | Never, default 90 | How many runs per category Run History keeps. | A whole number. [Details](#scan-history-retention) |
+| `RULEBEAT_DISABLE_SCHEDULER` | Multi-replica only | Stops the in-process scheduler on this replica. | `1` |
+| `RULEBEAT_DEMO` | Never | Demo mode: anonymous, read-only, synthetic data. | `1`. [Details](demo-mode.md) |
+
+### Running with no persistent volume
+
+On Azure Container Apps, App Service and Container Instances there is no data volume, so the
+files RuleBeat would otherwise generate on first boot do not survive a restart. Four variables
+replace them:
+
+- `RULEBEAT_DATABASE_URL`, because SQLite needs a local disk and a file share is not one.
+- `AUTH_SECRET`, or every restart signs everyone out.
+- `RULEBEAT_ENCRYPTION_KEY`, or every restart makes every credential stored through the console
+  unreadable.
+- `RULEBEAT_INITIAL_PASSWORD`, or the generated first password is written to a file inside a
+  container you may never get a shell on.
+
+With those four set the container is stateless and can restart, move hosts or redeploy freely.
+The portal walkthrough is [Azure Container Apps](install.md#azure-container-apps).
+
+### Making a random value
+
+`AUTH_SECRET` and `RULEBEAT_ENCRYPTION_KEY` accept any string. The working key is derived from
+whatever you supply, so length is what matters, not format: use 32 or more random characters. Any
+of these produce one:
+
+```
+openssl rand -base64 32
+```
+
+in bash, zsh, or the Azure Cloud Shell opened from the portal's top bar, so no local terminal is
+needed. `npx auth secret` works where Node is installed, and a password manager's generator set to
+40 characters is just as good. Store both values somewhere durable, such as a Key Vault secret or
+the password manager itself. Losing the auth secret only signs everyone out; losing the encryption
+key is covered under [Rotating secrets](#rotating-secrets).
+
 ## Sign-in
 
 `AZURE_TENANT_ID` names the tenant RuleBeat scans, or set it from Settings → Azure connection.
@@ -110,6 +183,12 @@ stored secret. Findings, rules and history are never encrypted.
 `RULEBEAT_ENCRYPTION_KEY_FILE` mounts it as a file, wins when both are set, and like `AUTH_SECRET_FILE`
 is cached after the first read, so rotating it needs a restart.
 
+Any string is a valid key. RuleBeat derives the working 32-byte key from the value you supply, so
+there is no required format or encoding; pick 32 or more random characters
+([Making a random value](#making-a-random-value)). On a platform with no data volume the
+variable is required rather than optional, because the generated file is lost on the first
+restart ([Running with no persistent volume](#running-with-no-persistent-volume)).
+
 ## Rotating secrets
 
 `AZURE_CLIENT_SECRET_FILE` and `AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE` are resolved fresh on every use,
@@ -139,7 +218,8 @@ so replacing the file needs a restart.
 
 Switching backends is a fresh install: nothing is migrated between SQLite and Postgres in either
 direction. The supported topology stays one replica either way, and a stateless no-volume
-deployment needs `AUTH_SECRET` and `RULEBEAT_ENCRYPTION_KEY` set alongside the URL. See
+deployment needs `AUTH_SECRET`, `RULEBEAT_ENCRYPTION_KEY` and `RULEBEAT_INITIAL_PASSWORD` set
+alongside the URL ([Running with no persistent volume](#running-with-no-persistent-volume)). See
 [`install.md`](install.md#deployment-topology).
 
 ## Scan history retention
