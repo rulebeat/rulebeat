@@ -30,11 +30,19 @@ const root = process.env.RELEASE_SCRIPT_ROOT
 /** Exactly the files scripts/release.mjs writes. A release PR may contain nothing else. */
 export const RELEASE_FILES = Object.freeze([
   'CHANGELOG.md',
+  'README.md',
   'package-lock.json',
   'package.json',
   'packages/core/package.json',
   'packages/web/package.json',
 ]);
+
+/**
+ * release.mjs's pinImageTags also rewrites the image version pin in every top-level markdown
+ * page under docs/public/, so those may change on a release branch too (and nothing nested
+ * or non-markdown under it).
+ */
+export const RELEASE_DOC_PATTERN = /^docs\/public\/[^/]+\.md$/;
 
 /** The identity prepare-release.yml commits and pushes as. */
 export const RELEASE_AUTHOR = 'github-actions[bot]';
@@ -176,11 +184,13 @@ export function checkReleaseCandidate({ changelogText, packageVersions, version,
   }
 
   // 3. The release branch's own diff introduces nothing but the release transformation.
-  const unexpected = changedPaths.filter((p) => !RELEASE_FILES.includes(p));
+  const unexpected = changedPaths.filter(
+    (p) => !RELEASE_FILES.includes(p) && !RELEASE_DOC_PATTERN.test(p)
+  );
   if (unexpected.length > 0) {
     errors.push(
-      `A release branch may only change ${RELEASE_FILES.join(', ')} -- it also changed: ` +
-        `${unexpected.join(', ')}.`
+      `A release branch may only change ${RELEASE_FILES.join(', ')} and docs/public/*.md -- ` +
+        `it also changed: ${unexpected.join(', ')}.`
     );
   }
 

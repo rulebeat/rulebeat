@@ -156,6 +156,25 @@ test('a release branch that also changed product code fails, naming the file', (
   assert.match(result.errors.join('\n'), /it also changed: packages\/web\/lib\/db\/migrate\.ts/);
 });
 
+test('the pinned docs release.mjs rewrites are allowed: README.md and docs/public/*.md', () => {
+  // release.mjs's pinImageTags rewrites README.md and every top-level docs/public/*.md in the
+  // same commit that bumps the version, so a release branch legitimately touches them.
+  const result = checkReleaseCandidate({
+    ...GOOD_INPUT,
+    changedPaths: [...RELEASE_FILES, 'docs/public/install.md', 'docs/public/security.md'],
+  });
+  assert.equal(result.ok, true);
+});
+
+test('a non-markdown or nested path under docs/public is still rejected', () => {
+  const result = checkReleaseCandidate({
+    ...GOOD_INPUT,
+    changedPaths: [...RELEASE_FILES, 'docs/public/img/evil.png', 'docs/public/notes.txt'],
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /it also changed: docs\/public\/img\/evil\.png, docs\/public\/notes\.txt/);
+});
+
 test('a release branch changing only some of the release files still passes', () => {
   // release.mjs always writes all five, but a subset is not evidence of tampering -- only extra
   // files are. Pinning this stops a future "must equal exactly" tightening from breaking releases.
