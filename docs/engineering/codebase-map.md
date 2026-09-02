@@ -253,3 +253,4 @@
 | `scripts/verify-release-version.test.mjs` | `node:test` cases for `checkReleaseVersion()` |
 | `CHANGELOG.md` | Keep a Changelog format. `[Unreleased]` is the running record every behaviour-changing PR adds a line to; `release.mjs` moves it under a dated header at release time |
 | `docs/engineering/conventions/releases.md` | The release/CHANGELOG conventions, each written after something broke |
+| `docs/engineering/decisions/` | Architecture decision records, one file per decision, numbered. `0001` fixes the single-replica topology and lists the triggers that would reopen multi-replica work |
