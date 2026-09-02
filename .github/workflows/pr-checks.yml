@@ -15,7 +15,9 @@ name: PR checks
 # read-only token here, which is all this needs -- it makes no API writes at all.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    # `edited` is here for the Public footprint job, which reads the PR description: fixing a
+    # description that carried an attribution footer must re-run the check without a push.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
   # prepare-release.yml dispatches this against its own release PR. A GITHUB_TOKEN-created PR does
   # not reliably get automatic workflow runs, and once "Changelog entry" is a required check, a
   # release PR with no run at all can never merge.
@@ -73,3 +75,36 @@ jobs:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/check-changelog-entry.mjs
+
+  public-footprint:
+    # Branch name, commit messages and PR description carry no tool attribution, session link or
+    # tool-named prefix. The rule: docs/engineering/how-changes-are-made.md, "Branches, commits and
+    # what becomes public". Same shape as the job above so the two stay fork-safe together.
+    name: Public footprint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # fetch-depth: 0 so base..head is walkable for the commit-message check.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: bash scripts/resolve-pr-context.sh
+
+      # PR_BODY comes through `env:`, never interpolated into the script text, so a description
+      # containing shell syntax cannot run anything. It is empty on workflow_dispatch, where only
+      # the branch name and commits are checked.
+      - name: Public footprint
+        env:
+          PR_HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash scripts/check-public-footprint.sh
