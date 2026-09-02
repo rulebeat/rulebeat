@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-02
+
 ### Added
 
 - CI now proves the Postgres backend on every change: the whole web test suite runs a second time against a real PostgreSQL 17 service, and the backend parity suite grew to cover rules with their KQL, users, dashboards and suppressions alongside the findings lifecycle. docker-compose.yml gains an optional `postgres` profile, off by default so the single-container SQLite install is unchanged, with a matching `RULEBEAT_DATABASE_URL` entry in .env.example (issue #73, phase 3).
@@ -27,6 +29,10 @@ All notable changes to RuleBeat are documented here. Format follows
   instead of `:latest`. The release script now rewrites the pinned tags in the same commit that
   bumps the version, and a test fails the build if any doc names `:latest` or a stale version,
   so the pins cannot go stale the way they did before 0.2.4.
+
+### Dependencies
+
+- Added `@types/pg` 8.23.1.
 
 ## [0.2.4] - 2026-08-25
 
@@ -201,7 +207,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/rulebeat/rulebeat/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/rulebeat/rulebeat/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rulebeat/rulebeat/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/rulebeat/rulebeat/compare/v0.2.1...v0.2.2

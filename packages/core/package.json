@@ -1,6 +1,6 @@
 {
   "name": "@rulebeat/core",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "private": true,
   "description": "RuleBeat core — scanning engine, ARM clients, policy engine, types",
   "license": "Apache-2.0",
