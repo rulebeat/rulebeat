@@ -61,7 +61,18 @@ function CheckedAt({ isoDate }: { isoDate: string }) {
 }
 
 function SystemSection({ data }: { data: SystemDiagnostics }) {
-  const { scheduler, schemaCache } = data;
+  const { storage, scheduler, schemaCache } = data;
+
+  // Which database this process is on. A deployment can run on the wrong backend with no symptom
+  // until a restart empties it, so this row exists to be read before that happens. SQLite chosen
+  // by nothing at all gets the one sentence that names the risk.
+  const storageSummary = storage.kind === 'postgres'
+    ? `PostgreSQL at ${storage.host ?? 'unknown host'}${storage.port ? `:${storage.port}` : ''}${storage.database ? `/${storage.database}` : ''}${storage.user ? ` as ${storage.user}` : ''}.`
+    : `SQLite file at ${storage.file ?? 'the data directory'}.`;
+
+  const storageSelection = storage.selectedBy === 'default'
+    ? 'Nothing selected it: RULEBEAT_DATABASE_URL is unset. On a host with no persistent volume this database is lost on restart; set RULEBEAT_DATABASE_BACKEND=postgres to require Postgres.'
+    : `Selected by ${storage.selectedBy}.`;
 
   const schedulerStatus: 'ok' | 'warn' | 'fail' =
     !scheduler.enabled ? 'warn'
@@ -110,6 +121,17 @@ function SystemSection({ data }: { data: SystemDiagnostics }) {
 
   return (
     <ul className="divide-y divide-border bg-surface">
+      <li className="flex items-start gap-3 px-3.5 py-3">
+        <StatusDot status="ok" />
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-medium text-ink">Storage</p>
+          <p className="text-xs leading-relaxed text-ink-2">
+            Where rules, findings, settings and history are kept.
+          </p>
+          <p className="break-all text-xs leading-relaxed text-ink-2">{storageSummary}</p>
+          <p className="text-xs leading-relaxed text-ink-2">{storageSelection}</p>
+        </div>
+      </li>
       <li className="flex items-start gap-3 px-3.5 py-3">
         <StatusDot status={schedulerStatus} />
         <div className="min-w-0 space-y-0.5">

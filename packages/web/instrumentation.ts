@@ -2,6 +2,20 @@ export async function register() {
   // Only run in the Node.js server runtime, not Edge
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
+  // Storage backend, checked before anything opens the database. Importing lib/db/backend is what
+  // checks RULEBEAT_DATABASE_BACKEND against RULEBEAT_DATABASE_URL, and a contradiction throws
+  // there. This process must not keep serving requests on a database the operator did not choose
+  // (a Container Apps install once ran on SQLite inside the container because its connection
+  // string was missing, and lost everything on restart), so it exits with the reason in the log
+  // and lets the platform restart it. backend.ts reads only its own two variables, so importing
+  // it here does not disturb the AUTH_URL capture below.
+  try {
+    await import('./lib/db/backend');
+  } catch (err) {
+    console.error('[startup] storage configuration is invalid:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
+
   // `trustHost: true` (auth.config.ts) means Auth.js will infer the public URL from request
   // headers if nothing else is set — fine for a single-tenant self-hosted app, but a public URL
   // configured in Settings → Sign-in is a stronger source of truth, and Auth.js reads it from
@@ -14,6 +28,14 @@ export async function register() {
     syncAuthUrlMirror(await getPublicUrl());
   } catch (err) {
     console.error('[startup] could not read the configured public URL:', err);
+  }
+
+  // One line naming the live backend: the operator's proof of which database this process is on,
+  // printed once the storage check above has passed and the database has been opened.
+  {
+    const { describeBackend, formatBackend } = await import('./lib/db/backend');
+    const { sqliteFilePath } = await import('./lib/db/client');
+    console.log(`[startup] storage: ${formatBackend(describeBackend(), sqliteFilePath)}`);
   }
 
   const { warmSchemaCache } = await import('./lib/schema-warmer');

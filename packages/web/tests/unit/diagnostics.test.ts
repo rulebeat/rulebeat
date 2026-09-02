@@ -7,7 +7,40 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeSchemaCache, writeResourceTypesCache, getSchemaCacheStatus } from '@/lib/schema-cache';
 import { getSchedulerStatus } from '@/lib/scheduler';
+import { getSystemDiagnostics } from '@/lib/diagnostics';
+import { dbKind } from '@/lib/db/backend';
 import { execRaw } from '../helpers/db';
+
+// ── Storage (which backend this process is on) ──────────────────────────────
+
+describe('getSystemDiagnostics storage', () => {
+  it('reports the backend this test run is actually using, with a printable summary', async () => {
+    const { storage } = await getSystemDiagnostics();
+    expect(storage.kind).toBe(dbKind === 'pg' ? 'postgres' : 'sqlite');
+    expect(storage.summary.length).toBeGreaterThan(0);
+    if (storage.kind === 'sqlite') {
+      // tests/setup.ts points RULEBEAT_DB_PATH at a throwaway file; that is the file to report.
+      expect(storage.file).toBe(process.env.RULEBEAT_DB_PATH);
+      expect(storage.summary).toContain('SQLite at ');
+    } else {
+      expect(storage.file).toBeNull();
+      expect(storage.summary).toContain('PostgreSQL at ');
+      expect(storage.host).toBeTruthy();
+    }
+  });
+
+  it('never carries the database password', async () => {
+    const { storage } = await getSystemDiagnostics();
+    const url = process.env.RULEBEAT_DATABASE_URL;
+    if (!url) return; // SQLite run: there is no password to leak.
+    const password = decodeURIComponent(new URL(url).password);
+    // CI's Postgres fixture uses the same word for user, database and password, so the password
+    // text legitimately appears as the user and database fields. The distinct-password proof
+    // lives in database-backend.test.ts; this case covers the live wiring only when it can.
+    if (!password || password === storage.user || storage.database?.includes(password)) return;
+    expect(JSON.stringify(storage)).not.toContain(password);
+  });
+});
 
 // ── Schema-cache helpers ─────────────────────────────────────────────────────
 

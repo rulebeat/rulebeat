@@ -114,9 +114,9 @@ az postgres flexible-server create --resource-group <rg> --name <server-name> \
 
 Then let RuleBeat reach it: private access on your VNet, or public access with a firewall rule for
 the app's outbound IP. Azure enforces TLS, so append `?sslmode=require` to the connection string.
-Those same platforms have no data volume, so alongside the URL set `AUTH_SECRET`,
-`RULEBEAT_ENCRYPTION_KEY` and `RULEBEAT_INITIAL_PASSWORD`, or the first restart signs everyone
-out and loses the generated keys
+Those same platforms have no data volume, so alongside the URL set
+`RULEBEAT_DATABASE_BACKEND=postgres`, `AUTH_SECRET`, `RULEBEAT_ENCRYPTION_KEY` and
+`RULEBEAT_INITIAL_PASSWORD`, or the first restart signs everyone out and loses the generated keys
 ([Running with no persistent volume](configure.md#running-with-no-persistent-volume)).
 [Azure Container Apps](#azure-container-apps) below walks through the whole thing in the portal.
 
@@ -261,11 +261,17 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
 
    | Name | Value |
    |---|---|
+   | `RULEBEAT_DATABASE_BACKEND` | `postgres` |
    | `RULEBEAT_DATABASE_URL` | `postgres://rulebeat:<password>@<server-name>.postgres.database.azure.com:5432/rulebeat?sslmode=require` |
    | `AUTH_SECRET` | first value from step 2 |
    | `RULEBEAT_ENCRYPTION_KEY` | second value from step 2 |
    | `RULEBEAT_INITIAL_PASSWORD` | third value from step 2 |
    | `AZURE_TENANT_ID` | the tenant to scan |
+
+   The first row is the guardrail: with it set, a container that cannot see the connection string
+   refuses to start and says so in its log, instead of running on a SQLite file that the next
+   restart deletes. Check the Log stream after the first boot for a line starting
+   `[startup] storage: PostgreSQL`; the same appears on the Diagnostics page after sign-in.
 
    On the Ingress tab enable ingress, accept traffic from anywhere, HTTP, target port 3000. Create.
 
@@ -278,10 +284,10 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
    ([Microsoft Entra ID sign-in](configure.md#microsoft-entra-id-sign-in-optional)).
 
 5. **First sign-in.** Open the application URL and sign in as `admin@rulebeat.local` with the third
-   value from step 2; it forces a change. The wizard's Connect Azure step asks for a service
-   principal, and with a managed identity there is none to enter, so choose Skip for now. Settings
-   → Azure connection then reports "Managed identity or Azure CLI sign-in" as the source, and a
-   first run from the Scans page confirms it reaches your subscriptions.
+   value from step 2; it forces a change. The wizard's Connect Azure step recognises the managed
+   identity and shows it with a Verify button instead of a service principal form: press Verify
+   to confirm it reaches your subscriptions, then Continue through the remaining steps to the
+   first scan.
 
 Directory rules need the Microsoft Graph `Application.Read.All` permission on that identity. The
 portal cannot grant an application permission to a managed identity, and the `az ad app permission`

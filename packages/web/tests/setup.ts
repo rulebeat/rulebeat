@@ -22,6 +22,9 @@ process.env.RULEBEAT_DB_PATH = join(dir, 'test.db');
 // into the Postgres backend, and that run starts from an empty schema so `lib/db/client.ts`'s
 // bootstrap recreates the tables fresh for every test file (vitest isolates module registries per
 // file, so the import-time bootstrap re-runs each time).
+// RULEBEAT_DATABASE_BACKEND is cleared in both branches for the same reason: the selector must
+// come from this file's decision, never from the developer's shell.
+delete process.env.RULEBEAT_DATABASE_BACKEND;
 if (process.env.RULEBEAT_TEST_PG_URL) {
   process.env.RULEBEAT_DATABASE_URL = process.env.RULEBEAT_TEST_PG_URL;
   delete process.env.RULEBEAT_DATABASE_URL_FILE;
