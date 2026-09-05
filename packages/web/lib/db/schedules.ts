@@ -1,6 +1,6 @@
 import { db } from './client';
 import { schedules } from './tables';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { many, one, run } from './exec';
 import { listCategories } from './categories';
 import { loadRules } from '../rules';
@@ -323,14 +323,56 @@ export async function deleteSchedule(id: string): Promise<boolean> {
   return true;
 }
 
-/** Advances a schedule after a run. A null nextRunAt means the recurrence has no more
- *  occurrences (a one-off that just fired, or a recurring schedule past its end date) —
- *  the schedule is disabled rather than left enabled with nothing left to do. */
-export async function setNextRun(id: string, nextRunAt: string | null, lastRunAt?: string): Promise<void> {
-  await run(db.update(schedules).set({
+/** `next_run_at = <the value the caller saw>`, null included: SQL's `= NULL` is never true, so a
+ *  disabled schedule run by hand (nextRunAt null) needs IS NULL to be claimable at all. */
+function nextRunIs(expected: string | null) {
+  return expected === null ? isNull(schedules.nextRunAt) : eq(schedules.nextRunAt, expected);
+}
+
+/**
+ * Claims a schedule for this process before running it (issue #88): one conditional UPDATE that
+ * advances `next_run_at` only if it still holds the value the caller's `listDueSchedules()` saw.
+ * Two processes sharing a database during a rolling deploy both see the same due row; exactly one
+ * changes it and gets `true`, the other gets `false` and must not run. Never read-then-write, and
+ * never the in-process busy flag, which the other container cannot see.
+ *
+ * A null `nextRunAt` means the recurrence has no more occurrences (a one-off that just fired, or a
+ * recurring schedule past its end date): the schedule is disabled rather than left enabled with
+ * nothing left to do, as it always was.
+ */
+export async function claimDueSchedule(
+  schedule: Pick<Schedule, 'id' | 'nextRunAt'>,
+  nextRunAt: string | null,
+  lastRunAt: string,
+): Promise<boolean> {
+  const claimed = await many(db.update(schedules).set({
     nextRunAt,
     ...(nextRunAt === null && { enabled: false }),
-    ...(lastRunAt !== undefined && { lastRunAt }),
+    lastRunAt,
     updatedAt: new Date().toISOString(),
-  }).where(eq(schedules.id, id)));
+  }).where(and(eq(schedules.id, schedule.id), nextRunIs(schedule.nextRunAt)))
+    .returning({ id: schedules.id }));
+  return claimed.length > 0;
+}
+
+/**
+ * After the claimed run finishes, moves `next_run_at` to the first occurrence after the finish, so
+ * a scan longer than its own interval skips the occurrences it overran instead of running again
+ * the moment it ends, which is what advancing after the run always did. Conditional on the row
+ * still holding what the claim wrote: an operator who edited the schedule while it ran chose a new
+ * time on purpose, and that edit wins. Returns whether the row moved.
+ */
+export async function advanceScheduleAfterRun(
+  id: string,
+  claimedNextRunAt: string | null,
+  nextRunAt: string | null,
+): Promise<boolean> {
+  if (nextRunAt === claimedNextRunAt) return false;
+  const moved = await many(db.update(schedules).set({
+    nextRunAt,
+    ...(nextRunAt === null && { enabled: false }),
+    updatedAt: new Date().toISOString(),
+  }).where(and(eq(schedules.id, id), nextRunIs(claimedNextRunAt)))
+    .returning({ id: schedules.id }));
+  return moved.length > 0;
 }

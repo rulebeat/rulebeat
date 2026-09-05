@@ -349,6 +349,15 @@ describe('TS-25 · schedules survive the move off the cron model', () => {
     expect(await countRows(up.sqlite, 'schedule_runs')).toBe(1);
   });
 
+  it('25-07 · a pre-existing run gains the overlap-safety columns as NULL, which recovery reads as stale (issue #88)', async () => {
+    const [run] = rowsIfPresent(up.sqlite, 'schedule_runs');
+    expect(run).toBeDefined();
+    expect(run!.status).toBe('success');
+    // Present, and unset: nothing about an old row is invented. A leftover 'running' row from an
+    // older version has no heartbeat to be fresh, so recovery reaps it exactly as it did before.
+    expect(run).toMatchObject({ heartbeat_at: null, owner_id: null, notify_claimed_at: null });
+  });
+
   it('25-05 · snapshot history survives the table being rebuilt', async () => {
     const snapshots = rowsIfPresent(up.sqlite, 'posture_snapshots');
     expect(snapshots.length, 'trend history was lost in the table rebuild').toBe(1);

@@ -54,6 +54,9 @@ const SAMPLE_RUN = {
   error: null,
   durationMs: 1000,
   notifyStatus: 'none' as const,
+  notifyClaimedAt: null,
+  heartbeatAt: null,
+  ownerId: null,
 };
 
 export async function POST(req: Request) {

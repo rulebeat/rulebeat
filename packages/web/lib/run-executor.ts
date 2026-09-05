@@ -1,7 +1,7 @@
 import type { TenantContext } from '@rulebeat/core';
 import { createTenantContext } from './azure-credential';
 import { listCategories } from './db/categories';
-import { startRun, finishRun, recordCategoryProgress, getRun, type RunTriggeredBy, type ScheduleRun } from './schedule-runs';
+import { startRun, finishRun, recordCategoryProgress, heartbeatRun, getRun, type RunTriggeredBy, type ScheduleRun } from './schedule-runs';
 import { runCategoryScan } from './scan-runner';
 import { resolveCategoriesForSchedule, resolveRulesForSchedule } from './schedule-target';
 import type { ScheduleTargetType } from './db/schedules';
@@ -11,6 +11,10 @@ export interface RunTarget {
   targetType: ScheduleTargetType;
   targetValues: string[];
 }
+
+/** How often a running row's heartbeat is refreshed. One tenth of STALE_AFTER_MS (schedule-runs.ts),
+ *  so a live process would have to miss ten beats in a row before another one could reap its run. */
+export const HEARTBEAT_INTERVAL_MS = 30_000;
 
 function groupRuleIdsByCategory(rules: { id: string; category: string }[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -36,6 +40,8 @@ export async function executeTarget(
     /** Injected by the demo generator so a replayed run is stamped at its simulated date instead
      *  of the real current time — threaded through to startRun/finishRun and runCategoryScan. */
     now?: Date;
+    /** Tests only: a shorter beat so a run lasting milliseconds still records one. */
+    heartbeatIntervalMs?: number;
   },
 ): Promise<ScheduleRun> {
   const categoryIds = await resolveCategoriesForSchedule(target);
@@ -52,6 +58,17 @@ export async function executeTarget(
     now: opts.now,
   });
   const started = opts.now?.getTime() ?? Date.now();
+
+  // Proof of life for the whole run, on a timer rather than at category boundaries: one category's
+  // scan can take longer than STALE_AFTER_MS on a big tenant, and a replacement container's
+  // recovery pass must never mistake a slow live scan for a dead one (issue #88). Unref'd so a
+  // process shutting down never waits on it; a beat that fires after finishRun is a no-op.
+  const heartbeat = setInterval(() => {
+    void heartbeatRun(run.id).catch(err => {
+      console.error(`[RuleBeat] scan run ${run.id} heartbeat failed:`, err);
+    });
+  }, opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
 
   try {
     const ctx = opts.ctx ?? await createTenantContext({ runId: run.id });
@@ -132,6 +149,8 @@ export async function executeTarget(
       durationMs: (opts.now?.getTime() ?? Date.now()) - started,
       now: opts.now,
     });
+  } finally {
+    clearInterval(heartbeat);
   }
 
   return (await getRun(run.id))!;

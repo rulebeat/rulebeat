@@ -226,6 +226,9 @@ table schedule_runs
   target_type TEXT
   target_values TEXT
   notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_claimed_at TEXT
+  heartbeat_at TEXT
+  owner_id TEXT
 table schedules
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -346,7 +349,7 @@ rules {"applies_to":null,"category":"security","condition_groups":null,"conditio
 rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","shape":"detect","tags":null,"type":"builtin","visual_query":null}
 rules {"applies_to":null,"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_population_count":null,"last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","shape":"detect","tags":null,"type":"builtin","visual_query":null}
 scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
-schedule_runs {"categories":"[\\"cost\\"]","duration_ms":null,"error":null,"finished_at":"<TS>","id":"r0000000-0000-4000-8000-000000000001","new_finding_fingerprints":null,"new_findings":1,"notify_status":"none","schedule_id":"sch00000-0000-4000-8000-000000000001","started_at":"<TS>","status":"success","target_type":null,"target_values":null,"total_findings":4,"triggered_by":"schedule"}
+schedule_runs {"categories":"[\\"cost\\"]","duration_ms":null,"error":null,"finished_at":"<TS>","heartbeat_at":null,"id":"r0000000-0000-4000-8000-000000000001","new_finding_fingerprints":null,"new_findings":1,"notify_claimed_at":null,"notify_status":"none","owner_id":null,"schedule_id":"sch00000-0000-4000-8000-000000000001","started_at":"<TS>","status":"success","target_type":null,"target_values":null,"total_findings":4,"triggered_by":"schedule"}
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000001","interval":1,"last_run_at":"<TS>","name":"Nightly cost sweep","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"categories","target_values":"[\\"cost\\",\\"security\\"]","updated_at":"<TS>"}
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000002","interval":1,"last_run_at":null,"name":"Everything, weekly","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"all","target_values":"[]","updated_at":"<TS>"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
@@ -579,6 +582,9 @@ table schedule_runs
   target_type TEXT
   target_values TEXT
   notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_claimed_at TEXT
+  heartbeat_at TEXT
+  owner_id TEXT
 table schedules
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -920,6 +926,9 @@ table schedule_runs
   target_type TEXT
   target_values TEXT
   notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_claimed_at TEXT
+  heartbeat_at TEXT
+  owner_id TEXT
 table schedules
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -1269,6 +1278,9 @@ table schedule_runs
   target_type TEXT
   target_values TEXT
   notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_claimed_at TEXT
+  heartbeat_at TEXT
+  owner_id TEXT
 table schedules
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -1619,6 +1631,9 @@ table schedule_runs
   target_type TEXT
   target_values TEXT
   notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_claimed_at TEXT
+  heartbeat_at TEXT
+  owner_id TEXT
 table schedules
   id TEXT PK(1)
   name TEXT NOT NULL

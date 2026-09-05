@@ -13,13 +13,13 @@ import { db } from '@/lib/db/client';
 import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { syncScanFindings, deleteFindingsForRule } from '@/lib/db/findings';
-import { startRun, finishRun, getRun } from '@/lib/schedule-runs';
+import { startRun, finishRun, getRun, STALE_AFTER_MS } from '@/lib/schedule-runs';
 import { recoverInterruptedRuns, recoverPendingNotifications } from '@/lib/startup-recovery';
 import { executeTarget } from '@/lib/run-executor';
 import { createChannel, deleteChannel } from '@/lib/db/notification-channels';
 import { setLinksForSchedule, deleteLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { setDnsLookupForTests, resetDnsLookupForTests } from '@/lib/ssrf-guard';
-import { resetDb, clearRules } from '../helpers/db';
+import { resetDb, clearRules, execRaw } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
 import type { Finding } from '@/lib/types';
 
@@ -108,6 +108,9 @@ describe('recoverInterruptedRuns (pass 1)', () => {
   it('flips a stale "running" row to "error" with finishedAt and a client-safe recovery message', async () => {
     const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: [CATEGORY] });
     expect(run.status).toBe('running');
+    // A freshly started run has a fresh heartbeat and is somebody's live scan (issue #88); the
+    // orphan this pass exists for is one whose owner stopped beating. Age the beat past the window.
+    await execRaw(`UPDATE schedule_runs SET heartbeat_at = '${new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString()}' WHERE id = '${run.id}'`);
 
     const recovered = await recoverInterruptedRuns();
     expect(recovered).toBe(1);
@@ -215,7 +218,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
     await deleteChannel(channelId);
   });
 
-  it('persists notifyStatus: pending durably before the webhook resolves, then sent once it does', async () => {
+  it('holds the sending claim durably before the webhook resolves, then sent once it does', async () => {
     await insertRule(RULE_A, MARKER_OK);
 
     let resolveFetch: (value: Response) => void = () => {};
@@ -230,8 +233,11 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
 
     // await executeTarget() fires dispatch without awaiting it — give the microtask queue a chance to
     // reach the (deliberately unresolved) fetch call before asserting the durable outbox state.
+    // While the webhook is in flight the row holds this process's claim ('sending', issue #88):
+    // durable, so a crash here is recovered after the stale window, and exclusive, so a second
+    // process seeing the same row does not send it again meanwhile.
     await vi.waitFor(async () => expect(fetchMock).toHaveBeenCalled());
-    expect((await getRun(run.id))!.notifyStatus).toBe('pending');
+    expect((await getRun(run.id))!.notifyStatus).toBe('sending');
 
     resolveFetch(fakeResponse(200, 'ok'));
     await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));

@@ -296,9 +296,16 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   new_finding_fingerprints TEXT,
   error TEXT,
   duration_ms INTEGER,
-  notify_status TEXT NOT NULL DEFAULT 'none'
+  notify_status TEXT NOT NULL DEFAULT 'none',
+  notify_claimed_at TEXT,
+  heartbeat_at TEXT,
+  owner_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id, started_at DESC);
+-- Overlap safety (issue #88), for a Postgres database bootstrapped before these columns shipped.
+ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS notify_claimed_at TEXT;
+ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS heartbeat_at TEXT;
+ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id TEXT PRIMARY KEY,
@@ -353,6 +360,20 @@ CREATE TABLE IF NOT EXISTS query_runs (
 CREATE INDEX IF NOT EXISTS idx_query_runs_owner ON query_runs(owner_id, ran_at DESC);
 `;
 
+/**
+ * Arbitrary but fixed: every RuleBeat process bootstrapping the same database takes the same
+ * advisory lock, so two containers booting at once (a rolling deploy's first Postgres start, or a
+ * scaled-out mistake) run the DDL one after the other instead of colliding inside
+ * `CREATE TABLE IF NOT EXISTS`, which is not atomic across sessions and fails the loser with a
+ * duplicate-key error on the catalog (issue #88).
+ */
+const BOOTSTRAP_LOCK_KEY = 7385562991;
+
 export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<void> {
-  await db.execute(sql.raw(DDL));
+  // A transaction-scoped lock releases itself with the transaction, including on error, so a
+  // failed bootstrap can never leave the lock held for the process's lifetime.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SELECT pg_advisory_xact_lock(${BOOTSTRAP_LOCK_KEY})`));
+    await tx.execute(sql.raw(DDL));
+  });
 }

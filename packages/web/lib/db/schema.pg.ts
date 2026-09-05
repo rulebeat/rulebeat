@@ -294,6 +294,9 @@ export const scheduleRuns = pgTable('schedule_runs', {
   error: text('error'),
   durationMs: integer('duration_ms'),
   notifyStatus: text('notify_status').notNull().default('none'),
+  notifyClaimedAt: text('notify_claimed_at'),
+  heartbeatAt: text('heartbeat_at'),
+  ownerId: text('owner_id'),
 });
 
 export const notificationDeliveries = pgTable('notification_deliveries', {

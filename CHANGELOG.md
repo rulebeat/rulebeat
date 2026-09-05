@@ -10,6 +10,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - A rule's findings can now be cleared without deleting the rule, built-in rules included. A Clear findings control on the Scans page's Rules tab (editor and admin) deletes every finding the rule produced, active and fixed, with their history, keeps the rule, and writes an audit entry naming the rule and the count. Disabling a rule stops it being scanned but leaves its findings counted, since only a rule that ran can resolve its own findings, so a rule that turned out to be wrong had no way out before. Suppressions, past runs and past trend days are untouched (issue #98).
 
+### Fixed
+
+- A rolling deploy, where the old and new container overlap for up to a minute, no longer runs a due schedule twice, sends the same notification batch twice, or reports the old container's live scan as crashed. A due schedule is now claimed with one conditional database update before its scan starts, a notification batch is claimed the same way before it is sent, a running scan records a heartbeat every 30 seconds and recovery only reaps a run whose heartbeat is five minutes old, and the PostgreSQL schema bootstrap takes an advisory lock so two first boots cannot collide. Recovery of interrupted runs and unsent notifications now also runs on every scheduler tick, not only at startup. One consequence: a scan interrupted by a crash is reported as not completed and its schedule waits for the next occurrence instead of re-running at boot. Existing run history is untouched; the three new `schedule_runs` columns are added on upgrade and read as stale for old rows (issue #88).
+
 ## [0.4.0] - 2026-09-02
 
 ### Added
