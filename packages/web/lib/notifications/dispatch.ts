@@ -7,7 +7,7 @@ import { SEVERITY_ORDER } from '@/lib/severity';
 import { buildScansHref } from '@/lib/scans-link';
 import { getPublicUrl } from '@/lib/sign-in-config';
 import { assertSafeWebhookUrl, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
-import { markNotifySent } from '@/lib/schedule-runs';
+import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
 import { buildPayload } from './format';
 
 const MAX_ATTEMPTS = 3;
@@ -188,18 +188,32 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
 }
 
 /**
- * Dispatches (when there's anything to dispatch) then durably closes the run's notification outbox
- * entry. The single function both the live post-scan path and startup recovery call, so there is
- * exactly one place that decides "this run's notifications are done" (spec 025).
+ * Claims the run's notification outbox entry, dispatches (when there's anything to dispatch), then
+ * durably closes the entry. The single function both the live post-scan path and startup recovery
+ * call, so there is exactly one place that decides "this run's notifications are done" (spec 025).
+ *
+ * The claim is what stops two processes sending the same batch (issue #88): the row goes
+ * 'pending' -> 'sending' in one conditional UPDATE, so of the live post-scan dispatch and a
+ * replacement container's recovery pass, whichever gets there second sees no row change and
+ * returns `false` without sending. A 'sending' claim whose owner died is taken over only after
+ * STALE_AFTER_MS (schedule-runs.ts).
  *
  * `dispatchNotifications()` never throws under any current code path — every channel's send is
  * caught internally and the whole dispatch is `Promise.allSettled`-wrapped — so `notifyStatus` is
  * marked `'sent'` unconditionally once dispatch returns; per-channel success/failure is tracked
  * separately in notification_deliveries.
+ *
+ * @returns whether this call held the claim and therefore did the dispatching.
  */
-export async function dispatchAndMarkSent(run: ScheduleRun, findings: Finding[]): Promise<void> {
+export async function dispatchAndMarkSent(
+  run: ScheduleRun,
+  findings: Finding[],
+  opts: { now?: Date } = {},
+): Promise<boolean> {
+  if (!(await claimNotifyDispatch(run.id, { now: opts.now }))) return false;
   if (findings.length > 0) {
     await dispatchNotifications(run, findings);
   }
   await markNotifySent(run.id);
+  return true;
 }

@@ -329,7 +329,13 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
   newFindingFingerprints: text('new_finding_fingerprints'), // JSON: string[]
   error: text('error'),
   durationMs: integer('duration_ms'),
-  notifyStatus: text('notify_status').notNull().default('none'), // 'none' | 'pending' | 'sent'
+  notifyStatus: text('notify_status').notNull().default('none'), // 'none' | 'pending' | 'sending' | 'sent'
+  // Overlap safety (issue #88). Two RuleBeat processes can share one database for the length of a
+  // rolling deploy, so a row has to say which process owns it and whether that process is still
+  // alive; null on every row written before these columns existed, which recovery reads as stale.
+  notifyClaimedAt: text('notify_claimed_at'), // when the current 'sending' claim was taken
+  heartbeatAt: text('heartbeat_at'),          // last proof of life from the process running this row
+  ownerId: text('owner_id'),                  // lib/instance-id.ts's per-process id
 });
 
 // One row per delivery attempt sequence (a channel's final outcome for a single run, after retries

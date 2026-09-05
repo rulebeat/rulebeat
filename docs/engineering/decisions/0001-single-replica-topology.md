@@ -63,7 +63,20 @@ effects; exactly-once is never promised.
 
 - `docs/public/install.md`, `configure.md` and `faq.md` keep stating one replica as the supported
   shape, and the Container Apps guidance says to keep min and max replicas at 1 in single-revision
-  mode until the overlap-safety claims ship.
+  mode. The overlap-safety claims shipped (issue #88, see the amendment below); they make the
+  revision-overlap window harmless without changing the topology.
 - Any new coordination write is one conditional `UPDATE` (or `BEGIN IMMEDIATE` on SQLite), never
   read-then-write, and never relies on the in-process `busy` flag.
 - "Single container install" remains a claim the product can keep making.
+
+## Amendment, 2026-09-05 (issue #88)
+
+The overlap-safety claims described under Context are built: `claimDueSchedule()` advances
+`next_run_at` in one conditional `UPDATE` before a scan starts, `claimNotifyDispatch()` moves a
+run's outbox entry `pending` to `sending` the same way, `schedule_runs` carries `heartbeat_at` and
+`owner_id` so recovery reaps only a run whose owner has been silent for five minutes, recovery
+runs on every scheduler tick as well as at startup, and `bootstrapPg` takes a transaction-scoped
+advisory lock. One statement in Context is therefore out of date: `next_run_at` is now advanced at
+the claim, not after the run, so an interrupted run is reported as not completed and its schedule
+waits for the next occurrence instead of re-running late. The decision itself is unchanged: one
+replica, and the triggers above still decide when that is revisited.

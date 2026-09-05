@@ -1,7 +1,8 @@
-import { eq, desc } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import { db } from './db/client';
 import { scheduleRuns } from './db/tables';
 import { many, one, run } from './db/exec';
+import { INSTANCE_ID } from './instance-id';
 import type { ScheduleTargetType } from './db/schedules';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
@@ -10,7 +11,21 @@ const MAX_RUNS_PER_BUCKET = 90;
 
 export type ScheduleRunStatus = 'running' | 'success' | 'partial' | 'error';
 export type RunTriggeredBy = 'manual' | 'schedule';
-export type NotifyStatus = 'none' | 'pending' | 'sent';
+export type NotifyStatus = 'none' | 'pending' | 'sending' | 'sent';
+
+/**
+ * How long a run may go without a heartbeat, or a notification claim without being closed, before
+ * another process may treat its owner as dead and take over (issue #88). Heartbeats land every
+ * 30 seconds (run-executor.ts), and one notification dispatch is bounded by a few attempts of a
+ * few seconds each, so five minutes is far outside anything a live process does and still short
+ * enough that a crashed container's run is reported, and its notifications sent, on the next tick.
+ */
+export const STALE_AFTER_MS = 5 * 60_000;
+
+/** The ISO instant before which a heartbeat or claim counts as stale, as of `now`. */
+export function staleBefore(now: Date = new Date()): string {
+  return new Date(now.getTime() - STALE_AFTER_MS).toISOString();
+}
 
 export interface ScheduleRun {
   id: string;
@@ -28,6 +43,12 @@ export interface ScheduleRun {
   error: string | null;
   durationMs: number | null;
   notifyStatus: NotifyStatus;
+  /** When the current 'sending' claim was taken; null until a dispatch claims the row. */
+  notifyClaimedAt: string | null;
+  /** Last proof of life from the process running this row; null on rows from before the column existed. */
+  heartbeatAt: string | null;
+  /** lib/instance-id.ts's id of the process that started the run; null on rows from before the column. */
+  ownerId: string | null;
 }
 
 type Row = typeof scheduleRuns.$inferSelect;
@@ -49,6 +70,9 @@ function rowToRun(row: Row): ScheduleRun {
     error: row.error,
     durationMs: row.durationMs,
     notifyStatus: (row.notifyStatus as NotifyStatus | undefined) ?? 'none',
+    notifyClaimedAt: row.notifyClaimedAt ?? null,
+    heartbeatAt: row.heartbeatAt ?? null,
+    ownerId: row.ownerId ?? null,
   };
 }
 
@@ -82,6 +106,10 @@ export async function startRun(opts: StartRunOptions): Promise<ScheduleRun> {
     error: null,
     durationMs: null,
     notifyStatus: 'none',
+    notifyClaimedAt: null,
+    // The first heartbeat is the start itself, so a row is never 'running' with no proof of life.
+    heartbeatAt: startedAt,
+    ownerId: INSTANCE_ID,
   }));
 
   await pruneOldRuns(opts.scheduleId);
@@ -117,6 +145,47 @@ export async function finishRun(id: string, patch: {
  * the startup recovery pass, so there is exactly one place that decides "this entry is done." */
 export async function markNotifySent(id: string): Promise<void> {
   await run(db.update(scheduleRuns).set({ notifyStatus: 'sent' }).where(eq(scheduleRuns.id, id)));
+}
+
+/** The outbox rows nobody has finished dispatching: never claimed ('pending'), or claimed by a
+ *  process that stopped before closing the entry (a 'sending' claim older than `staleBefore`, or
+ *  one with no claim time at all). */
+function notifyDueCondition(staleBeforeIso: string) {
+  return or(
+    eq(scheduleRuns.notifyStatus, 'pending'),
+    and(
+      eq(scheduleRuns.notifyStatus, 'sending'),
+      or(isNull(scheduleRuns.notifyClaimedAt), lt(scheduleRuns.notifyClaimedAt, staleBeforeIso)),
+    ),
+  );
+}
+
+/**
+ * Claims a run's notification batch for this process: one conditional UPDATE that moves the row to
+ * 'sending' only while it is still due (see `notifyDueCondition`). Of any number of processes
+ * trying at once, exactly one sees a row change and gets `true`; the rest get `false` and must not
+ * dispatch (issue #88). At-least-once, never twice from two live processes: a claim whose owner
+ * died is taken over only after STALE_AFTER_MS.
+ */
+export async function claimNotifyDispatch(id: string, opts: { now?: Date } = {}): Promise<boolean> {
+  const now = opts.now ?? new Date();
+  const claimed = await many(
+    db.update(scheduleRuns)
+      .set({ notifyStatus: 'sending', notifyClaimedAt: now.toISOString() })
+      .where(and(eq(scheduleRuns.id, id), notifyDueCondition(staleBefore(now))))
+      .returning({ id: scheduleRuns.id }),
+  );
+  return claimed.length > 0;
+}
+
+/** Refreshes a running row's proof of life. A no-op once the run has finished, so a timer that
+ *  fires a beat late can never resurrect a closed row. */
+export async function heartbeatRun(id: string, now: Date = new Date()): Promise<void> {
+  await run(
+    db.update(scheduleRuns)
+      .set({ heartbeatAt: now.toISOString() })
+      .where(and(eq(scheduleRuns.id, id), eq(scheduleRuns.status, 'running'))),
+  );
 }
 
 /** Durably appends one category's new-finding fingerprints and totals to a still-running run's row,
@@ -168,16 +237,23 @@ export async function getLatestRun(scheduleId: string): Promise<ScheduleRun | nu
   return (await listRuns(scheduleId, 1))[0] ?? null;
 }
 
-/** Every row still `status: 'running'` — at process start, that can only mean a previous process
- *  died mid-scan (this process hasn't started a run yet). Feeds `recoverInterruptedRuns()`. */
-export async function listRunningRuns(): Promise<ScheduleRun[]> {
-  return (await many(db.select().from(scheduleRuns).where(eq(scheduleRuns.status, 'running')))).map(rowToRun);
+/** Every row still `status: 'running'` whose owner has stopped proving it is alive: a heartbeat
+ *  older than `staleBefore`, or none at all (rows from before the column existed, which the
+ *  upgrade leaves NULL). A row with a fresh heartbeat belongs to a live process, most likely the
+ *  container this one is replacing, and is not an orphan. Feeds `recoverInterruptedRuns()`. */
+export async function listStaleRunningRuns(staleBeforeIso: string): Promise<ScheduleRun[]> {
+  return (await many(
+    db.select().from(scheduleRuns).where(and(
+      eq(scheduleRuns.status, 'running'),
+      or(isNull(scheduleRuns.heartbeatAt), lt(scheduleRuns.heartbeatAt, staleBeforeIso)),
+    )),
+  )).map(rowToRun);
 }
 
-/** Every row still `notifyStatus: 'pending'` — its notification batch was due but never confirmed
- *  dispatched. Feeds `recoverPendingNotifications()`. */
-export async function listPendingNotificationRuns(): Promise<ScheduleRun[]> {
-  return (await many(db.select().from(scheduleRuns).where(eq(scheduleRuns.notifyStatus, 'pending')))).map(rowToRun);
+/** Every row whose notification batch is still due, per `notifyDueCondition`. Feeds
+ *  `recoverPendingNotifications()`; each row is then claimed individually before dispatch. */
+export async function listNotificationRunsToRecover(staleBeforeIso: string): Promise<ScheduleRun[]> {
+  return (await many(db.select().from(scheduleRuns).where(notifyDueCondition(staleBeforeIso)))).map(rowToRun);
 }
 
 async function pruneOldRuns(scheduleId: string): Promise<void> {

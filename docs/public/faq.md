@@ -78,10 +78,18 @@ Not today. The Azure public cloud endpoints are the only ones wired in.
 
 ## Can I run more than one replica?
 
-Not supported today: one container and one in-process scheduler. Two replicas would both run
-every due schedule, because scheduling has no cross-instance coordination, and in SQLite mode they
-would also contend for one database file. Running on PostgreSQL does not change the answer yet.
-See [`install.md`](install.md#deployment-topology).
+Not supported today: one container and one in-process scheduler. A rolling deploy, where the old
+and new container overlap for up to a minute, is safe: a due schedule runs once, in whichever
+container claims it first, a notification batch is sent once, and the new container's startup does
+not mark the old container's live scan as crashed. Anything longer-lived than that overlap is
+untested, and in SQLite mode two containers would also contend for one database file. Running on
+PostgreSQL does not change the answer yet. See [`install.md`](install.md#deployment-topology).
+
+One consequence of the claim is worth knowing. A schedule's next run time is advanced when the
+schedule is claimed, before its scan starts. If the container dies mid-scan, the run shows as not
+completed in Run History once its heartbeat is five minutes old, at the next start or scheduler
+tick, with whatever findings it had already recorded kept, and the schedule waits for its next
+occurrence rather than re-running at boot.
 
 ## Can I use PostgreSQL instead of SQLite?
 

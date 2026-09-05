@@ -276,7 +276,12 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
    On the Ingress tab enable ingress, accept traffic from anywhere, HTTP, target port 3000. Create.
 
 4. **Settings on the new app.** Under Scale set minimum and maximum replicas both to 1: RuleBeat
-   runs exactly one replica, and scaling to zero would stop the scheduler. Under Identity turn on
+   runs exactly one replica, and scaling to zero would stop the scheduler. Under Revisions keep
+   single revision mode, the default. A new revision still overlaps the old one for up to a minute
+   while the old container drains, and that window is safe: a due schedule runs once, in whichever
+   container claims it first, a notification batch is sent once, and each container's live scan is
+   left alone by the other's startup recovery. Two revisions serving traffic for longer than that
+   is the multi-replica topology RuleBeat does not support. Under Identity turn on
    System assigned, then Azure role assignments, Add: scope Subscription, role Reader, once per
    subscription to scan. RuleBeat picks that identity up with nothing else set. When you want
    Microsoft sign-in, add `AUTH_URL` set to the application URL from the Overview page as a new
@@ -388,12 +393,17 @@ generated to lose. The four variables, what each one replaces, and how to produc
 in [Running with no persistent volume](configure.md#running-with-no-persistent-volume); the
 portal steps are under [Azure Container Apps](#azure-container-apps).
 
-**Both modes run a single replica.** Postgres removes SQLite's single-writer constraint, but the
-background scheduler has no cross-instance coordination: each replica's 30-second poll loop and
-busy flag are in-process, so two replicas both run the same due schedule and send duplicate
-notifications and history. `RULEBEAT_DISABLE_SCHEDULER=1` on every replica but one avoids that,
-but it is a manual workaround rather than a high-availability story. Multi-replica support with
-real coordination is on the roadmap, not built.
+**Both modes run a single replica.** Postgres removes SQLite's single-writer constraint, but a
+second long-lived replica is still unsupported and untested: manual scans and the busy flag that
+keeps runs from overlapping against one tenant are per process, and in SQLite mode two containers
+cannot share the database file at all. What is safe is the overlap a rolling deploy creates, where
+the old and new container run side by side for up to a minute. Every due schedule is claimed with
+one conditional database update before its scan starts, every notification batch is claimed the
+same way before it is sent, and a running scan records a heartbeat every 30 seconds so the other
+container's recovery pass leaves it alone until that heartbeat is five minutes old.
+`RULEBEAT_DISABLE_SCHEDULER=1` on every replica but one remains the manual workaround for anything
+longer-lived than that window; multi-replica support with real coordination is on the roadmap, not
+built.
 
 ## Local development
 

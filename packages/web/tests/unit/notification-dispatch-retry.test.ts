@@ -32,6 +32,9 @@ function makeRun(scheduleId: string): ScheduleRun {
     error: null,
     durationMs: null,
     notifyStatus: 'pending',
+    notifyClaimedAt: null,
+    heartbeatAt: null,
+    ownerId: null,
   };
 }
 

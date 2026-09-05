@@ -868,6 +868,13 @@ export function runMigrations(sqlite: Database.Database): void {
   // schedule_runs: durable notification outbox marker (spec 025) — 'none' | 'pending' | 'sent'.
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN notify_status TEXT NOT NULL DEFAULT 'none'`); } catch { /* already exists */ }
 
+  // schedule_runs: overlap safety (issue #88). A run's heartbeat, the process that owns it, and when
+  // its notification claim was taken. Existing rows get NULL in all three, which recovery reads as
+  // "stale", the same treatment every leftover 'running' row got before the columns existed.
+  try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN notify_claimed_at TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN heartbeat_at TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN owner_id TEXT`); } catch { /* already exists */ }
+
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any
   // rows created under the old model (disabling them — the old fields don't map 1:1 onto the new

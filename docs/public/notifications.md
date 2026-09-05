@@ -74,8 +74,11 @@ request repeated is the same rejection. Email is a single attempt. Every attempt
 per channel with its status and response detail, keeping the most recent 50.
 
 Sending is an outbox rather than fire-and-forget: a run records that notifications are pending,
-dispatch happens, the run is marked sent. If the process restarts in between, startup recovery
-dispatches the pending ones. A restart delays a notification; it does not lose it.
+the process about to send them claims the batch, dispatch happens, the run is marked sent. If the
+process restarts in between, recovery dispatches the pending ones, at the next start and on every
+scheduler tick. The claim is what keeps two containers overlapping during a rolling deploy from
+both sending the same batch; a claim whose owner died is taken over after five minutes. A restart
+delays a notification; it does not lose it.
 
 ## Where a destination is allowed to point
 

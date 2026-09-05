@@ -33,6 +33,14 @@ targeting mode, tags and specific-rule lists included.
 Notification channels are assigned per schedule, along with the minimum severity and optional
 category and subscription scope for each. See [`notifications.md`](notifications.md).
 
+A due schedule is claimed before its scan starts: one conditional database update moves its next
+run forward, so two RuleBeat containers overlapping during a rolling deploy cannot both run it.
+While a scan runs, its row in Run History carries a heartbeat refreshed every 30 seconds. A run
+whose heartbeat is more than five minutes old is marked as not completed at the next start or
+scheduler tick, with the findings it had already recorded kept and its notifications, if any were
+due, sent then. A run interrupted that way is not re-run at boot; the schedule waits for its next
+occurrence.
+
 ## Disable, clear findings, or suppress
 
 Three controls make findings go away, and they mean different things.

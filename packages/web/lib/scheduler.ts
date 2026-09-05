@@ -1,6 +1,8 @@
-import { listDueSchedules, setNextRun, computeNextRun, type Schedule } from './db/schedules';
+import type { TenantContext } from '@rulebeat/core';
+import { listDueSchedules, claimDueSchedule, advanceScheduleAfterRun, computeNextRun, type Schedule } from './db/schedules';
 import { executeTarget, type RunTarget } from './run-executor';
 import type { ScheduleRun } from './schedule-runs';
+import { recoverInterruptedRuns, recoverPendingNotifications } from './startup-recovery';
 import { isDemoMode } from './demo';
 
 const TICK_INTERVAL_MS = 30_000;
@@ -56,18 +58,44 @@ async function tickOnce(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
-    const now = new Date().toISOString();
-    const due = await listDueSchedules(now);
-    for (const schedule of due) {
-      try {
-        await runOnce(schedule);
-      } catch {
-        // runOnce already records failures in schedule_runs; never let one bad
-        // schedule stop the loop from processing the rest.
-      }
-    }
+    await sweepStaleWork();
+    await runDueSchedules();
   } finally {
     busy = false;
+  }
+}
+
+/**
+ * The same two recovery passes instrumentation.ts runs at startup, repeated every tick. Startup
+ * alone stopped being enough once recovery learned to leave a run with a fresh heartbeat alone
+ * (issue #88): the container this one replaced may die mid-scan after this one has already
+ * started, and its run would otherwise stay 'running', and its notifications unsent, until
+ * somebody restarted again. Both passes are one SELECT each when there is nothing to do.
+ */
+async function sweepStaleWork(): Promise<void> {
+  try {
+    await recoverInterruptedRuns();
+    await recoverPendingNotifications();
+  } catch (err) {
+    console.error('[scheduler] stale-run sweep failed:', err);
+  }
+}
+
+/**
+ * Runs every schedule due at `now`, claiming each one before running it. One tick of one process;
+ * exported so a test can drive two of them against one database at once, which is exactly what a
+ * rolling deploy does. `ctx` is injected by tests only, the same way run-executor.ts takes it.
+ */
+export async function runDueSchedules(opts: { now?: Date; ctx?: TenantContext } = {}): Promise<void> {
+  const now = opts.now ?? new Date();
+  const due = await listDueSchedules(now.toISOString());
+  for (const schedule of due) {
+    try {
+      await runOnce(schedule, opts);
+    } catch {
+      // runOnce already records failures in schedule_runs; never let one bad
+      // schedule stop the loop from processing the rest.
+    }
   }
 }
 
@@ -96,12 +124,30 @@ export async function runManualTarget(target: RunTarget): Promise<ScheduleRun> {
   }
 }
 
-async function runOnce(schedule: Schedule): Promise<void> {
-  const startedAtIso = new Date().toISOString();
+/**
+ * Claim, run, re-advance (issue #88). The claim moves `next_run_at` to the next occurrence before
+ * the scan starts, from the value this process saw, so a second process seeing the same due row
+ * loses the claim and skips. The cost is deliberate and documented in the FAQ: a process that dies
+ * mid-scan no longer re-runs the schedule at the next start; the run is reported as interrupted
+ * once its heartbeat goes stale, and the schedule waits for its next occurrence.
+ *
+ * `now` and `ctx` are for tests (and the demo generator's shape of the same idea): a real tick
+ * passes neither.
+ */
+async function runOnce(schedule: Schedule, opts: { now?: Date; ctx?: TenantContext } = {}): Promise<void> {
+  const startedAt = opts.now ?? new Date();
+  const claimedNextRunAt = computeNextRun(schedule, startedAt)?.toISOString() ?? null;
+  const claimed = await claimDueSchedule(schedule, claimedNextRunAt, startedAt.toISOString());
+  if (!claimed) return;
+
   await executeTarget(
     { targetType: schedule.targetType, targetValues: schedule.targetValues },
-    { triggeredBy: 'schedule', scheduleId: schedule.id },
+    { triggeredBy: 'schedule', scheduleId: schedule.id, ctx: opts.ctx },
   );
-  const nextRunAt = computeNextRun(schedule, new Date())?.toISOString() ?? null;
-  await setNextRun(schedule.id, nextRunAt, startedAtIso);
+
+  // A scan longer than its own interval must not run again the instant it ends: move on to the
+  // first occurrence after the finish, unless an operator moved the schedule meanwhile.
+  const finishedAt = opts.now ?? new Date();
+  const afterRun = computeNextRun(schedule, finishedAt)?.toISOString() ?? null;
+  await advanceScheduleAfterRun(schedule.id, claimedNextRunAt, afterRun);
 }
