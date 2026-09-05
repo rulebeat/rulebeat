@@ -62,14 +62,14 @@ the image, recorded publicly in Sigstore's Rekor transparency log.
 cosign verify \
   --certificate-identity-regexp '^https://github.com/rulebeat/rulebeat/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/rulebeat/rulebeat:0.4.0
+  ghcr.io/rulebeat/rulebeat:0.5.0
 ```
 
 Every image also carries an SBOM and a build provenance attestation, attached to the same digest:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.4.0 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.4.0 --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.5.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/rulebeat/rulebeat:0.5.0 --format '{{ json .Provenance }}'
 ```
 
 The pipelines that build and scan every image are public
