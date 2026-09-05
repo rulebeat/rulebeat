@@ -7,7 +7,7 @@ so on) rather than a role rank, so this table is the single place the mapping li
 | Action | Viewer | Editor | Admin |
 |---|:---:|:---:|:---:|
 | Read and export everything (findings, rules, dashboards, scans) | ✅ | ✅ | ✅ |
-| Author, edit, delete, or test-validate rules | | ✅ | ✅ |
+| Author, edit, delete, or test-validate rules, and clear a rule's findings | | ✅ | ✅ |
 | Run a manual scan | | ✅ | ✅ |
 | Create or edit schedules | | ✅ | ✅ |
 | Suppress a finding | | ✅ | ✅ |

@@ -33,6 +33,26 @@ targeting mode, tags and specific-rule lists included.
 Notification channels are assigned per schedule, along with the minimum severity and optional
 category and subscription scope for each. See [`notifications.md`](notifications.md).
 
+## Disable, clear findings, or suppress
+
+Three controls make findings go away, and they mean different things.
+
+- **Disable the rule**, with the toggle on the Rules tab. The rule stops being scanned. Its
+  findings are left exactly as they were, still listed and still counted, because no scan looks at
+  them again and only a rule that ran can mark its own findings fixed. Use it for a rule that is
+  right but not wanted right now.
+- **Clear findings**, next to the affected count on the Rules tab (editor and admin). Deletes
+  every finding the rule has ever produced, active and fixed, together with their history, and
+  keeps the rule. Use it when the rule turned out to be wrong: the findings were never real, so
+  marking them fixed would record remediation nobody did. Built-in rules can have their findings
+  cleared even though they cannot be deleted. If the rule is still enabled, the next scan that runs
+  it recreates whatever still matches and notifies about each one as new, so disable the rule
+  first unless a clean baseline is what you want. Suppressions are kept, so a finding that comes
+  back is still suppressed. Past runs in Run History and past days on the trend charts keep their
+  original counts. The action is written to the audit log with the number of findings removed.
+- **Suppress a finding** ([`suppressions.md`](suppressions.md)) records that one finding is real
+  but accepted. It hides that finding from the figures without deleting anything.
+
 ## Run history
 
 Every run, manual or scheduled, is recorded with its outcome, duration and which rules it covered.

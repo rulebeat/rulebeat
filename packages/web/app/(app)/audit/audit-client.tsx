@@ -40,7 +40,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
 // Destructive and access-changing actions are tinted so they stand out when scanning the list —
 // which is exactly what someone opens this page to look for.
 const NOTABLE_ACTIONS = new Set([
-  'rule.delete', 'suppression.create', 'schedule.delete', 'category.delete',
+  'rule.delete', 'rule.clear_findings', 'suppression.create', 'schedule.delete', 'category.delete',
   'dashboard.delete', 'user.remove', 'user.role_change', 'user.default_role_change',
   'user.invite_claimed',
   'user.password_reset', 'user.password_removed', 'auth.locked_out',
