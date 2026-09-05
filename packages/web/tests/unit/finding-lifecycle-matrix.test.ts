@@ -192,10 +192,25 @@ describe('deleteFindingsForRule', () => {
     expect(await listFindings()).toHaveLength(1);
     expect(await eventsFor(f.fingerprint)).toHaveLength(1);
 
-    await deleteFindingsForRule(RULE_A);
+    expect(await deleteFindingsForRule(RULE_A)).toBe(1);
 
     expect(await listFindings()).toHaveLength(0);
     expect(await eventsFor(f.fingerprint)).toHaveLength(0);
+  });
+
+  it('returns how many findings rows it removed, active and fixed alike, and 0 when there is nothing left', async () => {
+    const active = finding('vm-active');
+    const fixed = finding('vm-fixed');
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [active, fixed], finishedAt: daysAgo(2) });
+    // A second scan that ran the rule and no longer sees vm-fixed marks it fixed; the row stays.
+    await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [active], finishedAt: daysAgo(1) });
+    expect((await listFindings({ status: 'fixed' })).map(f => f.fingerprint)).toEqual([fixed.fingerprint]);
+
+    expect(await deleteFindingsForRule(RULE_A)).toBe(2);
+    expect(await listFindings()).toHaveLength(0);
+
+    // Nothing left to delete is a normal outcome, not an error: the caller reports the number.
+    expect(await deleteFindingsForRule(RULE_A)).toBe(0);
   });
 });
 

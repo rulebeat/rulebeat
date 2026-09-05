@@ -376,19 +376,34 @@ export async function getActivityOccurrenceCounts(opts: {
   return out;
 }
 
-export async function deleteFindingsForRule(ruleId: string): Promise<void> {
-  const categoryRows = await many(
-    db.select({ category: findingsTable.category }).from(findingsTable)
-      .where(eq(findingsTable.ruleId, ruleId)),
-  );
-  const affectedCategories = new Set(categoryRows.map(r => r.category));
+/** Hard-deletes every `findings` row and every `finding_events` row for a rule, active and fixed
+ *  alike, then refreshes today's snapshot for each category that lost rows. Returns how many
+ *  findings rows went, which is free: the rows are already read to learn the affected categories.
+ *  Called when a rule is deleted and when an operator clears a rule's findings (issue #98); a
+ *  second call for the same rule finds nothing and returns 0. Suppressions are keyed on the
+ *  fingerprint and are deliberately left alone, so a finding that later regenerates re-attaches to
+ *  its old suppression. */
+export async function deleteFindingsForRule(ruleId: string): Promise<number> {
+  let deleted = 0;
+  const affectedCategories = new Set<string>();
 
   await inTransaction(async (tx) => {
+    const rows = await many(
+      tx.select({ category: findingsTable.category }).from(findingsTable)
+        .where(eq(findingsTable.ruleId, ruleId)),
+    );
+    deleted = rows.length;
+    for (const r of rows) affectedCategories.add(r.category);
+
     await run(tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)));
     await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
   });
 
+  // Outside the transaction on purpose: on Postgres the snapshot recompute runs on its own
+  // connection, so inside it would still see the rows this transaction has not yet committed.
   for (const category of affectedCategories) await upsertDailySnapshot(category);
+
+  return deleted;
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---

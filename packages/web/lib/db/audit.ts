@@ -6,6 +6,7 @@ import type { AppUser } from './users';
 
 export type AuditAction =
   | 'rule.create' | 'rule.update' | 'rule.delete' | 'rule.duplicate' | 'rule.bulk_update'
+  | 'rule.clear_findings'
   | 'suppression.create' | 'suppression.delete'
   | 'schedule.create' | 'schedule.update' | 'schedule.delete' | 'schedule.run'
   | 'category.create' | 'category.update' | 'category.delete'

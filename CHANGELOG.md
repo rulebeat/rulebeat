@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- A rule's findings can now be cleared without deleting the rule, built-in rules included. A Clear findings control on the Scans page's Rules tab (editor and admin) deletes every finding the rule produced, active and fixed, with their history, keeps the rule, and writes an audit entry naming the rule and the count. Disabling a rule stops it being scanned but leaves its findings counted, since only a rule that ran can resolve its own findings, so a rule that turned out to be wrong had no way out before. Suppressions, past runs and past trend days are untouched (issue #98).
+
 ## [0.4.0] - 2026-09-02
 
 ### Added

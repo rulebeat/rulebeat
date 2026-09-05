@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { FindingsExplorerClient } from '@/components/findings/findings-explorer-client';
@@ -12,6 +13,7 @@ import type { NotificationChannelSummary } from '@/lib/db/notification-channels'
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Callout } from '@/components/ui/callout';
 import { Switch } from '@/components/ui/switch';
 import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
 import { Input } from '@/components/ui/input';
@@ -115,10 +117,16 @@ export function ScansClient({
   notificationChannels = [],
   ruleFindingCounts = {},
 }: ScansClientProps) {
+  const router = useRouter();
   const canRunScans = can(role, 'scans:run');
   const canEditRules = can(role, 'rules:write');
+  // Same action as deleting a rule: clearing its findings reaches the same primitive that rule
+  // deletion already does, so it is not an escalation for anyone who holds rules:delete.
+  const canClearFindings = can(role, 'rules:delete');
   const canSuppress = can(role, 'suppressions:write');
   const [policies, setPolicies] = useState(initialPolicies);
+  const [clearingId, setClearingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
@@ -163,6 +171,40 @@ export function ScansClient({
       body: JSON.stringify(updated),
     });
     setPolicies(ps => ps.map(p => p.id === policy.id ? updated : p));
+  }
+
+  /** Deletes every finding the rule produced, active and fixed, and keeps the rule (issue #98).
+   *  The count in the row is active findings only, so the number reported back from the server
+   *  can be higher; the copy says "findings", never "active findings", for that reason. After a
+   *  success the server's own per-rule counts are re-read via router.refresh() rather than patched
+   *  locally, so the row cannot drift from what the page would show on a fresh load. */
+  async function clearFindings(policy: Rule) {
+    const lines = [
+      `Clear every finding for "${policy.name}"?`,
+      'This deletes the rule\'s findings and their history and cannot be undone. The rule itself stays, and any suppressions are kept.',
+    ];
+    if (policy.enabled) {
+      lines.push('This rule is still enabled: the next scan that runs it recreates whatever still matches and notifies about each one as new. Disable the rule first if that is not what you want.');
+    }
+    if (!confirm(lines.join('\n\n'))) return;
+
+    setNotice(null);
+    setClearingId(policy.id);
+    try {
+      const res = await fetch(`/api/rules/${encodeURIComponent(policy.id)}/findings`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setNotice({ tone: 'error', text: body.error ?? `Could not clear the findings for "${policy.name}".` });
+        return;
+      }
+      const { deleted } = await res.json() as { deleted: number };
+      setNotice({ tone: 'success', text: `Cleared ${deleted} finding${deleted === 1 ? '' : 's'} for "${policy.name}".` });
+      router.refresh();
+    } catch {
+      setNotice({ tone: 'error', text: `Could not clear the findings for "${policy.name}".` });
+    } finally {
+      setClearingId(null);
+    }
   }
 
   // Run Scan target defaults to whatever the Rules tab's Category filter currently holds — the
@@ -317,6 +359,12 @@ export function ScansClient({
                 )}
               </div>
 
+              {notice && (
+                <div className="px-6 pt-4">
+                  <Callout tone={notice.tone}>{notice.text}</Callout>
+                </div>
+              )}
+
               {visible.length === 0 ? (
                 <CardContent>
                   <p className="py-10 text-center text-sm text-ink-muted">
@@ -368,6 +416,22 @@ export function ScansClient({
                           <span className="inline-flex w-fit shrink-0 items-center gap-1 bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2">
                             {statusLabel}
                           </span>
+                        )}
+
+                        {/* Only where there is something to clear: the affected count is what
+                            prompts the operator to act, and a row with no findings would just
+                            carry a button that does nothing. */}
+                        {canClearFindings && findingCount > 0 && (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="shrink-0"
+                            disabled={clearingId === policy.id}
+                            onClick={() => { void clearFindings(policy); }}
+                            title="Delete every finding this rule produced, active and fixed. The rule stays."
+                          >
+                            {clearingId === policy.id ? 'Clearing…' : 'Clear findings'}
+                          </Button>
                         )}
                       </div>
                     );

@@ -46,4 +46,5 @@ resolves on the next successful scan and its suppression goes quiet with it.
 | This one resource is an approved deviation | Suppress the finding, with a reason and a review date. |
 | This rule should never apply to these resources | Edit the rule's scope, conditions or Applies to population. |
 | This rule is not relevant to us | Disable the rule. It leaves the posture total and stops being scanned; existing findings stay listed, marked Off. |
+| This rule was wrong and its findings were never real | Clear the rule's findings from the Rules tab. Deletes them and their history and keeps the rule; see [scans-and-schedules.md](scans-and-schedules.md#disable-clear-findings-or-suppress). |
 | This finding is real and we fixed it | Nothing. The next successful scan marks it fixed. |
