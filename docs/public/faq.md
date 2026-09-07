@@ -13,12 +13,12 @@ with [`why-run-rulebeat.md`](why-run-rulebeat.md) for what the visibility is for
 
 ## How is this different from Azure Policy?
 
-Policy is Azure's enforcement layer: it decides whether a resource may exist in a given state, and
-can audit, deny or modify at deployment time. RuleBeat runs the checks you write yourself, on a
-schedule, and keeps the finding history, suppressions and dashboards that show how posture moves.
-It never blocks a deployment, never modifies a resource, and never holds the credentials that
-could. The two are independent and neither needs the other. See
-[`how-it-works.md`](how-it-works.md).
+Where an Azure Policy assignment runs in audit mode and someone reads the compliance blade, the two
+overlap. The difference is the work around a check: in RuleBeat a check is the query you already
+run, it shows its rows before you save it, it runs on the schedule you set, it can read Entra ID as
+well as resources, and every finding keeps a history until it is fixed. Enforcing a standard is
+Azure Policy's job. RuleBeat never enforces. The full comparison, checked against Microsoft's
+documentation, is in [`rulebeat-and-azure-policy.md`](rulebeat-and-azure-policy.md).
 
 ## How is this different from Defender for Cloud or Azure Advisor?
 

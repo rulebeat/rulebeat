@@ -86,6 +86,7 @@ nav:
       - scans-and-schedules.md
   - Understand:
       - why-run-rulebeat.md
+      - rulebeat-and-azure-policy.md
       - how-it-works.md
       - posture.md
   - Operate:
