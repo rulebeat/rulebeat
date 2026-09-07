@@ -6,10 +6,6 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
-### Changed
-
-- The console's metadata description, the Open Graph image alt text and the package descriptions now say what RuleBeat is ("RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and customize on a schedule and tracks every finding until it is fixed.") instead of the earlier "runs the governance checks your team writes" line, so the app describes itself with the same sentence as the README, the docs and rulebeat.com. A test now fails if any of those restatements drift, or if the license name appears outside a License section.
-
 ## [0.5.0] - 2026-09-05
 
 ### Added
