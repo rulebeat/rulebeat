@@ -86,8 +86,9 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
-      # The Pages setting that enforces HTTPS on the custom domain is not set from here: the
-      # workflow token, even with pages: write, gets "Resource not accessible by integration"
-      # from PUT /repos/{owner}/{repo}/pages (tried 2026-09-07). It is a one-time owner action
-      # in the repository's Pages settings, or `gh api --method PUT repos/<owner>/<repo>/pages
-      # -F https_enforced=true` with an owner token.
+      # TLS for the custom domain is terminated by Cloudflare, which proxies the docs record, so
+      # GitHub never issues its own certificate for it and the Pages setting that enforces HTTPS
+      # stays unavailable by design (the API answers "The certificate does not exist yet"). The
+      # http to https redirect, if wanted, is Cloudflare's "Always Use HTTPS" setting. Setting the
+      # GitHub flag from this job was also refused with "Resource not accessible by integration",
+      # so there is nothing for the deploy to do here (both checked 2026-09-07).
