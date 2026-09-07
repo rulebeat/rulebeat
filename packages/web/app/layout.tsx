@@ -48,7 +48,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'RuleBeat',
     description:
-      'RuleBeat runs the governance checks your team writes for Azure on a schedule, tracks every finding over time, and never holds write access.',
+      'RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and customize on a schedule and tracks every finding until it is fixed.',
     metadataBase: await resolveMetadataBase(),
   };
 }

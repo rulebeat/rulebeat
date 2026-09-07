@@ -5,12 +5,11 @@
   <img src="brand/lockup/rulebeat-lockup-306.png" alt="RuleBeat" width="240">
 </picture>
 
-<h3>Azure governance checks you write, run on a schedule</h3>
+<h3>Write the rule once. Check your whole Azure tenant against it, every day.</h3>
 
 <p>
-A self-hosted governance scanner for Azure: one Docker container you run in your own subscription.<br>
-Your rules describe what should not exist in your estate. RuleBeat finds where it does,<br>
-and tracks every finding from first seen to fixed.
+RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and
+customize on a schedule and tracks every finding until it is fixed.
 </p>
 
 <p>
@@ -43,12 +42,12 @@ and tracks every finding from first seen to fixed.
 
 ![Dashboard overview with the Overall Posture ring, trend, and stat cards](docs/public/img/dashboard.png)
 
-A rule is a check you author against Azure Resource Graph or Microsoft Graph, in a visual builder
-or as raw KQL. Built-in and custom rules share one scan, history, suppression, dashboard and
-notification workflow.
+Every check is a rule. Customize the built-in rules or create your own for the checks you need, in a
+visual builder or as a raw query. Built-in and custom rules run in the same scan, share the same
+suppressions and history, and show up in the same dashboards and notifications.
 
-RuleBeat is read-only by design. It scans with a Reader credential you provide, never holds write
-access, and never blocks a deployment. It is open source (Apache-2.0) and free.
+RuleBeat only ever reads. It scans with a Reader credential you create, never holds write access,
+and never blocks a deployment. It is open source and free.
 
 ---
 
@@ -222,8 +221,8 @@ or is missing something you would need to adopt it,
 
 ## Feedback & contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The whole platform is open and community-contributed under
-Apache-2.0. [Open an issue](https://github.com/rulebeat/rulebeat/issues) with bug reports, feature
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The whole platform is open to contribution.
+[Open an issue](https://github.com/rulebeat/rulebeat/issues) with bug reports, feature
 requests, or rule ideas, or open a pull request directly. [`SUPPORT.md`](SUPPORT.md) says where to
 ask questions; everyone in the project's spaces follows the
 [code of conduct](CODE_OF_CONDUCT.md).
