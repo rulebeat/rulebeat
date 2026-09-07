@@ -6,8 +6,11 @@ this file is the one to read.
 
 ## The product in one paragraph
 
-RuleBeat runs the governance checks a platform team writes for Azure on a schedule, tracks every
-finding over time, and never holds write access. It never blocks a deployment. Every check is a
+RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and
+customize on a schedule and tracks every finding until it is fixed. RuleBeat only ever reads. It
+scans with a Reader credential you create, never holds write access, and never blocks a deployment.
+(Positioning is owned by the launch-operations repo and restated here verbatim; "tool" is the noun,
+the reader is "you", and the license name appears only in License sections.) Every check is a
 **rule** (a row in SQLite) that either compiles to an Azure Resource Graph KQL query or targets
 Microsoft Graph directly for checks about the directory itself; every result the query returns is a
 finding. Users author their own rules through a visual builder that reads and writes KQL both ways,

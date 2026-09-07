@@ -1,6 +1,7 @@
 {
   "name": "@rulebeat/web",
   "version": "0.5.0",
+  "description": "RuleBeat web: the Next.js console and API routes",
   "private": true,
   "license": "Apache-2.0",
   "scripts": {

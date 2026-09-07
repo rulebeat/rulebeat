@@ -3,6 +3,14 @@
 Short answers, each pointing at the page with the long one. The comparisons name only Microsoft's
 own services; RuleBeat does not publish comparisons with tools it has not used hands-on.
 
+## What is RuleBeat?
+
+RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and
+customize on a schedule and tracks every finding until it is fixed. RuleBeat only ever reads. It scans
+with a Reader credential you create, never holds write access, and never blocks a deployment. Start
+with [`why-run-rulebeat.md`](why-run-rulebeat.md) for what the visibility is for and
+[`how-it-works.md`](how-it-works.md) for what happens between a rule and a finding.
+
 ## How is this different from Azure Policy?
 
 Policy is Azure's enforcement layer: it decides whether a resource may exist in a given state, and
@@ -117,5 +125,6 @@ beside it, because the keys never live in the database. See [`security.md`](secu
 
 ## Is it really free?
 
-Yes. Open source under Apache-2.0, with no paid tier and no feature held back from the open
-version.
+Yes. RuleBeat is open source and free, with no paid tier and no feature held back from the open
+version. The license is Apache-2.0, in the repository's
+[`LICENSE`](https://github.com/rulebeat/rulebeat/blob/main/LICENSE) file.

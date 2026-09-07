@@ -1,6 +1,6 @@
 # Support
 
-RuleBeat is open source (Apache-2.0) and free. It is self-hosted and community-supported.
+RuleBeat is open source and free. It is self-hosted and community-supported.
 
 ## Before asking
 

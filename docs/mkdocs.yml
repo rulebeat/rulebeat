@@ -15,9 +15,12 @@
 # they are in the documentation, not the product site (the Stripe/GitHub/Cloudflare docs pattern).
 # It also reaches browser-tab titles and the OG card titles via overrides/main.html.
 site_name: RuleBeat Docs
+# Positioning line 1, verbatim (owned by the launch-operations repo, restated in README.md and
+# docs/public/README.md; packages/web/tests/unit/docs-positioning-drift.test.ts fails if the
+# copies disagree). The home page's description; every other page gets its own from hooks/seo.py.
 site_description: >-
-  RuleBeat runs the governance checks your team writes for Azure on a schedule,
-  tracks every finding over time, and never holds write access.
+  RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create
+  and customize on a schedule and tracks every finding until it is fixed.
 site_url: https://docs.rulebeat.com/
 repo_url: https://github.com/rulebeat/rulebeat
 repo_name: rulebeat/rulebeat
@@ -106,6 +109,13 @@ plugins:
   - search
   - glightbox
 
+# Search and AI discoverability, with no extra dependency: a per-page <meta name="description">
+# derived from each page's first paragraph (front matter stays out of docs/public so GitHub keeps
+# rendering the files unchanged), the question/answer pairs the FAQ's structured data needs, and
+# llms.txt plus llms-full.txt written next to the built site. See the file's own header.
+hooks:
+  - hooks/seo.py
+
 markdown_extensions:
   - tables
   # Syntax-highlighted fences, like GitHub renders the same files: pymdownx.highlight runs Pygments
@@ -134,6 +144,8 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/rulebeat/rulebeat
+    - icon: fontawesome/solid/globe
+      link: https://rulebeat.com
 
 # Raised from MkDocs' defaults (anchors and absolute_links default to `info`, which --strict
 # ignores) so `mkdocs build --strict` fails on any broken internal link OR anchor. External

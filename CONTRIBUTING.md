@@ -1,8 +1,8 @@
 # Contributing
 
-RuleBeat's whole platform (the engine, UI, scheduler, RBAC, dashboards, rules, packs) publishes
-under Apache-2.0, open to contribution. Fork the repo, branch, and open a pull request against
-`main`. For a rule idea, a check you'd like to see, a correction to an existing rule's
+RuleBeat's whole platform (the engine, UI, scheduler, RBAC, dashboards, rules, packs) is open
+source and open to contribution. Contributions land under the project's Apache-2.0 license (see
+[`LICENSE`](LICENSE)). Fork the repo, branch, and open a pull request against `main`. For a rule idea, a check you'd like to see, a correction to an existing rule's
 recommendation text, or a change to the product itself, [open an issue](https://github.com/rulebeat/rulebeat/issues)
 first if you want to talk it through before writing code.
 

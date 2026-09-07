@@ -1,13 +1,15 @@
 # RuleBeat documentation
 
-RuleBeat is a self-hosted governance scanner for Azure: a single Docker container you run in your own
-subscription. Your team writes rules describing what should not exist in your estate, RuleBeat runs
-them on a schedule, and every finding is tracked from first seen to fixed. A rule is a check you
-author against Azure Resource Graph or Microsoft Graph, in a visual builder or as raw KQL, and
-built-in and custom rules share one scan, history, suppression, dashboard and notification workflow.
+RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and
+customize on a schedule and tracks every finding until it is fixed. Every check is a rule. Customize
+the built-in rules or create your own for the checks you need, in a visual builder or as a raw query.
+Built-in and custom rules run in the same scan, share the same suppressions and history, and show up
+in the same dashboards and notifications.
 
-RuleBeat is read-only by design. It scans with a Reader credential you provide, never holds write
-access, and never blocks a deployment. It is open source (Apache-2.0) and free.
+Those checks usually live in someone's head, in a script only its author runs, or in a wiki page that
+went stale the month it was written. RuleBeat gives them a home. RuleBeat only ever reads. It scans
+with a Reader credential you create, never holds write access, and never blocks a deployment. It is
+open source and free.
 
 **New here?** Read [Why run RuleBeat](why-run-rulebeat.md), then [Installing RuleBeat](install.md).
 Everything else is reference you can come back to.

@@ -1,18 +1,81 @@
 {% extends "base.html" %}
 
-{#- Static OG/Twitter card metadata, without Material's social plugin (which needs cairo on the
-    runner). site_url ends with '/', so the plain concatenation below is correct. -#}
+{#- Static OG/Twitter card metadata and structured data, without Material's social plugin
+    (which needs cairo on the runner). The description comes per page from hooks/seo.py, with
+    the site-wide sentence as the fallback; site_url ends with '/', so the plain concatenation
+    below is correct. -#}
 {% block extrahead %}
+  {% set page_description = page.meta.description if page and page.meta and page.meta.description else config.site_description %}
   {% set og_title = config.site_name %}
   {% if page and page.title and not page.is_homepage %}
     {% set og_title = page.title ~ " - " ~ config.site_name %}
   {% endif %}
-  <meta property="og:type" content="website" />
+  {% set social_image = config.site_url ~ "img/brand/rulebeat-social-1200x630.png" %}
+  <meta property="og:type" content="{{ 'website' if page and page.is_homepage else 'article' }}" />
+  <meta property="og:site_name" content="{{ config.site_name }}" />
   <meta property="og:title" content="{{ og_title }}" />
-  <meta property="og:description" content="{{ config.site_description }}" />
+  <meta property="og:description" content="{{ page_description }}" />
   <meta property="og:url" content="{{ page.canonical_url }}" />
-  <meta property="og:image" content="{{ config.site_url }}img/brand/rulebeat-social-1200x630.png" />
+  <meta property="og:image" content="{{ social_image }}" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
+
+  {#- Structured data. Every field is a fact the page itself states; nothing is rated, priced or
+      reviewed. The home page describes the software, every other page is an article about it,
+      and the FAQ carries its question/answer pairs (page.meta.faq, set by hooks/seo.py). -#}
+  {#- The 404 template renders with no page object, so everything page-shaped is guarded. -#}
+  {% set publisher = {"@type": "Organization", "name": "RuleBeat", "url": "https://rulebeat.com"} %}
+  {% if page and page.is_homepage %}
+    {% set software = {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "RuleBeat",
+      "description": config.site_description,
+      "url": "https://rulebeat.com",
+      "applicationCategory": "SecurityApplication",
+      "applicationSubCategory": "Cloud governance",
+      "operatingSystem": "Docker",
+      "isAccessibleForFree": true,
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "softwareHelp": {"@type": "WebPage", "url": config.site_url},
+      "sameAs": [config.repo_url],
+      "author": publisher
+    } %}
+    <script type="application/ld+json">{{ software | tojson }}</script>
+    {% set website = {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": config.site_name,
+      "url": config.site_url,
+      "description": config.site_description,
+      "publisher": publisher
+    } %}
+    <script type="application/ld+json">{{ website | tojson }}</script>
+  {% elif page %}
+    {% set article = {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": page.title,
+      "description": page_description,
+      "url": page.canonical_url,
+      "mainEntityOfPage": page.canonical_url,
+      "isPartOf": {"@type": "WebSite", "name": config.site_name, "url": config.site_url},
+      "author": publisher,
+      "publisher": publisher
+    } %}
+    <script type="application/ld+json">{{ article | tojson }}</script>
+  {% endif %}
+  {% if page and page.meta and page.meta.faq %}
+    {% set entities = [] %}
+    {% for pair in page.meta.faq %}
+      {% set _ = entities.append({
+        "@type": "Question",
+        "name": pair.question,
+        "acceptedAnswer": {"@type": "Answer", "text": pair.answer}
+      }) %}
+    {% endfor %}
+    {% set faq = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": entities} %}
+    <script type="application/ld+json">{{ faq | tojson }}</script>
+  {% endif %}
 {% endblock %}

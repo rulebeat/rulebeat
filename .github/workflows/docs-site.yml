@@ -86,3 +86,14 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      # A docs domain shared publicly should not answer over plaintext, and the Pages setting
+      # that enforces HTTPS lives outside the repo. Setting it here, after every deploy, keeps it
+      # true without anyone remembering the checkbox; the call is idempotent and needs only the
+      # `pages: write` permission this job already holds. It cannot succeed until GitHub has
+      # provisioned the domain's certificate, so a refusal is logged rather than failing a deploy
+      # that already happened.
+      - name: Enforce HTTPS on the Pages site
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/${{ github.repository }}/pages" -F https_enforced=true
