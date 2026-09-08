@@ -27,6 +27,7 @@ Everything else is reference you can come back to.
 | Page | What it answers |
 |---|---|
 | [Why run RuleBeat](why-run-rulebeat.md) | What the visibility buys you: cost, security, compliance, identity, reliability. |
+| [RuleBeat and Azure Policy](rulebeat-and-azure-policy.md) | Where the two overlap, where the work around a check differs, and what Policy does that RuleBeat does not. |
 | [How it works](how-it-works.md) | What happens between a rule and a finding, and where data lives. |
 | [Posture](posture.md) | What "X of Y passing" means exactly, and what counts as unknown. |
 

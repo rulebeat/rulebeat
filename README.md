@@ -113,11 +113,14 @@ your action under your own identity.
 
 ## Why not just use...
 
-- **Azure Policy.** Policy is Azure's enforcement layer: it evaluates definitions inside the control
-  plane and can audit, deny or modify a resource at deployment time, and it does that better than
-  anything you would write yourself. RuleBeat does a different job: your own checks, run by your own
-  service on a schedule, with history, suppressions and dashboards. Teams run both, and neither
-  needs the other.
+- **Azure Policy.** Where an assignment runs in audit mode and someone reads the compliance blade,
+  the two overlap. The difference is the work around a check: in RuleBeat a check is the KQL you
+  already run in the Resource Graph blade, it shows real rows before you save it, it runs on the
+  schedule you set instead of the daily evaluation cycle, it can read Entra ID as well as
+  resources, and every finding keeps a history until it is fixed. Enforcing a standard is Policy's
+  job, and it does that better than anything you would write yourself. RuleBeat never enforces.
+  The full comparison is in
+  [`rulebeat-and-azure-policy.md`](docs/public/rulebeat-and-azure-policy.md).
 - **Defender for Cloud or Azure Advisor.** Both are valuable, and both are security-first or
   recommendation-first. Neither lets you write a check against your own tag standard, naming
   convention or internal rule and then schedule it, suppress the known cases and watch the trend.
@@ -198,7 +201,7 @@ Published and searchable at [docs.rulebeat.com](https://docs.rulebeat.com), and 
 | Write a rule | [authoring-rules.md](docs/public/authoring-rules.md), [directory-rules.md](docs/public/directory-rules.md) |
 | Understand what it does with a finding | [how-it-works.md](docs/public/how-it-works.md), [posture.md](docs/public/posture.md) |
 | Know what it reads and stores | [security.md](docs/public/security.md) |
-| Compare it to what you already run | [faq.md](docs/public/faq.md) |
+| Compare it to what you already run | [rulebeat-and-azure-policy.md](docs/public/rulebeat-and-azure-policy.md), [faq.md](docs/public/faq.md) |
 
 Contributing to the code is [`CONTRIBUTING.md`](CONTRIBUTING.md); reporting a vulnerability is
 [`SECURITY.md`](SECURITY.md). Local development:
