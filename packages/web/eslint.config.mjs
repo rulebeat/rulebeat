@@ -6,6 +6,9 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // eslint-plugin-react's version auto-detect calls context.getFilename(), which
+    // ESLint 10 removed. Naming the version skips the detect path entirely.
+    settings: { react: { version: "19.3" } },
     rules: {
       // A leading underscore is the house convention for "kept for a uniform call
       // signature, intentionally unused" (see lib/notifications/format.ts's per-channel
