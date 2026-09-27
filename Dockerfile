@@ -17,8 +17,8 @@ FROM base AS builder
 RUN apk add --no-cache python3 make g++
 
 # The WHOLE of /app, not just /app/node_modules. npm does not hoist everything to the root: with
-# these manifests it nests nodemailer and typescript under packages/web/node_modules, and
-# .dockerignore excludes those paths so `COPY . .` cannot supply them either. Copying only the root
+# these manifests it nests nodemailer and several ESLint packages under packages/web/node_modules,
+# and .dockerignore excludes those paths so `COPY . .` cannot supply them either. Copying only the root
 # left packages/web/node_modules absent from this stage entirely, and dispatch.ts's dynamic
 # `import('nodemailer')` then resolved by walking UP to a hoisted nodemailer@8.0.11 that is an
 # optional peer of another package, rather than the ^9.0.5 packages/web declares. The build passed

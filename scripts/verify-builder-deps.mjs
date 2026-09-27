@@ -3,7 +3,7 @@
 // that package, at the major version the manifest asks for.
 //
 // Why this exists: the Docker builder stage used to copy only /app/node_modules. npm does not
-// hoist everything there -- with these manifests it nests nodemailer and typescript under
+// hoist everything there -- with these manifests it nests nodemailer and several ESLint packages under
 // packages/web/node_modules -- and .dockerignore excludes those paths, so that directory was
 // simply absent while `next build` ran. dispatch.ts reaches nodemailer through a dynamic
 // `import('nodemailer')`, Node resolution walked UP to the root, and it found nodemailer@8.0.11
