@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Security
+
+- Next.js is upgraded from 16.3.2 to 16.3.5, which fixes two critical remote code execution vulnerabilities in Next.js itself: CVE-2026-75604, which affects servers hosted on Windows, and GHSA-2xp9-vwfh-vxw4, in the image optimization endpoint when AVIF files are served. The Docker image failed its vulnerability scan on 16.3.2. No configuration change is needed.
+
 ## [0.5.0] - 2026-09-05
 
 ### Added
