@@ -6,9 +6,20 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-27
+
 ### Security
 
 - Next.js is upgraded from 16.3.2 to 16.3.5, which fixes two critical remote code execution vulnerabilities in Next.js itself: CVE-2026-75604, which affects servers hosted on Windows, and GHSA-2xp9-vwfh-vxw4, in the image optimization endpoint when AVIF files are served. The Docker image failed its vulnerability scan on 16.3.2. No configuration change is needed.
+
+### Dependencies
+
+- Updated `@azure/identity` from 4.13.2 to 4.13.3.
+- Updated `@base-ui/react` from 1.7.0 to 1.8.0.
+- Updated `lucide-react` from 1.33.0 to 1.47.0.
+- Updated `react` from 19.2.8 to 19.3.0.
+- Updated `react-dom` from 19.2.8 to 19.3.0.
+- Updated `tailwind-merge` from 3.6.0 to 3.7.0.
 
 ## [0.5.0] - 2026-09-05
 
@@ -236,7 +247,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/rulebeat/rulebeat/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rulebeat/rulebeat/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rulebeat/rulebeat/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rulebeat/rulebeat/compare/v0.2.4...v0.3.0
