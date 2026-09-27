@@ -122,6 +122,7 @@ export function SignInSection({ initialStatus }: { initialStatus: SignInStatus }
   // very first (pre-hydration) pass -- a guaranteed hydration mismatch. Starting both at '' and
   // filling it in after mount keeps the first client render identical to the server's.
   const [origin, setOrigin] = useState('');
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the post-mount set is the point, see above
   useEffect(() => { setOrigin(window.location.origin); }, []);
   // The saved Public URL wins when set, same resolution order `resolveMetadataBase()` uses
   // server-side -- otherwise this fell back to whatever address the browser happens to be on,

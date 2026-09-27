@@ -66,6 +66,7 @@ export function ConnectStep({
   // a guaranteed hydration mismatch. Starting at '' and filling it in after mount keeps the first
   // client render identical to the server's.
   const [origin, setOrigin] = useState('');
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the post-mount set is the point, see above
   useEffect(() => { setOrigin(window.location.origin); }, []);
   // Entra refuses a redirect URI on an IP literal, and install.md tells people to bind
   // 127.0.0.1, so show the localhost form and say why rather than an unregisterable value.
