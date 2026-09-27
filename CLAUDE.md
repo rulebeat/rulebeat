@@ -321,3 +321,17 @@ Read these only when the task needs them.
 | `docs/public/posture.md` | Exactly what "X of Y passing" means; read before touching anything that counts findings. |
 | `tests/` (both packages) | The test suite is the closest thing this repo has to a QA plan. Read the tests around the area you're touching before writing new ones, so you match the existing contract style rather than the implementation. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report a bug, propose a change, or file a security issue. |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on this repo, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md`, ADRs in `docs/engineering/decisions/`. See `docs/agents/domain.md`.
