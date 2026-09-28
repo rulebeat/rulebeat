@@ -45,3 +45,30 @@ export function resolveDemoConfig(env: Record<string, string | undefined> = proc
     seed: rawSeed === undefined || rawSeed.trim() === '' ? DEFAULT_SEED : parseSeed(rawSeed),
   };
 }
+
+/** When a Demo resets on its own, and whether it is dressed for a screen recording. */
+export interface DemoResetSettings {
+  /** Minutes between timed Resets. 0 means the timer is off. */
+  resetMinutes: number;
+  /** The Recording presentation: no banner, and the timer forced off. */
+  recording: boolean;
+}
+
+export const DEFAULT_RESET_MINUTES = 60;
+const MAX_RESET_MINUTES = 7 * 24 * 60;
+
+/** Reads the Reset timer and the Recording presentation from the environment. */
+export function resolveDemoResetSettings(env: Record<string, string | undefined> = process.env): DemoResetSettings {
+  const recording = env.RULEBEAT_DEMO_RECORDING?.trim() === '1';
+  const raw = env.RULEBEAT_DEMO_RESET_MINUTES?.trim();
+  let minutes = DEFAULT_RESET_MINUTES;
+  if (raw !== undefined && raw !== '') {
+    if (!/^\d+$/.test(raw) || Number(raw) > MAX_RESET_MINUTES) {
+      throw new DemoConfigError(
+        `RULEBEAT_DEMO_RESET_MINUTES must be a whole number of minutes from 0 to ${MAX_RESET_MINUTES}, where 0 turns the timer off. Got "${raw}".`,
+      );
+    }
+    minutes = Number(raw);
+  }
+  return { resetMinutes: recording ? 0 : minutes, recording };
+}

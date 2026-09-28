@@ -6,6 +6,7 @@ import { DATA_DIR, resolveSqliteFilePath } from '../db/sqlite-path';
 import { getAppVersion } from '../version';
 import { DemoConfigError, resolveDemoConfig, type DemoConfig } from './config';
 import { DEMO_STAMP_KEY, LEGACY_DEMO_STAMP_KEYS } from './stamp';
+import { finishDemoReset } from './reset';
 
 // Nothing here may import lib/db/client.ts statically. This module runs from instrumentation.ts
 // before anything has opened the database, and its whole job is to decide what file client.ts
@@ -57,10 +58,21 @@ export function assertReplaceableDemoDatabase(path: string): void {
   }
 }
 
-/** Replaces the live database with a copy of `snapshot`. */
-export function restoreDemoSnapshot(snapshot: string, live: string): void {
+/** The snapshot this process's Demo is restored from, for its Data set, Seed and release. */
+export function currentDemoSnapshotPath(snapshotDir: string = DEMO_SNAPSHOT_DIR): string {
+  return join(snapshotDir, snapshotFileName(resolveDemoConfig(), getAppVersion()));
+}
+
+/** Replaces the live database with a copy of `snapshot`, with its history moved to end at `now`. */
+export function restoreDemoSnapshot(snapshot: string, live: string, now: Date = new Date()): void {
   removeSqliteFiles(live);
   copyFileSync(snapshot, live);
+  const sqlite = new Database(live);
+  try {
+    finishDemoReset(sqlite, now);
+  } finally {
+    sqlite.close();
+  }
 }
 
 /**
@@ -89,14 +101,15 @@ export type DemoBootResult = 'restored' | 'generated';
 
 /**
  * Gets the demo database ready before the app opens it. Restores the snapshot for this Data set,
- * Seed and release when one exists, which makes every restart a Reset. Otherwise generates the Demo
+ * Seed and release when one exists, which makes every restart a Reset. Either way the live
+ * database's history is moved to end at `now` (see ./reset.ts). Otherwise generates the Demo
  * into an empty database and keeps a snapshot of the result. `force` always regenerates.
  *
  * Throws a DemoConfigError, meant to stop the process, when the Demo cannot run: Postgres is
  * configured, the Data set or Seed is invalid, or the file it would replace is not a Demo database.
  */
 export async function prepareDemoDatabase(
-  opts: { force?: boolean; snapshotDir?: string } = {},
+  opts: { force?: boolean; snapshotDir?: string; now?: Date } = {},
 ): Promise<DemoBootResult> {
   if (dbKind === 'pg') {
     throw new DemoConfigError(
@@ -116,7 +129,7 @@ export async function prepareDemoDatabase(
   const snapshot = join(dir, name);
 
   if (!opts.force && existsSync(snapshot)) {
-    restoreDemoSnapshot(snapshot, live);
+    restoreDemoSnapshot(snapshot, live, opts.now);
     pruneDemoSnapshots(dir, name);
     return 'restored';
   }
@@ -129,5 +142,7 @@ export async function prepareDemoDatabase(
   if (!rawSqlite) throw new Error('The demo database was generated but no SQLite handle is open.');
   writeDemoSnapshot(rawSqlite, snapshot);
   pruneDemoSnapshots(dir, name);
+  // The snapshot keeps the history as generated; the live copy starts where every later Reset does.
+  finishDemoReset(rawSqlite, opts.now ?? new Date());
   return 'generated';
 }

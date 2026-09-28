@@ -35,7 +35,8 @@ export default defineConfig({
       timeout: 60_000,
       // Same AUTH_URL override as global-setup.ts's admin-fixture server — the developer's
       // .env.local pins AUTH_URL to :3000, which `next start` would otherwise leave in place.
-      env: { RULEBEAT_DEMO: '1', AUTH_URL: DEMO_URL },
+      // The Reset timer off, so a Reset at the top of the hour cannot land in the middle of a run.
+      env: { RULEBEAT_DEMO: '1', AUTH_URL: DEMO_URL, RULEBEAT_DEMO_RESET_MINUTES: '0' },
     },
   ],
 });

@@ -56,12 +56,16 @@ export interface CreateFakeContextOptions {
   identityApps: SyntheticApp[];
   day: number;
   totalDays: number;
+  /** What a query no fixture answers throws. The generator's default treats it as a build error;
+   *  the running Demo passes the Demo's own reason instead (./live-context.ts). */
+  unknownQuery?: (what: string) => Error;
 }
 
 /** One fresh context per simulated day — cheap (a handful of closures), and it means `.logs` only
  *  ever holds that day's activity, so `assertNoQueryFailures` doesn't need to track a read offset. */
 export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantContext {
   const { estate, rules, fixturesByRuleId, identityApps, day, totalDays } = opts;
+  const unknownQuery = opts.unknownQuery ?? ((what: string) => new Error(`Demo generator: ${what}`));
 
   const queryIndex = new Map<string, RuleFixture>();
   for (const rule of rules) {
@@ -84,11 +88,11 @@ export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantCon
       // Every enabled rule is enabled *because* it has a fixture (see replay.ts) — reaching here
       // means a fixture's stored rawKql no longer matches the seeded rule's actual rawKql, which
       // would otherwise silently render as "this rule found nothing" instead of a build error.
-      throw new Error(`Demo generator: no fixture matched this rule's KQL exactly:\n${kql}`);
+      throw unknownQuery(`no fixture matched this rule's KQL exactly:\n${kql}`);
     },
     graphRows: path => {
       if (path.startsWith('/applications')) return graphAppsForDay(identityApps, day, totalDays);
-      throw new Error(`Demo generator: unrecognized Graph path: ${path}`);
+      throw unknownQuery(`unrecognized Graph path: ${path}`);
     },
   });
 }

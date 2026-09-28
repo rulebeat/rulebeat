@@ -54,6 +54,8 @@ credential choices described in [Azure scanning credential](#azure-scanning-cred
 | `RULEBEAT_DEMO` | Never | Demo mode: synthetic data, shared by every Visitor, signed in automatically as an admin. | `1`. [Details](demo-mode.md) |
 | `RULEBEAT_DEMO_DATASET` | Never, default `contoso` | The Data set a Demo is generated from. Read only with `RULEBEAT_DEMO=1`. | `contoso`. [Details](demo-mode.md#choosing-the-data) |
 | `RULEBEAT_DEMO_SEED` | Never, default `0xc0ffee` | Varies the generated Demo. The same Data set, Seed and release always give the same Demo. | A whole number from 0 to 4294967295, decimal or `0x` hex |
+| `RULEBEAT_DEMO_RESET_MINUTES` | Never, default `60` | Minutes between a Demo's timed Resets, on wall-clock boundaries. `0` turns the timer off. | A whole number from 0 to 10080. [Details](demo-mode.md#resets) |
+| `RULEBEAT_DEMO_RECORDING` | Never | Hides the Demo bar and turns the Reset timer off, for recording. | `1`. [Details](demo-mode.md#resets) |
 
 ### Running with no persistent volume
 

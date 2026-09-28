@@ -7,24 +7,27 @@ import { isDemoMode } from './demo';
 
 const TICK_INTERVAL_MS = 30_000;
 
-// A simple busy flag (not a promise chain) — ticks that fire while a run is in progress
-// are dropped rather than queued, so a long-running scan can never stack up a backlog of
-// pending ticks. Due schedules simply get picked up on the next tick after the busy flag clears.
-let busy = false;
-
 type SchedulerGlobals = {
   __rulebeatSchedulerStarted?: boolean;
   __rulebeatSchedulerLastTickAt?: string;
+  __rulebeatScanLock?: { busy: boolean };
 };
 
 function schedulerGlobals(): SchedulerGlobals {
   return globalThis as typeof globalThis & SchedulerGlobals;
 }
 
+// A simple busy flag (not a promise chain) — ticks that fire while a run is in progress
+// are dropped rather than queued, so a long-running scan can never stack up a backlog of
+// pending ticks. Due schedules simply get picked up on the next tick after the busy flag clears.
+// Held on globalThis because instrumentation.ts (the scheduler, a Demo's Reset timer) and the
+// route handlers (Run now) can each load their own copy of this module.
+const scanLock = (schedulerGlobals().__rulebeatScanLock ??= { busy: false });
+
 export async function startScheduler(): Promise<void> {
   if (process.env.RULEBEAT_DISABLE_SCHEDULER === '1') return;
-  // Demo mode is read-only (see lib/demo/index.ts) — a ticking scheduler would mutate the curated
-  // synthetic estate every visitor is meant to see the same version of.
+  // A Demo never runs its schedules: every scan in a Demo is one a Visitor started, and a ticking
+  // scheduler would change the shared data between Resets with nobody asking it to.
   if (await isDemoMode()) return;
   const g = schedulerGlobals();
   if (g.__rulebeatSchedulerStarted) return;
@@ -55,13 +58,13 @@ export function getSchedulerStatus(): {
 
 async function tickOnce(): Promise<void> {
   schedulerGlobals().__rulebeatSchedulerLastTickAt = new Date().toISOString();
-  if (busy) return;
-  busy = true;
+  if (scanLock.busy) return;
+  scanLock.busy = true;
   try {
     await sweepStaleWork();
     await runDueSchedules();
   } finally {
-    busy = false;
+    scanLock.busy = false;
   }
 }
 
@@ -102,25 +105,38 @@ export async function runDueSchedules(opts: { now?: Date; ctx?: TenantContext } 
 /** Also used by the "Run now" API. If a tick is currently running, wait for it to clear
  *  first so a manual trigger can never overlap with an automatic run. */
 export async function executeSchedule(schedule: Schedule): Promise<void> {
-  while (busy) await new Promise(r => setTimeout(r, 250));
-  busy = true;
+  while (scanLock.busy) await new Promise(r => setTimeout(r, 250));
+  scanLock.busy = true;
   try {
     await runOnce(schedule);
   } finally {
-    busy = false;
+    scanLock.busy = false;
   }
 }
 
-/** Ad-hoc "Run Scan" trigger from the Scans page — shares the same busy-flag serialization as
+/** Runs `fn` once no scan is in flight, holding the same scanLock.busy flag scans do, so nothing starts a
+ *  scan while it runs. The Demo's Reset (lib/demo/live-reset.ts) is the caller: an in-flight scan
+ *  finishes before the database is replaced under it. */
+export async function whileNoScanRuns<T>(fn: () => Promise<T>): Promise<T> {
+  while (scanLock.busy) await new Promise(r => setTimeout(r, 250));
+  scanLock.busy = true;
+  try {
+    return await fn();
+  } finally {
+    scanLock.busy = false;
+  }
+}
+
+/** Ad-hoc "Run Scan" trigger from the Scans page — shares the same scanLock.busy-flag serialization as
  *  scheduled runs so a manual run can never overlap with an automatic one, and goes through the
  *  exact same executeTarget() core so it shows up in Run History identically to a schedule fire. */
 export async function runManualTarget(target: RunTarget): Promise<ScheduleRun> {
-  while (busy) await new Promise(r => setTimeout(r, 250));
-  busy = true;
+  while (scanLock.busy) await new Promise(r => setTimeout(r, 250));
+  scanLock.busy = true;
   try {
     return await executeTarget(target, { triggeredBy: 'manual' });
   } finally {
-    busy = false;
+    scanLock.busy = false;
   }
 }
 

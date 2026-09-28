@@ -25,13 +25,16 @@ import { db, dbReady, pgDb, rawSqlite } from './client';
 export type DbHandle = typeof db;
 
 const txStore = new AsyncLocalStorage<DbHandle>();
-let sqliteTxLock: Promise<void> | null = null;
+// On globalThis because instrumentation.ts (a Demo's Reset) and the route handlers can each load
+// their own copy of this module, and the lock only works if they share it.
+const txLock = ((globalThis as typeof globalThis & { __rulebeatSqliteTxLock?: { held: Promise<void> | null } })
+  .__rulebeatSqliteTxLock ??= { held: null });
 
 async function settle(): Promise<void> {
   await dbReady;
   if (dbKind !== 'sqlite') return;
   if (txStore.getStore()) return; // inside inTransaction(): the lock is ours, don't wait on it
-  while (sqliteTxLock) await sqliteTxLock;
+  while (txLock.held) await txLock.held;
 }
 
 /** Executes a query expected to return zero or more rows. */
@@ -79,9 +82,9 @@ export async function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promis
     });
   }
 
-  while (sqliteTxLock) await sqliteTxLock;
+  while (txLock.held) await txLock.held;
   let release!: () => void;
-  sqliteTxLock = new Promise<void>((resolve) => { release = resolve; });
+  txLock.held = new Promise<void>((resolve) => { release = resolve; });
   try {
     rawSqlite!.exec('BEGIN IMMEDIATE');
     try {
@@ -95,7 +98,27 @@ export async function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promis
       throw err;
     }
   } finally {
-    sqliteTxLock = null;
+    txLock.held = null;
+    release();
+  }
+}
+
+/**
+ * Runs synchronous work on the raw SQLite connection with no transaction of anyone else's open
+ * around it: waits for the transaction lock, holds it while `fn` runs, then releases it. For
+ * statements that cannot run inside a transaction (ATTACH), such as the Demo's Reset
+ * (lib/demo/reset.ts). SQLite only.
+ */
+export async function withExclusiveSqlite<T>(fn: (sqlite: NonNullable<typeof rawSqlite>) => T): Promise<T> {
+  await dbReady;
+  if (dbKind !== 'sqlite' || !rawSqlite) throw new Error('withExclusiveSqlite() needs the SQLite backend.');
+  while (txLock.held) await txLock.held;
+  let release!: () => void;
+  txLock.held = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    return fn(rawSqlite);
+  } finally {
+    txLock.held = null;
     release();
   }
 }
