@@ -30,7 +30,10 @@ The published image carries the generator, so a Demo runs from any release with 
 bash or zsh:
 
 ```bash
-docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000   -v rulebeat-demo:/app/packages/web/data   -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000   ghcr.io/rulebeat/rulebeat:latest
+docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 \
+  -v rulebeat-demo:/app/packages/web/data \
+  -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 \
+  ghcr.io/rulebeat/rulebeat:0.5.1
 ```
 
 PowerShell:
@@ -39,13 +42,13 @@ PowerShell:
 docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 `
   -v rulebeat-demo:/app/packages/web/data `
   -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 `
-  ghcr.io/rulebeat/rulebeat:latest
+  ghcr.io/rulebeat/rulebeat:0.5.1
 ```
 
 The first start generates the Demo before the server listens, which takes a minute or two; the
 container reports healthy once it is ready. The result is kept as a snapshot in the data volume, and
 every later start restores that snapshot instead of generating again, so a restart always returns the
-Demo to its starting state. Pin a release tag instead of `latest` to get the same Demo every time.
+Demo to its starting state. The same release tag always gives the same Demo.
 
 From a source checkout, `npm run generate-demo` in `packages/web` forces a fresh generation without
 starting the app, and `RULEBEAT_DEMO=1 npm run dev` then serves it.

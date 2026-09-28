@@ -4,8 +4,13 @@
  * a restart restores exactly the snapshot for the configured Data set, Seed and release.
  *
  * Every file here lives in a temp directory. The ambient test database is never the target.
+ *
+ * The Demo is SQLite-only whatever backend the suite runs on, so the backend is pinned to SQLite
+ * here; the Postgres refusal test swaps it for 'pg' on a fresh module registry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/lib/db/backend', () => ({ dbKind: 'sqlite' }));
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
