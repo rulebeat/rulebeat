@@ -45,7 +45,7 @@ bash or zsh:
 docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 \
   -v rulebeat-demo:/app/packages/web/data \
   -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 \
-  ghcr.io/rulebeat/rulebeat:0.5.1
+  ghcr.io/rulebeat/rulebeat:0.6.0
 ```
 
 PowerShell:
@@ -54,7 +54,7 @@ PowerShell:
 docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 `
   -v rulebeat-demo:/app/packages/web/data `
   -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 `
-  ghcr.io/rulebeat/rulebeat:0.5.1
+  ghcr.io/rulebeat/rulebeat:0.6.0
 ```
 
 The first start generates the Demo before the server listens, which takes a minute or two.

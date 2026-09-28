@@ -6,12 +6,20 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-28
+
 ### Changed
 
 - The published image now includes the demo data generator. A container started with `RULEBEAT_DEMO=1` generates its Demo on first start, keeps it as a snapshot in the data volume, and restores that snapshot on every later start, so a restart returns the Demo to its starting state. `RULEBEAT_DEMO_DATASET` and `RULEBEAT_DEMO_SEED` choose what is generated. A Demo refuses to start on Postgres or against a database that is not a Demo database. The Docker health check now allows three minutes for a first start.
 - A Demo is now writable and shared. Every Visitor is signed in automatically as the same admin and can create and edit rules, run scans, suppress findings, and change schedules, dashboards and notification channels. The Azure connection, sign-in configuration and users are Locked surfaces: visible, but refused with the reason. A Demo records every notification as not sent instead of sending it, and "Send test" answers that it is a Demo. `/signin` redirects to the console in a Demo.
 - A Demo now resets itself. Every hour by default, on the clock, it returns to its starting state and moves its history forward so it ends at the Reset, keeping every finding's age. A Reset waits for a running scan. `RULEBEAT_DEMO_RESET_MINUTES` sets the interval (`0` turns it off), `RULEBEAT_DEMO_RECORDING=1` hides the Demo bar and turns the timer off, and `rulebeat-demo reset` inside the container resets it now. The Demo bar shows when the next Reset is and tells a returning Visitor once that earlier changes are gone. `/api/health` answers 503 until a Demo has its data.
 - Run now works in a Demo. It scans the synthetic estate the Demo was generated from, and a rule the Demo has no data for fails with a reason that says so.
+
+### Dependencies
+
+- Updated `drizzle-orm` from 0.45.2 to 0.45.3.
+- Updated `lucide-react` from 1.47.0 to 1.48.0.
+- Updated `nodemailer` from 9.0.5 to 10.0.10.
 
 ## [0.5.1] - 2026-09-27
 
@@ -254,7 +262,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/rulebeat/rulebeat/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rulebeat/rulebeat/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rulebeat/rulebeat/compare/v0.3.0...v0.4.0
