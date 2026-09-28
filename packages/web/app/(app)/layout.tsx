@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { getLocalAccount } from '@/lib/db/local-accounts';
 import { can } from '@/lib/rbac';
 import { isOnboardingPending } from '@/lib/onboarding';
+import { isDemoMode } from '@/lib/demo';
 import { getAppVersion } from '@/lib/version';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -32,8 +33,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Must come after the mustChangePassword redirect above: requireRole blocks every action except
   // account:self while a temporary password is set (RB-QA-017), so onboarding's own API calls would
   // 403 if this ran first. Gated on the action, not role === 'admin' — lib/rbac.ts is the one place
-  // that mapping lives.
-  if (user && can(user.role, 'azure:manage') && await isOnboardingPending()) redirect('/onboarding');
+  // that mapping lives. A Demo has no onboarding (/onboarding is a 404 there), and its Visitor is an
+  // admin, so the redirect would send every Visitor to a page that does not exist.
+  if (user && can(user.role, 'azure:manage') && !(await isDemoMode()) && await isOnboardingPending()) redirect('/onboarding');
 
   return (
     <div className="relative flex flex-col h-screen overflow-hidden bg-background">
