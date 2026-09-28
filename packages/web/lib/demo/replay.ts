@@ -1,5 +1,5 @@
 import type { Rule } from '@rulebeat/core';
-import { executeTarget } from '../../lib/run-executor';
+import { executeTarget } from '../run-executor';
 import { assertNoQueryFailures, createFakeContext } from './fake-context';
 import type { Estate } from './estate';
 import type { SyntheticApp } from './identity-fixtures';

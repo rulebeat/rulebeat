@@ -35,7 +35,7 @@ export async function executeTarget(
     triggeredBy: RunTriggeredBy;
     scheduleId?: string;
     /** Injected by the demo generator to replay scans against a synthetic estate instead of a real
-     *  Azure tenant — see lib/demo.ts. Falls back to createTenantContext() for every real run. */
+     *  Azure tenant — see lib/demo/index.ts. Falls back to createTenantContext() for every real run. */
     ctx?: TenantContext;
     /** Injected by the demo generator so a replayed run is stamped at its simulated date instead
      *  of the real current time — threaded through to startRun/finishRun and runCategoryScan. */

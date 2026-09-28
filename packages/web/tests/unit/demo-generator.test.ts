@@ -1,7 +1,7 @@
 /**
- * WS2g cont. · the demo data generator (scripts/demo/*).
+ * WS2g cont. · the demo data generator (lib/demo/*).
  *
- * These modules run outside the app via `tsx` (see scripts-import-ban.test.ts) and were already
+ * These modules ship in the image and run at a Demo's boot (lib/demo/boot.ts). They were first
  * proven to work once, end to end, by hand: `npm run generate-demo` produced 510 resources, 886
  * findings across all 5 categories and 60 successful schedule_runs with zero query failures. This
  * suite pins that behaviour so it stays true — the risk isn't the generator's own logic (it's pure
@@ -13,7 +13,8 @@
  * Runs against the ambient test database tests/setup.ts already points at a throwaway file —
  * nothing here touches demo.db or rulebeat.db.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import type { Rule } from '@rulebeat/core';
 import { runRules } from '@rulebeat/core';
@@ -22,15 +23,16 @@ import { db, rawSqlite } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
 import { scheduleRuns, findings } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { buildEstate, TYPE_META } from '../../scripts/demo/estate';
-import { buildIdentityApps, graphAppsForDay } from '../../scripts/demo/identity-fixtures';
-import { CORE_FIXTURES, CORE_RULE_IDS } from '../../scripts/demo/core-fixtures';
-import { buildAprlFixtures } from '../../scripts/demo/aprl-fixtures';
-import { extractProjectColumns } from '../../scripts/demo/kql-columns';
-import { isViolatingOnDay, rowsForRuleOnDay } from '../../scripts/demo/violation-engine';
-import { createFakeContext, assertNoQueryFailures } from '../../scripts/demo/fake-context';
-import { replay } from '../../scripts/demo/replay';
-import type { RuleFixture } from '../../scripts/demo/rule-fixture';
+import { buildEstate, TYPE_META } from '@/lib/demo/estate';
+import { buildIdentityApps, graphAppsForDay } from '@/lib/demo/identity-fixtures';
+import { CORE_FIXTURES, CORE_RULE_IDS } from '@/lib/demo/core-fixtures';
+import { buildAprlFixtures } from '@/lib/demo/aprl-fixtures';
+import { extractProjectColumns } from '@/lib/demo/kql-columns';
+import { isViolatingOnDay, rowsForRuleOnDay } from '@/lib/demo/violation-engine';
+import { createFakeContext, assertNoQueryFailures } from '@/lib/demo/fake-context';
+import { replay } from '@/lib/demo/replay';
+import { DEFAULT_SEED, rand01, setGeneratorSeed } from '@/lib/demo/prng';
+import type { RuleFixture } from '@/lib/demo/rule-fixture';
 
 async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
@@ -72,6 +74,49 @@ describe('determinism', () => {
     const types = new Set(estate.resources.map(r => r.type));
     expect(types.size).toBeGreaterThan(5);
     for (const type of types) expect(TYPE_META[type]).toBeDefined();
+  });
+});
+
+// ── Seed ────────────────────────────────────────────────────────────────────────────────────────
+// RULEBEAT_DEMO_SEED varies the Demo, and the default Seed must still produce the exact Demo the
+// generator produced before the Seed existed. The two hashes below were taken from that earlier
+// generator; a change to them means every existing Demo snapshot and screenshot silently changes.
+
+const DEFAULT_ESTATE_SHA256 = '0b9ee7c2cf55abc1b5cf25bd9f969717e4810d914d182f6fed176fa3ce547c0f';
+const DEFAULT_IDENTITY_SHA256 = '617a4eac5692ce9ed99b01042355f85a2057388921d2b7441435e83f59a1ec30';
+const sha256 = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+describe('Seed', () => {
+  afterEach(() => setGeneratorSeed(DEFAULT_SEED));
+
+  it('the default Seed produces the same estate and identity fixtures as before the Seed existed', () => {
+    setGeneratorSeed(DEFAULT_SEED);
+    expect(sha256(buildEstate().resources)).toBe(DEFAULT_ESTATE_SHA256);
+    expect(sha256(buildIdentityApps())).toBe(DEFAULT_IDENTITY_SHA256);
+    // rand01 decides which resource violates which rule on which day; values from the same generator.
+    expect(['a', 'vm-01::rule-x::day-3', 'some-resource::some-rule::day-3'].map(rand01))
+      .toEqual([0.1690230632448, 0.5038094536704, 0.6462448498688]);
+  });
+
+  it('another Seed produces a different estate, violations and identity fixtures', () => {
+    setGeneratorSeed(DEFAULT_SEED);
+    const estate = buildEstate().resources;
+    const identity = buildIdentityApps();
+    const draw = rand01('some-resource::some-rule::day-3');
+
+    setGeneratorSeed(42);
+    expect(buildEstate().resources).not.toEqual(estate);
+    expect(buildIdentityApps()).not.toEqual(identity);
+    expect(rand01('some-resource::some-rule::day-3')).not.toBe(draw);
+  });
+
+  it('the same non-default Seed produces the same Demo twice', () => {
+    setGeneratorSeed(42);
+    const a = { estate: buildEstate().resources, identity: buildIdentityApps() };
+    setGeneratorSeed(DEFAULT_SEED);
+    buildEstate();
+    setGeneratorSeed(42);
+    expect({ estate: buildEstate().resources, identity: buildIdentityApps() }).toEqual(a);
   });
 });
 

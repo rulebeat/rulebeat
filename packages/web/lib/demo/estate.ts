@@ -1,5 +1,5 @@
-import { DEMO_SUBSCRIPTIONS } from '../../lib/demo-fixtures';
-import { mulberry32, pick, pickWeighted, shuffle } from './prng';
+import { DEMO_SUBSCRIPTIONS } from '../demo-fixtures';
+import { mulberry32, pick, pickWeighted, seedFor, shuffle } from './prng';
 
 const ESTATE_SEED = 0xc0ffee;
 
@@ -84,7 +84,7 @@ function nameFor(type: string, rg: string, index: number, rng: () => number): st
  *  run — resource identity (id, type, location) never changes across simulated days; only which
  *  rules a resource violates changes day to day (see violation-engine.ts). */
 export function buildEstate(): Estate {
-  const rng = mulberry32(ESTATE_SEED);
+  const rng = mulberry32(seedFor(ESTATE_SEED));
   const resources: EstateResource[] = [];
 
   for (const sub of DEMO_SUBSCRIPTIONS) {

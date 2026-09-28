@@ -99,7 +99,9 @@ ENV HOSTNAME=0.0.0.0
 # this image further, so adding a package here just to remove it later would be wasted churn.
 # /api/health is unauthenticated by design (see proxy.ts) and does no DB/Azure work, so a
 # transient Azure or disk hiccup never restart-loops a container that isn't actually broken.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+# The start period covers a Demo's first boot (RULEBEAT_DEMO=1), which generates its data before
+# the server listens; a normal install is healthy within seconds and is unaffected.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 WORKDIR /app/packages/web

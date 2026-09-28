@@ -1,25 +1,18 @@
-import { existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-
-// Deliberately no static imports of anything under lib/ here. `RULEBEAT_DEMO=1` must be set
-// before lib/db/client.ts's module-load-time DEFAULT_DB_NAME check ever runs — a static import
-// is hoisted above the assignment below regardless of where it's written in this file, so the
-// real orchestration lives in ./demo/run.ts, reached only through the dynamic import() in main().
-
-const dataDir = join(process.cwd(), 'data');
-for (const suffix of ['', '-wal', '-shm']) {
-  const file = join(dataDir, `demo.db${suffix}`);
-  if (existsSync(file)) rmSync(file);
-}
+// A local shortcut for regenerating the Demo without starting the app. The generator itself lives in
+// lib/demo/ and ships in the image, where boot runs it; this only forces a fresh generation.
+//
+// Deliberately no static imports of anything under lib/ here. `RULEBEAT_DEMO=1` must be set before
+// lib/db/client.ts decides which file to open, and a static import is hoisted above the assignment
+// below regardless of where it is written in this file.
 
 process.env.RULEBEAT_DEMO = '1';
 
-async function main(): Promise<void> {
-  const { runGenerator } = await import('./demo/run');
-  await runGenerator();
+async function generateDemo(): Promise<void> {
+  const { prepareDemoDatabase } = await import('../lib/demo/boot');
+  await prepareDemoDatabase({ force: true });
 }
 
-main().catch(err => {
-  console.error(err);
+generateDemo().catch(err => {
+  console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });

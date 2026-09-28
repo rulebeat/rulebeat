@@ -1,13 +1,12 @@
 /**
  * Architecture test: product code never imports from `scripts/`.
  *
- * `scripts/generate-demo.ts` (WS2c) runs via `tsx`, outside the Next.js build, the same pattern as
- * the repo root's `sync-pack.ts` — its whole reason to exist is that it can set `RULEBEAT_DEMO=1`
- * and dynamic-import the DB-touching modules *before* `lib/db/client.ts` opens its connection
- * (`tests/setup.ts` is the same trick). None of that is safe to reach from `app/` or `lib/`: a
- * bundled import would pull generator-only code (and its assumption that it's always safe to
- * fabricate data) into the running product. Written ahead of the generator itself, per the plan's
- * build order, so the ban exists before there's anything to violate it.
+ * `scripts/` holds one-off tooling run via `tsx`, outside the Next.js build (the repo root's
+ * `sync-pack.ts`, `seed-e2e.ts`). Its whole reason to exist is that it can set env vars and
+ * dynamic-import DB-touching modules *before* `lib/db/client.ts` opens its connection, and it may
+ * assume things the running product must not. The Demo generator used to live here; it moved to
+ * `lib/demo/` when the Demo started generating itself at boot, so it is product code now and the
+ * wrapper `scripts/generate-demo.ts` imports it, never the other way round.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -53,7 +52,7 @@ describe('product code never imports from scripts/', () => {
       .map(f => f.rel.split(sep).join('/'));
 
     expect(offenders, [
-      'These files import from scripts/ — one-off tooling (pack sync, the demo data generator) that',
+      'These files import from scripts/ — one-off tooling (pack sync, e2e seeding) that',
       'runs via tsx outside the app, deliberately never bundled into it. Move shared logic into lib/',
       'and have both the script and the app import that instead.',
     ].join(' ')).toEqual([]);

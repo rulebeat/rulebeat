@@ -121,7 +121,7 @@ describe('GET /api/query/runs (spec 037 follow-up)', () => {
   describe('demo mode', () => {
     afterEach(async () => {
       delete process.env.RULEBEAT_DEMO;
-      await deleteMeta('demo-mode-v1');
+      await deleteMeta('demo-mode-v2');
       resetDemoModeCacheForTests();
     });
 

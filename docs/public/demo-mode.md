@@ -1,8 +1,8 @@
 # Demo mode
 
 Demo mode runs the real RuleBeat build over a generated synthetic database, with no Azure tenant
-connected. There is no hosted demo today, so this is how you run one yourself: for a team
-walkthrough, a screenshot, or a first look before requesting a service principal.
+connected. Run one yourself for a team walkthrough, a screenshot, or a first look before requesting
+a service principal.
 
 ## What it is
 
@@ -25,40 +25,60 @@ two people generating the demo get the same estate, and every id is an obvious p
 
 ## How to run it
 
-Demo mode runs from a source checkout: the generator is a repo script the published image does not
-ship. Generation takes a few minutes.
+The published image carries the generator, so a Demo runs from any release with one variable:
 
 bash or zsh:
 
 ```bash
-git clone https://github.com/rulebeat/rulebeat.git
-cd rulebeat
-npm install
-npm run build:core
-cd packages/web
-RULEBEAT_DEMO=1 npm run generate-demo
-RULEBEAT_DEMO=1 npm run dev
+docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 \
+  -v rulebeat-demo:/app/packages/web/data \
+  -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 \
+  ghcr.io/rulebeat/rulebeat:0.5.1
 ```
 
 PowerShell:
 
 ```powershell
-git clone https://github.com/rulebeat/rulebeat.git
-cd rulebeat
-npm install
-npm run build:core
-cd packages/web
-$env:RULEBEAT_DEMO = '1'
-npm run generate-demo
-npm run dev
+docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 `
+  -v rulebeat-demo:/app/packages/web/data `
+  -e RULEBEAT_DEMO=1 -e AUTH_URL=http://localhost:3000 `
+  ghcr.io/rulebeat/rulebeat:0.5.1
 ```
 
+The first start generates the Demo before the server listens, which takes a minute or two; the
+container reports healthy once it is ready. The result is kept as a snapshot in the data volume, and
+every later start restores that snapshot instead of generating again, so a restart always returns the
+Demo to its starting state. The same release tag always gives the same Demo.
+
+From a source checkout, `npm run generate-demo` in `packages/web` forces a fresh generation without
+starting the app, and `RULEBEAT_DEMO=1 npm run dev` then serves it.
+
+## Choosing the data
+
+A Demo is fully determined by three things: the Data set, the Seed and the release. The same three
+always produce the same Demo, down to resource names and finding ages.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RULEBEAT_DEMO_DATASET` | `contoso` | The fictional estate to generate. `contoso` is the only one today. |
+| `RULEBEAT_DEMO_SEED` | `0xc0ffee` | Varies names, tags and which resources violate which rule. Decimal or `0x` hex, 0 to 4294967295. |
+
+Changing either one generates a new Demo on the next start. An unknown Data set or an invalid Seed
+stops the container with the reason in its log.
+
+## How it stays apart from a real install
+
 `RULEBEAT_DEMO=1` points the app at `data/demo.db` instead of `data/rulebeat.db` and turns on the
-anonymous read-only behaviour. The generator stamps the database it writes (`demo-mode-v1` in its
+anonymous read-only behaviour. The generator stamps the database it writes (`demo-mode-v2` in its
 `meta` table). **Both** the variable and the stamp must be present for demo mode to be active, and
-neither is ever set by the running app. Regenerate any time; the script deletes and rebuilds
-`demo.db`, and your real database is never touched because the variable switched the file name
-before anything else loaded.
+neither is ever set by a normal install.
+
+Before it replaces a database, the Demo checks that file for its stamp. If `RULEBEAT_DB_PATH` points a
+Demo at a database that is not a Demo database, the container refuses to start and leaves the file
+alone. A database stamped by an earlier release's demo (`demo-mode-v1`) counts as a Demo database and
+is regenerated.
+
+A Demo runs on SQLite only. With `RULEBEAT_DATABASE_URL` set, it refuses to start.
 
 ## What a demo instance cannot prove
 
@@ -69,6 +89,4 @@ notification channels, and the visitor is a viewer, so the admin pages are not p
 walkthrough.
 
 Demo mode is anonymous by construction, so anyone who reaches the URL can read it. That is fine for
-synthetic data, but never point a demo-mode instance at a database that was ever a real one: the
-file name switch is the only thing keeping them apart, and `RULEBEAT_DEMO=1` against a stamped
-database makes it world-readable.
+synthetic data, and the stamp check above is what keeps a real database out of it.

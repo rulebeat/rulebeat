@@ -1,8 +1,8 @@
 /**
  * WS2g · demo mode's two-gate switch.
  *
- * `await isDemoMode()` (lib/demo.ts) requires both `RULEBEAT_DEMO=1` (lib/demo-env.ts, gate 1) and the
- * `demo-mode-v1` stamp in the database's own `meta` table (gate 2, written only by the generator).
+ * `await isDemoMode()` (lib/demo/index.ts) requires both `RULEBEAT_DEMO=1` (lib/demo-env.ts, gate 1) and the
+ * `demo-mode-v2` stamp in the database's own `meta` table (gate 2, written only by the generator).
  * Neither gate is meaningful alone — the truth table below proves that directly, against the
  * ambient test database that `tests/setup.ts` already points at a throwaway file.
  *
@@ -21,7 +21,7 @@ import { isDemoEnv } from '@/lib/demo-env';
 import { isDemoMode, stampDemoDatabase, resetDemoModeCacheForTests, DEMO_VISITOR_ID } from '@/lib/demo';
 import { getMeta, deleteMeta } from '@/lib/db/meta';
 
-const STAMP_KEY = 'demo-mode-v1';
+const STAMP_KEY = 'demo-mode-v2';
 
 afterEach(async () => {
   delete process.env.RULEBEAT_DEMO;

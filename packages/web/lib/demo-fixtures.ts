@@ -1,7 +1,7 @@
 /**
  * Fixed subscription identities shared between the demo API surface (this file, read by
  * `/api/azure/subscriptions`) and the future synthetic data generator
- * (`scripts/generate-demo.ts`, WS2c) — both must agree on the same ids and names, or a demo
+ * (`lib/demo/`) — both must agree on the same ids and names, or a demo
  * visitor's subscription picker and the scan data behind it disagree.
  *
  * IDs are fixed placeholder GUIDs, not randomly generated: the same demo looks the same every

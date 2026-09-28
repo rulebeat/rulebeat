@@ -1,4 +1,4 @@
-import { mulberry32, pick, pickWeighted, rand01 } from './prng';
+import { mulberry32, pick, pickWeighted, rand01, seedFor } from './prng';
 
 const IDENTITY_SEED = 0xbadA55;
 const APP_COUNT = 28;
@@ -47,7 +47,7 @@ function buildCredential(seedKey: string, index: number, kind: 'secret' | 'cert'
 
 /** Built once, deterministically, independent of the simulated day — mirrors `buildEstate()`. */
 export function buildIdentityApps(): SyntheticApp[] {
-  const rng = mulberry32(IDENTITY_SEED);
+  const rng = mulberry32(seedFor(IDENTITY_SEED));
   const apps: SyntheticApp[] = [];
 
   for (let i = 0; i < APP_COUNT; i++) {
