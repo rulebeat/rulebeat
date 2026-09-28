@@ -1,5 +1,6 @@
 import type { TenantContext } from '@rulebeat/core';
-import { createTenantContext } from './azure-credential';
+import { createScanContext } from './scan-context';
+import { DEMO_UNANSWERED_RULE_REASON, unansweredDemoQueries } from './demo/unanswered';
 import { listCategories } from './db/categories';
 import { startRun, finishRun, recordCategoryProgress, heartbeatRun, getRun, type RunTriggeredBy, type ScheduleRun } from './schedule-runs';
 import { runCategoryScan } from './scan-runner';
@@ -35,7 +36,8 @@ export async function executeTarget(
     triggeredBy: RunTriggeredBy;
     scheduleId?: string;
     /** Injected by the demo generator to replay scans against a synthetic estate instead of a real
-     *  Azure tenant — see lib/demo/index.ts. Falls back to createTenantContext() for every real run. */
+     *  Azure tenant (lib/demo/replay.ts). Falls back to createScanContext(): the real tenant, or a
+     *  running Demo's synthetic one. */
     ctx?: TenantContext;
     /** Injected by the demo generator so a replayed run is stamped at its simulated date instead
      *  of the real current time — threaded through to startRun/finishRun and runCategoryScan. */
@@ -71,7 +73,7 @@ export async function executeTarget(
   heartbeat.unref();
 
   try {
-    const ctx = opts.ctx ?? await createTenantContext({ runId: run.id });
+    const ctx = opts.ctx ?? await createScanContext({ runId: run.id });
     let totalFindings = 0;
     let newFindings = 0;
     const newFingerprints: string[] = [];
@@ -120,7 +122,11 @@ export async function executeTarget(
     const status = allErrored ? 'error' : (errors.length > 0 || partialCategories.length > 0) ? 'partial' : 'success';
     const messages = [...errors];
     if (partialCategories.length > 0) {
-      messages.push(`${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
+      // In a Demo, the likely cause is a rule the Demo has no data for; say that rather than
+      // sending the Visitor to server logs they cannot read.
+      messages.push(unansweredDemoQueries(ctx) > 0
+        ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
+        : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }
     const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.length > 0;
     await finishRun(run.id, {

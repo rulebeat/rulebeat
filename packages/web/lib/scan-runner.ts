@@ -8,7 +8,7 @@ import {
   type RuleRunEvent,
   type TenantContext,
 } from '@rulebeat/core';
-import { createTenantContext } from './azure-credential';
+import { createScanContext } from './scan-context';
 import { loadRules, setRulePopulationCounts, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
 import { syncScanFindings, dedupeFindingsByFingerprint } from './db/findings';
@@ -40,7 +40,7 @@ export interface RunScanOptions {
 }
 
 export async function runCategoryScan(category: Category, opts: RunScanOptions = {}): Promise<ScanRunOutcome> {
-  const ctx = opts.ctx ?? await createTenantContext();
+  const ctx = opts.ctx ?? await createScanContext();
 
   const startedAt = opts.now ?? new Date();
   const findings: Finding[] = [];

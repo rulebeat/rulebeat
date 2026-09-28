@@ -21,7 +21,12 @@ switched on.
 - **Nothing leaves the container.** The scheduler does not start. A notification is recorded in the
   channel's history as not sent instead of being sent, and "Send test" answers that this is a Demo.
 
-A black bar on every page reads "Demo" so a screenshot never passes for a real tenant.
+- **It resets on a timer.** Every hour by default, the Demo returns to its starting state, so
+  whatever a Visitor broke is gone for the next one. See [Resets](#resets).
+
+A black bar on every page reads "Demo" so a screenshot never passes for a real tenant. It also says
+when the next Reset is, and a Visitor who comes back after one is told once that earlier changes are
+gone.
 
 The generator builds a fictional four-subscription estate and replays sixty days of daily scans over
 it, so history, trends and finding lifecycles look like a tenant scanned for two months: roughly 50
@@ -52,10 +57,11 @@ docker run -d --name rulebeat-demo -p 127.0.0.1:3000:3000 `
   ghcr.io/rulebeat/rulebeat:0.5.1
 ```
 
-The first start generates the Demo before the server listens, which takes a minute or two; the
-container reports healthy once it is ready. The result is kept as a snapshot in the data volume, and
-every later start restores that snapshot instead of generating again, so a restart always returns the
-Demo to its starting state. The same release tag always gives the same Demo.
+The first start generates the Demo before the server listens, which takes a minute or two.
+`/api/health` answers 503 until the Demo has its data, so the container reports healthy only once it
+is ready. The result is kept as a snapshot in the data volume, and every later start restores that
+snapshot instead of generating again, so a restart always returns the Demo to its starting state.
+The same release tag always gives the same Demo.
 
 From a source checkout, `npm run generate-demo` in `packages/web` forces a fresh generation without
 starting the app, and `RULEBEAT_DEMO=1 npm run dev` then serves it.
@@ -72,6 +78,44 @@ always produce the same Demo, down to resource names and finding ages.
 
 Changing either one generates a new Demo on the next start. An unknown Data set or an invalid Seed
 stops the container with the reason in its log.
+
+## Resets
+
+A Reset copies the snapshot over the live data and moves every date forward so the Demo's history
+ends at the moment of the Reset. A finding that was 12 days old when the Demo was generated is 12
+days old after every Reset, and the posture trend always ends today.
+
+Three things start one:
+
+- **The timer.** It fires on wall-clock boundaries counted from midnight in the container's time
+  zone: with the default 60 minutes, at the top of every hour. A Reset that comes due while a scan is
+  running waits for the scan to finish.
+- **A restart.** Every start restores the snapshot the same way.
+- **`rulebeat-demo reset`**, run inside the container, resets it now:
+
+  ```bash
+  docker exec rulebeat-demo rulebeat-demo reset
+  ```
+
+There is no HTTP endpoint for a Reset. Every Visitor is an admin, so anything a browser could call,
+every Visitor could call.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RULEBEAT_DEMO_RESET_MINUTES` | `60` | Minutes between timed Resets. `0` turns the timer off; a restart and `rulebeat-demo reset` still work. |
+| `RULEBEAT_DEMO_RECORDING` | unset | `1` hides the Demo bar and turns the timer off, for recording a walkthrough. `rulebeat-demo reset` still works, so reset before each take. |
+
+A Reset refuses a database that does not carry the Demo stamp, and a snapshot that does not, and
+changes nothing in either case.
+
+## Running scans in a Demo
+
+Run now works in a Demo. It scans the same synthetic estate the Demo was generated from, as it
+stands on the last generated day, so a shipped rule finds what it found in the history.
+
+A rule a Visitor writes, or a shipped rule whose query a Visitor edits, has no data behind it. That
+rule fails with the reason "A Demo only has data for the rules it ships with, so a new or edited rule
+has nothing to run against." The rest of the scan runs, and the run shows as partial.
 
 ## How it stays apart from a real install
 
@@ -94,5 +138,5 @@ tenant, [`permissions.md`](permissions.md)), anything about performance on a rea
 notification channel reaches its destination, since a Demo never sends one.
 
 A Demo needs no sign-in by construction, so anyone who reaches the URL can use it and change what
-the next Visitor sees. That is fine for synthetic data: a restart restores the starting state, and
-the stamp check above is what keeps a real database out of it.
+the next Visitor sees. That is fine for synthetic data: the next Reset restores the starting state,
+and the stamp check above is what keeps a real database out of it.

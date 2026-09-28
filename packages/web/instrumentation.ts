@@ -24,9 +24,18 @@ export async function register() {
   const { isDemoEnv } = await import('./lib/demo-env');
   if (isDemoEnv()) {
     try {
+      // Checked first, so a bad interval stops the Demo before it touches any file.
+      const { resolveDemoResetSettings } = await import('./lib/demo/config');
+      resolveDemoResetSettings();
       const { prepareDemoDatabase } = await import('./lib/demo/boot');
       const result = await prepareDemoDatabase();
       console.log(`[startup] Demo ${result === 'restored' ? 'restored from its snapshot' : 'generated'}`);
+      // Resets from here on: the timer, and `rulebeat-demo reset` inside the container.
+      const { startDemoResetTimer, listenForDemoResetRequests } = await import('./lib/demo/live-reset');
+      startDemoResetTimer();
+      listenForDemoResetRequests();
+      const { markDemoReady } = await import('./lib/demo/readiness');
+      markDemoReady();
     } catch (err) {
       console.error('[startup] the Demo could not start:', err instanceof Error ? err.message : err);
       process.exit(1);

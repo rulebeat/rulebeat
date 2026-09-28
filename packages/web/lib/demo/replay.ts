@@ -35,14 +35,17 @@ export interface ReplayOptions {
 /** Runs `await executeTarget()` once per simulated day, oldest first, each against a fake context scoped
  *  to that day — the same shared execution path a real scheduled scan uses, so every downstream
  *  table (findings, finding_events, scan_history, posture_snapshots, schedule_runs) fills in
- *  exactly as it would from 60 days of a real 'all'-target daily schedule. */
-export async function replay(opts: ReplayOptions): Promise<void> {
+ *  exactly as it would from 60 days of a real 'all'-target daily schedule. Returns the last
+ *  simulated run's timestamp: where the history ends. */
+export async function replay(opts: ReplayOptions): Promise<Date> {
   const { estate, rules, fixturesByRuleId, identityApps, scheduleId } = opts;
   const totalDays = opts.totalDays ?? TOTAL_DAYS;
+  let last = dateForDay(totalDays - 1, totalDays);
 
   for (let day = 0; day < totalDays; day++) {
     const ctx = createFakeContext({ estate, rules, fixturesByRuleId, identityApps, day, totalDays });
     const now = dateForDay(day, totalDays);
+    last = now;
 
     const run = await executeTarget(
       { targetType: 'all', targetValues: [] },
@@ -55,4 +58,5 @@ export async function replay(opts: ReplayOptions): Promise<void> {
     assertNoQueryFailures(ctx, day);
     opts.onDay?.(day, totalDays);
   }
+  return last;
 }

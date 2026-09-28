@@ -25,6 +25,7 @@ import {
 } from '@/lib/demo/boot';
 import { DemoConfigError } from '@/lib/demo/config';
 import { DEFAULT_SEED } from '@/lib/demo/prng';
+import { DEMO_HISTORY_ENDS_KEY, DEMO_RESET_AT_KEY } from '@/lib/demo/reset';
 import { DEMO_STAMP_KEY, LEGACY_DEMO_STAMP_KEYS } from '@/lib/demo/stamp';
 import { getAppVersion } from '@/lib/version';
 
@@ -101,6 +102,7 @@ describe('snapshots', () => {
     const source = join(dir, 'source.db');
     const sqlite = new Database(source);
     sqlite.pragma('journal_mode = WAL');
+    sqlite.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
     sqlite.exec('CREATE TABLE marker (value TEXT)');
     sqlite.prepare('INSERT INTO marker (value) VALUES (?)').run('from-snapshot');
 
@@ -148,6 +150,35 @@ describe('prepareDemoDatabase()', () => {
     await expect(prepareDemoDatabase({ snapshotDir: snaps })).resolves.toBe('restored');
     expect(readMarker(live)).toBe('pristine');
     expect(readdirSync(snaps)).toEqual([name]);
+  });
+
+  it('moves the restored history to end at boot, and records the boot as a Reset', async () => {
+    const snaps = join(dir, 'snaps');
+    mkdirSync(snaps);
+    const snapshot = join(snaps, snapshotFileName({ dataSet: 'contoso', seed: DEFAULT_SEED }, getAppVersion()));
+    makeDatabase(snapshot, { stamp: DEMO_STAMP_KEY, marker: '2026-01-02T12:00:00.000Z' });
+    const sqlite = new Database(snapshot);
+    sqlite.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(DEMO_HISTORY_ENDS_KEY, '2026-01-10T12:00:00.000Z');
+    sqlite.close();
+
+    const live = join(dir, 'demo.db');
+    vi.stubEnv('RULEBEAT_DB_PATH', live);
+    vi.stubEnv('RULEBEAT_DEMO_SEED', '');
+    vi.stubEnv('RULEBEAT_DEMO_DATASET', '');
+
+    const before = Date.now();
+    await prepareDemoDatabase({ snapshotDir: snaps });
+    const reader = new Database(live, { readonly: true });
+    try {
+      const meta = (key: string) => (reader.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string }).value;
+      const resetAt = new Date(meta(DEMO_RESET_AT_KEY)).getTime();
+      expect(resetAt).toBeGreaterThanOrEqual(before);
+      expect(meta(DEMO_HISTORY_ENDS_KEY)).toBe(meta(DEMO_RESET_AT_KEY));
+      // Eight days before the end of history when generated, eight days before the boot now.
+      expect(new Date(readMarker(live)!).getTime()).toBe(resetAt - 8 * 86_400_000);
+    } finally {
+      reader.close();
+    }
   });
 
   it('refuses to replace a database that is not a Demo database, and leaves it untouched', async () => {

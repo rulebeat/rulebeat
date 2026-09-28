@@ -69,6 +69,12 @@ COPY --from=builder /app/packages/web/.next/static ./packages/web/.next/static
 COPY --from=builder /app/packages/web/public ./packages/web/public
 COPY --from=builder /app/packages/web/data/packs ./packages/web/data/packs
 
+# `rulebeat-demo reset`, run inside a Demo's container, resets it on demand. Plain JavaScript with
+# no dependencies (it only signals the server, which does the Reset), so it ships as source.
+COPY --from=builder /app/packages/web/bin/rulebeat-demo.mjs ./packages/web/bin/rulebeat-demo.mjs
+RUN printf '#!/bin/sh\nexec node /app/packages/web/bin/rulebeat-demo.mjs "$@"\n' > /usr/local/bin/rulebeat-demo \
+  && chmod 755 /usr/local/bin/rulebeat-demo
+
 # Run as a non-root user. The node images already ship one (uid 1000), so use it rather than
 # minting another.
 #

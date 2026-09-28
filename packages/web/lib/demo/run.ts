@@ -9,6 +9,8 @@ import { buildAprlFixtures } from './aprl-fixtures';
 import type { RuleFixture } from './rule-fixture';
 import { replay, TOTAL_DAYS } from './replay';
 import { setGeneratorSeed } from './prng';
+import { DEMO_HISTORY_ENDS_KEY } from './reset';
+import { setMeta } from '../db/meta';
 import type { DemoConfig, DemoDataSet } from './config';
 
 // Reached through a dynamic import from ./boot.ts (and the scripts/generate-demo.ts wrapper), never
@@ -64,7 +66,7 @@ async function generateContoso(): Promise<void> {
   const curatedRules = await loadRules();
 
   console.log(`Replaying ${TOTAL_DAYS} simulated days of scans...`);
-  await replay({
+  const historyEndsAt = await replay({
     estate,
     rules: curatedRules,
     fixturesByRuleId,
@@ -76,6 +78,8 @@ async function generateContoso(): Promise<void> {
       }
     },
   });
+  // Where this history ends, so every Reset can move it to end at the moment of the Reset.
+  await setMeta(DEMO_HISTORY_ENDS_KEY, historyEndsAt.toISOString());
 }
 
 const DATA_SET_GENERATORS: Record<DemoDataSet, () => Promise<void>> = {
