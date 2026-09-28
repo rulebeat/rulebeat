@@ -6,13 +6,11 @@
  * probed — and visibility only ever controls *read* access: a non-owner can GET a shared query but
  * can never DELETE it, because await deleteSavedQuery() re-checks strict ownership on its own.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
-import { deleteMeta } from '@/lib/db/meta';
-import { resetDemoModeCacheForTests, stampDemoDatabase } from '@/lib/demo';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -105,22 +103,6 @@ describe('/api/query/saved (spec 037)', () => {
       expect(entries[0].action).toBe('query.save');
       expect(entries[0].summary).toBe('Saved a resource-graph query "My saved query" (private)');
     });
-
-    describe('demo mode', () => {
-      afterEach(async () => {
-        delete process.env.RULEBEAT_DEMO;
-        await deleteMeta('demo-mode-v2');
-        resetDemoModeCacheForTests();
-      });
-
-      it('blocks creating a saved query with a read-only 403', async () => {
-        process.env.RULEBEAT_DEMO = '1';
-        await stampDemoDatabase();
-        resetDemoModeCacheForTests();
-        const res = await createSaved(postRequest('http://localhost/api/query/saved', VALID_ARG_BODY));
-        expect(res.status).toBe(403);
-      });
-    });
   });
 
   describe('GET (list) and visibility isolation', () => {
@@ -187,26 +169,6 @@ describe('/api/query/saved (spec 037)', () => {
 
       const getRes = await getSaved(new Request(`http://localhost/api/query/saved/${id}`), idParams(id));
       expect(getRes.status).toBe(404);
-    });
-
-    describe('demo mode', () => {
-      afterEach(async () => {
-        delete process.env.RULEBEAT_DEMO;
-        await deleteMeta('demo-mode-v2');
-        resetDemoModeCacheForTests();
-      });
-
-      it('blocks deleting a saved query with a read-only 403', async () => {
-        const created = await createSaved(postRequest('http://localhost/api/query/saved', VALID_ARG_BODY));
-        const { id } = await created.json();
-
-        process.env.RULEBEAT_DEMO = '1';
-        await stampDemoDatabase();
-        resetDemoModeCacheForTests();
-
-        const res = await deleteSaved(new Request(`http://localhost/api/query/saved/${id}`, { method: 'DELETE' }), idParams(id));
-        expect(res.status).toBe(403);
-      });
     });
   });
 });

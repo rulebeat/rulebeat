@@ -4,6 +4,7 @@ import { can, type Action } from '@/lib/rbac';
 import { getUser, type AppUser } from '@/lib/db/users';
 import { getLocalAccount } from '@/lib/db/local-accounts';
 import { isDemoMode, DEMO_VISITOR_ID } from '@/lib/demo';
+import { lockedSurfaceMessage } from '@/lib/demo/locked';
 
 /**
  * Resolves the signed-in person's local user row (which carries their role).
@@ -16,12 +17,12 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   const session = await auth();
   const uid = session?.user?.uid;
   if (!uid) {
-    // A demo visitor never signs in, so there is no uid to resolve — auth.config.ts's `authorized`
-    // callback already let this anonymous GET through. Browse as the generator's seeded viewer row,
-    // exactly like any other signed-in viewer downstream (no new authorization mechanism). Gated on
-    // the full isDemoMode() (env *and* the database's own demo-mode-v2 stamp), not isDemoEnv()
-    // alone — an incompletely-configured demo must fall through to "no user" like any other
-    // anonymous request, never silently grant access to whatever demo.db happens to contain.
+    // A Visitor never signs in, so there is no uid to resolve: auth.config.ts's `authorized`
+    // callback let the request through without a session. Act as the generator's seeded Visitor
+    // row, an ordinary admin downstream (no new authorization mechanism). No session is minted for
+    // it, so a Reset that rewrites the database can never strand a cookie. Gated on the full
+    // isDemoMode() (env *and* the database's own demo-mode-v2 stamp), not isDemoEnv() alone: an
+    // incompletely-configured Demo falls through to "no user" like any other anonymous request.
     return (await isDemoMode()) ? getUser(DEMO_VISITOR_ID) : null;
   }
   const dbUser = await getUser(uid);
@@ -35,22 +36,27 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 }
 
 /**
- * The authorization guard for API routes. Returns the acting user — so handlers get the audit
- * actor for free — or a ready-to-return 401/403, which callers check with `instanceof NextResponse`.
+ * The authorization guard for API routes. Returns the acting user (so handlers get the audit
+ * actor for free) or a ready-to-return 401/403, which callers check with `instanceof NextResponse`.
  *
  * Routes name the action they perform (`'rules:write'`), never a role, so the role→action mapping
  * lives in exactly one place: lib/rbac.ts.
+ *
+ * In a Demo, every Visitor is an admin, so the Locked surfaces (lib/demo/locked.ts) are refused
+ * here with the reason. A handler that only reads a Locked surface passes `{ readOnly: true }` to
+ * stay readable; leaving it off only ever makes a handler stricter. `route-guards.test.ts` checks
+ * that `readOnly` appears only in GET handlers.
  */
-export async function requireRole(action: Action): Promise<AppUser | NextResponse> {
+export async function requireRole(
+  action: Action,
+  opts: { readOnly?: boolean } = {},
+): Promise<AppUser | NextResponse> {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Demo mode hard-denies every action but reading — checked ahead of, and independent from, the
-  // normal can() lookup below, so the guarantee never rests on the seeded visitor row's stored role
-  // staying 'viewer'. (It does stay 'viewer'; this is the belt to that suspenders, and it's what
-  // proves the read-only promise even against a row someone tampered with directly in the database.)
-  if ((await isDemoMode()) && action !== 'read') {
-    return NextResponse.json({ error: 'This is a read-only demo. Nothing here can be changed.' }, { status: 403 });
+  if (!opts.readOnly && (await isDemoMode())) {
+    const locked = lockedSurfaceMessage(action);
+    if (locked) return NextResponse.json({ error: locked }, { status: 403 });
   }
 
   if (!can(user.role, action)) {

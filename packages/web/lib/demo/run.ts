@@ -1,10 +1,7 @@
-import { eq } from 'drizzle-orm';
-import { db } from '../db/client';
-import { users } from '../db/schema';
-import { createUser } from '../db/users';
 import { createSchedule } from '../db/schedules';
 import { loadRules, setRulesEnabled } from '../rules';
-import { DEMO_VISITOR_ID, stampDemoDatabase } from './index';
+import { stampDemoDatabase } from './index';
+import { seedDemoVisitor } from './visitor';
 import { buildEstate } from './estate';
 import { buildIdentityApps } from './identity-fixtures';
 import { CORE_FIXTURES, CORE_RULE_IDS } from './core-fixtures';
@@ -17,12 +14,6 @@ import type { DemoConfig, DemoDataSet } from './config';
 // Reached through a dynamic import from ./boot.ts (and the scripts/generate-demo.ts wrapper), never
 // statically: every import above resolves down to lib/db/client.ts, which opens its database file
 // at module-load time, and the boot step must finish preparing that file first.
-
-async function seedDemoVisitor(): Promise<void> {
-  const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
-  if ('error' in result) throw new Error(`Failed to seed demo visitor: ${result.error}`);
-  db.update(users).set({ id: DEMO_VISITOR_ID }).where(eq(users.id, result.user.id)).run();
-}
 
 async function seedDemoSchedule(): Promise<string> {
   const startAt = new Date();

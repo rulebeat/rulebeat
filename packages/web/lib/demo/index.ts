@@ -7,7 +7,7 @@ export { isDemoEnv } from '../demo-env';
 export { DEMO_STAMP_KEY, LEGACY_DEMO_STAMP_KEYS } from './stamp';
 
 /**
- * The fixed `users.id` of the seeded viewer row an anonymous visitor browses as in demo mode.
+ * The fixed `users.id` of the seeded admin row every Visitor acts as in a Demo.
  * A real row, not a synthetic in-memory user — `lib/api-auth.ts`'s `getCurrentUser()` looks it up
  * with the same `getUser()` every signed-in request uses, so nothing downstream needs to know the
  * difference. Only the Demo generator (`./run.ts`) creates this row; the running app only ever reads it.
@@ -24,9 +24,9 @@ let cachedStamped: boolean | null = null;
  * `lib/db/client.ts` to `demo.db` before this function could even query it) **and** the
  * `demo-mode-v2` stamp in that same database.
  *
- * Both are required, deliberately. The env var alone would turn on anonymous read-only access and
- * the "you can't write here" kill switch against a database that was never actually populated by
- * the generator — every empty `demo.db` some other process happened to create would look live. The
+ * Both are required, deliberately. The env var alone would sign every anonymous request in as an
+ * admin against a database that was never actually populated by the generator: every empty
+ * `demo.db` some other process happened to create would look live. The
  * stamp alone is inert, because nothing reachable without the env var ever checks it. Neither gate
  * is set by anything in the running app; only the Demo generator writes the stamp, and only
  * a deployer sets the environment variable.

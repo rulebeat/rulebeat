@@ -34,7 +34,7 @@ export const authConfig: NextAuthConfig = {
   // safe for a single-tenant self-hosted app whose OAuth callback URL is pinned in Entra.
   trustHost: true,
   callbacks: {
-    authorized({ auth, request }) {
+    authorized({ auth }) {
       // uid (our own users.id) is required, not just any session: a token issued before this
       // claim existed — or a local session with no linked role yet — carries no uid, so the role
       // can't be resolved and every API call would 401 while the user still looked signed in.
@@ -42,16 +42,14 @@ export const authConfig: NextAuthConfig = {
       // carries a uid and everything works.
       if (auth?.user?.uid) return true;
 
-      // Demo mode: let an anonymous GET through with no session at all, so a visitor can browse
-      // without signing in first. Only `isDemoEnv()` (the environment variable) is checked here —
-      // this file is bundled into the edge/proxy build and can't touch SQLite to check the second
-      // gate (lib/demo/index.ts's `demo-mode-v2` stamp), so it stays deliberately permissive at this
-      // layer. That is safe: this callback only decides whether a *page navigation or API request
-      // is let through at all*, never what it's allowed to do. The actual read-only enforcement —
-      // and the full two-gate check — happens downstream in lib/api-auth.ts's getCurrentUser() and
-      // requireRole(), which is where a write actually gets denied. A non-GET (a mutation) falls
-      // through to the redirect-to-signin below, same as any other anonymous request.
-      return isDemoEnv() && request.method === 'GET';
+      // A Demo: let every request through with no session at all, for every method, so a Visitor
+      // uses the console without signing in. Only `isDemoEnv()` (the environment variable) is
+      // checked here: this file is bundled into the edge/proxy build and can't touch SQLite to check
+      // the second gate (lib/demo/index.ts's `demo-mode-v2` stamp). That is safe because this
+      // callback only decides whether a request reaches the app at all, never what it may do.
+      // lib/api-auth.ts's getCurrentUser() applies the full two-gate check and resolves the Visitor,
+      // and requireRole() refuses the Locked surfaces.
+      return isDemoEnv();
     },
     async session({ session, token }) {
       session.user.uid = typeof token.uid === 'string' ? token.uid : null;

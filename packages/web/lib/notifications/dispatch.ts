@@ -8,7 +8,11 @@ import { buildScansHref } from '@/lib/scans-link';
 import { getPublicUrl } from '@/lib/sign-in-config';
 import { assertSafeWebhookUrl, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
+import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
+
+/** What a Demo records, and "Send test" answers, instead of sending. */
+export const DEMO_NOT_SENT = 'Not sent: this is a Demo.';
 
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [2_000, 8_000]; // delay before attempt 2, then before attempt 3
@@ -150,6 +154,7 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
     { status: 'new' },
   );
   const href = await buildAbsoluteHref(scansPath);
+  const demo = await isDemoMode();
 
   await Promise.allSettled(
     channels.map(async channel => {
@@ -162,6 +167,22 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
 
       const filtered = scoped.filter(f => meetsThreshold(f.severity, channel.minSeverity));
       if (filtered.length === 0) return;
+
+      // A Demo records what would have been sent, with zero attempts, and contacts nothing. The
+      // channel's own last-result fields are left alone: nothing was tried, so nothing failed.
+      if (demo) {
+        await recordDelivery({
+          channelId: channel.id,
+          scheduleId: run.scheduleId,
+          runId: run.id,
+          ok: false,
+          attempts: 0,
+          httpStatus: null,
+          error: DEMO_NOT_SENT,
+          findingsCount: filtered.length,
+        });
+        return;
+      }
 
       const payload = buildPayload(channel.type, filtered, href, run);
 

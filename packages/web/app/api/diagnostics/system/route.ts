@@ -8,7 +8,7 @@ import { getSystemDiagnostics } from '@/lib/diagnostics';
  * check loads. Admin-only: same gate as the preflight route, both under `diagnostics/`.
  */
 export async function GET() {
-  const actor = await requireRole('azure:manage');
+  const actor = await requireRole('azure:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
   return NextResponse.json(await getSystemDiagnostics());
 }

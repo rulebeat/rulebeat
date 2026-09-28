@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
@@ -11,7 +11,8 @@ import {
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/types';
 import type { AppUser } from '@/lib/db/users';
-import { can, ROLE_LABELS, type Role } from '@/lib/rbac';
+import { can, ROLE_LABELS, type Action, type Role } from '@/lib/rbac';
+import { lockedSurfaceMessage } from '@/lib/demo/locked';
 import { UsersSection } from './users-section';
 import { AzureConnectionSection } from './azure-connection-section';
 import type { AzureConnectionStatus } from '@/lib/azure-credential';
@@ -184,6 +185,22 @@ function EditRow({
   );
 }
 
+/**
+ * A section every Visitor can see but not change in a Demo. The server refuses the change anyway
+ * (requireRole() in lib/api-auth.ts); this says why before anyone tries, and disables the form
+ * controls inside so nothing looks clickable. Outside a Demo it renders its children untouched.
+ */
+function LockedSurface({ demo, action, children }: { demo: boolean; action: Action; children: ReactNode }) {
+  const message = demo ? lockedSurfaceMessage(action) : null;
+  if (!message) return <>{children}</>;
+  return (
+    <div className="space-y-2">
+      <Callout icon={Lock}>{message}</Callout>
+      <fieldset disabled className="contents">{children}</fieldset>
+    </div>
+  );
+}
+
 export function SettingsClient({
   initialCategories,
   role,
@@ -193,6 +210,7 @@ export function SettingsClient({
   initialAzureStatus,
   initialSignInStatus,
   initialChannels,
+  demo = false,
 }: {
   initialCategories: Category[];
   role: Role;
@@ -206,6 +224,8 @@ export function SettingsClient({
   initialSignInStatus: SignInStatus | null;
   /** Null unless the viewer is an admin — the server only loads it for `notifications:manage`. */
   initialChannels: NotificationChannelSummary[] | null;
+  /** A Demo: the Locked surfaces render with their reason and every control inside disabled. */
+  demo?: boolean;
 }) {
   const canEditCategories = can(role, 'categories:write');
   const canManageUsers = can(role, 'users:manage');
@@ -294,11 +314,15 @@ export function SettingsClient({
       {/* Sign-in first, Azure connection second, deliberately: how you get into RuleBeat at all
           comes before what RuleBeat can see once you're in. */}
       {canManageAuth && initialSignInStatus && (
-        <SignInSection initialStatus={initialSignInStatus} />
+        <LockedSurface demo={demo} action="auth:manage">
+          <SignInSection initialStatus={initialSignInStatus} />
+        </LockedSurface>
       )}
 
       {canManageAzure && initialAzureStatus && (
-        <AzureConnectionSection initialStatus={initialAzureStatus} />
+        <LockedSurface demo={demo} action="azure:manage">
+          <AzureConnectionSection initialStatus={initialAzureStatus} />
+        </LockedSurface>
       )}
 
       {canManageNotifications && initialChannels !== null && (
@@ -407,11 +431,13 @@ export function SettingsClient({
       </Card>
 
       {canManageUsers && (
-        <UsersSection
-          initialUsers={initialUsers}
-          initialUsersWithPassword={initialUsersWithPassword}
-          currentUserId={currentUserId}
-        />
+        <LockedSurface demo={demo} action="users:manage">
+          <UsersSection
+            initialUsers={initialUsers}
+            initialUsersWithPassword={initialUsersWithPassword}
+            currentUserId={currentUserId}
+          />
+        </LockedSurface>
       )}
     </div>
   );

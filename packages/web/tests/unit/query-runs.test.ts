@@ -6,13 +6,11 @@
  * the 20-row prune are covered in each run-* route's own test file (query-run-resource-graph.test.ts
  * has the prune/cap assertion, since it's naturally exercised through a real run sequence there).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, deleteUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { recordQueryRun, listQueryRuns } from '@/lib/db/query-runs';
-import { deleteMeta } from '@/lib/db/meta';
-import { resetDemoModeCacheForTests, stampDemoDatabase } from '@/lib/demo';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -115,24 +113,6 @@ describe('GET /api/query/runs (spec 037 follow-up)', () => {
       const deleted = await deleteUser(ownerId);
       expect(deleted).toBe(true);
       expect(await listQueryRuns(ownerId)).toHaveLength(0);
-    });
-  });
-
-  describe('demo mode', () => {
-    afterEach(async () => {
-      delete process.env.RULEBEAT_DEMO;
-      await deleteMeta('demo-mode-v2');
-      resetDemoModeCacheForTests();
-    });
-
-    it('blocks the read with a 403, same as every other query-page route', async () => {
-      await signInAs('editor@example.com');
-      process.env.RULEBEAT_DEMO = '1';
-      await stampDemoDatabase();
-      resetDemoModeCacheForTests();
-
-      const res = await GET();
-      expect(res.status).toBe(403);
     });
   });
 });

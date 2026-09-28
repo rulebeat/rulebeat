@@ -1,25 +1,18 @@
 /**
- * WS2g · demo mode's anonymous read-only access.
+ * How a Demo resolves who is acting, and what it refuses.
  *
- * Two things this suite exists to prove, both load-bearing:
- *
- * 1. `await getCurrentUser()` only ever browses an anonymous request as the demo visitor when the full
- *    two-gate `await isDemoMode()` is true — an anonymous request against a plain, non-demo install stays
- *    unauthenticated, and a demo env var with no seeded visitor row does not silently grant access
- *    to whatever `demo.db` happens to contain.
- * 2. `await requireRole()`'s demo hard-deny does not rest on the visitor row's stored role staying
- *    'viewer'. It is checked ahead of, and independently from, the normal `can()` lookup — proven
- *    here by promoting the visitor row directly in the database (the way a tampered or misseeded
- *    row would look) and confirming every write action still 403s.
+ * 1. `getCurrentUser()` resolves a request with no session as the seeded Visitor only when the full
+ *    two-gate `isDemoMode()` is true. A plain install stays unauthenticated, and a Demo env var with
+ *    no seeded Visitor row does not grant access to whatever `demo.db` contains.
+ * 2. The Visitor is an admin and may change anything outside the Locked surfaces. The Locked
+ *    surfaces (Azure connection, sign-in configuration, users) are refused by `requireRole()` with
+ *    the reason, whatever role the acting row holds, and stay readable through `{ readOnly: true }`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse } from 'next/server';
 import { resetDb } from '../helpers/db';
-import { db } from '@/lib/db/client';
-import { run as execRun } from '@/lib/db/exec';
-import { users } from '@/lib/db/tables';
-import { eq } from 'drizzle-orm';
 import { createUser } from '@/lib/db/users';
+import { seedDemoVisitor } from '@/lib/demo/visitor';
 import { stampDemoDatabase, resetDemoModeCacheForTests, DEMO_VISITOR_ID } from '@/lib/demo';
 import { deleteMeta } from '@/lib/db/meta';
 
@@ -31,18 +24,6 @@ vi.mock('@/auth', () => ({
 }));
 
 const { requireRole, getCurrentUser } = await import('@/lib/api-auth');
-
-/** Seeds the same row the Demo generator creates — a real viewer, not a synthetic user. */
-async function seedDemoVisitor(): Promise<void> {
-  const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
-  if ('error' in result) throw new Error(result.error);
-  await execRun(db.update(users).set({ id: DEMO_VISITOR_ID }).where(eq(users.id, result.user.id)));
-}
-
-/** Simulates a tampered or misseeded row: the id the app looks up, promoted straight in the DB. */
-async function tamperVisitorToAdmin(): Promise<void> {
-  await execRun(db.update(users).set({ role: 'admin' }).where(eq(users.id, DEMO_VISITOR_ID)));
-}
 
 async function enableDemoMode(): Promise<void> {
   process.env.RULEBEAT_DEMO = '1';
@@ -69,13 +50,13 @@ describe('await getCurrentUser() and anonymous requests', () => {
     expect(await getCurrentUser()).toBeNull();
   });
 
-  it('browses as the seeded viewer row for an anonymous request in demo mode', async () => {
+  it('acts as the seeded Visitor, an admin, for a request with no session in a Demo', async () => {
     await seedDemoVisitor();
     await enableDemoMode();
 
     const user = await getCurrentUser();
     expect(user?.id).toBe(DEMO_VISITOR_ID);
-    expect(user?.role).toBe('viewer');
+    expect(user?.role).toBe('admin');
   });
 
   it('stays unauthenticated when demo mode is on but the visitor row was never seeded', async () => {
@@ -95,68 +76,63 @@ describe('await getCurrentUser() and anonymous requests', () => {
   });
 });
 
-describe('await requireRole() in demo mode: read only, no matter what', () => {
-  it('allows read for the anonymous demo visitor', async () => {
+describe('requireRole() in a Demo', () => {
+  it('lets the Visitor write everywhere outside the Locked surfaces', async () => {
     await seedDemoVisitor();
     await enableDemoMode();
 
-    const result = await requireRole('read');
-    expect(result).not.toBeInstanceOf(NextResponse);
-  });
-
-  it('denies a write action for the anonymous demo visitor with the read-only message', async () => {
-    await seedDemoVisitor();
-    await enableDemoMode();
-
-    const result = await requireRole('rules:write');
-    expect(result).toBeInstanceOf(NextResponse);
-    const res = result as NextResponse;
-    expect(res.status).toBe(403);
-    const body = await res.clone().json();
-    expect(body.error).toMatch(/read-only demo/i);
-  });
-
-  it('denies admin-only actions for the anonymous demo visitor too', async () => {
-    await seedDemoVisitor();
-    await enableDemoMode();
-
-    const result = await requireRole('users:manage');
-    expect(result).toBeInstanceOf(NextResponse);
-    expect((result as NextResponse).status).toBe(403);
-  });
-
-  it('still denies every write action after the visitor row is tampered to admin', async () => {
-    await seedDemoVisitor();
-    await tamperVisitorToAdmin();
-    await enableDemoMode();
-
-    // Prove the tamper actually took, so a failure below is the guard, not a broken fixture.
-    const visitor = await getCurrentUser();
-    expect(visitor?.role).toBe('admin');
-
-    for (const action of ['rules:write', 'users:manage', 'azure:manage', 'categories:write'] as const) {
-      const result = await requireRole(action);
-      expect(result, `expected '${action}' to be denied for a tampered-admin demo visitor`).toBeInstanceOf(NextResponse);
-      expect((result as NextResponse).status).toBe(403);
+    for (const action of [
+      'read', 'rules:write', 'rules:delete', 'scans:run', 'schedules:write', 'suppressions:write',
+      'dashboards:write', 'categories:write', 'notifications:manage', 'audit:read',
+    ] as const) {
+      expect(await requireRole(action), `expected '${action}' to be allowed`).not.toBeInstanceOf(NextResponse);
     }
   });
 
-  it('still allows read after the visitor row is tampered to admin', async () => {
+  it('refuses each Locked surface with the reason it is locked', async () => {
     await seedDemoVisitor();
-    await tamperVisitorToAdmin();
     await enableDemoMode();
 
-    const result = await requireRole('read');
-    expect(result).not.toBeInstanceOf(NextResponse);
+    const expected = {
+      'azure:manage': /Azure connection is locked in the Demo/,
+      'auth:manage': /Sign-in configuration is locked in the Demo/,
+      'users:manage': /Users are locked in the Demo/,
+      'account:self': /Users are locked in the Demo/,
+    } as const;
+    for (const [action, why] of Object.entries(expected)) {
+      const result = await requireRole(action as keyof typeof expected);
+      expect(result, `expected '${action}' to be locked`).toBeInstanceOf(NextResponse);
+      const res = result as NextResponse;
+      expect(res.status).toBe(403);
+      expect((await res.clone().json()).error).toMatch(why);
+    }
   });
 
-  it('a real signed-in admin is unaffected by the demo hard-deny once demo mode is off', async () => {
+  it('keeps the Locked surfaces readable for a handler that only reads', async () => {
+    await seedDemoVisitor();
+    await enableDemoMode();
+
+    for (const action of ['azure:manage', 'auth:manage', 'users:manage'] as const) {
+      expect(await requireRole(action, { readOnly: true })).not.toBeInstanceOf(NextResponse);
+    }
+  });
+
+  it('locks the surfaces for a signed-in admin too, not only the Visitor row', async () => {
+    const result = await createUser({ email: 'admin@example.com', role: 'admin' });
+    if ('error' in result) throw result;
+    mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
+    await enableDemoMode();
+
+    expect(await requireRole('azure:manage')).toBeInstanceOf(NextResponse);
+  });
+
+  it('leaves a real install alone: an admin manages the Azure connection outside a Demo', async () => {
     const result = await createUser({ email: 'admin2@example.com', role: 'admin' });
     if ('error' in result) throw result;
     mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
-    // Deliberately no await enableDemoMode() call.
+    // Deliberately no enableDemoMode() call.
 
-    const write = await requireRole('rules:write');
-    expect(write).not.toBeInstanceOf(NextResponse);
+    expect(await requireRole('azure:manage')).not.toBeInstanceOf(NextResponse);
+    expect(await requireRole('users:manage')).not.toBeInstanceOf(NextResponse);
   });
 });
