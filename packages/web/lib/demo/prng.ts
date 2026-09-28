@@ -5,6 +5,25 @@
  * "roughly N".
  */
 
+/** The Seed a Demo is generated with when `RULEBEAT_DEMO_SEED` is unset. */
+export const DEFAULT_SEED = 0xc0ffee;
+
+// The Seed of the generation in progress. Module state rather than a parameter threaded through
+// every fixture, because a Demo is generated once per process (at boot, or by the CLI) and every
+// draw in that run must agree on it. At DEFAULT_SEED every derivation below is the identity, so the
+// default Demo is byte-identical to the one generated before the Seed was configurable.
+let activeSeed = DEFAULT_SEED;
+
+/** Sets the Seed for the next generation. Called by `runGenerator()` before it draws anything. */
+export function setGeneratorSeed(seed: number): void {
+  activeSeed = seed >>> 0;
+}
+
+/** A fixed per-purpose PRNG seed (the estate's, the identity fixtures'), moved by the active Seed. */
+export function seedFor(base: number): number {
+  return (base ^ activeSeed ^ DEFAULT_SEED) >>> 0;
+}
+
 /** A seeded PRNG for sequential draws (estate construction — resource counts, names, regions). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -22,7 +41,8 @@ export function mulberry32(seed: number): () => number {
  * The violation engine needs "is resource R violating rule Q on day D" to be a pure function of
  * (R, Q, D) alone, not of what order the generator happened to visit them in.
  */
-export function rand01(key: string): number {
+export function rand01(rawKey: string): number {
+  const key = activeSeed === DEFAULT_SEED ? rawKey : `${activeSeed}::${rawKey}`;
   let h1 = 0xdeadbeef ^ key.length;
   let h2 = 0x41c6ce57 ^ key.length;
   for (let i = 0; i < key.length; i++) {

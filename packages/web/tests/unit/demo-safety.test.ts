@@ -18,7 +18,7 @@ import {
 import { stampDemoDatabase, resetDemoModeCacheForTests } from '@/lib/demo';
 import { deleteMeta } from '@/lib/db/meta';
 
-const STAMP_KEY = 'demo-mode-v1';
+const STAMP_KEY = 'demo-mode-v2';
 const ENV_KEYS = [
   'RULEBEAT_DEMO',
   'AZURE_TENANT_ID',

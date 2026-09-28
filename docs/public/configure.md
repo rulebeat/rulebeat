@@ -52,6 +52,8 @@ credential choices described in [Azure scanning credential](#azure-scanning-cred
 | `SCAN_HISTORY_LIMIT` | Never, default 90 | How many runs per category Run History keeps. | A whole number. [Details](#scan-history-retention) |
 | `RULEBEAT_DISABLE_SCHEDULER` | Multi-replica only | Stops the in-process scheduler on this replica. | `1` |
 | `RULEBEAT_DEMO` | Never | Demo mode: anonymous, read-only, synthetic data. | `1`. [Details](demo-mode.md) |
+| `RULEBEAT_DEMO_DATASET` | Never, default `contoso` | The Data set a Demo is generated from. Read only with `RULEBEAT_DEMO=1`. | `contoso`. [Details](demo-mode.md#choosing-the-data) |
+| `RULEBEAT_DEMO_SEED` | Never, default `0xc0ffee` | Varies the generated Demo. The same Data set, Seed and release always give the same Demo. | A whole number from 0 to 4294967295, decimal or `0x` hex |
 
 ### Running with no persistent volume
 

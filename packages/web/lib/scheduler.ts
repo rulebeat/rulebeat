@@ -23,7 +23,7 @@ function schedulerGlobals(): SchedulerGlobals {
 
 export async function startScheduler(): Promise<void> {
   if (process.env.RULEBEAT_DISABLE_SCHEDULER === '1') return;
-  // Demo mode is read-only (see lib/demo.ts) — a ticking scheduler would mutate the curated
+  // Demo mode is read-only (see lib/demo/index.ts) — a ticking scheduler would mutate the curated
   // synthetic estate every visitor is meant to see the same version of.
   if (await isDemoMode()) return;
   const g = schedulerGlobals();

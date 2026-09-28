@@ -154,6 +154,7 @@
 | `packages/web/lib/db/schedules.ts` | `Schedule` type + CRUD + `computeNextRun()`, a cron-free recurrence engine |
 | `packages/web/lib/schedule-target.ts` | `resolveRulesForSchedule`/`resolveCategoriesForSchedule` |
 | `packages/web/lib/scheduler.ts` | In-process scheduler: 30s tick loop, wraps `run-executor.ts`'s `executeTarget()` |
+| `packages/web/lib/demo/` | The Demo: `index.ts` (the `RULEBEAT_DEMO` + stamp gate), `boot.ts` (restores or generates the demo database before the app opens it, called from `instrumentation.ts`), `config.ts` (Data set and Seed from env), `run.ts` (the generator, replaying 60 days through `executeTarget()` against `fake-tenant.ts`). Ships in the image |
 | `packages/web/lib/db/notification-channels.ts` | Notification channel address book: encrypted URL storage, `NotificationChannelSummary` (no URL), `recordChannelResult()`, `rowToStoredChannel()`. `deleteChannel()` cascades its `notification_deliveries` history |
 | `packages/web/lib/db/schedule-notification-channels.ts` | Junction repo: `listLinksForSchedule`, `setLinksForSchedule`, `deleteLinksForSchedule`, `getChannelsForSchedule` (used by dispatcher) |
 | `packages/web/lib/db/notification-deliveries.ts` | Per-attempt delivery history: `recordDelivery()`/`listDeliveriesForChannel()`/`deleteDeliveriesForChannel()`, capped at 50 rows per channel (oldest pruned) |

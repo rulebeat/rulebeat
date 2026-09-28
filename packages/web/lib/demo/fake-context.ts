@@ -1,6 +1,6 @@
 import type { Rule } from '@rulebeat/core';
-import { DEMO_SUBSCRIPTIONS } from '../../lib/demo-fixtures';
-import { fakeTenantContext, type FakeTenantContext } from '../../tests/helpers/fake-azure';
+import { DEMO_SUBSCRIPTIONS } from '../demo-fixtures';
+import { fakeTenantContext, type FakeTenantContext } from './fake-tenant';
 import { rand01 } from './prng';
 import type { Estate, EstateResource } from './estate';
 import { graphAppsForDay, type SyntheticApp } from './identity-fixtures';

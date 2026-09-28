@@ -1,22 +1,22 @@
 import { eq } from 'drizzle-orm';
-import { db } from '../../lib/db/client';
-import { users } from '../../lib/db/schema';
-import { createUser } from '../../lib/db/users';
-import { createSchedule } from '../../lib/db/schedules';
-import { loadRules, setRulesEnabled } from '../../lib/rules';
-import { DEMO_VISITOR_ID, stampDemoDatabase } from '../../lib/demo';
+import { db } from '../db/client';
+import { users } from '../db/schema';
+import { createUser } from '../db/users';
+import { createSchedule } from '../db/schedules';
+import { loadRules, setRulesEnabled } from '../rules';
+import { DEMO_VISITOR_ID, stampDemoDatabase } from './index';
 import { buildEstate } from './estate';
 import { buildIdentityApps } from './identity-fixtures';
 import { CORE_FIXTURES, CORE_RULE_IDS } from './core-fixtures';
 import { buildAprlFixtures } from './aprl-fixtures';
 import type { RuleFixture } from './rule-fixture';
 import { replay, TOTAL_DAYS } from './replay';
+import { setGeneratorSeed } from './prng';
+import type { DemoConfig, DemoDataSet } from './config';
 
-// This module must only ever be reached via the dynamic `import('./demo/run')` in
-// scripts/generate-demo.ts, *after* that file has set `RULEBEAT_DEMO=1` — every import above
-// resolves down to lib/db/client.ts, which reads that env var at module-load time to decide
-// rulebeat.db vs demo.db. A static top-level import here would be hoisted ahead of the env-var
-// assignment and silently open the real database instead.
+// Reached through a dynamic import from ./boot.ts (and the scripts/generate-demo.ts wrapper), never
+// statically: every import above resolves down to lib/db/client.ts, which opens its database file
+// at module-load time, and the boot step must finish preparing that file first.
 
 async function seedDemoVisitor(): Promise<void> {
   const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
@@ -44,7 +44,7 @@ async function seedDemoSchedule(): Promise<string> {
   return result.schedule.id;
 }
 
-export async function runGenerator(): Promise<void> {
+async function generateContoso(): Promise<void> {
   console.log('Building synthetic estate...');
   const estate = buildEstate();
   const identityApps = buildIdentityApps();
@@ -85,7 +85,17 @@ export async function runGenerator(): Promise<void> {
       }
     },
   });
+}
 
+const DATA_SET_GENERATORS: Record<DemoDataSet, () => Promise<void>> = {
+  contoso: generateContoso,
+};
+
+/** Fills the freshly opened, empty demo database with the chosen Data set, then stamps it. */
+export async function runGenerator(config: DemoConfig): Promise<void> {
+  setGeneratorSeed(config.seed);
+  console.log(`Generating Demo: Data set ${config.dataSet}, Seed 0x${config.seed.toString(16)}`);
+  await DATA_SET_GENERATORS[config.dataSet]();
   await stampDemoDatabase();
   console.log('Demo database generated successfully.');
 }

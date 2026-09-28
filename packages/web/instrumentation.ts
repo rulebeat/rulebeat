@@ -16,6 +16,23 @@ export async function register() {
     process.exit(1);
   }
 
+  // The Demo's database is prepared before anything below opens it: restored from the snapshot for
+  // this Data set, Seed and release, or generated on the first boot. Next.js does not serve until
+  // register() returns, so no request ever sees a half-built Demo. A Demo that cannot start (on
+  // Postgres, a bad Seed, a file that is not a Demo database) exits rather than serving something
+  // else under the Demo's name.
+  const { isDemoEnv } = await import('./lib/demo-env');
+  if (isDemoEnv()) {
+    try {
+      const { prepareDemoDatabase } = await import('./lib/demo/boot');
+      const result = await prepareDemoDatabase();
+      console.log(`[startup] Demo ${result === 'restored' ? 'restored from its snapshot' : 'generated'}`);
+    } catch (err) {
+      console.error('[startup] the Demo could not start:', err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  }
+
   // `trustHost: true` (auth.config.ts) means Auth.js will infer the public URL from request
   // headers if nothing else is set — fine for a single-tenant self-hosted app, but a public URL
   // configured in Settings → Sign-in is a stronger source of truth, and Auth.js reads it from

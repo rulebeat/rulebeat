@@ -19,7 +19,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     // A demo visitor never signs in, so there is no uid to resolve — auth.config.ts's `authorized`
     // callback already let this anonymous GET through. Browse as the generator's seeded viewer row,
     // exactly like any other signed-in viewer downstream (no new authorization mechanism). Gated on
-    // the full isDemoMode() (env *and* the database's own demo-mode-v1 stamp), not isDemoEnv()
+    // the full isDemoMode() (env *and* the database's own demo-mode-v2 stamp), not isDemoEnv()
     // alone — an incompletely-configured demo must fall through to "no user" like any other
     // anonymous request, never silently grant access to whatever demo.db happens to contain.
     return (await isDemoMode()) ? getUser(DEMO_VISITOR_ID) : null;

@@ -23,7 +23,7 @@ import { createUser } from '@/lib/db/users';
 import { stampDemoDatabase, resetDemoModeCacheForTests, DEMO_VISITOR_ID } from '@/lib/demo';
 import { deleteMeta } from '@/lib/db/meta';
 
-const STAMP_KEY = 'demo-mode-v1';
+const STAMP_KEY = 'demo-mode-v2';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({
@@ -32,7 +32,7 @@ vi.mock('@/auth', () => ({
 
 const { requireRole, getCurrentUser } = await import('@/lib/api-auth');
 
-/** Seeds the same row `scripts/generate-demo.ts` creates — a real viewer, not a synthetic user. */
+/** Seeds the same row the Demo generator creates — a real viewer, not a synthetic user. */
 async function seedDemoVisitor(): Promise<void> {
   const result = await createUser({ email: 'demo-visitor@rulebeat.local', role: 'viewer' });
   if ('error' in result) throw new Error(result.error);

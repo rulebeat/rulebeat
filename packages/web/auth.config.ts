@@ -45,7 +45,7 @@ export const authConfig: NextAuthConfig = {
       // Demo mode: let an anonymous GET through with no session at all, so a visitor can browse
       // without signing in first. Only `isDemoEnv()` (the environment variable) is checked here —
       // this file is bundled into the edge/proxy build and can't touch SQLite to check the second
-      // gate (lib/demo.ts's `demo-mode-v1` stamp), so it stays deliberately permissive at this
+      // gate (lib/demo/index.ts's `demo-mode-v2` stamp), so it stays deliberately permissive at this
       // layer. That is safe: this callback only decides whether a *page navigation or API request
       // is let through at all*, never what it's allowed to do. The actual read-only enforcement —
       // and the full two-gate check — happens downstream in lib/api-auth.ts's getCurrentUser() and
