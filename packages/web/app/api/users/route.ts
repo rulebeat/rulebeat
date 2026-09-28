@@ -6,7 +6,7 @@ import { writeAudit } from '@/lib/db/audit';
 import { isRole } from '@/lib/rbac';
 
 export async function GET() {
-  const actor = await requireRole('users:manage');
+  const actor = await requireRole('users:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
   return NextResponse.json(await listUsers());
 }

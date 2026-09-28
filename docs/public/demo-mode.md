@@ -6,15 +6,22 @@ a service principal.
 
 ## What it is
 
-The normal build, pointed at a generated database instead of your real one, with three behaviours
-switched on. Browsing is **anonymous and read-only**: a visitor opens the URL and is already looking
-at dashboards, scans, findings, rules, suppressions and schedules as a viewer, and every request that
-would change anything is refused. There is **no Azure access, structurally**: credential resolution
-is short-circuited before it reads the environment or the database, so a demo instance cannot connect
-to a tenant even with a real service principal in its environment. And there is **no background
-work**: the scheduler does not start, and the onboarding and change-password pages are unreachable. A
-black bar on every page reads "Demo. Synthetic data. Read-only. Nothing here can be changed." so a
-screenshot never passes for a real tenant.
+The normal build, pointed at a generated database instead of your real one, with four behaviours
+switched on.
+
+- **Signed in automatically, as an admin.** A Visitor opens the URL and is already in the console,
+  able to create and edit rules, run scans, suppress findings, and change schedules, dashboards and
+  notification channels. Every Visitor is the same account, so what one changes, the next one sees.
+- **Some surfaces are locked.** The Azure connection, sign-in configuration and users are visible
+  but cannot be changed, and each one says why on the Settings page. The sign-in page sends a
+  Visitor straight to the console.
+- **No Azure access, structurally.** Credential resolution is short-circuited before it reads the
+  environment or the database, so a Demo cannot connect to a tenant even with a real service
+  principal in its environment.
+- **Nothing leaves the container.** The scheduler does not start. A notification is recorded in the
+  channel's history as not sent instead of being sent, and "Send test" answers that this is a Demo.
+
+A black bar on every page reads "Demo" so a screenshot never passes for a real tenant.
 
 The generator builds a fictional four-subscription estate and replays sixty days of daily scans over
 it, so history, trends and finding lifecycles look like a tenant scanned for two months: roughly 50
@@ -69,7 +76,7 @@ stops the container with the reason in its log.
 ## How it stays apart from a real install
 
 `RULEBEAT_DEMO=1` points the app at `data/demo.db` instead of `data/rulebeat.db` and turns on the
-anonymous read-only behaviour. The generator stamps the database it writes (`demo-mode-v2` in its
+behaviours above. The generator stamps the database it writes (`demo-mode-v2` in its
 `meta` table). **Both** the variable and the stamp must be present for demo mode to be active, and
 neither is ever set by a normal install.
 
@@ -80,13 +87,12 @@ is regenerated.
 
 A Demo runs on SQLite only. With `RULEBEAT_DATABASE_URL` set, it refuses to start.
 
-## What a demo instance cannot prove
+## What a Demo cannot prove
 
 That **your** permissions are right (use the onboarding wizard or Diagnostics against your own
-tenant, [`permissions.md`](permissions.md)), anything about performance on a real estate, or
-anything about notifications, since no scan runs. The synthetic data also has no suppressions or
-notification channels, and the visitor is a viewer, so the admin pages are not part of a
-walkthrough.
+tenant, [`permissions.md`](permissions.md)), anything about performance on a real estate, or that a
+notification channel reaches its destination, since a Demo never sends one.
 
-Demo mode is anonymous by construction, so anyone who reaches the URL can read it. That is fine for
-synthetic data, and the stamp check above is what keeps a real database out of it.
+A Demo needs no sign-in by construction, so anyone who reaches the URL can use it and change what
+the next Visitor sees. That is fine for synthetic data: a restart restores the starting state, and
+the stamp check above is what keeps a real database out of it.

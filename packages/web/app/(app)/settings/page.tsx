@@ -7,6 +7,7 @@ import { can } from '@/lib/rbac';
 import { getAzureConnectionStatus } from '@/lib/azure-credential';
 import { getSignInStatus } from '@/lib/sign-in-config';
 import { listChannels } from '@/lib/db/notification-channels';
+import { isDemoMode } from '@/lib/demo';
 import { SettingsClient } from './settings-client';
 
 export default async function SettingsPage() {
@@ -18,6 +19,7 @@ export default async function SettingsPage() {
   const manageNotifications = can(role, 'notifications:manage');
 
   const categories = await listCategories();
+  const demo = await isDemoMode();
 
   const initialChannels = manageNotifications ? await listChannels() : null;
 
@@ -34,6 +36,7 @@ export default async function SettingsPage() {
           initialAzureStatus={manageAzure ? await getAzureConnectionStatus() : null}
           initialSignInStatus={manageAuth ? await getSignInStatus() : null}
           initialChannels={initialChannels}
+          demo={demo}
         />
       </main>
     </>

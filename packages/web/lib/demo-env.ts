@@ -10,7 +10,7 @@
  *
  * This is one half of demo mode's two-gate switch — see `lib/demo/index.ts` for the other. The env var
  * alone only redirects which database file `lib/db/client.ts` opens; it does not by itself turn on
- * anonymous access, the read-only kill switch, or the banner. Those additionally require the
+ * the Visitor's automatic sign-in, the Locked surfaces, or the banner. Those additionally require the
  * `demo-mode-v2` stamp written into that database's own `meta` table by the demo generator, so a
  * mis-set environment variable can at worst expose an empty database, never a real tenant's data.
  */

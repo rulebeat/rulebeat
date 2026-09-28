@@ -4,7 +4,8 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { getStoredChannel, type NotificationChannelType, type EmailChannelConfig } from '@/lib/db/notification-channels';
 import { buildPayload } from '@/lib/notifications/format';
-import { buildAbsoluteHref } from '@/lib/notifications/dispatch';
+import { buildAbsoluteHref, DEMO_NOT_SENT } from '@/lib/notifications/dispatch';
+import { isDemoMode } from '@/lib/demo';
 import { guardedFetch, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
 import type { Finding, Severity } from '@/lib/types';
 
@@ -62,6 +63,8 @@ const SAMPLE_RUN = {
 export async function POST(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
+  // A Demo contacts nothing outside itself. The channel form stays usable; the send does not happen.
+  if (await isDemoMode()) return NextResponse.json({ ok: false, error: DEMO_NOT_SENT }, { status: 409 });
 
   let body: { id?: string; type?: string; url?: string; config?: EmailChannelConfig } = {};
   try {

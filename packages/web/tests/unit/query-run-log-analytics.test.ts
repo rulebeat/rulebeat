@@ -7,7 +7,7 @@
  * local 400-only unwrap helper on this route (unlike its ARG/Graph siblings): every other failure
  * falls straight through to the generic 502.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
@@ -17,8 +17,6 @@ import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { LogAnalyticsTruncatedError } from '@rulebeat/core';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { listQueryRuns } from '@/lib/db/query-runs';
-import { deleteMeta } from '@/lib/db/meta';
-import { resetDemoModeCacheForTests, stampDemoDatabase } from '@/lib/demo';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -185,35 +183,6 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
 
     it('does not record anything when the query itself fails (502)', async () => {
       fakeCtx = fakeTenantContext({ logsFailWith: new Error('correlationId aaaa-bbbb workspace 123') });
-      await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      expect(await listQueryRuns(userId)).toHaveLength(0);
-    });
-  });
-
-  describe('demo mode', () => {
-    afterEach(async () => {
-      delete process.env.RULEBEAT_DEMO;
-      await deleteMeta('demo-mode-v2');
-      resetDemoModeCacheForTests();
-    });
-
-    it('blocks the run with a read-only 403, never reaching Azure', async () => {
-      process.env.RULEBEAT_DEMO = '1';
-      await stampDemoDatabase();
-      resetDemoModeCacheForTests();
-      fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }] });
-
-      const res = await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
-      expect(res.status).toBe(403);
-      expect(fakeCtx?.logsQueries).toHaveLength(0);
-    });
-
-    it('does not record run history either', async () => {
-      process.env.RULEBEAT_DEMO = '1';
-      await stampDemoDatabase();
-      resetDemoModeCacheForTests();
-      fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }] });
-
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));
       expect(await listQueryRuns(userId)).toHaveLength(0);
     });

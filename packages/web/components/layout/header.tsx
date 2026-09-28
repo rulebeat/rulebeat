@@ -54,11 +54,11 @@ export async function Header({ title, description }: HeaderProps) {
             </form>
           </>
         ) : (
-          // No session and demo mode: this is an anonymous visitor, not someone who failed to sign
-          // in. Fills the slot the avatar/name/sign-out block would otherwise leave empty.
+          // No session in a Demo: this is a Visitor, signed in automatically as the shared admin, not
+          // someone who failed to sign in. There is nothing to sign out of, so no button either.
           (await isDemoMode()) && (
             <span className="whitespace-nowrap text-xs font-medium text-ink-2">
-              Browsing as viewer
+              Signed in as the Demo Visitor
             </span>
           )
         )}

@@ -168,3 +168,29 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     }
   });
 });
+
+describe('Locked surfaces stay locked in a Demo', () => {
+  // `requireRole(action, { readOnly: true })` skips the Demo's Locked-surface refusal, so it is only
+  // honest on a handler that cannot change anything. A POST that picked it up would quietly unlock
+  // the Azure connection, sign-in configuration or users for every Visitor.
+  it('readOnly is passed only from GET handlers', () => {
+    const misplaced: string[] = [];
+    for (const r of routeFiles) {
+      const handlers = [...r.source.matchAll(/export\s+(?:async\s+)?function\s+([A-Z]+)\b/g)];
+      for (const use of r.source.matchAll(/readOnly\s*:\s*true/g)) {
+        const owner = handlers.filter(h => h.index! < use.index!).at(-1)?.[1];
+        if (owner !== 'GET') misplaced.push(`${r.rel.split(sep).join('/')} (${owner ?? 'outside a handler'})`);
+      }
+    }
+    expect(misplaced).toEqual([]);
+  });
+
+  it('found the read-only Locked-surface handlers at all', () => {
+    const readOnlyRoutes = routeFiles.filter(r => /readOnly\s*:\s*true/.test(r.source)).map(r => r.rel.split(sep).join('/'));
+    expect(readOnlyRoutes).toEqual(expect.arrayContaining([
+      'settings/azure-connection/route.ts',
+      'settings/sign-in/route.ts',
+      'users/route.ts',
+    ]));
+  });
+});

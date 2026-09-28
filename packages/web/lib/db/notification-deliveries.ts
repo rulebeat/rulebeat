@@ -30,6 +30,8 @@ export interface NotificationDelivery {
   httpStatus: number | null;
   error: string | null;
   findingsCount: number;
+  /** A Demo recorded this delivery instead of sending it. Every real send makes at least one attempt. */
+  suppressed: boolean;
 }
 
 type Row = typeof notificationDeliveries.$inferSelect;
@@ -46,6 +48,7 @@ function rowToDelivery(row: Row): NotificationDelivery {
     httpStatus: row.httpStatus,
     error: row.error,
     findingsCount: row.findingsCount,
+    suppressed: row.attempts === 0,
   };
 }
 

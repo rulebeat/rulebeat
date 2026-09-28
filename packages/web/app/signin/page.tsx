@@ -1,9 +1,13 @@
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
+import { isDemoMode } from '@/lib/demo';
 import { getSignInStatus } from '@/lib/sign-in-config';
 import { getAppVersion } from '@/lib/version';
 import { SignInClient } from './signin-client';
 
 export default async function SignInPage() {
+  // A Visitor is signed in already, and a Demo has no other account to sign in as.
+  if (await isDemoMode()) redirect('/');
   const status = await getSignInStatus();
   // RULEBEAT_FORCE_LOCAL_SIGNIN is the host-level escape when SSO breaks under a `disabled`
   // policy — it has to make the form *visible* here, not just accepted by authorize(), or the

@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Changed
 
 - The published image now includes the demo data generator. A container started with `RULEBEAT_DEMO=1` generates its Demo on first start, keeps it as a snapshot in the data volume, and restores that snapshot on every later start, so a restart returns the Demo to its starting state. `RULEBEAT_DEMO_DATASET` and `RULEBEAT_DEMO_SEED` choose what is generated. A Demo refuses to start on Postgres or against a database that is not a Demo database. The Docker health check now allows three minutes for a first start.
+- A Demo is now writable and shared. Every Visitor is signed in automatically as the same admin and can create and edit rules, run scans, suppress findings, and change schedules, dashboards and notification channels. The Azure connection, sign-in configuration and users are Locked surfaces: visible, but refused with the reason. A Demo records every notification as not sent instead of sending it, and "Send test" answers that it is a Demo. `/signin` redirects to the console in a Demo.
 
 ## [0.5.1] - 2026-09-27
 

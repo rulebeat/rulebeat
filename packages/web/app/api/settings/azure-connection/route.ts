@@ -27,7 +27,7 @@ import {
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET() {
-  const actor = await requireRole('azure:manage');
+  const actor = await requireRole('azure:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
 
   return NextResponse.json(await getAzureConnectionStatus());

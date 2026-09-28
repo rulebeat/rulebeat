@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/select';
 import type { NotificationChannelSummary, NotificationChannelType, EmailChannelConfig } from '@/lib/db/notification-channels';
 import type { NotificationDelivery } from '@/lib/db/notification-deliveries';
 import {
-  Bell, Check, ChevronDown, ChevronUp, Clock, Loader2, Plus, Send, Trash2, X,
+  Bell, Check, ChevronDown, ChevronUp, Clock, Loader2, Minus, Plus, Send, Trash2, X,
 } from 'lucide-react';
 
 const CHANNEL_TYPE_LABELS: Record<NotificationChannelType, string> = {
@@ -538,19 +538,21 @@ export function NotificationsSection({
                         <ul className="space-y-1.5">
                           {historyByChannel[channel.id].map(d => (
                             <li key={d.id} className="flex items-start gap-2 text-xs">
-                              {d.ok
-                                ? <Check className="mt-0.5 size-3.5 shrink-0 text-status-ok" />
-                                : <X className="mt-0.5 size-3.5 shrink-0 text-sev-critical" />}
+                              {d.suppressed
+                                ? <Minus className="mt-0.5 size-3.5 shrink-0 text-ink-2" />
+                                : d.ok
+                                  ? <Check className="mt-0.5 size-3.5 shrink-0 text-status-ok" />
+                                  : <X className="mt-0.5 size-3.5 shrink-0 text-sev-critical" />}
                               <div className="min-w-0 flex-1">
                                 <span className="text-ink">
                                   {new Date(d.occurredAt).toLocaleString()}
                                 </span>
                                 <span className="text-ink">
-                                  {' — '}{d.ok ? 'delivered' : 'failed'}
+                                  {' — '}{d.suppressed ? 'suppressed (Demo)' : d.ok ? 'delivered' : 'failed'}
                                   {d.attempts > 1 ? ` after ${d.attempts} attempts` : ''}
                                   {typeof d.findingsCount === 'number' ? `, ${d.findingsCount} finding${d.findingsCount === 1 ? '' : 's'}` : ''}
                                 </span>
-                                {!d.ok && d.error && (
+                                {!d.ok && !d.suppressed && d.error && (
                                   <p className="truncate text-sev-critical" title={d.error}>{d.error.slice(0, 100)}</p>
                                 )}
                               </div>

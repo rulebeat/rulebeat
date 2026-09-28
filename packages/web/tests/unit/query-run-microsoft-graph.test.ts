@@ -5,7 +5,7 @@
  * authoring's /api/rules/validate-graph — see validate-graph.test.ts), confirming the live query page
  * cannot reach a Graph resource type that rule authoring itself would refuse.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
@@ -15,8 +15,6 @@ import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { GraphTruncatedError, type GraphQuery } from '@rulebeat/core';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { listQueryRuns } from '@/lib/db/query-runs';
-import { deleteMeta } from '@/lib/db/meta';
-import { resetDemoModeCacheForTests, stampDemoDatabase } from '@/lib/demo';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -185,35 +183,6 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
 
     it('does not record anything when the query itself fails (502)', async () => {
       fakeCtx = fakeTenantContext({ graphFailWith: new Error('Graph API 429: Too many requests') });
-      await POST(postRequest({ graphQuery: VALID_GQ }));
-      expect(await listQueryRuns(userId)).toHaveLength(0);
-    });
-  });
-
-  describe('demo mode', () => {
-    afterEach(async () => {
-      delete process.env.RULEBEAT_DEMO;
-      await deleteMeta('demo-mode-v2');
-      resetDemoModeCacheForTests();
-    });
-
-    it('blocks the run with a read-only 403, never reaching Azure', async () => {
-      process.env.RULEBEAT_DEMO = '1';
-      await stampDemoDatabase();
-      resetDemoModeCacheForTests();
-      fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
-
-      const res = await POST(postRequest({ graphQuery: VALID_GQ }));
-      expect(res.status).toBe(403);
-      expect(fakeCtx?.graphRequests).toHaveLength(0);
-    });
-
-    it('does not record run history either', async () => {
-      process.env.RULEBEAT_DEMO = '1';
-      await stampDemoDatabase();
-      resetDemoModeCacheForTests();
-      fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
-
       await POST(postRequest({ graphQuery: VALID_GQ }));
       expect(await listQueryRuns(userId)).toHaveLength(0);
     });

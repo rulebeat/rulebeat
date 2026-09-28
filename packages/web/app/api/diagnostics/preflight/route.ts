@@ -14,7 +14,7 @@ import { credentialFailedPreflight, runPreflight } from '@/lib/preflight';
  * deployment configuration rather than findings data.
  */
 export async function GET() {
-  const actor = await requireRole('azure:manage');
+  const actor = await requireRole('azure:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
 
   // Building the context is where a bad credential actually surfaces — await createTenantContext()

@@ -26,7 +26,7 @@ function isLocalSignInPolicy(value: unknown): value is LocalSignInPolicy {
 }
 
 export async function GET() {
-  const actor = await requireRole('auth:manage');
+  const actor = await requireRole('auth:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
 
   return NextResponse.json(await getSignInStatus());
