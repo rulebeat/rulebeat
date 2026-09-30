@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SeverityBadge } from '@/components/findings/severity-badge';
@@ -23,6 +23,10 @@ import { cn } from '@/lib/utils';
 import { matchesRuleSearch } from '@/lib/rule-filters';
 import { toggleInSet } from '@/lib/toggle-set';
 import { applyRuleToggle, requestRuleToggle } from '@/lib/rule-toggle';
+import {
+  bulkChanges, headerCheckboxState, pruneSelection, toggleAllVisible, type BulkAction,
+} from '@/lib/rule-bulk-selection';
+import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } from '@/lib/rule-bulk-toggle';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
@@ -128,6 +132,8 @@ export function ScansClient({
   const [policies, setPolicies] = useState(initialPolicies);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
@@ -161,6 +167,15 @@ export function ScansClient({
     return true;
   }), [policies, tagFilter, severityFilter, statusFilter, categoryFilter, search, categoryById]);
 
+  // A rule the filters hide leaves the selection for good, so widening the filters again cannot
+  // bring it back into a bulk action unseen. Syncing to the filtered list, not derivable state.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setSelection(s => pruneSelection(s, visible)); }, [visible]);
+  // Also pruned at render, for the one pass before the effect above has run.
+  const selected = pruneSelection(selection, visible);
+  const changes = bulkChanges(selected, visible);
+  const headerState = headerCheckboxState(selected, visible);
+
   const enabledCount = policies.filter(p => p.enabled).length;
   const hasActiveFilter = search.trim() !== '' || tagFilter.size > 0 || severityFilter.size > 0 || statusFilter !== 'all' || categoryFilter.size > 0;
 
@@ -169,6 +184,27 @@ export function ScansClient({
     const outcome = await requestRuleToggle(policy);
     setPolicies(ps => applyRuleToggle(ps, outcome));
     if (!outcome.ok) setNotice({ tone: 'error', text: outcome.error });
+  }
+
+  /** Sends only the selected rules this action changes. The selection clears on success and stays
+   *  on failure, so the same action can be tried again. */
+  async function bulkToggle(action: BulkAction) {
+    const ids = changes[action];
+    if (ids.length === 0) return;
+    setNotice(null);
+    setBulkBusy(true);
+    try {
+      const outcome = await requestBulkToggle(action, ids);
+      setPolicies(ps => applyBulkToggle(ps, outcome));
+      if (outcome.ok) {
+        setSelection(new Set());
+        setNotice({ tone: 'success', text: bulkToggleMessage(outcome) });
+      } else {
+        setNotice({ tone: 'error', text: outcome.error });
+      }
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   /** Deletes every finding the rule produced, active and fixed, and keeps the rule (issue #98).
@@ -371,6 +407,52 @@ export function ScansClient({
                 </CardContent>
               ) : (
                 <div className="divide-y divide-border">
+                  {/* Select-all row, and the action bar once anything is selected. Normal page
+                      flow, not sticky: the page has one scroll region. */}
+                  {canEditRules && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3">
+                      <input
+                        type="checkbox"
+                        id="rules-select-all"
+                        checked={headerState === 'all'}
+                        disabled={bulkBusy}
+                        ref={el => { if (el) el.indeterminate = headerState === 'some'; }}
+                        onChange={() => setSelection(s => toggleAllVisible(pruneSelection(s, visible), visible))}
+                        aria-label={headerState === 'all' ? 'Clear selection' : `Select all ${rulesPhrase(visible.length)} shown`}
+                        className="size-3.5 shrink-0 accent-ink"
+                      />
+                      {selected.size === 0 ? (
+                        <label htmlFor="rules-select-all" className="cursor-pointer text-sm text-ink-2">
+                          Select all {rulesPhrase(visible.length)} shown
+                        </label>
+                      ) : (
+                        <>
+                          <span className="numeral-grid text-sm font-medium text-ink">{selected.size} selected</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={bulkBusy || changes.enable.length === 0}
+                              onClick={() => { void bulkToggle('enable'); }}
+                            >
+                              Enable {rulesPhrase(changes.enable.length)}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={bulkBusy || changes.disable.length === 0}
+                              onClick={() => { void bulkToggle('disable'); }}
+                            >
+                              Disable {rulesPhrase(changes.disable.length)}
+                            </Button>
+                            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelection(new Set())}>
+                              Clear selection
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {visible.map(policy => {
                     const findingCount = ruleFindingCounts[policy.id] ?? 0;
                     const statusLabel = ruleStatusLabel(policy.lastRunStatus);
@@ -382,6 +464,17 @@ export function ScansClient({
                           !policy.enabled && 'opacity-60',
                         )}
                       >
+                        {canEditRules && (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(policy.id)}
+                            disabled={bulkBusy}
+                            onChange={() => setSelection(s => toggleInSet(pruneSelection(s, visible), policy.id))}
+                            aria-label={`Select ${policy.name}`}
+                            className="size-3.5 shrink-0 accent-ink"
+                          />
+                        )}
+
                         <Switch
                           checked={policy.enabled}
                           disabled={!canEditRules}
