@@ -22,6 +22,7 @@ import { ToggleChip } from '@/components/ui/toggle-chip';
 import { cn } from '@/lib/utils';
 import { matchesRuleSearch } from '@/lib/rule-filters';
 import { toggleInSet } from '@/lib/toggle-set';
+import { applyRuleToggle, requestRuleToggle } from '@/lib/rule-toggle';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
@@ -164,13 +165,10 @@ export function ScansClient({
   const hasActiveFilter = search.trim() !== '' || tagFilter.size > 0 || severityFilter.size > 0 || statusFilter !== 'all' || categoryFilter.size > 0;
 
   async function toggleEnabled(policy: Rule) {
-    const updated = { ...policy, enabled: !policy.enabled };
-    await fetch(`/api/rules/${encodeURIComponent(policy.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    });
-    setPolicies(ps => ps.map(p => p.id === policy.id ? updated : p));
+    setNotice(null);
+    const outcome = await requestRuleToggle(policy);
+    setPolicies(ps => applyRuleToggle(ps, outcome));
+    if (!outcome.ok) setNotice({ tone: 'error', text: outcome.error });
   }
 
   /** Deletes every finding the rule produced, active and fixed, and keeps the rule (issue #98).
