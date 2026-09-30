@@ -10,6 +10,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - Applies to is removed. Rules that used it now show a plain count of affected resources, and their Applies to definitions are deleted on upgrade. Creating or updating a rule with `appliesTo` now returns an error.
 
+### Fixed
+
+- The enable switch on the Rules tab now changes only when the change was saved. If saving fails, the switch stays where it was and the tab shows why.
+
 ## [0.6.0] - 2026-09-28
 
 ### Changed
