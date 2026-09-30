@@ -27,7 +27,6 @@ export interface NormalisedRule {
   groupName: string | null;
   /** Absent on any database that predates spec 029's migration. */
   queryBackend: string | null;
-  shape: string | null;
   kind: string | null;
 }
 
@@ -67,7 +66,6 @@ export function readRules(sqlite: Database, table?: 'rules' | 'policies'): Norma
     tags: str(cols.has('tags') ? r.tags : null),
     groupName: str(cols.has('group_name') ? r.group_name : null),
     queryBackend: str(cols.has('query_backend') ? r.query_backend : null),
-    shape: str(cols.has('shape') ? r.shape : null),
     kind: str(cols.has('kind') ? r.kind : null),
   }));
 }

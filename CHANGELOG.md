@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Removed
+
+- Applies to is removed. Rules that used it now show a plain count of affected resources, and their Applies to definitions are deleted on upgrade. Creating or updating a rule with `appliesTo` now returns an error.
+
 ## [0.6.0] - 2026-09-28
 
 ### Changed

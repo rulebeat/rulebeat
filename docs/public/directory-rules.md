@@ -95,12 +95,11 @@ check covers `Application.Read.All` specifically and not the others.
 ## How Directory findings behave
 
 Lifecycle, suppressions, dashboards, notifications and export are identical to Resource Graph
-findings. Four differences: a directory object has no subscription, so a Directory finding is
+findings. Three differences: a directory object has no subscription, so a Directory finding is
 recorded under the first subscription id of the scanning identity and a dashboard filtered to a
-different subscription will not show it; Applies to is not available, so the finding count is the
-whole story; more than 10,000 objects is reported as `capped` rather than silently cut; and location,
-resource group and tags are empty, being ARM concepts, so filtering a dashboard by resource group or
-tag excludes Directory findings by construction.
+different subscription will not show it; more than 10,000 objects is reported as `capped` rather
+than silently cut; and location, resource group and tags are empty, being ARM concepts, so
+filtering a dashboard by resource group or tag excludes Directory findings by construction.
 
 They also cannot query any Graph path outside the seven allowlisted types (no sign-in logs, no audit
 logs, no conditional access policies; adding a type is a code change, by design), join two object

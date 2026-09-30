@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, saveRules, isNameTaken, deriveShape, deriveKind } from '@/lib/rules';
+import { loadRules, saveRules, isNameTaken, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -23,6 +23,10 @@ export async function POST(req: Request) {
   const body = await parseJsonBody<Omit<Rule, 'id'>>(req);
   if (body instanceof NextResponse) return body;
 
+  if ('appliesTo' in body) {
+    return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
+  }
+
   if (await isNameTaken(body.name)) {
     return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
@@ -40,14 +44,6 @@ export async function POST(req: Request) {
   if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
     return NextResponse.json({
       error: 'The rule has no condition that compiles to a filter — it would match every resource in scope. Add at least one real condition.',
-    }, { status: 400 });
-  }
-
-  // Same guard, applied to the Applies-to population query (spec 031) — an empty Applies-to block
-  // would silently count every resource in scope as the population, not a real denominator.
-  if (body.appliesTo && !hasCompilableFilter(body.appliesTo)) {
-    return NextResponse.json({
-      error: 'Applies-to has no condition that compiles to a filter — it would count every resource in scope. Add at least one real condition, or remove Applies-to.',
     }, { status: 400 });
   }
 
@@ -109,7 +105,6 @@ export async function POST(req: Request) {
     type: 'custom',
     pack: undefined,
     queryBackend,
-    shape: deriveShape(body.appliesTo),
     kind: deriveKind(queryBackend),
   };
   await saveRules([...await loadRules(), rule]);

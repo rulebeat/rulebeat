@@ -35,16 +35,17 @@ CREATE TABLE IF NOT EXISTS rules (
   query_backend TEXT NOT NULL DEFAULT 'resource-graph',
   graph_query TEXT,
   logs_query TEXT,
-  shape TEXT NOT NULL DEFAULT 'detect',
   kind TEXT NOT NULL DEFAULT 'state',
   group_name TEXT,
   tags TEXT,
   visual_query TEXT,
-  applies_to TEXT,
   last_run_status TEXT,
-  last_run_at TEXT,
-  last_population_count INTEGER
+  last_run_at TEXT
 );
+-- Applies to was removed; drop its columns from a database bootstrapped while it existed.
+ALTER TABLE rules DROP COLUMN IF EXISTS applies_to;
+ALTER TABLE rules DROP COLUMN IF EXISTS last_population_count;
+ALTER TABLE rules DROP COLUMN IF EXISTS shape;
 
 CREATE TABLE IF NOT EXISTS scans (
   id TEXT PRIMARY KEY,

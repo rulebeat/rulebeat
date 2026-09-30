@@ -1,8 +1,8 @@
-import { eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { rules as rulesTable } from './db/tables';
 import { many, run, inTransaction } from './db/exec';
-import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleShape, RuleType, VisualQuery } from '@rulebeat/core';
+import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 
 export async function loadRules(): Promise<Rule[]> {
   return (await many(db.select().from(rulesTable))).map(rowToRule);
@@ -18,13 +18,10 @@ export function deriveKind(queryBackend: QueryBackend): RuleKind {
 }
 
 /**
- * The one place `shape` is computed (spec 031). Never independently authored or accepted from a
- * client — both API routes call this rather than trusting a client-sent `Rule.shape`, so a stale
- * or forged value on the wire can never stick. Same discipline as `deriveKind()` above.
+ * Applies to was removed. POST and PUT reject a body that still carries the field rather than
+ * silently dropping it, so an API caller finds out the definition would no longer be stored.
  */
-export function deriveShape(appliesTo: VisualQuery | undefined): RuleShape {
-  return appliesTo ? 'assert' : 'detect';
-}
+export const APPLIES_TO_REMOVED_ERROR = 'Applies to has been removed. Remove the appliesTo field from the request.';
 
 /**
  * Flips just the `enabled` column for a batch of rules — a single `UPDATE ... WHERE id IN (...)`,
@@ -60,25 +57,6 @@ export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<
 export async function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus, at: string): Promise<void> {
   if (ids.length === 0) return;
   await run(db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
-}
-
-/**
- * Per-rule population-count write after a scan (spec 031). Unlike setRulesLastRunStatus above,
- * each rule's count is its own value, so this can't share one `UPDATE ... WHERE id IN (...)` across
- * rules the way a status shared by every rule in the batch can — one UPDATE per rule instead, inside
- * a transaction. Bounded by how many rules actually declare an Applies-to population, which today is
- * a small, opt-in subset. A rule whose population query didn't return a count this scan (failed) is
- * simply absent from `counts` and left untouched here — its last known count stays displayed rather
- * than disappearing, the same precedent setRulesLastRunStatus already sets for rules outside a scan.
- */
-export async function setRulePopulationCounts(counts: Record<string, number>): Promise<void> {
-  const entries = Object.entries(counts);
-  if (entries.length === 0) return;
-  await inTransaction(async (tx) => {
-    for (const [id, count] of entries) {
-      await run(tx.update(rulesTable).set({ lastPopulationCount: count }).where(eq(rulesTable.id, id)));
-    }
-  });
 }
 
 export async function saveRules(rules: Rule[]): Promise<void> {
@@ -184,15 +162,12 @@ function rowToRule(row: Row): Rule {
     projectColumns: row.projectColumns ? JSON.parse(row.projectColumns) as string[] : undefined,
     rawKql: row.rawKql ?? undefined,
     visualQuery: row.visualQuery ? JSON.parse(row.visualQuery) as VisualQuery : undefined,
-    appliesTo: row.appliesTo ? JSON.parse(row.appliesTo) as VisualQuery : undefined,
     queryBackend: row.queryBackend as QueryBackend,
-    shape: row.shape as RuleShape,
     kind: row.kind as RuleKind,
     graphQuery: row.graphQuery ? JSON.parse(row.graphQuery) as GraphQuery : undefined,
     logsQuery: row.logsQuery ? JSON.parse(row.logsQuery) as LogAnalyticsQuery : undefined,
     lastRunStatus: (row.lastRunStatus as RuleExecutionStatus | null) ?? undefined,
     lastRunAt: row.lastRunAt ?? undefined,
-    lastPopulationCount: row.lastPopulationCount ?? undefined,
   };
 }
 
@@ -217,14 +192,11 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     group: r.group ?? null,
     tags: r.tags?.length ? JSON.stringify(r.tags) : null,
     visualQuery: r.visualQuery ? JSON.stringify(r.visualQuery) : null,
-    appliesTo: r.appliesTo ? JSON.stringify(r.appliesTo) : null,
     queryBackend,
-    shape: deriveShape(r.appliesTo),
     kind: deriveKind(queryBackend),
     graphQuery: r.graphQuery ? JSON.stringify(r.graphQuery) : null,
     logsQuery: r.logsQuery ? JSON.stringify(r.logsQuery) : null,
     lastRunStatus: r.lastRunStatus ?? null,
     lastRunAt: r.lastRunAt ?? null,
-    lastPopulationCount: r.lastPopulationCount ?? null,
   };
 }

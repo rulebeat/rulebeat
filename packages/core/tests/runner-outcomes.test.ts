@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import { runRules } from '../src/engine/runner.js';
 import { ResourceGraphTruncatedError } from '../src/clients/resource-graph.js';
-import type { Rule, RuleRunEvent, VisualQuery } from '../src/engine/types.js';
+import type { Rule, RuleRunEvent } from '../src/engine/types.js';
 import type { Finding, LogFields, QueryScope, TenantContext } from '../src/types.js';
 
 interface CapturedLog { message: string; fields?: LogFields }
@@ -144,115 +144,6 @@ describe('runRules() per-rule outcomes (spec 004)', () => {
 
     const outcomeLog = logs.find(l => l.fields?.operation === 'rule-outcome');
     expect(outcomeLog?.fields).toMatchObject({ status: 'capped', findingCount: 0, level: 'info' });
-  });
-});
-
-describe('runRules() Applies-to population query (spec 031)', () => {
-  // A minimal but real filter stage — runPopulationQuery() runs unconditionally whenever
-  // rule.appliesTo is set, regardless of what it contains, so the exact condition doesn't matter
-  // to these tests; what matters is that a rule with appliesTo triggers a second queryARG() call.
-  const appliesTo: VisualQuery = {
-    stages: [{
-      id: 'f1',
-      type: 'filter',
-      groups: [{ id: 'g1', conditions: [{ id: 'c1', field: 'name', operator: 'exists' }] }],
-    }],
-  };
-
-  it('flips an otherwise-successful outcome to failed when the population query throws, keeping the real finding count', async () => {
-    const rule = baseRule({ appliesTo });
-    const rows = [argRow('/subscriptions/sub-1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1')];
-    const logs: CapturedLog[] = [];
-    let call = 0;
-    const ctx = fakeCtx(async () => {
-      call++;
-      if (call === 1) return rows;
-      throw new Error('population query: 429 Too Many Requests');
-    }, logs);
-
-    const events = await drain(rule, ctx);
-    const findingEvents = events.filter(e => e.kind === 'finding');
-    const outcomeEvents = events.filter(e => e.kind === 'outcome');
-
-    // The violation query alone succeeded (1 finding) — only the population query's own failure
-    // makes the combined outcome 'failed'. findingCount stays real; it's derived purely from the
-    // violation query and is never zeroed out by a population-side problem.
-    expect(findingEvents).toHaveLength(1);
-    expect(outcomeEvents).toEqual([
-      { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'failed', findingCount: 1 } },
-    ]);
-
-    const outcomeLog = logs.find(l => l.fields?.operation === 'rule-outcome');
-    expect(outcomeLog?.fields).toMatchObject({ status: 'failed', findingCount: 1, level: 'error' });
-    const populationLog = logs.find(l => l.fields?.operation === 'rule-population-outcome');
-    expect(populationLog?.fields).toMatchObject({ level: 'error' });
-  });
-
-  it('flips an otherwise-successful outcome to capped when the population query is truncated, with no populationCount to show for it', async () => {
-    const rule = baseRule({ appliesTo });
-    const rows = [argRow('/subscriptions/sub-1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1')];
-    let call = 0;
-    const ctx = fakeCtx(async () => {
-      call++;
-      if (call === 1) return rows;
-      throw new ResourceGraphTruncatedError(1000);
-    });
-
-    const events = await drain(rule, ctx);
-    const outcomeEvents = events.filter(e => e.kind === 'outcome');
-
-    expect(outcomeEvents).toEqual([
-      { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'capped', findingCount: 1 } },
-    ]);
-    // A truncated population query has no trustworthy count — a caller can't say "3 of N" without
-    // a real N, so populationCount must stay absent rather than carry a partial number.
-    expect(outcomeEvents[0]!.outcome).not.toHaveProperty('populationCount');
-  });
-
-  it('carries populationCount in the outcome when both the violation and population queries succeed', async () => {
-    const rule = baseRule({ appliesTo });
-    const rows = [argRow('/subscriptions/sub-1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1')];
-    let call = 0;
-    const ctx = fakeCtx(async () => {
-      call++;
-      return call === 1 ? rows : [{ Count: 40 }];
-    });
-
-    const events = await drain(rule, ctx);
-
-    expect(events.filter(e => e.kind === 'outcome')).toEqual([
-      { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'success', findingCount: 1, populationCount: 40 } },
-    ]);
-  });
-
-  it('skips the population query entirely when the violation query fails outright, since failed already outranks every population outcome', async () => {
-    const rule = baseRule({ appliesTo });
-    let calls = 0;
-    const ctx = fakeCtx(async () => { calls++; throw new Error('violation query exploded'); });
-
-    const events = await drain(rule, ctx);
-
-    expect(calls).toBe(1);
-    expect(events).toEqual([
-      { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'failed', findingCount: 0 } },
-    ]);
-  });
-
-  it('still runs the population query when the violation query is merely truncated, and a failed population query still wins out over capped', async () => {
-    const rule = baseRule({ appliesTo });
-    let call = 0;
-    const ctx = fakeCtx(async () => {
-      call++;
-      if (call === 1) throw new ResourceGraphTruncatedError(1000);
-      throw new Error('population query failed too');
-    });
-
-    const events = await drain(rule, ctx);
-
-    expect(call).toBe(2);
-    expect(events).toEqual([
-      { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'failed', findingCount: 0 } },
-    ]);
   });
 });
 

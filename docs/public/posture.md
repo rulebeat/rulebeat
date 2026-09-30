@@ -29,9 +29,7 @@ to passing, which is why a suppression needs a reason and is audited
 Active findings come from the live findings table rather than the last scan's blob, so a narrow
 scheduled run cannot move rules it did not touch. The Rules tab shows each rule's last outcome as a
 chip: "not yet run", "query failed", "result capped", "no resource id"
-([`how-it-works.md`](how-it-works.md#one-outcome-per-rule)). Applies to does not enter the formula:
-a rule with three findings is one failing rule whether its population is 40 or 4,000
-([`authoring-rules.md`](authoring-rules.md#applies-to)).
+([`how-it-works.md`](how-it-works.md#one-outcome-per-rule)).
 
 ## Why the number moves when your estate did not
 

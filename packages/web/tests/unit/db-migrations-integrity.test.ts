@@ -237,11 +237,10 @@ describe('TS-25 · the identity rules seed exactly once (spec 029)', () => {
     const sqlite = open(sample.file);
     try {
       for (const id of ['cred:app-secret-expiring', 'cred:app-cert-expiring']) {
-        const rows = sqlite.prepare(`SELECT query_backend, shape, kind FROM rules WHERE id = ?`).all(id) as
-          { query_backend: string; shape: string; kind: string }[];
+        const rows = sqlite.prepare(`SELECT query_backend, kind FROM rules WHERE id = ?`).all(id) as
+          { query_backend: string; kind: string }[];
         expect(rows.length, `"${id}" was duplicated by repeated upgrades`).toBe(1);
         expect(rows[0]!.query_backend).toBe('microsoft-graph');
-        expect(rows[0]!.shape).toBe('detect');
         expect(rows[0]!.kind).toBe('state');
       }
     } finally { sqlite.close(); }
@@ -575,6 +574,118 @@ describe('TS-25 · a rule survives the last-run-status column addition (spec 030
       expect(row.enabled, 'a disabled rule must not come back enabled').toBe(0);
       expect(row.last_run_status).toBeNull();
       expect(row.last_run_at).toBeNull();
+    } finally { sqlite.close(); }
+  });
+});
+
+// ── Applies to's columns are dropped without touching the rule they sat on ────
+
+const APPLIES_TO_COLUMNS = ['applies_to', 'last_population_count', 'shape'];
+
+/** A database exactly as the last release that had Applies to left it: today's schema plus its three
+ *  columns, and one rule that used it, with a finding and a suppression hanging off that rule. */
+function sampleWithAppliesTo(): { sample: Sample; ruleId: string } {
+  const sample = makeSample('current');
+  const ruleId = '3f0c2a6e-9b1d-4c47-8e55-2d7a9f0b6c11';
+  const resourceId = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Storage/storageAccounts/stapp';
+  const fingerprint = computeFingerprint(ruleId, resourceId);
+  const visualQuery = {
+    stages: [{
+      id: 'f1', type: 'filter',
+      groups: [{ id: 'g1', conditions: [{ id: 'c1', field: 'properties.minimumTlsVersion', operator: 'notEquals', value: 'TLS1_2' }] }],
+    }],
+  };
+  const appliesTo = {
+    stages: [{
+      id: 'f2', type: 'filter',
+      groups: [{ id: 'g2', conditions: [{ id: 'c2', field: 'resourceGroup', operator: 'startsWith', value: 'rg-' }] }],
+    }],
+  };
+
+  const sqlite = open(sample.file);
+  try {
+    runMigrations(sqlite);
+    sqlite.exec(`ALTER TABLE rules ADD COLUMN shape TEXT NOT NULL DEFAULT 'detect'`);
+    sqlite.exec(`ALTER TABLE rules ADD COLUMN applies_to TEXT`);
+    sqlite.exec(`ALTER TABLE rules ADD COLUMN last_population_count INTEGER`);
+    sqlite.prepare(`
+      INSERT INTO rules (id, name, description, category, severity, enabled, scope, resource_types,
+        conditions, raw_kql, visual_query, tags, type, query_backend, kind, last_run_status, last_run_at,
+        shape, applies_to, last_population_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      ruleId, 'Storage accounts below TLS 1.2', 'Checks the minimum TLS version', 'security', 'high', 0,
+      JSON.stringify({ level: 'resourceGroup', subscriptionIds: ['00000000-0000-0000-0000-000000000000'] }),
+      JSON.stringify(['microsoft.storage/storageaccounts']),
+      '[]',
+      `resources | where type == 'microsoft.storage/storageaccounts' | where properties.minimumTlsVersion != 'TLS1_2'`,
+      JSON.stringify(visualQuery), JSON.stringify(['Production']), 'custom', 'resource-graph', 'state',
+      'success', '2026-09-01T08:00:00.000Z',
+      'assert', JSON.stringify(appliesTo), 40,
+    );
+    sqlite.prepare(`
+      INSERT INTO findings (fingerprint, rule_id, category, severity, resource_id, resource_type, resource_name,
+        subscription_id, resource_group, title, first_seen_at, last_seen_at, times_seen)
+      VALUES (?, ?, 'security', 'high', ?, 'microsoft.storage/storageaccounts', 'stapp',
+        '00000000-0000-0000-0000-000000000000', 'rg-app', 'Storage accounts below TLS 1.2',
+        '2026-08-01T08:00:00.000Z', '2026-09-01T08:00:00.000Z', 7)
+    `).run(fingerprint, ruleId, resourceId);
+    sqlite.prepare(`
+      INSERT INTO suppressions (id, fingerprint, resource_id, reason, suppressed_at, expires_at)
+      VALUES ('s1', ?, ?, 'Legacy client needs TLS 1.0 until the migration', '2026-08-15T08:00:00.000Z', NULL)
+    `).run(fingerprint, resourceId);
+  } finally { sqlite.close(); }
+  return { sample, ruleId };
+}
+
+/** The rule without the three removed columns, plus everything keyed on it. */
+function ruleAndDependents(sqlite: Database, ruleId: string) {
+  const rule = sqlite.prepare(`SELECT * FROM rules WHERE id = ?`).get(ruleId) as Record<string, unknown> | undefined;
+  const kept = rule && Object.fromEntries(Object.entries(rule).filter(([k]) => !APPLIES_TO_COLUMNS.includes(k)));
+  return {
+    rule: kept,
+    findings: sqlite.prepare(`SELECT * FROM findings WHERE rule_id = ?`).all(ruleId),
+    suppressions: sqlite.prepare(`SELECT * FROM suppressions ORDER BY id`).all(),
+  };
+}
+
+describe('TS-25 · removing Applies to drops its columns and nothing else', () => {
+  it('the three columns are gone and the rule, its finding and its suppression are unchanged', async () => {
+    const { sample, ruleId } = sampleWithAppliesTo();
+    const before = (() => {
+      const sqlite = open(sample.file);
+      try { return ruleAndDependents(sqlite, ruleId); } finally { sqlite.close(); }
+    })();
+    expect(before.rule, 'fixture rule missing').toBeDefined();
+    expect(before.findings).toHaveLength(1);
+    expect(before.suppressions).toHaveLength(1);
+
+    const sqlite = migrateOnly(sample);
+    try {
+      const columns = columnsOf(sqlite, 'rules');
+      for (const column of APPLIES_TO_COLUMNS) expect(columns, `${column} survived the upgrade`).not.toContain(column);
+      expect(ruleAndDependents(sqlite, ruleId)).toEqual(before);
+      // The suppression still silences the finding: its fingerprint is what the next scan computes.
+      const finding = before.findings[0] as { fingerprint: string; resource_id: string };
+      expect(computeFingerprint(ruleId, finding.resource_id)).toBe(finding.fingerprint);
+    } finally { sqlite.close(); }
+  });
+
+  it('running the migrations again leaves the columns absent and the rule unchanged', async () => {
+    const { sample, ruleId } = sampleWithAppliesTo();
+    upgradeInProcess(sample);
+    const afterFirst = (() => {
+      const sqlite = open(sample.file);
+      try { return ruleAndDependents(sqlite, ruleId); } finally { sqlite.close(); }
+    })();
+
+    for (let i = 0; i < 2; i++) upgradeInProcess(sample);
+
+    const sqlite = open(sample.file);
+    try {
+      const columns = columnsOf(sqlite, 'rules');
+      for (const column of APPLIES_TO_COLUMNS) expect(columns, `${column} came back on a later start`).not.toContain(column);
+      expect(ruleAndDependents(sqlite, ruleId)).toEqual(afterFirst);
     } finally { sqlite.close(); }
   });
 });

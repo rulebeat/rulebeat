@@ -54,7 +54,6 @@ async function seedBuiltinRules(db: PgDb): Promise<void> {
   await db.transaction(async (tx) => {
     for (const r of BUILTIN_RULES) {
       const queryBackend = r.queryBackend ?? 'resource-graph';
-      const shape = r.shape ?? 'detect';
       const kind = r.kind ?? deriveKindForSeed(queryBackend);
       const graphQuery = r.graphQuery ? JSON.stringify(r.graphQuery) : null;
       await tx.insert(rules).values({
@@ -72,7 +71,6 @@ async function seedBuiltinRules(db: PgDb): Promise<void> {
         type: 'builtin',
         pack: r.pack ?? 'rulebeat-core',
         queryBackend,
-        shape,
         kind,
         graphQuery,
       }).onConflictDoNothing();
@@ -86,7 +84,6 @@ async function seedBuiltinRules(db: PgDb): Promise<void> {
         name: r.name,
         rawKql: r.rawKql ?? null,
         queryBackend,
-        shape,
         kind,
         graphQuery: sql`COALESCE(${rules.graphQuery}, ${graphQuery})`,
       }).where(eq(rules.id, r.id));

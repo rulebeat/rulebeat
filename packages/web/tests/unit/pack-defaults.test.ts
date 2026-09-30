@@ -80,31 +80,28 @@ describe('B3 · a fresh install starts quiet', () => {
   });
 });
 
-describe('spec 031 · taxonomy defaults for real pack-seeded rules', () => {
-  // seedPackRules()'s own INSERT (migrate.ts) never mentions shape/kind/applies_to at all — none of
-  // aprl-v2.json's rule objects carry those fields, since the pack predates spec 031 by definition.
-  // Safety here rests entirely on the `shape`/`kind` columns' own SQL-level
-  // `NOT NULL DEFAULT ...` (migrate.ts's ALTER TABLE statements), not on any TypeScript code path —
-  // deriveShape()/deriveKind() are never called by this raw-SQL seeding path the way ruleToRow() calls
-  // them for a UI-authored save. A DEFAULT dropped from a future rewrite of that ALTER, or an INSERT
+describe('taxonomy defaults for real pack-seeded rules', () => {
+  // seedPackRules()'s own INSERT (migrate.ts) never mentions query_backend/kind at all; none of
+  // aprl-v2.json's rule objects carry those fields. Safety here rests entirely on the columns' own
+  // SQL-level `NOT NULL DEFAULT ...` (migrate.ts's ALTER TABLE statements), not on any TypeScript
+  // code path: deriveKind() is never called by this raw-SQL seeding path the way ruleToRow() calls
+  // it for a UI-authored save. A DEFAULT dropped from a future rewrite of that ALTER, or an INSERT
   // rewritten to list every column explicitly (which would then insert a literal NULL instead of
-  // falling back), would slip past every other spec 031 test in this suite, since all of them save
-  // rules through lib/rules.ts rather than through this seeding path. Run against the real, committed
-  // aprl-v2.json (via the same seed() helper as the tests above), not a synthesised stand-in.
-  it('every real aprl-v2 rule seeds with shape detect, kind state, and no applies_to', async () => {
+  // falling back), would slip past every test that saves rules through lib/rules.ts rather than
+  // through this seeding path. Run against the real, committed aprl-v2.json (via the same seed()
+  // helper as the tests above), not a synthesised stand-in.
+  it('every real aprl-v2 rule seeds with query backend resource-graph and kind state', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);
       const rows = sqlite.prepare(
-        `SELECT id, shape, kind, applies_to, query_backend FROM rules WHERE pack = 'aprl-v2'`,
-      ).all() as { id: string; shape: string | null; kind: string | null; applies_to: string | null; query_backend: string }[];
+        `SELECT id, kind, query_backend FROM rules WHERE pack = 'aprl-v2'`,
+      ).all() as { id: string; kind: string | null; query_backend: string }[];
 
       expect(rows.length).toBeGreaterThan(100);
       for (const row of rows) {
         expect(row.query_backend, `"${row.id}" did not default to resource-graph`).toBe('resource-graph');
-        expect(row.shape, `"${row.id}" did not default to detect`).toBe('detect');
         expect(row.kind, `"${row.id}" did not default to state`).toBe('state');
-        expect(row.applies_to, `"${row.id}" unexpectedly has an applies_to`).toBeNull();
       }
     } finally {
       sqlite.close();

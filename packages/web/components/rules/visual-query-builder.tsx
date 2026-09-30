@@ -563,8 +563,8 @@ export function VisualQueryBuilder({ query, onChange, fields, readOnly, heading 
   fields: string[];
   readOnly?: boolean;
   // Not rendered as visible text — the call site's own CardTitle already shows this. Exposed as
-  // an accessible name so two builder instances on one page (Violates when / Applies to) can be
-  // told apart by screen readers and by test selectors querying accessible role/name.
+  // an accessible name so the builder can be found by screen readers and by test selectors
+  // querying accessible role/name.
   heading: string;
 }) {
   function updateStage(i: number, s: QueryStage) {

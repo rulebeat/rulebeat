@@ -200,13 +200,6 @@ export type RuleType = 'builtin' | 'community' | 'custom';
 // uses and how runCategoryScan() dispatches it — see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
-// 'detect' matches Azure Policy's audit semantics — every row a rule's query returns is a
-// violation. 'assert' (spec 031) additionally declares a population via Rule.appliesTo, so
-// findings can be reported against a known denominator ("5 of 40 affected"). Always derived from
-// appliesTo presence at write time (deriveShape() in packages/web/lib/rules.ts) — never an
-// independent author-set control, same discipline as RuleKind below.
-export type RuleShape = 'detect' | 'assert';
-
 // Derived from queryBackend, never independently authored — see deriveKind() in
 // packages/web/lib/rules.ts. 'state' rules check a point-in-time condition; 'activity' rules
 // check something that happened over a time window (only log-analytics rules are 'activity').
@@ -300,7 +293,6 @@ export interface Rule {
   type: RuleType;
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
-  shape?: RuleShape;           // absent = 'detect' (the SQL-layer default)
   kind?: RuleKind;             // absent = 'state' (the SQL-layer default); always derived, never author-set
   group?: string;          // legacy single group; superseded by tags
   tags?: string[];         // multi-dimensional labels (mcsb:*, svc:*, framework:*, waf:*, custom)
@@ -312,12 +304,6 @@ export interface Rule {
   remediationSteps?: RemediationStep[];
   rawKql?: string;
   visualQuery?: VisualQuery;
-  /** Optional population query (spec 031): when set, a scan also counts how many resources this
-   *  rule's scope/type/appliesTo filter matches, independent of how many violate it. Same
-   *  VisualQuery shape as visualQuery, compiled with buildPopulationQuery() instead of
-   *  buildQueryFromVisual(). Presence of this field is what makes shape 'assert' rather than
-   *  'detect' — see deriveShape() in packages/web/lib/rules.ts. */
-  appliesTo?: VisualQuery;
   /** Graph-backend counterpart to rawKql/visualQuery (spec 032) — set only when queryBackend is
    *  'microsoft-graph'. Consumed by runGraphRules(), never runner.ts. */
   graphQuery?: GraphQuery;
@@ -328,12 +314,6 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: RuleExecutionStatus;
   lastRunAt?: string;
-  /** Population size from the last scan whose Applies-to query actually returned one (spec 031) —
-   *  persisted the same way as lastRunStatus, since the Rules tab renders from stored rule rows,
-   *  not a live scan. Absent for every 'detect'-shape rule, and left stale (not cleared) by a scan
-   *  whose population query failed, same as lastRunStatus is left untouched for rules outside a
-   *  scan's scope. */
-  lastPopulationCount?: number;
 }
 
 // ── Per-rule execution outcome ────────────────────────────────────────────────
@@ -349,11 +329,6 @@ export interface RuleExecutionOutcome {
   ruleId: string;
   status: RuleExecutionStatus;
   findingCount: number;
-  /** Population size from Rule.appliesTo's count query — absent for a 'detect'-shape rule (no
-   *  appliesTo declared). Independent of findingCount: a rule can have a known population and
-   *  zero findings (fully compliant), or a failed/capped population query alongside a perfectly
-   *  successful violation query (see the worst-of-two status combination in runner.ts). */
-  populationCount?: number;
 }
 
 // runRules() yields both findings and per-rule outcomes on one iteration pass rather than

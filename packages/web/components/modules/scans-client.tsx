@@ -402,11 +402,7 @@ export function ScansClient({
 
                         <SeverityBadge severity={policy.severity} />
 
-                        {policy.lastPopulationCount !== undefined ? (
-                          <span className="numeral-grid shrink-0 text-xs text-ink-muted">
-                            {findingCount} of {policy.lastPopulationCount} affected
-                          </span>
-                        ) : findingCount > 0 && (
+                        {findingCount > 0 && (
                           <span className="numeral-grid shrink-0 text-xs text-ink-muted">
                             {findingCount} resource{findingCount === 1 ? '' : 's'} affected
                           </span>

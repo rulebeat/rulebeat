@@ -408,9 +408,9 @@ export function hasCompilableFilter(vq: VisualQuery): boolean {
   return vq.stages.some(stage => stage.type === 'filter' && buildFilterStageKql(stage) !== null);
 }
 
-// Shared by buildQueryFromVisual and buildPopulationQuery: scope table, resource-type filter, and
-// every stage of the pipeline (filter/compute/expand/aggregate/join/sort/limit/shape/raw). The two
-// callers differ only in the terminal stage they append (`| project <cols>` vs `| count`).
+// Scope table, resource-type filter, and every stage of the pipeline
+// (filter/compute/expand/aggregate/join/sort/limit/shape/raw); buildQueryFromVisual appends the
+// terminal `| project <cols>`.
 function buildVisualQueryLines(
   vq: VisualQuery,
   rule: Pick<Rule, 'scope' | 'resourceTypes'>,
@@ -513,18 +513,6 @@ export function buildQueryFromVisual(
   const lines = buildVisualQueryLines(vq, rule);
   const outCols = rule.projectColumns?.length ? rule.projectColumns : DEFAULT_PROJECT_COLUMNS;
   lines.push(`| project ${outCols.join(', ')}`);
-  return lines.join('\n');
-}
-
-// Applies-to population/count query (spec 031) — the same condition-group compiler, scope, and
-// resource-type handling as buildQueryFromVisual, but terminating in `| count` instead of
-// `| project <columns>`. Used as the denominator for a rule's "X of Y affected" display.
-export function buildPopulationQuery(
-  vq: VisualQuery,
-  rule: Pick<Rule, 'scope' | 'resourceTypes'>,
-): string {
-  const lines = buildVisualQueryLines(vq, rule);
-  lines.push('| count');
   return lines.join('\n');
 }
 

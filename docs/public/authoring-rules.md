@@ -58,30 +58,6 @@ Every row it returns becomes one finding, carrying the resource id, name, type, 
 subscription and a portal link, with `tags` in its evidence because the query projects it. Fix the
 tags and the next successful scan marks each one fixed.
 
-## Applies to
-
-By default a rule is measured against every resource in its scope, so three findings means three
-things wrong. Some rules are really assertions about a smaller population, where a bare count stops
-being useful: three findings out of three production VMs is a problem, three out of four hundred VMs
-is probably already handled.
-
-Applies to is an optional second query defining that population, built with the same builder. Turn it
-on and RuleBeat runs it as its own count, showing "3 of 40 affected" instead of "3 resources
-affected". For "every VM in a production resource group must carry an `owner` tag", it is the rule
-above plus Applies to set to `resourceGroup` **starts with** `prod-`, which compiles to
-
-```kql
-Resources
-| where type in~ ('microsoft.compute/virtualmachines')
-| where resourceGroup startswith 'prod-'
-| count
-```
-
-Note what the violation query does **not** do: it does not restrict itself to `prod-` resource
-groups, so a VM in `dev-sandbox` without an owner tag is still flagged. To make the rule only look at
-production, put the resource-group condition under Violates when as well. Applies to is the
-denominator, not a filter, and it is a Resource configuration feature only.
-
 ## Raw KQL
 
 Any Resource configuration rule can be authored as raw KQL instead of, or alongside, structured

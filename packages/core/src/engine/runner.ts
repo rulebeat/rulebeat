@@ -2,52 +2,10 @@ import { createFinding } from '../finding.js';
 import { ResourceGraphTruncatedError } from '../clients/resource-graph.js';
 import { extractAzureErrorMessage } from '../errors.js';
 import type { Finding, TenantContext } from '../types.js';
-import { buildPopulationQuery, buildRuleQuery, queryHasTopLevelLimit } from './kql.js';
+import { buildRuleQuery, queryHasTopLevelLimit } from './kql.js';
 import type { Rule, RuleExecutionStatus, RuleRunEvent } from './types.js';
 
 const IDENTITY_FIELDS = new Set(['id', 'name', 'type', 'location', 'resourceGroup', 'subscriptionId']);
-
-// Ranks RuleExecutionStatus from most to least trustworthy, so a rule's violation-query outcome
-// and its independent Applies-to population-query outcome (spec 031) combine into one overall
-// status: 'success' only if both are 'success', 'failed' if either failed, otherwise the worse of
-// the two. Mirrors the existing invalid-beats-capped precedent below, generalized to two sources.
-const STATUS_SEVERITY: Record<RuleExecutionStatus, number> = { failed: 3, invalid: 2, capped: 1, success: 0 };
-function worseStatus(a: RuleExecutionStatus, b: RuleExecutionStatus): RuleExecutionStatus {
-  return STATUS_SEVERITY[a] >= STATUS_SEVERITY[b] ? a : b;
-}
-
-interface PopulationResult { status: RuleExecutionStatus; count?: number }
-
-// Runs Rule.appliesTo's count query, if the rule declares one. A rule with no appliesTo (every
-// 'detect'-shape rule — still the common case) contributes a neutral 'success' with no count, so
-// worseStatus() below is a no-op and the outcome carries no populationCount, unchanged from today.
-async function runPopulationQuery(
-  rule: Rule,
-  ctx: TenantContext,
-  scope: { subscriptions?: string[]; managementGroups?: string[] },
-): Promise<PopulationResult> {
-  if (!rule.appliesTo) return { status: 'success' };
-  const kql = buildPopulationQuery(rule.appliesTo, rule);
-  const capped = queryHasTopLevelLimit(kql);
-  try {
-    const rows = await ctx.queryARG<Record<string, unknown>>(kql, scope);
-    // ARG's `| count` operator names its single result column 'Count' (capital C).
-    const raw = rows[0]?.['Count'] ?? rows[0]?.['count'];
-    const count = typeof raw === 'number' ? raw : Number(raw ?? 0);
-    return { status: capped ? 'capped' : 'success', count };
-  } catch (err) {
-    if (err instanceof ResourceGraphTruncatedError) {
-      ctx.log(`Rule ${rule.id} population query truncated: ${extractAzureErrorMessage(err)}`, {
-        operation: 'rule-population-outcome', ruleId: rule.id, category: rule.category, level: 'info',
-      });
-      return { status: 'capped' };
-    }
-    ctx.log(`Rule ${rule.id} population query failed: ${extractAzureErrorMessage(err)}`, {
-      operation: 'rule-population-outcome', ruleId: rule.id, category: rule.category, level: 'error',
-    });
-    return { status: 'failed' };
-  }
-}
 
 // rawKql rules (e.g. every APRL rule) write their own `| project` clause and often only include
 // the columns their query actually needs (id, name, tags, ...) — type/resourceGroup/subscriptionId
@@ -117,22 +75,9 @@ export async function* runRules(
       // Either way it must never resolve this rule's prior findings, which is why both land in
       // the same try/catch: neither path yielded a trustworthy, exhaustive result.
       if (err instanceof ResourceGraphTruncatedError) {
-        // 'capped', unlike 'failed' below, doesn't automatically dominate every population
-        // outcome — a failed population query would still make the combined result 'failed' — so
-        // the population query still runs and gets folded in here rather than skipped.
-        const population = await runPopulationQuery(rule, ctx, scope);
-        const status = worseStatus('capped', population.status);
-        logOutcome(status, 0, durationMs, `Rule ${rule.id} query truncated: ${extractAzureErrorMessage(err)}`);
-        yield {
-          kind: 'outcome',
-          outcome: {
-            ruleId: rule.id, status, findingCount: 0,
-            ...(population.count !== undefined ? { populationCount: population.count } : {}),
-          },
-        };
+        logOutcome('capped', 0, durationMs, `Rule ${rule.id} query truncated: ${extractAzureErrorMessage(err)}`);
+        yield { kind: 'outcome', outcome: { ruleId: rule.id, status: 'capped', findingCount: 0 } };
       } else {
-        // 'failed' already outranks every possible population outcome in worseStatus() below, so
-        // the combined result can't change — skip the round-trip on an already-known answer.
         logOutcome('failed', 0, durationMs, `Rule ${rule.id} query failed: ${extractAzureErrorMessage(err)}`);
         yield { kind: 'outcome', outcome: { ruleId: rule.id, status: 'failed', findingCount: 0 } };
       }
@@ -214,23 +159,13 @@ export async function* runRules(
     }
 
     // 'invalid' takes precedence over 'capped' when both apply — a bad identity is the more
-    // actionable problem to surface, and both already exclude resolving prior findings. Neither
-    // dominates a failed/capped Applies-to population query, so that combines in via worseStatus()
-    // same as every other branch above.
-    const violationStatus = invalidRowCount > 0 ? 'invalid' : capped ? 'capped' : 'success';
-    const population = await runPopulationQuery(rule, ctx, scope);
-    const status = worseStatus(violationStatus, population.status);
+    // actionable problem to surface, and both already exclude resolving prior findings.
+    const status: RuleExecutionStatus = invalidRowCount > 0 ? 'invalid' : capped ? 'capped' : 'success';
     const findingCount = resources.length - invalidRowCount;
     const message = invalidRowCount > 0
       ? `Rule ${rule.id} completed: ${status} (${findingCount} finding(s), ${invalidRowCount} row(s) with no resource id)`
       : `Rule ${rule.id} completed: ${status} (${findingCount} finding(s))`;
     logOutcome(status, findingCount, queryDurationMs, message);
-    yield {
-      kind: 'outcome',
-      outcome: {
-        ruleId: rule.id, status, findingCount,
-        ...(population.count !== undefined ? { populationCount: population.count } : {}),
-      },
-    };
+    yield { kind: 'outcome', outcome: { ruleId: rule.id, status, findingCount } };
   }
 }
