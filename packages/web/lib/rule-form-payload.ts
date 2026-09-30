@@ -10,7 +10,6 @@ import type { VisualQuery } from '@/lib/kql';
  *  class of bug structurally impossible to reintroduce for a third backend later. */
 export interface RuleFormQueryFields {
   visualQuery: VisualQuery;
-  appliesTo: VisualQuery | undefined;
   rawKql: string;
   graphQuery: GraphQuery;
   logsQuery: LogAnalyticsQuery;
@@ -19,7 +18,6 @@ export interface RuleFormQueryFields {
 export interface DedicatedEditorPayloadFields {
   usesDedicatedEditor: boolean;
   visualQuery: VisualQuery | undefined;
-  appliesTo: VisualQuery | undefined;
   rawKql: string | undefined;
   graphQuery: GraphQuery | undefined;
   logsQuery: LogAnalyticsQuery | undefined;
@@ -35,7 +33,6 @@ export function deriveDedicatedEditorFields(
   return {
     usesDedicatedEditor,
     visualQuery: usesDedicatedEditor ? undefined : fields.visualQuery,
-    appliesTo: usesDedicatedEditor ? undefined : fields.appliesTo,
     rawKql: usesDedicatedEditor ? undefined : (fields.rawKql || undefined),
     graphQuery: isGraphBackend ? fields.graphQuery : undefined,
     logsQuery: isLogAnalyticsBackend ? fields.logsQuery : undefined,

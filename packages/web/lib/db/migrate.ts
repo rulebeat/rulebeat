@@ -761,22 +761,33 @@ export function runMigrations(sqlite: Database.Database): void {
   // spec 029: rule taxonomy — every pre-existing row is an ARG state-detection rule, which is
   // exactly what these defaults say, so no backfill UPDATE is needed beyond the ALTER itself.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN query_backend TEXT NOT NULL DEFAULT 'resource-graph'`); } catch { /* already exists */ }
-  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN shape TEXT NOT NULL DEFAULT 'detect'`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN kind TEXT NOT NULL DEFAULT 'state'`); } catch { /* already exists */ }
   // spec 030: last real per-rule scan outcome, so "zero findings" can be told apart from "never
   // successfully ran". Plain nullable columns — every existing row simply hasn't run yet.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN last_run_status TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN last_run_at TEXT`); } catch { /* already exists */ }
-  // spec 031: Applies-to population/count query — presence makes a rule's shape 'assert' rather
-  // than 'detect'. Absent (the default for every existing row) preserves today's 'detect' exactly.
-  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN applies_to TEXT`); } catch { /* already exists */ }
-  // spec 031: last population count a scan actually returned — same "nullable, filled in by the
-  // next real scan" shape as last_run_status/last_run_at above.
-  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN last_population_count INTEGER`); } catch { /* already exists */ }
   // spec 032: Graph query definition — null for every rule except queryBackend = 'microsoft-graph'.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN graph_query TEXT`); } catch { /* already exists */ }
   // spec 036: Log Analytics query definition — null for every rule except queryBackend = 'log-analytics'.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN logs_query TEXT`); } catch { /* already exists */ }
+
+  // Applies to was removed. Drop its columns from a database created while it existed; a fresh
+  // install never has them, and the table_info check makes every later startup a no-op. The three
+  // drops run in one transaction so a failure leaves the table exactly as it was.
+  try {
+    const ruleColumns = new Set(
+      (sqlite.prepare(`PRAGMA table_info(rules)`).all() as { name: string }[]).map(c => c.name),
+    );
+    const removedColumns = ['applies_to', 'last_population_count', 'shape'].filter(c => ruleColumns.has(c));
+    if (removedColumns.length > 0) {
+      const dropRemoved = sqlite.transaction(() => {
+        for (const column of removedColumns) sqlite.exec(`ALTER TABLE rules DROP COLUMN ${column}`);
+      });
+      dropRemoved();
+    }
+  } catch (err) {
+    console.error('[RuleBeat] could not drop the removed Applies to columns from rules:', err);
+  }
 
   // Migrate legacy single-value group_name into the multi-value tags column.
   // Idempotent: once a row's tags are populated, the WHERE clause no longer matches it.
@@ -1181,8 +1192,8 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
     sqlite.exec(`DELETE FROM rules WHERE id LIKE 'orphan::%' OR id LIKE 'standards::%'`);
 
     const insert = sqlite.prepare(`
-      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, raw_kql, type, pack, query_backend, shape, kind, graph_query)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, raw_kql, type, pack, query_backend, kind, graph_query)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     // graph_query is deliberately NOT in the unconditional SET list below, unlike every other
     // column here: spec 032 makes a microsoft-graph builtin's graphQuery editable via
@@ -1192,12 +1203,11 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
     // COALESCE only fills a genuine NULL (a pre-032 row, or one that has never had a value), then
     // never touches it again once anything — the backfilled default or a user's own edit — is there.
     const update = sqlite.prepare(`
-      UPDATE rules SET type = 'builtin', pack = ?, name = ?, raw_kql = ?, query_backend = ?, shape = ?, kind = ?, graph_query = COALESCE(graph_query, ?) WHERE id = ?
+      UPDATE rules SET type = 'builtin', pack = ?, name = ?, raw_kql = ?, query_backend = ?, kind = ?, graph_query = COALESCE(graph_query, ?) WHERE id = ?
     `);
     const seedAll = sqlite.transaction(() => {
       for (const r of BUILTIN_RULES) {
         const queryBackend = r.queryBackend ?? 'resource-graph';
-        const shape = r.shape ?? 'detect';
         const kind = r.kind ?? deriveKindForSeed(queryBackend);
         const graphQuery = r.graphQuery ? JSON.stringify(r.graphQuery) : null;
         insert.run(
@@ -1211,13 +1221,12 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
           'builtin',
           r.pack ?? 'rulebeat-core',
           queryBackend,
-          shape,
           kind,
           graphQuery,
         );
         // Backfill type/pack/name/raw_kql/taxonomy on rows that already existed (INSERT OR IGNORE skips them);
         // graph_query backfills only when null — see the comment on `update` above.
-        update.run(r.pack ?? 'rulebeat-core', r.name, r.rawKql ?? null, queryBackend, shape, kind, graphQuery, r.id);
+        update.run(r.pack ?? 'rulebeat-core', r.name, r.rawKql ?? null, queryBackend, kind, graphQuery, r.id);
       }
     });
     // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred

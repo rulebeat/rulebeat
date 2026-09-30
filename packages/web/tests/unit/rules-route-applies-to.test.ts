@@ -1,11 +1,10 @@
 /**
- * Spec 031 — POST /api/rules and PUT /api/rules/[id] must derive `shape` from the request's own
- * `appliesTo` (never trust a client-sent shape — see deriveShape()'s comment in lib/rules.ts) and
- * must reject an Applies-to block with no compilable filter, the same way RB-RM-004 already guards
- * an empty visualQuery — see route.ts's own comments next to each check.
+ * Applies to was removed. POST /api/rules and PUT /api/rules/[id] reject a body that still carries
+ * `appliesTo` with a 400 and a fixed message, rather than silently dropping the field, and nothing
+ * is written: no rule is created and an existing rule, custom or built-in, is left as it was.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetDb, clearRules } from '../helpers/db';
+import { resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { loadRules, saveRules } from '@/lib/rules';
@@ -21,8 +20,9 @@ vi.mock('@/lib/azure-credential', () => ({
 const { POST } = await import('@/app/api/rules/route');
 const { PUT } = await import('@/app/api/rules/[id]/route');
 
-// Same minimal-but-real stage-based VisualQuery shape used in rules-taxonomy-roundtrip.test.ts and
-// core's runner-outcomes.test.ts.
+const EXPECTED_ERROR = 'Applies to has been removed. Remove the appliesTo field from the request.';
+
+// What an old client or script would still send: a real, compilable stage-based query.
 const appliesTo: VisualQuery = {
   stages: [{
     id: 'f1',
@@ -31,13 +31,9 @@ const appliesTo: VisualQuery = {
   }],
 };
 
-// A stages array present but with nothing that compiles to a filter — hasCompilableFilter() is
-// false for this on both the visualQuery and appliesTo guards, since .some() on [] is false.
-const emptyAppliesTo: VisualQuery = { stages: [] };
-
 function baseBody(overrides: Partial<Rule> = {}): Omit<Rule, 'id'> {
   return {
-    name: 'applies-to test rule ' + Math.random().toString(36).slice(2),
+    name: 'applies-to removal test rule ' + Math.random().toString(36).slice(2),
     description: 'a test rule',
     category: 'security',
     severity: 'medium',
@@ -64,102 +60,82 @@ async function signInAsEditor(): Promise<void> {
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
-describe('POST /api/rules — Applies-to shape derivation and guard (spec 031)', () => {
+describe('POST /api/rules rejects appliesTo', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
     await signInAsEditor();
   });
 
-  it('saves a rule with no appliesTo as shape detect', async () => {
-    const res = await POST(postRequest(baseBody()));
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.shape).toBe('detect');
-    expect(json.appliesTo).toBeUndefined();
-  });
-
-  it('saves a rule with a compilable appliesTo as shape assert', async () => {
-    const res = await POST(postRequest(baseBody({ appliesTo })));
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.shape).toBe('assert');
-    expect(json.appliesTo).toEqual(appliesTo);
-    expect((await loadRules()).find(r => r.id === json.id)?.shape).toBe('assert');
-  });
-
-  it('ignores a forged shape on the request body and derives it from appliesTo instead', async () => {
-    const res = await POST(postRequest(baseBody({ appliesTo, shape: 'detect' })));
-    expect(res.status).toBe(201);
-    const json = await res.json();
-    expect(json.shape).toBe('assert');
-  });
-
-  it('rejects an appliesTo with no compilable filter and does not persist the rule', async () => {
-    const before = (await loadRules()).length;
-    const res = await POST(postRequest(baseBody({ appliesTo: emptyAppliesTo })));
+  it('returns 400 with the removal message and creates no rule', async () => {
+    const body = baseBody();
+    const before = await loadRules();
+    const res = await POST(postRequest({ ...body, appliesTo }));
     expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toMatch(/Applies-to/);
-    expect((await loadRules()).length).toBe(before);
+    expect((await res.json()).error).toBe(EXPECTED_ERROR);
+    const after = await loadRules();
+    expect(after.length).toBe(before.length);
+    expect(after.some(r => r.name === body.name)).toBe(false);
+  });
+
+  it('rejects the key even when its value is null', async () => {
+    const res = await POST(postRequest({ ...baseBody(), appliesTo: null }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(EXPECTED_ERROR);
+  });
+
+  it('still creates the same rule when appliesTo is absent', async () => {
+    const body = baseBody();
+    const res = await POST(postRequest(body));
+    expect(res.status).toBe(201);
+    expect((await loadRules()).some(r => r.name === body.name)).toBe(true);
   });
 });
 
-describe('PUT /api/rules/[id] — Applies-to shape derivation and guard (spec 031)', () => {
-  let detectRuleId: string;
-  let assertRuleId: string;
+describe('PUT /api/rules/[id] rejects appliesTo', () => {
+  let customRuleId: string;
 
   beforeEach(async () => {
     await resetDb();
-    // await resetDb() deliberately preserves the seeded rules baseline (see its own comment) — clear it
-    // outright so this file's fixed-name fixtures below can never collide with a prior test's rows
-    // or with a seeded built-in, across runs within this describe block.
-    await clearRules();
     mockAuth.mockReset();
     await signInAsEditor();
-
-    detectRuleId = globalThis.crypto.randomUUID();
-    assertRuleId = globalThis.crypto.randomUUID();
+    customRuleId = globalThis.crypto.randomUUID();
     await saveRules([
-      { ...baseBody({ name: 'existing detect rule' }), id: detectRuleId },
-      { ...baseBody({ name: 'existing assert rule', appliesTo }), id: assertRuleId },
+      ...(await loadRules()).filter(r => r.type === 'builtin'),
+      { ...baseBody({ name: 'existing custom rule' }), id: customRuleId },
     ]);
   });
 
-  it('flips shape from detect to assert when an edit adds appliesTo', async () => {
-    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('detect');
+  it('returns 400 for a custom rule and leaves the stored rule unchanged', async () => {
+    const before = (await loadRules()).find(r => r.id === customRuleId);
     const res = await PUT(
-      putRequest({ ...baseBody({ name: 'existing detect rule', appliesTo }), id: detectRuleId }),
-      { params: Promise.resolve({ id: detectRuleId }) },
-    );
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.shape).toBe('assert');
-    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('assert');
-  });
-
-  it('flips shape from assert back to detect when an edit removes appliesTo', async () => {
-    expect((await loadRules()).find(r => r.id === assertRuleId)?.shape).toBe('assert');
-    const res = await PUT(
-      putRequest({ ...baseBody({ name: 'existing assert rule' }), id: assertRuleId }),
-      { params: Promise.resolve({ id: assertRuleId }) },
-    );
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.shape).toBe('detect');
-    expect(json.appliesTo).toBeUndefined();
-    expect((await loadRules()).find(r => r.id === assertRuleId)?.shape).toBe('detect');
-  });
-
-  it('rejects an edit whose new appliesTo has no compilable filter, leaving the stored rule untouched', async () => {
-    const res = await PUT(
-      putRequest({ ...baseBody({ name: 'existing detect rule', appliesTo: emptyAppliesTo }), id: detectRuleId }),
-      { params: Promise.resolve({ id: detectRuleId }) },
+      putRequest({ ...baseBody({ name: 'renamed by a rejected edit', severity: 'high' }), id: customRuleId, appliesTo }),
+      { params: Promise.resolve({ id: customRuleId }) },
     );
     expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toMatch(/Applies-to/);
-    expect((await loadRules()).find(r => r.id === detectRuleId)?.shape).toBe('detect');
-    expect((await loadRules()).find(r => r.id === detectRuleId)?.appliesTo).toBeUndefined();
+    expect((await res.json()).error).toBe(EXPECTED_ERROR);
+    expect((await loadRules()).find(r => r.id === customRuleId)).toEqual(before);
+  });
+
+  it('returns 400 for a built-in rule and leaves the stored rule unchanged', async () => {
+    const builtin = (await loadRules()).find(r => r.type === 'builtin' && r.queryBackend !== 'microsoft-graph');
+    expect(builtin, 'no seeded built-in rule to edit').toBeDefined();
+    const res = await PUT(
+      putRequest({ enabled: !builtin!.enabled, tags: ['rejected-edit'], appliesTo }),
+      { params: Promise.resolve({ id: builtin!.id }) },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(EXPECTED_ERROR);
+    expect((await loadRules()).find(r => r.id === builtin!.id)).toEqual(builtin);
+  });
+
+  it('still saves the same custom-rule edit when appliesTo is absent', async () => {
+    const res = await PUT(
+      putRequest({ ...baseBody({ name: 'renamed by an accepted edit' }), id: customRuleId }),
+      { params: Promise.resolve({ id: customRuleId }) },
+    );
+    expect(res.status).toBe(200);
+    expect((await loadRules()).find(r => r.id === customRuleId)?.name).toBe('renamed by an accepted edit');
   });
 });
+

@@ -12,7 +12,7 @@ export function isAllowedGraphPath(path: string): path is GraphQuery['path'] {
 
 /**
  * Structural checks on a Graph rule's query shape, mirroring hasCompilableFilter's role for
- * visualQuery/appliesTo: catch a shape that could never produce a real finding before it's saved,
+ * visualQuery: catch a shape that could never produce a real finding before it's saved,
  * rather than discovering it the first time a scan runs. Returns a client-safe error message, or
  * null when the shape is sound.
  */

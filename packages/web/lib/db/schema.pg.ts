@@ -37,15 +37,12 @@ export const rules = pgTable('rules', {
   queryBackend: text('query_backend').notNull().default('resource-graph'),
   graphQuery: text('graph_query'),
   logsQuery: text('logs_query'),
-  shape: text('shape').notNull().default('detect'),
   kind: text('kind').notNull().default('state'),
   group: text('group_name'),
   tags: text('tags'),
   visualQuery: text('visual_query'),
-  appliesTo: text('applies_to'),
   lastRunStatus: text('last_run_status'),
   lastRunAt: text('last_run_at'),
-  lastPopulationCount: integer('last_population_count'),
 });
 
 export const scans = pgTable('scans', {

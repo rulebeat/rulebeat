@@ -289,14 +289,9 @@ export function RuleForm({
     return defaultVisualQuery();
   });
 
-  // Applies-to state (spec 031) — undefined means "off", i.e. this rule is measured against every
-  // resource in scope, exactly as before this field existed. No legacy source to migrate from
-  // (the field is brand new), so unlike visualQuery above this is a plain pass-through.
-  const [appliesTo, setAppliesTo] = useState<VisualQuery | undefined>(initial?.appliesTo);
-
   // Graph query state (spec 032) — only meaningful when isGraphBackend. Starts at a sane default
   // for a brand-new Directory rule (users, no filter) rather than undefined, since GraphRuleEditor
-  // needs a real GraphQuery to render, unlike appliesTo above which has a real "off" state.
+  // needs a real GraphQuery to render.
   const [graphQuery, setGraphQuery] = useState<GraphQuery>(initial?.graphQuery ?? { path: 'users' });
 
   // Log Analytics query state (spec 036) — only meaningful when isLogAnalyticsBackend. Same
@@ -460,10 +455,9 @@ export function RuleForm({
     name, description, category, severity, enabled, tags,
     scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns,
     kql: kqlFromGui,
-    appliesTo,
     graphQuery,
     logsQuery,
-  }), [name, description, category, severity, enabled, tags, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, appliesTo, graphQuery, logsQuery]);
+  }), [name, description, category, severity, enabled, tags, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
   const [baselineSnapshot, setBaselineSnapshot] = useState(currentSnapshot);
   const dirty = currentSnapshot !== baselineSnapshot;
 
@@ -504,7 +498,7 @@ export function RuleForm({
     };
     const resTypes = resourceTypes.split(',').map(t => t.trim()).filter(Boolean);
     const dedicated = deriveDedicatedEditorFields(queryBackend, {
-      visualQuery: effectiveVisualQuery, appliesTo, rawKql: kqlText, graphQuery, logsQuery,
+      visualQuery: effectiveVisualQuery, rawKql: kqlText, graphQuery, logsQuery,
     });
     const payload = {
       name: name.trim(), description: description.trim(), category, severity, enabled, tags,
@@ -515,7 +509,6 @@ export function RuleForm({
       conditionGroups: undefined,
       projectColumns,
       visualQuery: dedicated.visualQuery,
-      appliesTo: dedicated.appliesTo,
       rawKql: dedicated.rawKql,
       graphQuery: dedicated.graphQuery,
       logsQuery: dedicated.logsQuery,
@@ -947,46 +940,6 @@ export function RuleForm({
             </Card>
             </div>
           )}
-
-          {/* ── Applies to (spec 031) ────────────────────────────────────────────── */}
-          <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-1.5 min-w-0">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <CardTitle className="text-sm">Applies to</CardTitle>
-                    {!isReadOnly && (
-                      <span title="Optional. Define the population this rule is measured against — for example, only VMs tagged production. Posture then reads as 'X of Y' instead of a bare finding count. Leave this off to measure against every resource in scope, as today.">
-                        <HelpCircle className="size-3.5 text-ink-faint" />
-                      </span>
-                    )}
-                  </div>
-                  {!isReadOnly && (
-                    <Switch
-                      checked={appliesTo !== undefined}
-                      onCheckedChange={(checked) => setAppliesTo(checked ? defaultVisualQuery() : undefined)}
-                      title={appliesTo !== undefined ? 'Measure against every resource in scope instead' : 'Measure against a defined subset instead'}
-                    />
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {appliesTo !== undefined ? (
-                  <VisualQueryBuilder
-                    query={appliesTo}
-                    onChange={setAppliesTo}
-                    fields={allFields}
-                    readOnly={isReadOnly}
-                    heading="Applies to"
-                  />
-                ) : (
-                  <p className="py-1 text-xs text-ink-2">
-                    {isReadOnly
-                      ? 'This rule is measured against every resource in scope.'
-                      : 'Off — this rule is measured against every resource in scope. Turn on to track posture against a defined subset instead.'}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
 
           {/* ── Violates when ─────────────────────────────────────────────────── */}
           {(() => {

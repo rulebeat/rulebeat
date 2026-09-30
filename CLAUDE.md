@@ -123,8 +123,8 @@ flow through the same Results/Run History/Rules tabs as every other category.
   `Rule.pack` is the open-ended sub-classification within `type:'builtin'` (e.g.
   `rulebeat-core`/`aprl-v2`). `Rule.id` is a plain UUID for every rule; provenance lives entirely in
   `type`/`pack`. `Rule.queryBackend: 'resource-graph' | 'microsoft-graph' | 'log-analytics'` now picks
-  the execution path, and `Rule.shape: 'detect' | 'assert'` plus `Rule.kind: 'state' | 'activity'`
-  classify what the rule means, with `kind` always derived from `queryBackend`. `resource-graph` and
+  the execution path, and `Rule.kind: 'state' | 'activity'` classifies what the rule means, always
+  derived from `queryBackend`. `resource-graph` and
   `microsoft-graph` are both authorable through the rule form today; Logs authoring is future work.
 - `kql.ts`: `buildRuleQuery`/`buildQueryFromVisual`/`parseKqlToVisualQuery`, the KQL↔GUI parser.
   `normalizeKqlExpr()` pre-normalizes real-world KQL (double-quoted strings, `<>`, etc.) so hand-written

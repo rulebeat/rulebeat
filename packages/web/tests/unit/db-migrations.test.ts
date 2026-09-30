@@ -235,7 +235,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     ).toBe(true);
   });
 
-  it('25-14 · every pre-029 ARG rule defaults to resource-graph / detect / state', async () => {
+  it('25-14 · every pre-029 ARG rule defaults to resource-graph / state', async () => {
     // The two identity checks are the one deliberate exception — see the dedicated case below —
     // so they're excluded here rather than asserted against the ARG default.
     const IDENTITY_IDS = new Set(['cred:app-secret-expiring', 'cred:app-cert-expiring']);
@@ -243,7 +243,6 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
       expect(rule.queryBackend, `"${rule.name}" did not default to resource-graph`).toBe('resource-graph');
-      expect(rule.shape, `"${rule.name}" did not default to detect`).toBe('detect');
       expect(rule.kind, `"${rule.name}" did not default to state`).toBe('state');
     }
   });

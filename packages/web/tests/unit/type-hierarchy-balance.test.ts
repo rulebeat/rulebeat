@@ -88,9 +88,7 @@ const ALLOWED_FAINT_FILES = new Set([
  * of those batches, this cap moves down in the same commit rather than being left to silently pass
  * stale. Raised 149 -> 151 by spec 030: posture-ring-widget's "N not yet proven" callout and
  * scans-client's per-rule "N resources affected" span are both metadata/caption text, fitting the
- * role below. Raised 151 -> 152 by spec 031: scans-client's new "N of M affected" span (the
- * lastPopulationCount branch, for assert-shape rules) reuses the exact same numeral/caption styling
- * as the sibling span beside it, so it's the same role, not a new one. Raised 152 -> 154 by spec
+ * role below. Raised 151 -> 152 by spec 031: scans-client's "N of M affected" span reused the exact same\n * numeral/caption styling as the sibling span beside it, so it was the same role, not a new one. Raised 152 -> 154 by spec
  * 032: graph-rule-editor's empty-state caption ("No severity bands...") and its helper text
  * explaining band evaluation order are both metadata/helper text, not structural labels. Raised
  * 154 -> 156 by spec 033: the category/subscription scorecard widgets' new secondary "pct%" span
@@ -117,8 +115,9 @@ const ALLOWED_FAINT_FILES = new Set([
  * subscription-scorecard-widget.tsx and trend-widget.tsx each gain one caption noting that a
  * per-subscription total still reflects the whole category's rule count, the same
  * helper/metadata-caption role, not a new one.
+ * Lowered 171 -> 170 when Applies to was removed: the scans-client span it added (above) is gone.
  */
-const INK_MUTED_CEILING = 171;
+const INK_MUTED_CEILING = 170;
 
 describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the rest (spec 002)', () => {
   it('found the source files at all (guards against this suite silently testing nothing)', async () => {

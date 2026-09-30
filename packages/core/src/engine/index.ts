@@ -9,7 +9,7 @@ export type {
   LimitStage,
   LogAnalyticsQuery,
   QueryBackend,
-  Rule, RuleExecutionOutcome, RuleExecutionStatus, RuleRunEvent, RuleKind, RuleScope, RuleShape, RuleType,
+  Rule, RuleExecutionOutcome, RuleExecutionStatus, RuleRunEvent, RuleKind, RuleScope, RuleType,
   QueryStage,
   ShapeStage,
   SortColumn, SortStage,

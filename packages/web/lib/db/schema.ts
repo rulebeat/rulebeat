@@ -19,15 +19,12 @@ export const rules = sqliteTable('rules', {
   queryBackend: text('query_backend').notNull().default('resource-graph'), // 'resource-graph' | 'microsoft-graph' | 'log-analytics'
   graphQuery: text('graph_query'),            // JSON: GraphQuery | null — set only when queryBackend = 'microsoft-graph'
   logsQuery: text('logs_query'),              // JSON: LogAnalyticsQuery | null — set only when queryBackend = 'log-analytics'
-  shape: text('shape').notNull().default('detect'),       // 'detect' | 'assert' — 'assert' when applies_to is set (spec 031), else 'detect'
   kind: text('kind').notNull().default('state'),          // 'state' | 'activity' — always derived from queryBackend, never authored
   group: text('group_name'),                  // optional user-defined group name (column: group_name avoids SQL reserved word)
   tags: text('tags'),                         // JSON: string[] | null — multi-dimensional labels
   visualQuery: text('visual_query'),          // JSON: VisualQuery | null — visual builder state; rawKql stores the generated KQL
-  appliesTo: text('applies_to'),              // JSON: VisualQuery | null — spec 031 population/count query; presence drives shape='assert'
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null — this rule's outcome the last time a scan actually ran it
   lastRunAt: text('last_run_at'),             // ISO timestamp of that outcome; null = never run
-  lastPopulationCount: integer('last_population_count'), // spec 031: Applies-to count from the last scan that returned one; null for 'detect' rules or one whose population query has only ever failed
 });
 
 export const scans = sqliteTable('scans', {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, saveRules, isNameTaken, deriveShape } from '@/lib/rules';
+import { loadRules, saveRules, isNameTaken, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { deleteFindingsForRule } from '@/lib/db/findings';
 import { writeAudit, changedFields } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
@@ -32,6 +32,9 @@ export async function PUT(
   if (existing.type === 'builtin') {
     const body = await parseJsonBody<Partial<Rule>>(req);
     if (body instanceof NextResponse) return body;
+    if ('appliesTo' in body) {
+      return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
+    }
 
     let graphQuery = existing.graphQuery;
     if (existing.queryBackend === 'microsoft-graph' && body.graphQuery) {
@@ -75,6 +78,10 @@ export async function PUT(
   const body = await parseJsonBody<Rule>(req);
   if (body instanceof NextResponse) return body;
 
+  if ('appliesTo' in body) {
+    return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
+  }
+
   if (await isNameTaken(body.name, id)) {
     return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
@@ -83,13 +90,6 @@ export async function PUT(
   if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
     return NextResponse.json({
       error: 'The rule has no condition that compiles to a filter — it would match every resource in scope. Add at least one real condition.',
-    }, { status: 400 });
-  }
-
-  // spec 031: same guard, applied to Applies-to — see POST for the reasoning.
-  if (body.appliesTo && !hasCompilableFilter(body.appliesTo)) {
-    return NextResponse.json({
-      error: 'Applies-to has no condition that compiles to a filter — it would count every resource in scope. Add at least one real condition, or remove Applies-to.',
     }, { status: 400 });
   }
 
@@ -141,26 +141,22 @@ export async function PUT(
     }
   }
 
-  // Preserve type/pack/taxonomy — cannot be changed via edit. shape is the one exception: it's
-  // derived from the incoming appliesTo (spec 031), same as POST, not preserved from the old row —
-  // an edit that adds or removes Applies-to must actually change what the rule's shape reports.
+  // Preserve type/pack/taxonomy — cannot be changed via edit.
   //
-  // Also preserve the scan-outcome fields (lastRunStatus/lastRunAt/lastPopulationCount): the form
-  // never sends them (they aren't user-editable), and `body` is a bare payload the client built,
-  // not a spread of `existing` — without this, every edit through this route silently reset a
-  // rule's outcome history back to "never run", which made spec 030's coverage badge and this
-  // spec's "X of Y affected" count both go blank the moment someone saved an unrelated change.
+  // Also preserve the scan-outcome fields (lastRunStatus/lastRunAt): the form never sends them
+  // (they aren't user-editable), and `body` is a bare payload the client built, not a spread of
+  // `existing` — without this, every edit through this route silently reset a rule's outcome
+  // history back to "never run", which made spec 030's coverage badge go blank the moment someone
+  // saved an unrelated change.
   allRules[idx] = {
     ...body,
     id,
     type: existing.type,
     pack: existing.pack,
     queryBackend: existing.queryBackend,
-    shape: deriveShape(body.appliesTo),
     kind: existing.kind,
     lastRunStatus: existing.lastRunStatus,
     lastRunAt: existing.lastRunAt,
-    lastPopulationCount: existing.lastPopulationCount,
   };
   await saveRules(allRules);
 

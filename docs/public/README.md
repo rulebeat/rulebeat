@@ -47,7 +47,7 @@ Everything else is reference you can come back to.
 
 | Page | What it answers |
 |---|---|
-| [Authoring rules](authoring-rules.md) | Scope, conditions, operators, Applies to, raw KQL, round-tripping, provenance. |
+| [Authoring rules](authoring-rules.md) | Scope, conditions, operators, raw KQL, round-tripping, provenance. |
 | [Directory rules](directory-rules.md) | Rules that read Microsoft Graph: object types, OData filters, expiring items. |
 | [Demo mode](demo-mode.md) | Running RuleBeat against synthetic data with no Azure access at all. |
 | [FAQ](faq.md) | How RuleBeat relates to Azure Policy, Defender and Advisor, and what people ask before installing. |

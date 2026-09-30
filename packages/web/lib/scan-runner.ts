@@ -9,7 +9,7 @@ import {
   type TenantContext,
 } from '@rulebeat/core';
 import { createScanContext } from './scan-context';
-import { loadRules, setRulePopulationCounts, setRulesLastRunStatus } from './rules';
+import { loadRules, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
 import { syncScanFindings, dedupeFindingsByFingerprint } from './db/findings';
 import { upsertDailySnapshot } from './db/snapshots';
@@ -62,15 +62,12 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   // 'failed' (the query threw) and 'capped' (a top-level take/top, or ARG-truncated result) are
   // both "real but not proven complete" and must leave their prior findings untouched.
   const successRuleIds: string[] = [];
-  // spec 031: population counts from this scan's Applies-to queries, keyed by rule id — independent
-  // of a rule's overall success/failed/capped status (see RuleExecutionOutcome.populationCount).
-  const populationCounts: Record<string, number> = {};
 
   // Shared by all three backends' event loops (spec 032/036) — runRules(), runGraphRules(), and
   // runLawRules() all yield the same RuleRunEvent<Finding> contract (per-rule
   // success/failed/capped/invalid outcomes, never a thrown rejection for an individual rule's
   // failure), so one handler keeps the fingerprint/timestamp transform and the
-  // success/incomplete/population bookkeeping in exactly one place instead of duplicated per
+  // success/incomplete bookkeeping in exactly one place instead of duplicated per
   // backend. None of the three loops needs a try/catch of its own for the same reason: a bad rule
   // yields a 'failed' outcome event rather than throwing.
   function handleEvent(event: RuleRunEvent<CoreFinding>): void {
@@ -90,9 +87,6 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
         detectedAt: finding.detectedAt.toISOString(),
       });
       return;
-    }
-    if (event.outcome.populationCount !== undefined) {
-      populationCounts[event.outcome.ruleId] = event.outcome.populationCount;
     }
     if (event.outcome.status === 'success') {
       successRuleIds.push(event.outcome.ruleId);
@@ -156,7 +150,6 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     const ids = incompleteRules.filter(r => r.status === status).map(r => r.ruleId);
     await setRulesLastRunStatus(ids, status, summary.finishedAt);
   }
-  await setRulePopulationCounts(populationCounts);
 
   await upsertDailySnapshot(category.id, opts.now);
 

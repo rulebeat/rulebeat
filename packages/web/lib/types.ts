@@ -284,9 +284,6 @@ export type RuleType = 'builtin' | 'community' | 'custom';
 // What system a rule's detection logic queries against — see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
-// 'assert' when appliesTo is set (spec 031), else 'detect'. Always derived, never author-set.
-export type RuleShape = 'detect' | 'assert';
-
 // Derived from queryBackend, never independently authored.
 export type RuleKind = 'state' | 'activity';
 
@@ -333,7 +330,6 @@ export interface Rule {
   type: RuleType;
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
-  shape?: RuleShape;           // absent = 'detect' (the SQL-layer default)
   kind?: RuleKind;             // absent = 'state' (the SQL-layer default); always derived, never author-set
   /** @deprecated Superseded by `tags` (multi-value). Kept for read compat with old rows. */
   group?: string;
@@ -346,9 +342,6 @@ export interface Rule {
   remediationSteps?: RemediationStep[];
   rawKql?: string;
   visualQuery?: VisualQuery;
-  /** Population/count query (spec 031) — presence makes `shape` 'assert' rather than 'detect'.
-   *  Absent (the default) means this rule is measured against every resource in scope. */
-  appliesTo?: VisualQuery;
   /** Microsoft Graph query definition (spec 032) — set only when queryBackend = 'microsoft-graph'. */
   graphQuery?: GraphQuery;
   /** Log Analytics query definition (spec 036) — set only when queryBackend = 'log-analytics'. */
@@ -357,10 +350,6 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: 'success' | 'failed' | 'capped' | 'invalid';
   lastRunAt?: string;
-  /** Population size from the last scan whose Applies-to query actually returned one (spec 031).
-   *  Absent for every 'detect'-shape rule, and left stale (not cleared) by a scan whose population
-   *  query failed. */
-  lastPopulationCount?: number;
 }
 
 // ── Live query page types (spec 037) ──────────────────────────────────────────
