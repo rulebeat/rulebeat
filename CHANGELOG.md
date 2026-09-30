@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Rules tab can enable or disable many rules at once. Select rules with the checkboxes, or select every rule the current filters show, then use the action bar. Each button counts only the selected rules it would change, and a rule the filters hide is never part of the action. Editors and admins see the checkboxes; viewers see the list as before.
+
 ### Removed
 
 - Applies to is removed. Rules that used it now show a plain count of affected resources, and their Applies to definitions are deleted on upgrade. Creating or updating a rule with `appliesTo` now returns an error.

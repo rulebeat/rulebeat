@@ -48,7 +48,10 @@ Three controls make findings go away, and they mean different things.
 - **Disable the rule**, with the toggle on the Rules tab. The rule stops being scanned. Its
   findings are left exactly as they were, still listed and still counted, because no scan looks at
   them again and only a rule that ran can mark its own findings fixed. Use it for a rule that is
-  right but not wanted right now.
+  right but not wanted right now. To disable or enable many rules at once, select them with the
+  checkboxes on the Rules tab (editor and admin), or use the checkbox above the list to select
+  every rule the current filters show, then pick the action. Each action changes only the selected
+  rules it applies to, and a rule hidden by the filters drops out of the selection.
 - **Clear findings**, next to the affected count on the Rules tab (editor and admin). Deletes
   every finding the rule has ever produced, active and fixed, together with their history, and
   keeps the rule. Use it when the rule turned out to be wrong: the findings were never real, so
