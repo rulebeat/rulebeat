@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-02
+
 ### Added
 
 - The Rules tab can enable or disable many rules at once. Select rules with the checkboxes, or select every rule the current filters show, then use the action bar. Each button counts only the selected rules it would change, and a rule the filters hide is never part of the action. Editors and admins see the checkboxes; viewers see the list as before.
@@ -274,7 +276,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/rulebeat/rulebeat/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rulebeat/rulebeat/compare/v0.4.0...v0.5.0
