@@ -4,11 +4,15 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileS
 import { join } from 'path';
 // Sub-path import, not the package root: this keeps the Azure SDK out of the database layer's
 // import graph. `finding.js` needs only node's crypto.
-import { computeFingerprint } from '@rulebeat/core/finding';
+import { computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { buildRuleQuery, type Rule } from '@rulebeat/core/kql';
 import { BUILTIN_RULES } from '../builtin-rules';
 import { STARTER_DASHBOARD } from '../dashboard-templates';
 import { hashPasswordSync } from '../password';
+import {
+  FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
+  type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
+} from './fingerprint-rekey';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -59,7 +63,10 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
   const updateSuppression = sqlite.prepare(`UPDATE suppressions SET fingerprint = ? WHERE fingerprint = ?`);
 
   const remap = (resourceId: string, storedFingerprint: string): void => {
-    if (computeFingerprint(oldId, resourceId) !== storedFingerprint) return;
+    // A database from before computeFingerprint() ignored casing still holds the legacy value; it
+    // is just as exactly the old id's, and lands on the current formula like any other.
+    if (computeFingerprint(oldId, resourceId) !== storedFingerprint
+      && computeLegacyFingerprint(oldId, resourceId) !== storedFingerprint) return;
     const next = computeFingerprint(newId, resourceId);
     if (next === storedFingerprint) return;
     // Each in its own try/catch: `findings.fingerprint` is a primary key, so a row already sitting
@@ -1039,6 +1046,33 @@ export function runMigrations(sqlite: Database.Database): void {
   // epoch claim at all (treated as 0 in getCurrentUser()) — an upgrade never mass-invalidates
   // every current session.
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+
+  // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
+  rekeyFingerprintCase(sqlite);
+}
+
+/**
+ * Runs lib/db/fingerprint-rekey.ts's plan once, in one transaction with its marker, so it applies
+ * completely or not at all. A failure is logged and retried on the next start rather than allowed to
+ * stop the app booting; the old fingerprints keep working exactly as before until it succeeds.
+ */
+function rekeyFingerprintCase(sqlite: Database.Database): void {
+  try {
+    sqlite.transaction(() => {
+      if (sqlite.prepare(`SELECT value FROM meta WHERE key = ?`).get(FINGERPRINT_CASE_MARKER)) return;
+      const statements = planFingerprintRekey({
+        findings: sqlite.prepare(REKEY_READS.findings).all() as RekeyFindingRow[],
+        suppressions: sqlite.prepare(REKEY_READS.suppressions).all() as RekeySuppressionRow[],
+        ruleIds: (sqlite.prepare(REKEY_READS.rules).all() as { id: string }[]).map(r => r.id),
+        scheduleRuns: sqlite.prepare(REKEY_READS.scheduleRuns).all() as RekeyScheduleRunRow[],
+      });
+      for (const s of statements) sqlite.prepare(s.sql).run(...s.params);
+      sqlite.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)`)
+        .run(FINGERPRINT_CASE_MARKER, new Date().toISOString());
+    })();
+  } catch (err) {
+    console.error('[migrate] could not move finding fingerprints onto the case-insensitive formula:', err);
+  }
 }
 
 /**

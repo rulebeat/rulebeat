@@ -14,6 +14,28 @@ const baseActivityInput = {
   recommendation: 'Investigate the principal.',
 };
 
+describe('computeFingerprint()', () => {
+  const id = (rg: string) => `/subscriptions/sub-1/resourceGroups/${rg}/providers/Microsoft.Compute/virtualMachines/vm-1`;
+
+  it('treats resource ids that differ only in casing as the same resource, as Azure does', () => {
+    expect(computeFingerprint('rule-1', id('RG-APP'))).toBe(computeFingerprint('rule-1', id('rg-app')));
+  });
+
+  it('still tells different resources apart', () => {
+    expect(computeFingerprint('rule-1', id('rg-app'))).not.toBe(computeFingerprint('rule-1', id('rg-other')));
+  });
+
+  it('keeps the resource id casing on the finding itself', () => {
+    const finding = createFinding({
+      module: 'security', ruleId: 'rule-1', severity: 'high', category: 'security',
+      resourceId: id('RG-APP'), resourceType: 'microsoft.compute/virtualmachines', resourceName: 'vm-1',
+      subscriptionId: 'sub-1', title: 't', description: 'd', evidence: {}, recommendation: 'r',
+    });
+    expect(finding.resourceId).toBe(id('RG-APP'));
+    expect(finding.fingerprint).toBe(computeFingerprint('rule-1', id('rg-app')));
+  });
+});
+
 describe('computeActivityFingerprint()', () => {
   it('is stable for the same ruleId + dimensionKey', () => {
     const a = computeActivityFingerprint('rule-1', 'principal:foo@bar.com');

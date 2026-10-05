@@ -1,6 +1,10 @@
 import { sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type * as pgSchema from '../schema.pg';
+import {
+  FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
+  type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
+} from '../fingerprint-rekey';
 
 /**
  * Brings a Postgres database up to the current schema. The Postgres analog of `migrate.ts`'s
@@ -376,5 +380,37 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
   await db.transaction(async (tx) => {
     await tx.execute(sql.raw(`SELECT pg_advisory_xact_lock(${BOOTSTRAP_LOCK_KEY})`));
     await tx.execute(sql.raw(DDL));
+    // A savepoint, so a failure rolls back only the rekey and the schema bootstrap still commits:
+    // a one-time data step must never stop the app booting. It is retried on the next start.
+    try {
+      await tx.transaction(async (sp) => { await rekeyFingerprintCase(sp); });
+    } catch (err) {
+      console.error('[bootstrap] could not move finding fingerprints onto the case-insensitive formula:', err);
+    }
   });
+}
+
+type PgTx = Parameters<Parameters<NodePgDatabase<typeof pgSchema>['transaction']>[0]>[0];
+
+/**
+ * The Postgres half of migrate.ts's rekeyFingerprintCase(): the same plan, run once, inside the
+ * bootstrap's own locked transaction so two booting containers cannot both apply it. Postgres
+ * installs since 0.7.0 hold fingerprints from the case-sensitive formula too.
+ */
+async function rekeyFingerprintCase(tx: PgTx): Promise<void> {
+  const marker = await tx.execute(sql`SELECT value FROM meta WHERE key = ${FINGERPRINT_CASE_MARKER}`);
+  if (marker.rows.length > 0) return;
+  const read = async <T>(query: string) => (await tx.execute(sql.raw(query))).rows as T[];
+  const statements = planFingerprintRekey({
+    findings: await read<RekeyFindingRow>(REKEY_READS.findings),
+    suppressions: await read<RekeySuppressionRow>(REKEY_READS.suppressions),
+    ruleIds: (await read<{ id: string }>(REKEY_READS.rules)).map(r => r.id),
+    scheduleRuns: await read<RekeyScheduleRunRow>(REKEY_READS.scheduleRuns),
+  });
+  for (const s of statements) {
+    const parts = s.sql.split('?');
+    const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
+    await tx.execute(sql.join(chunks, sql.raw('')));
+  }
+  await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINGERPRINT_CASE_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
 }
