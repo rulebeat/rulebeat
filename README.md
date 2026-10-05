@@ -141,7 +141,7 @@ you can explore the UI without connecting anything.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 \
      -v rulebeat-data:/app/packages/web/data \
      -e AUTH_URL=http://localhost:3000 \
-     ghcr.io/rulebeat/rulebeat:0.7.0
+     ghcr.io/rulebeat/rulebeat:0.7.1
    ```
 
    PowerShell:
@@ -150,7 +150,7 @@ you can explore the UI without connecting anything.
    docker run -d --name rulebeat --restart unless-stopped -p 127.0.0.1:3000:3000 `
      -v rulebeat-data:/app/packages/web/data `
      -e AUTH_URL=http://localhost:3000 `
-     ghcr.io/rulebeat/rulebeat:0.7.0
+     ghcr.io/rulebeat/rulebeat:0.7.1
    ```
 
 2. Read the generated admin password. It is written to the data volume, never to the container

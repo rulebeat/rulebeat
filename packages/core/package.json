@@ -1,6 +1,6 @@
 {
   "name": "@rulebeat/core",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "RuleBeat core: scanning engine, ARM clients, KQL builder and parser, types",
   "license": "Apache-2.0",

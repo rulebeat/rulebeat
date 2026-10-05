@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-05
+
 ### Fixed
 
 - Rescanning a resource no longer resolves its finding and opens a new one when Azure returns the resource id with different casing, for example a resource group name in capitals on one scan and in lowercase on the next. Azure resource ids are case-insensitive, and findings now match them that way. On upgrade, existing findings, their history and suppressions move to the new matching on both SQLite and Postgres, so finding ages are kept and suppressions keep working. Findings that were already split in two by this are merged back into one, keeping the earliest first-seen date.
@@ -280,7 +282,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/rulebeat/rulebeat/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/rulebeat/rulebeat/compare/v0.5.0...v0.5.1
