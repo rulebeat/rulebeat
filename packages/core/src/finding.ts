@@ -21,7 +21,19 @@ export interface CreateFindingInput {
   azurePortalLink?: string;
 }
 
+/** Azure resource ids are case-insensitive, and Resource Graph does not always return the same
+ *  casing for the same resource across scans (resource group names especially), so the id is
+ *  lowercased before hashing. Without that, a casing change resolved the finding and opened a new
+ *  one. The finding's own resourceId keeps Azure's casing; only the identity ignores it. Stored
+ *  fingerprints from before this change are re-keyed on upgrade (lib/db/fingerprint-rekey.ts). */
 export function computeFingerprint(ruleId: string, resourceId: string): string {
+  return createHash('sha256').update(`${ruleId}::${resourceId.toLowerCase()}`).digest('hex').slice(0, 16);
+}
+
+/** The case-sensitive formula every fingerprint was computed with before computeFingerprint()
+ *  started lowercasing. Exists only so the upgrade can recognise, exactly, a stored fingerprint it
+ *  is allowed to rewrite. Never use it for a new finding. */
+export function computeLegacyFingerprint(ruleId: string, resourceId: string): string {
   return createHash('sha256').update(`${ruleId}::${resourceId}`).digest('hex').slice(0, 16);
 }
 

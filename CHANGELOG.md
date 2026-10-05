@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Rescanning a resource no longer resolves its finding and opens a new one when Azure returns the resource id with different casing, for example a resource group name in capitals on one scan and in lowercase on the next. Azure resource ids are case-insensitive, and findings now match them that way. On upgrade, existing findings, their history and suppressions move to the new matching on both SQLite and Postgres, so finding ages are kept and suppressions keep working. Findings that were already split in two by this are merged back into one, keeping the earliest first-seen date.
+
 ## [0.7.0] - 2026-10-02
 
 ### Added
