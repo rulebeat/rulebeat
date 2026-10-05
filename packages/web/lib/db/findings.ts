@@ -199,8 +199,10 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
     }
 
     // 3. Resolve: findings that were active for a rule this scan actually ran, but didn't
-    // reappear. Scoping to (category, ranRuleIds) means disabled rules and tag/rule-scoped
-    // schedules never falsely resolve findings outside what they checked. kind:'state' excludes
+    // reappear. Scoping to ranRuleIds means disabled rules and tag/rule-scoped schedules never
+    // falsely resolve findings outside what they checked. Deliberately not scoped to the finding's
+    // stored category: a rule moved to another category keeps its old findings under the old one,
+    // and neither category's scan would ever resolve them otherwise. kind:'state' excludes
     // 'activity' findings — those never resolve, they age out of a read-time window instead
     // (spec 034): a rule not re-reporting an occurrence this scan says nothing about whether it's
     // still relevant, unlike a resource genuinely no longer matching a state rule's query.
@@ -210,7 +212,6 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
         tx.select({ fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId })
           .from(findingsTable)
           .where(and(
-            eq(findingsTable.category, category),
             inArray(findingsTable.ruleId, ruleChunk),
             eq(findingsTable.status, 'active'),
             eq(findingsTable.kind, 'state'),

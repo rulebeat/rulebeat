@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Moving a rule to another category no longer leaves its old findings open forever. Findings the rule stops returning are now resolved on its next successful scan, whichever category they were recorded under. Findings already stuck this way are resolved the next time that rule runs.
+
 ## [0.7.1] - 2026-10-05
 
 ### Fixed
