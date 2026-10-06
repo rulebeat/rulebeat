@@ -128,8 +128,8 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
   it('lets an update that keeps an existing duplicate pair\'s name succeed', async () => {
     const shared = unique('Pre-existing Duplicate');
     const config = JSON.stringify({ autoRefresh: 0, widgets: [] });
-    await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-older', '${shared}', '${config}', 1, '2024-01-01T00:00:00.000Z')`);
-    await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-newer', '${shared.toUpperCase()}', '${config}', 0, '2024-02-01T00:00:00.000Z')`);
+    await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-older', '${shared}', '${config}', TRUE, '2024-01-01T00:00:00.000Z')`);
+    await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-newer', '${shared.toUpperCase()}', '${config}', FALSE, '2024-02-01T00:00:00.000Z')`);
 
     const res = await put('dup-older', { name: shared, description: 'edited without renaming' });
 
