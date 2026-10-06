@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseOptionalJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -25,12 +26,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('azure:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { tenantId?: string; clientId?: string; clientSecret?: string } = {};
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    /* empty body is the "test what's live" mode */
-  }
+  const body = await parseOptionalJsonBody<{ tenantId?: string; clientId?: string; clientSecret?: string }>(req, {});
+  if (body instanceof NextResponse) return body;
 
   try {
     const typed = body.tenantId?.trim() && body.clientId?.trim() && body.clientSecret;

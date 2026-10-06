@@ -1,8 +1,10 @@
 import NextAuth from 'next-auth';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import type { NextFetchEvent } from 'next/server';
 import { authConfig } from '@/auth.config';
 import { correctedRequestUrl } from '@/lib/request-origin';
+import { checkRequestOrigin } from '@/lib/origin-check';
+import { buildSecurityHeaders, generateNonce } from '@/lib/security-headers';
 
 // A second NextAuth instance built from the DB-free config, not `@/auth` — the proxy runs on
 // every non-excluded request and only needs to decode the JWT and check one claim, so it has no
@@ -80,8 +82,61 @@ function correctProxyRequest(req: NextRequest): NextRequest {
 }
 
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
-  const response = await authHandler(correctProxyRequest(req), event);
-  return fixCallbackUrlOrigin(response);
+  // A state-changing request whose Origin disagrees with where this install is reachable never
+  // reaches the auth guard at all — see lib/origin-check.ts. AUTH_URL (not getPublicUrl() itself)
+  // is read here because it is the env-mirrored value sign-in-config.ts keeps in sync, safe to
+  // read in the proxy's runtime with no database access, the same reason auth.config.ts stays
+  // DB-free. /signin runs through the proxy now, so its form posts are checked the same way.
+  if (checkRequestOrigin(req.method, req.headers, process.env.AUTH_URL ?? null) === 'refuse') {
+    return withSecurityHeaders(
+      req,
+      NextResponse.json({ error: 'This request did not come from an allowed origin.' }, { status: 403 }),
+    );
+  }
+  const response = isPublicPage(req)
+    ? NextResponse.next()
+    : fixCallbackUrlOrigin(await authHandler(correctProxyRequest(req), event));
+  return withSecurityHeaders(req, response);
+}
+
+// `/signin` used to sit outside the matcher so the guard never saw it. The page policy has to be
+// stamped on it too, so it now runs through the proxy and this is what keeps the guard off it. The
+// test is the old exclusion verbatim, an unanchored prefix, so exactly the same paths stay public.
+function isPublicPage(req: NextRequest): boolean {
+  return req.nextUrl.pathname.startsWith('/signin');
+}
+
+// Stamps the page policy (lib/security-headers.ts) on the response and, for a request that is
+// going on to render, forwards the nonce to that render. Next reads the nonce back out of the
+// Content-Security-Policy *request* header to stamp its own scripts, and the layout reads `x-nonce`
+// for the one inline script it owns. A request that only gets redirected renders nothing, so it
+// takes the response headers alone.
+function withSecurityHeaders(req: NextRequest, response: Response): Response {
+  const nonce = generateNonce();
+  const security = buildSecurityHeaders({
+    url: req.url,
+    headers: req.headers,
+    env: { NODE_ENV: process.env.NODE_ENV, RULEBEAT_CSP: process.env.RULEBEAT_CSP },
+    nonce,
+  });
+  for (const [name, value] of Object.entries(security)) response.headers.set(name, value);
+
+  if (response.headers.get('x-middleware-next') === '1') {
+    // Same override NextResponse.next({ request: { headers } }) writes. The auth handler's own
+    // pass-through response carries none, so copy it across rather than build a second response
+    // and lose the session cookies the handler appended to this one. Setting (not appending) the
+    // two names also discards any value the client sent for them.
+    const forwarded = new Headers(req.headers);
+    forwarded.set('x-nonce', nonce);
+    forwarded.set('Content-Security-Policy', security['Content-Security-Policy']);
+    const override = NextResponse.next({ request: { headers: forwarded } });
+    for (const [name, value] of override.headers) {
+      if (name.startsWith('x-middleware-') && name !== 'x-middleware-next') {
+        response.headers.set(name, value);
+      }
+    }
+  }
+  return response;
 }
 
 // The brand images sit outside the guard alongside favicon.ico, for the same reason it already
@@ -102,8 +157,14 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
 // `api/health$` is anchored the same way: it's a single unauthenticated liveness route, not a
 // route prefix like `api/auth`, so an unanchored entry would silently unguard `/api/healthx` and
 // `/api/health/private` too. The first draft of this line used a bare, unanchored prefix.
+//
+// `signin` is deliberately no longer in the list. This matcher now decides which responses get the
+// page policy as well as which reach the guard, and /signin is an HTML page that needs the policy
+// most. It still never reaches the guard: `isPublicPage` skips it inside the function. `api/auth`
+// stays excluded because it answers with redirects and JSON, plus Auth.js's own bare sign-out
+// page, which has no script; the static `frame-ancestors` in next.config.ts still covers that.
 export const config = {
   matcher: [
-    '/((?!api/auth|signin|_next/static|_next/image|favicon[.]ico$|icon[.]png$|apple-icon[.]png$|opengraph-image[.]png$|brand/lockup[.]png$|brand/lockup-dark[.]png$|brand/mark[.]png$|brand/mark-dark[.]png$|api/health$).*)',
+    '/((?!api/auth|_next/static|_next/image|favicon[.]ico$|icon[.]png$|apple-icon[.]png$|opengraph-image[.]png$|brand/lockup[.]png$|brand/lockup-dark[.]png$|brand/mark[.]png$|brand/mark-dark[.]png$|api/health$).*)',
   ],
 };

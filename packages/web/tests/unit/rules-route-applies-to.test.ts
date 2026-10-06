@@ -47,10 +47,18 @@ function baseBody(overrides: Partial<Rule> = {}): Omit<Rule, 'id'> {
 }
 
 function postRequest(body: unknown): Request {
-  return new Request('http://localhost/api/rules', { method: 'POST', body: JSON.stringify(body) });
+  return new Request('http://localhost/api/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 function putRequest(body: unknown): Request {
-  return new Request('http://localhost/api/rules/x', { method: 'PUT', body: JSON.stringify(body) });
+  return new Request('http://localhost/api/rules/x', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 async function signInAsEditor(): Promise<void> {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -39,12 +40,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { name?: string; type?: string; url?: string; config?: unknown };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const body = await parseJsonBody<{ name?: string; type?: string; url?: string; config?: unknown }>(req);
+  if (body instanceof NextResponse) return body;
 
   const name = body.name?.trim() ?? '';
   const type = body.type?.trim() ?? '';
@@ -112,12 +109,8 @@ export async function PUT(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { id?: string; name?: string; type?: string; url?: string; config?: unknown };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const body = await parseJsonBody<{ id?: string; name?: string; type?: string; url?: string; config?: unknown }>(req);
+  if (body instanceof NextResponse) return body;
 
   const id = body.id?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });

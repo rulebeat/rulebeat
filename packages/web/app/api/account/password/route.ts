@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { existsSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { parseJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -18,12 +19,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('account:self');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { currentPassword?: string; newPassword?: string };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const body = await parseJsonBody<{ currentPassword?: string; newPassword?: string }>(req);
+  if (body instanceof NextResponse) return body;
 
   const newPassword = body.newPassword ?? '';
   const strength = validatePasswordStrength(newPassword);

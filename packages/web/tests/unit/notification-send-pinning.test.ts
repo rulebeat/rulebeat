@@ -246,7 +246,11 @@ describe('"Send test" through the real send path', () => {
   let respond: (res: http.ServerResponse) => void;
 
   function testRequest(body: unknown): Request {
-    return new Request('http://localhost/api/settings/notifications/test', { method: 'POST', body: JSON.stringify(body) });
+    return new Request('http://localhost/api/settings/notifications/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
   }
 
   beforeEach(async () => {

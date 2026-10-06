@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -36,15 +37,11 @@ export async function PUT(req: Request) {
   const actor = await requireRole('auth:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: {
+  const body = await parseJsonBody<{
     tenantId?: string; clientId?: string; clientSecret?: string; localSignInPolicy?: string;
     publicUrl?: string; reuseAzureConnection?: boolean;
-  };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  }>(req);
+  if (body instanceof NextResponse) return body;
 
   if (body.publicUrl !== undefined) {
     const trimmed = body.publicUrl.trim();

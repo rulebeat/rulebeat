@@ -34,6 +34,7 @@ const { POST } = await import('@/app/api/query/run-microsoft-graph/route');
 function postRequest(body: Record<string, unknown>): Request {
   return new Request('http://localhost/api/query/run-microsoft-graph', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { IBM_Plex_Mono, Inter, Inter_Tight } from 'next/font/google';
 import { MinWidthGuard } from '@/components/layout/min-width-guard';
 import { ThemeProvider } from '@/components/theme/theme-provider';
@@ -55,6 +55,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const preference = parseThemePreference((await cookies()).get(THEME_COOKIE)?.value);
+  /* Minted per request in proxy.ts. The content policy only runs scripts that carry it, so the
+     inline script below needs it by hand; Next stamps its own scripts itself. Reading request
+     headers also keeps every page rendered per request, which a nonce requires. */
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   /* For an explicit choice the server can stamp the class itself, so the correct ground is
      in the very first byte of HTML. For `system` the server has no way to know the machine's
@@ -68,7 +72,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* Browsers blank a script's nonce attribute once it has run, so hydration would otherwise
+            see a mismatch between the server's attribute and the emptied one in the DOM. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
       </head>
       <body className="min-h-full antialiased" suppressHydrationWarning>
         <ThemeProvider initialPreference={preference}>{children}</ThemeProvider>
