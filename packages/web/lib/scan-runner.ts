@@ -11,8 +11,7 @@ import {
 import { createScanContext } from './scan-context';
 import { loadRules, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
-import { syncScanFindings, dedupeFindingsByFingerprint } from './db/findings';
-import { upsertDailySnapshot } from './db/snapshots';
+import { syncScanFindingsDetailed, dedupeFindingsByFingerprint, refreshSnapshotsFor } from './db/findings';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, Finding, IncompleteRule, ScanSummary } from './types';
 
@@ -131,7 +130,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
 
   await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
 
-  const { created, reactivated } = await syncScanFindings({
+  const { created, reactivated, affectedCategories } = await syncScanFindingsDetailed({
     scanId,
     category: category.id,
     ranRuleIds,
@@ -151,7 +150,9 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     await setRulesLastRunStatus(ids, status, summary.finishedAt);
   }
 
-  await upsertDailySnapshot(category.id, opts.now);
+  // After the sync's transaction has committed. A rule moved to another category leaves findings
+  // recorded under its old one, so every category the sync touched is refreshed, not only this one.
+  await refreshSnapshotsFor([...new Set([category.id, ...affectedCategories])], opts.now);
 
   return { summary, newFindings };
 }

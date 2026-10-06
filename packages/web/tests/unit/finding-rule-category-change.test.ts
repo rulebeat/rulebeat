@@ -8,9 +8,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { getCategory } from '@/lib/db/categories';
 import { db } from '@/lib/db/client';
-import { run as execRun } from '@/lib/db/exec';
-import { rules as rulesTable } from '@/lib/db/tables';
+import { many as execMany, run as execRun } from '@/lib/db/exec';
+import { rules as rulesTable, findingEvents as findingEventsTable } from '@/lib/db/tables';
 import { listFindings } from '@/lib/db/findings';
+import { getSnapshots } from '@/lib/db/snapshots';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb, clearRules } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
@@ -61,6 +62,35 @@ describe('a rule whose category changes after it has findings', () => {
 
     expect(await statusOf(RULE_ID, 'vm-1')).toBe('active');
     expect(await statusOf(RULE_ID, 'vm-2')).toBe('fixed');
+  });
+
+  it('refreshes the old category snapshot and records the resolved event under the old category', async () => {
+    const security = (await getCategory('security'))!;
+    const compliance = (await getCategory('compliance'))!;
+
+    await runCategoryScan(security, {
+      ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' }), argRow({ name: 'vm-2' })] }),
+      ruleIds: [RULE_ID],
+    });
+    expect((await getSnapshots({ categories: ['security'] }))[0]?.activeFindings).toBe(2);
+
+    await execRun(db.update(rulesTable).set({ category: 'compliance' }).where(eq(rulesTable.id, RULE_ID)));
+    await runCategoryScan(compliance, {
+      ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' })] }),
+      ruleIds: [RULE_ID],
+    });
+
+    // vm-2 resolved and vm-1 was re-recorded under compliance, so security holds nothing active.
+    expect((await getSnapshots({ categories: ['security'] }))[0]?.activeFindings).toBe(0);
+    expect((await getSnapshots({ categories: ['compliance'] }))[0]?.activeFindings).toBe(1);
+
+    const vm2 = (await listFindings()).find(f => f.resourceName === 'vm-2')!;
+    const events = await execMany(db.select().from(findingEventsTable)
+      .where(eq(findingEventsTable.fingerprint, vm2.fingerprint)));
+    expect(events.map(e => [e.type, e.category]).sort()).toEqual([
+      ['created', 'security'],
+      ['resolved', 'security'],
+    ]);
   });
 
   it('still never resolves findings of a rule the scan did not run', async () => {
