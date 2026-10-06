@@ -48,7 +48,7 @@
 | `packages/web/lib/severity.ts` | `SEVERITY_ORDER`, `emptySeverityCounts()`: canonical severity ordering, shared by scan-runner/dashboard-data/snapshots |
 | `packages/web/lib/rule-description.ts` | `splitLearnMore()` splits a rule description's optional trailing `\nLearn more: <url>` marker into text + link |
 | `packages/web/lib/toggle-set.ts` | `toggleInSet()`: shared add/remove toggle for `Set`-based filter state |
-| `packages/web/lib/rules.ts` | `loadRules`/`saveRules`/`isNameTaken`/`duplicateRule`/`allTagsFromRules`: the rules repository layer. `setRulesEnabled(ids, enabled)` is a single `UPDATE ... WHERE id IN (...)`, deliberately not `saveRules()` (delete + reinsert), for onboarding step 3's bulk toggle. `listRuleSummaries()` is the light `{id,category,severity,enabled}` projection that feeds it, never the full `Rule[]` with KQL/visual-query blobs |
+| `packages/web/lib/rules.ts` | `loadRules`/`isNameTaken`/`duplicateRule`/`allTagsFromRules`: the rules repository layer. A single-rule write is `createRule`/`updateRule`/`deleteRule`, each touching only that rule's row (`updateRule` never writes `lastRunStatus`/`lastRunAt`, which belong to the scan; `deleteRule` removes the rule, its findings and its finding events in one transaction). `saveRules()` (delete + reinsert of every row) is used only by test fixtures. `setRulesEnabled(ids, enabled)` is a single `UPDATE ... WHERE id IN (...)` for onboarding step 3's bulk toggle. `listRuleSummaries()` is the light `{id,category,severity,enabled}` projection that feeds it, never the full `Rule[]` with KQL/visual-query blobs |
 | `packages/web/lib/builtin-rules.ts` | 13 built-in rules, fixed literal UUID `id` each (no `builtin::` prefix), seeded on startup |
 | `packages/web/lib/rule-filters.ts` | `matchesRuleSearch()`: shared search predicate used by both Library and Scans |
 | `packages/web/components/ui/checklist-dropdown.tsx` | Shared `ChecklistPanel` portal behind two triggers: `ChecklistDropdown` (toolbar) and `ColumnFilterIcon` (table column funnel) |
@@ -139,7 +139,6 @@
 | `packages/web/lib/explorer-filters.ts` | `ExplorerFilterState` + `getRecencyStatus()`/`isWithinRange()`: the Results-tab filter predicate pulled out of the component into a plain, closure-free function so it can be unit-tested and compared against the dashboard's own `queryActiveFindings` instead of trusting two hand-written predicates to stay in sync |
 | `packages/web/app/api/categories/route.ts` | `GET` list + `POST` create categories |
 | `packages/web/app/api/categories/[id]/route.ts` | `GET`/`PUT`/`DELETE` single category; builtin DELETE returns 403 |
-| `packages/web/app/api/scan/[category]/route.ts` | Legacy dynamic scan route. Still works, but unused by the UI |
 | `packages/web/app/(app)/scans/page.tsx` | Single Scans page. Reads all `/scans` query params, renders `ScansClient` once |
 | `packages/web/app/api/scans/run/route.ts` | `POST`: ad-hoc "Run Scan" trigger, fire-and-return-202 (now also returns `requestedAt`, server clock). `GET ?since=`: most recent run, for `use-run-progress.ts` to poll |
 | `packages/web/lib/hooks/use-run-progress.ts` | `useRunProgress()` polls `GET /api/scans/run?since=` every 2s, with a 10-minute timeout state |

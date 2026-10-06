@@ -1,7 +1,8 @@
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { rules as rulesTable } from './db/tables';
-import { many, run, inTransaction } from './db/exec';
+import { many, one, run, inTransaction } from './db/exec';
+import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 
 export async function loadRules(): Promise<Rule[]> {
@@ -59,6 +60,77 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
   await run(db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
 }
 
+/** Inserts one rule. Touches no other row, so it cannot disturb a concurrent edit or scan write. */
+export async function createRule(rule: Rule): Promise<void> {
+  await run(db.insert(rulesTable).values(ruleToRow(rule)));
+}
+
+/**
+ * What a caller may change on an existing rule. The scan outcome fields are the scan's alone, so
+ * the type leaves them out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
+ */
+export type RuleChanges = Partial<Omit<Rule, 'id' | 'kind' | 'lastRunStatus' | 'lastRunAt'>>;
+
+// The columns `updateRule()` will write, by the Rule field that feeds each. `kind` follows
+// `queryBackend` and the two run-outcome columns are never in here, on purpose.
+const UPDATABLE_FIELDS = [
+  'name', 'description', 'category', 'severity', 'enabled', 'scope', 'resourceTypes', 'conditions',
+  'conditionGroups', 'projectColumns', 'rawKql', 'type', 'pack', 'group', 'tags', 'visualQuery',
+  'queryBackend', 'graphQuery', 'logsQuery',
+] as const satisfies readonly (keyof RuleChanges)[];
+
+/**
+ * Updates one rule's row and returns the stored result, or null if no such rule exists. Only the
+ * fields present in `changes` are written (a key set to `undefined` clears that column), so a column
+ * the caller did not mention keeps whatever value it has now, including one a scan or another editor
+ * wrote after the caller last read the rule. `lastRunStatus`/`lastRunAt` are never written here.
+ */
+export async function updateRule(id: string, changes: RuleChanges): Promise<Rule | null> {
+  return inTransaction(async (tx) => {
+    const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    if (!current) return null;
+
+    // ruleToRow() does the JSON encoding and the derivation of `kind`; its output is only used to
+    // pick the columns the caller named.
+    const row: Record<string, unknown> = ruleToRow({ ...rowToRule(current), ...changes });
+    const set: Record<string, unknown> = {};
+    // An undefined here is a required column the caller left blank; there is nothing to write for it.
+    for (const field of UPDATABLE_FIELDS) {
+      if (field in changes && row[field] !== undefined) set[field] = row[field];
+    }
+    if ('queryBackend' in changes) set.kind = row.kind;
+
+    if (Object.keys(set).length > 0) {
+      await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
+    }
+
+    const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    return stored ? rowToRule(stored) : null;
+  });
+}
+
+/**
+ * Deletes one rule together with its findings and finding events, in one transaction: either all
+ * of it goes or none of it does. Returns false if the rule does not exist. Suppressions are keyed
+ * on the fingerprint and are left alone, as they are when a rule's findings are cleared.
+ */
+export async function deleteRule(id: string): Promise<boolean> {
+  const outcome = await inTransaction(async (tx) => {
+    const existing = await one(tx.select({ id: rulesTable.id }).from(rulesTable).where(eq(rulesTable.id, id)));
+    if (!existing) return null;
+    await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
+    return removeFindingRowsForRule(tx, id);
+  });
+  if (!outcome) return false;
+  await refreshSnapshotsFor(outcome.categories);
+  return true;
+}
+
+/**
+ * Replaces the whole rule set. No route or scan uses this: a single-rule write goes through
+ * `createRule()`/`updateRule()`/`deleteRule()` so it cannot overwrite what a concurrent writer
+ * changed. It remains for test fixtures that need an exact starting set.
+ */
 export async function saveRules(rules: Rule[]): Promise<void> {
   await inTransaction(async (tx) => {
     await run(tx.delete(rulesTable));
@@ -126,7 +198,7 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
     enabled: false,
   };
 
-  await saveRules([...all, copy]);
+  await createRule(copy);
   return copy;
 }
 

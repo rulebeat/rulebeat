@@ -1,7 +1,7 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from './client';
 import { findings as findingsTable, findingEvents as findingEventsTable } from './tables';
-import { many, run, inTransaction } from './exec';
+import { many, run, inTransaction, type DbHandle } from './exec';
 import { loadScanHistory } from '../scan-history';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
@@ -385,26 +385,34 @@ export async function getActivityOccurrenceCounts(opts: {
  *  fingerprint and are deliberately left alone, so a finding that later regenerates re-attaches to
  *  its old suppression. */
 export async function deleteFindingsForRule(ruleId: string): Promise<number> {
-  let deleted = 0;
-  const affectedCategories = new Set<string>();
-
-  await inTransaction(async (tx) => {
-    const rows = await many(
-      tx.select({ category: findingsTable.category }).from(findingsTable)
-        .where(eq(findingsTable.ruleId, ruleId)),
-    );
-    deleted = rows.length;
-    for (const r of rows) affectedCategories.add(r.category);
-
-    await run(tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)));
-    await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
-  });
-
-  // Outside the transaction on purpose: on Postgres the snapshot recompute runs on its own
-  // connection, so inside it would still see the rows this transaction has not yet committed.
-  for (const category of affectedCategories) await upsertDailySnapshot(category);
-
+  const { deleted, categories } = await inTransaction(tx => removeFindingRowsForRule(tx, ruleId));
+  await refreshSnapshotsFor(categories);
   return deleted;
+}
+
+/** The row-deleting half of deleteFindingsForRule, for a caller that already holds a transaction
+ *  (deleting a rule removes the rule and its findings atomically). Returns the categories that lost
+ *  rows; the caller must pass them to refreshSnapshotsFor() once its transaction has committed. */
+export async function removeFindingRowsForRule(
+  tx: DbHandle,
+  ruleId: string,
+): Promise<{ deleted: number; categories: string[] }> {
+  const rows = await many(
+    tx.select({ category: findingsTable.category }).from(findingsTable)
+      .where(eq(findingsTable.ruleId, ruleId)),
+  );
+
+  await run(tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)));
+  await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
+
+  return { deleted: rows.length, categories: [...new Set(rows.map(r => r.category))] };
+}
+
+/** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
+ *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
+ *  transaction has not yet committed. */
+export async function refreshSnapshotsFor(categories: string[]): Promise<void> {
+  for (const category of categories) await upsertDailySnapshot(category);
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---
