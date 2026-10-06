@@ -1,7 +1,8 @@
 import { db } from './client';
 import { users, savedQueries, queryRuns } from './tables';
 import { eq, and, asc, count, sql } from 'drizzle-orm';
-import { many, one, run } from './exec';
+import { many, one, run, inTransaction, type DbHandle } from './exec';
+import { dbKind } from './backend';
 import { isRole, type Role } from '@/lib/rbac';
 
 export interface AppUser {
@@ -50,14 +51,43 @@ export async function getUserByEmail(email: string): Promise<AppUser | null> {
   return row ? rowToUser(row) : null;
 }
 
-export async function getUser(id: string): Promise<AppUser | null> {
-  const row = await one(db.select().from(users).where(eq(users.id, id)));
+async function getUserOn(handle: DbHandle, id: string): Promise<AppUser | null> {
+  const row = await one(handle.select().from(users).where(eq(users.id, id)));
   return row ? rowToUser(row) : null;
 }
 
-export async function countAdmins(): Promise<number> {
-  const row = await one(db.select({ n: count() }).from(users).where(eq(users.role, 'admin')));
+export async function getUser(id: string): Promise<AppUser | null> {
+  return getUserOn(db, id);
+}
+
+async function countAdminsOn(handle: DbHandle): Promise<number> {
+  const row = await one(handle.select({ n: count() }).from(users).where(eq(users.role, 'admin')));
   return row?.n ?? 0;
+}
+
+export async function countAdmins(): Promise<number> {
+  return countAdminsOn(db);
+}
+
+/**
+ * Takes a row lock on every admin before this transaction counts them, so a second concurrent
+ * transaction doing the same last-admin check waits here instead of reading a stale count. A
+ * no-op on SQLite: `inTransaction()`'s `BEGIN IMMEDIATE` plus its in-process lock already
+ * serialises every writer against the single connection, so a second call never even starts
+ * until the first has committed. On Postgres (default READ COMMITTED, where a plain `SELECT
+ * COUNT(*)` inside a transaction does NOT by itself see a concurrent transaction's in-flight
+ * write), `SELECT ... FOR UPDATE` blocks until any transaction holding the lock finishes; once
+ * unblocked, Postgres re-evaluates the row against the WHERE clause against its latest committed
+ * version, so a row demoted out of `role = 'admin'` by the transaction that just committed drops
+ * out of the lock set here too, and the count taken right after sees the up-to-date state.
+ * `.for('update')` isn't reachable through the SQLite-typed builder every repository builds
+ * queries on (see tables.ts), hence the raw statement.
+ */
+async function lockAdminRowsForUpdate(tx: DbHandle): Promise<void> {
+  if (dbKind !== 'pg') return;
+  await (tx as unknown as { execute(query: unknown): Promise<unknown> }).execute(
+    sql`SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE`,
+  );
 }
 
 export async function createUser(data: { email: string; role: Role; oid?: string; name?: string }): Promise<{ user: AppUser } | { error: string }> {
@@ -81,31 +111,54 @@ export async function createUser(data: { email: string; role: Role; oid?: string
   return { user: (await getUser(id))! };
 }
 
+/**
+ * The last-admin check and the role write happen inside one `inTransaction()` call so no second
+ * concurrent call can read the same "still 2 admins" count this one just acted on. See
+ * `lockAdminRowsForUpdate()` for how that holds on Postgres as well as SQLite.
+ */
 export async function updateUserRole(id: string, role: Role): Promise<{ user: AppUser } | { error: string } | null> {
-  const existing = await getUser(id);
-  if (!existing) return null;
-  if (existing.role === role) return { user: existing };
-  if (existing.role === 'admin' && await countAdmins() === 1) {
-    return { error: 'This is the only admin. Promote someone else to admin first.' };
-  }
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!existing) return null;
+    if (existing.role === role) return { user: existing };
 
-  await run(db.update(users).set({ role }).where(eq(users.id, id)));
-  return { user: (await getUser(id))! };
+    if (existing.role === 'admin') {
+      await lockAdminRowsForUpdate(tx);
+      if (await countAdminsOn(tx) === 1) {
+        return { error: 'This is the only admin. Promote someone else to admin first.' };
+      }
+    }
+
+    await run(tx.update(users).set({ role }).where(eq(users.id, id)));
+    return { user: (await getUserOn(tx, id))! };
+  });
 }
 
+/**
+ * The last-admin check and all three deletes run inside one transaction: the check can't be
+ * raced the same way `updateUserRole`'s can't (see `lockAdminRowsForUpdate()`), and a failure
+ * part-way through the deletes rolls every one of them back instead of leaving the user row gone
+ * but their saved queries or run history still present, or vice versa.
+ */
 export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'last-admin'> {
-  const existing = await getUser(id);
-  if (!existing) return 'notfound';
-  if (existing.role === 'admin' && await countAdmins() === 1) return 'last-admin';
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!existing) return 'notfound';
 
-  // Private saved queries (spec 037) are personal scratch state — delete them with their owner.
-  // Shared ones stay (ownerEmail is denormalized precisely so they keep reading correctly afterward).
-  await run(db.delete(savedQueries).where(and(eq(savedQueries.ownerId, id), eq(savedQueries.visibility, 'private'))));
-  // Run history (spec 037 follow-up) has no shared visibility at all — it's always fully personal,
-  // so every row goes, not just a 'private' subset.
-  await run(db.delete(queryRuns).where(eq(queryRuns.ownerId, id)));
-  await run(db.delete(users).where(eq(users.id, id)));
-  return true;
+    if (existing.role === 'admin') {
+      await lockAdminRowsForUpdate(tx);
+      if (await countAdminsOn(tx) === 1) return 'last-admin';
+    }
+
+    // Private saved queries (spec 037) are personal scratch state — delete them with their owner.
+    // Shared ones stay (ownerEmail is denormalized precisely so they keep reading correctly afterward).
+    await run(tx.delete(savedQueries).where(and(eq(savedQueries.ownerId, id), eq(savedQueries.visibility, 'private'))));
+    // Run history (spec 037 follow-up) has no shared visibility at all — it's always fully personal,
+    // so every row goes, not just a 'private' subset.
+    await run(tx.delete(queryRuns).where(eq(queryRuns.ownerId, id)));
+    await run(tx.delete(users).where(eq(users.id, id)));
+    return true;
+  });
 }
 
 /** Binds an Entra object id to a row that was created by email before that person ever signed in. */

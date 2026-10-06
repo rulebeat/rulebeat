@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Fixed
 
 - Moving a rule to another category no longer leaves its old findings open forever. Findings the rule stops returning are now resolved on its next successful scan, whichever category they were recorded under. Findings already stuck this way are resolved the next time that rule runs.
+- Two admins demoting or deleting each other at the same moment can no longer leave the install with no admin; one of the two changes is refused. Deleting a user now removes their private saved queries, their query history and the user together, or none of them if something fails part-way.
 
 ### Security
 
