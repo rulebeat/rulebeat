@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { listDashboards, createDashboard, createStarterDashboard } from '@/lib/db/dashboards';
+import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -32,13 +32,17 @@ export async function POST(req: Request) {
 
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
 
+  const name = body.name.trim();
   const result = await createDashboard({
-    name: body.name.trim(),
+    name,
     description: body.description,
     config: body.config ?? { autoRefresh: 0, widgets: [] },
   });
 
-  if ('error' in result) return Response.json({ error: result.error }, { status: 409 });
+  if (!result.ok) {
+    const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);
+    return Response.json({ error }, { status: 409 });
+  }
 
   await writeAudit({
     actor,

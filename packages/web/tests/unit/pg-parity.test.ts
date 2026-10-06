@@ -219,16 +219,16 @@ describe('dashboards repository parity', () => {
     await clearDashboards();
 
     const a = await createDashboard({ name: 'Parity A', description: 'first', config: { widgets: [] } });
-    if ('error' in a) throw new Error(a.error);
+    if (!a.ok) throw new Error(a.reason);
     expect(a.dashboard.isDefault).toBe(true); // very first dashboard in an empty table
 
     const b = await createDashboard({ name: 'Parity B', config: { widgets: [], autoRefresh: 30 } });
-    if ('error' in b) throw new Error(b.error);
+    if (!b.ok) throw new Error(b.reason);
     expect(b.dashboard.isDefault).toBe(false);
 
     // Collisions are case-insensitive, on create and rename alike.
-    expect(await createDashboard({ name: 'parity a', config: { widgets: [] } })).toHaveProperty('error');
-    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' })).toHaveProperty('error');
+    expect(await createDashboard({ name: 'parity a', config: { widgets: [] } })).toEqual({ ok: false, reason: 'name-taken' });
+    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' })).toEqual({ ok: false, reason: 'name-taken' });
 
     const dup = await duplicateDashboard(a.dashboard.id);
     expect(dup).not.toBeNull();

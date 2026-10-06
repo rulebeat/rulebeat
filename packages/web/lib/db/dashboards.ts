@@ -1,7 +1,7 @@
 import { db } from './client';
 import { dashboards } from './tables';
 import { eq, asc } from 'drizzle-orm';
-import { many, one, run, inTransaction } from './exec';
+import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
 import type { Dashboard, DashboardConfig } from '@/lib/types';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
@@ -27,44 +27,91 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
   return row ? rowToDashboard(row) : null;
 }
 
-export async function isNameTaken(name: string, excludeId?: string): Promise<boolean> {
-  const all = await many(db.select().from(dashboards));
+/**
+ * Issue #161: a dashboard name is meant to be unique (case-insensitively, ignoring surrounding
+ * spaces), but there is no unique index, since an existing install can already hold names that
+ * differ only by case or spacing and an upgrade must never disturb those rows. The check lives in
+ * the application instead, in the same transaction as the write, the way rule names do (see
+ * `lib/rules.ts`). The same transaction reads whether the table is empty, so two first creates
+ * cannot both become the default.
+ *
+ * On SQLite `inTransaction()` already serializes every writer through a process-wide lock. On
+ * Postgres (READ COMMITTED) two open transactions cannot see each other's uncommitted row, so every
+ * write here takes `pgAdvisoryXactLock()` first, which is a no-op on SQLite.
+ */
+const DASHBOARD_NAME_LOCK_KEY = 7194826034;
+
+export async function isNameTaken(name: string, excludeId?: string, handle: DbHandle = db): Promise<boolean> {
+  const all = await many(handle.select().from(dashboards));
   return all.some(d => d.name.trim().toLowerCase() === name.trim().toLowerCase() && d.id !== excludeId);
 }
 
-export async function createDashboard(data: { name: string; description?: string; config: DashboardConfig }): Promise<{ dashboard: Dashboard } | { error: string }> {
-  if (!data.name.trim()) return { error: 'Name is required.' };
-  if (await isNameTaken(data.name)) return { error: `A dashboard named "${data.name}" already exists.` };
+/** The 409 message both dashboard-save routes return when a name is already in use. */
+export function dashboardNameTakenMessage(name: string): string {
+  return `A dashboard named "${name}" already exists.`;
+}
+
+// Inserts one row on `tx`, which the caller has already locked and checked a free name on. The very
+// first dashboard in an empty table is the default, so a fresh empty-state "Create dashboard"
+// always produces a usable one.
+async function insertDashboard(tx: DbHandle, data: { name: string; description?: string; config: DashboardConfig }): Promise<Dashboard> {
   const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  // A fresh empty-state "Create dashboard" should always produce a usable default.
-  const isFirstDashboard = (await listDashboards()).length === 0;
-  await run(db.insert(dashboards).values({
+  const isFirstDashboard = (await many(tx.select({ id: dashboards.id }).from(dashboards).limit(1))).length === 0;
+  await run(tx.insert(dashboards).values({
     id,
     name: data.name.trim(),
     description: data.description ?? null,
     config: JSON.stringify(data.config),
     isDefault: isFirstDashboard,
-    createdAt: now,
+    createdAt: new Date().toISOString(),
   }));
-  return { dashboard: (await getDashboard(id))! };
+  const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+  return rowToDashboard(stored!);
 }
 
-export async function updateDashboard(id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>): Promise<{ dashboard: Dashboard } | { error: string } | null> {
-  const existing = await getDashboard(id);
-  if (!existing) return null;
-  if (data.name !== undefined) {
-    const trimmed = data.name.trim();
-    if (!trimmed) return { error: 'Name cannot be empty.' };
-    if (await isNameTaken(trimmed, id)) return { error: `A dashboard named "${trimmed}" already exists.` };
-    data = { ...data, name: trimmed };
-  }
-  await run(db.update(dashboards).set({
-    ...(data.name !== undefined && { name: data.name }),
-    ...(data.description !== undefined && { description: data.description }),
-    ...(data.config !== undefined && { config: JSON.stringify(data.config) }),
-  }).where(eq(dashboards.id, id)));
-  return { dashboard: (await getDashboard(id))! };
+export type CreateDashboardResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'empty-name' }
+  | { ok: false; reason: 'name-taken' };
+
+export async function createDashboard(data: { name: string; description?: string; config: DashboardConfig }): Promise<CreateDashboardResult> {
+  if (!data.name.trim()) return { ok: false, reason: 'empty-name' };
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    if (await isNameTaken(data.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
+    return { ok: true, dashboard: await insertDashboard(tx, data) };
+  });
+}
+
+export type UpdateDashboardResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'empty-name' }
+  | { ok: false; reason: 'name-taken' };
+
+// The name is only checked when it actually changes (compared case-insensitively, after trimming,
+// against the stored one): an install can already hold a pre-existing duplicate pair, and saving
+// one of them without renaming it must keep working.
+export async function updateDashboard(id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>): Promise<UpdateDashboardResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (data.name !== undefined) {
+      const trimmed = data.name.trim();
+      if (!trimmed) return { ok: false, reason: 'empty-name' };
+      const renamed = trimmed.toLowerCase() !== existing.name.trim().toLowerCase();
+      if (renamed && await isNameTaken(trimmed, id, tx)) return { ok: false, reason: 'name-taken' };
+      data = { ...data, name: trimmed };
+    }
+    await run(tx.update(dashboards).set({
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.config !== undefined && { config: JSON.stringify(data.config) }),
+    }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: rowToDashboard(stored!) };
+  });
 }
 
 // Every dashboard is now deletable, including the default — if the deleted row was the default
@@ -95,33 +142,44 @@ export async function setDefaultDashboard(id: string): Promise<boolean> {
   return true;
 }
 
-export async function duplicateDashboard(id: string): Promise<Dashboard | null> {
-  const src = await getDashboard(id);
-  if (!src) return null;
-  let name = `${src.name} (copy)`;
+// Picks the first free name among `base`, then `suffix(2)`, `suffix(3)`, ... on `tx`. The caller
+// holds the name lock, so the name it gets back is still free when it inserts.
+async function nextFreeName(tx: DbHandle, base: string, suffix: (n: number) => string): Promise<string> {
+  let name = base;
   let n = 2;
-  while (await isNameTaken(name)) { name = `${src.name} (copy ${n++})`; }
-  const result = await createDashboard({
-    name,
-    description: src.description,
-    config: JSON.parse(JSON.stringify(src.config)) as DashboardConfig,
-  });
-  return 'error' in result ? null : result.dashboard;
+  while (await isNameTaken(name, undefined, tx)) name = suffix(n++);
+  return name;
 }
 
-// Restores the original starter dashboard as a new row — e.g. from the gallery's empty state
+// Picks the copy's name and inserts it in one locked transaction, so concurrent duplicates of one
+// dashboard each land on a different name.
+export async function duplicateDashboard(id: string): Promise<Dashboard | null> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!row) return null;
+    const src = rowToDashboard(row);
+    const name = await nextFreeName(tx, `${src.name} (copy)`, n => `${src.name} (copy ${n})`);
+    return insertDashboard(tx, {
+      name,
+      description: src.description,
+      config: JSON.parse(JSON.stringify(src.config)) as DashboardConfig,
+    });
+  });
+}
+
+// Restores the original starter dashboard as a new row, e.g. from the gallery's empty state
 // after a user has deleted every dashboard. Named like duplicateDashboard's own dedupe loop.
-// createDashboard already auto-defaults the very first dashboard in an empty table, so this
+// insertDashboard already auto-defaults the very first dashboard in an empty table, so this
 // relies on that rather than calling setDefaultDashboard itself.
 export async function createStarterDashboard(): Promise<Dashboard> {
-  let name = STARTER_DASHBOARD.name;
-  let n = 2;
-  while (await isNameTaken(name)) { name = `${STARTER_DASHBOARD.name} (${n++})`; }
-  const result = await createDashboard({
-    name,
-    description: STARTER_DASHBOARD.description,
-    config: JSON.parse(JSON.stringify(STARTER_DASHBOARD.config)) as DashboardConfig,
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const name = await nextFreeName(tx, STARTER_DASHBOARD.name, n => `${STARTER_DASHBOARD.name} (${n})`);
+    return insertDashboard(tx, {
+      name,
+      description: STARTER_DASHBOARD.description,
+      config: JSON.parse(JSON.stringify(STARTER_DASHBOARD.config)) as DashboardConfig,
+    });
   });
-  if ('error' in result) throw new Error(result.error);
-  return result.dashboard;
 }
