@@ -18,7 +18,7 @@ import { recoverInterruptedRuns, recoverPendingNotifications } from '@/lib/start
 import { executeTarget } from '@/lib/run-executor';
 import { createChannel, deleteChannel } from '@/lib/db/notification-channels';
 import { setLinksForSchedule, deleteLinksForSchedule } from '@/lib/db/schedule-notification-channels';
-import { setDnsLookupForTests, resetDnsLookupForTests } from '@/lib/ssrf-guard';
+import { setDnsLookupForTests, resetDnsLookupForTests, setGuardedTransportForTests } from '@/lib/ssrf-guard';
 import { resetDb, clearRules, execRaw } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
 import type { Finding } from '@/lib/types';
@@ -152,7 +152,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
     });
 
     const fetchMock = vi.fn().mockResolvedValue(fakeResponse(200, 'ok'));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     const recovered = await recoverPendingNotifications();
 
@@ -169,7 +169,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
     });
 
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     const recovered = await recoverPendingNotifications();
 
@@ -190,7 +190,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
     });
 
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     const recovered = await recoverPendingNotifications();
 
@@ -224,7 +224,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
     let resolveFetch: (value: Response) => void = () => {};
     const fetchPromise = new Promise<Response>(resolve => { resolveFetch = resolve; });
     const fetchMock = vi.fn().mockReturnValue(fetchPromise);
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },

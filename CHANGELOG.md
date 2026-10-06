@@ -17,6 +17,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - Signing in with Microsoft now clears a local account's lockout, so a user locked out of their password after 5 wrong attempts can use it again straight away instead of waiting 15 minutes.
 - A Microsoft Graph rule's expansion array field must now be a plain property name: letters, numbers and underscores, starting with a letter. Saving a rule with any other value is refused, and a stored rule with one is reported as failed when it runs instead of being sent to Graph.
 - CSV exports of the audit log, findings and query results now put an apostrophe in front of any text cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, so a spreadsheet shows it as text instead of running it as a formula. A cell containing a carriage return is now quoted, so it can no longer split a row.
+- Webhook and email notifications now connect only to the address that was checked as public, and each send, including each retry, checks it again. IPv6 addresses that carry an IPv4 address inside them (NAT64 and 6to4) are checked against that IPv4 address, and Teredo addresses are refused. "Send test" and scheduled notifications now send the same way.
 
 ## [0.7.1] - 2026-10-05
 

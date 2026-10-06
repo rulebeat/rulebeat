@@ -6,7 +6,7 @@
  * rows. That is exactly the race two containers have, minus the network, and it runs unchanged on
  * SQLite and on the Postgres CI job.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { computeFingerprint } from '@rulebeat/core';
@@ -25,7 +25,7 @@ import { recoverInterruptedRuns, recoverPendingNotifications } from '@/lib/start
 import { dispatchAndMarkSent } from '@/lib/notifications/dispatch';
 import { createChannel, deleteChannel } from '@/lib/db/notification-channels';
 import { setLinksForSchedule, deleteLinksForSchedule } from '@/lib/db/schedule-notification-channels';
-import { setDnsLookupForTests, resetDnsLookupForTests } from '@/lib/ssrf-guard';
+import { setDnsLookupForTests, resetDnsLookupForTests, setGuardedTransportForTests, type GuardedTransport } from '@/lib/ssrf-guard';
 import { syncScanFindings } from '@/lib/db/findings';
 import { INSTANCE_ID } from '@/lib/instance-id';
 import { resetDb, clearRules, countRows, execRaw } from '../helpers/db';
@@ -266,7 +266,7 @@ describe('a running row proves it is alive, and only a silent one is reaped', ()
 describe('a notification batch is sent once, whichever process gets to it', () => {
   let scheduleId: string;
   let channelId: string;
-  let fetchMock: ReturnType<typeof vi.fn>;
+  let fetchMock: Mock<GuardedTransport>;
 
   beforeEach(async () => {
     scheduleId = `sched-${crypto.randomUUID()}`;
@@ -274,7 +274,7 @@ describe('a notification batch is sent once, whichever process gets to it', () =
     await setLinksForSchedule(scheduleId, [{ channelId, minSeverity: 'low', categoryIds: null, subscriptionIds: null }]);
     setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
     fetchMock = vi.fn().mockResolvedValue(fakeResponse(200));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
   });
 
   afterEach(async () => {

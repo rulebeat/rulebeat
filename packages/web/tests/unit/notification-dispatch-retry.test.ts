@@ -11,7 +11,7 @@ import { dispatchNotifications } from '@/lib/notifications/dispatch';
 import { createChannel, deleteChannel } from '@/lib/db/notification-channels';
 import { deleteLinksForSchedule, setLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listDeliveriesForChannel } from '@/lib/db/notification-deliveries';
-import { setDnsLookupForTests, resetDnsLookupForTests } from '@/lib/ssrf-guard';
+import { setDnsLookupForTests, resetDnsLookupForTests, setGuardedTransportForTests } from '@/lib/ssrf-guard';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import type { Finding } from '@/lib/types';
 
@@ -106,7 +106,7 @@ describe('dispatchNotifications retry/backoff', () => {
       .mockResolvedValueOnce(fakeResponse(500, 'server error'))
       .mockResolvedValueOnce(fakeResponse(500, 'server error'))
       .mockResolvedValueOnce(fakeResponse(200, 'ok'));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
@@ -119,7 +119,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
   it('does not retry a 4xx — one attempt, one failed delivery row', async () => {
     const fetchMock = vi.fn().mockResolvedValue(fakeResponse(400, 'bad request'));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
 
@@ -133,7 +133,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
   it('retries network errors up to 3 attempts, then records the final failure', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('fetch failed: ECONNREFUSED'));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
@@ -148,7 +148,7 @@ describe('dispatchNotifications retry/backoff', () => {
   it('spec 021: a channel resolving to a private address fails once, with no retries', async () => {
     setDnsLookupForTests(async () => [{ address: '169.254.169.254' }]);
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
 
@@ -162,7 +162,7 @@ describe('dispatchNotifications retry/backoff', () => {
 
   it('spec 021: a redirect response is refused once, with no retries', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ status: 302, type: 'basic', ok: false } as Response);
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await dispatchNotifications(makeRun(scheduleId), [makeFinding()]);
 
@@ -178,7 +178,7 @@ describe('dispatchNotifications retry/backoff', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(fakeResponse(429, 'rate limited'))
       .mockResolvedValueOnce(fakeResponse(200, 'ok'));
-    vi.stubGlobal('fetch', fetchMock);
+    setGuardedTransportForTests(fetchMock);
 
     await settleWithTimers(dispatchNotifications(makeRun(scheduleId), [makeFinding()]));
 
