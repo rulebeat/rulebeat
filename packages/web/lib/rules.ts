@@ -89,6 +89,17 @@ export function allTagsFromRules(rules: Rule[]): string[] {
   return [...new Set(rules.flatMap(r => r.tags ?? []))].sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * The one shared name check for POST /api/rules and PUT /api/rules/[id], called before
+ * isNameTaken() and before anything is written. A missing name, a non-string value (a number,
+ * null, an object), or one that is blank after trimming would otherwise reach isNameTaken()'s bare
+ * `.trim()` call and throw, turning a client mistake into a 500 instead of a 400.
+ */
+export function validateRuleName(name: unknown): string | null {
+  if (typeof name !== 'string' || name.trim() === '') return 'A rule needs a name.';
+  return null;
+}
+
 export async function isNameTaken(name: string, excludeId?: string): Promise<boolean> {
   const all = await loadRules();
   return all.some(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);

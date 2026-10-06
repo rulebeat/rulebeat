@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, saveRules, isNameTaken, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, saveRules, isNameTaken, validateRuleName, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { deleteFindingsForRule } from '@/lib/db/findings';
 import { writeAudit, changedFields } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
@@ -80,6 +80,11 @@ export async function PUT(
 
   if ('appliesTo' in body) {
     return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
+  }
+
+  const nameError = validateRuleName(body.name);
+  if (nameError) {
+    return NextResponse.json({ error: nameError }, { status: 400 });
   }
 
   if (await isNameTaken(body.name, id)) {

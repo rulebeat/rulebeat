@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, saveRules, isNameTaken, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, saveRules, isNameTaken, validateRuleName, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -25,6 +25,11 @@ export async function POST(req: Request) {
 
   if ('appliesTo' in body) {
     return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
+  }
+
+  const nameError = validateRuleName(body.name);
+  if (nameError) {
+    return NextResponse.json({ error: nameError }, { status: 400 });
   }
 
   if (await isNameTaken(body.name)) {
