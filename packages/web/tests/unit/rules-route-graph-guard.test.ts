@@ -234,23 +234,36 @@ describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
     expect((await loadRules()).find(r => r.id === customRuleId)?.graphQuery).toEqual(newGq);
   });
 
-  it('allows editing graphQuery on a builtin microsoft-graph rule (Decision 1 — identity checks become fully editable)', async () => {
+  it('refuses to change the graphQuery of a builtin microsoft-graph rule and says to duplicate it (ticket #163: a built-in only changes by version)', async () => {
     fakeCtx = fakeTenantContext({ graphRows: [] });
     const newGq: GraphQuery = { path: 'applications', filter: "startswith(displayName,'internal-')" };
     const res = await PUT(
       putRequest({ enabled: true, graphQuery: newGq }),
       { params: Promise.resolve({ id: builtinGraphRuleId }) },
     );
-    expect(res.status).toBe(200);
-    expect((await loadRules()).find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(newGq);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/duplicate/i);
+    expect((await loadRules()).find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(VALID_GQ);
   });
 
-  it('rejects an invalid-shape graphQuery edit on a builtin microsoft-graph rule, leaving it untouched', async () => {
+  it('accepts a builtin microsoft-graph update that echoes its stored graphQuery, as the rule toggle sends it', async () => {
+    const res = await PUT(
+      putRequest({ enabled: false, graphQuery: JSON.parse(JSON.stringify(VALID_GQ)) as GraphQuery }),
+      { params: Promise.resolve({ id: builtinGraphRuleId }) },
+    );
+    expect(res.status).toBe(200);
+    const saved = (await loadRules()).find(r => r.id === builtinGraphRuleId);
+    expect(saved?.enabled).toBe(false);
+    expect(saved?.graphQuery).toEqual(VALID_GQ);
+  });
+
+  it('refuses a graphQuery edit on a builtin microsoft-graph rule by the version lock, whether or not the new query is a valid shape', async () => {
     const res = await PUT(
       putRequest({ enabled: true, graphQuery: NON_ALLOWLISTED_GQ }),
       { params: Promise.resolve({ id: builtinGraphRuleId }) },
     );
     expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/duplicate/i);
     expect((await loadRules()).find(r => r.id === builtinGraphRuleId)?.graphQuery).toEqual(VALID_GQ);
   });
 

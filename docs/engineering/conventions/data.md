@@ -65,7 +65,11 @@ The governing rule: **an upgrade must never disturb a user's existing configurat
 
 **Pair an external pack's query files to their recommendations by a stable id (the guid in the filename or `recommendationId`), never by directory index.** `scripts/packs/aprl-v2.ts` pairs by index, so 76 of 143 APRL rules carry another recommendation's KQL and 38 carry an `under-development` placeholder. Known and not yet fixed.
 
-**`seedPackRules` resets a pack rule's name, pack label and resource types on every startup; only enabled state, severity, description and KQL edits survive.** Don't write "an upgrade never overwrites an edited pack rule" anywhere; say which fields are kept and which are re-synced.
+**The startup seeder never overwrites a definition field of a rule that is enabled.** `seedRules()` records each shipped version in `rule_versions` and moves only a disabled rule to a newer one, including one that was running as "Before versioning"; the definition fields are name, description, category, severity, query and its scope. Enabled state, tags, suppressions and schedules are never touched by an upgrade, and the seeding path writes no audit entry. A rule no pack ships any more is marked retired and keeps running. Only `type`, `pack` and a missing Graph query are re-asserted on every start.
+
+**A pack file needs an entry in `pack-manifest.json` that names its `versionScheme` and the field that version comes from** (`version`, `pinnedRelease` or `pinnedCommitDate`). Without one the pack is skipped with a warning, and its rules are never read as dropped. `scripts/sync-pack.ts` keeps the scheme and writes the commit's own timestamp as the version.
+
+**A built-in's query is read-only everywhere, and a change to it ships as a new version.** `PUT /api/rules/[id]` answers 400 for a built-in whose body carries a different Graph query. A rule whose Graph query had been tuned before this became custom on upgrade, with the same id so its findings and suppressions stay attached.
 
 **External data-source syncing: one generic runner + a small per-source transform.** Adding a new pack should be one new file implementing an interface, not a monolithic bespoke script.
 

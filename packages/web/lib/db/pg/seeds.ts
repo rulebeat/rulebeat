@@ -1,13 +1,17 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as pgSchema from '../schema.pg';
-import { BUILTIN_RULES } from '../../builtin-rules';
+import {
+  definitionToColumns, planRuleSeeding, versionKey,
+  type SeedAction, type StoredRuleRow,
+} from '../../rule-versions';
+import { loadShippedCatalogue, type ShippedCatalogue } from '../../shipped-catalogue';
 import { STARTER_DASHBOARD } from '../../dashboard-templates';
 import { hashPasswordSync } from '../../password';
-import { BUILTIN_CATEGORIES, OLD_SECURITY_RED } from '../migrate';
+import { BUILTIN_CATEGORIES, OLD_SECURITY_RED, type SeedOptions } from '../migrate';
 
 type PgDb = NodePgDatabase<typeof pgSchema>;
 
@@ -31,10 +35,9 @@ type PgDb = NodePgDatabase<typeof pgSchema>;
 export async function seedPg(
   db: PgDb,
   dataDir: string,
-  opts: { skipOwnerBootstrap?: boolean } = {},
+  opts: SeedOptions = {},
 ): Promise<void> {
-  await seedBuiltinRules(db);
-  await seedPackRules(db, dataDir);
+  await seedRules(db, dataDir, opts.catalogue);
   await seedCategories(db);
   await seedDefaultDashboard(db);
   // Onboarding must be decided BEFORE the owner account exists (see runSeeds in migrate.ts).
@@ -43,96 +46,87 @@ export async function seedPg(
   await seedInitialAdmin(db);
 }
 
-// Mirrors deriveKind() in lib/rules.ts, duplicated for the same reason migrate.ts duplicates it:
-// lib/rules.ts imports the db client, and importing it back from the seed path would cycle.
-function deriveKindForSeed(queryBackend: string): 'state' | 'activity' {
-  return queryBackend === 'log-analytics' ? 'activity' : 'state';
-}
+/**
+ * The Postgres twin of `migrate.ts`'s `seedRules()`: the same plan (`planRuleSeeding()`), executed
+ * with Drizzle. An upgrade adds versions beside the one a rule runs and never changes what an
+ * enabled rule runs (ADR 0004).
+ */
+async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined): Promise<void> {
+  const { rules, ruleVersions } = pgSchema;
+  const shipped = catalogue ?? loadShippedCatalogue(dataDir);
+  const now = new Date().toISOString();
 
-async function seedBuiltinRules(db: PgDb): Promise<void> {
-  const { rules } = pgSchema;
   await db.transaction(async (tx) => {
-    for (const r of BUILTIN_RULES) {
-      const queryBackend = r.queryBackend ?? 'resource-graph';
-      const kind = r.kind ?? deriveKindForSeed(queryBackend);
-      const graphQuery = r.graphQuery ? JSON.stringify(r.graphQuery) : null;
-      await tx.insert(rules).values({
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        category: r.category,
-        severity: r.severity,
-        enabled: r.enabled,
-        scope: JSON.stringify(r.scope),
-        resourceTypes: JSON.stringify(r.resourceTypes),
-        filter: null,
-        conditions: JSON.stringify(r.conditions),
-        rawKql: r.rawKql ?? null,
-        type: 'builtin',
-        pack: r.pack ?? 'rulebeat-core',
-        queryBackend,
-        kind,
-        graphQuery,
-      }).onConflictDoNothing();
-      // Backfill type/pack/name/raw_kql/taxonomy on rows that already existed (the insert above
-      // skips them). graph_query only fills a genuine NULL: spec 032 makes a builtin's graphQuery
-      // user-editable, so re-asserting the seed default would silently revert that edit. Same
-      // COALESCE contract as migrate.ts's seedBuiltinRules.
-      await tx.update(rules).set({
-        type: 'builtin',
-        pack: r.pack ?? 'rulebeat-core',
-        name: r.name,
-        rawKql: r.rawKql ?? null,
-        queryBackend,
-        kind,
-        graphQuery: sql`COALESCE(${rules.graphQuery}, ${graphQuery})`,
-      }).where(eq(rules.id, r.id));
+    const rows: StoredRuleRow[] = (await tx.select({
+      id: rules.id, name: rules.name, description: rules.description, category: rules.category,
+      severity: rules.severity, enabled: rules.enabled, scope: rules.scope, resourceTypes: rules.resourceTypes,
+      conditions: rules.conditions, conditionGroups: rules.conditionGroups, visualQuery: rules.visualQuery,
+      projectColumns: rules.projectColumns, rawKql: rules.rawKql, queryBackend: rules.queryBackend,
+      kind: rules.kind, graphQuery: rules.graphQuery, logsQuery: rules.logsQuery, type: rules.type,
+      pack: rules.pack, version: rules.version, retiredAt: rules.retiredAt, originRuleId: rules.originRuleId,
+    }).from(rules));
+    const recorded = new Set(
+      (await tx.select({ ruleId: ruleVersions.ruleId, version: ruleVersions.version }).from(ruleVersions))
+        .map(r => versionKey(r.ruleId, r.version)),
+    );
+
+    const execute = async (t: typeof tx, a: SeedAction): Promise<void> => {
+      switch (a.action) {
+        case 'insert':
+          await t.insert(rules).values({
+            id: a.rule.id, ...definitionToColumns(a.rule.definition), filter: null, type: 'builtin',
+            enabled: a.rule.enabled, pack: a.rule.pack, version: a.rule.version,
+          }).onConflictDoNothing();
+          break;
+        case 'adopt':
+          await t.update(rules).set({ type: 'builtin', pack: a.pack }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'backfill-graph':
+          await t.update(rules).set({
+            queryBackend: a.rule.definition.queryBackend,
+            kind: a.rule.definition.kind,
+            graphQuery: JSON.stringify(a.rule.definition.graphQuery),
+          }).where(and(eq(rules.id, a.rule.id), isNull(rules.graphQuery)));
+          break;
+        case 'convert':
+          await t.update(rules).set({
+            type: 'custom', pack: null, version: null, retiredAt: null,
+            originRuleId: a.ruleId, originVersion: a.originVersion,
+          }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'record':
+          await t.insert(ruleVersions).values({
+            ruleId: a.ruleId, version: a.version, sortKey: a.sortKey, releaseNote: a.releaseNote,
+            definition: JSON.stringify(a.definition), upstreamRef: a.upstreamRef ?? null, firstSeenAt: now,
+          }).onConflictDoNothing();
+          break;
+        case 'set-running':
+          await t.update(rules).set({ version: a.version }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'apply':
+          await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })
+            .where(eq(rules.id, a.rule.id));
+          break;
+        case 'retire':
+          await t.update(rules).set({ retiredAt: now }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'unretire':
+          await t.update(rules).set({ retiredAt: null }).where(eq(rules.id, a.ruleId));
+          break;
+      }
+    };
+
+    for (const action of planRuleSeeding({ catalogue: shipped, rows, recorded })) {
+      try {
+        // A nested transaction is a savepoint: one rule that cannot be written (a malformed pack
+        // entry) is skipped without aborting the rest, as a malformed pack file always was.
+        await tx.transaction(async (savepoint) => execute(savepoint as unknown as typeof tx, action));
+      } catch (err) {
+        console.warn(`[rulebeat] could not seed a rule (${action.action}): ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   });
 }
-
-async function seedPackRules(db: PgDb, dataDir: string): Promise<void> {
-  const packsDir = join(dataDir, 'packs');
-  if (!existsSync(packsDir)) return;
-  const { rules } = pgSchema;
-
-  const files = readdirSync(packsDir).filter(f => f.endsWith('.json') && f !== 'pack-manifest.json');
-  for (const file of files) {
-    try {
-      const packRules = JSON.parse(readFileSync(join(packsDir, file), 'utf-8')) as Array<Record<string, unknown>>;
-      await db.transaction(async (tx) => {
-        for (const p of packRules) {
-          // Pack JSON uses 'rules' field (old name), read as conditions for backward compat.
-          const conditions = p.conditions ?? p.rules ?? [];
-          const resourceTypes =
-            typeof p.resourceTypes === 'string' ? p.resourceTypes : JSON.stringify(p.resourceTypes ?? []);
-          await tx.insert(rules).values({
-            id: p.id as string,
-            name: p.name as string,
-            description: p.description as string,
-            category: p.category as string,
-            severity: p.severity as string,
-            enabled: !!p.enabled,
-            scope: typeof p.scope === 'string' ? p.scope : JSON.stringify(p.scope),
-            resourceTypes,
-            filter: null,
-            conditions: typeof conditions === 'string' ? conditions : JSON.stringify(conditions),
-            rawKql: (p.rawKql as string | undefined) ?? null,
-            type: 'builtin',
-            pack: (p.pack as string | undefined) ?? null,
-          }).onConflictDoNothing();
-          await tx.update(rules).set({
-            name: p.name as string,
-            type: 'builtin',
-            pack: (p.pack as string | undefined) ?? null,
-            resourceTypes,
-          }).where(eq(rules.id, p.id as string));
-        }
-      });
-    } catch { /* malformed pack file: skip */ }
-  }
-}
-
 async function seedCategories(db: PgDb): Promise<void> {
   const { categories } = pgSchema;
   await db.transaction(async (tx) => {

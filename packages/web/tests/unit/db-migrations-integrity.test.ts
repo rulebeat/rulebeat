@@ -384,12 +384,24 @@ describe('TS-25 · no legacy identifier survives anywhere', () => {
       upgradeInProcess(sample);
       const sqlite = open(sample.file);
       try {
-        const offenders = everyTextValue(sqlite)
+        // The fixture's "Legacy rule builtin::..." names are display text, not ids. An enabled rule
+        // keeps its stored name on upgrade (ticket #163), so the rules table is swept as it stands;
+        // the "Before versioning" definition of a rule that has since moved to the shipped one keeps
+        // that old name by design, so its name is left out of the sweep.
+        const withoutRuleNames = everyTextValue(sqlite).map(v => {
+          if (v.table === 'rule_versions' && v.column === 'definition') {
+            const { name: _name, ...rest } = JSON.parse(v.value) as Record<string, unknown>;
+            return { ...v, value: JSON.stringify(rest) };
+          }
+          return v;
+        });
+        const offenders = withoutRuleNames
           .filter(v => LEGACY_PATTERNS.some(p => p.test(v.value)))
           .map(v => `${v.table}.${v.column}: ${v.value.slice(0, 80)}`);
         // A stale id in a JSON blob is not cosmetic: findings and dashboard widgets keyed on it stop
         // resolving to a rule, so drill-through and the top-rules widgets quietly go blank.
         expect([...new Set(offenders)], 'these still carry a pre-UUID rule id').toEqual([]);
+
       } finally { sqlite.close(); }
     });
   }

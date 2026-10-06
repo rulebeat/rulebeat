@@ -314,6 +314,15 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: RuleExecutionStatus;
   lastRunAt?: string;
+  /** The rule version a shipped (`builtin`) rule currently runs. Absent on a custom rule. Only a
+   *  version switch changes it, never an upgrade of an enabled rule (ADR 0004). */
+  version?: string;
+  /** Set when no pack ships this built-in any more. A retired rule keeps running and keeps its findings. */
+  retiredAt?: string;
+  /** Custom rule only: the shipped rule it was made from. Equal to `id` when a built-in was converted in place. */
+  originRuleId?: string;
+  /** Custom rule only: the shipped version it was made from. */
+  originVersion?: string;
 }
 
 // ── Per-rule execution outcome ────────────────────────────────────────────────

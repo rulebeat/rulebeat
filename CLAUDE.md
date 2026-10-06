@@ -204,10 +204,20 @@ where something is genuinely wrong. The vertical sidebar is the navigation and d
   `max-h` box.
 
 ### External pack seeding
-`data/packs/*.json` are committed, version-pinned external rule packs. `seedPackRules()` inside
-`runSeeds()` (`lib/db/migrate.ts`, with `lib/db/pg/seeds.ts` as the Postgres twin) seeds them as
-`type=builtin` on startup via `INSERT OR IGNORE` + `UPDATE`. Adding a pack is dropping a JSON file,
-no code change.
+`data/packs/*.json` are committed, version-pinned external rule packs, and `pack-manifest.json`
+names each pack's version scheme (`semver`, `upstream-release` or `upstream-commit-date`) and the
+version it ships. `seedRules()` inside `runSeeds()` (`lib/db/migrate.ts`, with `lib/db/pg/seeds.ts`
+as the Postgres twin) seeds RuleBeat Core and every pack as `type=builtin` on startup. Both
+backends run the same plan, `planRuleSeeding()` in `lib/rule-versions.ts`, over what
+`loadShippedCatalogue()` (`lib/shipped-catalogue.ts`) says this build ships. Adding a pack is
+dropping a JSON file plus its manifest entry, no code change; a pack file the manifest gives no
+version is skipped with a warning.
+
+**An upgrade never changes what an enabled shipped rule runs.** A new definition is recorded in
+`rule_versions` beside the running one, and only a disabled rule moves to it. A rule no pack ships
+any more gets `retired_at` and keeps running. A rule stored before versions existed is recorded as
+its shipped version, or as "Before versioning" when its stored definition differs; if that rule is
+disabled it then moves to the shipped version, and an enabled one stays on "Before versioning".
 
 ### Scans page pattern
 One page, no category routing; category is a filter like tags/severity/status. `scans/page.tsx`

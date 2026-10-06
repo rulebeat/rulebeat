@@ -6,6 +6,14 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Every shipped rule now has a version, and each version is recorded with the definition it shipped with. RuleBeat Core rules are at `1.0.0` and the APRL pack's version is the date and time of the upstream commit it was synced from (shown as 2026-06-08). Pack versions are set per pack in `data/packs/pack-manifest.json`.
+- Upgrading RuleBeat no longer changes what an enabled rule runs. A newer shipped definition is recorded next to the one that is running. A disabled shipped rule moves to the newest version on upgrade, since nothing it produces can change. Name, description, category, severity, query and conditions are no longer rewritten from the shipped files on every start, and your enabled state, tags, suppressions, schedules and findings are never touched.
+- A rule that no pack ships any more is marked retired. It keeps running and keeps its findings. A rule whose stored definition differs from the shipped one the first time versions are recorded keeps running as "Before versioning" while it is enabled; a disabled one is recorded as "Before versioning" and then moves to the shipped version.
+- An Identity built-in rule whose Microsoft Graph query was edited becomes a custom rule on upgrade. It keeps its id, query, findings and suppressions, and is no longer re-seeded.
+- A built-in rule's query can no longer be edited. The query is read-only in the rule form, and updating a built-in rule with a different Microsoft Graph query answers 400. Duplicate the rule to get a custom copy you can change.
+
 ### Removed
 
 - The old `POST /api/scan/<category>` and `POST /api/scan/identity` routes are gone. They started a scan outside the scan lock and left no entry in Run History. Use `POST /api/scans/run`, which every part of the console already uses.

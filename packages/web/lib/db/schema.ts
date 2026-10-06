@@ -25,7 +25,24 @@ export const rules = sqliteTable('rules', {
   visualQuery: text('visual_query'),          // JSON: VisualQuery | null — visual builder state; rawKql stores the generated KQL
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null — this rule's outcome the last time a scan actually ran it
   lastRunAt: text('last_run_at'),             // ISO timestamp of that outcome; null = never run
+  version: text('version'),                   // the rule version this row currently runs; null for a custom rule
+  retiredAt: text('retired_at'),              // ISO timestamp; set when no pack ships this built-in any more (it keeps running)
+  originRuleId: text('origin_rule_id'),       // custom rule only: the shipped rule it was made from (same id when converted in place)
+  originVersion: text('origin_version'),      // custom rule only: the shipped version it was made from
 });
+
+/** Every definition of a shipped rule this install has seen, one row per (rule, version). */
+export const ruleVersions = sqliteTable('rule_versions', {
+  ruleId: text('rule_id').notNull(),
+  version: text('version').notNull(),
+  sortKey: text('sort_key').notNull(),        // orders a rule's versions oldest to newest by plain string comparison (versionSortKey)
+  releaseNote: text('release_note').notNull(),
+  definition: text('definition').notNull(),   // JSON: the rule's definition fields as of this version
+  upstreamRef: text('upstream_ref'),          // e.g. the pinned upstream commit sha for an APRL version
+  firstSeenAt: text('first_seen_at').notNull(), // when this install first saw the version
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ruleId, table.version] }),
+}));
 
 export const scans = sqliteTable('scans', {
   id: text('id').primaryKey(),

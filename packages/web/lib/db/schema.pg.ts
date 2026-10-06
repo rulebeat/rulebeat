@@ -43,7 +43,23 @@ export const rules = pgTable('rules', {
   visualQuery: text('visual_query'),
   lastRunStatus: text('last_run_status'),
   lastRunAt: text('last_run_at'),
+  version: text('version'),
+  retiredAt: text('retired_at'),
+  originRuleId: text('origin_rule_id'),
+  originVersion: text('origin_version'),
 });
+
+export const ruleVersions = pgTable('rule_versions', {
+  ruleId: text('rule_id').notNull(),
+  version: text('version').notNull(),
+  sortKey: text('sort_key').notNull(),
+  releaseNote: text('release_note').notNull(),
+  definition: text('definition').notNull(),
+  upstreamRef: text('upstream_ref'),
+  firstSeenAt: text('first_seen_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ruleId, table.version] }),
+}));
 
 export const scans = pgTable('scans', {
   id: text('id').primaryKey(),

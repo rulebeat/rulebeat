@@ -6,7 +6,11 @@ import { join } from 'path';
 // import graph. `finding.js` needs only node's crypto.
 import { computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { buildRuleQuery, type Rule } from '@rulebeat/core/kql';
-import { BUILTIN_RULES } from '../builtin-rules';
+import {
+  definitionToColumns, planRuleSeeding, versionKey,
+  type SeedAction, type StoredRuleRow,
+} from '../rule-versions';
+import { loadShippedCatalogue, type ShippedCatalogue } from '../shipped-catalogue';
 import { STARTER_DASHBOARD } from '../dashboard-templates';
 import { hashPasswordSync } from '../password';
 import {
@@ -777,6 +781,24 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN graph_query TEXT`); } catch { /* already exists */ }
   // spec 036: Log Analytics query definition — null for every rule except queryBackend = 'log-analytics'.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN logs_query TEXT`); } catch { /* already exists */ }
+  // #152: rule versions. Every existing row simply has no recorded version yet; the seeder records
+  // one on the first start after this upgrade (see lib/rule-versions.ts).
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN version TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN retired_at TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_rule_id TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_version TEXT`); } catch { /* already exists */ }
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS rule_versions (
+      rule_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      sort_key TEXT NOT NULL,
+      release_note TEXT NOT NULL,
+      definition TEXT NOT NULL,
+      upstream_ref TEXT,
+      first_seen_at TEXT NOT NULL,
+      PRIMARY KEY (rule_id, version)
+    );
+  `);
 
   // Applies to was removed. Drop its columns from a database created while it existed; a fresh
   // install never has them, and the table_info check makes every later startup a no-op. The three
@@ -823,9 +845,13 @@ export function runMigrations(sqlite: Database.Database): void {
   // De-Morgan-corrected buildRuleQuery() and collapse it onto the one representation every rule
   // saved since then already uses. Gated on rows actually missing raw_kql existing, not a
   // one-time marker, so this is a no-op on every startup after the first row migrates.
+  // Only Resource Graph rules: a Microsoft Graph or Log Analytics rule keeps its query in its own
+  // column and has no raw_kql by design, so compiling its empty conditions would stamp a
+  // `Resources | project ...` query onto it (the startup seeder used to blank that again on every
+  // start for built-ins, which hid it).
   const legacyConditionRows = sqlite.prepare(
     `SELECT id, scope, resource_types, filter, conditions, condition_groups, project_columns
-     FROM rules WHERE raw_kql IS NULL OR raw_kql = ''`,
+     FROM rules WHERE (raw_kql IS NULL OR raw_kql = '') AND query_backend = 'resource-graph'`,
   ).all() as {
     id: string;
     scope: string;
@@ -1108,13 +1134,19 @@ export const BUILTIN_CATEGORIES = [
 // have the exact untouched old default — an admin who already chose their own colour keeps it.
 export const OLD_SECURITY_RED = '#ef4444';
 
-export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { skipOwnerBootstrap?: boolean } = {}): void {
+export interface SeedOptions {
+  skipOwnerBootstrap?: boolean;
+  /** What this build ships. Defaults to RuleBeat Core plus `<dataDir>/packs/*.json`; a test passes
+   *  its own so it can ship a changed definition without editing the real rule files. */
+  catalogue?: ShippedCatalogue;
+}
+
+export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedOptions = {}): void {
   // Seed from legacy JSON files on first run (one-time migration)
   seedFromJson();
-  // Seed built-in rules on every startup (INSERT OR IGNORE preserves user edits; UPDATE backfills name/pack)
-  seedBuiltinRules();
-  // Seed external pack rules from data/packs/*.json (committed, version-pinned)
-  seedPackRules();
+  // Seed shipped rules (RuleBeat Core and packs) and record their versions on every startup. An
+  // upgrade adds versions beside the one a rule runs; it never changes what an enabled rule runs.
+  seedRules();
   // Seed built-in categories on every startup (INSERT OR IGNORE preserves user edits)
   seedCategories();
   // Seed the default dashboard if none exist
@@ -1215,102 +1247,87 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: { ski
     }
   }
 
-  // Mirrors deriveKind() in lib/rules.ts — duplicated rather than imported, because lib/rules.ts
-  // imports the db client, which imports this file at module scope, and importing back would cycle.
-  function deriveKindForSeed(queryBackend: string): 'state' | 'activity' {
-    return queryBackend === 'log-analytics' ? 'activity' : 'state';
-  }
-
-  function seedBuiltinRules() {
+  // Seeds the shipped rules (RuleBeat Core and every pack) and records their versions. What it may
+  // change is decided by `planRuleSeeding()` (lib/rule-versions.ts), shared with the Postgres seeder:
+  // it adds versions beside the one a rule runs and never changes what an enabled rule runs (ADR 0004).
+  function seedRules() {
     // Remove legacy orphan:: / standards:: rows superseded by builtin:: equivalents
     sqlite.exec(`DELETE FROM rules WHERE id LIKE 'orphan::%' OR id LIKE 'standards::%'`);
 
-    const insert = sqlite.prepare(`
-      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, raw_kql, type, pack, query_backend, kind, graph_query)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const catalogue = opts.catalogue ?? loadShippedCatalogue(dataDir);
+    const now = new Date().toISOString();
+
+    const insertRule = sqlite.prepare(`
+      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, condition_groups, project_columns, visual_query, raw_kql, type, pack, query_backend, kind, graph_query, logs_query, version)
+      VALUES (@id, @name, @description, @category, @severity, @enabled, @scope, @resourceTypes, NULL, @conditions, @conditionGroups, @projectColumns, @visualQuery, @rawKql, 'builtin', @pack, @queryBackend, @kind, @graphQuery, @logsQuery, @version)
     `);
-    // graph_query is deliberately NOT in the unconditional SET list below, unlike every other
-    // column here: spec 032 makes a microsoft-graph builtin's graphQuery editable via
-    // PUT /api/rules/[id] (the one field on a builtin row the API allows changing besides
-    // enabled/tags), so re-asserting the seed default on every startup would silently revert that
-    // edit — the same class of bug the categories seed used to have with label/color/icon.
-    // COALESCE only fills a genuine NULL (a pre-032 row, or one that has never had a value), then
-    // never touches it again once anything — the backfilled default or a user's own edit — is there.
-    const update = sqlite.prepare(`
-      UPDATE rules SET type = 'builtin', pack = ?, name = ?, raw_kql = ?, query_backend = ?, kind = ?, graph_query = COALESCE(graph_query, ?) WHERE id = ?
+    const adopt = sqlite.prepare(`UPDATE rules SET type = 'builtin', pack = ? WHERE id = ?`);
+    const backfillGraph = sqlite.prepare(`UPDATE rules SET query_backend = ?, kind = ?, graph_query = ? WHERE id = ? AND graph_query IS NULL`);
+    const convert = sqlite.prepare(`UPDATE rules SET type = 'custom', pack = NULL, version = NULL, retired_at = NULL, origin_rule_id = id, origin_version = ? WHERE id = ?`);
+    const record = sqlite.prepare(`
+      INSERT OR IGNORE INTO rule_versions (rule_id, version, sort_key, release_note, definition, upstream_ref, first_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
+    const setRunning = sqlite.prepare(`UPDATE rules SET version = ? WHERE id = ?`);
+    const applyVersion = sqlite.prepare(`
+      UPDATE rules SET name = @name, description = @description, category = @category, severity = @severity,
+        query_backend = @queryBackend, kind = @kind, resource_types = @resourceTypes, scope = @scope,
+        conditions = @conditions, condition_groups = @conditionGroups, visual_query = @visualQuery,
+        project_columns = @projectColumns, raw_kql = @rawKql, graph_query = @graphQuery, logs_query = @logsQuery,
+        version = @version
+      WHERE id = @id
+    `);
+    const setRetired = sqlite.prepare(`UPDATE rules SET retired_at = ? WHERE id = ?`);
+
+    const execute = (a: SeedAction) => {
+      switch (a.action) {
+        case 'insert':
+          insertRule.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version });
+          break;
+        case 'adopt': adopt.run(a.pack, a.ruleId); break;
+        case 'backfill-graph':
+          backfillGraph.run(a.rule.definition.queryBackend, a.rule.definition.kind, JSON.stringify(a.rule.definition.graphQuery), a.rule.id);
+          break;
+        case 'convert': convert.run(a.originVersion, a.ruleId); break;
+        case 'record':
+          record.run(a.ruleId, a.version, a.sortKey, a.releaseNote, JSON.stringify(a.definition), a.upstreamRef ?? null, now);
+          break;
+        case 'set-running': setRunning.run(a.version, a.ruleId); break;
+        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
+        case 'retire': setRetired.run(now, a.ruleId); break;
+        case 'unretire': setRetired.run(null, a.ruleId); break;
+      }
+    };
+    // Nested transaction = savepoint: one rule that cannot be written (a malformed pack entry) is
+    // skipped without losing the rest, as a malformed pack file always was.
+    const executeOne = sqlite.transaction(execute);
+
     const seedAll = sqlite.transaction(() => {
-      for (const r of BUILTIN_RULES) {
-        const queryBackend = r.queryBackend ?? 'resource-graph';
-        const kind = r.kind ?? deriveKindForSeed(queryBackend);
-        const graphQuery = r.graphQuery ? JSON.stringify(r.graphQuery) : null;
-        insert.run(
-          r.id, r.name, r.description, r.category, r.severity,
-          r.enabled ? 1 : 0,
-          JSON.stringify(r.scope),
-          JSON.stringify(r.resourceTypes),
-          null,
-          JSON.stringify(r.conditions),
-          r.rawKql ?? null,
-          'builtin',
-          r.pack ?? 'rulebeat-core',
-          queryBackend,
-          kind,
-          graphQuery,
-        );
-        // Backfill type/pack/name/raw_kql/taxonomy on rows that already existed (INSERT OR IGNORE skips them);
-        // graph_query backfills only when null — see the comment on `update` above.
-        update.run(r.pack ?? 'rulebeat-core', r.name, r.rawKql ?? null, queryBackend, kind, graphQuery, r.id);
+      const rows = (sqlite.prepare(`
+        SELECT id, name, description, category, severity, enabled, scope, resource_types AS resourceTypes,
+               conditions, condition_groups AS conditionGroups, visual_query AS visualQuery,
+               project_columns AS projectColumns, raw_kql AS rawKql, query_backend AS queryBackend, kind,
+               graph_query AS graphQuery, logs_query AS logsQuery, type, pack, version,
+               retired_at AS retiredAt, origin_rule_id AS originRuleId
+        FROM rules
+      `).all() as Array<Omit<StoredRuleRow, 'enabled'> & { enabled: number }>)
+        .map(r => ({ ...r, enabled: r.enabled === 1 }));
+      const recorded = new Set(
+        (sqlite.prepare(`SELECT rule_id, version FROM rule_versions`).all() as { rule_id: string; version: string }[])
+          .map(r => versionKey(r.rule_id, r.version)),
+      );
+      for (const action of planRuleSeeding({ catalogue, rows, recorded })) {
+        try {
+          executeOne(action);
+        } catch (err) {
+          console.warn(`[rulebeat] could not seed a rule (${action.action}): ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     });
     // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred
     // transaction isn't enough under concurrent build-time workers.
     seedAll.immediate();
   }
-
-  function seedPackRules() {
-    const packsDir = join(dataDir, 'packs');
-    if (!existsSync(packsDir)) return;
-
-    const insert = sqlite.prepare(`
-      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, raw_kql, type, pack)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const update = sqlite.prepare(`
-      UPDATE rules SET name = ?, type = 'builtin', pack = ?, resource_types = ? WHERE id = ?
-    `);
-
-    const files = readdirSync(packsDir).filter(f => f.endsWith('.json') && f !== 'pack-manifest.json');
-    for (const file of files) {
-      try {
-        const packRules = JSON.parse(readFileSync(join(packsDir, file), 'utf-8')) as Array<Record<string, unknown>>;
-        const seedPack = sqlite.transaction(() => {
-          for (const p of packRules) {
-            // Pack JSON uses 'rules' field (old name) — read as conditions for backward compat
-            const conditions = p.conditions ?? p.rules ?? [];
-            insert.run(
-              p.id, p.name, p.description, p.category, p.severity,
-              p.enabled ? 1 : 0,
-              typeof p.scope === 'string' ? p.scope : JSON.stringify(p.scope),
-              typeof p.resourceTypes === 'string' ? p.resourceTypes : JSON.stringify(p.resourceTypes ?? []),
-              null,
-              typeof conditions === 'string' ? conditions : JSON.stringify(conditions),
-              p.rawKql ?? null,
-              'builtin',
-              p.pack ?? null,
-            );
-            update.run(
-              p.name, p.pack ?? null,
-              typeof p.resourceTypes === 'string' ? p.resourceTypes : JSON.stringify(p.resourceTypes ?? []),
-              p.id,
-            );
-          }
-        });
-        seedPack.immediate();
-      } catch { /* malformed pack file — skip */ }
-    }
-  }
-
   function seedCategories() {
     const insert = sqlite.prepare(`
       INSERT OR IGNORE INTO categories (id, label, color, icon, sort_order, is_builtin, is_special, created_at)

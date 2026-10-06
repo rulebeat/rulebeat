@@ -23,7 +23,7 @@ import { PACK_LABELS } from '@/lib/pack-labels';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule } from '@/lib/types';
-import type { PackManifestEntry } from './page';
+import { isExternalPack, type PackManifestEntry } from './pack-manifest';
 
 // ---- Constants ----
 
@@ -142,8 +142,8 @@ function EmptySection({
 
 function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record<string, PackManifestEntry> }) {
   const info = manifest[packId];
-  if (!info) return null;
   const meta = PACK_META[packId];
+  if (!isExternalPack(info)) return null;
   const shortCommit = info.pinnedCommit.slice(0, 7);
   return (
     <div className="space-y-3 bg-surface-sunken p-4">
