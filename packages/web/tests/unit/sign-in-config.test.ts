@@ -5,13 +5,20 @@ import { join } from 'node:path';
 import { resetDb } from '../helpers/db';
 import { resetSecretBoxForTests } from '@/lib/secret-box';
 import { createUser, getUser } from '@/lib/db/users';
-import { setPassword, recordFailedAttempt } from '@/lib/db/local-accounts';
+import { setPassword, recordFailedAttempt, getLocalAccount, isLockedOut } from '@/lib/db/local-accounts';
+import * as localAccountsModule from '@/lib/db/local-accounts';
 import { saveSsoProvider } from '@/lib/db/sso-providers';
 import {
   authorizeLocalAccount, getLocalSignInPolicy, getSignInStatus, resolveSignInConfig,
-  setLocalSignInPolicy,
+  setLocalSignInPolicy, SignInBusyError,
 } from '@/lib/sign-in-config';
-import { hashPassword } from '@/lib/password';
+import {
+  getDummyVerificationCallCountForTests, getRealVerificationCallCountForTests, hashPassword,
+  isPasswordGateSaturated, resetDummyVerificationCallCountForTests,
+  resetPasswordGateForTests, resetRealVerificationCallCountForTests, setPasswordGateLimitsForTests,
+  withPasswordGate,
+} from '@/lib/password';
+import { MAX_SIGNIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 import { listAuditEntries } from '@/lib/db/audit';
 
 const ENV_KEYS = [
@@ -339,5 +346,148 @@ describe('flood-vector logging inside authorizeLocalAccount (spec 022)', () => {
     expect(entries.some(e =>
       e.action === 'auth.sign_in_failed' && e.actorEmail === 'wrongpw@example.com',
     )).toBe(true);
+  });
+});
+
+describe('authorizeLocalAccount under a saturated password gate', () => {
+  afterEach(() => {
+    resetPasswordGateForTests();
+  });
+
+  it('throws SignInBusyError without a DB write, a password claim, or any hashing', async () => {
+    const created = await createUser({ email: 'busy@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+
+    setPasswordGateLimitsForTests(1, 0);
+    // Occupy the single slot forever so the gate reads as saturated for the rest of this test.
+    void withPasswordGate(() => new Promise<void>(() => {}));
+    expect(isPasswordGateSaturated()).toBe(true);
+
+    resetDummyVerificationCallCountForTests();
+    resetRealVerificationCallCountForTests();
+
+    let caught: unknown;
+    try {
+      await authorizeLocalAccount({ email: 'busy@example.com', password: 'CorrectPassword1!' });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(SignInBusyError);
+    expect((caught as SignInBusyError).code).toBe('busy');
+
+    // Nothing was spent reaching this rejection: no claim, no real or dummy scrypt call, no audit.
+    expect(getDummyVerificationCallCountForTests()).toBe(0);
+    expect(getRealVerificationCallCountForTests()).toBe(0);
+    expect((await getLocalAccount(created.user.id))!.failedAttempts).toBe(0);
+    expect(await listAuditEntries()).toHaveLength(0);
+  });
+
+  it('gives the attempt back when the gate fills after the attempt was claimed', async () => {
+    const created = await createUser({ email: 'busy-late@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+    // Four real failures, so the claim on the next attempt is the one that sets the lock.
+    for (let i = 0; i < 4; i++) await recordFailedAttempt(created.user.id);
+
+    setPasswordGateLimitsForTests(1, 0);
+    const realClaim = localAccountsModule.claimFailedAttempt;
+    const spy = vi.spyOn(localAccountsModule, 'claimFailedAttempt').mockImplementation(async (userId) => {
+      const result = await realClaim(userId);
+      void withPasswordGate(() => new Promise<void>(() => {}));
+      return result;
+    });
+
+    try {
+      await expect(
+        authorizeLocalAccount({ email: 'busy-late@example.com', password: 'CorrectPassword1!' }),
+      ).rejects.toBeInstanceOf(SignInBusyError);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const account = (await getLocalAccount(created.user.id))!;
+    expect(account.failedAttempts).toBe(4);
+    expect(isLockedOut(account)).toBe(false);
+  });
+});
+
+describe('the locked-account branch burns a dummy verification too (closing the timing oracle)', () => {
+  it('calls verifyDummyPassword before returning null for a locked-out account', async () => {
+    const created = await createUser({ email: 'locked-dummy@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+    for (let i = 0; i < 5; i++) await recordFailedAttempt(created.user.id);
+
+    const before = getDummyVerificationCallCountForTests();
+    const result = await authorizeLocalAccount({ email: 'locked-dummy@example.com', password: 'CorrectPassword1!' });
+
+    expect(result).toBeNull();
+    expect(getDummyVerificationCallCountForTests()).toBe(before + 1);
+  });
+});
+
+describe('oversized sign-in passwords are rejected before any hashing', () => {
+  it('returns null without ever reaching verifyPassword for a password over the limit', async () => {
+    const created = await createUser({ email: 'oversized@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+
+    resetRealVerificationCallCountForTests();
+    resetDummyVerificationCallCountForTests();
+
+    const oversized = 'a'.repeat(MAX_SIGNIN_PASSWORD_LENGTH + 1);
+    const result = await authorizeLocalAccount({ email: 'oversized@example.com', password: oversized });
+
+    expect(result).toBeNull();
+    expect(getRealVerificationCallCountForTests()).toBe(0);
+    expect(getDummyVerificationCallCountForTests()).toBe(0);
+  });
+
+  it('still accepts a password exactly at the limit', async () => {
+    const created = await createUser({ email: 'at-limit@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    const atLimit = 'Cx1!' + 'a'.repeat(MAX_SIGNIN_PASSWORD_LENGTH - 4);
+    await setPassword(created.user.id, await hashPassword(atLimit), { mustChangePassword: false });
+
+    const result = await authorizeLocalAccount({ email: 'at-limit@example.com', password: atLimit });
+    expect(result).not.toBeNull();
+  });
+});
+
+describe('concurrent wrong guesses never exceed the failed-attempt cap (the lockout race)', () => {
+  it('N concurrent wrong-password attempts against one account cap out at 5 failed attempts', async () => {
+    const created = await createUser({ email: 'race@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        authorizeLocalAccount({ email: 'race@example.com', password: 'WrongPassword1!' })),
+    );
+    expect(results.every(r => r === null)).toBe(true);
+
+    const account = (await getLocalAccount(created.user.id))!;
+    expect(account.failedAttempts).toBe(5);
+    expect(isLockedOut(account)).toBe(true);
+  });
+
+  it('a correct password on the 5th attempt still signs in, even after 4 prior failures', async () => {
+    const created = await createUser({ email: 'fifth-correct@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+
+    for (let i = 0; i < 4; i++) {
+      const attempt = await authorizeLocalAccount({ email: 'fifth-correct@example.com', password: 'WrongPassword1!' });
+      expect(attempt).toBeNull();
+    }
+
+    const result = await authorizeLocalAccount({ email: 'fifth-correct@example.com', password: 'CorrectPassword1!' });
+    expect(result).not.toBeNull();
+
+    const account = (await getLocalAccount(created.user.id))!;
+    expect(account.failedAttempts).toBe(0);
+    expect(isLockedOut(account)).toBe(false);
   });
 });

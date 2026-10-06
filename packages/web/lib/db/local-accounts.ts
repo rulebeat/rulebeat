@@ -1,6 +1,6 @@
 import { db } from './client';
 import { localAccounts, users } from './tables';
-import { eq, count } from 'drizzle-orm';
+import { and, count, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { many, one, run } from './exec';
 
 /**
@@ -110,6 +110,59 @@ export async function recordFailedAttempt(userId: string): Promise<void> {
 export async function clearFailedAttempts(userId: string): Promise<void> {
   await run(db.update(localAccounts).set({ failedAttempts: 0, lockedUntil: null })
     .where(eq(localAccounts.userId, userId)));
+}
+
+/**
+ * Atomically claims a failed-attempt slot BEFORE password verification runs. `isLockedOut()` read
+ * before verification, paired with `recordFailedAttempt()`'s read-modify-write afterwards, is two
+ * separate round trips with no lock between them: concurrent wrong guesses can all read "not
+ * locked yet" and all write afterwards, losing increments to the race and letting far more than
+ * `MAX_FAILED_ATTEMPTS` wrong guesses through before the lock actually engages. One conditional
+ * `UPDATE` closes that: it increments `failed_attempts` (and sets `locked_until` once the new
+ * count reaches the threshold) in a single statement, and only matches a row that isn't currently
+ * locked — so the claim and the lock check are the same atomic operation, on both SQLite and
+ * Postgres. `RETURNING` (via the existing `many()` seam, same pattern as `claimDueSchedule()` in
+ * `schedules.ts`) is how the caller learns whether its claim matched: no match means the account
+ * was already locked by a previous attempt, reported as `'locked'` with no separate read.
+ *
+ * The claim is deliberately optimistic: it increments (and may set `locked_until`) even when the
+ * password about to be checked turns out to be *correct*. That is safe, not a bug: a correct
+ * attempt is always followed by `clearFailedAttempts()`, which unconditionally resets both
+ * columns, so a correct 5th attempt still signs in. Only a *failed* verification leaves the
+ * claim's increment (and any lock it set) standing. The in-flight cap this claim enforces is
+ * about bounding concurrent attempts against one account, not about perfectly attributing a lock
+ * to the exact attempt that caused it — the pre-existing design already accepted that distinction
+ * (see the lockout-flood logging note on `authorizeLocalAccount`).
+ */
+export async function claimFailedAttempt(userId: string): Promise<'claimed' | 'locked'> {
+  const now = new Date().toISOString();
+  const lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString();
+
+  const claimed = await many(db.update(localAccounts).set({
+    failedAttempts: sql`${localAccounts.failedAttempts} + 1`,
+    lockedUntil: sql`CASE WHEN ${localAccounts.failedAttempts} + 1 >= ${MAX_FAILED_ATTEMPTS}
+      THEN ${lockedUntil} ELSE ${localAccounts.lockedUntil} END`,
+  }).where(and(
+    eq(localAccounts.userId, userId),
+    or(isNull(localAccounts.lockedUntil), lte(localAccounts.lockedUntil, now)),
+  )).returning({ userId: localAccounts.userId }));
+
+  return claimed.length > 0 ? 'claimed' : 'locked';
+}
+
+/**
+ * Gives back one claimed attempt whose password was never checked (the hashing gate turned it
+ * away). A busy rejection is not a wrong guess, so it must not count toward, or cause, a lockout.
+ * While a claim's lock is in place no other claim can match, so the count is exactly the
+ * threshold here and stepping back below it is what lifts the lock this claim set.
+ */
+export async function refundFailedAttempt(userId: string): Promise<void> {
+  await run(db.update(localAccounts).set({
+    failedAttempts: sql`CASE WHEN ${localAccounts.failedAttempts} > 0
+      THEN ${localAccounts.failedAttempts} - 1 ELSE 0 END`,
+    lockedUntil: sql`CASE WHEN ${localAccounts.failedAttempts} - 1 < ${MAX_FAILED_ATTEMPTS}
+      THEN NULL ELSE ${localAccounts.lockedUntil} END`,
+  }).where(eq(localAccounts.userId, userId)));
 }
 
 /**

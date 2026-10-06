@@ -10,6 +10,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - Moving a rule to another category no longer leaves its old findings open forever. Findings the rule stops returning are now resolved on its next successful scan, whichever category they were recorded under. Findings already stuck this way are resolved the next time that rule runs.
 
+### Security
+
+- Local sign-in now limits how many password checks run at once. When too many arrive together, the sign-in form asks you to try again in a minute instead of queueing them. The 5-attempt lockout is applied in one step, so attempts sent at the same time all count toward it. A failed sign-in takes the same time whether or not the account is locked, and sign-in passwords over 1024 characters are rejected without being checked.
+
 ## [0.7.1] - 2026-10-05
 
 ### Fixed

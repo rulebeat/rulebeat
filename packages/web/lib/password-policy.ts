@@ -2,6 +2,15 @@
 
 export const MIN_PASSWORD_LENGTH = 15;
 
+/**
+ * Sign-in-input bound only, not a policy on what a password can be *set* to. The hashing
+ * algorithm's cost is independent of input length, so an attacker submitting a multi-megabyte
+ * "password" at sign-in would make every gated verification (the real one and the dummy one) hash
+ * that much extra data for free. Checked once, at the top of `authorizeLocalAccount`, before any
+ * lookup or hashing.
+ */
+export const MAX_SIGNIN_PASSWORD_LENGTH = 1024;
+
 // Full strings, not fragments meant to be "padded" — every entry here is already 15+ characters,
 // so it actually proves the minimum length rather than depending on a caller adding padding that
 // might not happen. Comparison is case-insensitive (both sides lowercased before comparing).
