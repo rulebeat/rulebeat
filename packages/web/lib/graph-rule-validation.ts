@@ -1,4 +1,4 @@
-import { buildGraphPath, GRAPH_RESOURCE_PATHS } from '@rulebeat/core';
+import { buildGraphPath, isValidGraphFieldName, GRAPH_RESOURCE_PATHS } from '@rulebeat/core';
 import type { GraphQuery, TenantContext } from '@rulebeat/core';
 
 /**
@@ -24,6 +24,9 @@ export function validateGraphQueryShape(gq: GraphQuery): string | null {
     const { arrayField, dateField, itemIdField, resourceType, bands } = gq.expand;
     if (!arrayField?.trim() || !dateField?.trim() || !itemIdField?.trim() || !resourceType?.trim()) {
       return 'Expansion needs an array field, a date field, an item id field, and a resource type.';
+    }
+    if (!isValidGraphFieldName(arrayField)) {
+      return 'The array field must start with a letter and contain only letters, numbers, and underscores, up to 128 characters.';
     }
     if (!bands || bands.length === 0) {
       return 'Expansion needs at least one severity band.';

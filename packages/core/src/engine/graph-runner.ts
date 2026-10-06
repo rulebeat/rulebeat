@@ -20,6 +20,17 @@ function severityForBands(days: number, bands: GraphExpandConfig['bands']) {
   return undefined;
 }
 
+// A Graph property name is a simple identifier (passwordCredentials, keyCredentials) — never a
+// value with its own query syntax. This is the one shared check between a rule's save-time
+// validation (web's graph-rule-validation.ts) and buildGraphPath's own defence in depth below, so
+// the two can never drift apart.
+const GRAPH_FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const GRAPH_FIELD_NAME_MAX_LENGTH = 128;
+
+export function isValidGraphFieldName(name: string): boolean {
+  return name.length > 0 && name.length <= GRAPH_FIELD_NAME_MAX_LENGTH && GRAPH_FIELD_NAME_PATTERN.test(name);
+}
+
 // Builds the Graph request path for a rule's query: the allowlisted resource path, an explicit
 // $select when expand is set (so the array field this rule expands is guaranteed present rather
 // than relying on Graph's default per-resource-type property set), and the rule's own $filter if
@@ -28,6 +39,13 @@ function severityForBands(days: number, bands: GraphExpandConfig['bands']) {
 export function buildGraphPath(gq: GraphQuery): string {
   const parts: string[] = [];
   if (gq.expand) {
+    // arrayField is inserted into $select raw, with no further encoding — it must already be a
+    // bare identifier, or a value like "x&$top=1" would add query options this rule never
+    // authored. Save-time validation (graph-rule-validation.ts) is meant to catch this first; this
+    // is defence in depth for a rule whose stored data somehow predates that check.
+    if (!isValidGraphFieldName(gq.expand.arrayField)) {
+      throw new Error(`"${gq.expand.arrayField}" is not a valid Microsoft Graph array field name.`);
+    }
     const select = ['id', 'displayName', gq.expand.arrayField];
     // appId is Applications-specific (the app registration's client id, distinct from its Graph
     // object id) — only requested for that one path, since Graph rejects a $select naming a
@@ -87,7 +105,6 @@ export async function* runGraphRules(
       continue;
     }
 
-    const path = buildGraphPath(gq);
     const queryStartedAt = Date.now();
     let objects: Record<string, unknown>[];
     try {
@@ -96,6 +113,10 @@ export async function* runGraphRules(
         // fixture deliberately violates that at runtime (via a cast) to exercise this exact path.
         throw new Error('This tenant context has no Graph access configured.');
       }
+      // Inside the try, not before it: buildGraphPath can throw (an invalid expand.arrayField —
+      // see its own doc comment), and that throw must land this one rule's outcome as 'failed'
+      // rather than escaping the generator and aborting every other rule in the same scan.
+      const path = buildGraphPath(gq);
       objects = await ctx.graphGet<Record<string, unknown>>(path);
     } catch (err) {
       const durationMs = Date.now() - queryStartedAt;

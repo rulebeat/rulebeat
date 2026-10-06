@@ -136,6 +136,19 @@ describe('buildGraphPath()', () => {
       `/applications?$select=id,displayName,keyCredentials,appId&$filter=${encodeURIComponent("startswith(displayName,'x')")}`,
     );
   });
+
+  it('throws when the expand array field is not a simple identifier, instead of inserting it raw into $select', () => {
+    expect(() => buildGraphPath({
+      path: 'applications',
+      expand: {
+        arrayField: 'passwordCredentials&$expand=owners',
+        dateField: 'endDateTime',
+        itemIdField: 'keyId',
+        resourceType: 'x',
+        bands: [],
+      },
+    })).toThrow();
+  });
 });
 
 describe('runGraphRules() outcomes', () => {
@@ -247,6 +260,27 @@ describe('runGraphRules() outcomes', () => {
 
     const events = await drain([rule], ctx);
     expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'success', findingCount: 0 } }]);
+  });
+
+  it("yields failed, without ever calling graphGet, when the rule's expand array field is not a simple identifier", async () => {
+    const rule = baseRule({
+      graphQuery: {
+        path: 'applications',
+        expand: {
+          arrayField: 'passwordCredentials&$expand=owners',
+          dateField: 'endDateTime',
+          itemIdField: 'keyId',
+          resourceType: 'x',
+          bands: [],
+        },
+      },
+    });
+    const graphGet = vi.fn(async () => [{ id: 'obj-1', displayName: 'Object One' }]);
+    const ctx = fakeCtx(graphGet);
+
+    const events = await drain([rule], ctx);
+    expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'failed', findingCount: 0 } }]);
+    expect(graphGet).not.toHaveBeenCalled();
   });
 });
 

@@ -104,6 +104,22 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a microsoft-graph rule whose expand array field is not a simple identifier, before any Azure call', async () => {
+    const badGq: GraphQuery = {
+      path: 'applications',
+      expand: {
+        arrayField: 'passwordCredentials&$expand=owners',
+        dateField: 'endDateTime',
+        itemIdField: 'keyId',
+        resourceType: 'x',
+        bands: [{ maxDays: 30, severity: 'medium' }],
+      },
+    };
+    const res = await POST(postRequest(baseBody({ queryBackend: 'microsoft-graph', graphQuery: badGq })));
+    expect(res.status).toBe(400);
+    expect(fakeCtx?.graphRequests ?? []).toHaveLength(0);
+  });
+
   it('saves a valid microsoft-graph rule, persisting queryBackend, graphQuery and kind:state', async () => {
     fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1', displayName: 'User One' }] });
     const res = await POST(postRequest(baseBody({ queryBackend: 'microsoft-graph', graphQuery: VALID_GQ })));
