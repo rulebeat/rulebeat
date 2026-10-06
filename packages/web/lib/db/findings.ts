@@ -23,6 +23,13 @@ export interface SyncResult {
   resolved: string[];
 }
 
+export interface DetailedSyncResult extends SyncResult {
+  /** Every category that had a finding row written, resolved or moved in this sync, including the
+   *  scanned one. A rule moved to another category leaves rows recorded under its old category,
+   *  so the caller must refresh each of these categories' snapshot, not only the scanned one. */
+  affectedCategories: string[];
+}
+
 export interface SyncScanFindingsOptions {
   scanId: string;
   category: string;
@@ -111,11 +118,19 @@ export async function listFindings(opts: { status?: 'active' | 'fixed' } = {}): 
 }
 
 export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<SyncResult> {
+  const { created, reactivated, resolved } = await syncScanFindingsDetailed(opts);
+  return { created, reactivated, resolved };
+}
+
+/** syncScanFindings() plus the categories it touched, for the scan path that has to refresh their
+ *  snapshots once the transaction has committed. */
+export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): Promise<DetailedSyncResult> {
   const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent } = opts;
   const findings = dedupeFindingsByFingerprint(rawFindings);
   const created: string[] = [];
   const reactivated: string[] = [];
   const resolved: string[] = [];
+  const affectedCategories = new Set<string>();
   // An 'activity' finding never resolves (step 3 below excludes kind:'state'), so a repeat
   // occurrence is neither 'created' nor 'reactivated' — it needs its own event type (step 4) so
   // the activity-occurrences widget still gets one data point per scan that reported it.
@@ -125,6 +140,10 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
     const seenFingerprints = findings.map(f => f.fingerprint);
     const seenSet = new Set(seenFingerprints);
     const resolvedRuleByFp = new Map<string, string>();
+    // The category a resolved finding row is recorded under, which differs from the scanned one
+    // when its rule has moved. Its `resolved` event carries this so one finding's history stays
+    // in a single category.
+    const resolvedCategoryByFp = new Map<string, string>();
 
     // 1. Classify: not present = created; present but currently fixed = reactivated; present,
     // already active, and kind:'activity' = occurred (a repeat 'state' sighting gets no event).
@@ -136,6 +155,10 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
     }
     for (const f of findings) {
       const existing = existingByFp.get(f.fingerprint);
+      // The upsert below re-records the row under the scanned category, so a row that sat under
+      // another one (a moved rule) leaves that category's counts.
+      affectedCategories.add(category);
+      if (existing) affectedCategories.add(existing.category);
       if (!existing) created.push(f.fingerprint);
       else if (existing.status === 'fixed') reactivated.push(f.fingerprint);
       else if (f.kind === 'activity') occurred.push(f.fingerprint);
@@ -209,7 +232,7 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
     for (const ruleChunk of chunk(ranRuleIds, CHUNK_SIZE)) {
       if (ruleChunk.length === 0) continue;
       const staleActive = await many(
-        tx.select({ fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId })
+        tx.select({ fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId, category: findingsTable.category })
           .from(findingsTable)
           .where(and(
             inArray(findingsTable.ruleId, ruleChunk),
@@ -218,7 +241,11 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
           )),
       );
       const toResolve = staleActive.filter(r => !seenSet.has(r.fingerprint));
-      for (const r of toResolve) resolvedRuleByFp.set(r.fingerprint, r.ruleId);
+      for (const r of toResolve) {
+        resolvedRuleByFp.set(r.fingerprint, r.ruleId);
+        resolvedCategoryByFp.set(r.fingerprint, r.category);
+        affectedCategories.add(r.category);
+      }
       for (const resolveChunk of chunk(toResolve, CHUNK_SIZE)) {
         if (resolveChunk.length === 0) continue;
         await run(
@@ -252,7 +279,7 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
       }
       for (const fp of resolved) {
         const ruleId = resolvedRuleByFp.get(fp) ?? '';
-        events.push({ id: crypto.randomUUID(), fingerprint: fp, ruleId, category, scanId, type: 'resolved', occurredAt: finishedAt });
+        events.push({ id: crypto.randomUUID(), fingerprint: fp, ruleId, category: resolvedCategoryByFp.get(fp) ?? category, scanId, type: 'resolved', occurredAt: finishedAt });
       }
       if (events.length > 0) {
         for (const evChunk of chunk(events, CHUNK_SIZE)) {
@@ -265,7 +292,7 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
     }
   });
 
-  return { created, reactivated, resolved };
+  return { created, reactivated, resolved, affectedCategories: [...affectedCategories] };
 }
 
 export interface FindingEventCount { date: string; created: number; resolved: number; }
@@ -411,8 +438,8 @@ export async function removeFindingRowsForRule(
 /** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
  *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
  *  transaction has not yet committed. */
-export async function refreshSnapshotsFor(categories: string[]): Promise<void> {
-  for (const category of categories) await upsertDailySnapshot(category);
+export async function refreshSnapshotsFor(categories: string[], now?: Date): Promise<void> {
+  for (const category of categories) await upsertDailySnapshot(category, now);
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { sql } from 'drizzle-orm';
 import { dbKind } from './backend';
 import { db, dbReady, pgDb, rawSqlite } from './client';
 
@@ -101,6 +102,24 @@ export async function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promis
     txLock.held = null;
     release();
   }
+}
+
+/**
+ * Takes a Postgres transaction-scoped advisory lock on a fixed key, for a check-then-write inside
+ * `inTransaction()` that must not let two concurrent transactions both pass the check. Postgres
+ * runs at READ COMMITTED: each statement only sees rows committed before *that statement* started,
+ * so two transactions opened close together can each run the same uniqueness check, see nothing
+ * from the other (neither has committed yet), and both proceed to write. A transaction-scoped
+ * advisory lock on a fixed key serializes the whole check-then-write around it instead: the second
+ * caller blocks here until the first transaction commits or rolls back (which releases the lock
+ * with it), so by the time the second caller's own check runs, it sees what the first one wrote.
+ *
+ * No-op on SQLite, where `inTransaction()` already serializes every writer through the process-wide
+ * `txLock` above, so a second transaction cannot even begin until the first one has fully committed.
+ */
+export async function pgAdvisoryXactLock(tx: DbHandle, key: number): Promise<void> {
+  if (dbKind !== 'pg') return;
+  await (tx as unknown as { execute(query: unknown): Promise<unknown> }).execute(sql.raw(`SELECT pg_advisory_xact_lock(${key})`));
 }
 
 /**

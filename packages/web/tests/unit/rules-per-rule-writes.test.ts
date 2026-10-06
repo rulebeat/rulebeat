@@ -100,9 +100,9 @@ describe('updateRule', () => {
     const rule = makeRule({ tags: ['keep-me'], description: 'original description' });
     await createRule(rule);
 
-    const updated = await updateRule(rule.id, { enabled: false });
+    const result = await updateRule(rule.id, { enabled: false });
 
-    expect(updated?.enabled).toBe(false);
+    expect(result).toMatchObject({ ok: true, rule: expect.objectContaining({ enabled: false }) });
     const stored = (await loadRules()).find(r => r.id === rule.id)!;
     expect(stored).toEqual({ ...rule, enabled: false });
   });
@@ -170,9 +170,9 @@ describe('updateRule', () => {
     expect(stored.kind).toBe('activity');
   });
 
-  it('returns null for an unknown id and writes nothing', async () => {
+  it('returns a not-found result for an unknown id and writes nothing', async () => {
     const before = await loadRules();
-    expect(await updateRule('no-such-rule', { enabled: false })).toBeNull();
+    expect(await updateRule('no-such-rule', { enabled: false })).toEqual({ ok: false, reason: 'not-found' });
     expect(await loadRules()).toEqual(before);
   });
 });

@@ -1,7 +1,7 @@
 import { eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { rules as rulesTable } from './db/tables';
-import { many, one, run, inTransaction } from './db/exec';
+import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 
@@ -60,9 +60,45 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
   await run(db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
 }
 
+/**
+ * Issue #158: a rule name is meant to be unique (case-insensitively, ignoring surrounding spaces),
+ * but there is no unique index — an existing install can already hold names that differ only by
+ * case or spacing, and an upgrade must never disturb those rows. The check therefore lives in the
+ * application, at `createRule()`/`updateRule()`, each returning a `'name-taken'` result the routes
+ * map to 409, rather than in a route-level pre-check `isNameTaken()` the caller then writes after:
+ * two requests racing the old two-step shape could both pass the check before either wrote.
+ *
+ * On SQLite this check-then-write is already atomic: `inTransaction()` serializes every writer
+ * through a process-wide lock (see exec.ts), so a second caller's transaction cannot even begin
+ * until the first one has committed its insert or update. Postgres runs at READ COMMITTED, where
+ * that is not true — each caller's own transaction would see no committed row from the other's
+ * still-open one — so every write that calls this takes `pgAdvisoryXactLock()` first (a no-op on
+ * SQLite) to serialize the two backends the same way.
+ */
+const RULE_NAME_LOCK_KEY = 7194826033;
+
+export async function isNameTaken(name: string, excludeId?: string, handle: DbHandle = db): Promise<boolean> {
+  const all = (await many(handle.select().from(rulesTable))).map(rowToRule);
+  return all.some(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);
+}
+
+/** The 409 body both rule-save routes return when a write loses the race on the name column. */
+export function ruleNameTakenError(name: string): { error: string } {
+  return { error: `A rule named "${name}" already exists. Rule names must be unique.` };
+}
+
+export type CreateRuleResult =
+  | { ok: true; rule: Rule }
+  | { ok: false; reason: 'name-taken' };
+
 /** Inserts one rule. Touches no other row, so it cannot disturb a concurrent edit or scan write. */
-export async function createRule(rule: Rule): Promise<void> {
-  await run(db.insert(rulesTable).values(ruleToRow(rule)));
+export async function createRule(rule: Rule): Promise<CreateRuleResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
+    if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
+    await run(tx.insert(rulesTable).values(ruleToRow(rule)));
+    return { ok: true, rule };
+  });
 }
 
 /**
@@ -80,15 +116,31 @@ const UPDATABLE_FIELDS = [
 ] as const satisfies readonly (keyof RuleChanges)[];
 
 /**
- * Updates one rule's row and returns the stored result, or null if no such rule exists. Only the
- * fields present in `changes` are written (a key set to `undefined` clears that column), so a column
- * the caller did not mention keeps whatever value it has now, including one a scan or another editor
- * wrote after the caller last read the rule. `lastRunStatus`/`lastRunAt` are never written here.
+ * Updates one rule's row and returns the stored result, `{ ok: false, reason: 'not-found' }` if no
+ * such rule exists, or `{ ok: false, reason: 'name-taken' }` if `changes.name` would collide with
+ * another rule. The name is only checked when `changes` actually renames the rule (compared
+ * case-insensitively, ignoring surrounding spaces, against the row's current name): an install can
+ * already hold a pre-existing duplicate pair, and editing one of them without touching its name
+ * must keep working. Only the fields present in `changes` are written (a key set to `undefined`
+ * clears that column), so a column the caller did not mention keeps whatever value it has now,
+ * including one a scan or another editor wrote after the caller last read the rule.
+ * `lastRunStatus`/`lastRunAt` are never written here.
  */
-export async function updateRule(id: string, changes: RuleChanges): Promise<Rule | null> {
+export type UpdateRuleResult =
+  | { ok: true; rule: Rule }
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'name-taken' };
+
+export async function updateRule(id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
   return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
-    if (!current) return null;
+    if (!current) return { ok: false, reason: 'not-found' };
+
+    if (changes.name !== undefined) {
+      const renamed = changes.name.trim().toLowerCase() !== current.name.trim().toLowerCase();
+      if (renamed && await isNameTaken(changes.name, id, tx)) return { ok: false, reason: 'name-taken' };
+    }
 
     // ruleToRow() does the JSON encoding and the derivation of `kind`; its output is only used to
     // pick the columns the caller named.
@@ -105,7 +157,10 @@ export async function updateRule(id: string, changes: RuleChanges): Promise<Rule
     }
 
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
-    return stored ? rowToRule(stored) : null;
+    // Always present: this same transaction just confirmed the row exists and only this process
+    // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
+    // isn't reachable through any caller `updateRule()` has today.
+    return { ok: true, rule: rowToRule(stored!) };
   });
 }
 
@@ -162,44 +217,49 @@ export function allTagsFromRules(rules: Rule[]): string[] {
 }
 
 /**
- * The one shared name check for POST /api/rules and PUT /api/rules/[id], called before
- * isNameTaken() and before anything is written. A missing name, a non-string value (a number,
- * null, an object), or one that is blank after trimming would otherwise reach isNameTaken()'s bare
- * `.trim()` call and throw, turning a client mistake into a 500 instead of a 400.
+ * The one shared name check for POST /api/rules and PUT /api/rules/[id], called before anything
+ * else, including `createRule()`/`updateRule()`'s own name-taken check. A missing name, a
+ * non-string value (a number, null, an object), or one that is blank after trimming would
+ * otherwise reach `isNameTaken()`'s bare `.trim()` call and throw, turning a client mistake into a
+ * 500 instead of a 400.
  */
 export function validateRuleName(name: unknown): string | null {
   if (typeof name !== 'string' || name.trim() === '') return 'A rule needs a name.';
   return null;
 }
 
-export async function isNameTaken(name: string, excludeId?: string): Promise<boolean> {
-  const all = await loadRules();
-  return all.some(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);
-}
-
+/**
+ * Picks a free "(copy)" name and inserts it, all inside one locked transaction with
+ * `createRule()`'s: a concurrent create or duplicate landing on the same candidate name must not
+ * both pass their own uniqueness check before either writes.
+ */
 export async function duplicateRule(id: string): Promise<Rule | null> {
-  const all = await loadRules();
-  const original = all.find(r => r.id === id);
-  if (!original) return null;
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
+    const originalRow = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    if (!originalRow) return null;
+    const original = rowToRule(originalRow);
 
-  const baseName = original.name;
-  let candidate = `${baseName} (copy)`;
-  let n = 2;
-  while (all.some(r => r.name.trim().toLowerCase() === candidate.trim().toLowerCase())) {
-    candidate = `${baseName} (copy ${n++})`;
-  }
+    const all = (await many(tx.select().from(rulesTable))).map(rowToRule);
+    const baseName = original.name;
+    let candidate = `${baseName} (copy)`;
+    let n = 2;
+    while (all.some(r => r.name.trim().toLowerCase() === candidate.trim().toLowerCase())) {
+      candidate = `${baseName} (copy ${n++})`;
+    }
 
-  const copy: Rule = {
-    ...original,
-    id: globalThis.crypto.randomUUID(),
-    name: candidate,
-    type: 'custom',
-    pack: undefined,
-    enabled: false,
-  };
+    const copy: Rule = {
+      ...original,
+      id: globalThis.crypto.randomUUID(),
+      name: candidate,
+      type: 'custom',
+      pack: undefined,
+      enabled: false,
+    };
 
-  await createRule(copy);
-  return copy;
+    await run(tx.insert(rulesTable).values(ruleToRow(copy)));
+    return copy;
+  });
 }
 
 // --- helpers ---

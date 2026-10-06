@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, createRule, isNameTaken, validateRuleName, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, createRule, validateRuleName, ruleNameTakenError, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -30,10 +30,6 @@ export async function POST(req: Request) {
   const nameError = validateRuleName(body.name);
   if (nameError) {
     return NextResponse.json({ error: nameError }, { status: 400 });
-  }
-
-  if (await isNameTaken(body.name)) {
-    return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
 
   // spec 036: all three backends now have a real editor/engine — resource-graph and
@@ -112,7 +108,10 @@ export async function POST(req: Request) {
     queryBackend,
     kind: deriveKind(queryBackend),
   };
-  await createRule(rule);
+  const result = await createRule(rule);
+  if (!result.ok) {
+    return NextResponse.json(ruleNameTakenError(rule.name), { status: 409 });
+  }
 
   await writeAudit({
     actor,
@@ -123,5 +122,5 @@ export async function POST(req: Request) {
     details: { category: rule.category, severity: rule.severity, enabled: rule.enabled },
   });
 
-  return NextResponse.json(rule, { status: 201 });
+  return NextResponse.json(result.rule, { status: 201 });
 }

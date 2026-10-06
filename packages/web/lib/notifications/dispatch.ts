@@ -8,6 +8,7 @@ import { buildScansHref } from '@/lib/scans-link';
 import { getPublicUrl } from '@/lib/sign-in-config';
 import { RedirectRefusedError, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
+import { loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
 import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
 import { postWebhookJson, sendSmtpMail } from './send';
@@ -176,6 +177,14 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
   );
 }
 
+/** Drops findings whose fingerprint has an active suppression, by the same predicate the Results
+ *  tab and dashboards use (`isActiveSuppression`, so an expired suppression hides nothing). */
+async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
+  if (findings.length === 0) return findings;
+  const suppressed = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
+  return findings.filter(f => !suppressed.has(f.fingerprint));
+}
+
 /**
  * Claims the run's notification outbox entry, dispatches (when there's anything to dispatch), then
  * durably closes the entry. The single function both the live post-scan path and startup recovery
@@ -192,6 +201,12 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
  * marked `'sent'` unconditionally once dispatch returns; per-channel success/failure is tracked
  * separately in notification_deliveries.
  *
+ * Findings suppressed at this moment are left out (issue #144): a suppressed finding whose
+ * resource was fixed and broke again reactivates under the same fingerprint and counts as new in
+ * the scan, but its suppression still applies. Checked here, after the claim, so the live path and
+ * recovery share one decision and a suppression added or expired since the scan is honoured. A
+ * batch that is all suppressed is treated like an empty one: nothing is sent and the entry closes.
+ *
  * @returns whether this call held the claim and therefore did the dispatching.
  */
 export async function dispatchAndMarkSent(
@@ -200,8 +215,9 @@ export async function dispatchAndMarkSent(
   opts: { now?: Date } = {},
 ): Promise<boolean> {
   if (!(await claimNotifyDispatch(run.id, { now: opts.now }))) return false;
-  if (findings.length > 0) {
-    await dispatchNotifications(run, findings);
+  const notifiable = await withoutSuppressed(findings);
+  if (notifiable.length > 0) {
+    await dispatchNotifications(run, notifiable);
   }
   await markNotifySent(run.id);
   return true;
