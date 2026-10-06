@@ -14,7 +14,7 @@ import { deleteMeta } from '@/lib/db/meta';
 import { createChannel, getChannelSummary } from '@/lib/db/notification-channels';
 import { setLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listDeliveriesForChannel } from '@/lib/db/notification-deliveries';
-import { setDnsLookupForTests, resetDnsLookupForTests } from '@/lib/ssrf-guard';
+import { setDnsLookupForTests, resetDnsLookupForTests, setGuardedTransportForTests } from '@/lib/ssrf-guard';
 import { DEMO_VISITOR_ID, resetDemoModeCacheForTests, stampDemoDatabase } from '@/lib/demo';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import type { Finding } from '@/lib/types';
@@ -60,7 +60,7 @@ beforeEach(async () => {
   mockAuth.mockResolvedValue(null);
   sendMail.mockReset();
   fetchSpy.mockClear();
-  vi.stubGlobal('fetch', fetchSpy);
+  setGuardedTransportForTests(fetchSpy);
   setDnsLookupForTests(async () => [{ address: '93.184.216.34' }]);
   await enableDemo();
 });

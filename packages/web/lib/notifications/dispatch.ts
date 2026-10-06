@@ -6,10 +6,11 @@ import { recordDelivery } from '@/lib/db/notification-deliveries';
 import { SEVERITY_ORDER } from '@/lib/severity';
 import { buildScansHref } from '@/lib/scans-link';
 import { getPublicUrl } from '@/lib/sign-in-config';
-import { assertSafeWebhookUrl, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
+import { RedirectRefusedError, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
 import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
+import { postWebhookJson, sendSmtpMail } from './send';
 
 /** What a Demo records, and "Send test" answers, instead of sending. */
 export const DEMO_NOT_SENT = 'Not sent: this is a Demo.';
@@ -44,32 +45,17 @@ interface SendResult {
  * POSTs to a webhook channel with retry/backoff for transient failures. A 4xx response is never
  * retried. Network/timeout errors and 5xx/429 are retried up to MAX_ATTEMPTS total.
  *
- * The destination is SSRF-guarded once, before the retry loop — a guard rejection is a permanent
- * failure like a 4xx, not a transient one, so it is never retried (spec 021).
+ * Every attempt goes through the guarded send, which checks the destination at the moment it
+ * connects. A guard rejection is a permanent failure like a 4xx, not a transient one, so it is
+ * never retried (spec 021).
  */
 async function sendWebhook(channel: StoredNotificationChannel, body: unknown): Promise<SendResult> {
-  try {
-    await assertSafeWebhookUrl(channel.url);
-  } catch (err) {
-    const message = err instanceof SsrfGuardError ? err.message : String(err).slice(0, 200);
-    return { ok: false, attempts: 1, httpStatus: null, error: message };
-  }
-
   let lastError: string | null = null;
   let lastStatus: number | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(channel.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10_000),
-        redirect: 'manual',
-      });
-      if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) {
-        throw new SsrfGuardError(`Refusing to follow a redirect response from ${channel.url}.`);
-      }
+      const res = await postWebhookJson(channel.url, body);
 
       if (res.ok) {
         return { ok: true, attempts: attempt, httpStatus: res.status, error: null };
@@ -85,9 +71,12 @@ async function sendWebhook(channel: StoredNotificationChannel, body: unknown): P
       }
     } catch (err) {
       lastStatus = null;
-      lastError = String(err).slice(0, 200);
-      // A redirect refusal is a property of the endpoint, not a transient hiccup — retrying would
-      // just hit the same redirect again, so it fails like the pre-loop SSRF guard does (spec 021).
+      // A blocked address reads as its own message; a redirect refusal keeps its long-standing form.
+      lastError = err instanceof SsrfGuardError && !(err instanceof RedirectRefusedError)
+        ? err.message
+        : String(err).slice(0, 200);
+      // A refused address or redirect is a property of the endpoint, not a transient hiccup —
+      // retrying would just hit the same answer again (spec 021).
       if (err instanceof SsrfGuardError || attempt === MAX_ATTEMPTS) {
         return { ok: false, attempts: attempt, httpStatus: null, error: lastError };
       }
@@ -107,32 +96,11 @@ async function sendEmail(channel: StoredNotificationChannel, subject: string, te
   }
 
   try {
-    await assertSafeEmailHost(cfg);
+    await sendSmtpMail(cfg, channel.url, { subject, text });
+    return { ok: true, attempts: 1, httpStatus: null, error: null };
   } catch (err) {
     const message = err instanceof SsrfGuardError ? err.message : String(err).slice(0, 200);
     return { ok: false, attempts: 1, httpStatus: null, error: message };
-  }
-
-  try {
-    const { default: nodemailer } = await import('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host: cfg.host,
-      port: cfg.port,
-      secure: cfg.tls === 'tls',
-      requireTLS: cfg.tls === 'starttls',
-      auth: cfg.username ? { user: cfg.username, pass: channel.url } : undefined,
-    });
-
-    await transporter.sendMail({
-      from: cfg.fromAddress,
-      to: cfg.toAddresses,
-      subject,
-      text,
-    });
-
-    return { ok: true, attempts: 1, httpStatus: null, error: null };
-  } catch (err) {
-    return { ok: false, attempts: 1, httpStatus: null, error: String(err).slice(0, 200) };
   }
 }
 

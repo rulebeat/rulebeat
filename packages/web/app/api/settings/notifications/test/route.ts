@@ -6,7 +6,8 @@ import { getStoredChannel, type NotificationChannelType, type EmailChannelConfig
 import { buildPayload } from '@/lib/notifications/format';
 import { buildAbsoluteHref, DEMO_NOT_SENT } from '@/lib/notifications/dispatch';
 import { isDemoMode } from '@/lib/demo';
-import { guardedFetch, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
+import { SsrfGuardError } from '@/lib/ssrf-guard';
+import { postWebhookJson, sendSmtpMail } from '@/lib/notifications/send';
 import type { Finding, Severity } from '@/lib/types';
 
 /**
@@ -118,48 +119,27 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'No SMTP configuration available for this channel.' }, { status: 400 });
       }
       try {
-        await assertSafeEmailHost(emailConfig);
-      } catch (err) {
-        const message = err instanceof SsrfGuardError ? err.message : 'SMTP host is not allowed.';
-        await writeAudit({
-          actor,
-          action: 'notification_channel.test',
-          entityType: 'notification_channel',
-          entityId: channelId,
-          summary: `Tested notification channel — failed: ${message.slice(0, 80)}`,
-          details: { ok: false },
-        });
-        return NextResponse.json({ ok: false, error: message }, { status: 400 });
-      }
-      const { default: nodemailer } = await import('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: emailConfig.host,
-        port: emailConfig.port,
-        secure: emailConfig.tls === 'tls',
-        requireTLS: emailConfig.tls === 'starttls',
-        auth: emailConfig.username ? { user: emailConfig.username, pass: url } : undefined,
-      });
-      try {
-        await transporter.sendMail({
-          from: emailConfig.fromAddress,
-          to: emailConfig.toAddresses,
-          subject: payload.subject,
-          text: payload.text,
-        });
+        await sendSmtpMail(emailConfig, url, { subject: payload.subject, text: payload.text });
         ok = true;
       } catch (err) {
+        if (err instanceof SsrfGuardError) {
+          await writeAudit({
+            actor,
+            action: 'notification_channel.test',
+            entityType: 'notification_channel',
+            entityId: channelId,
+            summary: `Tested notification channel — failed: ${err.message.slice(0, 80)}`,
+            details: { ok: false },
+          });
+          return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+        }
         ok = false;
         errorMsg = String(err).slice(0, 200);
       }
     } else {
       let res: Response;
       try {
-        res = await guardedFetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload.body),
-          signal: AbortSignal.timeout(10_000),
-        });
+        res = await postWebhookJson(url, payload.body);
       } catch (err) {
         if (err instanceof SsrfGuardError) {
           await writeAudit({

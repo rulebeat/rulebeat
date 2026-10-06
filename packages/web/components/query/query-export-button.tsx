@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { csvCell } from '@/lib/csv';
 import { Download, ChevronDown } from 'lucide-react';
 
 interface QueryExportButtonProps {
@@ -19,15 +20,6 @@ export function QueryExportButton({ rows }: QueryExportButtonProps) {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  function csvCell(val: unknown): string {
-    if (val === null || val === undefined) return '';
-    if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
-    const s = String(val);
-    return s.includes(',') || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"`
-      : s;
   }
 
   function exportCsv() {

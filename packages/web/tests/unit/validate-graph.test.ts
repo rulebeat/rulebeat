@@ -66,6 +66,22 @@ describe('POST /api/rules/validate-graph (spec 032)', () => {
     expect(body.error).toMatch(/not one of the Microsoft Graph resource types/);
   });
 
+  it('rejects an expand config whose array field is not a simple identifier, before any Azure call', async () => {
+    const res = await POST(postRequest({
+      path: 'applications',
+      expand: {
+        arrayField: 'passwordCredentials&$expand=owners',
+        dateField: 'endDateTime',
+        itemIdField: 'keyId',
+        resourceType: 'x',
+        bands: [{ maxDays: 30, severity: 'medium' }],
+      },
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/array field/);
+  });
+
   it('returns 503 naming the missing credential when Azure has never been configured', async () => {
     connectError = new AzureNotConfiguredError('RuleBeat has no Azure credential to scan with.');
     const res = await POST(postRequest(VALID_GQ));

@@ -46,6 +46,12 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
         const provisioned = await provisionUser({ oid: p.oid, email, name: user.name ?? p.name });
         if (!provisioned) return false;
 
+        // SSO is the way back from a local-account lockout. Anyone who knows an email can lock
+        // its local password for 15 minutes at a time; a real Microsoft sign-in proves the owner
+        // is here, so it clears the lock and they can use their password again straight away.
+        const { clearFailedAttempts } = await import('@/lib/db/local-accounts');
+        await clearFailedAttempts(provisioned.id);
+
         // A stored-but-unverified row proves itself here: a real OAuth round trip is a strictly
         // stronger check than any probe could run ahead of time (it exercises the redirect URI,
         // the client secret and the tenant all at once). Env-managed config has no row to flip.

@@ -27,5 +27,5 @@ export {
 } from './kql.js';
 export type { ParsedVisualResult } from './kql.js';
 export { runRules } from './runner.js';
-export { runGraphRules, buildGraphPath } from './graph-runner.js';
+export { runGraphRules, buildGraphPath, isValidGraphFieldName } from './graph-runner.js';
 export { runLawRules } from './law-runner.js';

@@ -58,6 +58,7 @@ export {
   runRules,
   runGraphRules,
   buildGraphPath,
+  isValidGraphFieldName,
   runLawRules,
   GRAPH_RESOURCE_PATHS,
 } from './engine/index.js';
