@@ -15,7 +15,7 @@
  * versions. The DDL below is kept as literal SQL so it reads as a plain statement of what that era's
  * schema was.
  *
- * Note the current `CREATE TABLE` block in `lib/db/client.ts` is itself an *old* shape — `rules` has
+ * Note the current `CREATE TABLE` block in `runMigrations()` (`lib/db/migrate.ts`) is itself an *old* shape — `rules` has
  * no `type`/`tags`/`raw_kql`, `schedules` still has `cron`. Every install, fresh or upgraded, reaches
  * the current schema only by running the ALTERs. That's why `current` (an empty file) is a shape in
  * its own right.

@@ -10,8 +10,9 @@ import { dirname, join } from 'node:path';
 import { readSecretFileTrimmed } from '@/lib/secret-file';
 
 /**
- * Symmetric encryption for the few secrets RuleBeat has to keep — today just the Azure client
- * secret entered in the UI.
+ * Symmetric encryption for the few secrets RuleBeat has to keep: the Azure client secret and the
+ * sign-in (Entra ID) client secret entered in the UI, and each notification channel's destination
+ * (a webhook URL or an SMTP password).
  *
  * Storing it in plain text would be below the bar every comparable self-hosted tool sets (n8n
  * encrypts credentials with `N8N_ENCRYPTION_KEY`, Grafana encrypts datasource secrets with its

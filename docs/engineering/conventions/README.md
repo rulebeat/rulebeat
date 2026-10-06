@@ -63,7 +63,7 @@ appending.
 
 ## Structural rules that cost the most when broken
 
-**Anything derived from an id must be rewritten when that id is.** Findings are keyed on `sha256(ruleId::resourceId)`, so renaming a rule silently strands every finding's history and switches off every suppression. Grep for every value *computed from* the thing being renamed.
+**Anything derived from an id must be rewritten when that id is.** Findings are keyed on `sha256(ruleId::resourceId)` (`sha256(ruleId::activity::dimensionKey)` for an activity finding), so renaming a rule silently strands every finding's history and switches off every suppression. Grep for every value *computed from* the thing being renamed.
 
 **Anything resolvable from more than one source needs one construction site, enforced by an architecture test.** Nine call sites each building their own Azure credential was invisible breakage the moment there were three auth sources. Ban the constructor everywhere else and assert the one allowed file still uses it.
 
@@ -71,7 +71,7 @@ appending.
 
 **When a value a function needs is already sitting on an injected context, re-deriving it via a fresh SDK call defeats the injection.** Check what the context already carries before adding a second live call for the same fact.
 
-**A new execution backend gets its own engine, not a branch inside the shared one.** `graph-runner.ts` staying separate from `runner.ts` kept ARG's ARM-shaped assumptions off a backend that doesn't share them, and made per-rule failure isolation a property of the engine itself rather than a branch someone could forget to wrap.
+**A new execution backend gets its own engine, not a branch inside the shared one.** `graph-runner.ts` and `law-runner.ts` staying separate from `runner.ts` kept ARG's ARM-shaped assumptions off backends that don't share them, and made per-rule failure isolation a property of the engine itself rather than a branch someone could forget to wrap.
 
 **User-facing copy must not read as AI-written.** No em dashes joining clauses, no hedging filler, no rule-of-three adjective lists. Don't default a status indicator to a permanently-visible colored box for the normal case. Reserve full callouts for problems or actionable detail.
 

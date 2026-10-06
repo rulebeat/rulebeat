@@ -9,7 +9,7 @@ Graph, so it has no ARG scope or resource type filter. Everything else is the sa
 it lives in the Rules tab, runs in the same scans and schedules, and can be suppressed, dashboarded
 and notified on. The two built-in credential-expiry checks are ordinary rules of this kind. They run
 through their own engine because a directory object has no subscription, resource group or location
-([`how-it-works.md`](how-it-works.md#two-engines-not-one-engine-with-a-branch)).
+([`how-it-works.md`](how-it-works.md#three-engines-not-one-engine-with-a-branch)).
 
 ## The editor
 

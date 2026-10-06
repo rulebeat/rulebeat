@@ -13,14 +13,19 @@ import { ExportButton } from '@/components/findings/export-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Callout } from '@/components/ui/callout';
 import { ChecklistDropdown, ColumnFilterIcon } from '@/components/ui/checklist-dropdown';
 import { CodeBlock } from '@/components/ui/code-block';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 import { useResizableColumns, ColumnResizeHandle } from '@/lib/hooks/use-resizable-columns';
 import { cn } from '@/lib/utils';
 import { resolveDateWindow, dateWindowLabel, type DateWindow } from '@/lib/date-window';
 import { toggleInSet } from '@/lib/toggle-set';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
+import {
+  requestSuppress, requestUnsuppress, applySuppress, applyUnsuppress, applySuppressionsLoad, fetchSuppressionList,
+} from '@/lib/suppression-actions';
 import type { Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import { getRecencyStatus, isWithinRange, matchesExplorerFilters, type ExplorerFilterDim } from '@/lib/explorer-filters';
@@ -217,13 +222,16 @@ function PropertyCard({ label, value, mono, copyLabel }: { label: string; value?
 // ---- Suppression form (inline, on expand) ----
 
 function SuppressionPanel({
-  finding, suppression, canSuppress, onSuppress, onUnsuppress,
+  finding, suppression, canSuppress, error, onSuppress, onUnsuppress,
 }: {
   finding: ExplorerFinding;
   suppression?: Suppression;
   canSuppress: boolean;
+  /** Set only when this finding's own last suppress/unsuppress request was refused — the server's
+   *  own message when the route returns one, a stable fallback otherwise. Never a raw error. */
+  error?: string;
   onSuppress: (finding: ExplorerFinding, reason: string, expiresAt?: string) => void;
-  onUnsuppress: (id: string) => void;
+  onUnsuppress: (finding: ExplorerFinding, id: string) => void;
 }) {
   const [reason, setReason] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -232,19 +240,22 @@ function SuppressionPanel({
     // The reason and expiry stay visible to everyone — that a finding is suppressed, and why, is
     // information a viewer needs. Only removing it is gated.
     return (
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="label-grid mb-1.5">Suppressed</p>
-          <p className="text-[13px] text-ink">{suppression.reason}</p>
-          {suppression.expiresAt && (
-            <p className="mt-0.5 text-xs text-ink-muted">Expires {new Date(suppression.expiresAt).toLocaleDateString()}</p>
+      <div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="label-grid mb-1.5">Suppressed</p>
+            <p className="text-[13px] text-ink">{suppression.reason}</p>
+            {suppression.expiresAt && (
+              <p className="mt-0.5 text-xs text-ink-muted">Expires {new Date(suppression.expiresAt).toLocaleDateString()}</p>
+            )}
+          </div>
+          {canSuppress && (
+            <Button variant="outline" size="sm" className="shrink-0" onClick={e => { e.stopPropagation(); onUnsuppress(finding, suppression.id); }}>
+              Remove suppression
+            </Button>
           )}
         </div>
-        {canSuppress && (
-          <Button variant="outline" size="sm" className="shrink-0" onClick={e => { e.stopPropagation(); onUnsuppress(suppression.id); }}>
-            Remove suppression
-          </Button>
-        )}
+        {error && <Callout tone="error" className="mt-2.5">{error}</Callout>}
       </div>
     );
   }
@@ -276,6 +287,7 @@ function SuppressionPanel({
           Suppress
         </Button>
       </div>
+      {error && <Callout tone="error" className="mt-2.5">{error}</Callout>}
     </div>
   );
 }
@@ -337,12 +349,27 @@ export function FindingsExplorerClient({
     { flexCol: 'resource' },
   );
 
-  // Suppressions — self-managed so the widget (no prop) and the page (prop provided) both work
+  // Suppressions — self-managed so the widget (no prop) and the page (prop provided) both work.
+  // A failed load sets `suppressionsFailed` rather than falling back to `[]`, so widget mode can
+  // tell "couldn't load" apart from "no suppressions exist" (see applySuppressionsLoad).
   const [suppressions, setSuppressions] = useState<Suppression[]>(suppressionsProp ?? []);
+  const [suppressionsFailed, setSuppressionsFailed] = useState(false);
+  const [suppressionsRetryTick, setSuppressionsRetryTick] = useState(0);
   useEffect(() => {
     if (suppressionsProp) return;
-    fetch('/api/suppressions').then(r => r.ok ? r.json() : []).then(setSuppressions).catch(() => {});
-  }, [suppressionsProp]);
+    let cancelled = false;
+    fetchSuppressionList().then(result => {
+      if (cancelled) return;
+      const next = applySuppressionsLoad(result);
+      setSuppressions(next.suppressions);
+      setSuppressionsFailed(next.failed);
+    });
+    return () => { cancelled = true; };
+  }, [suppressionsProp, suppressionsRetryTick]);
+
+  // Per-finding suppress/unsuppress failure, keyed by fingerprint so one row's refused request
+  // doesn't show on every other row's panel.
+  const [suppressionErrors, setSuppressionErrors] = useState<Map<string, string>>(new Map());
 
   // Subscription id → display name, for labelling the Subscription filter.
   const subNames = useSubscriptionNames();
@@ -573,19 +600,19 @@ export function FindingsExplorerClient({
   }, [availablePolicyOptions, policyFilter]);
 
   async function handleSuppress(finding: ExplorerFinding, reason: string, expiresAt?: string) {
-    const res = await fetch('/api/suppressions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fingerprint: finding.fingerprint, resourceId: finding.resourceId, reason, expiresAt }),
-    });
-    if (res.ok) {
-      const s = await res.json() as Suppression;
-      setSuppressions(prev => [...prev, s]);
+    setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
+    const outcome = await requestSuppress(finding, reason, expiresAt);
+    if (outcome.ok) {
+      setSuppressions(prev => applySuppress(prev, outcome));
+    } else {
+      setSuppressionErrors(prev => new Map(prev).set(finding.fingerprint, outcome.error));
     }
   }
-  async function handleUnsuppress(id: string) {
-    await fetch(`/api/suppressions/${id}`, { method: 'DELETE' });
-    setSuppressions(prev => prev.filter(s => s.id !== id));
+  async function handleUnsuppress(finding: ExplorerFinding, id: string) {
+    setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
+    const outcome = await requestUnsuppress(id);
+    setSuppressions(prev => applyUnsuppress(prev, outcome));
+    if (!outcome.ok) setSuppressionErrors(prev => new Map(prev).set(finding.fingerprint, outcome.error));
   }
 
   const resourceFlexible = isFlexible('resource');
@@ -597,6 +624,14 @@ export function FindingsExplorerClient({
   // manually resizes Resource, every column is a fixed px and the row needs max-content again so
   // the existing horizontal scroll wrapper knows the true (possibly wider-than-viewport) content width.
   const rowMinWidth: string | undefined = resourceFlexible ? undefined : 'max-content';
+
+  // A failed suppressions load (widget mode only — page mode always gets the prop) must not look
+  // like "no suppressions": every finding would briefly read as unsuppressed instead of showing
+  // that the widget itself couldn't load. Checked ahead of the empty-findings state below, which
+  // is a genuine "nothing to show" and would otherwise mask the real failure.
+  if (mode === 'widget' && suppressionsFailed) {
+    return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
+  }
 
   if (data.findings.length === 0) {
     return (
@@ -1152,6 +1187,7 @@ export function FindingsExplorerClient({
                               finding={f}
                               suppression={suppression}
                               canSuppress={canSuppress}
+                              error={suppressionErrors.get(f.fingerprint)}
                               onSuppress={handleSuppress}
                               onUnsuppress={handleUnsuppress}
                             />

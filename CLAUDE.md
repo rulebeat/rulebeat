@@ -11,9 +11,9 @@ customize on a schedule and tracks every finding until it is fixed. RuleBeat onl
 scans with a Reader credential you create, never holds write access, and never blocks a deployment.
 (Positioning is owned by the launch-operations repo and restated here verbatim; "tool" is the noun,
 the reader is "you", and the license name appears only in License sections.) Every check is a
-**rule** (a row in SQLite) that either compiles to an Azure Resource Graph KQL query or targets
-Microsoft Graph directly for checks about the directory itself; every result the query returns is a
-finding. Users author their own rules through a visual builder that reads and writes KQL both ways,
+**rule** (a row in the database) that either compiles to an Azure Resource Graph KQL query, runs a
+Log Analytics KQL query for activity, or targets Microsoft Graph directly for checks about the
+directory itself; every result the query returns is a finding. Users author their own rules through a visual builder that reads and writes KQL both ways,
 or as a raw query. A finding shows the rule's own recommendation text; RuleBeat does not generate or
 run fixes. It is self-hosted by the customer, in their own Azure, in a Docker container.
 
@@ -75,7 +75,9 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   local identity. Never uses the user's OAuth token, never holds write credentials.
   `createTenantContext()` is what every scan/schema/KQL path calls.
 - **Route protection:** `proxy.ts` (Next.js 16's rename of `middleware.ts`) guards all routes except
-  `/signin` and `/api/auth/*`.
+  `/signin`, `/api/auth/*`, `/api/health` and a few static brand images. It also stamps the security
+  headers (CSP, plus HSTS over HTTPS) on every response it sees and refuses a write request whose `Origin` is not an
+  allowed one (`lib/origin-check.ts`).
 - **RBAC:** three roles (`viewer|editor|admin`) in a local `users` table. Every API handler calls
   `requireRole(action)` (`lib/api-auth.ts`), GETs included, so a removed user loses read access
   immediately. **The role is never on the session token**; it's read from SQLite per request, so a
@@ -90,16 +92,19 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
 ### Scan flow
 Browser → `RunScanButton` → `POST /api/scans/run` → `runManualTarget()` → `executeTarget()`
 (`lib/run-executor.ts`) → per touched category, `runCategoryScan(category, opts)`
-(`lib/scan-runner.ts`) → `runRules()` or `runGraphRules()` from core, by `Rule.queryBackend` → `ScanSummary`,
-saved via `saveScanResult()`, then `syncScanFindings()` upserts the `findings` lifecycle table.
+(`lib/scan-runner.ts`) → `runRules()`, `runGraphRules()` or `runLawRules()` from core, by
+`Rule.queryBackend` → `ScanSummary`, saved via `saveScanResult()`, then `syncScanFindingsDetailed()`
+(`lib/db/findings.ts`; `syncScanFindings()` is its thin wrapper) upserts the `findings` lifecycle
+table and returns the categories it touched, whose dashboard snapshots `runCategoryScan` refreshes
+after that commit.
 Renders in the single `/scans` page's Results tab; category is a filter, not a route.
 
-**Per-rule outcome, not a bare finding list:** `runRules()` is an async generator yielding
+**Per-rule outcome, not a bare finding list:** each engine is an async generator yielding
 `{ kind: 'finding', finding }` and `{ kind: 'outcome', outcome: { ruleId, status, findingCount } }`
 events, `status` one of `success | failed | capped | invalid`. A rule whose query throws yields `failed`; one
-whose query (or a follow-up page) came back truncated, or whose KQL has a top-level `take`/`limit`,
-yields `capped`; either way its findings are real but not exhaustive, so `syncScanFindings()`
-(`lib/scan-history.ts`) only resolves a rule's prior findings when that rule's own outcome was
+whose query (or a follow-up page) came back truncated, or whose KQL has a top-level
+`take`/`limit`/`top`, yields `capped`; either way its findings are real but not exhaustive, so
+`syncScanFindingsDetailed()` only resolves a rule's prior findings when that rule's own outcome was
 `success`. `scan-runner.ts` collects every non-`success` outcome into `incompleteRules` and sets
 `ScanSummary.coverage` to `'partial'` whenever the list is non-empty, surfaced as a badge in Run
 History and per-category in the coverage-freshness dashboard widget, never silently folded into
@@ -108,10 +113,11 @@ the posture number.
 **Rule-first, backend-partitioned:** `runCategoryScan` is the single shared execution path for both
 manual scans and scheduled runs, and does not special-case by category. Each category's enabled
 rules are partitioned by `Rule.queryBackend`: `microsoft-graph` rules run through `runGraphRules()`
-(`packages/core/src/engine/graph-runner.ts`), a separate engine from `runRules()`/Resource Graph
-rather than a branch inside it; everything else runs through `runRules()`/Resource Graph. Both feed
-the same `totalRules`/`incompleteRules`/`coverage` accounting, so a Graph-side failure marks only its
-own rules incomplete rather than aborting the whole scan. Identity's two built-in checks (expiring
+(`packages/core/src/engine/graph-runner.ts`) and `log-analytics` rules through `runLawRules()`
+(`packages/core/src/engine/law-runner.ts`), each a separate engine from `runRules()`/Resource Graph
+rather than a branch inside it; everything else runs through `runRules()`/Resource Graph. All three
+feed the same `totalRules`/`incompleteRules`/`coverage` accounting, so a Graph-side or Logs-side
+failure marks only its own rules incomplete rather than aborting the whole scan. Identity's two built-in checks (expiring
 app secrets and certificates) are ordinary `microsoft-graph`-backend rules, not a special case, and
 flow through the same Results/Run History/Rules tabs as every other category.
 
@@ -121,11 +127,13 @@ flow through the same Results/Run History/Rules tabs as every other category.
 ### Rule engine (packages/core/src/engine/)
 - `types.ts`: `Rule`/`Condition`/`RuleScope`/`RuleType`. `RuleType` = `'builtin'|'community'|'custom'`;
   `Rule.pack` is the open-ended sub-classification within `type:'builtin'` (e.g.
-  `rulebeat-core`/`aprl-v2`). `Rule.id` is a plain UUID for every rule; provenance lives entirely in
-  `type`/`pack`. `Rule.queryBackend: 'resource-graph' | 'microsoft-graph' | 'log-analytics'` now picks
+  `rulebeat-core`/`aprl-v2`). `Rule.id` is a plain UUID for every rule except the two Identity
+  built-ins (`cred:app-secret-expiring`, `cred:app-cert-expiring`); provenance lives entirely in
+  `type`/`pack`. `Rule.queryBackend: 'resource-graph' | 'microsoft-graph' | 'log-analytics'` picks
   the execution path, and `Rule.kind: 'state' | 'activity'` classifies what the rule means, always
-  derived from `queryBackend`. `resource-graph` and
-  `microsoft-graph` are both authorable through the rule form today; Logs authoring is future work.
+  derived from `queryBackend`. The engine and `POST /api/rules` accept all three; `resource-graph`
+  and `microsoft-graph` are authorable through the rule form, while the Logs option in the new-rule
+  picker is paused (disabled) pending multi-workspace support.
 - `kql.ts`: `buildRuleQuery`/`buildQueryFromVisual`/`parseKqlToVisualQuery`, the KQL↔GUI parser.
   `normalizeKqlExpr()` pre-normalizes real-world KQL (double-quoted strings, `<>`, etc.) so hand-written
   queries map onto the visual builder. **The parser never loses input.** What it can't map becomes a
@@ -143,10 +151,19 @@ flow through the same Results/Run History/Rules tabs as every other category.
   separate file rather than a branch inside `runner.ts`, since Graph rules share none of Resource
   Graph's ARM-shaped assumptions (no `parseResourceId()`, no location backfill). Each rule's Graph
   call has its own try/catch, so one rule's failure can't take its siblings down.
+- `law-runner.ts`: `runLawRules(rules, ctx)`, the same contract for `log-analytics` rules, which
+  yield `kind: 'activity'` findings. Also its own file, since a Logs row has no ARM resource id: a
+  finding's identity is the rule's optional `dimensionKeyField` value, and a row where that value is
+  blank makes the rule `invalid`. A top-level `take`/`limit`/`top` or a truncated result yields
+  `capped`; a thrown query error yields `failed`, caught per rule like the other two engines.
 
 Sub-path export `@rulebeat/core/kql` is the client-safe re-export (no Node SDK deps); web re-exports
-via `lib/kql.ts`. Rules live in SQLite (`lib/rules.ts` repository layer); built-ins
-(`lib/builtin-rules.ts`) seed via `INSERT OR IGNORE`; users can edit/disable but not overwrite.
+via `lib/kql.ts`. Rules live in the database (`lib/rules.ts` repository layer); built-ins
+(`lib/builtin-rules.ts`) seed via `INSERT OR IGNORE`; users can edit/disable but not overwrite. A rule
+name is unique case-insensitively, checked inside the write transaction of `createRule`/`updateRule`/
+`duplicateRule` (Postgres takes a `pg_advisory_xact_lock` first), not by a database index. A clash
+on create or rename comes back as `'name-taken'` and the routes answer 409; `duplicateRule` picks the
+next free name instead.
 
 ### ARM schema clients (packages/core/src/clients/)
 - `resource-graph.ts`: `ResourceGraphClient` wrapping the Azure Resource Graph SDK
@@ -154,8 +171,9 @@ via `lib/kql.ts`. Rules live in SQLite (`lib/rules.ts` repository layer); built-
   source Azure Policy uses
 
 ### Schema cache (packages/web/lib/schema-cache.ts)
-File cache in `data/schemas/` (gitignored): 7d TTL for property schemas, 1d for the type list. Serves
-stale-while-refresh; only hits ARM on a true miss.
+Cached in the database (`schema_cache` and `resource_types_cache` tables): 7d TTL for property
+schemas, 1d for the type list. Serves stale-while-refresh; only hits ARM on a true miss. Old
+`data/schemas/*.json` files are imported once on upgrade, then ignored.
 
 ### Page structure (Next.js App Router)
 Server/client split everywhere `auth()` is needed: `page.tsx` (server, calls `auth()` + loads data) +
@@ -186,9 +204,10 @@ where something is genuinely wrong. The vertical sidebar is the navigation and d
   `max-h` box.
 
 ### External pack seeding
-`data/packs/*.json` are committed, version-pinned external rule packs. `seedPackPolicies()`
-(`lib/db/client.ts`) seeds them as `type=builtin` on startup via `INSERT OR IGNORE` + `UPDATE`. Adding
-a pack is dropping a JSON file, no code change.
+`data/packs/*.json` are committed, version-pinned external rule packs. `seedPackRules()` inside
+`runSeeds()` (`lib/db/migrate.ts`, with `lib/db/pg/seeds.ts` as the Postgres twin) seeds them as
+`type=builtin` on startup via `INSERT OR IGNORE` + `UPDATE`. Adding a pack is dropping a JSON file,
+no code change.
 
 ### Scans page pattern
 One page, no category routing; category is a filter like tags/severity/status. `scans/page.tsx`
@@ -317,7 +336,7 @@ Read these only when the task needs them.
 | `docs/engineering/codebase-map.md` | You need to find something. Where each file lives and what it is for. |
 | `CHANGELOG.md` | Release history, and the `[Unreleased]` section every behaviour-changing PR must add a line to. |
 | `docs/public/README.md` | Index of the user-facing docs: install, permissions, security, and the behaviour pages. |
-| `docs/public/how-it-works.md` | The request path and the two rule engines, for anyone touching scan or finding code. |
+| `docs/public/how-it-works.md` | The request path and the three rule engines, for anyone touching scan or finding code. |
 | `docs/public/posture.md` | Exactly what "X of Y passing" means; read before touching anything that counts findings. |
 | `tests/` (both packages) | The test suite is the closest thing this repo has to a QA plan. Read the tests around the area you're touching before writing new ones, so you match the existing contract style rather than the implementation. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report a bug, propose a change, or file a security issue. |
