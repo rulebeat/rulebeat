@@ -7,6 +7,15 @@ import { loadRules } from '../rules';
 import { deleteLinksForSchedule } from './schedule-notification-channels';
 
 export type ScheduleTargetType = 'all' | 'categories' | 'tags' | 'rules';
+const SCHEDULE_TARGET_TYPES: readonly ScheduleTargetType[] = ['all', 'categories', 'tags', 'rules'];
+
+/** Narrows an untrusted string to `ScheduleTargetType` — the one place that knows the type's full
+ *  set of values at runtime, so a route validating a request body checks against this instead of
+ *  hand-copying the union as a second list that can silently drift from the type. */
+export function isScheduleTargetType(value: string): value is ScheduleTargetType {
+  return (SCHEDULE_TARGET_TYPES as readonly string[]).includes(value);
+}
+
 export type RecurrenceType = 'once' | 'hourly' | 'daily' | 'weekly' | 'monthly';
 export type ScheduleEndType = 'never' | 'on_date';
 

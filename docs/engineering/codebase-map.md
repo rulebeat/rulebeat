@@ -139,7 +139,6 @@
 | `packages/web/lib/explorer-filters.ts` | `ExplorerFilterState` + `getRecencyStatus()`/`isWithinRange()`: the Results-tab filter predicate pulled out of the component into a plain, closure-free function so it can be unit-tested and compared against the dashboard's own `queryActiveFindings` instead of trusting two hand-written predicates to stay in sync |
 | `packages/web/app/api/categories/route.ts` | `GET` list + `POST` create categories |
 | `packages/web/app/api/categories/[id]/route.ts` | `GET`/`PUT`/`DELETE` single category; builtin DELETE returns 403 |
-| `packages/web/app/api/scan/[category]/route.ts` | Legacy dynamic scan route. Still works, but unused by the UI |
 | `packages/web/app/(app)/scans/page.tsx` | Single Scans page. Reads all `/scans` query params, renders `ScansClient` once |
 | `packages/web/app/api/scans/run/route.ts` | `POST`: ad-hoc "Run Scan" trigger, fire-and-return-202 (now also returns `requestedAt`, server clock). `GET ?since=`: most recent run, for `use-run-progress.ts` to poll |
 | `packages/web/lib/hooks/use-run-progress.ts` | `useRunProgress()` polls `GET /api/scans/run?since=` every 2s, with a 10-minute timeout state |

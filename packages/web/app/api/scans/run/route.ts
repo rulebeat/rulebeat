@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { runManualTarget } from '@/lib/scheduler';
 import { writeAudit } from '@/lib/db/audit';
 import { listAllRuns } from '@/lib/schedule-runs';
-import type { ScheduleTargetType } from '@/lib/db/schedules';
+import { isScheduleTargetType } from '@/lib/db/schedules';
 
 /**
  * Reports the most recent run, for `use-run-progress.ts` to poll. `since` filters out a run that
@@ -24,9 +24,15 @@ export async function POST(req: Request) {
   const actor = await requireRole('scans:run');
   if (actor instanceof NextResponse) return actor;
 
-  const body = await parseJsonBody<{ targetType?: ScheduleTargetType; targetValues?: string[] }>(req);
+  const body = await parseJsonBody<{ targetType?: string; targetValues?: string[] }>(req);
   if (body instanceof NextResponse) return body;
   if (!body.targetType) return NextResponse.json({ error: 'targetType is required' }, { status: 400 });
+  if (!isScheduleTargetType(body.targetType)) {
+    return NextResponse.json(
+      { error: 'targetType must be one of all, categories, tags or rules.' },
+      { status: 400 },
+    );
+  }
   if (body.targetType !== 'all' && (body.targetValues?.length ?? 0) === 0) {
     return NextResponse.json({ error: 'At least one target is required.' }, { status: 400 });
   }
@@ -46,7 +52,10 @@ export async function POST(req: Request) {
   // schedule "run now" trigger, rather than holding the HTTP request open for the full run.
   // requestedAt is the server clock deliberately: use-run-progress.ts compares it against
   // ScheduleRun.startedAt (also server time), so deriving it in the browser would let clock skew
-  // silently drop a real run.
-  void runManualTarget({ targetType: body.targetType, targetValues });
+  // silently drop a real run. The response is already sent when a run fails to start, so the
+  // failure is logged here rather than left as an unhandled rejection.
+  void runManualTarget({ targetType: body.targetType, targetValues }).catch(err => {
+    console.error('[RuleBeat] manual scan run failed to start:', err);
+  });
   return NextResponse.json({ started: true, requestedAt: new Date().toISOString() }, { status: 202 });
 }

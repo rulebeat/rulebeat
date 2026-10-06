@@ -6,10 +6,15 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The old `POST /api/scan/<category>` and `POST /api/scan/identity` routes are gone. They started a scan outside the scan lock and left no entry in Run History. Use `POST /api/scans/run`, which every part of the console already uses.
+
 ### Fixed
 
 - A rule condition whose value contains `//`, such as a URL, now survives being opened in the visual builder. The parser used to treat everything after `//` as a comment even inside a quoted value, so saving the rule from the builder wrote broken KQL. A real `//` comment outside any quoted value is still ignored.
 - A rule with an empty resource type list now checks every resource type, the same as `*`. It used to generate a query with an empty `type in~ ()` filter that Resource Graph rejects.
+- Starting a scan with an unknown `targetType` now answers 400 before anything runs. A scan that fails to start after the request was accepted is now logged instead of failing silently.
 - Creating or saving a rule with no name, a blank name, or a name that is not text now answers 400 with "A rule needs a name." instead of a server error.
 - Moving a rule to another category no longer leaves its old findings open forever. Findings the rule stops returning are now resolved on its next successful scan, whichever category they were recorded under. Findings already stuck this way are resolved the next time that rule runs.
 - Two admins demoting or deleting each other at the same moment can no longer leave the install with no admin; one of the two changes is refused. Deleting a user now removes their private saved queries, their query history and the user together, or none of them if something fails part-way.

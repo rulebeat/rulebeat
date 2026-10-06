@@ -867,8 +867,8 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN schedule_id TEXT`); } catch { /* already exists */ }
 
   // Unified run history (manual "Run Scan" + scheduled): links a category's scan row back to the
-  // schedule_runs execution that produced it. Null for scans triggered via the standalone
-  // /api/scan/<category> route (bypasses the run picker) or pre-migration rows.
+  // schedule_runs execution that produced it. Null for scans triggered via the now-removed
+  // standalone /api/scan/<category> route (bypassed the run picker) or pre-migration rows.
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN run_id TEXT`); } catch { /* already exists */ }
 
   // Scan lifecycle correctness (spec 004): a category's scan can now be 'partial' when one or
