@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, deleteUser, type AppUser } from '@/lib/db/users';
 import {
-  clearFailedAttempts, clearPassword, countAdminsWithPassword, getLocalAccount,
+  claimFailedAttempt, clearFailedAttempts, clearPassword, countAdminsWithPassword, getLocalAccount,
   isLockedOut, listUserIdsWithPassword, recordFailedAttempt, setPassword,
 } from '@/lib/db/local-accounts';
 
@@ -93,6 +93,67 @@ describe('lockout', () => {
     const user = await makeUser('no-local-account@example.com');
     await expect(recordFailedAttempt(user.id)).resolves.toBeUndefined();
     expect(await getLocalAccount(user.id)).toBeNull();
+  });
+});
+
+describe('claimFailedAttempt (the lockout race fix)', () => {
+  it('claims successfully when not locked, incrementing failedAttempts', async () => {
+    const user = await makeUser('claim-ok@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+
+    expect(await claimFailedAttempt(user.id)).toBe('claimed');
+    expect((await getLocalAccount(user.id))!.failedAttempts).toBe(1);
+  });
+
+  it('the claim that reaches the threshold still reports "claimed", and locks the account', async () => {
+    const user = await makeUser('claim-lock@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+
+    for (let i = 0; i < 4; i++) expect(await claimFailedAttempt(user.id)).toBe('claimed');
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(false);
+
+    // The 5th claim is the one that crosses MAX_FAILED_ATTEMPTS — it still succeeds (this is the
+    // attempt whose password might still turn out to be correct), but locks the account.
+    expect(await claimFailedAttempt(user.id)).toBe('claimed');
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);
+  });
+
+  it('reports "locked" and leaves the counter untouched once already locked', async () => {
+    const user = await makeUser('claim-already-locked@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    for (let i = 0; i < 5; i++) await claimFailedAttempt(user.id);
+    const lockedAttempts = (await getLocalAccount(user.id))!.failedAttempts;
+
+    expect(await claimFailedAttempt(user.id)).toBe('locked');
+    expect((await getLocalAccount(user.id))!.failedAttempts).toBe(lockedAttempts);
+  });
+
+  it('N concurrent wrong guesses against one account never record more than the 5-attempt cap', async () => {
+    const user = await makeUser('claim-concurrent@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+
+    const results = await Promise.all(Array.from({ length: 10 }, () => claimFailedAttempt(user.id)));
+    const account = (await getLocalAccount(user.id))!;
+
+    expect(account.failedAttempts).toBe(5);
+    expect(isLockedOut(account)).toBe(true);
+    expect(results.filter(r => r === 'claimed')).toHaveLength(5);
+    expect(results.filter(r => r === 'locked')).toHaveLength(5);
+  });
+
+  it('a correct password after a claim still signs in: clearFailedAttempts undoes the speculative lock', async () => {
+    const user = await makeUser('claim-correct@example.com');
+    await setPassword(user.id, 'hash', { mustChangePassword: false });
+    for (let i = 0; i < 4; i++) await claimFailedAttempt(user.id);
+
+    // The 5th claim, about to be followed by a *correct* password per authorizeLocalAccount.
+    expect(await claimFailedAttempt(user.id)).toBe('claimed');
+    expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);
+
+    await clearFailedAttempts(user.id);
+    const account = (await getLocalAccount(user.id))!;
+    expect(account.failedAttempts).toBe(0);
+    expect(isLockedOut(account)).toBe(false);
   });
 });
 

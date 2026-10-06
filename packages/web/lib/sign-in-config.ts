@@ -1,5 +1,6 @@
 import Credentials from 'next-auth/providers/credentials';
 import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
+import { CredentialsSignin } from 'next-auth';
 import { fetchWithRetry } from '@rulebeat/core';
 import { getMeta, setMeta, deleteMeta } from '@/lib/db/meta';
 import {
@@ -9,6 +10,19 @@ import {
 } from '@/lib/db/sso-providers';
 import { getActiveAzureCredentialSummary, type AzureCredentialSummary } from '@/lib/db/azure-credentials';
 import { readSecretFileTrimmed } from '@/lib/secret-file';
+import { MAX_SIGNIN_PASSWORD_LENGTH } from '@/lib/password-policy';
+
+/**
+ * Thrown when the password-hashing gate (`lib/password.ts`) is already full — the sign-in path
+ * fails fast rather than queueing another password-verification call. `code` is what `@auth/core`
+ * puts on the error it rethrows to `signIn()`'s caller in raw/server-action mode (`isAuthError &&
+ * isRaw && !isRedirect` in `@auth/core/src/index.ts`'s `Auth()`), which is how `lib/actions.ts`'s
+ * `signInWithPassword()` tells this apart from "wrong email or password" and maps it to its own
+ * message.
+ */
+export class SignInBusyError extends CredentialsSignin {
+  code = 'busy';
+}
 
 /**
  * The single place RuleBeat decides how someone signs in — the sign-in equivalent of
@@ -268,54 +282,87 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
   const password = typeof credentials.password === 'string' ? credentials.password : '';
   if (!email || !password) return null;
 
-  const [{ getUserByEmail, touchLastSeen }, localAccounts, { verifyPassword, verifyDummyPassword }, { writeAudit, logAuthEvent }] =
-    await Promise.all([
-      import('@/lib/db/users'),
-      import('@/lib/db/local-accounts'),
-      import('@/lib/password'),
-      import('@/lib/db/audit'),
-    ]);
+  // Oversized input, rejected before any lookup or hashing — the hashing cost doesn't depend on
+  // input length, so an attacker-supplied multi-megabyte "password" would otherwise make every
+  // gated verification (real or dummy) hash that much extra data for free. Does not touch what a
+  // password can be *set* to; this only bounds sign-in input.
+  if (password.length > MAX_SIGNIN_PASSWORD_LENGTH) return null;
 
-  const user = await getUserByEmail(email);
-  const account = user ? await localAccounts.getLocalAccount(user.id) : null;
+  const [
+    { getUserByEmail, touchLastSeen }, localAccounts,
+    { verifyPassword, verifyDummyPassword, isPasswordGateSaturated, PasswordGateBusyError },
+    { writeAudit, logAuthEvent },
+  ] = await Promise.all([
+    import('@/lib/db/users'),
+    import('@/lib/db/local-accounts'),
+    import('@/lib/password'),
+    import('@/lib/db/audit'),
+  ]);
 
-  // Unbounded and attacker- or accident-reachable: a nonexistent email, or a real user with no
-  // local password (e.g. an SSO-only user on the local form). Neither is a bounded, real account
-  // this history can be attributed to — logged, not persisted (spec 022).
-  if (!user || !account) {
-    await verifyDummyPassword(password);
-    logAuthEvent(`Failed local sign-in attempt for ${email}`, { reason: 'unknown-account' });
-    return null;
+  let claimedFor: string | null = null;
+  try {
+    // Fail fast, before any DB read or password-verification call: a saturated gate must not cost
+    // a password claim or a dummy hash. The gated calls below carry the same check (`failFast:
+    // true`) as a second line of defence for the narrow race where saturation happens after this
+    // peek.
+    if (isPasswordGateSaturated()) throw new PasswordGateBusyError();
+
+    const user = await getUserByEmail(email);
+    const account = user ? await localAccounts.getLocalAccount(user.id) : null;
+
+    // Unbounded and attacker- or accident-reachable: a nonexistent email, or a real user with no
+    // local password (e.g. an SSO-only user on the local form). Neither is a bounded, real account
+    // this history can be attributed to — logged, not persisted (spec 022).
+    if (!user || !account) {
+      await verifyDummyPassword(password, { failFast: true });
+      logAuthEvent(`Failed local sign-in attempt for ${email}`, { reason: 'unknown-account' });
+      return null;
+    }
+
+    // Lockout race fix: claims the attempt atomically BEFORE verification runs (see
+    // claimFailedAttempt()'s own doc comment). A 'locked' result means the claim's WHERE clause
+    // found the account already locked — treated exactly like the old isLockedOut() branch, plus
+    // a dummy verification so the locked branch burns the same hashing cost as every other branch
+    // (otherwise returning early here is its own timing oracle confirming the email exists).
+    const claim = await localAccounts.claimFailedAttempt(user.id);
+    if (claim === 'locked') {
+      await verifyDummyPassword(password, { failFast: true });
+      logAuthEvent(`${user.email} tried to sign in while locked out from too many failed attempts`);
+      return null;
+    }
+    claimedFor = user.id;
+
+    const valid = await verifyPassword(password, account.passwordHash, { failFast: true });
+    if (!valid) {
+      // No recordFailedAttempt() call here — claimFailedAttempt() above already recorded this
+      // attempt (and locked the account if it was the one that crossed the threshold).
+      await writeAudit({
+        actor: user,
+        action: 'auth.sign_in_failed',
+        entityType: 'auth',
+        summary: `${user.email} entered the wrong password`,
+        details: { reason: 'wrong-password' },
+      });
+      return null;
+    }
+
+    // The claim above incremented failedAttempts speculatively, even for this correct password —
+    // clearFailedAttempts() unconditionally resets it, so a correct 5th attempt still signs in.
+    await localAccounts.clearFailedAttempts(user.id);
+    await touchLastSeen(user.id);
+    const { writeSignInAudit } = await import('@/lib/provision-user');
+    await writeSignInAudit(user);
+
+    return { id: user.id, email: user.email, name: user.name ?? undefined };
+  } catch (err) {
+    if (err instanceof PasswordGateBusyError) {
+      // The gate can fill between the peek above and the real verification. That attempt's
+      // password was never checked, so its claim is given back.
+      if (claimedFor) await localAccounts.refundFailedAttempt(claimedFor);
+      throw new SignInBusyError();
+    }
+    throw err;
   }
-
-  // Also unbounded: isLockedOut() is checked before any password verification, so every repeated
-  // request against an already-locked account writes here, not just the one that caused the
-  // lockout. Logged, not persisted — the lockout-causing attempt itself is still recorded below,
-  // in the wrong-password branch (spec 022).
-  if (localAccounts.isLockedOut(account)) {
-    logAuthEvent(`${user.email} tried to sign in while locked out from too many failed attempts`);
-    return null;
-  }
-
-  const valid = await verifyPassword(password, account.passwordHash);
-  if (!valid) {
-    await localAccounts.recordFailedAttempt(user.id);
-    await writeAudit({
-      actor: user,
-      action: 'auth.sign_in_failed',
-      entityType: 'auth',
-      summary: `${user.email} entered the wrong password`,
-      details: { reason: 'wrong-password' },
-    });
-    return null;
-  }
-
-  await localAccounts.clearFailedAttempts(user.id);
-  await touchLastSeen(user.id);
-  const { writeSignInAudit } = await import('@/lib/provision-user');
-  await writeSignInAudit(user);
-
-  return { id: user.id, email: user.email, name: user.name ?? undefined };
 }
 
 /**

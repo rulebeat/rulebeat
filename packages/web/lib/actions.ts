@@ -30,6 +30,12 @@ export async function signInWithPassword(
     return null;
   } catch (err) {
     if (err instanceof AuthError) {
+      // `SignInBusyError` (lib/sign-in-config.ts) is the only `code` authorizeLocalAccount sets
+      // itself; everything else (including the default `'credentials'` code) stays generic so a
+      // wrong email and a wrong password still read identically.
+      if ('code' in err && err.code === 'busy') {
+        return 'Too many sign-in attempts right now. Try again in a minute.';
+      }
       return 'Incorrect email or password.';
     }
     throw err;

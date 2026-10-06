@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { randomBytes, scryptSync } from 'node:crypto';
-import { hashPassword, hashPasswordSync, verifyDummyPassword, verifyPassword } from '@/lib/password';
+import {
+  getDummyVerificationCallCountForTests, getRealVerificationCallCountForTests, hashPassword,
+  hashPasswordSync, resetDummyVerificationCallCountForTests, resetRealVerificationCallCountForTests,
+  verifyDummyPassword, verifyPassword,
+} from '@/lib/password';
+
+afterEach(() => {
+  resetDummyVerificationCallCountForTests();
+  resetRealVerificationCallCountForTests();
+});
 
 describe('hashPassword / verifyPassword', () => {
   it('round-trips: a hash verifies against the password that produced it', async () => {
@@ -58,5 +67,30 @@ describe('hashPassword / verifyPassword', () => {
 describe('verifyDummyPassword', () => {
   it('never throws and always resolves (used to burn timing on an unknown account)', async () => {
     await expect(verifyDummyPassword('anything')).resolves.toBeUndefined();
+  });
+
+  it('counts each call — proof a code path really burned the dummy verification, not by timing', async () => {
+    const before = getDummyVerificationCallCountForTests();
+    await verifyDummyPassword('anything');
+    await verifyDummyPassword('anything-else');
+    expect(getDummyVerificationCallCountForTests()).toBe(before + 2);
+  });
+});
+
+describe('verification call counters (test-only seams)', () => {
+  it('verifyPassword increments the real-verification counter, verifyDummyPassword does not', async () => {
+    resetRealVerificationCallCountForTests();
+    resetDummyVerificationCallCountForTests();
+
+    const hash = await hashPassword('counted-password');
+    await verifyPassword('counted-password', hash);
+    expect(getRealVerificationCallCountForTests()).toBe(1);
+    expect(getDummyVerificationCallCountForTests()).toBe(0);
+
+    await verifyDummyPassword('irrelevant');
+    // verifyDummyPassword calls verifyPassword internally, so the real counter also moves —
+    // only the dummy counter distinguishes "this was a dummy call".
+    expect(getRealVerificationCallCountForTests()).toBe(2);
+    expect(getDummyVerificationCallCountForTests()).toBe(1);
   });
 });
