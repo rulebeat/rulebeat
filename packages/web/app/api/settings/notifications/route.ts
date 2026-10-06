@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -40,11 +41,9 @@ export async function POST(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   let body: { name?: string; type?: string; url?: string; config?: unknown };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const parsed = await parseJsonBody<typeof body>(req);
+  if (parsed instanceof NextResponse) return parsed;
+  body = parsed;
 
   const name = body.name?.trim() ?? '';
   const type = body.type?.trim() ?? '';
@@ -113,11 +112,9 @@ export async function PUT(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   let body: { id?: string; name?: string; type?: string; url?: string; config?: unknown };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const parsed = await parseJsonBody<typeof body>(req);
+  if (parsed instanceof NextResponse) return parsed;
+  body = parsed;
 
   const id = body.id?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });

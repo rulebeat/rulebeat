@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -47,11 +48,9 @@ export async function PUT(req: Request) {
   }
 
   let body: { name?: string; tenantId?: string; clientId?: string; clientSecret?: string };
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
-  }
+  const parsed = await parseJsonBody<typeof body>(req);
+  if (parsed instanceof NextResponse) return parsed;
+  body = parsed;
 
   const tenantId = body.tenantId?.trim() ?? '';
   const clientId = body.clientId?.trim() ?? '';

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { NextFetchEvent } from 'next/server';
 import { authConfig } from '@/auth.config';
 import { correctedRequestUrl } from '@/lib/request-origin';
+import { checkRequestOrigin } from '@/lib/origin-check';
 import { buildSecurityHeaders, generateNonce } from '@/lib/security-headers';
 
 // A second NextAuth instance built from the DB-free config, not `@/auth` — the proxy runs on
@@ -81,6 +82,17 @@ function correctProxyRequest(req: NextRequest): NextRequest {
 }
 
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
+  // A state-changing request whose Origin disagrees with where this install is reachable never
+  // reaches the auth guard at all — see lib/origin-check.ts. AUTH_URL (not getPublicUrl() itself)
+  // is read here because it is the env-mirrored value sign-in-config.ts keeps in sync, safe to
+  // read in the proxy's runtime with no database access, the same reason auth.config.ts stays
+  // DB-free. /signin runs through the proxy now, so its form posts are checked the same way.
+  if (checkRequestOrigin(req.method, req.headers, process.env.AUTH_URL ?? null) === 'refuse') {
+    return withSecurityHeaders(
+      req,
+      NextResponse.json({ error: 'This request did not come from an allowed origin.' }, { status: 403 }),
+    );
+  }
   const response = isPublicPage(req)
     ? NextResponse.next()
     : fixCallbackUrlOrigin(await authHandler(correctProxyRequest(req), event));

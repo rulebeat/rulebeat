@@ -113,7 +113,11 @@ describe('scheduled dispatch in a Demo', () => {
 
 describe('"Send test" in a Demo', () => {
   function testRequest(body: unknown): Request {
-    return new Request('http://localhost/api/settings/notifications/test', { method: 'POST', body: JSON.stringify(body) });
+    return new Request('http://localhost/api/settings/notifications/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
   }
 
   it('answers "Not sent" for a saved channel without contacting it', async () => {

@@ -32,6 +32,7 @@ const { POST } = await import('@/app/api/rules/validate-graph/route');
 function postRequest(graphQuery: unknown): Request {
   return new Request('http://localhost/api/rules/validate-graph', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ graphQuery }),
   });
 }

@@ -19,7 +19,11 @@ const { GET: listSaved, POST: createSaved } = await import('@/app/api/query/save
 const { GET: getSaved, DELETE: deleteSaved } = await import('@/app/api/query/saved/[id]/route');
 
 function postRequest(url: string, body: Record<string, unknown>): Request {
-  return new Request(url, { method: 'POST', body: JSON.stringify(body) });
+  return new Request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 function idParams(id: string) {

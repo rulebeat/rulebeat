@@ -97,7 +97,9 @@ can confirm this directly rather than take it on assertion.
 You sign in with a local account (a password hashed in your own database) or with Microsoft Entra ID.
 A session lasts 12 hours with an hourly refresh. Your role is looked up from the database on every
 request rather than stored in the session, so a permission change takes effect on your next request
-([`rbac.md`](rbac.md)).
+([`rbac.md`](rbac.md)). A request that changes anything is only accepted when its Origin matches the
+address your browser used to reach RuleBeat, or the address RuleBeat is configured to be reached at,
+so another site cannot make your browser submit one on your behalf.
 
 Report a vulnerability through
 [`SECURITY.md`](https://github.com/rulebeat/rulebeat/blob/main/SECURITY.md). This page describes how

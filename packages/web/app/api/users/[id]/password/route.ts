@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
+import { parseOptionalJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -24,11 +25,9 @@ export async function PUT(
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   let body: { password?: string } = {};
-  try {
-    body = await req.json() as typeof body;
-  } catch {
-    /* an empty body means "generate one" */
-  }
+  const parsed = await parseOptionalJsonBody<typeof body>(req, {});
+  if (parsed instanceof NextResponse) return parsed;
+  body = parsed;
 
   const hadAccount = !!await getLocalAccount(id);
   const generated = !body.password;

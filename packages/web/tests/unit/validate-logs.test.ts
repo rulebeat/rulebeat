@@ -37,6 +37,7 @@ const { POST } = await import('@/app/api/rules/validate-logs/route');
 function postRequest(logsQuery: unknown): Request {
   return new Request('http://localhost/api/rules/validate-logs', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ logsQuery }),
   });
 }

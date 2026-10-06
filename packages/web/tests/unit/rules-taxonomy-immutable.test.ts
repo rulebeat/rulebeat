@@ -26,7 +26,11 @@ const { PUT } = await import('@/app/api/rules/[id]/route');
 const RULE_ID = 'taxonomy-immutable-test';
 
 function putRequest(body: unknown): Request {
-  return new Request('http://localhost/api/rules/x', { method: 'PUT', body: JSON.stringify(body) });
+  return new Request('http://localhost/api/rules/x', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 async function signInAsEditor(): Promise<void> {

@@ -19,7 +19,11 @@ const { POST, PUT } = await import('@/app/api/settings/notifications/route');
 const { POST: TEST_POST } = await import('@/app/api/settings/notifications/test/route');
 
 function req(url: string, method: string, body: unknown): Request {
-  return new Request(url, { method, body: JSON.stringify(body) });
+  return new Request(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 async function signInAsAdmin(): Promise<void> {

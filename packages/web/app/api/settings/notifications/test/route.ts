@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseOptionalJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
@@ -68,9 +69,9 @@ export async function POST(req: Request) {
   if (await isDemoMode()) return NextResponse.json({ ok: false, error: DEMO_NOT_SENT }, { status: 409 });
 
   let body: { id?: string; type?: string; url?: string; config?: EmailChannelConfig } = {};
-  try {
-    body = await req.json() as typeof body;
-  } catch { /* empty body is fine */ }
+  const parsed = await parseOptionalJsonBody<typeof body>(req, {});
+  if (parsed instanceof NextResponse) return parsed;
+  body = parsed;
 
   let type: NotificationChannelType;
   let url: string;

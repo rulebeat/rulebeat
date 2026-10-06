@@ -24,6 +24,7 @@ const { POST } = await import('@/app/api/rules/validate-kql/route');
 function postRequest(kql: string): Request {
   return new Request('http://localhost/api/rules/validate-kql', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kql }),
   });
 }
