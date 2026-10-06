@@ -11,7 +11,9 @@ one channel can serve several schedules at different thresholds.
 When a scheduled run finishes and its findings are synced, RuleBeat works out which are *new* in that
 run (first seen now, not "still there"), applies each assignment's scope and then its severity, and
 sends one message per channel if anything is left. Manual runs never notify, a run with no new
-findings sends nothing, and an already-active finding is not re-sent.
+findings sends nothing, and an already-active finding is not re-sent. A finding that is suppressed
+when the message is about to go out is left out, even if it just came back after being fixed, and a
+batch made up only of suppressed findings sends nothing.
 
 ## Channel types
 
