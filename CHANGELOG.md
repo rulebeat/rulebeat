@@ -12,6 +12,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Fixed
 
+- A suppressed finding that comes back after its resource was fixed and broke again is no longer sent in notifications as new. Notifications now leave out every finding that is suppressed when they are sent, on scheduled runs and on runs whose notification is sent after a restart. An expired suppression no longer hides anything.
 - A rule condition whose value contains `//`, such as a URL, now survives being opened in the visual builder. The parser used to treat everything after `//` as a comment even inside a quoted value, so saving the rule from the builder wrote broken KQL. A real `//` comment outside any quoted value is still ignored.
 - A rule with an empty resource type list now checks every resource type, the same as `*`. It used to generate a query with an empty `type in~ ()` filter that Resource Graph rejects.
 - Starting a scan with an unknown `targetType` now answers 400 before anything runs. A scan that fails to start after the request was accepted is now logged instead of failing silently.
