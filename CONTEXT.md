@@ -37,3 +37,28 @@ _Avoid_: wipe, reseed, regenerate
 **Locked surface**:
 A part of the console a Visitor can see but not change in a Demo: the Azure connection, sign-in
 configuration and user management.
+
+## Rules
+
+**Custom rule**:
+A rule written or duplicated by someone on this install. An update never changes it, even when it
+was duplicated from a shipped rule.
+_Avoid_: user rule, forked rule
+
+**Rule version**:
+The version of a shipped rule's definition. RuleBeat Core rules start at 1.0.0 and are versioned
+by RuleBeat; a third-party rule uses the version its upstream gives it, or, when upstream has no
+versions, the upstream date of the commit its current definition was taken from. A new version is added beside
+the one in use; a rule keeps the version it runs until someone picks another. Custom rules have no version yet; they are planned to get one.
+_Avoid_: revision
+
+**Pack**:
+A named set of shipped rules that is versioned and updated as one source. RuleBeat Core is
+RuleBeat's own pack; APRL is a third-party pack. Every shipped rule belongs to exactly one pack,
+and the console shows a pack by its name alone.
+_Avoid_: library (that is the page listing every rule), rule set, collection, built-in library
+
+**Retired rule**:
+A shipped rule its pack no longer ships. It keeps running its last version until someone disables
+it. The same word is used for every pack.
+_Avoid_: obsolete, deprecated, removed
