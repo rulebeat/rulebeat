@@ -13,3 +13,12 @@ export function csvCell(val: unknown): string {
   if (typeof val === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+/**
+ * One CSV row (header or data), each cell guarded by csvCell. A column name comes from the same
+ * untrusted sources a data cell can (an evidence key from a rule query, a query result column),
+ * so a header row must be encoded exactly the way a data row is.
+ */
+export function csvRow(cells: unknown[]): string {
+  return cells.map(csvCell).join(',');
+}

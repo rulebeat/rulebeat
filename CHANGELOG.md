@@ -14,6 +14,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Security
 
+- The column names in findings and query result CSV exports are now encoded the same way as the cells below them. A column name taken from resource data or a query can no longer split the header row or be read by a spreadsheet as a formula.
 - Local sign-in now limits how many password checks run at once. When too many arrive together, the sign-in form asks you to try again in a minute instead of queueing them. The 5-attempt lockout is applied in one step, so attempts sent at the same time all count toward it. A failed sign-in takes the same time whether or not the account is locked, and sign-in passwords over 1024 characters are rejected without being checked.
 - Signing in with Microsoft now clears a local account's lockout, so a user locked out of their password after 5 wrong attempts can use it again straight away instead of waiting 15 minutes.
 - A Microsoft Graph rule's expansion array field must now be a plain property name: letters, numbers and underscores, starting with a letter. Saving a rule with any other value is refused, and a stored rule with one is reported as failed when it runs instead of being sent to Graph.

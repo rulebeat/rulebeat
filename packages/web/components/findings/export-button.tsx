@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { csvCell } from '@/lib/csv';
+import { csvRow } from '@/lib/csv';
 import type { Finding } from '@/lib/types';
 import { Download, ChevronDown } from 'lucide-react';
 
@@ -21,6 +21,63 @@ interface ExportButtonProps {
   findings: (Finding & LifecycleFields)[];
 }
 
+/**
+ * The findings CSV text, header and data rows alike. Extracted so it is testable without a DOM:
+ * evidence keys come from rule queries and Azure resource data, so a column name needs the same
+ * csvRow guard a data cell gets.
+ */
+export function buildFindingsCsv(findings: (Finding & LifecycleFields)[]): string {
+  // Collect all evidence data keys across all findings (skip internal _rule metadata)
+  const evidenceKeys = [
+    ...new Set(
+      findings.flatMap(f =>
+        Object.keys(f.evidence as Record<string, unknown>).filter(k => k !== '_rule'),
+      ),
+    ),
+  ].sort();
+
+  const hasLifecycle = findings.some(f => f.status !== undefined);
+
+  const fixedHeaders = [
+    'Severity', 'Title', 'Resource', 'ResourceGroup', 'Location',
+    'Subscription', 'ResourceType', 'RuleId', 'Violation', 'DetectedAt', 'PortalLink',
+    ...(hasLifecycle ? ['Status', 'FirstSeen', 'LastSeen', 'TimesSeen'] : []),
+  ];
+  const headers = [...fixedHeaders, ...evidenceKeys];
+
+  const rows = findings.map(f => {
+    const ev = f.evidence as Record<string, unknown>;
+    // Format violated rule as readable string
+    const rule = (ev['_rule'] as Record<string, unknown> | undefined) ?? ev;
+    const violation = [
+      rule['field'],
+      rule['operator'],
+      rule['value'] != null ? `'${rule['value']}'` : null,
+      Array.isArray(rule['values']) ? `[${(rule['values'] as string[]).join(', ')}]` : null,
+    ].filter(Boolean).join(' ');
+
+    const fixed = [
+      f.severity,
+      f.title,
+      f.resourceName,
+      f.resourceGroup ?? '',
+      f.location ?? '',
+      f.subscriptionId,
+      f.resourceType,
+      f.ruleId,
+      violation,
+      typeof f.detectedAt === 'string' ? f.detectedAt : new Date(f.detectedAt as string).toISOString(),
+      f.azurePortalLink ?? '',
+      ...(hasLifecycle ? [f.status ?? '', f.firstSeenAt ?? '', f.lastSeenAt ?? '', f.timesSeen ?? ''] : []),
+    ];
+
+    const evCols = evidenceKeys.map(k => ev[k]);
+    return csvRow([...fixed, ...evCols]);
+  });
+
+  return [csvRow(headers), ...rows].join('\n');
+}
+
 export function ExportButton({ findings }: ExportButtonProps) {
   function triggerDownload(filename: string, mimeType: string, content: string) {
     const blob = new Blob([content], { type: mimeType });
@@ -33,59 +90,7 @@ export function ExportButton({ findings }: ExportButtonProps) {
   }
 
   function exportCsv() {
-    // Collect all evidence data keys across all findings (skip internal _rule metadata)
-    const evidenceKeys = [
-      ...new Set(
-        findings.flatMap(f =>
-          Object.keys(f.evidence as Record<string, unknown>).filter(k => k !== '_rule'),
-        ),
-      ),
-    ].sort();
-
-    const hasLifecycle = findings.some(f => f.status !== undefined);
-
-    const fixedHeaders = [
-      'Severity', 'Title', 'Resource', 'ResourceGroup', 'Location',
-      'Subscription', 'ResourceType', 'RuleId', 'Violation', 'DetectedAt', 'PortalLink',
-      ...(hasLifecycle ? ['Status', 'FirstSeen', 'LastSeen', 'TimesSeen'] : []),
-    ];
-    const headers = [...fixedHeaders, ...evidenceKeys];
-
-    const rows = findings.map(f => {
-      const ev = f.evidence as Record<string, unknown>;
-      // Format violated rule as readable string
-      const rule = (ev['_rule'] as Record<string, unknown> | undefined) ?? ev;
-      const violation = [
-        rule['field'],
-        rule['operator'],
-        rule['value'] != null ? `'${rule['value']}'` : null,
-        Array.isArray(rule['values']) ? `[${(rule['values'] as string[]).join(', ')}]` : null,
-      ].filter(Boolean).join(' ');
-
-      const fixed = [
-        csvCell(f.severity),
-        csvCell(f.title),
-        csvCell(f.resourceName),
-        csvCell(f.resourceGroup ?? ''),
-        csvCell(f.location ?? ''),
-        csvCell(f.subscriptionId),
-        csvCell(f.resourceType),
-        csvCell(f.ruleId),
-        csvCell(violation),
-        csvCell(typeof f.detectedAt === 'string' ? f.detectedAt : new Date(f.detectedAt as string).toISOString()),
-        csvCell(f.azurePortalLink ?? ''),
-        ...(hasLifecycle ? [csvCell(f.status ?? ''), csvCell(f.firstSeenAt ?? ''), csvCell(f.lastSeenAt ?? ''), csvCell(f.timesSeen ?? '')] : []),
-      ];
-
-      const evCols = evidenceKeys.map(k => csvCell(ev[k]));
-      return [...fixed, ...evCols].join(',');
-    });
-
-    triggerDownload(
-      'findings.csv',
-      'text/csv',
-      [headers.join(','), ...rows].join('\n'),
-    );
+    triggerDownload('findings.csv', 'text/csv', buildFindingsCsv(findings));
   }
 
   function exportJson() {
