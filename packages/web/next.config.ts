@@ -18,6 +18,8 @@ const nextConfig: NextConfig = {
           // remove a user), so framing it is worth denying outright — nothing here is meant to
           // be embedded.
           { key: 'X-Frame-Options', value: 'DENY' },
+          // The full page policy (with its per-request nonce) is set in proxy.ts and replaces this
+          // value on every path the proxy runs on. This one is what remains on the paths it skips.
           { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           // Findings URLs carry subscription ids and resource names in query params. Send them

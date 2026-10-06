@@ -34,11 +34,17 @@ describe('proxy matcher', () => {
 
   it.each([
     '/api/auth/session',
-    '/signin',
     '/_next/static/chunk.js',
     '/_next/image',
   ])('leaves the pre-existing exclusion %s unguarded', (pathname) => {
     expect(guards(pathname)).toBe(false);
+  });
+
+  // /signin moved from "never reaches the proxy" to "reaches the proxy, which skips the guard for
+  // it": the page policy has to be stamped on that page too. Whether the guard is really skipped
+  // is asserted against the proxy itself in proxy-security-headers.test.ts, not here.
+  it('runs /signin through the proxy so it gets the page policy', () => {
+    expect(guards('/signin')).toBe(true);
   });
 
   // The container liveness probe must be reachable with no session, same as the brand images above.

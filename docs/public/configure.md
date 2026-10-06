@@ -51,6 +51,7 @@ credential choices described in [Azure scanning credential](#azure-scanning-cred
 | **Behaviour** | | | |
 | `SCAN_HISTORY_LIMIT` | Never, default 90 | How many runs per category Run History keeps. | A whole number. [Details](#scan-history-retention) |
 | `RULEBEAT_DISABLE_SCHEDULER` | Multi-replica only | Stops the in-process scheduler on this replica. | `1` |
+| `RULEBEAT_CSP` | Never | Turns off the script policy on pages. For a browser extension or reverse proxy that injects scripts into pages. Leaving it on is recommended. | `off`. [Details](#browser-security-headers) |
 | `RULEBEAT_DEMO` | Never | Demo mode: synthetic data, shared by every Visitor, signed in automatically as an admin. | `1`. [Details](demo-mode.md) |
 | `RULEBEAT_DEMO_DATASET` | Never, default `contoso` | The Data set a Demo is generated from. Read only with `RULEBEAT_DEMO=1`. | `contoso`. [Details](demo-mode.md#choosing-the-data) |
 | `RULEBEAT_DEMO_SEED` | Never, default `0xc0ffee` | Varies the generated Demo. The same Data set, Seed and release always give the same Demo. | A whole number from 0 to 4294967295, decimal or `0x` hex |
@@ -158,6 +159,20 @@ probing `/api/health`.
 
 With no reverse proxy at all, on a trusted internal network, you can widen the `ports:` entry to
 `"3000:3000"`, but that is an explicit choice rather than the shipped default.
+
+## Browser security headers
+
+Every page RuleBeat serves carries a Content-Security-Policy that lets the browser run only the
+scripts RuleBeat itself rendered for that request, and refuses to show the page inside a frame. A
+request that arrives over HTTPS also gets a `Strict-Transport-Security` header, valid for one year,
+so the browser keeps using HTTPS for this address. It is sent only on HTTPS requests, so a plain
+HTTP install on localhost is unaffected. With a reverse proxy in front, make sure it passes
+`X-Forwarded-Proto` through, since that is how RuleBeat knows the browser used HTTPS.
+
+If a browser extension or a reverse proxy adds its own scripts to pages, the policy blocks them and
+the browser console reports it. Set `RULEBEAT_CSP=off` to drop the script policy. The rule against
+framing stays, and the other headers are unchanged. Leaving the policy on is recommended: the better
+fix is usually to stop the extension or proxy from injecting into RuleBeat's pages.
 
 ## Azure scanning credential
 
