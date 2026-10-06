@@ -22,7 +22,7 @@ const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
 const { dispatchNotifications } = await import('@/lib/notifications/dispatch');
-const { sendSmtpMail } = await import('@/lib/notifications/send');
+const { sendSmtpMail, setSmtpAddressSenderForTests, resetSmtpAddressSenderForTests } = await import('@/lib/notifications/send');
 const { POST: TEST_POST } = await import('@/app/api/settings/notifications/test/route');
 
 /** Answers 127.0.0.1 on the first resolution and a metadata address on every later one. */
@@ -54,7 +54,7 @@ async function startWebhookServer(respond: (res: http.ServerResponse) => void) {
 }
 
 /** A minimal SMTP server: accepts one message and keeps the lines of its DATA section. */
-async function startSmtpServer() {
+async function startSmtpServer(opts: { rcptReply?: string } = {}) {
   const data: string[] = [];
   let connections = 0;
   const sockets = new Set<net.Socket>();
@@ -78,6 +78,7 @@ async function startSmtpServer() {
         const command = line.slice(0, 4).toUpperCase();
         if (command === 'DATA') { inData = true; socket.write('354 go\r\n'); }
         else if (command === 'QUIT') { socket.write('221 bye\r\n'); socket.end(); }
+        else if (command === 'RCPT' && opts.rcptReply) socket.write(`${opts.rcptReply}\r\n`);
         else socket.write('250 ok\r\n');
       }
     });
@@ -97,6 +98,7 @@ function smtpConfig(host: string, port: number): EmailChannelConfig {
 
 afterEach(() => {
   resetDnsLookupForTests();
+  resetSmtpAddressSenderForTests();
   vi.restoreAllMocks();
 });
 
@@ -138,6 +140,15 @@ describe('sendSmtpMail', () => {
     });
   });
 
+  it('gives each address 10 seconds to accept the connection, so trying several stays bounded', async () => {
+    const { default: nodemailer } = await import('nodemailer');
+    const createTransport = vi.spyOn(nodemailer, 'createTransport');
+
+    await sendSmtpMail(smtpConfig('127.0.0.1', smtp.port), '', { subject: 's', text: 't' });
+
+    expect(createTransport.mock.calls[0][0]).toMatchObject({ connectionTimeout: 10_000 });
+  });
+
   it('sets no TLS server name when the host is already an IP address', async () => {
     const { default: nodemailer } = await import('nodemailer');
     const createTransport = vi.spyOn(nodemailer, 'createTransport');
@@ -168,6 +179,190 @@ describe('sendSmtpMail', () => {
     await expect(sendSmtpMail(smtpConfig('smtp.example.test', smtp.port), '', { subject: 's', text: 't' }))
       .rejects.toThrow('not a public address');
     expect(smtp.connections()).toBe(1);
+  });
+});
+
+/** An error shaped the way a refused or unreachable connection reaches the caller. */
+function connectionError(code: string, extra: Record<string, unknown> = {}): Error {
+  return Object.assign(new Error(`connect ${code} 93.184.216.34:25`), { code }, extra);
+}
+
+describe('sendSmtpMail with a host that resolves to several addresses', () => {
+  const message = { subject: 's', text: 't' };
+  const cfg = smtpConfig('smtp.example.test', 25);
+
+  function useAddresses(...addresses: string[]) {
+    const lookup = vi.fn(async () => addresses.map(address => ({ address })));
+    setDnsLookupForTests(lookup);
+    return lookup;
+  }
+
+  /** A one-address send that fails with `failures[address]` and succeeds for any address not listed. */
+  function useSender(failures: Record<string, Error>) {
+    const tried: string[] = [];
+    setSmtpAddressSenderForTests(async address => {
+      tried.push(address);
+      if (failures[address]) throw failures[address];
+    });
+    return tried;
+  }
+
+  it('sends through the second address when the first refuses the connection', async () => {
+    useAddresses('93.184.216.34', '8.8.8.8');
+    const tried = useSender({ '93.184.216.34': connectionError('ECONNREFUSED') });
+
+    await expect(sendSmtpMail(cfg, '', message)).resolves.toBeUndefined();
+
+    expect(tried).toEqual(['93.184.216.34', '8.8.8.8']);
+  });
+
+  it.each([
+    ['ECONNREFUSED', connectionError('ECONNREFUSED')],
+    ['ETIMEDOUT', connectionError('ETIMEDOUT')],
+    ['EHOSTUNREACH', connectionError('EHOSTUNREACH')],
+    ['ENETUNREACH', connectionError('ENETUNREACH')],
+    ['a connection timeout from the mail client', connectionError('ETIMEDOUT', { message: 'Connection timeout' })],
+    ['a socket failure from the mail client', connectionError('ESOCKET', { syscall: 'connect' })],
+  ])('moves on to the next address after %s', async (_label, err) => {
+    useAddresses('93.184.216.34', '8.8.8.8');
+    const tried = useSender({ '93.184.216.34': err });
+
+    await sendSmtpMail(cfg, '', message);
+
+    expect(tried).toEqual(['93.184.216.34', '8.8.8.8']);
+  });
+
+  it.each([
+    ['an authentication failure', Object.assign(new Error('Invalid login: 535 5.7.8 bad credentials'), {
+      code: 'EAUTH', responseCode: 535, response: '535 5.7.8 bad credentials',
+    })],
+    ['a rejected recipient', Object.assign(new Error('Recipient command failed: 550 no such user'), {
+      code: 'EENVELOPE', responseCode: 550, response: '550 no such user',
+    })],
+    ['a server reply with no code of its own', Object.assign(new Error('refused: 421 try later'), {
+      response: '421 try later', responseCode: 421,
+    })],
+    ['a timeout after the connection was made', Object.assign(new Error('Timeout'), { code: 'ETIMEDOUT' })],
+  ])('does not retry on another address after %s', async (_label, err) => {
+    useAddresses('93.184.216.34', '8.8.8.8');
+    const tried = useSender({ '93.184.216.34': err });
+
+    await expect(sendSmtpMail(cfg, '', message)).rejects.toBe(err);
+
+    expect(tried).toEqual(['93.184.216.34']);
+  });
+
+  it('tries IPv4 addresses before IPv6 ones, whatever order the resolver answered in', async () => {
+    useAddresses('2606:4700:4700::1111', '93.184.216.34', '2001:4860:4860::8888');
+    const tried = useSender({
+      '93.184.216.34': connectionError('ECONNREFUSED'),
+      '2606:4700:4700::1111': connectionError('ENETUNREACH'),
+    });
+
+    await sendSmtpMail(cfg, '', message);
+
+    expect(tried).toEqual(['93.184.216.34', '2606:4700:4700::1111', '2001:4860:4860::8888']);
+  });
+
+  it('gives up with one error when every address fails to connect, and tries at most three', async () => {
+    useAddresses('93.184.216.34', '8.8.8.8', '1.1.1.1', '8.8.4.4');
+    const first = connectionError('ECONNREFUSED');
+    const tried = useSender({
+      '93.184.216.34': first,
+      '8.8.8.8': connectionError('ETIMEDOUT'),
+      '1.1.1.1': connectionError('EHOSTUNREACH'),
+      '8.8.4.4': connectionError('ENETUNREACH'),
+    });
+
+    await expect(sendSmtpMail(cfg, '', message)).rejects.toBe(first);
+
+    expect(tried).toEqual(['93.184.216.34', '8.8.8.8', '1.1.1.1']);
+  });
+
+  it('resolves the name once however many addresses it tries', async () => {
+    const lookup = useAddresses('93.184.216.34', '8.8.8.8', '1.1.1.1');
+    useSender({ '93.184.216.34': connectionError('ECONNREFUSED'), '8.8.8.8': connectionError('ECONNREFUSED') });
+
+    await sendSmtpMail(cfg, '', message);
+
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the configuration and message to each attempt unchanged', async () => {
+    useAddresses('93.184.216.34', '8.8.8.8');
+    const calls: unknown[][] = [];
+    setSmtpAddressSenderForTests(async (...args) => {
+      calls.push(args);
+      if (args[0] === '93.184.216.34') throw connectionError('ECONNREFUSED');
+    });
+
+    await sendSmtpMail(cfg, 'pw', message);
+
+    expect(calls).toEqual([
+      ['93.184.216.34', cfg, 'pw', message],
+      ['8.8.8.8', cfg, 'pw', message],
+    ]);
+  });
+
+  it('behaves as before for a single-address host: one attempt, the error unchanged', async () => {
+    useAddresses('93.184.216.34');
+    const err = connectionError('ECONNREFUSED');
+    const tried = useSender({ '93.184.216.34': err });
+
+    await expect(sendSmtpMail(cfg, '', message)).rejects.toBe(err);
+
+    expect(tried).toEqual(['93.184.216.34']);
+  });
+
+  it('still refuses a host with a private address among several, without connecting', async () => {
+    useAddresses('93.184.216.34', '10.0.0.5');
+    const tried = useSender({});
+
+    await expect(sendSmtpMail(cfg, '', message)).rejects.toBeInstanceOf(SsrfGuardError);
+
+    expect(tried).toEqual([]);
+  });
+});
+
+describe('sendSmtpMail across several addresses with the real mail client', () => {
+  const message = { subject: 's', text: 't' };
+
+  beforeEach(() => {
+    allowAddressesForTests(['127.0.0.1', '127.0.0.2']);
+    setDnsLookupForTests(async () => [{ address: '127.0.0.1' }, { address: '127.0.0.2' }]);
+  });
+
+  it('treats a real refused connection as a connection failure and tries the next address', async () => {
+    // A port that was just free and has nothing listening: the first address refuses.
+    const probe = net.createServer();
+    await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+    const closedPort = (probe.address() as AddressInfo).port;
+    await new Promise<void>(resolve => probe.close(() => resolve()));
+    const { default: nodemailer } = await import('nodemailer');
+    const createTransport = vi.spyOn(nodemailer, 'createTransport');
+
+    await expect(sendSmtpMail(smtpConfig('smtp.example.test', closedPort), '', message)).rejects.toThrow();
+
+    expect(createTransport.mock.calls.map(c => (c[0] as { host: string }).host)).toEqual(['127.0.0.1', '127.0.0.2']);
+    // Every attempt still verifies the certificate against the configured name, not the address.
+    expect(createTransport.mock.calls.map(c => (c[0] as { tls: unknown }).tls))
+      .toEqual([{ servername: 'smtp.example.test' }, { servername: 'smtp.example.test' }]);
+  });
+
+  it('does not retry on another address when the server rejects the recipient', async () => {
+    const smtp = await startSmtpServer({ rcptReply: '550 no such user' });
+    try {
+      const { default: nodemailer } = await import('nodemailer');
+      const createTransport = vi.spyOn(nodemailer, 'createTransport');
+
+      await expect(sendSmtpMail(smtpConfig('smtp.example.test', smtp.port), '', message))
+        .rejects.toThrow(/550/);
+
+      expect(createTransport).toHaveBeenCalledTimes(1);
+      expect(smtp.connections()).toBe(1);
+    } finally {
+      await smtp.stop();
+    }
   });
 });
 

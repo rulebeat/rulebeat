@@ -8,7 +8,19 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { csvCell } from '@/lib/csv';
+import { csvCell, csvRow } from '@/lib/csv';
+
+describe('csvRow', () => {
+  it('encodes every cell the same way csvCell does, header or data row alike', () => {
+    expect(csvRow(['Severity', 'a,b', 'say "hi"', 'one\ntwo', '=SUM(A1)'])).toBe(
+      'Severity,"a,b","say ""hi""","one\ntwo",\'=SUM(A1)',
+    );
+  });
+
+  it('renders an empty row as an empty string', () => {
+    expect(csvRow([])).toBe('');
+  });
+});
 
 describe('csvCell', () => {
   it.each([

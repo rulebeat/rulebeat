@@ -4,11 +4,22 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { csvCell } from '@/lib/csv';
+import { csvRow } from '@/lib/csv';
 import { Download, ChevronDown } from 'lucide-react';
 
 interface QueryExportButtonProps {
   rows: Record<string, unknown>[];
+}
+
+/**
+ * The query-results CSV text, header and data rows alike. Extracted so it is testable without a
+ * DOM: a query result's column names come from the user's KQL, so a header cell needs the same
+ * csvRow guard a data cell gets.
+ */
+export function buildQueryCsv(rows: Record<string, unknown>[]): string {
+  const columns = [...new Set(rows.flatMap(row => Object.keys(row)))].sort();
+  const body = rows.map(row => csvRow(columns.map(c => row[c])));
+  return [csvRow(columns), ...body].join('\n');
 }
 
 export function QueryExportButton({ rows }: QueryExportButtonProps) {
@@ -23,9 +34,7 @@ export function QueryExportButton({ rows }: QueryExportButtonProps) {
   }
 
   function exportCsv() {
-    const columns = [...new Set(rows.flatMap(row => Object.keys(row)))].sort();
-    const body = rows.map(row => columns.map(c => csvCell(row[c])).join(','));
-    triggerDownload('query-results.csv', 'text/csv', [columns.join(','), ...body].join('\n'));
+    triggerDownload('query-results.csv', 'text/csv', buildQueryCsv(rows));
   }
 
   function exportJson() {

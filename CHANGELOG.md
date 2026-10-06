@@ -8,16 +8,19 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Fixed
 
+- Creating or saving a rule with no name, a blank name, or a name that is not text now answers 400 with "A rule needs a name." instead of a server error.
 - Moving a rule to another category no longer leaves its old findings open forever. Findings the rule stops returning are now resolved on its next successful scan, whichever category they were recorded under. Findings already stuck this way are resolved the next time that rule runs.
 - Two admins demoting or deleting each other at the same moment can no longer leave the install with no admin; one of the two changes is refused. Deleting a user now removes their private saved queries, their query history and the user together, or none of them if something fails part-way.
 
 ### Security
 
+- The column names in findings and query result CSV exports are now encoded the same way as the cells below them. A column name taken from resource data or a query can no longer split the header row or be read by a spreadsheet as a formula.
 - Local sign-in now limits how many password checks run at once. When too many arrive together, the sign-in form asks you to try again in a minute instead of queueing them. The 5-attempt lockout is applied in one step, so attempts sent at the same time all count toward it. A failed sign-in takes the same time whether or not the account is locked, and sign-in passwords over 1024 characters are rejected without being checked.
 - Signing in with Microsoft now clears a local account's lockout, so a user locked out of their password after 5 wrong attempts can use it again straight away instead of waiting 15 minutes.
 - A Microsoft Graph rule's expansion array field must now be a plain property name: letters, numbers and underscores, starting with a letter. Saving a rule with any other value is refused, and a stored rule with one is reported as failed when it runs instead of being sent to Graph.
 - CSV exports of the audit log, findings and query results now put an apostrophe in front of any text cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, so a spreadsheet shows it as text instead of running it as a formula. A cell containing a carriage return is now quoted, so it can no longer split a row.
 - Webhook and email notifications now connect only to the address that was checked as public, and each send, including each retry, checks it again. IPv6 addresses that carry an IPv4 address inside them (NAT64 and 6to4) are checked against that IPv4 address, and Teredo addresses are refused. "Send test" and scheduled notifications now send the same way.
+- An email notification now tries the mail server's other checked addresses when the first one cannot be reached, giving each address 10 seconds to accept the connection. It moves on only when the connection itself failed, so a rejected login or recipient is never retried elsewhere. Two more IPv6 address forms that are never public destinations (`::a.b.c.d` and `100::/64`) are now refused for webhooks and mail servers.
 - Every page, the sign-in page included, now carries a Content-Security-Policy that only runs scripts RuleBeat rendered itself, using a new random value for each request. Requests that arrive over HTTPS now get `Strict-Transport-Security` for one year, without `includeSubDomains` or `preload`. If a browser extension or a reverse proxy that injects scripts stops working, `RULEBEAT_CSP=off` drops the script policy and keeps the other headers.
 - A request that changes anything is now refused with 403 when its browser `Origin` matches neither the address the browser used to reach RuleBeat nor the configured public URL, so another site cannot make a signed-in browser submit changes. Requests with no `Origin`, such as scripts and `curl`, are unaffected. Routes that read a JSON body now require `Content-Type: application/json` and answer 415 otherwise.
 
