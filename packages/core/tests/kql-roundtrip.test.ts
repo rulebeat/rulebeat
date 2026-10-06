@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildQueryFromVisual,
+  buildRuleQuery,
   parseKqlToVisualQuery,
   queryHasTopLevelLimit,
   DEFAULT_PROJECT_COLUMNS,
@@ -876,6 +877,163 @@ describe('TS-09 · a bare "| where ..." with no table line is not lost [spec 043
     const kql = "Resources\n| where name startswith 'vm-'";
     const parsed = parseKqlToVisualQuery(kql);
     expect(parsed.warnings.some(w => /table name/i.test(w))).toBe(false);
+  });
+});
+
+describe('TS-09 · // inside a string literal is not a comment [#141]', () => {
+  /**
+   * The line-comment strip ran before tokenising with no idea whether the `//` sat inside a string,
+   * so a URL value was cut at its scheme and the rest of the condition came back as a broken raw
+   * passthrough.
+   */
+  const regenerateWith = (kql: string, resourceTypes: string[]): string => {
+    const parsed = parseKqlToVisualQuery(kql);
+    return buildQueryFromVisual(parsed.visualQuery, {
+      scope: parsed.scope,
+      resourceTypes,
+      projectColumns: parsed.projectColumns.length ? parsed.projectColumns : DEFAULT_PROJECT_COLUMNS,
+    });
+  };
+  const operators = (kql: string): Array<string | undefined> =>
+    parsedConditions(kql).map(c => c.operator);
+
+  it('round-trips a startsWith value containing a URL scheme', () => {
+    const kql = buildQueryFromVisual(
+      oneCondition({ field: 'properties.uri', operator: 'startsWith', value: 'https://a.b' }),
+      RESOURCE_TARGET,
+    );
+    expect(kql).toContain("properties.uri startswith 'https://a.b'");
+
+    const conditions = parsedConditions(kql);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toMatchObject({
+      field: 'properties.uri', operator: 'startsWith', value: 'https://a.b',
+    });
+    expect(regenerate(kql)).toBe(kql);
+  });
+
+  it('round-trips an equals value with // in the middle', () => {
+    const kql = buildQueryFromVisual(
+      oneCondition({ field: 'name', operator: 'equals', value: 'a//b' }),
+      RESOURCE_TARGET,
+    );
+    expect(operators(kql)).toEqual(['equals']);
+    expect(parsedConditions(kql)[0]!.value).toBe('a//b');
+    expect(regenerate(kql)).toBe(kql);
+  });
+
+  it('keeps // inside a hand-written double-quoted string', () => {
+    const kql = ['Resources', '| where name == "a//b"', '| project id'].join('\n');
+    expect(operators(kql)).toEqual(['equals']);
+    expect(parsedConditions(kql)[0]!.value).toBe('a//b');
+    expect(regenerate(regenerate(kql))).toBe(regenerate(kql));
+  });
+
+  it('keeps // after a backslash-escaped quote inside the same string', () => {
+    const kql = ['Resources', "| where name contains 'it\\'s //x' and kind == 'prod'", '| project id'].join('\n');
+    const parsed = parseKqlToVisualQuery(kql);
+    const conditions = parsed.visualQuery.stages
+      .filter(s => s.type === 'filter')
+      .flatMap(s => s.groups.flatMap(g => g.conditions));
+    expect(conditions).toHaveLength(2);
+    expect(conditions[0]!.rawExpr ?? conditions[0]!.value).toContain("it\\'s //x");
+    expect(conditions[1]).toMatchObject({ operator: 'equals', value: 'prod' });
+  });
+
+  it('still strips a real comment after a condition', () => {
+    const kql = ['Resources', '| where x == 1 // note', '| project id'].join('\n');
+    const conditions = parsedConditions(kql);
+    expect(conditions).toHaveLength(1);
+    expect(JSON.stringify(conditions[0])).not.toContain('note');
+    expect(regenerate(kql)).not.toContain('note');
+  });
+
+  it('strips a real comment that follows a string containing //', () => {
+    const kql = [
+      'Resources',
+      "| where properties.uri startswith 'https://a.b' // the url",
+      '| project id',
+    ].join('\n');
+    const conditions = parsedConditions(kql);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toMatchObject({ operator: 'startsWith', value: 'https://a.b' });
+    expect(regenerate(kql)).not.toContain('the url');
+  });
+
+  it('strips a comment on its own line between pipes', () => {
+    const kql = [
+      'Resources',
+      '// only production',
+      "| where name startswith 'prod-'",
+      '  // and nothing else',
+      '| project id',
+    ].join('\n');
+    const conditions = parsedConditions(kql);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toMatchObject({ operator: 'startsWith', value: 'prod-' });
+    expect(regenerate(kql)).not.toContain('production');
+  });
+
+  it('does not lose a type filter whose string contains //', () => {
+    const kql = ['Resources', "| where type =~ 'microsoft.web/sites'", "| where properties.uri startswith 'https://a.b'"].join('\n');
+    const parsed = parseKqlToVisualQuery(kql);
+    expect(parsed.resourceTypes).toEqual(['microsoft.web/sites']);
+    const once = regenerateWith(kql, parsed.resourceTypes);
+    expect(once).toContain("startswith 'https://a.b'");
+    expect(regenerateWith(once, parsed.resourceTypes)).toBe(once);
+  });
+});
+
+describe('TS-09 · an empty resource type list means all types [#149]', () => {
+  const rule = (resourceTypes: string[]): Rule => ({
+    id: 'test-rule',
+    name: 'Test rule',
+    description: 'desc',
+    category: 'reliability',
+    severity: 'medium',
+    enabled: true,
+    type: 'custom',
+    scope: { level: 'resource' },
+    resourceTypes,
+    conditions: [{ id: 'c1', field: 'name', operator: 'equals', value: 'foo' }],
+  });
+  const target = (resourceTypes: string[]): BuildTarget => ({
+    scope: { level: 'resource' },
+    resourceTypes,
+    projectColumns: DEFAULT_PROJECT_COLUMNS,
+  });
+
+  it('buildRuleQuery emits no empty in~ list and matches the [*] query', () => {
+    const empty = buildRuleQuery(rule([]));
+    expect(empty).not.toMatch(/in~\s*\(\s*\)/);
+    expect(empty).not.toContain('type in~');
+    expect(empty).toBe(buildRuleQuery(rule(['*'])));
+  });
+
+  it('buildQueryFromVisual emits no empty in~ list and matches the [*] query', () => {
+    const vq = oneCondition({ field: 'name', operator: 'equals', value: 'foo' });
+    const empty = buildQueryFromVisual(vq, target([]));
+    expect(empty).not.toMatch(/in~\s*\(\s*\)/);
+    expect(empty).toBe(buildQueryFromVisual(vq, target(['*'])));
+  });
+
+  it('round-trips [] to a stable query, whatever list the parser returns', () => {
+    const vq = oneCondition({ field: 'name', operator: 'equals', value: 'foo' });
+    const kql = buildQueryFromVisual(vq, target([]));
+    const parsed = parseKqlToVisualQuery(kql);
+    const again = buildQueryFromVisual(parsed.visualQuery, {
+      scope: parsed.scope,
+      resourceTypes: parsed.resourceTypes,
+      projectColumns: parsed.projectColumns.length ? parsed.projectColumns : DEFAULT_PROJECT_COLUMNS,
+    });
+    expect(again).toBe(kql);
+  });
+
+  it('leaves a non-empty type list unchanged', () => {
+    const vq = oneCondition({ field: 'name', operator: 'equals', value: 'foo' });
+    expect(buildQueryFromVisual(vq, target(['Microsoft.Web/Sites', 'microsoft.storage/storageaccounts']))).toContain(
+      "| where type in~ ('microsoft.web/sites', 'microsoft.storage/storageaccounts')",
+    );
   });
 });
 

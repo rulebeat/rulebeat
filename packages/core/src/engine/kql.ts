@@ -64,6 +64,28 @@ function splitTopLevelCommas(s: string): string[] {
   return parts.filter(Boolean);
 }
 
+// Removes a trailing `//` line comment from one physical line. Only a `//` outside every string
+// literal starts a comment, so a URL or path inside '...' or "..." survives intact. Escape-aware
+// like the rest of the file's string scanning: a backslash-escaped quote does not end the literal.
+function stripLineComment(line: string): string {
+  let inStr = false, strChar = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i] as string;
+    if (inStr) { if (ch === '\\') { i++; continue; } if (ch === strChar) inStr = false; continue; }
+    if (ch === "'" || ch === '"') { inStr = true; strChar = ch; continue; }
+    if (ch === '/' && line[i + 1] === '/') return line.slice(0, i);
+  }
+  return line;
+}
+
+// An empty resource type list means every type, exactly like ['*'], so the builder never emits an
+// empty `type in~ ()`. Shared by buildRuleQuery and buildVisualQueryLines.
+function typeFilterLine(resourceTypes: string[]): string | null {
+  if (resourceTypes.length === 0 || resourceTypes.includes('*')) return null;
+  const types = resourceTypes.map(t => `'${esc(t.toLowerCase())}'`).join(', ');
+  return `| where type in~ (${types})`;
+}
+
 /**
  * Splits one physical line at its `|` separators, ignoring pipes inside string literals or
  * parentheses. Returns the leading segment first, so `['Resources', "where name startswith 'vm-'"]`.
@@ -267,10 +289,8 @@ function buildConditionGroupExpr(group: ConditionGroup): string | null {
 export function buildRuleQuery(rule: Rule): string {
   const lines: string[] = [scopeToTable(rule.scope.level)];
 
-  if (!rule.resourceTypes.includes('*')) {
-    const types = rule.resourceTypes.map(t => `'${esc(t.toLowerCase())}'`).join(', ');
-    lines.push(`| where type in~ (${types})`);
-  }
+  const typeLine = typeFilterLine(rule.resourceTypes);
+  if (typeLine) lines.push(typeLine);
 
   // A flat rule.conditions list (no conditionGroups) is just a single-group shorthand — route it
   // through the same compiler so it gets the same De Morgan join-flip instead of a second,
@@ -417,10 +437,8 @@ function buildVisualQueryLines(
 ): string[] {
   const lines: string[] = [scopeToTable(rule.scope.level)];
 
-  if (!rule.resourceTypes.includes('*')) {
-    const types = rule.resourceTypes.map(t => `'${esc(t.toLowerCase())}'`).join(', ');
-    lines.push(`| where type in~ (${types})`);
-  }
+  const typeLine = typeFilterLine(rule.resourceTypes);
+  if (typeLine) lines.push(typeLine);
 
   for (const stage of vq.stages) {
     switch (stage.type) {
@@ -544,7 +562,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
 
   const rawLines = kql
     .split('\n')
-    .map(l => l.replace(/\/\/.*$/, '').trim())
+    .map(l => stripLineComment(l).trim())
     .filter(Boolean);
 
   if (rawLines.length === 0) {
