@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, updateRule, deleteRule, isNameTaken, validateRuleName, APPLIES_TO_REMOVED_ERROR, type RuleChanges } from '@/lib/rules';
+import { loadRules, updateRule, deleteRule, validateRuleName, ruleNameTakenError, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
 import { writeAudit, changedFields } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -9,6 +9,13 @@ import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
 import type { Rule } from '@rulebeat/core';
+
+/** Maps an `updateRule()` failure to the response both branches below return for it. */
+function updateFailureResponse(result: Extract<UpdateRuleResult, { ok: false }>, name: string): NextResponse {
+  return result.reason === 'not-found'
+    ? NextResponse.json({ error: 'Not found' }, { status: 404 })
+    : NextResponse.json(ruleNameTakenError(name), { status: 409 });
+}
 
 export async function PUT(
   req: Request,
@@ -52,8 +59,9 @@ export async function PUT(
       changes.graphQuery = body.graphQuery;
     }
 
-    const updated = await updateRule(id, changes);
-    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const result = await updateRule(id, changes);
+    if (!result.ok) return updateFailureResponse(result, existing.name);
+    const updated = result.rule;
 
     await writeAudit({
       actor,
@@ -81,10 +89,6 @@ export async function PUT(
   const nameError = validateRuleName(body.name);
   if (nameError) {
     return NextResponse.json({ error: nameError }, { status: 400 });
-  }
-
-  if (await isNameTaken(body.name, id)) {
-    return NextResponse.json({ error: `A rule named "${body.name}" already exists. Rule names must be unique.` }, { status: 409 });
   }
 
   // RB-RM-004: same server-side guard as POST — see that route for the reasoning.
@@ -165,8 +169,9 @@ export async function PUT(
     graphQuery: body.graphQuery,
     logsQuery: body.logsQuery,
   };
-  const updated = await updateRule(id, changes);
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const result = await updateRule(id, changes);
+  if (!result.ok) return updateFailureResponse(result, body.name);
+  const updated = result.rule;
 
   await writeAudit({
     actor,
