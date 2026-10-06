@@ -37,13 +37,11 @@ export async function PUT(req: Request) {
   const actor = await requireRole('auth:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: {
+  const body = await parseJsonBody<{
     tenantId?: string; clientId?: string; clientSecret?: string; localSignInPolicy?: string;
     publicUrl?: string; reuseAzureConnection?: boolean;
-  };
-  const parsed = await parseJsonBody<typeof body>(req);
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  }>(req);
+  if (body instanceof NextResponse) return body;
 
   if (body.publicUrl !== undefined) {
     const trimmed = body.publicUrl.trim();

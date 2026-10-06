@@ -40,10 +40,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { name?: string; type?: string; url?: string; config?: unknown };
-  const parsed = await parseJsonBody<typeof body>(req);
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseJsonBody<{ name?: string; type?: string; url?: string; config?: unknown }>(req);
+  if (body instanceof NextResponse) return body;
 
   const name = body.name?.trim() ?? '';
   const type = body.type?.trim() ?? '';
@@ -111,10 +109,8 @@ export async function PUT(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { id?: string; name?: string; type?: string; url?: string; config?: unknown };
-  const parsed = await parseJsonBody<typeof body>(req);
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseJsonBody<{ id?: string; name?: string; type?: string; url?: string; config?: unknown }>(req);
+  if (body instanceof NextResponse) return body;
 
   const id = body.id?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });

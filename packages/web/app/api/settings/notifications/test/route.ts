@@ -68,10 +68,8 @@ export async function POST(req: Request) {
   // A Demo contacts nothing outside itself. The channel form stays usable; the send does not happen.
   if (await isDemoMode()) return NextResponse.json({ ok: false, error: DEMO_NOT_SENT }, { status: 409 });
 
-  let body: { id?: string; type?: string; url?: string; config?: EmailChannelConfig } = {};
-  const parsed = await parseOptionalJsonBody<typeof body>(req, {});
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseOptionalJsonBody<{ id?: string; type?: string; url?: string; config?: EmailChannelConfig }>(req, {});
+  if (body instanceof NextResponse) return body;
 
   let type: NotificationChannelType;
   let url: string;

@@ -19,10 +19,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('account:self');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { currentPassword?: string; newPassword?: string };
-  const parsed = await parseJsonBody<typeof body>(req);
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseJsonBody<{ currentPassword?: string; newPassword?: string }>(req);
+  if (body instanceof NextResponse) return body;
 
   const newPassword = body.newPassword ?? '';
   const strength = validatePasswordStrength(newPassword);

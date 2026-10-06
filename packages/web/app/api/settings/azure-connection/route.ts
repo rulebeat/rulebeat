@@ -47,10 +47,8 @@ export async function PUT(req: Request) {
     }, { status: 409 });
   }
 
-  let body: { name?: string; tenantId?: string; clientId?: string; clientSecret?: string };
-  const parsed = await parseJsonBody<typeof body>(req);
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseJsonBody<{ name?: string; tenantId?: string; clientId?: string; clientSecret?: string }>(req);
+  if (body instanceof NextResponse) return body;
 
   const tenantId = body.tenantId?.trim() ?? '';
   const clientId = body.clientId?.trim() ?? '';

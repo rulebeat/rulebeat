@@ -24,10 +24,8 @@ export async function PUT(
   const target = await getUser(id);
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  let body: { password?: string } = {};
-  const parsed = await parseOptionalJsonBody<typeof body>(req, {});
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseOptionalJsonBody<{ password?: string }>(req, {});
+  if (body instanceof NextResponse) return body;
 
   const hadAccount = !!await getLocalAccount(id);
   const generated = !body.password;

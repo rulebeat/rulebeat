@@ -19,10 +19,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('auth:manage');
   if (actor instanceof NextResponse) return actor;
 
-  let body: { tenantId?: string } = {};
-  const parsed = await parseOptionalJsonBody<typeof body>(req, {});
-  if (parsed instanceof NextResponse) return parsed;
-  body = parsed;
+  const body = await parseOptionalJsonBody<{ tenantId?: string }>(req, {});
+  if (body instanceof NextResponse) return body;
 
   try {
     const typedTenantId = body.tenantId?.trim();
