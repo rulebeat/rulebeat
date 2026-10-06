@@ -40,6 +40,9 @@ email before they have ever signed in; the account binds to their identity on fi
 `RULEBEAT_INITIAL_ADMIN` names a work email that becomes an admin automatically on first Microsoft
 sign-in. It doubles as the lockout recovery path if every admin is ever removed: set it and restart.
 
+A local account is locked for 15 minutes after 5 wrong passwords. Signing in with Microsoft clears the
+lock straight away, as does an admin setting a new password for that user.
+
 ## Audit log
 
 Every mutation, not just the sensitive ones, writes a row: who did it, what action, a human-readable

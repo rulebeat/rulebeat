@@ -132,6 +132,9 @@ zero admins hold a local password. If Microsoft sign-in breaks while local sign-
 `RULEBEAT_FORCE_LOCAL_SIGNIN=true` is the escape hatch, and it requires access to the host so it
 cannot be triggered from inside the app.
 
+After 5 wrong passwords a local account is locked for 15 minutes. Signing in with Microsoft clears
+the lock straight away, as does an admin setting a new password for that user.
+
 Signing into the tenant proves who someone is, not that they should have access, so a Microsoft
 account with no matching RuleBeat user is refused. `RULEBEAT_INITIAL_ADMIN` names the work email that
 becomes an admin the moment they sign in, and doubles as the recovery path if every admin is removed.

@@ -13,6 +13,8 @@ import { authConfig } from '@/auth.config';
 import { buildAuthConfig } from '@/auth';
 import { resetDb } from '../helpers/db';
 import { createUser, bumpSessionEpoch, type AppUser } from '@/lib/db/users';
+import { getLocalAccount, isLockedOut, recordFailedAttempt, setPassword } from '@/lib/db/local-accounts';
+import { hashPassword } from '@/lib/password';
 
 /**
  * A real bug caught only by manually running the dev server, not by any test above: `lib/auth-
@@ -199,6 +201,58 @@ describe('auth.ts (the full config auth routes use)', () => {
         account: null,
       } as never);
       expect((token as { epoch?: number }).epoch).toBe(5);
+    });
+  });
+
+  // Anyone who knows an email can lock its local password; a real Microsoft sign-in is the way
+  // back, because it proves the owner is present. A rejected one proves nothing.
+  describe('callbacks.signIn (a Microsoft sign-in and a local-account lockout)', () => {
+    const TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
+    async function makeLockedUser(email: string): Promise<AppUser> {
+      const result = await createUser({ email, role: 'viewer' });
+      if ('error' in result) throw new Error(result.error);
+      const { user } = result;
+      await setPassword(user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
+      for (let i = 0; i < 5; i++) await recordFailedAttempt(user.id);
+      expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);
+      return user;
+    }
+
+    async function microsoftSignIn(email: string, profile: { tid: string; oid: string }) {
+      const full = await buildAuthConfig();
+      return full.callbacks!.signIn!({
+        user: { email, name: 'Someone' },
+        account: { provider: 'microsoft-entra-id' },
+        profile,
+      } as never);
+    }
+
+    beforeAll(async () => { await resetDb(); });
+
+    it('clears the lockout on the same user', async () => {
+      const user = await makeLockedUser('sso-unlock@example.com');
+
+      const allowed = await microsoftSignIn('sso-unlock@example.com', { tid: TENANT_ID, oid: 'oid-sso-unlock' });
+
+      expect(allowed).toBe(true);
+      const account = (await getLocalAccount(user.id))!;
+      expect(account.failedAttempts).toBe(0);
+      expect(isLockedOut(account)).toBe(false);
+    });
+
+    it('does not clear the lockout when the sign-in is rejected (wrong tenant)', async () => {
+      const user = await makeLockedUser('sso-wrong-tenant@example.com');
+
+      const allowed = await microsoftSignIn('sso-wrong-tenant@example.com', {
+        tid: '00000000-0000-0000-0000-0000000000ff',
+        oid: 'oid-sso-wrong-tenant',
+      });
+
+      expect(allowed).toBe(false);
+      const account = (await getLocalAccount(user.id))!;
+      expect(account.failedAttempts).toBe(5);
+      expect(isLockedOut(account)).toBe(true);
     });
   });
 });
