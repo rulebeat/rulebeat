@@ -2,6 +2,7 @@ import { createActivityFinding } from '../finding.js';
 import { LogAnalyticsTruncatedError } from '../clients/log-analytics.js';
 import { extractAzureErrorMessage } from '../errors.js';
 import type { Finding, TenantContext } from '../types.js';
+import { queryHasTopLevelLimit } from './kql.js';
 import type { Rule, RuleExecutionStatus, RuleRunEvent } from './types.js';
 
 // Log Analytics-backend counterpart to runRules()/runGraphRules() (spec 036) — same
@@ -44,6 +45,12 @@ export async function* runLawRules(
       yield { kind: 'outcome', outcome: { ruleId: rule.id, status: 'failed', findingCount: 0 } };
       continue;
     }
+
+    // A top-level take/top/limit caps the result set exactly as it does for a Resource Graph
+    // query (queryHasTopLevelLimit's own doc comment), so it gets the same 'capped' treatment here
+    // as runner.ts already gives runRules() — a rule ending in `| take 50` is not an exhaustive
+    // result and must not resolve its own prior findings.
+    const capped = queryHasTopLevelLimit(lq.kql);
 
     const queryStartedAt = Date.now();
     let rows: Record<string, unknown>[];
@@ -107,7 +114,10 @@ export async function* runLawRules(
       };
     }
 
-    const status: RuleExecutionStatus = invalidRowCount > 0 ? 'invalid' : 'success';
+    // Same precedence as runner.ts: 'invalid' wins over 'capped' when both apply, since a bad
+    // identity is the more actionable problem to surface, and both already exclude resolving
+    // prior findings.
+    const status: RuleExecutionStatus = invalidRowCount > 0 ? 'invalid' : capped ? 'capped' : 'success';
     const message = invalidRowCount > 0
       ? `Rule ${rule.id} completed: ${status} (${findingCount} finding(s), ${invalidRowCount} row(s) with no usable dimension value)`
       : `Rule ${rule.id} completed: ${status} (${findingCount} finding(s))`;

@@ -14,11 +14,13 @@ import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
+import { loadRules } from '@/lib/rules';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
 
 const ARG_RULE_ID = 'test-arg-rule-under-identity-logs';
 const LOGS_RULE_ID = 'test-logs-rule-under-identity';
+const CAPPED_LOGS_RULE_ID = 'test-capped-logs-rule-under-identity';
 
 // Same idempotent-delete-then-insert pattern as scan-runner-taxonomy-dispatch.test.ts's
 // insertArgRuleUnderIdentity() — await resetDb() deliberately preserves the seeded rules table.
@@ -53,6 +55,27 @@ async function insertLogsRuleUnderIdentity(): Promise<void> {
     conditions: JSON.stringify([]),
     queryBackend: 'log-analytics',
     logsQuery: JSON.stringify({ kql: 'SigninLogs | where ResultType != 0', timeWindowDays: 30 }),
+    type: 'custom',
+  }));
+}
+
+// Issue #145 — a Log Analytics rule whose query ends in a top-level take/limit/top is just as
+// incomplete as a capped Resource Graph query; distinct from insertLogsRuleUnderIdentity()'s
+// uncapped rule above only by that trailing `| take`.
+async function insertCappedLogsRuleUnderIdentity(): Promise<void> {
+  await execRun(db.delete(rulesTable).where(eq(rulesTable.id, CAPPED_LOGS_RULE_ID)));
+  await execRun(db.insert(rulesTable).values({
+    id: CAPPED_LOGS_RULE_ID,
+    name: CAPPED_LOGS_RULE_ID,
+    description: 'a log-analytics rule with a top-level take, filed under the identity category',
+    category: 'identity',
+    severity: 'medium',
+    enabled: true,
+    scope: JSON.stringify({ level: 'subscription' }),
+    resourceTypes: JSON.stringify([]),
+    conditions: JSON.stringify([]),
+    queryBackend: 'log-analytics',
+    logsQuery: JSON.stringify({ kql: 'SigninLogs | where ResultType != 0 | take 50', timeWindowDays: 30 }),
     type: 'custom',
   }));
 }
@@ -123,5 +146,29 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
     expect(outcome.summary.findings.map(f => f.ruleId).sort()).toEqual([ARG_RULE_ID, 'cred:app-secret-expiring'].sort());
     expect(outcome.summary.coverage).toBe('partial');
     expect(outcome.summary.incompleteRules.map(r => r.ruleId)).toEqual([LOGS_RULE_ID]);
+  });
+
+  // Issue #145 regression: runLawRules() used to report every Log Analytics rule 'success', even
+  // one whose query had a top-level take/limit — exactly the kind of incomplete result
+  // runRules()/runGraphRules() already flag as 'capped'. A rule like this is real but not
+  // exhaustive, so it must show up in incompleteRules (status 'capped'), tip the scan's own
+  // coverage to 'partial', and must never be stamped 'success' in the rules table.
+  it('a capped Log Analytics rule (top-level take) is reported capped, not success, and tips coverage to partial', async () => {
+    const category = await identityCategory();
+    await insertCappedLogsRuleUnderIdentity();
+    const ctx = fakeTenantContext({ logsRows: [{ UserId: 'u1' }] });
+
+    const outcome = await runCategoryScan(category, { ctx, ruleIds: [CAPPED_LOGS_RULE_ID] });
+
+    expect(outcome.summary.coverage).toBe('partial');
+    expect(outcome.summary.incompleteRules).toEqual([
+      { ruleId: CAPPED_LOGS_RULE_ID, ruleName: CAPPED_LOGS_RULE_ID, status: 'capped' },
+    ]);
+    // Capped means "real but not proven exhaustive", not "nothing found" — the finding itself is
+    // still produced.
+    expect(outcome.summary.findings.map(f => f.ruleId)).toEqual([CAPPED_LOGS_RULE_ID]);
+
+    const rule = (await loadRules()).find(r => r.id === CAPPED_LOGS_RULE_ID);
+    expect(rule?.lastRunStatus).toBe('capped');
   });
 });

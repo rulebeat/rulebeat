@@ -172,4 +172,45 @@ describe('runLawRules() outcomes', () => {
     const events = await drain([rule], ctx);
     expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'success', findingCount: 0 } }]);
   });
+
+  // Issue #145 — a Log Analytics query with a top-level take/limit/top is just as incomplete as a
+  // capped Resource Graph query, and must not report 'success' (runner.ts already makes this check
+  // for its own backend via queryHasTopLevelLimit(); law-runner.ts was missing it entirely).
+  it('yields capped, not success, for a query ending in a top-level `| take`', async () => {
+    const rule = baseRule({ logsQuery: { kql: 'SigninLogs | where ResultType != 0 | take 50', timeWindowDays: 30 } });
+    const ctx = fakeCtx(async () => [{ Foo: 'a' }]);
+
+    const events = await drain([rule], ctx);
+    const outcomes = events.filter(e => e.kind === 'outcome');
+
+    expect(events.filter(e => e.kind === 'finding')).toHaveLength(1);
+    expect(outcomes).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'capped', findingCount: 1 } }]);
+  });
+
+  it('yields capped, not success, for a query ending in a top-level `| limit`', async () => {
+    const rule = baseRule({ logsQuery: { kql: 'SigninLogs | where ResultType != 0 | limit 10', timeWindowDays: 30 } });
+    const ctx = fakeCtx(async () => [{ Foo: 'a' }]);
+
+    const events = await drain([rule], ctx);
+    const outcomes = events.filter(e => e.kind === 'outcome');
+
+    expect(events.filter(e => e.kind === 'finding')).toHaveLength(1);
+    expect(outcomes).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'capped', findingCount: 1 } }]);
+  });
+
+  it('stays success when `take` only appears inside a subquery, not as a top-level stage', async () => {
+    const rule = baseRule({
+      logsQuery: {
+        kql: 'SigninLogs | join kind=inner (AuditLogs | take 5) on CorrelationId',
+        timeWindowDays: 30,
+      },
+    });
+    const ctx = fakeCtx(async () => [{ Foo: 'a' }]);
+
+    const events = await drain([rule], ctx);
+    const outcomes = events.filter(e => e.kind === 'outcome');
+
+    expect(events.filter(e => e.kind === 'finding')).toHaveLength(1);
+    expect(outcomes).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'success', findingCount: 1 } }]);
+  });
 });
