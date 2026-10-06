@@ -88,4 +88,45 @@ describe('GET /api/audit/export', () => {
     const body = await res.text();
     expect(body).toContain("'=cmd");
   });
+
+  it('prefixes an apostrophe on every leading formula character, tab and carriage return included', async () => {
+    const admin = await makeUser('admin4@example.com', 'admin');
+    mockAuth.mockResolvedValue({ user: { uid: admin.id } });
+
+    for (const summary of ['=sum', '+sum', '-sum', '@sum', '\tsum', '\rsum']) {
+      await writeAudit({ actor: admin, action: 'rule.create', summary });
+    }
+
+    const res = await exportRoute.GET();
+    const body = await res.text();
+    expect(body).toContain(",'=sum,");
+    expect(body).toContain(",'+sum,");
+    expect(body).toContain(",'-sum,");
+    expect(body).toContain(",'@sum,");
+    expect(body).toContain(",'\tsum,");
+    // A leading CR also forces quoting, so the guarded cell stays in one row.
+    expect(body).toContain(",\"'\rsum\",");
+  });
+
+  it('quotes a value holding a bare carriage return so the row cannot split', async () => {
+    const admin = await makeUser('admin5@example.com', 'admin');
+    mockAuth.mockResolvedValue({ user: { uid: admin.id } });
+
+    await writeAudit({ actor: admin, action: 'rule.create', summary: 'first\rsecond' });
+
+    const res = await exportRoute.GET();
+    const body = await res.text();
+    expect(body).toContain(',"first\rsecond",');
+  });
+
+  it('leaves a value with a formula character only in the middle untouched', async () => {
+    const admin = await makeUser('admin6@example.com', 'admin');
+    mockAuth.mockResolvedValue({ user: { uid: admin.id } });
+
+    await writeAudit({ actor: admin, action: 'rule.create', summary: 'a=b-c+d@e' });
+
+    const res = await exportRoute.GET();
+    const body = await res.text();
+    expect(body).toContain(',a=b-c+d@e,');
+  });
 });
