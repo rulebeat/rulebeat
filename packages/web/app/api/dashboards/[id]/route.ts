@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard } from '@/lib/db/dashboards';
+import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -33,8 +33,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const before = await getDashboard(id);
   const result = await updateDashboard(id, body);
-  if (result === null) return Response.json({ error: 'Not found' }, { status: 404 });
-  if ('error' in result) return Response.json({ error: result.error }, { status: 409 });
+  if (!result.ok) {
+    if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+    const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
+    return Response.json({ error }, { status: 409 });
+  }
 
   // Only renames are audited. Every widget drag and resize also lands here as a `config` save,
   // and logging those would bury every meaningful entry under layout noise.

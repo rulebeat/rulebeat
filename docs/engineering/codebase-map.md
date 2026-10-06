@@ -121,7 +121,7 @@
 | `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
-| `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default |
+| `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page |
 | `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |

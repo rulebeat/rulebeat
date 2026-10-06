@@ -12,6 +12,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Fixed
 
+- Two dashboards can no longer end up with the same name when they are created, renamed, duplicated or restored from the starter at the same moment, and two dashboards created at once into an empty list no longer both become the default. Saving a dashboard without changing its name no longer fails when an older install already has another dashboard with the same name.
 - A suppressed finding that comes back after its resource was fixed and broke again is no longer sent in notifications as new. Notifications now leave out every finding that is suppressed when they are sent, on scheduled runs and on runs whose notification is sent after a restart. An expired suppression no longer hides anything.
 - A Log Analytics rule whose query ends in `take`, `limit` or `top` is now reported as capped, the same as a Resource Graph rule. Its results may be cut short, so the scan now shows partial coverage instead of reporting the rule as a full success.
 - After a rule moves to another category, the dashboards stop counting its fixed findings under the old category as soon as the next scan runs. Before, the old category kept showing them as active until that category was scanned again. The finding's history also stays in one category: its resolved event is recorded under the category the finding was found in.
