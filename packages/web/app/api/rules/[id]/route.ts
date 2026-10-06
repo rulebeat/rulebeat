@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, saveRules, isNameTaken, validateRuleName, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
-import { deleteFindingsForRule } from '@/lib/db/findings';
+import { loadRules, updateRule, deleteRule, isNameTaken, validateRuleName, APPLIES_TO_REMOVED_ERROR, type RuleChanges } from '@/lib/rules';
 import { writeAudit, changedFields } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -20,11 +19,8 @@ export async function PUT(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const allRules = await loadRules();
-  const idx = allRules.findIndex(r => r.id === id);
-  if (idx === -1) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  const existing = allRules[idx];
+  const existing = (await loadRules()).find(r => r.id === id);
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   // Built-ins: only enabled toggle and tag assignment are allowed, with one exception (spec 032) —
   // a microsoft-graph built-in (the seeded identity checks) ships its detection logic editable, so
@@ -36,7 +32,12 @@ export async function PUT(
       return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
     }
 
-    let graphQuery = existing.graphQuery;
+    // Only the fields this edit means to change are written, so a scan's run status or another
+    // editor's change to a column untouched here is never put back to what was read above.
+    const changes: RuleChanges = { enabled: Boolean(body.enabled) };
+    const newTags = body.tags ?? (body.group ? [body.group] : undefined);
+    if (newTags) changes.tags = newTags;
+
     if (existing.queryBackend === 'microsoft-graph' && body.graphQuery) {
       const shapeError = validateGraphQueryShape(body.graphQuery);
       if (shapeError) {
@@ -48,31 +49,26 @@ export async function PUT(
       } catch (err) {
         console.error('[RuleBeat] rule-save Graph probe could not connect to Azure, allowing save:', err);
       }
-      graphQuery = body.graphQuery;
+      changes.graphQuery = body.graphQuery;
     }
 
-    allRules[idx] = {
-      ...existing,
-      enabled: Boolean(body.enabled),
-      tags: body.tags ?? (body.group ? [body.group] : existing.tags),
-      graphQuery,
-    };
-    await saveRules(allRules);
+    const updated = await updateRule(id, changes);
+    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     await writeAudit({
       actor,
       action: 'rule.update',
       entityType: 'rule',
       entityId: id,
-      summary: allRules[idx].enabled !== existing.enabled
-        ? `${allRules[idx].enabled ? 'Enabled' : 'Disabled'} built-in rule "${existing.name}"`
-        : graphQuery !== existing.graphQuery
+      summary: changes.enabled !== existing.enabled
+        ? `${changes.enabled ? 'Enabled' : 'Disabled'} built-in rule "${existing.name}"`
+        : changes.graphQuery
           ? `Updated the Graph query on built-in rule "${existing.name}"`
           : `Updated tags on built-in rule "${existing.name}"`,
-      details: { changed: changedFields(existing, allRules[idx]) },
+      details: { changed: changedFields(existing, changes) },
     });
 
-    return NextResponse.json(allRules[idx]);
+    return NextResponse.json(updated);
   }
 
   const body = await parseJsonBody<Rule>(req);
@@ -146,35 +142,42 @@ export async function PUT(
     }
   }
 
-  // Preserve type/pack/taxonomy — cannot be changed via edit.
-  //
-  // Also preserve the scan-outcome fields (lastRunStatus/lastRunAt): the form never sends them
-  // (they aren't user-editable), and `body` is a bare payload the client built, not a spread of
-  // `existing` — without this, every edit through this route silently reset a rule's outcome
-  // history back to "never run", which made spec 030's coverage badge go blank the moment someone
-  // saved an unrelated change.
-  allRules[idx] = {
-    ...body,
-    id,
-    type: existing.type,
-    pack: existing.pack,
-    queryBackend: existing.queryBackend,
-    kind: existing.kind,
-    lastRunStatus: existing.lastRunStatus,
-    lastRunAt: existing.lastRunAt,
+  // The form sends the whole editable definition, so every editable field is named here and one the
+  // payload omits is cleared, as before. Type/pack/queryBackend/kind are left out so they cannot be
+  // changed via edit, and so are the scan-outcome fields (lastRunStatus/lastRunAt): they are the
+  // scan's, `updateRule()` never writes them, and an edit can neither reset a rule's outcome history
+  // to "never run" nor put back a stale one.
+  const changes: RuleChanges = {
+    name: body.name,
+    description: body.description,
+    category: body.category,
+    severity: body.severity,
+    enabled: body.enabled,
+    scope: body.scope,
+    resourceTypes: body.resourceTypes,
+    conditions: body.conditions,
+    conditionGroups: body.conditionGroups,
+    projectColumns: body.projectColumns,
+    rawKql: body.rawKql,
+    group: body.group,
+    tags: body.tags,
+    visualQuery: body.visualQuery,
+    graphQuery: body.graphQuery,
+    logsQuery: body.logsQuery,
   };
-  await saveRules(allRules);
+  const updated = await updateRule(id, changes);
+  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await writeAudit({
     actor,
     action: 'rule.update',
     entityType: 'rule',
     entityId: id,
-    summary: `Updated rule "${allRules[idx].name}"`,
-    details: { changed: changedFields(existing, allRules[idx]) },
+    summary: `Updated rule "${updated.name}"`,
+    details: { changed: changedFields(existing, changes) },
   });
 
-  return NextResponse.json(allRules[idx]);
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(
@@ -186,14 +189,12 @@ export async function DELETE(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const allRules = await loadRules();
-  const target = allRules.find(r => r.id === id);
+  const target = (await loadRules()).find(r => r.id === id);
 
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (target.type === 'builtin') return NextResponse.json({ error: 'Built-in rules cannot be deleted.' }, { status: 403 });
 
-  await saveRules(allRules.filter(r => r.id !== id));
-  await deleteFindingsForRule(id);
+  if (!await deleteRule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await writeAudit({
     actor,

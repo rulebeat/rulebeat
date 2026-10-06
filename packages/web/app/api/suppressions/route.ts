@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadSuppressions, saveSuppressions } from '@/lib/suppressions';
+import { loadSuppressions, addSuppression } from '@/lib/suppressions';
 import { writeAudit } from '@/lib/db/audit';
 import type { Suppression } from '@/lib/types';
 
@@ -30,9 +30,7 @@ export async function POST(req: Request) {
     ...(body.expiresAt ? { expiresAt: body.expiresAt } : {}),
   };
 
-  const all = await loadSuppressions();
-  all.push(suppression);
-  await saveSuppressions(all);
+  await addSuppression(suppression);
 
   // Suppression is the most consequential action in the product — it makes a real risk disappear
   // from the dashboard — so the reason and expiry are recorded alongside the actor.
