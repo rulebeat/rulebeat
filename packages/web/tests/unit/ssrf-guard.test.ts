@@ -1,4 +1,5 @@
 import http from 'node:http';
+import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -6,12 +7,15 @@ import {
   assertPublicHost,
   assertSafeWebhookUrl,
   guardedFetch,
+  resolveSmtpAddresses,
   SsrfGuardError,
   allowAddressesForTests,
   setDnsLookupForTests,
   setGuardedTransportForTests,
+  trustCertificateForTests,
   resetDnsLookupForTests,
 } from '@/lib/ssrf-guard';
+import { createSelfSignedCert } from '../helpers/self-signed-cert';
 
 afterEach(async () => {
   resetDnsLookupForTests();
@@ -55,6 +59,26 @@ describe('isBlockedAddress', () => {
     ['2001::1', 'Teredo, compressed'],
   ])('blocks %s (%s)', (ip) => {
     expect(isBlockedAddress(ip)).toBe(true);
+  });
+
+  // ::/96 IPv4-compatible (deprecated): some stacks still route it to the embedded IPv4 address,
+  // so the form is blocked whatever the tail is. 100::/64 is the discard-only prefix (RFC 6666).
+  it.each([
+    ['::127.0.0.1', 'IPv4-compatible embedding loopback'],
+    ['::7f00:1', 'IPv4-compatible embedding loopback, hex'],
+    ['::10.0.0.1', 'IPv4-compatible embedding 10.0.0.1'],
+    ['::8.8.8.8', 'IPv4-compatible embedding a public address'],
+    ['::808:808', 'IPv4-compatible embedding a public address, hex'],
+    ['100::1', 'discard-only prefix'],
+    ['100::ffff:ffff:ffff:ffff', 'discard-only prefix, last address'],
+  ])('blocks %s (%s)', (ip) => {
+    expect(isBlockedAddress(ip)).toBe(true);
+  });
+
+  it.each([
+    ['100:0:0:1::1', 'outside the 100::/64 discard-only prefix'],
+  ])('does not block %s (%s)', (ip) => {
+    expect(isBlockedAddress(ip)).toBe(false);
   });
 
   it.each([
@@ -104,6 +128,45 @@ describe('assertPublicHost', () => {
     setDnsLookupForTests(() => new Promise(() => { /* never resolves */ }));
     await expect(assertPublicHost('slow.example.test')).rejects.toThrow(SsrfGuardError);
   }, 10_000);
+});
+
+describe('resolveSmtpAddresses', () => {
+  const cfg = { host: 'smtp.example.test' };
+
+  it('lists IPv4 first, then IPv6, keeping the resolver order within a family', async () => {
+    setDnsLookupForTests(async () => [
+      { address: '2606:4700:4700::1111' },
+      { address: '93.184.216.34' },
+      { address: '2001:4860:4860::8888' },
+      { address: '8.8.4.4' },
+    ]);
+    // Four answers, so the cap also applies; the first three in the wanted order are kept.
+    await expect(resolveSmtpAddresses(cfg)).resolves.toEqual([
+      '93.184.216.34',
+      '8.8.4.4',
+      '2606:4700:4700::1111',
+    ]);
+  });
+
+  it('stops at three addresses', async () => {
+    setDnsLookupForTests(async () => [
+      { address: '93.184.216.34' }, { address: '8.8.8.8' }, { address: '1.1.1.1' }, { address: '8.8.4.4' },
+    ]);
+    await expect(resolveSmtpAddresses(cfg)).resolves.toEqual(['93.184.216.34', '8.8.8.8', '1.1.1.1']);
+  });
+
+  it('lists a repeated address once', async () => {
+    setDnsLookupForTests(async () => [{ address: '93.184.216.34' }, { address: '93.184.216.34' }, { address: '8.8.8.8' }]);
+    await expect(resolveSmtpAddresses(cfg)).resolves.toEqual(['93.184.216.34', '8.8.8.8']);
+  });
+
+  it('still refuses the whole host when any one address, even a later one, is not public', async () => {
+    setDnsLookupForTests(async () => [
+      { address: '93.184.216.34' }, { address: '8.8.8.8' }, { address: '1.1.1.1' }, { address: '10.0.0.5' },
+    ]);
+    await expect(resolveSmtpAddresses(cfg))
+      .rejects.toThrow('SMTP host is not allowed: smtp.example.test resolves to 10.0.0.5, which is not a public address.');
+  });
 });
 
 describe('assertSafeWebhookUrl', () => {
@@ -267,5 +330,56 @@ describe('guardedFetch over a real socket', () => {
       signal: AbortSignal.timeout(150),
     });
     await expect(sent).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+});
+
+describe('guardedFetch over a pinned HTTPS connection', () => {
+  let server: https.Server;
+  let port: number;
+  let pem: { key: string; cert: string };
+  let requests: (string | undefined)[];
+
+  beforeEach(async () => {
+    pem = createSelfSignedCert('pinned.example.test');
+    requests = [];
+    server = https.createServer({ key: pem.key, cert: pem.cert }, (req, res) => {
+      requests.push(req.headers.host);
+      res.statusCode = 200;
+      res.end('ok');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    port = (server.address() as AddressInfo).port;
+    allowAddressesForTests(['127.0.0.1']);
+    // Both names resolve to the one server: only the certificate can tell them apart.
+    setDnsLookupForTests(async () => [{ address: '127.0.0.1' }]);
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  });
+
+  it('connects when the URL\'s hostname is the one the certificate was issued for', async () => {
+    trustCertificateForTests(pem.cert);
+
+    const res = await guardedFetch(`https://pinned.example.test:${port}/hook`, { method: 'POST', body: 'x' });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(requests).toEqual([`pinned.example.test:${port}`]);
+  });
+
+  it('rejects a different hostname that resolves to the same address, on the certificate name', async () => {
+    trustCertificateForTests(pem.cert);
+
+    await expect(guardedFetch(`https://other.example.test:${port}/hook`, { method: 'POST', body: 'x' }))
+      .rejects.toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('rejects the certificate\'s own hostname when that certificate is not trusted', async () => {
+    await expect(guardedFetch(`https://pinned.example.test:${port}/hook`, { method: 'POST', body: 'x' }))
+      .rejects.toMatchObject({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' });
+    expect(requests).toHaveLength(0);
   });
 });

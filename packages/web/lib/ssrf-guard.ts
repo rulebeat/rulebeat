@@ -33,6 +33,7 @@ export type GuardedTransport = (url: string, init: RequestInit, addresses: Resol
 
 let activeTransport: GuardedTransport = requestPinned;
 const testAllowedAddresses = new Set<string>();
+let testTrustedCa: string | undefined;
 
 /** Test-only seam — substitute a fake resolver so tests never touch real DNS. */
 export function setDnsLookupForTests(fn: DnsLookup): void {
@@ -49,11 +50,17 @@ export function allowAddressesForTests(addresses: string[]): void {
   for (const address of addresses) testAllowedAddresses.add(address);
 }
 
-/** Restores the real resolver and transport and clears every address allowed for a test. */
+/** Test-only seam: trust this PEM certificate for HTTPS sends, so a test server can use a self-signed one. */
+export function trustCertificateForTests(pem: string): void {
+  testTrustedCa = pem;
+}
+
+/** Restores the real resolver and transport and clears every address and certificate allowed for a test. */
 export function resetDnsLookupForTests(): void {
   activeLookup = defaultLookup;
   activeTransport = requestPinned;
   testAllowedAddresses.clear();
+  testTrustedCa = undefined;
 }
 
 function ipv4ToInt(parts: number[]): number {
@@ -139,6 +146,12 @@ function isBlockedIpv6(ip: string): boolean {
   if ((first & 0xfe00) === 0xfc00) return true; // fc00::/7 unique-local
   if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
   if ((first & 0xff00) === 0xff00) return true; // ff00::/8 multicast
+
+  // ::/96 IPv4-compatible (RFC 4291, deprecated): some stacks still route it to the embedded IPv4
+  // address. The form is never a legitimate destination, so it is blocked whatever the tail is.
+  if (segs.slice(0, 6).every(s => s === '0000')) return true;
+  // 100::/64 is the discard-only prefix (RFC 6666): traffic to it is dropped, never delivered.
+  if (segs[0] === '0100' && segs.slice(1, 4).every(s => s === '0000')) return true;
 
   // 64:ff9b::/96 NAT64 (RFC 6052): the last 32 bits are the IPv4 address that gets connected to.
   if (segs[0] === '0064' && segs[1] === 'ff9b' && segs.slice(2, 6).every(s => s === '0000')) {
@@ -252,14 +265,22 @@ export async function assertSafeEmailHost(cfg: Pick<EmailChannelConfig, 'host'>)
   await resolvePublicSmtpHost(cfg.host);
 }
 
+/** How many of an SMTP host's checked addresses a send will try, so a dead host cannot stall it for long. */
+export const MAX_SMTP_ADDRESSES = 3;
+
 /**
- * Resolves an SMTP host once and returns the one address to connect to. The caller hands that
- * address to the mail client as the host (with the original name kept for TLS), so the client
- * never resolves the name itself. IPv4 is preferred, as the mail client itself would.
+ * Resolves an SMTP host once and returns the checked addresses to connect to, in the order to try
+ * them: IPv4 first, then IPv6, keeping the resolver's order within a family, at most
+ * `MAX_SMTP_ADDRESSES`. The caller hands one address at a time to the mail client as the host (with
+ * the original name kept for TLS), so the client never resolves the name itself.
  */
-export async function resolveSmtpAddress(cfg: Pick<EmailChannelConfig, 'host'>): Promise<string> {
+export async function resolveSmtpAddresses(cfg: Pick<EmailChannelConfig, 'host'>): Promise<string[]> {
   const addresses = await resolvePublicSmtpHost(cfg.host);
-  return (addresses.find(a => a.family === 4) ?? addresses[0]).address;
+  const ordered = [
+    ...addresses.filter(a => a.family === 4),
+    ...addresses.filter(a => a.family === 6),
+  ].map(a => a.address);
+  return [...new Set(ordered)].slice(0, MAX_SMTP_ADDRESSES);
 }
 
 /** Connects to one of the already-checked addresses only: the socket's own lookup is answered from them. */
@@ -310,6 +331,7 @@ function requestPinned(url: string, init: RequestInit, addresses: ResolvedAddres
       headers,
       agent: false,
       lookup: pinnedLookup(addresses),
+      ...(testTrustedCa ? { ca: testTrustedCa } : {}),
     }, res => {
       const chunks: Buffer[] = [];
       let size = 0;
