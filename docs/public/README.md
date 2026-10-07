@@ -21,6 +21,7 @@ Everything else is reference you can come back to.
 | [Installing RuleBeat](install.md) | Running one container, first sign-in, and the onboarding wizard. |
 | [Azure permissions](permissions.md) | Which Azure and Graph permissions the identity needs, and why each is read-only. |
 | [Scans and schedules](scans-and-schedules.md) | Running your first scan, and what a scheduled run records per rule. |
+| [Tutorials](tutorials.md) | Short videos: a situation you know, solved in RuleBeat. |
 
 ## Understand
 
