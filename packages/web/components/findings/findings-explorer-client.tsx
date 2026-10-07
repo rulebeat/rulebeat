@@ -30,6 +30,7 @@ import type { Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import {
   getRecencyStatus, isFixedInWindow, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
+  summarizeFindings, EXPLORER_SEVERITIES,
   type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
 } from '@/lib/explorer-filters';
 
@@ -72,7 +73,6 @@ interface FindingsExplorerClientProps {
 // ---- Constants ----
 
 const SEV_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const PAGE_SIZE = 50;
 
 /* Status is an outcome, so it uses the status tokens rather than severity's. The
@@ -484,18 +484,7 @@ export function FindingsExplorerClient({
     [data.findings, passesGlobalFilters],
   );
 
-  const stats = useMemo(() => {
-    const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-    let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
-    for (const f of statsPool) {
-      const recency = getRecencyStatus(f, rangeFrom, rangeTo);
-      if (recency !== 'fixed') counts[f.severity]++;
-      if (recency === 'new') newCount++;
-      else if (recency === 'active') activeCount++;
-      else if (isFixedInWindow(f, rangeFrom, rangeTo)) recentlyFixedCount++;
-    }
-    return { total: newCount + activeCount, counts, newCount, activeCount, recentlyFixedCount };
-  }, [statsPool, rangeFrom, rangeTo]);
+  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo), [statsPool, rangeFrom, rangeTo]);
 
   const suppressedCount = useMemo(
     () => data.findings.filter(f => (categoryFilter.size === 0 || categoryFilter.has(f.category)) && suppressedFps.has(f.fingerprint)).length,
@@ -677,24 +666,25 @@ export function FindingsExplorerClient({
           only targets a rule or tag instead of a whole category, since there's no single "previous
           scan" to diff against. A rolling window works identically no matter how the scan was
           scoped, and re-running the same scan seconds apart no longer swings the count to 0. */}
-      {/* One strip divided by hairlines rather than seven floating cards. The severity
+      {/* One strip divided by hairlines rather than eight floating cards. The severity
           counts are not a colour rainbow: critical is the only one that gets the accent,
           and the rest step down in ink weight, which is how Grid encodes severity
-          everywhere else. Seven equally loud pastel boxes told you nothing about which
-          number to look at first. */}
-      <div className="grid grid-cols-4 bg-surface lg:grid-cols-7">
+          everywhere else. Eight equally loud pastel boxes told you nothing about which
+          number to look at first. The five severity tiles always add up to Open. */}
+      <div className="grid grid-cols-4 bg-surface lg:grid-cols-8">
         {([
           { key: 'open',     label: 'Open',                   value: stats.total,              valueCls: 'text-ink' },
           { key: 'critical', label: 'Critical',               value: stats.counts.critical,    valueCls: 'text-sev-critical' },
           { key: 'high',     label: 'High',                   value: stats.counts.high,        valueCls: 'text-sev-high' },
           { key: 'medium',   label: 'Medium',                 value: stats.counts.medium,      valueCls: 'text-sev-medium' },
           { key: 'low',      label: 'Low',                    value: stats.counts.low,         valueCls: 'text-sev-low' },
-          { key: 'new',      label: `New (${windowLabel})`,   value: stats.newCount,           valueCls: 'text-sev-critical',
+          { key: 'info',     label: 'Info',                   value: stats.counts.info,        valueCls: 'text-ink-faint' },
+          { key: 'new',     label: `New (${windowLabel})`,   value: stats.newCount,           valueCls: 'text-sev-critical',
             title: `First seen within ${windowLabel} and not yet fixed` },
           { key: 'fixed',    label: `Fixed (${windowLabel})`, value: stats.recentlyFixedCount, valueCls: 'text-status-ok',
             title: `Resolved within ${windowLabel}` },
         ]).map(s => {
-          // Only two of the seven actually filter anything. The rest are readouts, so they
+          // Only two of the eight actually filter anything. The rest are readouts, so they
           // do not get a pointer or a hover state that promises a click will do something.
           const clickable = s.key === 'new' || s.key === 'fixed';
           const isOn = (s.key === 'new' && statusFilter === 'new') || (s.key === 'fixed' && statusFilter === 'fixed');
@@ -771,11 +761,11 @@ export function FindingsExplorerClient({
 
         <div className="h-6 w-px shrink-0 bg-border" />
 
-        {/* The severity filters sit flush as one segmented control rather than four separate
+        {/* The severity filters sit flush as one segmented control rather than five separate
             buttons, so they read as a single choice. Selected is an ink fill: this is a filter,
-            not an alert, and four red buttons would out-shout the findings themselves. */}
+            not an alert, and five red buttons would out-shout the findings themselves. */}
         <div className="flex shrink-0 items-center border border-rule-strong">
-          {SEVERITIES.map((sev, i) => (
+          {EXPLORER_SEVERITIES.map((sev, i) => (
             <button
               key={sev}
               type="button"

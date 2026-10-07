@@ -60,6 +60,35 @@ export function parseExplorerStatus(value: string | undefined): ExplorerStatusFi
   return value === 'new' || value === 'fixed' || value === 'all' ? value : 'open';
 }
 
+/** Every severity, in the order the tiles and the severity filter show them. Info is the lowest
+ *  severity of a real finding, so it gets a tile and a filter button like the rest. */
+export const EXPLORER_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+
+export interface ExplorerStats {
+  /** Open right now. Always the sum of `counts`. */
+  total: number;
+  /** Open findings per severity. */
+  counts: Record<Severity, number>;
+  newCount: number;
+  activeCount: number;
+  recentlyFixedCount: number;
+}
+
+/** The header tiles. Pass it a pool with every filter applied except severity and status, so the
+ *  tiles stay a stable reference while those two are toggled. */
+export function summarizeFindings(findings: ExplorerFinding[], from: string, to: string): ExplorerStats {
+  const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
+  for (const f of findings) {
+    const recency = getRecencyStatus(f, from, to);
+    if (recency !== 'fixed') counts[f.severity]++;
+    if (recency === 'new') newCount++;
+    else if (recency === 'active') activeCount++;
+    else if (isFixedInWindow(f, from, to)) recentlyFixedCount++;
+  }
+  return { total: newCount + activeCount, counts, newCount, activeCount, recentlyFixedCount };
+}
+
 export interface RuleCounts {
   /** Open right now, whatever the window. */
   open: number;

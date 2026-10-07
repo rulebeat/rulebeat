@@ -1,5 +1,5 @@
 /**
- * The Results tab's status filter, by-rule Active/New/Fixed counts, and filter-dropdown counts.
+ * The Results tab's status filter, by-rule Open/New/Fixed counts, header tiles, and filter-dropdown counts.
  *
  * Contract: Open is every open finding whatever the window or status picked; New and Fixed are
  * both bounded by the window; and a dropdown's counts follow every filter except its own, status
@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExplorerFinding } from '@/lib/explorer-data';
 import {
-  matchesExplorerFilters, countFindingsByRule, facetPool, parseExplorerStatus,
+  matchesExplorerFilters, countFindingsByRule, facetPool, parseExplorerStatus, summarizeFindings, EXPLORER_SEVERITIES,
   type ExplorerFilterState,
 } from '@/lib/explorer-filters';
 
@@ -105,5 +105,28 @@ describe('filter dropdown counts', () => {
   it('picking a subscription keeps the other subscriptions in its own dropdown', () => {
     const pool = facetPool(ALL, state({ subscriptions: new Set(['sub-1']) }), 'subscription');
     expect(new Set(pool.map(x => x.subscriptionId))).toEqual(new Set(['sub-1', 'sub-2']));
+  });
+});
+
+describe('header tiles', () => {
+  const INFO_OPEN = f('info-open', { severity: 'info' });
+  const LOW_OPEN = f('low-open', { severity: 'low' });
+
+  it('there is a severity tile and filter button for Info', () => {
+    expect(EXPLORER_SEVERITIES).toEqual(['critical', 'high', 'medium', 'low', 'info']);
+  });
+
+  it('the severity tiles add up to Open, Info included', () => {
+    const stats = summarizeFindings([...ALL, INFO_OPEN, LOW_OPEN], FROM, TO);
+    const tileSum = EXPLORER_SEVERITIES.reduce((n, sev) => n + stats.counts[sev], 0);
+    expect(stats.total).toBe(5);
+    expect(stats.counts.info).toBe(1);
+    expect(tileSum).toBe(stats.total);
+  });
+
+  it('the Info filter shows only open Info findings', () => {
+    const pool = [...ALL, INFO_OPEN, LOW_OPEN];
+    const picked = pool.filter(x => matchesExplorerFilters(x, state({ severities: new Set(['info']) })));
+    expect(picked.map(x => x.fingerprint)).toEqual(['info-open']);
   });
 });
