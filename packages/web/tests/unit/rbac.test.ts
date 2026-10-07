@@ -45,6 +45,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'azure:manage',
     'auth:manage',
     'notifications:manage',
+    'rules:version',
   ],
 };
 

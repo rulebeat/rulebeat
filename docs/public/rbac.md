@@ -8,6 +8,7 @@ so on) rather than a role rank, so this table is the single place the mapping li
 |---|:---:|:---:|:---:|
 | Read and export everything (findings, rules, dashboards, scans) | ✅ | ✅ | ✅ |
 | Author, edit, delete, or test-validate rules, and clear a rule's findings | | ✅ | ✅ |
+| Switch a shipped Rule version (`rules:version`) | | | ✅ |
 | Run a manual scan | | ✅ | ✅ |
 | Create or edit schedules | | ✅ | ✅ |
 | Suppress a finding | | ✅ | ✅ |
@@ -22,6 +23,10 @@ so on) rather than a role rank, so this table is the single place the mapping li
 
 Every account, viewer included, can change its own password. That sits outside the ladder: it is
 not something one role grants another.
+
+Every role can read a shipped rule's version history and review its changes. Switching forward
+or back is an admin decision, separate from authoring a Custom rule.
+See [Rule versions](rule-versions.md).
 
 A role is looked up from the local `users` table on every request that needs one, never carried on
 the session token, so a demotion or a removed account takes effect on the very next request rather
@@ -48,3 +53,6 @@ lock straight away, as does an admin setting a new password for that user.
 Every mutation, not just the sensitive ones, writes a row: who did it, what action, a human-readable
 summary, and the names of the fields that changed. Never the values, so a secret is never written to
 the log even indirectly. Only admins can read it, from Settings → Audit log.
+
+A Rule version switch records `rule.version`. The summary names the old and new versions, and
+the details contain changed field names only, not definition values. A refused switch writes no entry.

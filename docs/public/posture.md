@@ -40,6 +40,13 @@ finding's visibility, not the finding. And RuleBeat once counted a rule with zer
 passing whether or not its query had run, so an install upgraded across that change shows a lower,
 more honest number the next morning.
 
+Switching a shipped [Rule version](rule-versions.md) can also move the number after the next scan,
+even when your estate has not changed. The selected definition may return different resources or
+use a different severity or category. Matched findings keep their age, history and suppressions;
+dropped matches become fixed and new matches open. Switching itself starts no scan and does not
+reset findings. Upgrading does not change the version an enabled shipped rule runs, so taking a
+new definition is an admin's choice, not a silent consequence of restarting.
+
 ## Snapshots and trend
 
 Counts are live; trend lines need history. Once a day, after a scan's findings are synced, RuleBeat

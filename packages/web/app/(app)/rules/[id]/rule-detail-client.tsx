@@ -8,7 +8,7 @@ import { RuleForm } from '@/components/rules/rule-form';
 import { RuleOrigin } from '@/components/rules/rule-origin';
 import type { OriginNote } from '@/lib/rule-version-markers';
 import { canDuplicateRule } from '@/lib/rule-taxonomy';
-import type { Category, Rule } from '@/lib/types';
+import type { Category, Rule, RuleVersionHistory } from '@/lib/types';
 
 interface Props {
   rule: Rule;
@@ -20,9 +20,11 @@ interface Props {
   categories?: Category[];
   /** Whether this person may author rules at all. Built-ins still lock their detection query. */
   canAuthor: boolean;
+  canVersion: boolean;
+  versionHistory?: RuleVersionHistory;
 }
 
-export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor }: Props) {
+export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor, canVersion, versionHistory }: Props) {
   const router = useRouter();
   const isBuiltin = rule.type === 'builtin';
   const canDuplicate = canDuplicateRule(rule);
@@ -99,6 +101,8 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
           button is only active when there's something unsaved. */}
       <RuleForm
         initial={rule}
+        versionHistory={versionHistory}
+        canVersion={canVersion}
         kqlQuery={kqlQuery}
         readOnly={!editing}
         allTags={allTags}

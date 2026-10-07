@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Shipped rules now have a Rule version selector with dates, release notes, newer versions marked New, and a before/after review with a query line diff. Admins can switch to any recorded version, forward or back, without starting a scan. Viewers and editors can review history read-only. Each switch is audited with the old and new versions and changed field names; matched findings keep their ages, history and suppressions on the next scan.
+
 ### Changed
 
 - Every shipped rule now has a version, and each version is recorded with the definition it shipped with. RuleBeat Core rules are at `1.0.0` and the APRL pack's version is the date and time of the upstream commit it was synced from (shown as 2026-06-08). Pack versions are set per pack in `data/packs/pack-manifest.json`.

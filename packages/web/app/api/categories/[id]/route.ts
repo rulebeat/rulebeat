@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getCategory, updateCategory, deleteCategory } from '@/lib/db/categories';
-import { writeAudit, changedFields } from '@/lib/db/audit';
+import { writeAudit } from '@/lib/db/audit';
+import { changedFields } from '@/lib/changed-fields';
 
 export async function GET(
   _: Request,

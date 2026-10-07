@@ -20,7 +20,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   viewer: 'Read and export everything. Cannot change anything.',
   editor: 'Author rules, run scans, manage schedules, dashboards and suppressions.',
-  admin: 'Everything an editor can do, plus categories, users, sign-in configuration, the Azure connection, notifications and the audit log.',
+  admin: 'Everything an editor can do, plus switching rule versions, categories, users, sign-in configuration, the Azure connection, notifications and the audit log.',
 };
 
 const VIEWER_ACTIONS = ['read'] as const;
@@ -39,6 +39,7 @@ const EDITOR_ACTIONS = [
 
 const ADMIN_ACTIONS = [
   ...EDITOR_ACTIONS,
+  'rules:version',
   'categories:write',
   'users:manage',
   'audit:read',
