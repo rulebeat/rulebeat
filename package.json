@@ -1,6 +1,6 @@
 {
   "name": "rulebeat",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": true,
   "description": "RuleBeat is an open-source, self-hosted Azure governance tool. It runs the rules you create and customize on a schedule and tracks every finding until it is fixed.",
   "license": "Apache-2.0",

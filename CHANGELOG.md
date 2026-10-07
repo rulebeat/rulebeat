@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-07
+
 ### Added
 
 - Shipped rules now have a Rule version selector with dates, release notes, newer versions marked New, and a before/after review with a query line diff. Admins can switch to any recorded version, forward or back, without starting a scan. Viewers and editors can review history read-only. Each switch is audited with the old and new versions and changed field names; matched findings keep their ages, history and suppressions on the next scan.
@@ -328,7 +330,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/rulebeat/rulebeat/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/rulebeat/rulebeat/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/rulebeat/rulebeat/compare/v0.5.1...v0.6.0
