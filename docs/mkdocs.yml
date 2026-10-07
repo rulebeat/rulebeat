@@ -84,6 +84,7 @@ nav:
       - install.md
       - permissions.md
       - scans-and-schedules.md
+      - tutorials.md
   - Understand:
       - why-run-rulebeat.md
       - rulebeat-and-azure-policy.md

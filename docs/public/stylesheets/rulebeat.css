@@ -177,3 +177,8 @@
 .md-typeset details.note {
   border-color: var(--md-default-fg-color--lightest);
 }
+
+/* Tutorial thumbnails (img/tutorials/): a card, not a banner. GitHub shows them full width. */
+.md-typeset img[src*="img/tutorials/"] {
+  max-width: 320px;
+}
