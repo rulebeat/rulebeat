@@ -1,7 +1,9 @@
 import type { Severity } from './types';
 import type { ExplorerFinding, FindingDisplayStatus } from './explorer-data';
 
-export type ExplorerStatusFilter = 'open' | 'new' | 'active' | 'fixed' | 'all';
+/** 'open' is every finding open right now; 'new' and 'fixed' are both bounded by the chosen
+ *  window, the same way the New and Fixed header tiles count; 'all' is the two together. */
+export type ExplorerStatusFilter = 'open' | 'new' | 'fixed' | 'all';
 export type ExplorerFilterDim = 'severity' | 'status' | 'subscription' | 'resourceGroup' | 'location' | 'tags';
 
 /** Every dimension findings-explorer-client.tsx's `passesGlobalFilters` checks, pulled into a
@@ -42,6 +44,91 @@ export function getRecencyStatus(
   return isWithinRange(f.firstSeenAt, from, to) ? 'new' : 'active';
 }
 
+/** Fixed, and fixed inside the window. What the Fixed tile, the Fixed column and the Fixed status
+ *  option all count, so the three can never disagree. */
+export function isFixedInWindow(
+  f: Pick<ExplorerFinding, 'status' | 'resolvedAt'>,
+  from: string,
+  to: string,
+): boolean {
+  return f.status === 'fixed' && isWithinRange(f.resolvedAt, from, to);
+}
+
+/** A `?status=` value read back from the URL. 'active' was the old "ongoing only" option and is
+ *  read as 'open', so a link saved before it was removed still opens. */
+export function parseExplorerStatus(value: string | undefined): ExplorerStatusFilter {
+  return value === 'new' || value === 'fixed' || value === 'all' ? value : 'open';
+}
+
+/** Every severity, in the order the tiles and the severity filter show them. Info is the lowest
+ *  severity of a real finding, so it gets a tile and a filter button like the rest. */
+export const EXPLORER_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+
+export interface ExplorerStats {
+  /** Open right now. Always the sum of `counts`. */
+  total: number;
+  /** Open findings per severity. */
+  counts: Record<Severity, number>;
+  newCount: number;
+  activeCount: number;
+  recentlyFixedCount: number;
+}
+
+/** The header tiles. Pass it a pool with every filter applied except severity and status, so the
+ *  tiles stay a stable reference while those two are toggled. */
+export function summarizeFindings(findings: ExplorerFinding[], from: string, to: string): ExplorerStats {
+  const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
+  for (const f of findings) {
+    const recency = getRecencyStatus(f, from, to);
+    if (recency !== 'fixed') counts[f.severity]++;
+    if (recency === 'new') newCount++;
+    else if (recency === 'active') activeCount++;
+    else if (isFixedInWindow(f, from, to)) recentlyFixedCount++;
+  }
+  return { total: newCount + activeCount, counts, newCount, activeCount, recentlyFixedCount };
+}
+
+export interface RuleCounts {
+  /** Open right now, whatever the window. */
+  open: number;
+  /** Open and first seen inside the window. A subset of `open`. */
+  new: number;
+  /** Fixed inside the window. */
+  fixed: number;
+}
+
+/** Per-rule Open/New/Fixed for the by-rule view. Pass it a pool that has every filter applied
+ *  except status: the status filter picks which rules are listed, not what their counts say. */
+export function countFindingsByRule(
+  findings: ExplorerFinding[],
+  from: string,
+  to: string,
+): Map<string, RuleCounts> {
+  const counts = new Map<string, RuleCounts>();
+  for (const f of findings) {
+    let c = counts.get(f.ruleId);
+    if (!c) { c = { open: 0, new: 0, fixed: 0 }; counts.set(f.ruleId, c); }
+    const recency = getRecencyStatus(f, from, to);
+    if (recency !== 'fixed') c.open++;
+    if (recency === 'new') c.new++;
+    if (isFixedInWindow(f, from, to)) c.fixed++;
+  }
+  return counts;
+}
+
+/** The findings a filter dropdown (subscription, resource group, location, tags) counts its
+ *  options from: every filter applied except that dropdown's own, so its counts match the table
+ *  and picking one value never hides the others. */
+export function facetPool(
+  findings: ExplorerFinding[],
+  state: ExplorerFilterState,
+  dim: Exclude<ExplorerFilterDim, 'severity' | 'status'>,
+): ExplorerFinding[] {
+  const exclude = new Set<ExplorerFilterDim>([dim]);
+  return findings.filter(f => matchesExplorerFilters(f, state, exclude));
+}
+
 export function matchesExplorerFilters(
   f: ExplorerFinding,
   state: ExplorerFilterState,
@@ -54,7 +141,8 @@ export function matchesExplorerFilters(
     const recency = getRecencyStatus(f, state.rangeFrom, state.rangeTo);
     if (state.status === 'open' && recency === 'fixed') return false;
     if (state.status === 'new' && recency !== 'new') return false;
-    if (state.status === 'active' && recency !== 'active') return false;
+    if ((state.status === 'fixed' || state.status === 'all') && recency === 'fixed'
+      && !isFixedInWindow(f, state.rangeFrom, state.rangeTo)) return false;
     if (state.status === 'fixed' && recency !== 'fixed') return false;
   }
   if (state.ruleIds.size > 0 && !state.ruleIds.has(f.ruleId)) return false;

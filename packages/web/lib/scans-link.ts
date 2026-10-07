@@ -1,9 +1,10 @@
 import type { WidgetFilters } from './dashboard-filters';
+import type { ExplorerStatusFilter } from './explorer-filters';
 
 /** Metric-appropriate overrides layered on top of a widget's inherited `WidgetFilters` when
  *  building a click-through link to the Scans Results tab — see `buildScansHref`. */
 export interface ScansLinkOverrides {
-  status?: 'open' | 'new' | 'active' | 'fixed' | 'all';
+  status?: ExplorerStatusFilter;
   /** Single severity to link to (e.g. a "Critical findings" stat card) — takes precedence over
    *  any inherited `filters.severities`. */
   severity?: string;

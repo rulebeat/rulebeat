@@ -6,6 +6,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- In the Results tab's By rule view, the Active column is now called Open and counts every open finding for the rule, the same as the Open tile. It no longer changes with the New / Fixed window or the status filter. New is the part of it first seen inside the window, and Fixed now shows the findings fixed inside the window instead of staying blank.
+- The status filter's options are now Open, New, Fixed and All, with the window in the New and Fixed labels. Fixed lists only findings fixed inside the window, so it matches the Fixed count above it. "Ongoing only" is gone, and a saved link that used it opens as Open.
+- The Subscription, Resource Group, Location and Tags filter counts now follow every other filter, including severity and status, so they add up to what the table shows. They no longer count fixed findings while Open is selected.
+- The Results tab now has an Info tile and an Info severity filter. Open findings with Info severity were counted in Open but had no tile and could not be filtered on, so the severity tiles did not add up to Open.
+
 ## [0.8.0] - 2026-10-07
 
 ### Added

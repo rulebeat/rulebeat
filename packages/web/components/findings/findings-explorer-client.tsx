@@ -28,13 +28,17 @@ import {
 } from '@/lib/suppression-actions';
 import type { Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
-import { getRecencyStatus, isWithinRange, matchesExplorerFilters, type ExplorerFilterDim } from '@/lib/explorer-filters';
+import {
+  getRecencyStatus, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
+  summarizeFindings, EXPLORER_SEVERITIES,
+  type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
+} from '@/lib/explorer-filters';
 
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
 type SortDir = 'asc' | 'desc';
-type StatusFilterValue = 'open' | 'new' | 'active' | 'fixed' | 'all';
+type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
 
 interface FindingsExplorerClientProps {
@@ -69,7 +73,6 @@ interface FindingsExplorerClientProps {
 // ---- Constants ----
 
 const SEV_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const PAGE_SIZE = 50;
 
 /* Status is an outcome, so it uses the status tokens rather than severity's. The
@@ -89,9 +92,9 @@ const STATUS_CFG: Record<FindingDisplayStatus, { dot: string; chip: string; labe
 // "New"/"Fixed" are defined purely by elapsed real time — never by comparing to "the previous
 // scan," which breaks down the moment a run only targets one rule/tag instead of a whole category
 // (there's no single well-defined "previous scan" to compare against in that case). A finding is
-// "new" if it first appeared within the window and hasn't been fixed since; "fixed" status itself
-// is always all-time (browsing "what's been resolved, ever" is a different question from "what got
-// resolved recently") — the window only gates the separate "Fixed (Nd)" activity stat below. The
+// "new" if it first appeared within the window and hasn't been fixed since, and "fixed" (for the
+// tile, the by-rule column and the status option alike) if it was resolved within the window.
+// "Open" in the by-rule view is every open finding and ignores the window altogether. The
 // window itself is a pure [from, to] timestamp-range check (see `isWithinRange`), so an arbitrary
 // past custom range works identically to a rolling preset — neither this classification nor the
 // "Fixed (Nd)" count needs the findings list itself to be anything other than current state.
@@ -111,13 +114,15 @@ function shortDate(iso?: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const STATUS_FILTER_OPTIONS = [
-  { value: 'open',   label: 'Open (active + new)' },
-  { value: 'new',    label: 'New only' },
-  { value: 'active', label: 'Ongoing only' },
-  { value: 'fixed',  label: 'Fixed only' },
-  { value: 'all',    label: 'All statuses' },
-];
+// New and Fixed carry the window in their label, like the header tiles they match.
+function statusFilterOptions(windowLabel: string) {
+  return [
+    { value: 'open',  label: 'Open' },
+    { value: 'new',   label: `New (${windowLabel})` },
+    { value: 'fixed', label: `Fixed (${windowLabel})` },
+    { value: 'all',   label: 'All' },
+  ];
+}
 
 // Tab styling, named once because the strip renders "All categories" separately from the
 // mapped list and the two must not drift apart.
@@ -133,9 +138,8 @@ const COL_LABEL: Record<SortCol, string> = {
 };
 const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
 
-// Builds a sorted { value, label, count } list for a subscription/RG/location filter dropdown —
-// counted from a pool that isn't narrowed by the other toolbar filters, so picking a severity (say)
-// never makes a subscription option disappear from its own dropdown.
+// Builds a sorted { value, label, count } list for a subscription/RG/location filter dropdown,
+// counted from that dropdown's facetPool (every other filter applied, its own left out).
 function buildMetaOptions(pool: ExplorerFinding[], getter: (f: ExplorerFinding) => string | undefined) {
   const counts = new Map<string, number>();
   for (const f of pool) {
@@ -304,7 +308,7 @@ export function FindingsExplorerClient({
     lockedCategory ? new Set([lockedCategory]) : new Set(initialFilters?.categories ?? []),
   );
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set(initialFilters?.severities ?? []));
-  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>((initialFilters?.status as StatusFilterValue) ?? 'open');
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>(parseExplorerStatus(initialFilters?.status));
   const [policyFilter, setPolicyFilter] = useState<Set<string>>(
     new Set(initialFilters?.ruleId ? initialFilters.ruleId.split(',').filter(Boolean) : []),
   );
@@ -322,6 +326,7 @@ export function FindingsExplorerClient({
   );
   const { from: rangeFrom, to: rangeTo } = useMemo(() => resolveDateWindow(dateWindow), [dateWindow]);
   const windowLabel = dateWindowLabel(dateWindow);
+  const statusOptions = useMemo(() => statusFilterOptions(windowLabel), [windowLabel]);
 
   // Sort / pagination / expand
   const [sortCol, setSortCol] = useState<SortCol>('severity');
@@ -414,11 +419,15 @@ export function FindingsExplorerClient({
   // out of the `filtered` memo so the per-column filter option lists (below), and the stats pool,
   // can reuse the exact same predicate minus whichever dimension(s) should stay unfiltered. The
   // predicate itself lives in lib/explorer-filters.ts so it's unit-testable outside a React render.
-  const passesGlobalFilters = useCallback((f: ExplorerFinding, exclude?: Set<ExplorerFilterDim>) => matchesExplorerFilters(f, {
+  const filterState = useMemo<ExplorerFilterState>(() => ({
     showSuppressed, suppressedFingerprints: suppressedFps, categories: categoryFilter, severities: severityFilter,
     status: statusFilter, ruleIds: policyFilter, subscriptions: subFilter, resourceGroups: rgFilter,
     locations: locFilter, tags: tagFilter, search, rangeFrom, rangeTo,
-  }, exclude), [showSuppressed, suppressedFps, categoryFilter, severityFilter, statusFilter, rangeFrom, rangeTo, policyFilter, subFilter, rgFilter, locFilter, tagFilter, search]);
+  }), [showSuppressed, suppressedFps, categoryFilter, severityFilter, statusFilter, rangeFrom, rangeTo, policyFilter, subFilter, rgFilter, locFilter, tagFilter, search]);
+  const passesGlobalFilters = useCallback(
+    (f: ExplorerFinding, exclude?: Set<ExplorerFilterDim>) => matchesExplorerFilters(f, filterState, exclude),
+    [filterState],
+  );
 
   const passesColFilters = useCallback((f: ExplorerFinding, exclude?: SortCol) => {
     for (const col of Object.keys(colFilters) as SortCol[]) {
@@ -476,68 +485,57 @@ export function FindingsExplorerClient({
     [data.findings, passesGlobalFilters],
   );
 
-  const stats = useMemo(() => {
-    const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-    let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
-    for (const f of statsPool) {
-      const recency = getRecencyStatus(f, rangeFrom, rangeTo);
-      if (recency !== 'fixed') counts[f.severity]++;
-      if (recency === 'new') newCount++;
-      else if (recency === 'active') activeCount++;
-      else if (isWithinRange(f.resolvedAt, rangeFrom, rangeTo)) recentlyFixedCount++;
-    }
-    return { total: newCount + activeCount, counts, newCount, activeCount, recentlyFixedCount };
-  }, [statsPool, rangeFrom, rangeTo]);
+  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo), [statsPool, rangeFrom, rangeTo]);
 
   const suppressedCount = useMemo(
     () => data.findings.filter(f => (categoryFilter.size === 0 || categoryFilter.has(f.category)) && suppressedFps.has(f.fingerprint)).length,
     [data.findings, categoryFilter, suppressedFps],
   );
 
-  // Each dropdown's own option list is built from a pool that excludes that dropdown's own
-  // dimension (in addition to severity/status) — otherwise picking a Resource Group would, for
-  // instance, remove every other Resource Group from its own list the moment it's selected.
+  // Each dropdown counts from every filter except its own (facetPool), so its counts match the
+  // table, and picking one Resource Group never removes the other Resource Groups from its list.
   const subOptions = useMemo(() => {
-    const pool = data.findings.filter(f => passesGlobalFilters(f, new Set(['severity', 'status', 'subscription'])));
-    return buildMetaOptions(pool, f => f.subscriptionId)
+    return buildMetaOptions(facetPool(data.findings, filterState, 'subscription'), f => f.subscriptionId)
       .map(o => ({ ...o, label: subNames[o.value] ?? o.value }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [data.findings, passesGlobalFilters, subNames]);
-  const rgOptions = useMemo(() => {
-    const pool = data.findings.filter(f => passesGlobalFilters(f, new Set(['severity', 'status', 'resourceGroup'])));
-    return buildMetaOptions(pool, f => f.resourceGroup);
-  }, [data.findings, passesGlobalFilters]);
-  const locOptions = useMemo(() => {
-    const pool = data.findings.filter(f => passesGlobalFilters(f, new Set(['severity', 'status', 'location'])));
-    return buildMetaOptions(pool, f => f.location);
-  }, [data.findings, passesGlobalFilters]);
+  }, [data.findings, filterState, subNames]);
+  const rgOptions = useMemo(
+    () => buildMetaOptions(facetPool(data.findings, filterState, 'resourceGroup'), f => f.resourceGroup),
+    [data.findings, filterState],
+  );
+  const locOptions = useMemo(
+    () => buildMetaOptions(facetPool(data.findings, filterState, 'location'), f => f.location),
+    [data.findings, filterState],
+  );
   const tagOptions = useMemo(() => {
-    const pool = data.findings.filter(f => passesGlobalFilters(f, new Set(['severity', 'status', 'tags'])));
     const counts = new Map<string, number>();
-    for (const f of pool) for (const t of f.ruleTags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const f of facetPool(data.findings, filterState, 'tags')) for (const t of f.ruleTags) counts.set(t, (counts.get(t) ?? 0) + 1);
     return [...counts.entries()].map(([value, count]) => ({ value, label: value, count })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [data.findings, passesGlobalFilters]);
+  }, [data.findings, filterState]);
 
-  // By-rule pivot
+  // By-rule pivot. The status filter decides which rules are listed and which findings expand
+  // under each; the Open/New/Fixed numbers are counted with every filter except status, so a
+  // rule's Open count is the same whatever window or status is picked.
   const ruleRows = useMemo(() => {
+    const counts = countFindingsByRule(
+      data.findings.filter(f => passesGlobalFilters(f, new Set(['status'])) && passesColFilters(f)),
+      rangeFrom, rangeTo,
+    );
     const map = new Map<string, {
       ruleId: string; name: string; category: string; severity: Severity; disabled: boolean;
-      active: number; new: number; fixed: number; findings: ExplorerFinding[];
+      open: number; new: number; fixed: number; findings: ExplorerFinding[];
     }>();
     for (const f of filtered) {
       let e = map.get(f.ruleId);
       if (!e) {
-        e = { ruleId: f.ruleId, name: f.policyName, category: f.category, severity: f.severity, disabled: f.ruleDisabled, active: 0, new: 0, fixed: 0, findings: [] };
+        const c = counts.get(f.ruleId) ?? { open: 0, new: 0, fixed: 0 };
+        e = { ruleId: f.ruleId, name: f.policyName, category: f.category, severity: f.severity, disabled: f.ruleDisabled, ...c, findings: [] };
         map.set(f.ruleId, e);
       }
-      const recency = getRecencyStatus(f, rangeFrom, rangeTo);
-      if (recency === 'new') e.new++;
-      else if (recency === 'active') e.active++;
-      else e.fixed++;
       e.findings.push(f);
     }
-    return [...map.values()].sort((a, b) => (b.active + b.new) - (a.active + a.new));
-  }, [filtered, rangeFrom, rangeTo]);
+    return [...map.values()].sort((a, b) => b.open - a.open || b.fixed - a.fixed);
+  }, [data.findings, filtered, passesGlobalFilters, passesColFilters, rangeFrom, rangeTo]);
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   const paginated = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -669,24 +667,25 @@ export function FindingsExplorerClient({
           only targets a rule or tag instead of a whole category, since there's no single "previous
           scan" to diff against. A rolling window works identically no matter how the scan was
           scoped, and re-running the same scan seconds apart no longer swings the count to 0. */}
-      {/* One strip divided by hairlines rather than seven floating cards. The severity
+      {/* One strip divided by hairlines rather than eight floating cards. The severity
           counts are not a colour rainbow: critical is the only one that gets the accent,
           and the rest step down in ink weight, which is how Grid encodes severity
-          everywhere else. Seven equally loud pastel boxes told you nothing about which
-          number to look at first. */}
-      <div className="grid grid-cols-4 bg-surface lg:grid-cols-7">
+          everywhere else. Eight equally loud pastel boxes told you nothing about which
+          number to look at first. The five severity tiles always add up to Open. */}
+      <div className="grid grid-cols-4 bg-surface lg:grid-cols-8">
         {([
           { key: 'open',     label: 'Open',                   value: stats.total,              valueCls: 'text-ink' },
           { key: 'critical', label: 'Critical',               value: stats.counts.critical,    valueCls: 'text-sev-critical' },
           { key: 'high',     label: 'High',                   value: stats.counts.high,        valueCls: 'text-sev-high' },
           { key: 'medium',   label: 'Medium',                 value: stats.counts.medium,      valueCls: 'text-sev-medium' },
           { key: 'low',      label: 'Low',                    value: stats.counts.low,         valueCls: 'text-sev-low' },
-          { key: 'new',      label: `New (${windowLabel})`,   value: stats.newCount,           valueCls: 'text-sev-critical',
+          { key: 'info',     label: 'Info',                   value: stats.counts.info,        valueCls: 'text-ink-faint' },
+          { key: 'new',     label: `New (${windowLabel})`,   value: stats.newCount,           valueCls: 'text-sev-critical',
             title: `First seen within ${windowLabel} and not yet fixed` },
           { key: 'fixed',    label: `Fixed (${windowLabel})`, value: stats.recentlyFixedCount, valueCls: 'text-status-ok',
-            title: `Resolved within ${windowLabel}. Click to browse every fixed finding, any time` },
+            title: `Resolved within ${windowLabel}` },
         ]).map(s => {
-          // Only two of the seven actually filter anything. The rest are readouts, so they
+          // Only two of the eight actually filter anything. The rest are readouts, so they
           // do not get a pointer or a hover state that promises a click will do something.
           const clickable = s.key === 'new' || s.key === 'fixed';
           const isOn = (s.key === 'new' && statusFilter === 'new') || (s.key === 'fixed' && statusFilter === 'fixed');
@@ -763,11 +762,11 @@ export function FindingsExplorerClient({
 
         <div className="h-6 w-px shrink-0 bg-border" />
 
-        {/* The severity filters sit flush as one segmented control rather than four separate
+        {/* The severity filters sit flush as one segmented control rather than five separate
             buttons, so they read as a single choice. Selected is an ink fill: this is a filter,
-            not an alert, and four red buttons would out-shout the findings themselves. */}
+            not an alert, and five red buttons would out-shout the findings themselves. */}
         <div className="flex shrink-0 items-center border border-rule-strong">
-          {SEVERITIES.map((sev, i) => (
+          {EXPLORER_SEVERITIES.map((sev, i) => (
             <button
               key={sev}
               type="button"
@@ -792,7 +791,7 @@ export function FindingsExplorerClient({
           aria-label="Status"
           value={statusFilter}
           onValueChange={v => { setStatusFilter(v as StatusFilterValue); resetPage(); }}
-          options={STATUS_FILTER_OPTIONS}
+          options={statusOptions}
         />
 
         <div className="h-6 w-px shrink-0 bg-border" />
@@ -892,7 +891,7 @@ export function FindingsExplorerClient({
             <span className="label-grid">Rule</span>
             <span className="label-grid">Category</span>
             <span className="label-grid">Severity</span>
-            <span className="label-grid text-right">Active</span>
+            <span className="label-grid text-right">Open</span>
             <span className="label-grid text-right">New</span>
             <span className="label-grid text-right">Fixed</span>
           </div>
@@ -916,7 +915,7 @@ export function FindingsExplorerClient({
                   </span>
                   <CategoryBadge id={r.category} categories={data.categories} />
                   <SeverityBadge severity={r.severity} />
-                  <span className="text-right text-sm font-semibold tabular-nums text-ink">{r.active}</span>
+                  <span className="text-right text-sm font-semibold tabular-nums text-ink">{r.open}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-sev-critical">{r.new || ''}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-status-ok">{r.fixed || ''}</span>
                 </button>
