@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, createRule, validateRuleName, ruleNameTakenError, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNameTakenError, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
   const actor = await requireRole('rules:write');
   if (actor instanceof NextResponse) return actor;
 
-  const body = await parseJsonBody<Omit<Rule, 'id'>>(req);
+  // `copyFrom` is the id of the rule the form was duplicated from; it is not a Rule field.
+  const body = await parseJsonBody<Omit<Rule, 'id'> & { copyFrom?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
   if ('appliesTo' in body) {
@@ -100,13 +101,20 @@ export async function POST(req: Request) {
     }
   }
 
+  // A version, a retirement and an origin are the server's to set, never a request's: a custom rule
+  // has no version of its own and is never retired, and its origin is the rule `copyFrom` names as
+  // this server sees it. An unknown or non-string `copyFrom` records no origin and still creates.
+  const { copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov, ...fields } = body;
+  const source = typeof copyFrom === 'string' && copyFrom !== '' ? await loadRule(copyFrom) : null;
+
   const rule: Rule = {
-    ...body,
+    ...fields,
     id: globalThis.crypto.randomUUID(),
     type: 'custom',
     pack: undefined,
     queryBackend,
     kind: deriveKind(queryBackend),
+    ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);
   if (!result.ok) {

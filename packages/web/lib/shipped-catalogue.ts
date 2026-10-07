@@ -141,41 +141,70 @@ function packVersion(entry: PackManifestEntry | undefined): { scheme: VersionSch
   return version ? { scheme: entry.versionScheme, version } : null;
 }
 
+/**
+ * The definition fields of one entry in a pack file. The pack sync hashes this to tell whether a
+ * rule changed, and the loader ships it, so both read an entry the same way.
+ */
+export function packEntryDefinition(p: Record<string, unknown>): RuleDefinition {
+  const queryBackend = (p.queryBackend as RuleDefinition['queryBackend'] | undefined) ?? 'resource-graph';
+  // Pack JSON uses 'rules' (the old name for conditions); read it as conditions for backward compat.
+  const conditions = parseMaybeJson<Rule['conditions']>(p.conditions ?? p.rules, []);
+  return {
+    name: p.name as string,
+    description: p.description as string,
+    category: p.category as string,
+    severity: p.severity as string,
+    queryBackend,
+    kind: kindOfBackend(queryBackend),
+    resourceTypes: parseMaybeJson<string[]>(p.resourceTypes, []),
+    scope: parseMaybeJson<Rule['scope']>(p.scope, { level: 'resource' }),
+    conditions,
+    conditionGroups: emptyToNull(parseMaybeJson<Rule['conditionGroups'] | null>(p.conditionGroups, null)),
+    visualQuery: parseMaybeJson<Rule['visualQuery'] | null>(p.visualQuery, null) ?? null,
+    projectColumns: emptyToNull(parseMaybeJson<string[] | null>(p.projectColumns, null)),
+    rawKql: (p.rawKql as string | undefined) ?? null,
+    graphQuery: parseMaybeJson<Rule['graphQuery'] | null>(p.graphQuery, null) ?? null,
+    logsQuery: parseMaybeJson<Rule['logsQuery'] | null>(p.logsQuery, null) ?? null,
+  };
+}
+
+export function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/** The release note of a version that was synced from an upstream commit and says nothing more.
+ *  The loader and the pack sync both write it, so the two cannot word it differently. */
+export function syncedFromCommitNote(commit: string): string {
+  return `Synced from upstream commit ${commit.slice(0, 7)}.`;
+}
+
+/**
+ * A rule is shipped under its own `version`, `releaseNote` and `upstreamRef` when its entry has them
+ * (the pack sync writes them, so a sync that touches 3 of 143 rules leaves 140 versions alone). An
+ * entry without them takes the pack's version from the manifest, which is how a pack file written
+ * before rules carried their own version keeps working unchanged.
+ */
 function packRuleToShipped(
   p: Record<string, unknown>,
   packId: string,
   declared: { scheme: VersionScheme; version: string },
   entry: PackManifestEntry,
 ): ShippedRule {
-  const queryBackend = (p.queryBackend as ShippedRule['definition']['queryBackend'] | undefined) ?? 'resource-graph';
-  // Pack JSON uses 'rules' (the old name for conditions); read it as conditions for backward compat.
-  const conditions = parseMaybeJson<Rule['conditions']>(p.conditions ?? p.rules, []);
-  const upstreamRef = entry.pinnedCommit;
+  const ownVersion = nonEmptyString(p.version);
+  const version = ownVersion ?? declared.version;
+  // Without a version of its own the rule was synced at the pinned commit; with one, the commit
+  // the sync recorded for it is the only one that can be named.
+  const upstreamRef = nonEmptyString(p.upstreamRef) ?? (ownVersion ? undefined : entry.pinnedCommit);
   return {
     id: p.id as string,
     pack: (p.pack as string | undefined) ?? packId,
     versionScheme: declared.scheme,
-    version: declared.version,
-    releaseNote: upstreamRef ? `Synced from upstream commit ${upstreamRef.slice(0, 7)}.` : `Version ${declared.version}.`,
+    version,
+    releaseNote: nonEmptyString(p.releaseNote)
+      ?? (upstreamRef ? syncedFromCommitNote(upstreamRef) : `Version ${version}.`),
     upstreamRef,
     enabled: Boolean(p.enabled),
-    definition: {
-      name: p.name as string,
-      description: p.description as string,
-      category: p.category as string,
-      severity: p.severity as string,
-      queryBackend,
-      kind: kindOfBackend(queryBackend),
-      resourceTypes: parseMaybeJson<string[]>(p.resourceTypes, []),
-      scope: parseMaybeJson<Rule['scope']>(p.scope, { level: 'resource' }),
-      conditions,
-      conditionGroups: emptyToNull(parseMaybeJson<Rule['conditionGroups'] | null>(p.conditionGroups, null)),
-      visualQuery: parseMaybeJson<Rule['visualQuery'] | null>(p.visualQuery, null) ?? null,
-      projectColumns: emptyToNull(parseMaybeJson<string[] | null>(p.projectColumns, null)),
-      rawKql: (p.rawKql as string | undefined) ?? null,
-      graphQuery: parseMaybeJson<Rule['graphQuery'] | null>(p.graphQuery, null) ?? null,
-      logsQuery: parseMaybeJson<Rule['logsQuery'] | null>(p.logsQuery, null) ?? null,
-    },
+    definition: packEntryDefinition(p),
   };
 }
 /** What this build ships: RuleBeat Core plus every pack file in `<dataDir>/packs`. */

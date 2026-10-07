@@ -5,11 +5,15 @@ import { useRouter } from 'next/navigation';
 import { Pencil, Lock, Copy, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RuleForm } from '@/components/rules/rule-form';
+import { RuleOrigin } from '@/components/rules/rule-origin';
+import type { OriginNote } from '@/lib/rule-version-markers';
 import { canDuplicateRule } from '@/lib/rule-taxonomy';
 import type { Category, Rule } from '@/lib/types';
 
 interface Props {
   rule: Rule;
+  /** Where a custom rule was copied from, worked out on the server; null when nothing was recorded. */
+  origin?: OriginNote | null;
   kqlQuery?: string;
   initialEditing?: boolean;
   allTags?: string[];
@@ -18,7 +22,7 @@ interface Props {
   canAuthor: boolean;
 }
 
-export function RuleDetailClient({ rule, kqlQuery, initialEditing = false, allTags, categories, canAuthor }: Props) {
+export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor }: Props) {
   const router = useRouter();
   const isBuiltin = rule.type === 'builtin';
   const canDuplicate = canDuplicateRule(rule);
@@ -80,6 +84,12 @@ export function RuleDetailClient({ rule, kqlQuery, initialEditing = false, allTa
           </Button>
         )}
       </div>
+
+      {origin && (
+        <div className="max-w-[1600px] mx-auto">
+          <RuleOrigin origin={origin} />
+        </div>
+      )}
 
       {/* Form — readOnly whenever not in edit mode (custom rules only; a built-in never enters
           edit mode, so this stays permanently true for one and locks the detection query). Tags

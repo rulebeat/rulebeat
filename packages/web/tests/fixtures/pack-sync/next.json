@@ -1,0 +1,58 @@
+[
+  {
+    "id": "11111111-0000-4000-8000-000000000001",
+    "name": "Use at least the Enterprise SKU",
+    "description": "Managed domains need the Enterprise SKU to support replica sets.",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "fixture-pack",
+    "scope": { "level": "resource" },
+    "resourceTypes": ["Microsoft.AAD/domainServices"],
+    "rules": [],
+    "rawKql": "resources\n| where type == \"microsoft.aad/domainservices\"\n| where array_length(properties.replicaSets) < 2\n| project id, name, type, location, resourceGroup, subscriptionId"
+  },
+  {
+    "id": "11111111-0000-4000-8000-000000000002",
+    "name": "Use replica sets for resiliency",
+    "description": "Replica sets improve the resiliency of a managed domain.",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "fixture-pack",
+    "scope": { "level": "resource" },
+    "resourceTypes": ["Microsoft.AAD/domainServices"],
+    "rules": [],
+    "rawKql": "resources\n| where type == \"microsoft.aad/domainservices\"\n| where sku =~ 'Standard' or sku =~ 'Basic'\n| project id, name, type, location, resourceGroup, subscriptionId"
+  },
+  {
+    "rawKql": "resources\n| where type == \"microsoft.avs/privateclouds\"\n| project id, name, type, location, resourceGroup, subscriptionId",
+    "rules": [],
+    "resourceTypes": ["Microsoft.AVS/privateClouds"],
+    "scope": { "level": "resource" },
+    "pack": "fixture-pack",
+    "type": "builtin",
+    "enabled": true,
+    "severity": "low",
+    "category": "reliability",
+    "description": "Stretched clusters offer a 99.99% SLA.",
+    "name": "Enable stretched clusters",
+    "id": "11111111-0000-4000-8000-000000000003"
+  },
+  {
+    "id": "11111111-0000-4000-8000-000000000005",
+    "name": "Rule added upstream",
+    "description": "This rule first appears in the next snapshot.",
+    "category": "security",
+    "severity": "critical",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "fixture-pack",
+    "scope": { "level": "resource" },
+    "resourceTypes": ["Microsoft.Storage/storageAccounts"],
+    "rules": [],
+    "rawKql": "resources\n| where type == \"microsoft.storage/storageaccounts\"\n| project id, name, type, location, resourceGroup, subscriptionId"
+  }
+]

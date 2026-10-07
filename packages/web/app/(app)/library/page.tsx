@@ -2,6 +2,8 @@ import { cookies } from 'next/headers';
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
+import { loadRecordedVersions } from '@/lib/db/recorded-versions';
+import { newerVersionsByRule } from '@/lib/rule-version-markers';
 import { getCurrentUser } from '@/lib/api-auth';
 import { LibraryClient } from './library-client';
 import type { Rule } from '@/lib/types';
@@ -15,6 +17,7 @@ export default async function LibraryPage({
 }) {
   const { section } = await searchParams;
   const rules = await loadRules() as unknown as Rule[];
+  const newerVersions = newerVersionsByRule(rules, await loadRecordedVersions());
   const categories = await listCategories();
   const cookieStore = await cookies();
   const initialSidebarPinned = cookieStore.get('sidebar:library')?.value !== 'false';
@@ -25,6 +28,7 @@ export default async function LibraryPage({
       <main className="flex-1 p-8">
         <LibraryClient
           initialRules={rules}
+          newerVersions={newerVersions}
           initialSection={section}
           packManifest={packManifestJson as Record<string, PackManifestEntry>}
           categories={categories}

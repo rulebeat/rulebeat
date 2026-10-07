@@ -142,6 +142,8 @@ interface RuleFormProps {
    * backend comes from `initial.queryBackend` instead and can't change via this form either way.
    */
   initialQueryBackend?: QueryBackend;
+  /** On a new rule made by duplicating another: that rule's id, sent with the first save only. */
+  copyFrom?: string;
   /** Notified whenever unsaved changes appear/clear, so an embedding page can gate its own Save control. */
   onDirtyChange?: (dirty: boolean) => void;
   /** Notified whenever a save is in flight, so an embedding page can show its own saving state. */
@@ -155,7 +157,7 @@ interface RuleFormProps {
 }
 
 export function RuleForm({
-  initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, initialQueryBackend,
+  initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, initialQueryBackend, copyFrom,
   onDirtyChange, onSavingChange, saveHandleRef,
 }: RuleFormProps) {
   // Every category, plus the rule's own category if it's not (or no longer) in the DB list, so old
@@ -521,7 +523,7 @@ export function RuleForm({
         })
         : await fetch('/api/rules', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(copyFrom ? { ...payload, copyFrom } : payload),
         });
       if (!res.ok) {
         const body = await res.json().catch(() => null) as { error?: string } | null;

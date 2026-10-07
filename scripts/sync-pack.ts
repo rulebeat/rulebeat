@@ -11,6 +11,10 @@
  *   npx tsx scripts/sync-pack.ts aprl-v2 --commit=abc123def
  *   npx tsx scripts/sync-pack.ts aprl-v2 --commit=main
  *
+ * Each rule in the output carries its own version, release note and upstream commit: a rule whose
+ * definition did not change keeps the ones it had, a changed rule gets the commit's upstream date
+ * (lib/pack-versioning.ts).
+ *
  * The output file is committed to the repo. Self-hosters receive pack updates
  * as part of normal RuleBeat version upgrades — they never run this script.
  */
@@ -18,8 +22,16 @@
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { Policy } from '../packages/web/lib/types';
+import { versionPackRules, type PackFileRule } from '../packages/web/lib/pack-versioning';
+import { syncedFromCommitNote } from '../packages/web/lib/shipped-catalogue';
 
 // ---- Types ----
+
+interface PreviousManifestEntry {
+  versionScheme?: string;
+  pinnedCommit?: string;
+  pinnedCommitDate?: string;
+}
 
 export interface PackDefinition {
   id: string;
@@ -126,15 +138,32 @@ async function main() {
     errors.forEach(e => console.warn(`     - ${e}`));
   }
 
-  const outPath = join(PACKS_DIR, `${packId}.json`);
-  writeFileSync(outPath, JSON.stringify(valid, null, 2) + '\n', 'utf-8');
-  console.log(`\n  ✓ Written ${valid.length} policies to ${outPath}`);
-
-  // Update manifest. `versionScheme` is chosen per pack by a maintainer and survives a sync; the
-  // version itself is the commit's timestamp, which is what an admin compares against.
+  // The pinned commit's own timestamp is the version of every rule this sync changes, so it is read
+  // from GitHub before anything is written.
   const manifest = loadManifest();
-  const previous = manifest[packId] as { versionScheme?: string } | undefined;
+  const previous = manifest[packId] as PreviousManifestEntry | undefined;
   const pinned = await fetchCommit(pack.source, commit);
+
+  // Each rule keeps its version unless its definition changed since the last sync. An entry in the
+  // previous file with no version of its own was shipped under the pack's old manifest version.
+  const outPath = join(PACKS_DIR, `${packId}.json`);
+  const previousRules: PackFileRule[] = existsSync(outPath) ? JSON.parse(readFileSync(outPath, 'utf-8')) : [];
+  const { rules: versioned, summary } = versionPackRules({
+    previous: previousRules,
+    next: valid as unknown as PackFileRule[],
+    pinnedCommitDate: pinned.date,
+    pinnedCommit: pinned.sha,
+    previousPackDefaults: previous?.pinnedCommitDate && previous.pinnedCommit ? {
+      version: previous.pinnedCommitDate,
+      releaseNote: syncedFromCommitNote(previous.pinnedCommit),
+      upstreamRef: previous.pinnedCommit,
+    } : undefined,
+  });
+  writeFileSync(outPath, JSON.stringify(versioned, null, 2) + '\n', 'utf-8');
+  console.log(`\n  ✓ Written ${versioned.length} policies to ${outPath}`);
+  console.log(`    ${summary.changed.length} changed, ${summary.added.length} added, ${summary.dropped.length} dropped, ${summary.unchanged.length} unchanged`);
+
+  // Update manifest. `versionScheme` is chosen per pack by a maintainer and survives a sync.
   manifest[packId] = {
     label: pack.label,
     source: pack.source,

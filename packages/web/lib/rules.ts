@@ -230,6 +230,26 @@ export function validateRuleName(name: unknown): string | null {
   return null;
 }
 
+/** One rule by id, or null. */
+export async function loadRule(id: string): Promise<Rule | null> {
+  const row = await one(db.select().from(rulesTable).where(eq(rulesTable.id, id)));
+  return row ? rowToRule(row) : null;
+}
+
+/**
+ * The origin a copy of `original` records: the shipped rule it was made from, at the version that
+ * rule is running. A copy of a copy keeps the origin the first copy had, and a copy of a rule written
+ * from scratch has none. The one rule `duplicateRule()` and `POST /api/rules` (a copy saved from the
+ * form) share, so the two ways of copying a rule cannot record different origins.
+ */
+export function copiedOrigin(
+  original: Pick<Rule, 'id' | 'type' | 'version' | 'originRuleId' | 'originVersion'>,
+): Pick<Rule, 'originRuleId' | 'originVersion'> {
+  return original.type === 'builtin'
+    ? { originRuleId: original.id, originVersion: original.version }
+    : { originRuleId: original.originRuleId, originVersion: original.originVersion };
+}
+
 /**
  * Picks a free "(copy)" name and inserts it, all inside one locked transaction with
  * `createRule()`'s: a concurrent create or duplicate landing on the same candidate name must not
@@ -261,8 +281,7 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
       enabled: false,
       version: undefined,
       retiredAt: undefined,
-      originRuleId: original.type === 'builtin' ? original.id : original.originRuleId,
-      originVersion: original.type === 'builtin' ? original.version : original.originVersion,
+      ...copiedOrigin(original),
     };
 
     await run(tx.insert(rulesTable).values(ruleToRow(copy)));
