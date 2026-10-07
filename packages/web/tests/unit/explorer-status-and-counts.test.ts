@@ -1,0 +1,109 @@
+/**
+ * The Results tab's status filter, by-rule Active/New/Fixed counts, and filter-dropdown counts.
+ *
+ * Contract: Open is every open finding whatever the window or status picked; New and Fixed are
+ * both bounded by the window; and a dropdown's counts follow every filter except its own, status
+ * included, so they add up to what the table shows.
+ */
+import { describe, expect, it } from 'vitest';
+import type { ExplorerFinding } from '@/lib/explorer-data';
+import {
+  matchesExplorerFilters, countFindingsByRule, facetPool, parseExplorerStatus,
+  type ExplorerFilterState,
+} from '@/lib/explorer-filters';
+
+const FROM = '2026-10-01';
+const TO = '2026-10-07';
+
+function f(id: string, overrides: Partial<ExplorerFinding>): ExplorerFinding {
+  return {
+    module: 'compliance', category: 'compliance', fingerprint: id, ruleId: 'rule-a', resourceId: `/subscriptions/sub-1/x/${id}`,
+    resourceType: 'microsoft.compute/virtualmachines', resourceName: id, subscriptionId: 'sub-1',
+    title: 't', description: 'd', evidence: {}, recommendation: 'r', remediationSteps: [], detectedAt: '2026-10-07T00:00:00.000Z',
+    severity: 'medium', status: 'active', firstSeenAt: '2026-09-01T00:00:00.000Z', lastSeenAt: '2026-10-07T00:00:00.000Z',
+    timesSeen: 1, policyName: 'Rule A', ruleDisabled: false, ruleTags: [],
+    ...overrides,
+  };
+}
+
+// rule-a: one old open, one new open, one fixed inside the window, one fixed long ago.
+// rule-b: one new open in sub-2.
+const OLD_OPEN = f('old-open', {});
+const NEW_OPEN = f('new-open', { firstSeenAt: '2026-10-06T00:00:00.000Z' });
+const FIXED_RECENT = f('fixed-recent', { status: 'fixed', resolvedAt: '2026-10-05T00:00:00.000Z' });
+const FIXED_OLD = f('fixed-old', { status: 'fixed', resolvedAt: '2026-08-01T00:00:00.000Z' });
+const B_NEW = f('b-new', { ruleId: 'rule-b', subscriptionId: 'sub-2', firstSeenAt: '2026-10-06T00:00:00.000Z' });
+const ALL = [OLD_OPEN, NEW_OPEN, FIXED_RECENT, FIXED_OLD, B_NEW];
+
+function state(overrides: Partial<ExplorerFilterState> = {}): ExplorerFilterState {
+  return {
+    showSuppressed: false, suppressedFingerprints: new Set(), categories: new Set(), severities: new Set(),
+    status: 'open', ruleIds: new Set(), subscriptions: new Set(), resourceGroups: new Set(), locations: new Set(),
+    tags: new Set(), search: '', rangeFrom: FROM, rangeTo: TO,
+    ...overrides,
+  };
+}
+
+const shown = (s: ExplorerFilterState) => ALL.filter(x => matchesExplorerFilters(x, s)).map(x => x.fingerprint).sort();
+
+describe('status filter', () => {
+  it('Open is every open finding, old or new', () => {
+    expect(shown(state({ status: 'open' }))).toEqual(['b-new', 'new-open', 'old-open']);
+  });
+
+  it('New is open findings first seen inside the window', () => {
+    expect(shown(state({ status: 'new' }))).toEqual(['b-new', 'new-open']);
+  });
+
+  it('Fixed is only findings fixed inside the window, matching the Fixed tile', () => {
+    expect(shown(state({ status: 'fixed' }))).toEqual(['fixed-recent']);
+  });
+
+  it('All is open plus fixed inside the window', () => {
+    expect(shown(state({ status: 'all' }))).toEqual(['b-new', 'fixed-recent', 'new-open', 'old-open']);
+  });
+
+  it('reads the removed "active" option, and anything unknown, as Open', () => {
+    expect(parseExplorerStatus('active')).toBe('open');
+    expect(parseExplorerStatus(undefined)).toBe('open');
+    expect(parseExplorerStatus('nonsense')).toBe('open');
+    expect(parseExplorerStatus('new')).toBe('new');
+    expect(parseExplorerStatus('fixed')).toBe('fixed');
+    expect(parseExplorerStatus('all')).toBe('all');
+  });
+});
+
+describe('by-rule counts', () => {
+  it('Open counts every open finding, New is a subset of it, Fixed is inside the window', () => {
+    const counts = countFindingsByRule(ALL, FROM, TO);
+    expect(counts.get('rule-a')).toEqual({ open: 2, new: 1, fixed: 1 });
+    expect(counts.get('rule-b')).toEqual({ open: 1, new: 1, fixed: 0 });
+  });
+
+  it('Open does not change with the window', () => {
+    const wide = countFindingsByRule(ALL, '2026-01-01', TO).get('rule-a');
+    const narrow = countFindingsByRule(ALL, TO, TO).get('rule-a');
+    expect(wide?.open).toBe(2);
+    expect(narrow?.open).toBe(2);
+    expect(wide?.new).toBe(2);
+    expect(narrow?.new).toBe(0);
+  });
+});
+
+describe('filter dropdown counts', () => {
+  it('the subscription dropdown follows the status filter and never counts out-of-window fixed findings', () => {
+    const pool = facetPool(ALL, state({ status: 'new' }), 'subscription');
+    expect(pool.map(x => x.fingerprint).sort()).toEqual(['b-new', 'new-open']);
+  });
+
+  it('the subscription dropdown follows the severity filter', () => {
+    const critical = f('crit', { severity: 'critical' });
+    const pool = facetPool([...ALL, critical], state({ severities: new Set(['critical']) }), 'subscription');
+    expect(pool.map(x => x.fingerprint)).toEqual(['crit']);
+  });
+
+  it('picking a subscription keeps the other subscriptions in its own dropdown', () => {
+    const pool = facetPool(ALL, state({ subscriptions: new Set(['sub-1']) }), 'subscription');
+    expect(new Set(pool.map(x => x.subscriptionId))).toEqual(new Set(['sub-1', 'sub-2']));
+  });
+});

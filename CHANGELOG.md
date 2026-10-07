@@ -28,6 +28,9 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Fixed
 
+- In the Results tab's By rule view, the Active column is now called Open and counts every open finding for the rule, the same as the Open tile. It no longer changes with the New / Fixed window or the status filter. New is the part of it first seen inside the window, and Fixed now shows the findings fixed inside the window instead of staying blank.
+- The status filter's options are now Open, New, Fixed and All, with the window in the New and Fixed labels. Fixed lists only findings fixed inside the window, so it matches the Fixed count above it. "Ongoing only" is gone, and a saved link that used it opens as Open.
+- The Subscription, Resource Group, Location and Tags filter counts now follow every other filter, including severity and status, so they add up to what the table shows. They no longer count fixed findings while Open is selected.
 - Two dashboards can no longer end up with the same name when they are created, renamed, duplicated or restored from the starter at the same moment, and two dashboards created at once into an empty list no longer both become the default. Saving a dashboard without changing its name no longer fails when an older install already has another dashboard with the same name.
 - A suppressed finding that comes back after its resource was fixed and broke again is no longer sent in notifications as new. Notifications now leave out every finding that is suppressed when they are sent, on scheduled runs and on runs whose notification is sent after a restart. An expired suppression no longer hides anything.
 - A Log Analytics rule whose query ends in `take`, `limit` or `top` is now reported as capped, the same as a Resource Graph rule. Its results may be cut short, so the scan now shows partial coverage instead of reporting the rule as a full success.
