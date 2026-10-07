@@ -1,12 +1,61 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
-import { rules as rulesTable } from './db/tables';
+import { rules as rulesTable, ruleVersions } from './db/tables';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
+import { buildRuleQuery } from '@rulebeat/core/kql';
+import { definitionOfRow, definitionToColumns } from './rule-versions';
+import { isCommitDateVersion } from './rule-version-markers';
+import type { RuleDefinition } from './shipped-catalogue';
+import type { RuleVersionHistory } from './types';
 
 export async function loadRules(): Promise<Rule[]> {
   return (await many(db.select().from(rulesTable))).map(rowToRule);
+}
+
+function definitionQuery(definition: RuleDefinition): string {
+  if (definition.queryBackend === 'microsoft-graph') return JSON.stringify(definition.graphQuery, null, 2);
+  if (definition.queryBackend === 'log-analytics') return definition.logsQuery?.kql ?? '';
+  return definition.rawKql ?? buildRuleQuery({
+    ...definition, id: '', type: 'builtin', enabled: true,
+    severity: definition.severity as Rule['severity'],
+    conditionGroups: definition.conditionGroups ?? undefined,
+    visualQuery: definition.visualQuery ?? undefined,
+    projectColumns: definition.projectColumns ?? undefined,
+    rawKql: definition.rawKql ?? undefined,
+    graphQuery: definition.graphQuery ?? undefined,
+    logsQuery: definition.logsQuery ?? undefined,
+  });
+}
+
+export async function listRuleVersions(id: string): Promise<RuleVersionHistory | null> {
+  const current = await one(db.select().from(rulesTable).where(eq(rulesTable.id, id)));
+  if (!current) return null;
+  const versions = await many(db.select().from(ruleVersions).where(eq(ruleVersions.ruleId, id)));
+  // Compare in JavaScript so both backends use byte ordering, never the database's locale.
+  versions.sort((a, b) => a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0);
+  const running = versions.find(v => v.version === current.version);
+  const currentDefinition = definitionOfRow(current);
+  return {
+    retired: current.retiredAt !== null,
+    currentDefinition,
+    currentQuery: definitionQuery(currentDefinition),
+    versions: versions.map(v => {
+      const definition = JSON.parse(v.definition) as RuleDefinition;
+      return {
+        version: v.version,
+        date: isCommitDateVersion(v.version) ? v.version : v.firstSeenAt,
+        firstSeenAt: v.firstSeenAt,
+        releaseNote: v.releaseNote,
+        upstreamRef: v.upstreamRef,
+        isRunning: v.version === current.version,
+        isNewer: running !== undefined && v.sortKey > running.sortKey,
+        definition,
+        query: definitionQuery(definition),
+      };
+    }),
+  };
 }
 
 /**
@@ -78,8 +127,12 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
 const RULE_NAME_LOCK_KEY = 7194826033;
 
 export async function isNameTaken(name: string, excludeId?: string, handle: DbHandle = db): Promise<boolean> {
-  const all = (await many(handle.select().from(rulesTable))).map(rowToRule);
-  return all.some(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);
+  return (await findNameConflict(name, excludeId, handle)) !== undefined;
+}
+
+async function findNameConflict(name: string, excludeId: string | undefined, handle: DbHandle) {
+  const all = await many(handle.select({ id: rulesTable.id, name: rulesTable.name }).from(rulesTable));
+  return all.find(r => r.name.trim().toLowerCase() === name.trim().toLowerCase() && r.id !== excludeId);
 }
 
 /** The 409 body both rule-save routes return when a write loses the race on the name column. */
@@ -103,7 +156,7 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
 
 /**
  * What a caller may change on an existing rule. The scan outcome fields are the scan's alone, and
- * the version, retirement and origin fields belong to the startup seeder, so the type leaves them
+ * the version, retirement and origin fields belong to seeding and version switching, so the type leaves them
  * out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
  */
 export type RuleChanges = Partial<Omit<Rule,
@@ -163,6 +216,38 @@ export async function updateRule(id: string, changes: RuleChanges): Promise<Upda
     // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
     // isn't reachable through any caller `updateRule()` has today.
     return { ok: true, rule: rowToRule(stored!) };
+  });
+}
+
+export type SwitchRuleVersionResult =
+  | { ok: true; rule: Rule; oldVersion: string | null; before: RuleDefinition; after: RuleDefinition }
+  | { ok: false; reason: 'not-found' | 'unknown-version' | 'custom-rule' }
+  | { ok: false; reason: 'name-taken'; conflictingName: string };
+
+export async function switchRuleVersion(id: string, version: string): Promise<SwitchRuleVersionResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
+    const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    if (!current) return { ok: false, reason: 'not-found' };
+    if (current.type !== 'builtin') return { ok: false, reason: 'custom-rule' };
+    const recorded = await one(tx.select().from(ruleVersions)
+      .where(and(eq(ruleVersions.ruleId, id), eq(ruleVersions.version, version))));
+    if (!recorded) return { ok: false, reason: 'unknown-version' };
+    const definition = JSON.parse(recorded.definition) as RuleDefinition;
+    const renamed = definition.name.trim().toLowerCase() !== current.name.trim().toLowerCase();
+    if (renamed) {
+      const conflict = await findNameConflict(definition.name, id, tx);
+      if (conflict) return { ok: false, reason: 'name-taken', conflictingName: conflict.name };
+    }
+
+    await run(tx.update(rulesTable).set({
+      ...definitionToColumns(definition), version, filter: null,
+    }).where(eq(rulesTable.id, id)));
+    const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    return {
+      ok: true, rule: rowToRule(stored!), oldVersion: current.version,
+      before: definitionOfRow(current), after: definition,
+    };
   });
 }
 

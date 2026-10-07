@@ -21,16 +21,21 @@ export interface RecordedVersion {
 /** The two things a Library filter can pick. */
 export type VersionMarker = 'new-version' | 'retired';
 
-const COMMIT_DATE = /^\d{4}-\d{2}-\d{2}T/;
+/** An upstream-commit-date version (an ISO timestamp), as opposed to semver or Before versioning. */
+export function isCommitDateVersion(version: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T/.test(version);
+}
+
+/** The YYYY-MM-DD (UTC) part of an ISO date. */
+export function formatVersionDate(date: string): string {
+  const time = Date.parse(date);
+  return Number.isNaN(time) ? date.slice(0, 10) : new Date(time).toISOString().slice(0, 10);
+}
 
 /** How an admin reads a version: semver as it is, an upstream commit date as its date. */
 export function versionLabel(version: string): string {
   if (version === BEFORE_VERSIONING) return 'Before versioning';
-  if (COMMIT_DATE.test(version)) {
-    const time = Date.parse(version);
-    if (!Number.isNaN(time)) return new Date(time).toISOString().slice(0, 10);
-  }
-  return version;
+  return isCommitDateVersion(version) ? formatVersionDate(version) : version;
 }
 
 /** The sentence for a rule converted in place from a built-in. "Before versioning" is not a version

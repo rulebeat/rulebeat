@@ -90,6 +90,7 @@ nav:
       - rulebeat-and-azure-policy.md
       - how-it-works.md
       - posture.md
+      - rule-versions.md
   - Operate:
       - notifications.md
       - dashboards.md

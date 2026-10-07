@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
-import { loadRules, allTagsFromRules } from '@/lib/rules';
+import { loadRules, allTagsFromRules, listRuleVersions } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
 import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { describeOrigin } from '@/lib/rule-version-markers';
@@ -27,6 +27,7 @@ export default async function RuleDetailPage({
   const allTags = allTagsFromRules(allRules);
   const categories = await listCategories();
   const user = await getCurrentUser();
+  const versionHistory = rule.type === 'builtin' ? await listRuleVersions(rule.id) : null;
 
   // Only a custom rule with a recorded origin has one, so the table is read for no other rule.
   const origin = rule.type === 'custom' && rule.originRuleId
@@ -39,8 +40,11 @@ export default async function RuleDetailPage({
     <>
       <Header title={rule.name} description={descriptionText || undefined} />
       <RuleDetailClient
+        key={`${rule.id}:${rule.version ?? ''}`}
         rule={rule}
         origin={origin}
+        versionHistory={versionHistory ?? undefined}
+        canVersion={can(user?.role ?? 'viewer', 'rules:version')}
         kqlQuery={rule.rawKql}
         initialEditing={initialEditing}
         allTags={allTags}

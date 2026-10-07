@@ -28,6 +28,8 @@ import { VisualQueryBuilder, defaultVisualQuery } from './visual-query-builder';
 import { GraphRuleEditor } from './graph-rule-editor';
 import { LogAnalyticsRuleEditor } from './log-analytics-rule-editor';
 import { deriveDedicatedEditorFields } from '@/lib/rule-form-payload';
+import { RuleVersionSelector } from './rule-version-selector';
+import type { RuleVersionHistory } from '@/lib/types';
 
 // Always-available ARG fields in the condition field autocomplete.
 const ARG_BASE_FIELDS = ['subscriptionId', 'resourceGroup', 'id', 'name', 'type', 'location', 'tags', 'kind', 'sku'];
@@ -130,6 +132,8 @@ interface ValidateResult { count: number; samples: { name: string; type: string;
 
 interface RuleFormProps {
   initial?: Rule;
+  versionHistory?: RuleVersionHistory;
+  canVersion?: boolean;
   kqlQuery?: string;
   readOnly?: boolean;
   allTags?: string[];
@@ -158,6 +162,7 @@ interface RuleFormProps {
 
 export function RuleForm({
   initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, initialQueryBackend, copyFrom,
+  versionHistory, canVersion = false,
   onDirtyChange, onSavingChange, saveHandleRef,
 }: RuleFormProps) {
   // Every category, plus the rule's own category if it's not (or no longer) in the DB list, so old
@@ -554,6 +559,9 @@ export function RuleForm({
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
+      {initial?.type === 'builtin' && versionHistory && (
+        <RuleVersionSelector rule={initial} history={versionHistory} canSwitch={canVersion} blocked={dirty || saving} />
+      )}
       {/* Details/target on the left and the query builder on the right, wide enough apart
           that a large screen isn't mostly blank. The sidebar sticks while the (usually much
           taller) query/conditions column scrolls, so Name/Category/Enabled etc. never need

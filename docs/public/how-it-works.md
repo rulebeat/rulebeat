@@ -106,6 +106,19 @@ ended `success` is badged **complete**; any other outcome makes it **partial**, 
 lists which rules were incomplete and why. Partial coverage is surfaced rather than folded into the
 posture figure ([`posture.md`](posture.md)).
 
+## Shipped definitions and upgrades
+
+Every shipped rule belongs to a Pack. Startup records each shipped Rule version and its definition
+in `rule_versions`. An enabled rule keeps its running definition; a disabled rule moves to a newer
+shipped version. A Retired rule keeps running even when its Pack no longer ships it. Custom rules
+are never changed by the seeder.
+
+An admin can switch one shipped rule forward or back to any recorded version after reviewing its
+changes. The definition and version are saved together with the case-insensitive name check.
+The switch is audited and starts no scan. The next scan uses the selected definition and the
+same rule id, preserving matched findings, their ages and suppressions through the normal sync
+path. See [Rule versions](rule-versions.md).
+
 ## Where data lives
 
 Everything is one database: a SQLite file in `data/` (or the Docker named volume) by default, or

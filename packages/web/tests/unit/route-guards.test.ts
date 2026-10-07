@@ -148,6 +148,8 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['rules/bulk/route.ts', 'rules:write'],
     // Clearing a rule's findings is destructive in the same way deleting the rule is (issue #98).
     ['rules/[id]/findings/route.ts', 'rules:delete'],
+    ['rules/[id]/versions/route.ts', 'read'],
+    ['rules/[id]/version/route.ts', 'rules:version'],
     ['onboarding/route.ts', 'azure:manage'],
     ['settings/notifications/route.ts', 'notifications:manage'],
     ['settings/notifications/test/route.ts', 'notifications:manage'],

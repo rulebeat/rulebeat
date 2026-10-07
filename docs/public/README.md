@@ -31,6 +31,7 @@ Everything else is reference you can come back to.
 | [RuleBeat and Azure Policy](rulebeat-and-azure-policy.md) | Where the two overlap, where the work around a check differs, and what Policy does that RuleBeat does not. |
 | [How it works](how-it-works.md) | What happens between a rule and a finding, and where data lives. |
 | [Posture](posture.md) | What "X of Y passing" means exactly, and what counts as unknown. |
+| [Rule versions](rule-versions.md) | Reviewing and switching shipped definitions, rollback, and Retired rules. |
 
 ## Operate
 
@@ -57,7 +58,8 @@ Everything else is reference you can come back to.
 
 - **Rule** is the thing you author and enable. **Finding** is one row a rule returned.
   **Suppression** is a finding you chose to hide, with a reason and an optional expiry. **Posture**
-  is the "X of Y passing" measure. **Pack** is a version-pinned external rule set. **Category** is
+  is the "X of Y passing" measure. **Pack** is a named set of shipped rules from one source.
+  **Rule version** is a shipped rule's definition version. **Category** is
   the configurable grouping a rule belongs to.
 - Screenshots come from demo mode's synthetic estate or a fresh install with placeholder values. No
   id, name or count in them belongs to a real tenant.

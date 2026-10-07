@@ -6,7 +6,7 @@ import type { AppUser } from './users';
 
 export type AuditAction =
   | 'rule.create' | 'rule.update' | 'rule.delete' | 'rule.duplicate' | 'rule.bulk_update'
-  | 'rule.clear_findings'
+  | 'rule.clear_findings' | 'rule.version'
   | 'suppression.create' | 'suppression.delete'
   | 'schedule.create' | 'schedule.update' | 'schedule.delete' | 'schedule.run'
   | 'category.create' | 'category.update' | 'category.delete'
@@ -147,15 +147,4 @@ export async function listAllAuditEntries(): Promise<AuditEntry[]> {
 export async function countAuditEntries(): Promise<number> {
   const row = await one(db.select({ n: count() }).from(auditLog));
   return row?.n ?? 0;
-}
-
-/**
- * The field names that differ between an existing record and an incoming update, for `details`.
- * Compared by serialized value so nested arrays/objects (conditions, scope, tags) work too.
- */
-export function changedFields<T extends object>(before: T, after: Partial<T>): string[] {
-  return Object.keys(after).filter(key => {
-    const k = key as keyof T;
-    return JSON.stringify(after[k]) !== JSON.stringify(before[k]);
-  });
 }
