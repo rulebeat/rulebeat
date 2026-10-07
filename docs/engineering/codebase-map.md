@@ -57,7 +57,11 @@
 | `packages/web/components/rules/tag-picker.tsx` | Multi-select tag chip picker, `lockedTags?` for non-removable system chips; used only in the rule form (Library shows read-only chips) |
 | `packages/web/data/packs/aprl-v2.json` | 143 APRL v2 reliability policies (committed, version-pinned); `id` is the bare upstream APRL guid |
 | `packages/web/data/packs/pack-manifest.json` | Pack registry: source, license, attribution, pinned commit |
-| `scripts/sync-pack.ts` | Generic pack sync runner |
+| `scripts/sync-pack.ts` | Generic pack sync runner; versions each rule through `lib/pack-versioning.ts` |
+| `packages/web/lib/pack-versioning.ts` | `versionPackRules()`: pure per-rule versioning for a pack sync (unchanged rules keep their version, changed ones take the commit date and a note naming the fields) |
+| `packages/web/lib/rule-version-markers.ts` | Pure, client-safe: the Library's "New version" and "Retired" markers and filter, the retired copy, and `describeOrigin()` for a custom rule's "Duplicated from" line |
+| `packages/web/lib/db/recorded-versions.ts` | `loadRecordedVersions()`: every recorded `(ruleId, version, sortKey)` in one query, no definitions |
+| `packages/web/components/rules/rule-origin.tsx` | The "Duplicated from <rule> <version>" line on a custom rule's page |
 | `scripts/packs/aprl-v2.ts` | APRL v2 pack transform |
 | `tsconfig.scripts.json` | TS config for `scripts/` (Node types, path alias for web types) |
 | `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 24 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs` |

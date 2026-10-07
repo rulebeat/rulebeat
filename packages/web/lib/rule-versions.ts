@@ -1,3 +1,4 @@
+import { BEFORE_VERSIONING } from './before-versioning';
 import {
   CORE_PACK, emptyToNull, parseMaybeJson,
   type RuleDefinition, type ShippedCatalogue, type ShippedRule, type VersionScheme,
@@ -14,8 +15,9 @@ import {
  */
 
 /** The version recorded for a definition that was stored before versions existed and differs from
- *  what ships. It keeps running until an admin switches it. */
-export const BEFORE_VERSIONING = 'before-versioning';
+ *  what ships. It keeps running until an admin switches it. Defined in `before-versioning.ts` so
+ *  client code can read it too; re-exported here so existing imports keep working. */
+export { BEFORE_VERSIONING };
 export const BEFORE_VERSIONING_NOTE = 'The definition this rule had before versions were recorded.';
 /** The empty string sorts before every other sort key, so this version is always the oldest. */
 export const BEFORE_VERSIONING_SORT_KEY = '';

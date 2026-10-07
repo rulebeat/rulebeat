@@ -24,6 +24,8 @@ export default async function NewRulePage({
   const categories = await listCategories();
 
   let prefilled: Rule | undefined;
+  // Set only when the copy is actually offered, so the save never names a rule the form did not copy.
+  let copiedFromId: string | undefined;
   if (copyFrom) {
     const source = allRules.find(r => r.id === decodeURIComponent(copyFrom));
     if (source && canDuplicateRule(source)) {
@@ -35,6 +37,7 @@ export default async function NewRulePage({
         pack: undefined,
         enabled: false,
       };
+      copiedFromId = source.id;
     }
   }
 
@@ -45,7 +48,7 @@ export default async function NewRulePage({
         description={prefilled ? `Copy of "${prefilled.name.replace(' (copy)', '')}"` : 'Define a new governance rule for your tenant'}
       />
       <main className="flex-1 p-6">
-        <RuleNewClient initial={prefilled} allTags={allTags} categories={categories} />
+        <RuleNewClient initial={prefilled} copyFrom={copiedFromId} allTags={allTags} categories={categories} />
       </main>
     </>
   );

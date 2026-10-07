@@ -20,6 +20,7 @@ import type { LockedTag } from '@/components/rules/tag-picker';
 import { cn } from '@/lib/utils';
 import { matchesRuleSearch } from '@/lib/rule-filters';
 import { PACK_LABELS } from '@/lib/pack-labels';
+import { matchesVersionFilter, retiredMessage, versionLabel, type VersionMarker } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule } from '@/lib/types';
@@ -210,7 +211,7 @@ function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record
 
 // ---- Main component ----
 
-export function LibraryClient({ initialRules, initialSection, packManifest, categories, initialSidebarPinned, role }: { initialRules: Rule[]; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; role: Role }) {
+export function LibraryClient({ initialRules, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, role }: { initialRules: Rule[]; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; role: Role }) {
   const canAuthor = can(role, 'rules:write');
   const router = useRouter();
   const [rules, setRules] = useState<Rule[]>(initialRules);
@@ -232,6 +233,7 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set(initialTag ? [initialTag] : []));
+  const [versionFilter, setVersionFilter] = useState<Set<string>>(new Set());
 
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'type' | 'tags' | 'category' | 'severity' | 'status'>(
     // Rule is the flex column, so every pixel the other five don't take goes to it.
@@ -284,6 +286,29 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
     });
   }, []);
 
+  // The two version markers, counted over every rule so the toolbar says how many there are
+  // before anything is picked (the same as Tags). A rule that is both retired and has a newer
+  // recorded version counts in each.
+  const versionOptions = useMemo((): Array<{ value: VersionMarker; label: string; count: number }> => [
+    { value: 'new-version', label: 'New version', count: rules.filter(r => newerVersions[r.id] !== undefined).length },
+    { value: 'retired', label: 'Retired', count: rules.filter(r => !!r.retiredAt).length },
+  ], [rules, newerVersions]);
+
+  const toggleVersionFilter = useCallback((value: string) => {
+    setVersionFilter(s => {
+      const next = new Set(s);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  }, []);
+
+  // The label of the pack that no longer ships a retired rule: the manifest's own, then the
+  // built-in list, then the pack id.
+  const packLabelOf = useCallback((rule: Rule) => {
+    const pack = rule.pack ?? 'rulebeat-core';
+    return packManifest[pack]?.label ?? PACK_LABELS[pack] ?? pack;
+  }, [packManifest]);
+
   function toggleSetValue(setter: (fn: (prev: Set<string>) => Set<string>) => void, value: string) {
     setter(prev => {
       const next = new Set(prev);
@@ -302,9 +327,10 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
     } else if (nav === 'community'       && r.type !== 'community')     return false;
     else if (nav === 'custom'            && r.type !== 'custom')        return false;
     if (tagFilter.size > 0 && !(r.tags ?? []).some(t => tagFilter.has(t))) return false;
+    if (!matchesVersionFilter(r, newerVersions, versionFilter)) return false;
     if (!matchesRuleSearch(r, search, categoryById.get(r.category)?.label)) return false;
     return true;
-  }, [nav, tagFilter, search, categoryById]);
+  }, [nav, tagFilter, versionFilter, newerVersions, search, categoryById]);
 
   type ColKey = 'type' | 'category' | 'severity' | 'status';
   const passesColFilters = useCallback((r: Rule, exclude?: ColKey) => {
@@ -341,9 +367,9 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
     };
   }, [rules, passesBaseFilters, passesColFilters, categoryById]);
 
-  const hasActiveFilter = search !== '' || tagFilter.size > 0 || typeFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
+  const hasActiveFilter = search !== '' || tagFilter.size > 0 || versionFilter.size > 0 || typeFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
   const clearFilters = useCallback(() => {
-    setSearch(''); setTagFilter(new Set()); setTypeFilter(new Set());
+    setSearch(''); setTagFilter(new Set()); setVersionFilter(new Set()); setTypeFilter(new Set());
     setCategoryFilter(new Set()); setSeverityFilter(new Set()); setStatusFilter(new Set());
   }, []);
 
@@ -497,6 +523,16 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
             />
           )}
 
+          {/* Always shown, even at 0 and 0: a filter that appears only once a rule has a new
+              version would leave an admin unsure whether none exist or the filter is missing. */}
+          <ChecklistDropdown
+            label="Version"
+            options={versionOptions}
+            selected={versionFilter}
+            onToggle={toggleVersionFilter}
+            onClear={() => setVersionFilter(new Set())}
+          />
+
           {hasActiveFilter && (
             <Button variant="outline" size="sm" onClick={clearFilters}>
               <X className="size-3.5" />
@@ -617,12 +653,30 @@ export function LibraryClient({ initialRules, initialSection, packManifest, cate
                         colgroup already decides how wide this is and a second cap here only
                         made the text stop short of the column edge. */}
                     <TableCell className="py-3">
-                      <Link
-                        href={`/rules/${encodeURIComponent(rule.id)}`}
-                        className="text-sm font-medium text-ink underline-offset-2 hover:underline"
-                      >
-                        {rule.name}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Link
+                          href={`/rules/${encodeURIComponent(rule.id)}`}
+                          className="text-sm font-medium text-ink underline-offset-2 hover:underline"
+                        >
+                          {rule.name}
+                        </Link>
+                        {newerVersions[rule.id] !== undefined && (
+                          <span
+                            title={`Version ${versionLabel(newerVersions[rule.id])} is available. This rule still runs ${rule.version ? versionLabel(rule.version) : 'its current version'}.`}
+                            className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink"
+                          >
+                            New version
+                          </span>
+                        )}
+                        {rule.retiredAt && (
+                          <span className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2">
+                            Retired
+                          </span>
+                        )}
+                      </div>
+                      {rule.retiredAt && (
+                        <p className="mt-1 text-xs leading-relaxed text-ink-2">{retiredMessage(packLabelOf(rule))}</p>
+                      )}
                       {/* One line, not two. The library holds 156 rules and a two-line
                           description put each row at 110px, so eight rules filled the
                           screen and finding one meant scrolling past twenty. This list is

@@ -24,6 +24,8 @@ function readQueryPrefill(): Rule | undefined {
 
 interface Props {
   initial?: Rule;
+  /** The id of the rule `initial` was copied from, sent with the save so the server records the origin. */
+  copyFrom?: string;
   allTags: string[];
   categories: Category[];
 }
@@ -34,7 +36,7 @@ interface Props {
  * (spec 037's "Save as rule") — the backend is already implicitly chosen in both cases.
  * Otherwise the picker's choice is threaded into RuleForm as initialQueryBackend.
  */
-export function RuleNewClient({ initial, allTags, categories }: Props) {
+export function RuleNewClient({ initial, copyFrom, allTags, categories }: Props) {
   const router = useRouter();
   const [prefill] = useState(() => initial ?? readQueryPrefill());
   const [checksConfirmed, setChecksConfirmed] = useState(!!prefill);
@@ -49,5 +51,5 @@ export function RuleNewClient({ initial, allTags, categories }: Props) {
     );
   }
 
-  return <RuleForm initial={prefill} initialQueryBackend={queryBackend} allTags={allTags} categories={categories} />;
+  return <RuleForm initial={prefill} copyFrom={copyFrom} initialQueryBackend={queryBackend} allTags={allTags} categories={categories} />;
 }
