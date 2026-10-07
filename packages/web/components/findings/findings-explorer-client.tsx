@@ -29,7 +29,7 @@ import {
 import type { Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import {
-  getRecencyStatus, isFixedInWindow, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
+  getRecencyStatus, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
   summarizeFindings, EXPLORER_SEVERITIES,
   type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
 } from '@/lib/explorer-filters';
@@ -326,6 +326,7 @@ export function FindingsExplorerClient({
   );
   const { from: rangeFrom, to: rangeTo } = useMemo(() => resolveDateWindow(dateWindow), [dateWindow]);
   const windowLabel = dateWindowLabel(dateWindow);
+  const statusOptions = useMemo(() => statusFilterOptions(windowLabel), [windowLabel]);
 
   // Sort / pagination / expand
   const [sortCol, setSortCol] = useState<SortCol>('severity');
@@ -790,7 +791,7 @@ export function FindingsExplorerClient({
           aria-label="Status"
           value={statusFilter}
           onValueChange={v => { setStatusFilter(v as StatusFilterValue); resetPage(); }}
-          options={statusFilterOptions(windowLabel)}
+          options={statusOptions}
         />
 
         <div className="h-6 w-px shrink-0 bg-border" />
