@@ -6,16 +6,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { LibraryClient } from './library-client';
 import type { Rule } from '@/lib/types';
 import packManifestJson from '@/data/packs/pack-manifest.json';
-
-export interface PackManifestEntry {
-  label: string;
-  source: string;
-  license: string;
-  attribution: string;
-  pinnedCommit: string;
-  syncedAt: string;
-  policyCount: number;
-}
+import type { PackManifestEntry } from './pack-manifest';
 
 export default async function LibraryPage({
   searchParams,

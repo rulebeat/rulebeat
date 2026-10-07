@@ -7,7 +7,7 @@
  * two separate guarantees:
  *
  *  - the committed pack JSON itself defaults every rule to disabled;
- *  - `seedPackRules()`'s re-seed UPDATE never touches `enabled` on a row that already exists, so an
+ *  - `seedRules()` (migrate.ts) never touches `enabled` on a row that already exists, so an
  *    admin who turns a rule on keeps it on across every restart. The JSON assertion alone does not
  *    protect that — this second test is the one that actually gates it.
  *
@@ -81,15 +81,12 @@ describe('B3 · a fresh install starts quiet', () => {
 });
 
 describe('taxonomy defaults for real pack-seeded rules', () => {
-  // seedPackRules()'s own INSERT (migrate.ts) never mentions query_backend/kind at all; none of
-  // aprl-v2.json's rule objects carry those fields. Safety here rests entirely on the columns' own
-  // SQL-level `NOT NULL DEFAULT ...` (migrate.ts's ALTER TABLE statements), not on any TypeScript
-  // code path: deriveKind() is never called by this raw-SQL seeding path the way ruleToRow() calls
-  // it for a UI-authored save. A DEFAULT dropped from a future rewrite of that ALTER, or an INSERT
-  // rewritten to list every column explicitly (which would then insert a literal NULL instead of
-  // falling back), would slip past every test that saves rules through lib/rules.ts rather than
-  // through this seeding path. Run against the real, committed aprl-v2.json (via the same seed()
-  // helper as the tests above), not a synthesised stand-in.
+  // none of aprl-v2.json's rule objects carry query_backend/kind, so seedRules() (migrate.ts) writes
+  // the defaults its shipped-catalogue loader gives them (resource-graph, state) from the pack file
+  // itself. deriveKind() is never called by this seeding path the way ruleToRow() calls it for a
+  // UI-authored save, so a regression in the loader would slip past every test that saves rules
+  // through lib/rules.ts rather than through this seeding path. Run against the real, committed
+  // aprl-v2.json (via the same seed() helper as the tests above), not a synthesised stand-in.
   it('every real aprl-v2 rule seeds with query backend resource-graph and kind state', async () => {
     const sqlite = freshDb();
     try {

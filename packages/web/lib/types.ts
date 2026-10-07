@@ -350,6 +350,14 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: 'success' | 'failed' | 'capped' | 'invalid';
   lastRunAt?: string;
+  /** Rule version a shipped rule currently runs; absent on a custom rule. */
+  version?: string;
+  /** Set when no pack ships this built-in any more; the rule keeps running. */
+  retiredAt?: string;
+  /** Custom rule only: the shipped rule it was made from. */
+  originRuleId?: string;
+  /** Custom rule only: the shipped version it was made from. */
+  originVersion?: string;
 }
 
 // ── Live query page types (spec 037) ──────────────────────────────────────────

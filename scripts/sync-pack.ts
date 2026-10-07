@@ -50,6 +50,23 @@ function saveManifest(manifest: Record<string, unknown>): void {
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
 }
 
+// ---- Commit date ----
+
+/**
+ * The commit's full sha and committer timestamp (UTC, whole seconds). It is the pack's
+ * version: two commits sort by it, and an admin sees it as a date. Read from GitHub rather than
+ * typed in, so the manifest cannot carry a date that belongs to a different commit.
+ */
+async function fetchCommit(source: string, commit: string): Promise<{ sha: string; date: string }> {
+  const repo = new URL(source).pathname.replace(/^\/|\/$/g, '');
+  const res = await fetch(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(commit)}`, {
+    headers: { Accept: 'application/vnd.github+json' },
+  });
+  if (!res.ok) throw new Error(`could not read the commit date for ${commit} (${res.status})`);
+  const body = await res.json() as { sha: string; commit: { committer: { date: string } } };
+  return { sha: body.sha, date: body.commit.committer.date };
+}
+
 // ---- Validation ----
 
 function validatePolicies(policies: Policy[]): { valid: Policy[]; errors: string[] } {
@@ -113,14 +130,19 @@ async function main() {
   writeFileSync(outPath, JSON.stringify(valid, null, 2) + '\n', 'utf-8');
   console.log(`\n  ✓ Written ${valid.length} policies to ${outPath}`);
 
-  // Update manifest
+  // Update manifest. `versionScheme` is chosen per pack by a maintainer and survives a sync; the
+  // version itself is the commit's timestamp, which is what an admin compares against.
   const manifest = loadManifest();
+  const previous = manifest[packId] as { versionScheme?: string } | undefined;
+  const pinned = await fetchCommit(pack.source, commit);
   manifest[packId] = {
     label: pack.label,
     source: pack.source,
     license: pack.license,
     attribution: pack.attribution,
-    pinnedCommit: commit,
+    versionScheme: previous?.versionScheme ?? 'upstream-commit-date',
+    pinnedCommit: pinned.sha,
+    pinnedCommitDate: pinned.date,
     syncedAt: new Date().toISOString().slice(0, 10),
     policyCount: valid.length,
   };

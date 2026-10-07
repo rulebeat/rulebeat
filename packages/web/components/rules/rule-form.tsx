@@ -213,11 +213,11 @@ export function RuleForm({
   // of the ARG visual/raw-KQL builder below — every save-gate and payload check that applies to one
   // of them applies to both, so this is the one flag both branch on instead of repeating the pair.
   const usesDedicatedEditor = isGraphBackend || isLogAnalyticsBackend;
-  // A built-in's Graph query is permission-gated only, like its Tags/Enabled (a built-in has no
-  // view/edit toggle at all). A custom rule's Graph query follows the ordinary view/edit toggle,
-  // like the KQL pane. Mirrors exactly what the PUT route accepts for each case. Also used for the
-  // Log Analytics editor — the flag name is backend-agnostic despite the "graph" in it.
-  const graphQueryReadOnly = isBuiltinCheck ? operationalReadOnly : isReadOnly;
+  // A built-in's query is read-only, like the rest of its definition: it only changes by switching
+  // to another version, and the PUT route refuses a different one. A custom rule's query follows the
+  // ordinary view/edit toggle, like the KQL pane. Also used for the Log Analytics editor — the flag
+  // name is backend-agnostic despite the "graph" in it.
+  const graphQueryReadOnly = isReadOnly;
 
   const lockedTags: LockedTag[] = useMemo(() => {
     if (initial?.type !== 'builtin') return [];

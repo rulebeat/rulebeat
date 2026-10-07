@@ -44,12 +44,32 @@ CREATE TABLE IF NOT EXISTS rules (
   tags TEXT,
   visual_query TEXT,
   last_run_status TEXT,
-  last_run_at TEXT
+  last_run_at TEXT,
+  version TEXT,
+  retired_at TEXT,
+  origin_rule_id TEXT,
+  origin_version TEXT
 );
 -- Applies to was removed; drop its columns from a database bootstrapped while it existed.
 ALTER TABLE rules DROP COLUMN IF EXISTS applies_to;
 ALTER TABLE rules DROP COLUMN IF EXISTS last_population_count;
 ALTER TABLE rules DROP COLUMN IF EXISTS shape;
+-- Rule versions (#152), for a Postgres database bootstrapped before these columns shipped.
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS version TEXT;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS retired_at TEXT;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_rule_id TEXT;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_version TEXT;
+
+CREATE TABLE IF NOT EXISTS rule_versions (
+  rule_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  sort_key TEXT NOT NULL,
+  release_note TEXT NOT NULL,
+  definition TEXT NOT NULL,
+  upstream_ref TEXT,
+  first_seen_at TEXT NOT NULL,
+  PRIMARY KEY (rule_id, version)
+);
 
 CREATE TABLE IF NOT EXISTS scans (
   id TEXT PRIMARY KEY,

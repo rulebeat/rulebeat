@@ -102,13 +102,15 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
 }
 
 /**
- * What a caller may change on an existing rule. The scan outcome fields are the scan's alone, so
- * the type leaves them out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
+ * What a caller may change on an existing rule. The scan outcome fields are the scan's alone, and
+ * the version, retirement and origin fields belong to the startup seeder, so the type leaves them
+ * out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
  */
-export type RuleChanges = Partial<Omit<Rule, 'id' | 'kind' | 'lastRunStatus' | 'lastRunAt'>>;
+export type RuleChanges = Partial<Omit<Rule,
+  'id' | 'kind' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion'>>;
 
 // The columns `updateRule()` will write, by the Rule field that feeds each. `kind` follows
-// `queryBackend` and the two run-outcome columns are never in here, on purpose.
+// `queryBackend`; the run-outcome and version columns are never in here, on purpose.
 const UPDATABLE_FIELDS = [
   'name', 'description', 'category', 'severity', 'enabled', 'scope', 'resourceTypes', 'conditions',
   'conditionGroups', 'projectColumns', 'rawKql', 'type', 'pack', 'group', 'tags', 'visualQuery',
@@ -248,6 +250,8 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
       candidate = `${baseName} (copy ${n++})`;
     }
 
+    // A copy is a custom rule with no version of its own. It remembers the shipped rule it was
+    // made from (or the origin the rule it copies already had), so a later release can say so.
     const copy: Rule = {
       ...original,
       id: globalThis.crypto.randomUUID(),
@@ -255,6 +259,10 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
       type: 'custom',
       pack: undefined,
       enabled: false,
+      version: undefined,
+      retiredAt: undefined,
+      originRuleId: original.type === 'builtin' ? original.id : original.originRuleId,
+      originVersion: original.type === 'builtin' ? original.version : original.originVersion,
     };
 
     await run(tx.insert(rulesTable).values(ruleToRow(copy)));
@@ -309,6 +317,10 @@ function rowToRule(row: Row): Rule {
     kind: row.kind as RuleKind,
     graphQuery: row.graphQuery ? JSON.parse(row.graphQuery) as GraphQuery : undefined,
     logsQuery: row.logsQuery ? JSON.parse(row.logsQuery) as LogAnalyticsQuery : undefined,
+    version: row.version ?? undefined,
+    retiredAt: row.retiredAt ?? undefined,
+    originRuleId: row.originRuleId ?? undefined,
+    originVersion: row.originVersion ?? undefined,
     lastRunStatus: (row.lastRunStatus as RuleExecutionStatus | null) ?? undefined,
     lastRunAt: row.lastRunAt ?? undefined,
   };
@@ -339,6 +351,10 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     kind: deriveKind(queryBackend),
     graphQuery: r.graphQuery ? JSON.stringify(r.graphQuery) : null,
     logsQuery: r.logsQuery ? JSON.stringify(r.logsQuery) : null,
+    version: r.version ?? null,
+    retiredAt: r.retiredAt ?? null,
+    originRuleId: r.originRuleId ?? null,
+    originVersion: r.originVersion ?? null,
     lastRunStatus: r.lastRunStatus ?? null,
     lastRunAt: r.lastRunAt ?? null,
   };

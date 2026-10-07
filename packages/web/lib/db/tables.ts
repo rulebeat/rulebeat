@@ -24,6 +24,7 @@ function pick<K extends keyof typeof sqlite & keyof typeof pg>(name: K): (typeof
 }
 
 export const rules = pick('rules');
+export const ruleVersions = pick('ruleVersions');
 export const scans = pick('scans');
 export const suppressions = pick('suppressions');
 export const schemaCache = pick('schemaCache');

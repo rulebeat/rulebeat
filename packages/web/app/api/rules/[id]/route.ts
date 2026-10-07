@@ -7,8 +7,12 @@ import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
+import { sameValue } from '@/lib/rule-versions';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
 import type { Rule } from '@rulebeat/core';
+
+const BUILTIN_QUERY_LOCKED_ERROR =
+  'A built-in rule\'s query cannot be edited. Duplicate the rule to get a custom copy you can change.';
 
 /** Maps an `updateRule()` failure to the response both branches below return for it. */
 function updateFailureResponse(result: Extract<UpdateRuleResult, { ok: false }>, name: string): NextResponse {
@@ -29,9 +33,10 @@ export async function PUT(
   const existing = (await loadRules()).find(r => r.id === id);
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Built-ins: only enabled toggle and tag assignment are allowed, with one exception (spec 032) —
-  // a microsoft-graph built-in (the seeded identity checks) ships its detection logic editable, so
-  // its graphQuery can also be tuned here without forking it into a custom copy first.
+  // Built-ins: only the enabled toggle and tag assignment are allowed. What a built-in runs changes
+  // only through a version switch, so a different Graph query is refused and the caller is pointed
+  // at Duplicate. A body that carries the stored query back unchanged (the Rules tab toggle sends
+  // the whole rule) is not an edit of it.
   if (existing.type === 'builtin') {
     const body = await parseJsonBody<Partial<Rule>>(req);
     if (body instanceof NextResponse) return body;
@@ -45,18 +50,8 @@ export async function PUT(
     const newTags = body.tags ?? (body.group ? [body.group] : undefined);
     if (newTags) changes.tags = newTags;
 
-    if (existing.queryBackend === 'microsoft-graph' && body.graphQuery) {
-      const shapeError = validateGraphQueryShape(body.graphQuery);
-      if (shapeError) {
-        return NextResponse.json({ error: shapeError }, { status: 400 });
-      }
-      try {
-        const ctx = await createTenantContext();
-        await probeGraphQuerySample(body.graphQuery, ctx);
-      } catch (err) {
-        console.error('[RuleBeat] rule-save Graph probe could not connect to Azure, allowing save:', err);
-      }
-      changes.graphQuery = body.graphQuery;
+    if (body.graphQuery && !sameValue(body.graphQuery, existing.graphQuery)) {
+      return NextResponse.json({ error: BUILTIN_QUERY_LOCKED_ERROR }, { status: 400 });
     }
 
     const result = await updateRule(id, changes);
@@ -70,9 +65,7 @@ export async function PUT(
       entityId: id,
       summary: changes.enabled !== existing.enabled
         ? `${changes.enabled ? 'Enabled' : 'Disabled'} built-in rule "${existing.name}"`
-        : changes.graphQuery
-          ? `Updated the Graph query on built-in rule "${existing.name}"`
-          : `Updated tags on built-in rule "${existing.name}"`,
+        : `Updated tags on built-in rule "${existing.name}"`,
       details: { changed: changedFields(existing, changes) },
     });
 

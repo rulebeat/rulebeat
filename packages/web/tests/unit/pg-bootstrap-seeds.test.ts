@@ -18,7 +18,7 @@ import { runSeeds } from '@/lib/db/migrate';
 import { seedPg } from '@/lib/db/pg/seeds';
 
 // Anchored to this file's location, not process.cwd(): under 'npm test' from the repo root the
-// workers' cwd is the root, where data/packs does not exist, and seedPackRules would silently
+// workers' cwd is the root, where data/packs does not exist, and the seeder would silently
 // no-op. Same trap demo-generator.test.ts documents.
 const DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
 
@@ -63,6 +63,16 @@ describe('seeded baseline (both backends)', () => {
   it('built-in and pack rules are present', async () => {
     expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE type = 'builtin'`)).toBeGreaterThan(0);
     expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'aprl-v2'`)).toBeGreaterThan(0);
+  });
+
+  it('every built-in and pack rule runs a version that is recorded, Core at 1.0.0 and APRL at the upstream commit time', async () => {
+    const unrecorded = await countOf(`
+      SELECT COUNT(*) AS n FROM rules r
+      WHERE r.type = 'builtin' AND r.retired_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM rule_versions v WHERE v.rule_id = r.id AND v.version = r.version)`);
+    expect(unrecorded).toBe(0);
+    expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'rulebeat-core' AND version = '1.0.0'`)).toBeGreaterThan(0);
+    expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'aprl-v2' AND version = '2026-06-08T13:06:47Z'`)).toBe(143);
   });
 
   it('the five built-in categories exist in order', async () => {
