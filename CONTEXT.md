@@ -62,3 +62,38 @@ _Avoid_: library (that is the page listing every rule), rule set, collection, bu
 A shipped rule its pack no longer ships. It keeps running its last version until someone disables
 it. The same word is used for every pack.
 _Avoid_: obsolete, deprecated, removed
+
+## Findings
+
+**Rule kind**:
+What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
+from severity, category and query backend. A Logs rule is always an Activity rule; any other rule
+is a Problem rule unless someone sets it to Advisory, and it can be switched back.
+_Avoid_: rule type (that is builtin, community or custom), mode
+
+**Problem rule**:
+A rule whose every result is something wrong with a resource. Its findings are failures and are
+what posture scores. Info is its lowest severity, not a separate kind.
+_Avoid_: compliance rule, state rule
+
+**Advisory rule**:
+A rule whose results are things to know about and act on, not failures: a service retirement
+that affects resources, an Azure Advisor recommendation. Its findings never count toward posture
+or toward any problem count.
+_Avoid_: info rule, informational rule, recommendation rule
+
+**Advisory**:
+A finding produced by an Advisory rule. One Advisory per affected resource, grouped by the
+recommendation it came from. It goes through Open, New and Fixed like any finding, keeps a
+severity, and is listed on its own Advisories tab.
+_Avoid_: notice, recommendation (that is what Azure Advisor calls its own rows), info finding
+
+**Deadline**:
+The date by which an Advisory needs action, read from a column the rule names, such as a
+retirement date. An Advisory may have none.
+_Avoid_: due date, retirement date (that is one source of a Deadline)
+
+**Overdue**:
+An open Advisory whose Deadline has passed. It is shown in red and sorted first, and it stays an
+Advisory; it never turns into a problem on its own.
+_Avoid_: expired, breached
