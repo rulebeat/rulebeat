@@ -1,5 +1,6 @@
 import type { Severity } from './types';
 import type { ExplorerFinding, FindingDisplayStatus } from './explorer-data';
+import { countsInFindingTotals } from './finding-kinds';
 
 /** 'open' is every finding open right now; 'new' and 'fixed' are both bounded by the chosen
  *  window, the same way the New and Fixed header tiles count; 'all' is the two together. */
@@ -80,6 +81,7 @@ export function summarizeFindings(findings: ExplorerFinding[], from: string, to:
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
   for (const f of findings) {
+    if (!countsInFindingTotals(f)) continue;
     const recency = getRecencyStatus(f, from, to);
     if (recency !== 'fixed') counts[f.severity]++;
     if (recency === 'new') newCount++;
@@ -99,7 +101,8 @@ export interface RuleCounts {
 }
 
 /** Per-rule Open/New/Fixed for the by-rule view. Pass it a pool that has every filter applied
- *  except status: the status filter picks which rules are listed, not what their counts say. */
+ *  except status: the status filter picks which rules are listed, not what their counts say.
+ *  Same finding-level total as the header tiles, so by-rule Open adds up to the Open tile. */
 export function countFindingsByRule(
   findings: ExplorerFinding[],
   from: string,
@@ -107,6 +110,7 @@ export function countFindingsByRule(
 ): Map<string, RuleCounts> {
   const counts = new Map<string, RuleCounts>();
   for (const f of findings) {
+    if (!countsInFindingTotals(f)) continue;
     let c = counts.get(f.ruleId);
     if (!c) { c = { open: 0, new: 0, fixed: 0 }; counts.set(f.ruleId, c); }
     const recency = getRecencyStatus(f, from, to);

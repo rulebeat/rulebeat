@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
+import { countsInFindingTotals } from '@/lib/finding-kinds';
 
 export async function GET(req: Request) {
   const actor = await requireRole('read');
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '20'), 200);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const all = await queryActiveFindings(filters);
+  const all = (await queryActiveFindings(filters)).filter(countsInFindingTotals);
   // Recent findings feed: newest-first by when each finding first appeared.
   all.sort((a, b) => new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime());
 

@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Posture and finding counts now share one definition of which rule kinds they include. Nothing you see changes.
+
 ### Fixed
 
 - In the Results tab's By rule view, the Active column is now called Open and counts every open finding for the rule, the same as the Open tile. It no longer changes with the New / Fixed window or the status filter. New is the part of it first seen inside the window, and Fixed now shows the findings fixed inside the window instead of staying blank.

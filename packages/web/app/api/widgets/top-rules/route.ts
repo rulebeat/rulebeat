@@ -4,6 +4,7 @@ import { queryActiveFindings } from '@/lib/dashboard-data';
 import { loadRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
 import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
+import { countsInFindingTotals } from '@/lib/finding-kinds';
 import type { Severity } from '@/lib/types';
 
 export async function GET(req: Request) {
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const findings = await queryActiveFindings(filters);
+  const findings = (await queryActiveFindings(filters)).filter(countsInFindingTotals);
   const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 

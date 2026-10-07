@@ -1,6 +1,7 @@
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { queryActiveFindings } from '@/lib/dashboard-data';
+import { countsInFindingTotals } from '@/lib/finding-kinds';
 import { getScanById, getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { buildExplorerData } from '@/lib/explorer-data';
@@ -64,6 +65,7 @@ export default async function ScansPage({
   if (activeTab === 'rules') {
     ruleFindingCounts = {};
     for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } })) {
+      if (!countsInFindingTotals(f)) continue;
       ruleFindingCounts[f.ruleId] = (ruleFindingCounts[f.ruleId] ?? 0) + 1;
     }
   }

@@ -7,6 +7,7 @@ import { loadRules } from '../rules';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
 import { getMeta, setMeta } from './meta';
+import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import type { Finding, Severity } from '../types';
 
 export interface FindingRecord extends Finding {
@@ -299,11 +300,12 @@ export interface FindingEventCount { date: string; created: number; resolved: nu
 
 /** Daily created(+reactivated)-vs-resolved counts from finding_events, for the "New vs Fixed"
  *  remediation-velocity widget. Events only carry fingerprint/ruleId/category, but the findings
- *  row (same fingerprint, deleted together with its events in deleteFindingsForRule) carries
- *  subscription/RG/severity — a join covers those dimensions, so every filter the other widgets
- *  support works here too. Tag filters are resolved to rule ids by the caller (rules own tags).
- *  Caveat: the join reads the finding's *current* subscription/RG/severity, not event-time
- *  values — same convention as every live findings-sourced number. Days with no events are
+ *  row carries subscription/RG/severity/kind, so a join covers those dimensions and lets every
+ *  filter the other widgets support work here too. The join is now unconditional so the kind
+ *  filter always applies; this is safe because every finding_events row is deleted or re-keyed
+ *  together with its findings row (deleteFindingsForRule, lib/db/fingerprint-rekey.ts).
+ *  Caveat: the join reads the finding's *current* subscription/RG/severity/kind, not event-time
+ *  values, same convention as every live findings-sourced number. Days with no events are
  *  zero-filled between the first event and today so bar spacing stays honest. */
 export async function getFindingEventCounts(opts: {
   categories?: string[];
@@ -313,22 +315,17 @@ export async function getFindingEventCounts(opts: {
   severities?: string[];
   sinceDate: string;
 }): Promise<FindingEventCount[]> {
-  const conditions = [sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`];
+  const conditions = [sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`, countsInFindingTotalsSql];
   if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
-
-  const needsJoin = Boolean(opts.subscriptions?.length || opts.resourceGroups?.length || opts.severities?.length);
   if (opts.subscriptions?.length) conditions.push(inArray(findingsTable.subscriptionId, opts.subscriptions));
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
 
   const selection = { type: findingEventsTable.type, occurredAt: findingEventsTable.occurredAt };
-  const rows = needsJoin
-    ? await many(db.select(selection).from(findingEventsTable)
-        .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
-        .where(and(...conditions)))
-    : await many(db.select(selection).from(findingEventsTable)
-        .where(and(...conditions)));
+  const rows = await many(db.select(selection).from(findingEventsTable)
+    .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
+    .where(and(...conditions)));
 
   const byDate = new Map<string, { created: number; resolved: number }>();
   for (const r of rows) {
