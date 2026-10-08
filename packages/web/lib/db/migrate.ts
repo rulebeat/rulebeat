@@ -7,7 +7,7 @@ import { join } from 'path';
 import { computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { buildRuleQuery, type Rule } from '@rulebeat/core/kql';
 import {
-  definitionToColumns, planRuleSeeding, versionKey,
+  definitionToColumns, installColumns, planRuleSeeding, versionKey,
   type SeedAction, type StoredRuleRow,
 } from '../rule-versions';
 import { loadShippedCatalogue, type ShippedCatalogue } from '../shipped-catalogue';
@@ -1270,8 +1270,8 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     const now = new Date().toISOString();
 
     const insertRule = sqlite.prepare(`
-      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, condition_groups, project_columns, visual_query, raw_kql, type, pack, query_backend, kind, graph_query, logs_query, version)
-      VALUES (@id, @name, @description, @category, @severity, @enabled, @scope, @resourceTypes, NULL, @conditions, @conditionGroups, @projectColumns, @visualQuery, @rawKql, 'builtin', @pack, @queryBackend, @kind, @graphQuery, @logsQuery, @version)
+      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, condition_groups, project_columns, visual_query, raw_kql, type, pack, query_backend, kind, graph_query, logs_query, version, deadline_field, group_field)
+      VALUES (@id, @name, @description, @category, @severity, @enabled, @scope, @resourceTypes, NULL, @conditions, @conditionGroups, @projectColumns, @visualQuery, @rawKql, 'builtin', @pack, @queryBackend, @kind, @graphQuery, @logsQuery, @version, @deadlineField, @groupField)
     `);
     const adopt = sqlite.prepare(`UPDATE rules SET type = 'builtin', pack = ? WHERE id = ?`);
     const backfillGraph = sqlite.prepare(`UPDATE rules SET query_backend = ?, kind = ?, graph_query = ? WHERE id = ? AND graph_query IS NULL`);
@@ -1294,7 +1294,10 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     const execute = (a: SeedAction) => {
       switch (a.action) {
         case 'insert':
-          insertRule.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version });
+          insertRule.run({
+            id: a.rule.id, ...definitionToColumns(a.rule.definition), ...installColumns(a.rule),
+            enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version,
+          });
           break;
         case 'adopt': adopt.run(a.pack, a.ruleId); break;
         case 'backfill-graph':

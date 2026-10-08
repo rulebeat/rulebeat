@@ -9,6 +9,7 @@ import type Database from 'better-sqlite3';
 import { makeSample, open, upgradeInProcess } from '../fixtures/upgrade';
 import { SHAPES } from '../fixtures/db-shapes';
 import { runMigrations } from '@/lib/db/migrate';
+import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 
 const RULE = '3c9d5a10-8e2b-4b7a-a1f4-5d6e7f809a11';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -88,7 +89,8 @@ describe('upgrading to a database with Deadline columns', () => {
     const names = (table: string) => all(db, `PRAGMA table_info(${table})`).map(c => c.name);
     expect(names('rules')).toContain('deadline_field');
     expect(names('findings')).toContain('deadline');
-    expect(all(db, `SELECT id FROM rules WHERE deadline_field IS NOT NULL`)).toEqual([]);
+    // Only the Service retirements rule RuleBeat Core ships (issue #181) names a Deadline column.
+    expect(all(db, `SELECT id FROM rules WHERE deadline_field IS NOT NULL`)).toEqual([{ id: SERVICE_RETIREMENTS_RULE_ID }]);
     expect(all(db, `SELECT fingerprint FROM findings WHERE deadline IS NOT NULL`)).toEqual([]);
     expect(all(db, `SELECT COUNT(*) AS n FROM rules`)[0].n).toBeGreaterThan(0);
   });

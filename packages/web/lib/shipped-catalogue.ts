@@ -34,6 +34,17 @@ export interface RuleDefinition {
   logsQuery: NonNullable<Rule['logsQuery']> | null;
 }
 
+/**
+ * What a shipped rule says a brand-new install should start as. Kind and the Deadline and Group
+ * columns belong to the install (ADR 0005), not to the versioned definition, so these are read once,
+ * when seeding first inserts the rule, and never again. Absent means a Problem with no columns.
+ */
+export interface RuleInstallDefaults {
+  kind?: Rule['kind'];
+  deadlineField?: string;
+  groupField?: string;
+}
+
 export interface ShippedRule {
   id: string;
   pack: string;
@@ -46,6 +57,8 @@ export interface ShippedRule {
   /** Whether a brand-new install runs it. An existing rule's enabled state is never touched. */
   enabled: boolean;
   definition: RuleDefinition;
+  /** Only read when the rule is first inserted. See `RuleInstallDefaults`. */
+  installDefaults?: RuleInstallDefaults;
 }
 
 export interface ShippedCatalogue {
@@ -85,6 +98,15 @@ export function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): 
   return queryBackend === 'log-analytics' ? 'activity' : 'state';
 }
 
+/** The install defaults a definition declares, or undefined when it declares none. */
+function installDefaultsOf(declared: { kind?: unknown; deadlineField?: unknown; groupField?: unknown }): RuleInstallDefaults | undefined {
+  const kind = declared.kind === 'advisory' ? 'advisory' : undefined;
+  const deadlineField = nonEmptyString(declared.deadlineField);
+  const groupField = nonEmptyString(declared.groupField);
+  if (!kind && !deadlineField && !groupField) return undefined;
+  return { ...(kind ? { kind } : {}), ...(deadlineField ? { deadlineField } : {}), ...(groupField ? { groupField } : {}) };
+}
+
 function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): ShippedRule {
   const queryBackend = r.queryBackend ?? 'resource-graph';
   return {
@@ -94,13 +116,15 @@ function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): Shi
     version: r.version,
     releaseNote: r.releaseNote,
     enabled: r.enabled,
+    installDefaults: installDefaultsOf(r),
     definition: {
       name: r.name,
       description: r.description,
       category: r.category,
       severity: r.severity,
       queryBackend,
-      kind: r.kind ?? kindOfBackend(queryBackend),
+      // The definition's kind is what the backend means. A declared Advisory is an install default.
+      kind: kindOfBackend(queryBackend),
       resourceTypes: r.resourceTypes,
       scope: r.scope,
       conditions: r.conditions,
@@ -204,6 +228,7 @@ function packRuleToShipped(
       ?? (upstreamRef ? syncedFromCommitNote(upstreamRef) : `Version ${version}.`),
     upstreamRef,
     enabled: Boolean(p.enabled),
+    installDefaults: installDefaultsOf(p),
     definition: packEntryDefinition(p),
   };
 }

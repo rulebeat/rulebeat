@@ -5,7 +5,7 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as pgSchema from '../schema.pg';
 import {
-  definitionToColumns, planRuleSeeding, versionKey,
+  definitionToColumns, installColumns, planRuleSeeding, versionKey,
   type SeedAction, type StoredRuleRow,
 } from '../../rule-versions';
 import { loadShippedCatalogue, type ShippedCatalogue } from '../../shipped-catalogue';
@@ -74,7 +74,7 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
       switch (a.action) {
         case 'insert':
           await t.insert(rules).values({
-            id: a.rule.id, ...definitionToColumns(a.rule.definition), filter: null, type: 'builtin',
+            id: a.rule.id, ...definitionToColumns(a.rule.definition), ...installColumns(a.rule), filter: null, type: 'builtin',
             enabled: a.rule.enabled, pack: a.rule.pack, version: a.rule.version,
           }).onConflictDoNothing();
           break;

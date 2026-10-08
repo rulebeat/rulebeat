@@ -25,6 +25,7 @@ import { SHAPES, addUsers, type BuiltShape, type ShapeName } from '../fixtures/d
 import { makeSample, open, upgradeInProcess, type Sample } from '../fixtures/upgrade';
 import { columnsOf, countRows, tableExists } from '../fixtures/dump';
 import { readRules, ruleByName, rowsIfPresent } from '../fixtures/inspect';
+import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 
 /**
  * Every table the app's schema declares, with the columns it expects to find. Read from the schema
@@ -238,7 +239,9 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
   it('25-14 · every pre-029 ARG rule defaults to resource-graph / state', async () => {
     // The two identity checks are the one deliberate exception — see the dedicated case below —
     // so they're excluded here rather than asserted against the ARG default.
-    const IDENTITY_IDS = new Set(['cred:app-secret-expiring', 'cred:app-cert-expiring']);
+    // The Service retirements rule is the other exception: it is new in this release (issue #181), so
+    // it was never a pre-029 rule, and it ships as an Advisory.
+    const IDENTITY_IDS = new Set(['cred:app-secret-expiring', 'cred:app-cert-expiring', SERVICE_RETIREMENTS_RULE_ID]);
     const rules = readRules(up.sqlite).filter(r => !IDENTITY_IDS.has(r.id));
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {

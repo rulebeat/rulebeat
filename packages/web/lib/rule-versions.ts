@@ -199,6 +199,25 @@ export function kindAfterApply(currentKind: string, queryBackend: RuleDefinition
   return currentKind === 'advisory' ? 'advisory' : 'state';
 }
 
+/**
+ * What a brand-new row of a shipped rule starts with for the three columns that belong to the install
+ * rather than to the versioned definition: its kind and the Deadline and Group columns an Advisory
+ * reads. This is the only place seeding decides them, and only the `insert` action calls it: a rule
+ * that already has a row keeps what it has, whatever a newer version declares (ADR 0005, ADR 0004).
+ * Logs rules are always 'activity', and the columns are only ever set on an Advisory.
+ */
+export function installColumns(rule: ShippedRule): { kind: string; deadlineField: string | null; groupField: string | null } {
+  const { queryBackend } = rule.definition;
+  if (queryBackend === 'log-analytics') return { kind: 'activity', deadlineField: null, groupField: null };
+  const declared = rule.installDefaults;
+  if (declared?.kind !== 'advisory') return { kind: 'state', deadlineField: null, groupField: null };
+  return {
+    kind: 'advisory',
+    deadlineField: queryBackend === 'resource-graph' ? declared.deadlineField ?? null : null,
+    groupField: declared.groupField ?? null,
+  };
+}
+
 /** Remembers a stored definition that differs from what ships, so it is never lost. */
 function recordBeforeVersioning(ruleId: string, definition: RuleDefinition): SeedAction {
   return {

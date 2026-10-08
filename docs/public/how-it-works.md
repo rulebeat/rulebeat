@@ -93,6 +93,18 @@ lists: it changes no count and no fingerprint, so fixing one resource resolves o
 The tab opens grouped, and List shows the flat table (`?view=list` in the address). The Group column
 belongs to your install in the same way the Deadline column does.
 
+RuleBeat ships one Advisory rule, **Service retirements** (Reliability). It reads the Azure Advisor
+recommendations in the Service upgrade and retirement subcategory, one Advisory per affected resource,
+with the retirement date as its Deadline and the retiring feature as its group. Advisor does not report
+every retirement and covers the public cloud only, so a resource missing from the list is not
+necessarily safe; the rule's recommendation points to the
+[Azure updates retirements page](https://azure.microsoft.com/updates/?updateType=retirements) for the
+rest. A resource that Advisor lists under two retirements is one Advisory, since a finding is
+identified by rule and resource. A fresh install starts with the rule as an Advisory, and you can
+switch it to a Problem in the rule form like any other rule. An upgrade never changes that choice: a
+new version of the rule changes what it runs only when it is disabled, and never changes its kind or
+its Deadline and group columns.
+
 ## How a row becomes a finding
 
 Each row gets a **fingerprint**, `sha256(ruleId::resourceId)` (resource id lowercased) truncated to 16

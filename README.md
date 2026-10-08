@@ -78,11 +78,11 @@ shows whether the estate is getting better or worse.
   an OData filter). Every row a query returns is a finding, so nothing can disagree with what the
   same query shows you in the Azure Portal. A third kind, *logs and activity*, is visible in the rule
   picker but not yet available.
-- <!-- count:checks-total -->**158 checks out of the box.** <!-- count:builtin-rules -->15 written
+- <!-- count:checks-total -->**159 checks out of the box.** <!-- count:builtin-rules -->16 written
   for RuleBeat plus <!-- count:pack-rules:aprl-v2 -->143 from the
   [Azure Proactive Resiliency Library](https://azure.github.io/Azure-Proactive-Resiliency-Library-v2/)
   (APRL), pinned to an upstream commit. A fresh install enables
-  <!-- count:enabled-default -->12 of them, so the first scan is a signal rather than a wall.
+  <!-- count:enabled-default -->13 of them, so the first scan is a signal rather than a wall.
 - **A visual rule builder that round-trips with raw KQL.** Pick scope, resource type and conditions,
   or paste a query from the Portal and have it parsed back into the builder. What the builder cannot
   express is kept verbatim, never dropped.

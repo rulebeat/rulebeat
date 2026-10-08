@@ -65,7 +65,7 @@ old formula is tagged with its version and not blended with the new one. See
 
 <!-- count:pack-rules:aprl-v2 -->143 reliability rules at once would make a first scan slow and its
 result unreadable, and not all of them fit every estate. A fresh install starts with
-<!-- count:enabled-default -->12 enabled rules and you switch on what applies to you. Some upstream
+<!-- count:enabled-default -->13 enabled rules and you switch on what applies to you. Some upstream
 recommendations ship with placeholder queries; enabling one gives a "query failed" outcome rather
 than a finding, which the Rules tab shows.
 

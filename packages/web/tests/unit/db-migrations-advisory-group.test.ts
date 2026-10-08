@@ -9,6 +9,7 @@ import type Database from 'better-sqlite3';
 import { makeSample, open, upgradeInProcess } from '../fixtures/upgrade';
 import { SHAPES } from '../fixtures/db-shapes';
 import { runMigrations } from '@/lib/db/migrate';
+import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 
 const RULE = '3c9d5a10-8e2b-4b7a-a1f4-5d6e7f809a12';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -95,7 +96,8 @@ describe('upgrading to a database with Group columns', () => {
     const names = (table: string) => all(db, `PRAGMA table_info(${table})`).map(c => c.name);
     expect(names('rules')).toContain('group_field');
     expect(names('findings')).toContain('group_value');
-    expect(all(db, `SELECT id FROM rules WHERE group_field IS NOT NULL`)).toEqual([]);
+    // Only the Service retirements rule RuleBeat Core ships (issue #181) names a Group column.
+    expect(all(db, `SELECT id FROM rules WHERE group_field IS NOT NULL`)).toEqual([{ id: SERVICE_RETIREMENTS_RULE_ID }]);
     expect(all(db, `SELECT fingerprint FROM findings WHERE group_value IS NOT NULL`)).toEqual([]);
     expect(all(db, `SELECT COUNT(*) AS n FROM rules`)[0].n).toBeGreaterThan(0);
   });

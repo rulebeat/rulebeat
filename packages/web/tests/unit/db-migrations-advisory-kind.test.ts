@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { makeSample, open, upgradeInProcess } from '../fixtures/upgrade';
 import { SHAPES } from '../fixtures/db-shapes';
 import { runMigrations } from '@/lib/db/migrate';
+import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 
 const RULE = '6b1f8c2e-4d3a-4f6b-9c1e-7a2d5e8f0b77';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -63,6 +64,8 @@ describe('upgrading with Advisories in the database', () => {
     db = sqlite = open(sample.file);
     expect(kindsAfterUpgrade.length).toBeGreaterThan(0);
     expect(all(db, `SELECT id, kind FROM rules ORDER BY id`)).toEqual(kindsAfterUpgrade);
-    expect(all(db, `SELECT id FROM rules WHERE kind = 'advisory'`)).toEqual([]);
+    // The one Advisory is the Service retirements rule RuleBeat Core ships (issue #181); every other
+    // rule in the database, shipped or the user's, is still not one.
+    expect(all(db, `SELECT id FROM rules WHERE kind = 'advisory'`)).toEqual([{ id: SERVICE_RETIREMENTS_RULE_ID }]);
   });
 });

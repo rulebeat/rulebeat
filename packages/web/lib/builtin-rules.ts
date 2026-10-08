@@ -346,9 +346,48 @@ const IDENTITY_RULES: CoreRuleDefinition[] = [
   },
 ];
 
+// ── Reliability / Service retirements (Advisory) ─────────────────────────────
+// Reads Azure Advisor's "Service upgrade and retirement" recommendations, one Advisory per affected
+// resource. Ships as an Advisory with a Deadline (the retirement date) and a group (the retiring
+// feature); kind and those two columns are install defaults, read only when the rule is first
+// inserted (ADR 0005), so an admin who switches it to a Problem keeps that through every upgrade.
+// `description` is also the recommendation, so the coverage caveat lives here where the reader sees it.
+
+const ADVISORY_RULES: CoreRuleDefinition[] = [
+  {
+    id: '3d0a6f52-8b71-4f0e-9c34-5e2b7a91d8c6',
+    type: 'builtin',
+    pack: 'rulebeat-core',
+    version: '1.0.0',
+    releaseNote: 'First release of this rule.',
+    name: 'Service retirements',
+    description: "Azure has announced that a service or feature this resource uses is being retired. Plan the move to the replacement before the retirement date, and use the Advisor recommendation on the resource for the migration steps. Advisor's retirement coverage is incomplete and covers the public cloud only, so a resource missing from this list is not necessarily safe. Check the Azure updates retirements page (https://azure.microsoft.com/updates/?updateType=retirements) for retirements that Advisor does not report.",
+    category: 'reliability',
+    severity: 'medium',
+    enabled: true,
+    kind: 'advisory',
+    deadlineField: 'retirementDate',
+    groupField: 'retirementFeatureName',
+    scope: { level: 'resource' },
+    resourceTypes: [],
+    conditions: [],
+    rawKql: `advisorresources
+| where type =~ 'microsoft.advisor/recommendations'
+| where properties.extendedProperties.recommendationSubCategory == 'ServiceUpgradeAndRetirement'
+| where iff(strlen(name) == 36, properties.lastUpdated > ago(1d), properties.platformState == 'New')
+| where isempty(properties.tracked)
+| extend resourceId = tostring(properties.resourceMetadata.resourceId)
+| extend retirementFeatureName = tostring(properties.extendedProperties.retirementFeatureName)
+| extend retirementDate = tostring(properties.extendedProperties.retirementDate)
+| where isnotempty(resourceId) and isnotempty(retirementFeatureName)
+| project id = resourceId, name = tostring(split(resourceId, '/')[-1]), subscriptionId, resourceGroup, retirementFeatureName, retirementDate, shortDescription = tostring(properties.shortDescription.problem), recommendationTypeId = tostring(properties.recommendationTypeId)`,
+  },
+];
+
 export const BUILTIN_RULES: CoreRuleDefinition[] = [
   ...COST_RULES,
   ...SECURITY_RULES,
   ...COMPLIANCE_RULES,
   ...IDENTITY_RULES,
+  ...ADVISORY_RULES,
 ];

@@ -37,6 +37,13 @@ export function shippedRule(
   };
 }
 
+/**
+ * The id of the Service retirements rule RuleBeat Core ships as an Advisory (issue #181). Written out
+ * here rather than read from `builtin-rules.ts`: findings are keyed on the rule id, so a test that
+ * follows a changed id would hide the break.
+ */
+export const SERVICE_RETIREMENTS_RULE_ID = '3d0a6f52-8b71-4f0e-9c34-5e2b7a91d8c6';
+
 /** A catalogue that read every pack cleanly, so retirement is allowed. */
 export function catalogueOf(...rules: ShippedRule[]): ShippedCatalogue {
   return { rules, packsDirRead: true, unreadablePacks: [] };

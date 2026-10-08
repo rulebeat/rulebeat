@@ -102,3 +102,15 @@ export const CORE_FIXTURES: RuleFixture[] = [
 ];
 
 export const CORE_RULE_IDS = CORE_FIXTURES.map(f => f.ruleId);
+
+/**
+ * RuleBeat Core's Resource Graph rules the demo has no fixture for (the Service retirements Advisory
+ * reads Advisor, which the synthetic estate does not model). Left enabled they would ask the fake
+ * tenant a question it cannot answer, so the demo curation turns them off. The Graph-backed identity
+ * rules are not Resource Graph rules and run from their own fixtures.
+ */
+export function unfixturedCoreRuleIds(rules: Array<{ id: string; pack?: string; queryBackend?: string }>): string[] {
+  return rules
+    .filter(r => r.pack === 'rulebeat-core' && (r.queryBackend ?? 'resource-graph') === 'resource-graph' && !CORE_RULE_IDS.includes(r.id))
+    .map(r => r.id);
+}

@@ -4,7 +4,7 @@ import { stampDemoDatabase } from './index';
 import { seedDemoVisitor } from './visitor';
 import { buildEstate } from './estate';
 import { buildIdentityApps } from './identity-fixtures';
-import { CORE_FIXTURES, CORE_RULE_IDS } from './core-fixtures';
+import { CORE_FIXTURES, CORE_RULE_IDS, unfixturedCoreRuleIds } from './core-fixtures';
 import { buildAprlFixtures } from './aprl-fixtures';
 import type { RuleFixture } from './rule-fixture';
 import { replay, TOTAL_DAYS } from './replay';
@@ -54,6 +54,7 @@ async function generateContoso(): Promise<void> {
   await setRulesEnabled(aprlRuleIds, false);
   await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
   await setRulesEnabled(CORE_RULE_IDS, true);
+  await setRulesEnabled(unfixturedCoreRuleIds(allRules), false);
   console.log(`  ${CORE_RULE_IDS.length} core rules + ${aprlFixtures.length} APRL rules enabled`);
 
   const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];

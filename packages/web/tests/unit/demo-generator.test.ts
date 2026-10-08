@@ -25,7 +25,7 @@ import { scheduleRuns, findings } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { buildEstate, TYPE_META } from '@/lib/demo/estate';
 import { buildIdentityApps, graphAppsForDay } from '@/lib/demo/identity-fixtures';
-import { CORE_FIXTURES, CORE_RULE_IDS } from '@/lib/demo/core-fixtures';
+import { CORE_FIXTURES, CORE_RULE_IDS, unfixturedCoreRuleIds } from '@/lib/demo/core-fixtures';
 import { buildAprlFixtures } from '@/lib/demo/aprl-fixtures';
 import { extractProjectColumns } from '@/lib/demo/kql-columns';
 import { isViolatingOnDay, rowsForRuleOnDay } from '@/lib/demo/violation-engine';
@@ -386,6 +386,7 @@ describe('replay() — small-scale integration against the real scan pipeline', 
     await setRulesEnabled(aprlRuleIds, false);
     await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
     await setRulesEnabled(CORE_RULE_IDS, true);
+    await setRulesEnabled(unfixturedCoreRuleIds(allRules), false);
 
     const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];
     const fixturesByRuleId = new Map(fixtures.map(f => [f.ruleId, f]));
