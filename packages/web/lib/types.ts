@@ -1,4 +1,5 @@
 import type { DateWindow } from './date-window';
+import type { ChangedFinding, FindingRow } from './finding-rows';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -37,13 +38,17 @@ export interface Finding {
   /** Every row the rule's query returned for this resource, in query order; `evidence` is the
    *  first. Absent on a finding saved before rows existed, which reads as one row (see
    *  `findingRows()` in lib/finding-rows.ts). */
-  rows?: Record<string, unknown>[];
+  rows?: FindingRow[];
   recommendation: string;
   remediationSteps: RemediationStep[];
   estimatedMonthlyCost?: number;
   azurePortalLink?: string;
   detectedAt: string;
 }
+
+/** A changed finding (see `ChangedFinding` in lib/finding-rows.ts) together with the finding itself,
+ *  which is what a notification lists. */
+export interface ChangedFindingDetail extends Finding, ChangedFinding {}
 
 /** A rule that did not run to a trustworthy completion this scan — its prior findings were left
  *  untouched (not resolved) rather than treated as fixed. */

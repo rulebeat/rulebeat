@@ -4,6 +4,7 @@ import { scheduleRuns } from './db/tables';
 import { many, one, run } from './db/exec';
 import { INSTANCE_ID } from './instance-id';
 import type { ScheduleTargetType } from './db/schedules';
+import { rowKey, type ChangedFinding, type FindingRow } from './finding-rows';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
 // now that this table also backs the user-facing Run History list, not just internal bookkeeping.
@@ -49,6 +50,32 @@ export interface ScheduleRun {
   heartbeatAt: string | null;
   /** lib/instance-id.ts's id of the process that started the run; null on rows from before the column. */
   ownerId: string | null;
+  /** Findings that gained rows in this run (#193), each with the rows added: the outbox for the
+   *  "Changed" section of a notification, kept so a restart can still send it. Empty when none. */
+  changedFindings: ChangedFinding[];
+}
+
+/** Folds changed-finding records by fingerprint, so a rule moved between categories or a replayed
+ *  category never lists a finding twice. A fingerprint recorded again keeps the rows it already
+ *  held and gains only the rows it did not have (compared with `rowKey`), in first-seen order. */
+function mergeChanged(existing: ChangedFinding[], incoming: ChangedFinding[]): ChangedFinding[] {
+  const merged = new Map<string, { fingerprint: string; addedRows: FindingRow[]; keys: Set<string> }>();
+  for (const record of [...existing, ...incoming]) {
+    let held = merged.get(record.fingerprint);
+    if (!held) merged.set(record.fingerprint, held = { fingerprint: record.fingerprint, addedRows: [], keys: new Set() });
+    for (const row of record.addedRows) {
+      const key = rowKey(row);
+      if (held.keys.has(key)) continue;
+      held.keys.add(key);
+      held.addedRows.push(row);
+    }
+  }
+  return Array.from(merged.values(), ({ fingerprint, addedRows }) => ({ fingerprint, addedRows }));
+}
+
+/** A stored `changed_findings` value as records; null on a row from before the column existed. */
+function parseChanged(value: string | null): ChangedFinding[] {
+  return value ? JSON.parse(value) as ChangedFinding[] : [];
 }
 
 type Row = typeof scheduleRuns.$inferSelect;
@@ -73,6 +100,7 @@ function rowToRun(row: Row): ScheduleRun {
     notifyClaimedAt: row.notifyClaimedAt ?? null,
     heartbeatAt: row.heartbeatAt ?? null,
     ownerId: row.ownerId ?? null,
+    changedFindings: parseChanged(row.changedFindings),
   };
 }
 
@@ -125,10 +153,14 @@ export async function finishRun(id: string, patch: {
   error?: string;
   durationMs: number;
   notifyStatus?: NotifyStatus;
+  /** Written only when given, so a finish that has nothing to add keeps what the per-category
+   *  progress writes already recorded. */
+  changedFindings?: ChangedFinding[];
   /** Injected by the demo generator to stamp a replayed run at its simulated date. */
   now?: Date;
 }): Promise<void> {
   await run(db.update(scheduleRuns).set({
+    ...(patch.changedFindings ? { changedFindings: JSON.stringify(patch.changedFindings) } : {}),
     finishedAt: (patch.now ?? new Date()).toISOString(),
     status: patch.status,
     totalFindings: patch.totalFindings,
@@ -197,6 +229,7 @@ export async function recordCategoryProgress(id: string, delta: {
   totalFindings: number;
   newFindings: number;
   newFindingFingerprints: string[];
+  changedFindings?: ChangedFinding[];
 }): Promise<void> {
   const row = await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)));
   if (!row) return;
@@ -208,6 +241,9 @@ export async function recordCategoryProgress(id: string, delta: {
     totalFindings: row.totalFindings + delta.totalFindings,
     newFindings: row.newFindings + delta.newFindings,
     newFindingFingerprints: JSON.stringify(mergedFingerprints),
+    ...(delta.changedFindings && delta.changedFindings.length > 0
+      ? { changedFindings: JSON.stringify(mergeChanged(parseChanged(row.changedFindings), delta.changedFindings)) }
+      : {}),
   }).where(eq(scheduleRuns.id, id)));
 }
 

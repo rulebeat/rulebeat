@@ -9,13 +9,13 @@ import { upsertDailySnapshot } from './snapshots';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
-import { findingRows, mergeFindingsByFingerprint } from '../finding-rows';
+import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
 import type { Finding, RuleKind, Severity } from '../types';
 
 export interface FindingRecord extends Finding {
   /** Every row the rule's query returned for this resource, in query order. Always present on a
    *  stored finding; one made from its evidence when it was stored before rows existed. */
-  rows: Record<string, unknown>[];
+  rows: FindingRow[];
   status: 'active' | 'fixed';
   firstSeenAt: string;
   lastSeenAt: string;
@@ -30,6 +30,10 @@ export interface SyncResult {
 }
 
 export interface DetailedSyncResult extends SyncResult {
+  /** Findings that were open, are still returned, and gained at least one row (#193), with just the
+   *  gained rows. A created or reactivated finding is never here, and neither is one that only lost
+   *  rows or whose rule did not succeed. */
+  changed: ChangedFinding[];
   /** Every category that had a finding row written, resolved or moved in this sync, including the
    *  scanned one. A rule moved to another category leaves rows recorded under its old category,
    *  so the caller must refresh each of these categories' snapshot, not only the scanned one. */
@@ -62,11 +66,11 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 type Row = typeof findingsTable.$inferSelect;
 
-function parseStoredRows(value: string | null): Record<string, unknown>[] | null {
+function parseStoredRows(value: string | null): FindingRow[] | null {
   if (value === null) return null;
   try {
     const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as Record<string, unknown>[] : null;
+    return Array.isArray(parsed) ? parsed as FindingRow[] : null;
   } catch {
     return null;
   }
@@ -149,6 +153,8 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
   // occurrence is neither 'created' nor 'reactivated' — it needs its own event type (step 4) so
   // the activity-occurrences widget still gets one data point per scan that reported it.
   const occurred: string[] = [];
+  // Rows an already-open finding gained and lost this scan (#193), by fingerprint.
+  const rowChanges = new Map<string, { added: FindingRow[]; removed: FindingRow[] }>();
 
   await inTransaction(async (tx) => {
     const seenFingerprints = findings.map(f => f.fingerprint);
@@ -162,6 +168,8 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
     // 1. Classify: not present = created; present but currently fixed = reactivated; present,
     // already active, and kind:'activity' = occurred (a repeat 'state' sighting gets no event).
     const existingByFp = new Map<string, Row>();
+    const ranRuleSet = new Set(ranRuleIds);
+    const keepStoredRows = new Map<string, Row>();
     for (const fpChunk of chunk(seenFingerprints, CHUNK_SIZE)) {
       if (fpChunk.length === 0) continue;
       const rows = await many(tx.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)));
@@ -175,11 +183,23 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
       if (existing) affectedCategories.add(existing.category);
       if (!existing) created.push(f.fingerprint);
       else if (existing.status === 'fixed') reactivated.push(f.fingerprint);
-      else if (f.kind === 'activity') occurred.push(f.fingerprint);
+      else {
+        if (f.kind === 'activity') occurred.push(f.fingerprint);
+        // An open finding that is returned again: compare its rows with the last stored ones. Only a
+        // rule that succeeded can prove a row went away (or is new), so a capped, failed or invalid
+        // outcome records nothing and leaves the stored rows alone, and the next successful scan
+        // compares against the last complete picture. A silent (backfill) sync observed nothing.
+        if (!ranRuleSet.has(f.ruleId)) keepStoredRows.set(f.fingerprint, existing);
+        else if (!silent) {
+          const { added, removed } = diffRows(rowToRecord(existing).rows, f.rows);
+          if (added.length > 0 || removed.length > 0) rowChanges.set(f.fingerprint, { added, removed });
+        }
+      }
     }
 
     // 2. Upsert every finding from this scan as active, refreshing denormalized display fields.
     for (const f of findings) {
+      const kept = keepStoredRows.get(f.fingerprint);
       await run(tx.insert(findingsTable).values({
         fingerprint: f.fingerprint,
         ruleId: f.ruleId,
@@ -227,8 +247,8 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           description: f.description,
           recommendation: f.recommendation,
           remediationSteps: JSON.stringify(f.remediationSteps ?? []),
-          evidence: JSON.stringify(f.evidence ?? {}),
-          evidenceRows: JSON.stringify(f.rows),
+          evidence: kept ? kept.evidence : JSON.stringify(f.evidence ?? {}),
+          evidenceRows: kept ? kept.evidenceRows : JSON.stringify(f.rows),
           azurePortalLink: f.azurePortalLink ?? null,
           status: 'active',
           lastSeenAt: finishedAt,
@@ -299,6 +319,17 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         const ruleId = resolvedRuleByFp.get(fp) ?? '';
         events.push({ id: crypto.randomUUID(), fingerprint: fp, ruleId, category: resolvedCategoryByFp.get(fp) ?? category, scanId, type: 'resolved', occurredAt: finishedAt });
       }
+      // One event per row, so a moved date reads as a row removed and a row added. The finding's
+      // own lifecycle events above are untouched, and no count reads these two types.
+      for (const [fp, { added, removed }] of rowChanges) {
+        const f = findingByFp.get(fp)!;
+        for (const row of removed) {
+          events.push({ id: crypto.randomUUID(), fingerprint: fp, ruleId: f.ruleId, category, scanId, type: 'row_removed', occurredAt: finishedAt, rowPayload: JSON.stringify(row) });
+        }
+        for (const row of added) {
+          events.push({ id: crypto.randomUUID(), fingerprint: fp, ruleId: f.ruleId, category, scanId, type: 'row_added', occurredAt: finishedAt, rowPayload: JSON.stringify(row) });
+        }
+      }
       if (events.length > 0) {
         for (const evChunk of chunk(events, CHUNK_SIZE)) {
           await run(tx.insert(findingEventsTable).values(evChunk));
@@ -310,7 +341,12 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
     }
   });
 
-  return { created, reactivated, resolved, affectedCategories: [...affectedCategories] };
+  // A finding that only lost rows is not changed: only a gained row is news.
+  const changed = [...rowChanges]
+    .filter(([, { added }]) => added.length > 0)
+    .map(([fingerprint, { added }]): ChangedFinding => ({ fingerprint, addedRows: added }));
+
+  return { created, reactivated, resolved, changed, affectedCategories: [...affectedCategories] };
 }
 
 export interface FindingEventCount { date: string; created: number; resolved: number; }
@@ -332,7 +368,13 @@ export async function getFindingEventCounts(opts: {
   severities?: string[];
   sinceDate: string;
 }): Promise<FindingEventCount[]> {
-  const conditions = [sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`, countsInFindingTotalsSql];
+  // Only the lifecycle types are counted, in the query itself: an event of any other type (row_added,
+  // row_removed) must not add a day, move the first day back or turn an empty window into a series.
+  const conditions = [
+    sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`,
+    inArray(findingEventsTable.type, ['created', 'reactivated', 'resolved']),
+    countsInFindingTotalsSql,
+  ];
   if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
   if (opts.subscriptions?.length) conditions.push(inArray(findingsTable.subscriptionId, opts.subscriptions));

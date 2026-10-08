@@ -60,6 +60,7 @@ const SAMPLE_RUN = {
   notifyClaimedAt: null,
   heartbeatAt: null,
   ownerId: null,
+  changedFindings: [],
 };
 
 export async function POST(req: Request) {

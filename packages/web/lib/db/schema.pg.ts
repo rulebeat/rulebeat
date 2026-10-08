@@ -251,6 +251,7 @@ export const findingEvents = pgTable('finding_events', {
   scanId: text('scan_id').notNull(),
   type: text('type').notNull(),
   occurredAt: text('occurred_at').notNull(),
+  rowPayload: text('row_payload'),
 });
 
 export const postureSnapshots = pgTable('posture_snapshots', {
@@ -312,6 +313,7 @@ export const scheduleRuns = pgTable('schedule_runs', {
   notifyClaimedAt: text('notify_claimed_at'),
   heartbeatAt: text('heartbeat_at'),
   ownerId: text('owner_id'),
+  changedFindings: text('changed_findings'),
 });
 
 export const notificationDeliveries = pgTable('notification_deliveries', {

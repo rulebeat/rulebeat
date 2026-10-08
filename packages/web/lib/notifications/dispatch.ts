@@ -1,4 +1,4 @@
-import type { Finding } from '@/lib/types';
+import type { ChangedFindingDetail, Finding } from '@/lib/types';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import { recordChannelResult, type StoredNotificationChannel } from '@/lib/db/notification-channels';
 import { getChannelsForSchedule } from '@/lib/db/schedule-notification-channels';
@@ -120,30 +120,39 @@ async function sendEmail(channel: StoredNotificationChannel, subject: string, te
  * "Include advisories" on, as its own section of the message, and is scoped and thresholded like
  * the rest. A channel with nothing left after that is skipped.
  */
-export async function dispatchNotifications(run: ScheduleRun, newFindings: Finding[]): Promise<void> {
+export async function dispatchNotifications(
+  run: ScheduleRun,
+  newFindings: Finding[],
+  changedFindings: ChangedFindingDetail[] = [],
+): Promise<void> {
   const channels = await getChannelsForSchedule(run.scheduleId);
   if (channels.length === 0) return;
 
   const scansFilters: WidgetFilters = { categories: [], severities: [], subscriptions: [], resourceGroups: [], tags: [], ruleIds: [], dateWindow: { mode: 'relative', days: 7 } };
   const href = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'new' }));
   const advisoriesHref = await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'advisories', status: 'new' }));
+  // A changed finding is not new, so its link shows what is open; the section names which ones changed.
+  const changedHref = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'open' }));
   const demo = await isDemoMode();
 
   await Promise.allSettled(
     channels.map(async channel => {
-      // C1b: apply category/subscription scope before severity threshold
-      const scoped = newFindings.filter(f => {
-        if (channel.categoryIds && !channel.categoryIds.includes(f.category)) return false;
-        if (channel.subscriptionIds && !channel.subscriptionIds.includes(f.subscriptionId)) return false;
-        return true;
-      });
-
-      const wanted = scoped
+      // C1b: apply category/subscription scope before severity threshold. The same four rules
+      // (scope, kind, severity, suppression upstream) decide a changed finding as a new one.
+      const reaches = <T extends Finding>(findings: T[]): T[] => findings
+        .filter(f => {
+          if (channel.categoryIds && !channel.categoryIds.includes(f.category)) return false;
+          if (channel.subscriptionIds && !channel.subscriptionIds.includes(f.subscriptionId)) return false;
+          return true;
+        })
         .filter(f => isDeliverableTo(f, channel))
         .filter(f => meetsThreshold(f.severity, channel.minSeverity));
+
+      const wanted = reaches(newFindings);
+      const changed = reaches(changedFindings);
       const advisories = wanted.filter(isAdvisory);
       const filtered = wanted.filter(f => !isAdvisory(f));
-      if (wanted.length === 0) return;
+      if (wanted.length === 0 && changed.length === 0) return;
 
       // A Demo records what would have been sent, with zero attempts, and contacts nothing. The
       // channel's own last-result fields are left alone: nothing was tried, so nothing failed.
@@ -156,12 +165,12 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
           attempts: 0,
           httpStatus: null,
           error: DEMO_NOT_SENT,
-          findingsCount: wanted.length,
+          findingsCount: wanted.length + changed.length,
         });
         return;
       }
 
-      const payload = buildPayload(channel.type, filtered, href, run, advisories, advisoriesHref);
+      const payload = buildPayload(channel.type, filtered, href, run, advisories, advisoriesHref, { findings: changed, href: changedHref });
 
       let result: SendResult;
       if (payload.kind === 'email') {
@@ -179,7 +188,7 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
         attempts: result.attempts,
         httpStatus: result.httpStatus,
         error: result.error,
-        findingsCount: wanted.length,
+        findingsCount: wanted.length + changed.length,
       });
     }),
   );
@@ -187,7 +196,7 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
 
 /** Drops findings whose fingerprint has an active suppression, by the same predicate the Results
  *  tab and dashboards use (`isActiveSuppression`, so an expired suppression hides nothing). */
-async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
+async function withoutSuppressed<T extends Finding>(findings: T[]): Promise<T[]> {
   if (findings.length === 0) return findings;
   const suppressed = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
   return findings.filter(f => !suppressed.has(f.fingerprint));
@@ -219,17 +228,24 @@ async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
  * include advisories (issues #176 and #180); `dispatchNotifications` makes that per-channel call.
  * A kind that is neither announced to every channel nor an Advisory is dropped here.
  *
+ * Changed findings (#193, `opts.changed`) go through the same suppression check and the same kind
+ * filter, so a suppressed changed finding is never announced; a batch with neither new nor changed
+ * findings left is empty.
+ *
  * @returns whether this call held the claim and therefore did the dispatching.
  */
 export async function dispatchAndMarkSent(
   run: ScheduleRun,
   findings: Finding[],
-  opts: { now?: Date } = {},
+  opts: { now?: Date; changed?: ChangedFindingDetail[] } = {},
 ): Promise<boolean> {
   if (!(await claimNotifyDispatch(run.id, { now: opts.now }))) return false;
-  const announceable = (await withoutSuppressed(findings)).filter(f => isNotifiable(f) || isAdvisory(f));
-  if (announceable.length > 0) {
-    await dispatchNotifications(run, announceable);
+  const announceable = async <T extends Finding>(list: T[]) =>
+    (await withoutSuppressed(list)).filter(f => isNotifiable(f) || isAdvisory(f));
+  const newFindings = await announceable(findings);
+  const changed = await announceable(opts.changed ?? []);
+  if (newFindings.length > 0 || changed.length > 0) {
+    await dispatchNotifications(run, newFindings, changed);
   }
   await markNotifySent(run.id);
   return true;

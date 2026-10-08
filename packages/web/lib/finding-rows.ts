@@ -7,6 +7,15 @@
 
 export type FindingRow = Record<string, unknown>;
 
+/** A finding that was open before a scan, is still returned, and gained rows it did not have (#193):
+ *  its fingerprint and only the gained rows, never a lost one. The one record shape the sync returns,
+ *  a run stores for its notification outbox and the executor passes along; the notification layer
+ *  pairs it with the finding itself (`ChangedFindingDetail` in lib/types.ts). */
+export interface ChangedFinding {
+  fingerprint: string;
+  addedRows: FindingRow[];
+}
+
 interface HasRows {
   evidence?: FindingRow | null;
   rows?: FindingRow[] | null;
@@ -32,6 +41,17 @@ export function rowKey(row: FindingRow): string {
     const source = value as Record<string, unknown>;
     return Object.fromEntries(Object.keys(source).sort().map(k => [k, source[k]]));
   });
+}
+
+/** What a finding gained and lost between two sightings, comparing rows on every column (rowKey).
+ *  A row whose value changed is one removed and one added. Both lists keep their rows' own order. */
+export function diffRows(previous: FindingRow[], current: FindingRow[]): { added: FindingRow[]; removed: FindingRow[] } {
+  const previousKeys = new Set(previous.map(rowKey));
+  const currentKeys = new Set(current.map(rowKey));
+  return {
+    added: current.filter(row => !previousKeys.has(rowKey(row))),
+    removed: previous.filter(row => !currentKeys.has(rowKey(row))),
+  };
 }
 
 /** Folds findings that share a fingerprint into one finding that holds every distinct row, in the

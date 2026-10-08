@@ -24,12 +24,14 @@ export async function recoverInterruptedRuns(now: Date = new Date()): Promise<nu
   const stale = await listStaleRunningRuns(staleBefore(now));
 
   for (const run of stale) {
-    const willNotify = run.triggeredBy === 'schedule' && run.newFindingFingerprints.length > 0;
+    const willNotify = run.triggeredBy === 'schedule'
+      && (run.newFindingFingerprints.length > 0 || run.changedFindings.length > 0);
     await finishRun(run.id, {
       status: 'error',
       totalFindings: run.totalFindings,
       newFindings: run.newFindings,
       newFindingFingerprints: run.newFindingFingerprints,
+      changedFindings: run.changedFindings,
       error: RECOVERY_ERROR_MESSAGE,
       durationMs: Date.now() - new Date(run.startedAt).getTime(),
       notifyStatus: willNotify ? 'pending' : 'none',
@@ -68,7 +70,13 @@ export async function recoverPendingNotifications(now: Date = new Date()): Promi
     const findings = run.newFindingFingerprints.length > 0
       ? await getFindingsByFingerprints(run.newFindingFingerprints)
       : [];
-    if (await dispatchAndMarkSent(run, findings, { now })) recovered++;
+    // A changed finding is resolved the same way, then given back the rows the run recorded for it.
+    const addedRows = new Map(run.changedFindings.map(c => [c.fingerprint, c.addedRows]));
+    const changed = addedRows.size > 0
+      ? (await getFindingsByFingerprints([...addedRows.keys()]))
+        .map(f => ({ ...f, addedRows: addedRows.get(f.fingerprint) ?? [] }))
+      : [];
+    if (await dispatchAndMarkSent(run, findings, { now, changed })) recovered++;
   }
 
   if (recovered > 0) {

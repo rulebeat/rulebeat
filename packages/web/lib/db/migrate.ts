@@ -807,6 +807,9 @@ export function runMigrations(sqlite: Database.Database): void {
   // backfilled: a finding stored before this reads as one row made from its evidence.
   try { sqlite.exec(`ALTER TABLE findings ADD COLUMN evidence_rows TEXT`); } catch { /* already exists */ }
 
+  // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
+  try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
+
   // Applies to was removed. Drop its columns from a database created while it existed; a fresh
   // install never has them, and the table_info check makes every later startup a no-op. The three
   // drops run in one transaction so a failure leaves the table exactly as it was.
@@ -925,6 +928,10 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN notify_claimed_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN heartbeat_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN owner_id TEXT`); } catch { /* already exists */ }
+
+  // #193: the findings a run saw gain a row, carried to notification dispatch and recovery. NULL on
+  // every earlier row, which reads as none.
+  try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN changed_findings TEXT`); } catch { /* already exists */ }
 
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any

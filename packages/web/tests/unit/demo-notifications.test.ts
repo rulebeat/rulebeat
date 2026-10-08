@@ -35,6 +35,7 @@ const RUN: ScheduleRun = {
   startedAt: new Date().toISOString(), finishedAt: null, status: 'running', categories: [],
   totalFindings: 1, newFindings: 1, newFindingFingerprints: [], error: null, durationMs: null,
   notifyStatus: 'pending', notifyClaimedAt: null, heartbeatAt: null, ownerId: null,
+  changedFindings: [],
 };
 
 const FINDING: Finding = {

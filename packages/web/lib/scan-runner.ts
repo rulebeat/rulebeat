@@ -14,11 +14,13 @@ import { saveScanResult } from './scan-history';
 import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
 import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
-import type { Category, Finding, IncompleteRule, ScanSummary } from './types';
+import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';
 
 export interface ScanRunOutcome {
   summary: ScanSummary;
   newFindings: Finding[];
+  /** Findings that gained a row since their last successful scan, each with just the added rows. */
+  changedFindings: ChangedFindingDetail[];
 }
 
 export interface RunScanOptions {
@@ -136,7 +138,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
 
   await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
 
-  const { created, reactivated, affectedCategories } = await syncScanFindingsDetailed({
+  const { created, reactivated, changed, affectedCategories } = await syncScanFindingsDetailed({
     scanId,
     category: category.id,
     ranRuleIds,
@@ -145,6 +147,10 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   });
   const newFingerprints = new Set([...created, ...reactivated]);
   const newFindings = mergedFindings.filter(f => newFingerprints.has(f.fingerprint));
+  const addedRowsByFingerprint = new Map(changed.map(c => [c.fingerprint, c.addedRows]));
+  const changedFindings: ChangedFindingDetail[] = mergedFindings
+    .filter(f => addedRowsByFingerprint.has(f.fingerprint))
+    .map(f => ({ ...f, addedRows: addedRowsByFingerprint.get(f.fingerprint)! }));
 
   // Persist what this scan actually observed about each rule it ran, so a future "zero findings"
   // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status
@@ -160,5 +166,5 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   // recorded under its old one, so every category the sync touched is refreshed, not only this one.
   await refreshSnapshotsFor([...new Set([category.id, ...affectedCategories])], opts.now);
 
-  return { summary, newFindings };
+  return { summary, newFindings, changedFindings };
 }

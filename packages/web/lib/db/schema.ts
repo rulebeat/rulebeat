@@ -271,8 +271,9 @@ export const findingEvents = sqliteTable('finding_events', {
   ruleId: text('rule_id').notNull(),
   category: text('category').notNull(),
   scanId: text('scan_id').notNull(),
-  type: text('type').notNull(),          // 'created' | 'reactivated' | 'resolved' | 'occurred' (spec 034, activity findings)
+  type: text('type').notNull(),          // 'created' | 'reactivated' | 'resolved' | 'occurred' (spec 034, activity findings) | 'row_added' | 'row_removed' (#193, one event per row)
   occurredAt: text('occurred_at').notNull(),
+  rowPayload: text('row_payload'),       // JSON of the row object a 'row_added' / 'row_removed' event is about; null for every other type
 });
 
 export const postureSnapshots = sqliteTable('posture_snapshots', {
@@ -352,6 +353,7 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
   notifyClaimedAt: text('notify_claimed_at'), // when the current 'sending' claim was taken
   heartbeatAt: text('heartbeat_at'),          // last proof of life from the process running this row
   ownerId: text('owner_id'),                  // lib/instance-id.ts's per-process id
+  changedFindings: text('changed_findings'),  // JSON: { fingerprint, addedRows }[] (#193); null on rows from before the column existed
 });
 
 // One row per delivery attempt sequence (a channel's final outcome for a single run, after retries

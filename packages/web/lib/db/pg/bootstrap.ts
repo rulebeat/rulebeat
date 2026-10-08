@@ -268,9 +268,13 @@ CREATE TABLE IF NOT EXISTS finding_events (
   category TEXT NOT NULL,
   scan_id TEXT NOT NULL,
   type TEXT NOT NULL,
-  occurred_at TEXT NOT NULL
+  occurred_at TEXT NOT NULL,
+  row_payload TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_finding_events_time ON finding_events(occurred_at DESC);
+
+-- The row a 'row_added' / 'row_removed' event is about (#193); null for every other event type.
+ALTER TABLE finding_events ADD COLUMN IF NOT EXISTS row_payload TEXT;
 
 CREATE TABLE IF NOT EXISTS posture_snapshots (
   category TEXT NOT NULL,
@@ -332,13 +336,16 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   notify_status TEXT NOT NULL DEFAULT 'none',
   notify_claimed_at TEXT,
   heartbeat_at TEXT,
-  owner_id TEXT
+  owner_id TEXT,
+  changed_findings TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id, started_at DESC);
 -- Overlap safety (issue #88), for a Postgres database bootstrapped before these columns shipped.
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS notify_claimed_at TEXT;
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS heartbeat_at TEXT;
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
+-- Findings that gained a row, carried to notification dispatch and recovery (#193).
+ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS changed_findings TEXT;
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id TEXT PRIMARY KEY,

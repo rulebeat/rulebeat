@@ -1,7 +1,7 @@
 # Notifications
 
-Channels are an address book, schedules decide who hears about what, only *new* findings from
-*scheduled* runs are sent, and every attempt is recorded.
+Channels are an address book, schedules decide who hears about what, only *new* findings and
+findings that *gained a row* from *scheduled* runs are sent, and every attempt is recorded.
 
 **Channels** live under Settings → Notifications: a name, a type and a destination, knowing nothing
 about schedules or severities. **Schedules** pick channels, and each assignment carries its own
@@ -21,6 +21,23 @@ setting, off by default. A channel with it on also receives the new Advisory fin
 minimum severity apply to Advisories the same way they do to findings. A channel with it off gets
 exactly the message it always got, and a run whose only news is Advisories sends to the channels that
 include them and to no one else.
+
+**Changed findings** are findings that were already open and gained a row. A rule that returns several
+rows for one resource keeps them all on one finding, so when a later scan returns a row the finding
+did not have, such as a second retirement on the same VM, the finding is *changed*. Each message gets
+a separate "Changed" section after the others, listing every changed finding and the rows it gained as
+`key: value` pairs, up to five rows per finding, with long values shortened. A link opens the open
+findings. The same rules apply as for a new finding: the assignment's scope and minimum severity, a
+suppressed finding is left out, and a changed Advisory goes only to channels that include advisories.
+A run whose only news is a changed finding sends a message holding just that section. A channel's
+delivery count is the new findings plus the changed ones.
+
+Only a row that is *added* notifies. A row that goes away sends nothing, and a row whose values change
+counts as one row lost and one added, so the new row is listed. A finding that is new or came back
+after being fixed is already announced as new and is not listed as changed. If a rule's query failed
+or came back capped in a run, nothing is recorded for it, and the next complete scan compares against
+the rows the last complete scan saw, so a partial result never produces a false "gained a row".
+Each added and lost row is also recorded with the finding's events.
 
 ## Channel types
 
@@ -80,6 +97,19 @@ Advisories:
 }
 ```
 
+When the run has changed findings the body also has a `changed` field, after `advisories` if that is
+present. Nothing above changes shape, and `findings` is empty when the run has only changed findings.
+Each entry is a finding as above plus the rows it gained, at most the first 20 entries while
+`totalChangedFindings` is the real count:
+
+```json
+"changed": {
+  "totalChangedFindings": 1,
+  "findings": [ { "fingerprint": "…", "title": "…", "severity": "medium", "category": "reliability", "resourceId": "…", "resourceName": "…", "subscriptionId": "…", "addedRows": [ { "retirement": "TLS 1.0" } ] } ],
+  "changedUrl": "https://rulebeat.example.com/scans?…"
+}
+```
+
 The Teams, Slack and email messages all carry the same header, a severity summary and a link back at
 `<public URL>/scans`, filtered to new findings over the last seven days. That public URL is the one
 under Settings → Sign-in (`AUTH_URL` in the environment), so set it before wiring channels or the
@@ -115,5 +145,5 @@ behind a public hostname or use email.
 ## What is not here
 
 No digest or batching across runs, no quiet hours, no per-rule routing, no HTML email. Notifications
-cover new findings only: a fixed finding, a failed run or a stale schedule sends nothing. The Scan
+cover new findings and findings that gained a row only: a fixed finding, a lost row, a failed run or a stale schedule sends nothing. The Scan
 Coverage widget is where a stopped schedule shows.

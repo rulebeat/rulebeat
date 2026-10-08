@@ -1,4 +1,5 @@
-import type { Finding } from '@/lib/types';
+import type { ChangedFindingDetail, Finding } from '@/lib/types';
+import type { FindingRow } from '@/lib/finding-rows';
 import type { NotificationChannelType } from '@/lib/db/notification-channels';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 
@@ -41,30 +42,68 @@ interface MessageContent {
   href: string;
   /** Where "View advisories" goes: the Advisories tab, filtered to new. */
   advisoriesHref: string;
+  /** Findings that gained rows (#193), in their own "Changed" section; Problems, Activity and, for a
+   *  channel that includes them, Advisories alike. Empty for a message with none. */
+  changed: ChangedFindingDetail[];
+  /** Where "View changed findings" goes: the open findings, since a changed finding is not new. */
+  changedHref: string;
 }
 
-/** A message holding only advisories has no problem section; one holding neither keeps the old shape. */
+/** A message holding only advisories or only changed findings has no problem section; one holding
+ *  nothing keeps the old shape. */
 function hasProblemSection(c: MessageContent): boolean {
-  return c.problems.length > 0 || c.advisories.length === 0;
+  return c.problems.length > 0 || (c.advisories.length === 0 && c.changed.length === 0);
 }
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** The one-line title: the old "N new findings", with the advisory count joined on when there is one. */
+/** The one-line title: the old "N new findings", with the advisory and changed counts joined on when
+ *  there are any. */
 function headline(c: MessageContent): string {
-  const advisories = plural(c.advisories.length, 'new advisory', 'new advisories');
-  if (c.advisories.length === 0) return `RuleBeat: ${plural(c.problems.length, 'new finding', 'new findings')}`;
-  if (c.problems.length === 0) return `RuleBeat: ${advisories}`;
-  return `RuleBeat: ${plural(c.problems.length, 'new finding', 'new findings')} and ${advisories}`;
+  const parts = [
+    ...(hasProblemSection(c) ? [plural(c.problems.length, 'new finding', 'new findings')] : []),
+    ...(c.advisories.length > 0 ? [plural(c.advisories.length, 'new advisory', 'new advisories')] : []),
+    ...(c.changed.length > 0 ? [plural(c.changed.length, 'changed finding', 'changed findings')] : []),
+  ];
+  const last = parts.pop()!;
+  return `RuleBeat: ${parts.length > 0 ? `${parts.join(', ')} and ${last}` : last}`;
+}
+
+const MAX_ROWS_SHOWN = 5;
+const MAX_VALUE_LENGTH = 80;
+/** How many findings (of each section) a Teams card or Slack message lists, an email lists and a
+ *  webhook body carries; the rest is a count. */
+const MAX_CARD_FINDINGS = 5;
+const MAX_EMAIL_FINDINGS = 10;
+const MAX_WEBHOOK_FINDINGS = 20;
+
+function rowValue(value: unknown): string {
+  const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
+  return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)}...` : text;
+}
+
+/** A row as its key: value pairs, compact. */
+function renderRow(row: FindingRow): string {
+  return Object.entries(row).map(([key, value]) => `${key}: ${rowValue(value)}`).join(', ');
+}
+
+const CHANGED_LABEL = (findings: ChangedFindingDetail[]) => `Changed (${findings.length})`;
+
+/** One line per added row, up to the first five, then "and N more rows". */
+function addedRowLines(rows: FindingRow[], prefix: string): string[] {
+  return [
+    ...rows.slice(0, MAX_ROWS_SHOWN).map(row => `${prefix}${renderRow(row)}`),
+    ...(rows.length > MAX_ROWS_SHOWN ? [`... and ${rows.length - MAX_ROWS_SHOWN} more rows.`] : []),
+  ];
 }
 
 const ADVISORIES_LABEL = (findings: Finding[]) => `Advisories (${findings.length})`;
 
 /** Teams Adaptive Card table of the first five findings, headed by `firstColumn`. */
 function teamsTable(findings: Finding[], firstColumn: string): object[] {
-  const rows = findings.slice(0, 5).map(f => ({
+  const rows = findings.slice(0, MAX_CARD_FINDINGS).map(f => ({
     type: 'TableRow',
     cells: [
       { type: 'TableCell', items: [{ type: 'TextBlock', text: SEVERITY_LABEL[f.severity] ?? f.severity, wrap: false, size: 'Small' }] },
@@ -91,15 +130,43 @@ function teamsTable(findings: Finding[], firstColumn: string): object[] {
     ],
     spacing: 'Medium',
   }];
-  if (findings.length > 5) {
+  if (findings.length > MAX_CARD_FINDINGS) {
     table.push({
       type: 'TextBlock',
-      text: `... and ${findings.length - 5} more.`,
+      text: `... and ${findings.length - MAX_CARD_FINDINGS} more.`,
       isSubtle: true,
       size: 'Small',
     });
   }
   return table;
+}
+
+/** Teams blocks for the first five changed findings: the finding, then the rows it gained. */
+function teamsChangedBlocks(changed: ChangedFindingDetail[]): object[] {
+  const blocks: object[] = [
+    { type: 'TextBlock', text: CHANGED_LABEL(changed), weight: 'Bolder', spacing: 'Large' },
+  ];
+  for (const f of changed.slice(0, MAX_CARD_FINDINGS)) {
+    blocks.push({
+      type: 'TextBlock',
+      text: `**${f.title}** · ${f.resourceName} (${SEVERITY_LABEL[f.severity] ?? f.severity})`,
+      wrap: true,
+      size: 'Small',
+      spacing: 'Small',
+    });
+    blocks.push({
+      type: 'TextBlock',
+      text: addedRowLines(f.addedRows, '+ ').join('\n\n'),
+      wrap: true,
+      size: 'Small',
+      isSubtle: true,
+      spacing: 'None',
+    });
+  }
+  if (changed.length > MAX_CARD_FINDINGS) {
+    blocks.push({ type: 'TextBlock', text: `... and ${changed.length - MAX_CARD_FINDINGS} more.`, isSubtle: true, size: 'Small' });
+  }
+  return blocks;
 }
 
 /** Teams Adaptive Card payload for Power Automate Workflows. */
@@ -138,6 +205,7 @@ function buildTeamsPayload(c: MessageContent, _run: ScheduleRun): object {
         },
         ...teamsTable(c.advisories, 'Advisory'),
       ] : []),
+      ...(c.changed.length > 0 ? teamsChangedBlocks(c.changed) : []),
     ],
     actions: [
       ...(problemSection ? [{
@@ -149,6 +217,11 @@ function buildTeamsPayload(c: MessageContent, _run: ScheduleRun): object {
         type: 'Action.OpenUrl',
         title: 'View advisories',
         url: c.advisoriesHref,
+      }] : []),
+      ...(c.changed.length > 0 ? [{
+        type: 'Action.OpenUrl',
+        title: 'View changed findings',
+        url: c.changedHref,
       }] : []),
     ],
   };
@@ -167,7 +240,7 @@ function buildTeamsPayload(c: MessageContent, _run: ScheduleRun): object {
 /** Slack blocks for the first five findings: a divider, one section each, and a "more" line. */
 function slackFindingBlocks(findings: Finding[]): object[] {
   const blocks: object[] = [];
-  const top = findings.slice(0, 5);
+  const top = findings.slice(0, MAX_CARD_FINDINGS);
   if (top.length > 0) {
     blocks.push({ type: 'divider' });
     for (const f of top) {
@@ -180,10 +253,10 @@ function slackFindingBlocks(findings: Finding[]): object[] {
       });
     }
   }
-  if (findings.length > 5) {
+  if (findings.length > MAX_CARD_FINDINGS) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `_... and ${findings.length - 5} more._` },
+      text: { type: 'mrkdwn', text: `_... and ${findings.length - MAX_CARD_FINDINGS} more._` },
     });
   }
   return blocks;
@@ -214,6 +287,29 @@ function buildSlackPayload(c: MessageContent, _run: ScheduleRun): object {
     blocks.push(...slackFindingBlocks(c.advisories));
   }
 
+  if (c.changed.length > 0) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${CHANGED_LABEL(c.changed)}*` },
+    });
+    for (const f of c.changed.slice(0, MAX_CARD_FINDINGS)) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${f.title}*\n*${(f.severity).toUpperCase()}* · ${f.resourceName}\n${addedRowLines(f.addedRows, '+ ').join('\n')}`,
+        },
+      });
+    }
+    if (c.changed.length > MAX_CARD_FINDINGS) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `_... and ${c.changed.length - MAX_CARD_FINDINGS} more._` },
+      });
+    }
+  }
+
   blocks.push({ type: 'divider' });
   blocks.push({
     type: 'actions',
@@ -228,6 +324,11 @@ function buildSlackPayload(c: MessageContent, _run: ScheduleRun): object {
         type: 'button',
         text: { type: 'plain_text', text: 'View advisories', emoji: true },
         url: c.advisoriesHref,
+      }] : []),
+      ...(c.changed.length > 0 ? [{
+        type: 'button',
+        text: { type: 'plain_text', text: 'View changed findings', emoji: true },
+        url: c.changedHref,
       }] : []),
     ],
   });
@@ -256,14 +357,21 @@ function buildWebhookPayload(c: MessageContent, run: ScheduleRun): object {
     triggeredBy: run.triggeredBy,
     counts: countsBySeverity(c.problems),
     totalNewFindings: c.problems.length,
-    findings: c.problems.slice(0, 20).map(webhookFinding),
+    findings: c.problems.slice(0, MAX_WEBHOOK_FINDINGS).map(webhookFinding),
     scansUrl: c.href,
     ...(c.advisories.length > 0 ? {
       advisories: {
         totalNewAdvisories: c.advisories.length,
         counts: countsBySeverity(c.advisories),
-        findings: c.advisories.slice(0, 20).map(webhookFinding),
+        findings: c.advisories.slice(0, MAX_WEBHOOK_FINDINGS).map(webhookFinding),
         advisoriesUrl: c.advisoriesHref,
+      },
+    } : {}),
+    ...(c.changed.length > 0 ? {
+      changed: {
+        totalChangedFindings: c.changed.length,
+        findings: c.changed.slice(0, MAX_WEBHOOK_FINDINGS).map(f => ({ ...webhookFinding(f), addedRows: f.addedRows })),
+        changedUrl: c.changedHref,
       },
     } : {}),
   };
@@ -273,10 +381,24 @@ function buildWebhookPayload(c: MessageContent, run: ScheduleRun): object {
 function emailItems(findings: Finding[]): string[] {
   const total = findings.length;
   return [
-    ...findings.slice(0, 10).map(f =>
+    ...findings.slice(0, MAX_EMAIL_FINDINGS).map(f =>
       `[${(f.severity).toUpperCase()}] ${f.title}\n  Resource: ${f.resourceName}\n  Category: ${f.category}`,
     ),
-    ...(total > 10 ? [`\n... and ${total - 10} more.`] : []),
+    ...(total > MAX_EMAIL_FINDINGS ? [`\n... and ${total - MAX_EMAIL_FINDINGS} more.`] : []),
+  ];
+}
+
+/** Plain-text list of up to ten changed findings, each with a line per row it gained. */
+function emailChangedItems(findings: ChangedFindingDetail[]): string[] {
+  const total = findings.length;
+  return [
+    ...findings.slice(0, MAX_EMAIL_FINDINGS).map(f => [
+      `[${(f.severity).toUpperCase()}] ${f.title}`,
+      `  Resource: ${f.resourceName}`,
+      `  Category: ${f.category}`,
+      ...addedRowLines(f.addedRows, '  Added: ').map(line => (line.startsWith('...') ? `  ${line}` : line)),
+    ].join('\n')),
+    ...(total > MAX_EMAIL_FINDINGS ? [`\n... and ${total - MAX_EMAIL_FINDINGS} more.`] : []),
   ];
 }
 
@@ -300,8 +422,15 @@ function buildEmailPayload(c: MessageContent, _run: ScheduleRun): { subject: str
       ...emailItems(c.advisories),
       '',
     ] : []),
+    ...(c.changed.length > 0 ? [
+      `Changed: ${plural(c.changed.length, 'finding', 'findings')} gained rows`,
+      '',
+      ...emailChangedItems(c.changed),
+      '',
+    ] : []),
     ...(problemSection ? [`View in RuleBeat: ${c.href}`] : []),
     ...(c.advisories.length > 0 ? [`View advisories: ${c.advisoriesHref}`] : []),
+    ...(c.changed.length > 0 ? [`View changed findings: ${c.changedHref}`] : []),
   ];
 
   return {
@@ -322,8 +451,12 @@ export function buildPayload(
   run: ScheduleRun,
   advisories: Finding[] = [],
   advisoriesHref: string = href,
+  changes?: { findings: ChangedFindingDetail[]; href: string },
 ): NotificationPayload {
-  const content: MessageContent = { problems: findings, advisories, href, advisoriesHref };
+  const content: MessageContent = {
+    problems: findings, advisories, href, advisoriesHref,
+    changed: changes?.findings ?? [], changedHref: changes?.href ?? href,
+  };
   if (type === 'email') {
     return { kind: 'email', ...buildEmailPayload(content, run) };
   }

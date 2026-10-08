@@ -97,6 +97,20 @@ every finding under it, which is why built-in rule ids are stable (a UUID, or `c
 name for the two directory credential checks) and a pack sync never changes them. The finding
 carries what the query returned plus the rule's severity, category and title at scan time.
 
+**A finding that gains or loses a row.** A finding keeps every distinct row its rule returned for the
+resource. When a finding was open and is returned again, the sync compares the new rows with the
+stored ones, row against row on every column, so the order of rows does not matter and a row whose
+values changed is one row removed and one added. Each added row is recorded with the finding's events as
+a `row_added` event and each lost row as a `row_removed` event, one event per row. A finding with at
+least one added row is *changed*: the scan reports it beside its new findings, and a scheduled run
+notifies about it ([`notifications.md`](notifications.md)). A lost row is only recorded. A finding that
+is new or reactivated records no row events, since its whole content is new.
+
+Only a rule that ran to a `success` outcome is compared. A rule that `failed`, was `capped` or was
+`invalid` records no row events, and its finding keeps the rows from the last complete scan, which the
+next complete scan is compared against. The run records its changed findings as it goes, per category,
+so a restart in the middle of a run still sends them.
+
 A finding is one rule and one resource (or, for an activity finding, one dimension value), and it
 holds **every distinct row** the rule's query returned for it. If a query returns three rows for one VM, that
 is one finding with three rows, shown in query order in the finding's detail and written as three
