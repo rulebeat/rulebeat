@@ -9,7 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Changed
 
 - Posture and finding counts now share one definition of which rule kinds they include.
-- Findings from Logs (Activity) rules no longer count in the Results tiles and severity breakdown, the By rule counts, the Rules tab's resources affected, or the dashboard's stat cards, recent findings, top rules, top resources, New vs Fixed and daily snapshots. They already did not count toward posture, so every count now agrees with it. They still appear in the Results table and the Activity Occurrences widget.
+- Findings from Logs (Activity) rules no longer count in the Results tiles and severity breakdown, the By rule counts, the Rules tab's resources affected, or the dashboard's stat cards, recent findings, top rules, top resources, New vs Fixed and daily snapshots. They already did not count toward posture, so every count now agrees with it. They still appear in the Results table and the Activity Occurrences widget. If you have Logs rules, the open findings line on the trend chart may drop once on the day you upgrade. Nothing was fixed; earlier days were counted the old way and are not rewritten.
 
 ### Fixed
 
