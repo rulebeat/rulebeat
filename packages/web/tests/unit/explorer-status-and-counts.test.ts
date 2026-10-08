@@ -108,7 +108,7 @@ describe('filter dropdown counts', () => {
   });
 });
 
-describe('finding-level totals include state and activity, but not a future kind (issue #175)', () => {
+describe('finding-level totals include state findings only, not activity or a future kind', () => {
   const ACTIVITY_OPEN = f('activity-open', { kind: 'activity', resourceId: undefined, dimensionKey: 'dim-a' });
   // Stands in for a kind that does not exist yet (e.g. 'advisory', ADR 0005), cast past the type
   // system since ExplorerFinding's kind has no third member today.
@@ -116,12 +116,10 @@ describe('finding-level totals include state and activity, but not a future kind
     kind: 'advisory' as unknown as ExplorerFinding['kind'], resourceId: undefined, dimensionKey: 'dim-b',
   });
 
-  it('the header tiles count an activity finding the same as a state finding', () => {
+  it('the header tiles leave an activity finding out, the same as posture does', () => {
     const withoutActivity = summarizeFindings(ALL, FROM, TO);
     const withActivity = summarizeFindings([...ALL, ACTIVITY_OPEN], FROM, TO);
-    expect(withActivity.total).toBe(withoutActivity.total + 1);
-    expect(withActivity.counts.medium).toBe(withoutActivity.counts.medium + 1);
-    expect(withActivity.activeCount).toBe(withoutActivity.activeCount + 1);
+    expect(withActivity).toEqual(withoutActivity);
   });
 
   it('the header tiles exclude a future-kind finding entirely, not just from its own severity, from `total` too', () => {
@@ -135,7 +133,7 @@ describe('finding-level totals include state and activity, but not a future kind
     expect(matchesExplorerFilters(FUTURE_KIND_OPEN, state({ status: 'open' }))).toBe(true);
   });
 
-  it('by-rule Open sums to the same total as the Open tile, for a pool with state, activity, and a future kind', () => {
+  it('by-rule Open sums to the same total as the Open tile, for a pool with state, activity and a future kind', () => {
     const pool = [...ALL, ACTIVITY_OPEN, FUTURE_KIND_OPEN];
     const tileOpen = summarizeFindings(pool, FROM, TO).total;
     const byRuleOpen = [...countFindingsByRule(pool, FROM, TO).values()].reduce((n, c) => n + c.open, 0);

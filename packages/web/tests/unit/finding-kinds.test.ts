@@ -5,8 +5,8 @@
  *
  * countsInFindingTotals answers a finding-level question: does this finding belong in a
  * finding-level total (the Results tiles, recent findings, top rules, top resources, the
- * dashboard stat cards, New vs Fixed, the snapshot writer's severity counts). Both state and
- * activity findings count, written positively as "kind is state or activity" so a future kind is
+ * dashboard stat cards, New vs Fixed, the snapshot writer's severity counts). Only state
+ * findings count, the same as posture, written positively as "kind is state" so a future kind is
  * excluded the moment it exists, not once every call site is updated for it.
  *
  * lib/finding-kinds.ts must stay free of drizzle/db imports: lib/explorer-filters.ts imports it
@@ -48,15 +48,15 @@ describe('countsInFindingTotals', () => {
     expect(countsInFindingTotals({ kind: 'state' })).toBe(true);
   });
 
-  it('an activity-kind object also counts, unlike countsTowardPosture', () => {
-    expect(countsInFindingTotals({ kind: 'activity' })).toBe(true);
+  it('an activity-kind object does not count, the same as countsTowardPosture', () => {
+    expect(countsInFindingTotals({ kind: 'activity' })).toBe(false);
   });
 
   it('an absent kind defaults to state and counts', () => {
     expect(countsInFindingTotals({})).toBe(true);
   });
 
-  it('a future kind outside the state/activity pair does not count, without needing its own branch', () => {
+  it('a future kind that is not literally "state" does not count, without needing its own branch', () => {
     expect(countsInFindingTotals({ kind: FUTURE_KIND })).toBe(false);
   });
 });

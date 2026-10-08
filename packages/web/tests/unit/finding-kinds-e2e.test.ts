@@ -1,7 +1,7 @@
 /**
  * End-to-end proof that a finding-level total (the dashboard's live summary, the New vs Fixed
- * trend, and the posture snapshot writer) counts a state and an activity-kind finding, while a
- * finding of some future kind (stood in for by 'advisory', ADR 0005) is excluded. See
+ * trend, and the posture snapshot writer) counts a state finding, while an activity-kind finding
+ * and a finding of some future kind (stood in for by 'advisory', ADR 0005) are excluded. See
  * lib/finding-kinds.ts for why there are two predicates and which one each of these paths uses.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -96,7 +96,7 @@ beforeEach(async () => {
 });
 
 describe('computeWidgetSummary (issue #175)', () => {
-  it('severityCounts/activeFindings/newInWindow count the state and the activity finding, not a future-kind one', async () => {
+  it('severityCounts/activeFindings/newInWindow count the state finding, not the activity or future-kind one', async () => {
     const activity = activityFinding('principal-a');
     const state = stateFinding('vm-1');
     const future = futureKindFinding('vm-2');
@@ -107,14 +107,14 @@ describe('computeWidgetSummary (issue #175)', () => {
 
     const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
-    expect(summary.current.activeFindings).toBe(2);
-    expect(summary.current.severityCounts.high).toBe(2);
-    expect(summary.current.newInWindow).toBe(2);
+    expect(summary.current.activeFindings).toBe(1);
+    expect(summary.current.severityCounts.high).toBe(1);
+    expect(summary.current.newInWindow).toBe(1);
   });
 });
 
 describe('getFindingEventCounts (issue #175)', () => {
-  it('counts the state and activity "created" events, not the future-kind one', async () => {
+  it('counts the state "created" event, not the activity or future-kind one', async () => {
     const activity = activityFinding('principal-a');
     const state = stateFinding('vm-1');
     const future = futureKindFinding('vm-2');
@@ -126,12 +126,12 @@ describe('getFindingEventCounts (issue #175)', () => {
 
     const counts = await getFindingEventCounts({ sinceDate: daysAgo(5).slice(0, 10) });
     const totalCreated = counts.reduce((n, c) => n + c.created, 0);
-    expect(totalCreated).toBe(2);
+    expect(totalCreated).toBe(1);
   });
 });
 
 describe('upsertDailySnapshot (issue #175)', () => {
-  it('activeFindings/severityCounts on the written row reflect the state and activity findings, not the future-kind one', async () => {
+  it('activeFindings/severityCounts on the written row reflect the state finding, not the activity or future-kind one', async () => {
     const activity = activityFinding('principal-a');
     const state = stateFinding('vm-1');
     const future = futureKindFinding('vm-2');
@@ -145,7 +145,7 @@ describe('upsertDailySnapshot (issue #175)', () => {
     const row = (await getSnapshots({ categories: [CATEGORY] })).find(s => s.date === today);
 
     expect(row, 'upsertDailySnapshot did not write today\'s row').toBeDefined();
-    expect(row!.activeFindings).toBe(2);
-    expect(row!.severityCounts.high).toBe(2);
+    expect(row!.activeFindings).toBe(1);
+    expect(row!.severityCounts.high).toBe(1);
   });
 });
