@@ -41,6 +41,9 @@ export type ViewFilter = BuiltinFilter | RowFilter;
 /** `then` breaks ties on the one before it. The URL carries only the first. */
 export interface ViewSort { field: ViewField; dir: 'asc' | 'desc'; then?: ViewSort }
 
+/** How groups are ordered at every level: by their value, or by their resource count. */
+export interface GroupSort { by: 'value' | 'count'; dir: 'asc' | 'desc' }
+
 export interface View {
   filters: ViewFilter[];
   /** Free text over resource name, rule name, type and resource id. */
@@ -51,6 +54,9 @@ export interface View {
   columns: string[];
   /** Null reads as DEFAULT_SORT. */
   sort: ViewSort | null;
+  /** Fields to group by, outermost first. Empty is the flat list. */
+  groupBy: ViewField[];
+  groupSort: GroupSort;
   /** 1-based. */
   page: number;
   pageSize: number;
@@ -92,11 +98,12 @@ export interface ViewPage<T> {
 export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_WINDOW_DAYS = 7;
 export const DEFAULT_SORT: ViewSort = { field: 'severity', dir: 'asc' };
+export const DEFAULT_GROUP_SORT: GroupSort = { by: 'value', dir: 'asc' };
 
 export function emptyView(): View {
   return {
     filters: [], search: '', window: { mode: 'relative', days: DEFAULT_WINDOW_DAYS },
-    columns: [], sort: null, page: 1, pageSize: DEFAULT_PAGE_SIZE,
+    columns: [], sort: null, groupBy: [], groupSort: { ...DEFAULT_GROUP_SORT }, page: 1, pageSize: DEFAULT_PAGE_SIZE,
   };
 }
 
@@ -423,6 +430,162 @@ export function clearFilter(filters: readonly ViewFilter[], field: ViewField): V
   return filters.filter(f => f.field !== field);
 }
 
+// ---- Grouping ----
+
+/** Resolves what a built-in field's value is called on screen, such as a rule id to its name. The
+ *  engine never builds labels itself; it only orders groups by what the caller says they read as. */
+export interface GroupOptions {
+  labelFor?: (field: ViewField, value: string) => string;
+}
+
+/** One group: a value of the group field, how many findings and rows fall in it, and either the
+ *  groups of the next field (`groups`) or, at the last field, the findings themselves (`items`),
+ *  each with only the rows that fell in this group. The other of the two is empty. */
+export interface ViewGroup<T> {
+  field: ViewField;
+  /** Null is the empty-value group: rows with no value for the field. It always sorts last. */
+  value: string | null;
+  /** Distinct findings in the group. A finding is in every group its rows fall into. */
+  resourceCount: number;
+  rowCount: number;
+  groups: ViewGroup<T>[];
+  items: ViewItem<T>[];
+}
+
+export interface GroupedViewPage<T> {
+  /** The requested page of top-level groups. */
+  groups: ViewGroup<T>[];
+  /** Top-level groups, across every page. */
+  groupTotal: number;
+  /** Findings that match and rows they hold, whichever group they fall in. */
+  total: number;
+  rowTotal: number;
+  /** The page returned, 1-based and clamped into range. */
+  page: number;
+  pageCount: number;
+}
+
+export interface ItemsPage<T> {
+  items: ViewItem<T>[];
+  total: number;
+  page: number;
+  pageCount: number;
+}
+
+function clampPage(total: number, page: number, pageSize: number): { page: number; pageCount: number; pageSize: number } {
+  const size = Math.max(1, Math.floor(pageSize) || DEFAULT_PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(total / size));
+  return { page: Math.min(Math.max(1, Math.floor(page) || 1), pageCount), pageCount, pageSize: size };
+}
+
+/** The values one finding falls under for a group field, each with the rows that fall there. A
+ *  built-in field holds all of a finding's rows under each value it has (a finding with several
+ *  tags is under each tag); a returned column puts each row under its own value. No value is null. */
+function groupParts(item: ViewItem<ViewFinding>, field: ViewField): { value: string | null; rows: FindingRow[] }[] {
+  if (!isRowField(field)) {
+    const values = [...new Set(builtinFieldValues(item.finding, field))].filter(v => v !== '');
+    return values.length > 0 ? values.map(value => ({ value, rows: item.rows })) : [{ value: null, rows: item.rows }];
+  }
+  if (item.rows.length === 0) return [{ value: null, rows: [] }];
+  const parts = new Map<string | null, FindingRow[]>();
+  for (const row of item.rows) {
+    const text = valueText(readPath(row, rowPath(field)));
+    const value = text === '' ? null : text;
+    const bucket = parts.get(value);
+    if (bucket) bucket.push(row);
+    else parts.set(value, [row]);
+  }
+  return [...parts].map(([value, rows]) => ({ value, rows }));
+}
+
+const compareText = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+
+/** Built-in fields whose stored value is an id or a code, not what the header says. Groups of these
+ *  order by the label. The others read the same on screen as they are stored (a day is ISO, so it
+ *  orders as the date it shows), and a returned column is shown as it is stored. */
+const LABELLED_FIELDS: ReadonlySet<ViewField> = new Set<ViewField>(['rule', 'kind', 'category', 'subscription']);
+
+/** Orders two non-empty group values the way the header shows them: severity by the ramp the flat
+ *  sort uses (anything off the ramp last), a labelled field by its label, the rest by the value. Ties
+ *  fall back to the stored value so the order never depends on the order findings arrived in. */
+function compareGroupValues(field: ViewField, a: string, b: string, labelFor: GroupOptions['labelFor']): number {
+  if (field === 'severity') {
+    const rank = (v: string) => { const i = SEVERITY_ORDER.indexOf(v as Severity); return i < 0 ? SEVERITY_ORDER.length : i; };
+    return rank(a) - rank(b) || compareText(a, b);
+  }
+  if (labelFor && LABELLED_FIELDS.has(field)) return compareText(labelFor(field, a), labelFor(field, b)) || compareText(a, b);
+  return compareText(a, b);
+}
+
+/** Groups order by `groupSort`, the empty-value group last whichever way it runs. Equal counts keep
+ *  value order, so the order never depends on the order findings arrived in. */
+function compareGroups(a: ViewGroup<ViewFinding>, b: ViewGroup<ViewFinding>, sort: GroupSort, labelFor: GroupOptions['labelFor']): number {
+  if (a.value === null || b.value === null) return a.value === b.value ? 0 : a.value === null ? 1 : -1;
+  const byValue = compareGroupValues(a.field, a.value, b.value, labelFor);
+  if (sort.by === 'value') return sort.dir === 'asc' ? byValue : -byValue;
+  const byCount = a.resourceCount - b.resourceCount;
+  return byCount !== 0 ? (sort.dir === 'asc' ? byCount : -byCount) : byValue;
+}
+
+function buildGroups<T extends ViewFinding>(
+  items: ViewItem<T>[], fields: readonly ViewField[], groupSort: GroupSort, sort: ViewSort, labelFor: GroupOptions['labelFor'],
+): ViewGroup<T>[] {
+  const [field, ...rest] = fields;
+  const buckets = new Map<string | null, ViewItem<T>[]>();
+  for (const item of items) {
+    for (const part of groupParts(item, field)) {
+      const bucket = buckets.get(part.value);
+      const member = { finding: item.finding, rows: part.rows };
+      if (bucket) bucket.push(member);
+      else buckets.set(part.value, [member]);
+    }
+  }
+  return [...buckets]
+    .map(([value, members]): ViewGroup<T> => ({
+      field,
+      value,
+      resourceCount: members.length,
+      rowCount: members.reduce((n, m) => n + m.rows.length, 0),
+      groups: rest.length > 0 ? buildGroups(members, rest, groupSort, sort, labelFor) : [],
+      items: rest.length > 0 ? [] : [...members].sort((a, b) => compareBy(a, b, sort)),
+    }))
+    .sort((a, b) => compareGroups(a, b, groupSort, labelFor));
+}
+
+/** Filters `findings` like `applyView`, then buckets the matching rows by `view.groupBy`, outermost
+ *  field first. Filters run before grouping, so only matching rows are bucketed. The top-level groups
+ *  are paged by `view.page` and `view.pageSize`; the rows inside a last-level group are paged by the
+ *  caller with `pageGroupItems`, each group on its own page. Items inside a group follow `view.sort`.
+ *  With no `groupBy` there are no groups: the flat list is `applyView`. `options.labelFor` lets a
+ *  sort by value follow the label a header shows; without it the stored value is compared. */
+export function applyGroupedView<T extends ViewFinding>(
+  findings: readonly T[], view: View, ctx: ViewContext = {}, options: GroupOptions = {},
+): GroupedViewPage<T> {
+  const rowFilters = activeRowFilters(view.filters);
+  const items = filterFindings(findings, view, ctx).map(finding => ({ finding, rows: matchingRows(finding, rowFilters) }));
+  const all = view.groupBy.length > 0 ? buildGroups(items, view.groupBy, view.groupSort, view.sort ?? DEFAULT_SORT, options.labelFor) : [];
+  const { page, pageCount, pageSize } = clampPage(all.length, view.page, view.pageSize);
+  return {
+    groups: all.slice((page - 1) * pageSize, page * pageSize),
+    groupTotal: all.length,
+    total: items.length,
+    rowTotal: items.reduce((n, item) => n + item.rows.length, 0),
+    page,
+    pageCount,
+  };
+}
+
+/** One page of a group's items. `page` is that group's own page number, 1-based, clamped. */
+export function pageGroupItems<T>(items: readonly ViewItem<T>[], page: number, pageSize = DEFAULT_PAGE_SIZE): ItemsPage<T> {
+  const clamped = clampPage(items.length, page, pageSize);
+  return {
+    items: items.slice((clamped.page - 1) * clamped.pageSize, clamped.page * clamped.pageSize),
+    total: items.length,
+    page: clamped.page,
+    pageCount: clamped.pageCount,
+  };
+}
+
 // ---- URL ----
 
 type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
@@ -515,6 +678,10 @@ export function viewToSearchParams(view: View, base?: ParamSource): URLSearchPar
 
   if (view.columns.length > 0) params.set('cols', view.columns.map(esc).join(','));
   if (view.sort) params.set('sort', `${view.sort.field}:${view.sort.dir}`);
+  if (view.groupBy.length > 0) params.set('group', view.groupBy.map(esc).join(','));
+  if (view.groupSort.by !== DEFAULT_GROUP_SORT.by || view.groupSort.dir !== DEFAULT_GROUP_SORT.dir) {
+    params.set('gsort', `${view.groupSort.by}:${view.groupSort.dir}`);
+  }
   for (const filter of view.filters.filter(isRowFilter).filter(isActiveRowFilter)) {
     params.append('rf', `${esc(rowPath(filter.field))}=${filter.values.map(esc).join('|')}`);
   }
@@ -569,6 +736,11 @@ export function viewFromSearchParams(source: ParamSource): View {
     const field = sort.slice(0, colon);
     const dir = sort.slice(colon + 1);
     if (isViewField(field) && (dir === 'asc' || dir === 'desc')) view.sort = { field, dir };
+  }
+  view.groupBy = [...new Set(splitList(readParam(source, 'group')).filter(isViewField))];
+  const [groupBy, groupDir] = (readParam(source, 'gsort') ?? '').split(':');
+  if ((groupBy === 'value' || groupBy === 'count') && (groupDir === 'asc' || groupDir === 'desc')) {
+    view.groupSort = { by: groupBy, dir: groupDir };
   }
   const page = Number(readParam(source, 'page'));
   if (Number.isInteger(page) && page > 1 && page <= MAX_URL_PAGE) view.page = page;

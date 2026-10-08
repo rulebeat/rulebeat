@@ -59,6 +59,29 @@ value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backsla
 including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
 and a filter that keeps nothing.
 
+### Group by
+
+The Group by button in the By resource toolbar groups the list by one or more fields, the same
+built-in and returned fields Add filter offers. Pick a field to add it, and use the arrows to move
+it earlier or later: groups nest in that order. Each group shows its value, the number of resources
+in it and the number of rows, and opening it shows the groups under it or, at the last level, the
+resources, 50 to a page with a pager of their own. Grouping is over rows, so a resource with rows in
+two groups appears under both, and its row count in each is only the rows that fall in that group.
+Rows with no value for a field go in a No value group, which comes last whichever way groups are
+sorted. Groups sort by value or by resource count, ascending or descending, at every level. Sorting
+by value follows what the header shows: rules, categories and subscriptions go by name, and
+severities go from critical down. The top
+level is paged too, and filters apply before grouping, so a returned-field filter narrows the rows
+that are grouped. The counts at the top of the page, the tiles and the exports do not change.
+
+To rebuild the Azure Advisor service retirement workbook, group the Service retirements rule by its
+retiring feature, then by its retirement date. Each feature shows how many resources it affects,
+each date under it shows the resources retiring then, and the affected resources are listed
+underneath. In the address, `group` lists the fields in order (`group=row.retiringFeature,row.retirementDate`)
+and `gsort` holds the group sort as `value:asc`, `value:desc`, `count:asc` or `count:desc` (left out
+when it is `value:asc`). Fields are written as in `sort` and `rf`, so `\,` stands for a comma inside
+a field name.
+
 ## Disable, clear findings, or suppress
 
 Three controls make findings go away, and they mean different things.
