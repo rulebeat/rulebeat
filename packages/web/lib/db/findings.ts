@@ -78,6 +78,7 @@ function rowToRecord(row: Row): FindingRecord {
     kind: row.kind as RuleKind,
     dimensionKey: row.dimensionKey ?? undefined,
     deadline: row.deadline ?? undefined,
+    groupValue: row.groupValue ?? undefined,
     resourceId: row.resourceId ?? undefined,
     resourceType: row.resourceType ?? undefined,
     resourceName: row.resourceName ?? undefined,
@@ -188,6 +189,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         kind: f.kind ?? 'state',
         dimensionKey: f.dimensionKey ?? null,
         deadline: f.deadline ?? null,
+        groupValue: f.groupValue ?? null,
         resourceId: f.resourceId ?? null,
         resourceType: f.resourceType ?? null,
         resourceName: f.resourceName ?? null,
@@ -218,6 +220,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           subscriptionId: f.subscriptionId,
           // Re-read from the rule's column on every sighting, so a changed or cleared date follows.
           deadline: f.deadline ?? null,
+          groupValue: f.groupValue ?? null,
           resourceGroup: f.resourceGroup ?? null,
           location: f.location ?? null,
           title: f.title,

@@ -30,6 +30,7 @@ export const rules = sqliteTable('rules', {
   originRuleId: text('origin_rule_id'),       // custom rule only: the shipped rule it was made from (same id when converted in place)
   originVersion: text('origin_version'),      // custom rule only: the shipped version it was made from
   deadlineField: text('deadline_field'),      // Advisory rules: the projected column holding each result's Deadline; install-owned like kind, kept across a kind switch and a version switch
+  groupField: text('group_field'),            // Advisory rules: the projected column whose value groups the rule's Advisories; install-owned like deadlineField
 });
 
 /** Every definition of a shipped rule this install has seen, one row per (rule, version). */
@@ -264,6 +265,7 @@ export const findings = sqliteTable('findings', {
   lastScanId: text('last_scan_id'),
   timesSeen: integer('times_seen').notNull().default(1),
   deadline: text('deadline'),                                          // UTC ISO of an Advisory's Deadline at its last sighting; null when the rule names none or the value did not parse
+  groupValue: text('group_value'),                                     // An Advisory's group at its last sighting; null when the rule names no Group column or the value was blank
 });
 
 export const findingEvents = sqliteTable('finding_events', {

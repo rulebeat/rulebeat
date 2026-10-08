@@ -300,7 +300,11 @@ export interface Rule {
    *  Deadline. Rule details, not part of the query or the shipped definition: it is kept across a
    *  kind switch and a version switch, and a Problem rule ignores it. */
   deadlineField?: string;
-  group?: string;          // legacy single group; superseded by tags
+  /** Advisory rules on Resource Graph only: the projected column whose value groups the rule's
+   *  Advisories (for example a retirement feature name). Rule details like `deadlineField`: not part
+   *  of the query or the shipped definition, kept across a kind switch and a version switch. */
+  groupField?: string;
+  group?: string;            // legacy single group; superseded by tags
   tags?: string[];         // multi-dimensional labels (mcsb:*, svc:*, framework:*, waf:*, custom)
   scope: RuleScope;
   resourceTypes: string[];

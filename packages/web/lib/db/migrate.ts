@@ -795,6 +795,10 @@ export function runMigrations(sqlite: Database.Database): void {
   // columns, so every existing rule names no Deadline column and every finding has no Deadline.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN deadline_field TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE findings ADD COLUMN deadline TEXT`); } catch { /* already exists */ }
+  // #178: an Advisory rule's Group column, and the group value each finding carries. Plain nullable
+  // columns, so every existing rule names no Group column and every finding has no group.
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN group_field TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN group_value TEXT`); } catch { /* already exists */ }
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS rule_versions (
       rule_id TEXT NOT NULL,

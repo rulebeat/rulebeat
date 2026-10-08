@@ -83,6 +83,16 @@ Advisory whose Deadline is before now is **Overdue**: the Advisories tab compute
 read, lists those first, and does not store it or count it anywhere. Like the kind, the Deadline column
 belongs to your install and survives an upgrade or a rule version switch.
 
+An Advisory rule on Resource Graph can also name a **Group column**, another column its query returns.
+Each finding stores that column's value (trimmed; a blank or missing value means no group) every time
+it is seen. The Advisories tab then groups its findings by rule, then by group value, and shows the
+rule's recommendation once per group with the affected resources underneath, each with its own
+status, Deadline and Overdue mark. A group that holds an Overdue finding, or the earliest Deadline,
+is listed first. A rule with no Group column is one group. Grouping only arranges what the tab already
+lists: it changes no count and no fingerprint, so fixing one resource resolves only its own finding.
+The tab opens grouped, and List shows the flat table (`?view=list` in the address). The Group column
+belongs to your install in the same way the Deadline column does.
+
 ## How a row becomes a finding
 
 Each row gets a **fingerprint**, `sha256(ruleId::resourceId)` (resource id lowercased) truncated to 16

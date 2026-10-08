@@ -48,6 +48,7 @@ export const rules = pgTable('rules', {
   originRuleId: text('origin_rule_id'),
   originVersion: text('origin_version'),
   deadlineField: text('deadline_field'),
+  groupField: text('group_field'),
 });
 
 export const ruleVersions = pgTable('rule_versions', {
@@ -242,6 +243,7 @@ export const findings = pgTable('findings', {
   lastScanId: text('last_scan_id'),
   timesSeen: integer('times_seen').notNull().default(1),
   deadline: text('deadline'),
+  groupValue: text('group_value'),
 });
 
 export const findingEvents = pgTable('finding_events', {

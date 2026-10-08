@@ -7,6 +7,7 @@ import { changedFields } from '@/lib/changed-fields';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
 import { checkDeadlineFieldRequest } from '@/lib/deadline-field-validation';
+import { checkGroupFieldRequest } from '@/lib/group-field-validation';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { sameValue } from '@/lib/rule-versions';
@@ -84,6 +85,15 @@ export async function PUT(
       });
       if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
       changes.deadlineField = deadline.field;
+    }
+    // The Group column is the install's choice in the same way, and checked the same way.
+    if ('groupField' in body) {
+      const group = await checkGroupFieldRequest({
+        requested: body.groupField, stored: existing.groupField,
+        kind: changes.kind ?? existing.kind, rule: existing,
+      });
+      if (!group.ok) return NextResponse.json({ error: group.error }, { status: 400 });
+      changes.groupField = group.field;
     }
 
     const result = await updateRule(id, changes);
@@ -208,6 +218,15 @@ export async function PUT(
   });
   if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
   if (namesDeadline) changes.deadlineField = deadline.field;
+  // The Group column follows the same rules as the Deadline column above.
+  const namesGroup = 'groupField' in body;
+  const group = await checkGroupFieldRequest({
+    requested: namesGroup ? body.groupField : existing.groupField, stored: existing.groupField,
+    kind: changes.kind ?? existing.kind,
+    rule: { queryBackend: existing.queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
+  });
+  if (!group.ok) return NextResponse.json({ error: group.error }, { status: 400 });
+  if (namesGroup) changes.groupField = group.field;
   const result = await updateRule(id, changes);
   if (!result.ok) return updateFailureResponse(result, body.name);
   const updated = result.rule;

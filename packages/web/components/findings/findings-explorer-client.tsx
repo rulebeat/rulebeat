@@ -34,6 +34,9 @@ import {
   type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
 } from '@/lib/explorer-filters';
 import { listsOnlyAdvisories } from '@/lib/finding-kinds';
+import {
+  groupAdvisories, parseAdvisoryView, advisoryViewParam, ADVISORY_VIEW_PARAM, type AdvisoryView,
+} from '@/lib/advisory-groups';
 
 // ---- Types ----
 
@@ -53,6 +56,8 @@ interface FindingsExplorerClientProps {
      *  widget mode they're just one-shot initial values from the dashboard filter bar. */
     subscriptions?: string[]; tags?: string[]; severities?: Severity[];
     resourceGroups?: string[]; locations?: string[]; windowDays?: number; from?: string; to?: string; search?: string;
+    /** A listing of Advisories only: `grouped` (the default) or `list`, read from `?view=`. */
+    view?: string;
   };
   /** Whether the viewer may create or remove suppressions. An existing suppression's reason is
    *  shown either way — only the create/remove controls are gated. */
@@ -350,6 +355,10 @@ export function FindingsExplorerClient({
   // Sort / pagination / expand. An Advisories listing opens in its own order (Overdue first, then
   // the earliest Deadline); every other listing opens by severity as before.
   const showDeadline = listsOnlyAdvisories(kinds);
+  // Grouping by recommendation only exists for a listing of Advisories, which opens grouped.
+  const groupable = showDeadline;
+  const [advisoryView, setAdvisoryView] = useState<AdvisoryView>(parseAdvisoryView(initialFilters?.view));
+  const grouped = groupable && advisoryView === 'grouped';
   const columns = showDeadline ? ADVISORY_COLS : BASE_COLS;
   const [sortCol, setSortCol] = useState<SortCol>(showDeadline ? 'deadline' : 'severity');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -424,12 +433,17 @@ export function FindingsExplorerClient({
       params.set('window', String(dateWindow.days));
     }
     if (search !== '') params.set('q', search);
+    if (groupable) {
+      const viewParam = advisoryViewParam(advisoryView);
+      if (viewParam) params.set(ADVISORY_VIEW_PARAM, viewParam);
+    }
     const qs = params.toString();
     router.replace(`${basePath}${qs ? `?${qs}` : ''}`, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     mode, categoryFilter, statusFilter, policyFilter, severityFilter, subFilter, rgFilter, locFilter,
     tagFilter, JSON.stringify(dateWindow), search, lockedCategory, basePath, JSON.stringify(extraParams),
+    groupable, advisoryView,
   ]);
 
   const suppressedFps = useMemo(() => new Set(
@@ -559,6 +573,10 @@ export function FindingsExplorerClient({
     }
     return [...map.values()].sort((a, b) => b.open - a.open || b.fixed - a.fixed);
   }, [data.findings, filtered, passesGlobalFilters, passesColFilters, rangeFrom, rangeTo, kinds]);
+
+  // Grouping only arranges the findings the filters already kept, so its member total is always
+  // `filtered.length`: no count anywhere reads the groups.
+  const advisoryGroups = useMemo(() => grouped ? groupAdvisories(filtered) : [], [grouped, filtered]);
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   const paginated = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -884,6 +902,27 @@ export function FindingsExplorerClient({
         </div>
         )}
 
+        {groupable && (
+          <div className="ml-auto flex h-9 items-center border border-rule-strong">
+            <button
+              type="button"
+              aria-pressed={advisoryView === 'grouped'}
+              onClick={() => setAdvisoryView('grouped')}
+              className={cn(VIEW_TAB_CLS, advisoryView === 'grouped' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
+            >
+              <LayoutList className="size-3.5" /> Grouped
+            </button>
+            <button
+              type="button"
+              aria-pressed={advisoryView === 'list'}
+              onClick={() => setAdvisoryView('list')}
+              className={cn(VIEW_TAB_CLS, 'border-l border-rule-strong', advisoryView === 'list' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
+            >
+              <Rows3 className="size-3.5" /> List
+            </button>
+          </div>
+        )}
+
         {suppressedCount > 0 && (
           <Button variant="outline" size="sm" onClick={() => setShowSuppressed(s => !s)}>
             {showSuppressed ? <EyeOff /> : <Eye />}
@@ -970,6 +1009,98 @@ export function FindingsExplorerClient({
             );
           })}
         </div>
+        </div>
+      ) : grouped ? (
+        /* ---- Advisories grouped by rule, then by group value ---- */
+        <div className="bg-surface">
+          <div className="border-b border-border px-5 py-3">
+            <h3 className="title-grid">
+              {filtered.length} {filtered.length === 1 ? 'advisory' : 'advisories'}
+            </h3>
+          </div>
+          {advisoryGroups.length === 0 ? (
+            <div className="py-16 text-center text-sm text-ink-2">No findings match your filters</div>
+          ) : advisoryGroups.map(rule => (
+            <section key={rule.ruleId} className="border-b border-border last:border-0">
+              <div className="flex items-baseline justify-between gap-4 px-5 pb-1 pt-4">
+                <h4 className="title-grid min-w-0 truncate">{rule.ruleName}</h4>
+                <span className="label-grid shrink-0">
+                  {rule.openCount} open
+                  {rule.overdueCount > 0 && <span className="font-medium text-destructive"> · {rule.overdueCount} overdue</span>}
+                </span>
+              </div>
+              {rule.groups.map(group => (
+                <div key={group.key} className="px-5 pb-4 pt-2">
+                  {(rule.hasNamedGroups || group.recommendation) && (
+                    <div className="mb-2 bg-surface-sunken px-4 py-3">
+                      {rule.hasNamedGroups && (
+                        <p className="label-grid mb-1">
+                          {group.groupValue ?? 'No group value'}
+                          <span className="normal-case"> · {group.findings.length} {group.findings.length === 1 ? 'resource' : 'resources'}</span>
+                        </p>
+                      )}
+                      {group.recommendation && <p className="text-sm text-ink-2">{group.recommendation}</p>}
+                    </div>
+                  )}
+                  {group.findings.map(f => {
+                    const isExpanded = expandedIds.has(f.fingerprint);
+                    const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
+                    const suppression = suppMap.get(f.fingerprint);
+                    return (
+                      <div key={f.fingerprint} className={cn('border-b border-rule-faint last:border-0', isExpanded && 'bg-surface-sunken')}>
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          onClick={() => toggleExpand(f.fingerprint)}
+                          className="group grid w-full items-center gap-x-4 px-2 py-2 text-left transition-colors hover:bg-surface-hover"
+                          style={{ gridTemplateColumns: '20px minmax(0, 1fr) 120px 150px 28px' }}
+                        >
+                          <span className={cn('mx-auto size-2 shrink-0', sCfg.dot)} title={sCfg.label} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-ink">{subjectLabel(f)}</p>
+                            <p className="truncate text-xs text-ink-2">{f.resourceType}</p>
+                          </div>
+                          <SeverityBadge severity={f.severity} />
+                          <span className={cn('text-xs tabular-nums', f.overdue ? 'font-medium text-destructive' : 'text-ink-2')}>
+                            {deadlineDate(f.deadline)}
+                            {f.overdue && ' · Overdue'}
+                          </span>
+                          <span className="shrink-0 text-ink-faint transition-colors group-hover:text-ink">
+                            {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="space-y-3 border-t border-border px-8 pb-4 pt-3">
+                            <span className="text-xs text-ink-2">
+                              {sCfg.label} · First seen {shortDate(f.firstSeenAt)} · Last seen {shortDate(f.lastSeenAt)} · Seen {f.timesSeen}×
+                            </span>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              <PropertyCard label="Resource Group" value={f.resourceGroup} />
+                              <PropertyCard label="Subscription" value={f.subscriptionId} />
+                              <PropertyCard label="Location" value={f.location} />
+                            </div>
+                            <PropertyCard label="Resource ID" value={f.resourceId} mono copyLabel="resource ID" />
+                            {(canSuppress || suppression) && (
+                              <div className="border-t border-border pt-3">
+                                <SuppressionPanel
+                                  finding={f}
+                                  suppression={suppression}
+                                  canSuppress={canSuppress}
+                                  error={suppressionErrors.get(f.fingerprint)}
+                                  onSuppress={handleSuppress}
+                                  onUnsuppress={handleUnsuppress}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </section>
+          ))}
         </div>
       ) : (
         /* ---- By-resource flat table ---- */
@@ -1234,7 +1365,7 @@ export function FindingsExplorerClient({
         </div>
       )}
 
-      {view === 'resource' && totalPages > 1 && (
+      {view === 'resource' && !grouped && totalPages > 1 && (
         // The four controls sit flush as one bar rather than as separate floating
         // buttons, so the group reads as a single control with the page counter in it.
         <div className="flex items-center justify-center py-2">

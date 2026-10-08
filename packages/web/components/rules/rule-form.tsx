@@ -88,6 +88,7 @@ const KIND_OPTIONS: readonly SelectOption[] = [
 ];
 // The Deadline column Select has no empty value, so "none" is a sentinel the form maps to ''.
 const NO_DEADLINE = '__none__';
+const NO_GROUP = '__none__';
 // Convert legacy conditionGroups / conditions to VisualQuery for backward compat.
 function condOpToVisual(op: ConditionOperator): VisualFilterOperator {
   return op === 'matches' ? 'matchesRegex' : op as VisualFilterOperator;
@@ -260,6 +261,8 @@ export function RuleForm({
   // The column an Advisory's Deadline is read from. Held in the form whatever the kind, so a switch
   // to Problem and back keeps it, and sent on every save of a Resource Graph rule ('' clears it).
   const [deadlineField, setDeadlineField] = useState(initial?.deadlineField ?? '');
+  // The column an Advisory's results are grouped by; same lifecycle as the Deadline column.
+  const [groupField, setGroupField] = useState(initial?.groupField ?? '');
   const [tags, setTags]               = useState<string[]>(initial?.tags ?? []);
   const [scopeLevel, setScopeLevel]   = useState<RuleScope['level']>(initial?.scope.level ?? initialParsed?.scope.level ?? 'resource');
   const [scopeSubscriptions, setScopeSubscriptions]     = useState<string[]>(initial?.scope.subscriptions ?? []);
@@ -472,12 +475,12 @@ export function RuleForm({
   // undoing it would otherwise leave visualQuery permanently different by id alone, even though
   // the query itself is byte-for-byte back to what it was.
   const currentSnapshot = useMemo(() => JSON.stringify({
-    name, description, category, severity, enabled, tags, kind, deadlineField,
+    name, description, category, severity, enabled, tags, kind, deadlineField, groupField,
     scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns,
     kql: kqlFromGui,
     graphQuery,
     logsQuery,
-  }), [name, description, category, severity, enabled, tags, kind, deadlineField, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
+  }), [name, description, category, severity, enabled, tags, kind, deadlineField, groupField, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
   const [baselineSnapshot, setBaselineSnapshot] = useState(currentSnapshot);
   const dirty = currentSnapshot !== baselineSnapshot;
 
@@ -488,6 +491,12 @@ export function RuleForm({
     const names = deadlineField && !columns.includes(deadlineField) ? [...columns, deadlineField] : columns;
     return [{ value: NO_DEADLINE, label: 'None' }, ...names.map(c => ({ value: c, label: c }))];
   }, [kqlText, projectColumns, deadlineField]);
+
+  const groupOptions = useMemo<readonly SelectOption[]>(() => {
+    const columns = projectedColumnNames(kqlText) ?? projectColumns;
+    const names = groupField && !columns.includes(groupField) ? [...columns, groupField] : columns;
+    return [{ value: NO_GROUP, label: 'None' }, ...names.map(c => ({ value: c, label: c }))];
+  }, [kqlText, projectColumns, groupField]);
 
   async function save() {
     if (!name.trim()) return alert('Name is required');
@@ -531,7 +540,7 @@ export function RuleForm({
     const payload = {
       name: name.trim(), description: description.trim(), category, severity, enabled, tags,
       ...(isLogAnalyticsBackend ? {} : { kind }),
-      ...(usesDedicatedEditor ? {} : { deadlineField: deadlineField || null }),
+      ...(usesDedicatedEditor ? {} : { deadlineField: deadlineField || null, groupField: groupField || null }),
       queryBackend,
       scope: scopeObj,
       resourceTypes: resTypes,
@@ -752,6 +761,21 @@ export function RuleForm({
                   />
                   <p className="mt-1 text-xs text-ink-2">
                     The column holding the date each result is due, as an ISO date or an epoch. A result past its date is marked Overdue. Pick a column the query returns.
+                  </p>
+                </div>
+              )}
+              {kind === 'advisory' && !usesDedicatedEditor && (
+                <div>
+                  <Label className="mb-1">Group column</Label>
+                  <Select
+                    value={groupField || NO_GROUP}
+                    onValueChange={v => setGroupField(v === NO_GROUP ? '' : v)}
+                    disabled={operationalReadOnly}
+                    options={groupOptions}
+                    aria-label="Group column"
+                  />
+                  <p className="mt-1 text-xs text-ink-2">
+                    The column that decides which results share a recommendation. The Advisories tab groups results by rule, then by this value, and shows the recommendation once per group. Pick a column the query returns.
                   </p>
                 </div>
               )}

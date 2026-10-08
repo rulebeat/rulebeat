@@ -62,6 +62,8 @@ ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_rule_id TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_version TEXT;
 -- Advisory Deadline column (#177), for a Postgres database bootstrapped before it shipped.
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS deadline_field TEXT;
+-- Advisory Group column (#178).
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS group_field TEXT;
 
 CREATE TABLE IF NOT EXISTS rule_versions (
   rule_id TEXT NOT NULL,
@@ -262,6 +264,8 @@ CREATE INDEX IF NOT EXISTS idx_findings_category_status ON findings(category, st
 CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings(rule_id);
 -- Advisory Deadline (#177), for a Postgres database bootstrapped before it shipped.
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS deadline TEXT;
+-- Advisory group value (#178).
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS group_value TEXT;
 
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,

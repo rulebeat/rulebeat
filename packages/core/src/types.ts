@@ -65,6 +65,12 @@ export interface Finding {
    * stored: it is this date compared with now, at read time.
    */
   deadline?: string;
+  /**
+   * An Advisory's group, read from the column the rule names in `Rule.groupField` (see
+   * parseGroupValue()), for example the retirement feature the resource is affected by. Absent when
+   * the rule names none or the row has no usable value; never set on a Problem rule's finding.
+   */
+  groupValue?: string;
 }
 
 export interface QueryScope {

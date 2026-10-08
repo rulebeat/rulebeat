@@ -26,12 +26,12 @@ export default async function ScansPage({
     category?: string; tab?: string; scan?: string; run?: string; compare?: string;
     compareCategory?: string; status?: string; ruleId?: string;
     severity?: string; subscription?: string; rg?: string; location?: string; tags?: string;
-    window?: string; from?: string; to?: string; q?: string;
+    window?: string; from?: string; to?: string; q?: string; view?: string;
   }>;
 }) {
   const {
     category: sectionParam, tab: tabParam, scan: scanId, run: runId, compare, compareCategory, status, ruleId,
-    severity, subscription, rg, location, tags, window, from, to, q,
+    severity, subscription, rg, location, tags, window, from, to, q, view,
   } = await searchParams;
   const categories = await listCategories();
   const user = await getCurrentUser();
@@ -116,6 +116,7 @@ export default async function ScansPage({
           from,
           to,
           search: q,
+          view,
         }}
         runs={activeTab === 'history' ? await listAllRuns(50) : undefined}
         runDetail={runDetail}

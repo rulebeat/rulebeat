@@ -6,6 +6,7 @@ import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
 import { checkDeadlineFieldRequest } from '@/lib/deadline-field-validation';
+import { checkGroupFieldRequest } from '@/lib/group-field-validation';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
@@ -118,6 +119,11 @@ export async function POST(req: Request) {
     rule: { queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
   });
   if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
+  const group = await checkGroupFieldRequest({
+    requested: body.groupField, stored: undefined, kind,
+    rule: { queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
+  });
+  if (!group.ok) return NextResponse.json({ error: group.error }, { status: 400 });
 
   const rule: Rule = {
     ...fields,
@@ -127,6 +133,7 @@ export async function POST(req: Request) {
     queryBackend,
     kind,
     deadlineField: deadline.field,
+    groupField: group.field,
     ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);

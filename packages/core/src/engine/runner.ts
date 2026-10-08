@@ -1,5 +1,6 @@
 import { createFinding } from '../finding.js';
 import { parseDeadline } from '../deadline.js';
+import { parseGroupValue } from '../group-value.js';
 import { ResourceGraphTruncatedError } from '../clients/resource-graph.js';
 import { extractAzureErrorMessage } from '../errors.js';
 import type { Finding, TenantContext } from '../types.js';
@@ -141,6 +142,10 @@ export async function* runRules(
       const deadline = rule.kind === 'advisory' && rule.deadlineField
         ? parseDeadline(resource[rule.deadlineField]) ?? undefined
         : undefined;
+      // Same for the group: a blank or missing value is no group, never a failed rule.
+      const groupValue = rule.kind === 'advisory' && rule.groupField
+        ? parseGroupValue(resource[rule.groupField]) ?? undefined
+        : undefined;
       yield {
         kind: 'finding',
         finding: createFinding({
@@ -161,6 +166,7 @@ export async function* runRules(
           remediationSteps: rule.remediationSteps ?? [],
           azurePortalLink: `https://portal.azure.com/#@/resource${resourceId}`,
           ...(deadline ? { deadline } : {}),
+          ...(groupValue ? { groupValue } : {}),
         }),
       };
     }
