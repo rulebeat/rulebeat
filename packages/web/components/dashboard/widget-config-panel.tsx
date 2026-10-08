@@ -373,6 +373,12 @@ export function WidgetConfigPanel({ widget, onClose, onSave }: Props) {
             <NumberInput value={Number(cfg.limit ?? 10)} onChange={v => setConfig('limit', v)} min={3} max={20} />
           </Field>
         );
+      case 'advisories':
+        return (
+          <Field label="Max Advisories">
+            <NumberInput value={Number(cfg.limit ?? 10)} onChange={v => setConfig('limit', v)} min={5} max={50} />
+          </Field>
+        );
       case 'subscription-scorecard':
         return (
           <Field label="Max Subscriptions">

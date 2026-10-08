@@ -92,7 +92,7 @@ shows whether the estate is getting better or worse.
 - **A findings lifecycle, not a scan diff.** Every finding is keyed on rule plus resource and tracked
   as new, active or fixed across scans. A suppression needs a reason and can carry an expiry date.
 - **Scheduled scans, dashboards, notifications, roles.** An Outlook-style recurrence engine,
-  <!-- count:widget-types -->12 dashboard widget types you can filter and arrange, alerts to Teams,
+  <!-- count:widget-types -->13 dashboard widget types you can filter and arrange, alerts to Teams,
   Slack, a webhook or email per schedule, and <!-- count:roles -->three roles enforced on every API
   route with an audit log behind them.
 

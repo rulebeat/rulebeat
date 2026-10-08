@@ -175,7 +175,8 @@ export type WidgetType =
   | 'top-resources'
   | 'coverage-freshness'
   | 'new-vs-fixed'
-  | 'activity-occurrences';
+  | 'activity-occurrences'
+  | 'advisories';
 
 export type StatMetric =
   | 'posture-pct'
