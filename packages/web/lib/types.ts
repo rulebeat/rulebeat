@@ -19,8 +19,9 @@ export interface Finding {
   category: ModuleCategory;
   /** 'state' (default, absent means 'state') is a resource in a wrong configuration — has
    *  resourceId/Type/Name below. 'activity' (spec 034) is an occurrence with no resource to point
-   *  at; resourceId/Type/Name are absent and `dimensionKey` carries what makes it distinct instead. */
-  kind?: 'state' | 'activity';
+   *  at; resourceId/Type/Name are absent and `dimensionKey` carries what makes it distinct instead.
+   *  'advisory' has a resource like 'state' but comes from a rule marked Advisory. */
+  kind?: RuleKind;
   /** Human-readable identity of an 'activity' occurrence's pattern. Absent for 'state' findings. */
   dimensionKey?: string;
   // Resource — absent for kind: 'activity' findings, which have no resource to describe.
@@ -284,8 +285,9 @@ export type RuleType = 'builtin' | 'community' | 'custom';
 // What system a rule's detection logic queries against — see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
-// Derived from queryBackend, never independently authored.
-export type RuleKind = 'state' | 'activity';
+// Resolved from queryBackend plus the kind an author asked for; see resolveKind() in lib/rules.ts.
+// 'state' is the code name for a Problem rule.
+export type RuleKind = 'state' | 'activity' | 'advisory';
 
 // Microsoft Graph query definition (spec 032) — set only when queryBackend = 'microsoft-graph'.
 // Mirrored from @rulebeat/core's engine/types.ts; keep the two in step.
@@ -330,7 +332,7 @@ export interface Rule {
   type: RuleType;
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
-  kind?: RuleKind;             // absent = 'state' (the SQL-layer default); always derived, never author-set
+  kind?: RuleKind;             // absent = 'state' (the SQL-layer default); Logs rules are always 'activity', any other backend is 'state' or 'advisory'
   /** @deprecated Superseded by `tags` (multi-value). Kept for read compat with old rows. */
   group?: string;
   tags?: string[];

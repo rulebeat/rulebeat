@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNameTakenError, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -38,6 +38,10 @@ export async function POST(req: Request) {
   const queryBackend: QueryBackend = body.queryBackend ?? 'resource-graph';
   if (queryBackend !== 'resource-graph' && queryBackend !== 'microsoft-graph' && queryBackend !== 'log-analytics') {
     return NextResponse.json({ error: `"${queryBackend}" rules cannot be authored yet.` }, { status: 400 });
+  }
+
+  if (body.kind === 'advisory' && queryBackend === 'log-analytics') {
+    return NextResponse.json({ error: ADVISORY_ON_LOGS_ERROR }, { status: 400 });
   }
 
   // RB-RM-004: the UI guard (rule-form.tsx's save()) is client-side only — an API caller submitting
@@ -113,7 +117,7 @@ export async function POST(req: Request) {
     type: 'custom',
     pack: undefined,
     queryBackend,
-    kind: deriveKind(queryBackend),
+    kind: resolveKind(queryBackend, body.kind),
     ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);

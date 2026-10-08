@@ -81,7 +81,7 @@ export function emptyToNull<T>(value: T[] | null | undefined): T[] | null {
 }
 
 /** What a rule on this backend means: Logs rules report activity, the other two report state. */
-function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): NonNullable<Rule['kind']> {
+export function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): NonNullable<Rule['kind']> {
   return queryBackend === 'log-analytics' ? 'activity' : 'state';
 }
 

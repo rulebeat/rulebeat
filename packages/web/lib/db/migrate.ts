@@ -1293,7 +1293,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
           record.run(a.ruleId, a.version, a.sortKey, a.releaseNote, JSON.stringify(a.definition), a.upstreamRef ?? null, now);
           break;
         case 'set-running': setRunning.run(a.version, a.ruleId); break;
-        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
+        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition, a.kind), version: a.rule.version }); break;
         case 'retire': setRetired.run(now, a.ruleId); break;
         case 'unretire': setRetired.run(null, a.ruleId); break;
       }

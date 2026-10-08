@@ -30,6 +30,7 @@ import { LogAnalyticsRuleEditor } from './log-analytics-rule-editor';
 import { deriveDedicatedEditorFields } from '@/lib/rule-form-payload';
 import { RuleVersionSelector } from './rule-version-selector';
 import type { RuleVersionHistory } from '@/lib/types';
+import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 
 // Always-available ARG fields in the condition field autocomplete.
 const ARG_BASE_FIELDS = ['subscriptionId', 'resourceGroup', 'id', 'name', 'type', 'location', 'tags', 'kind', 'sku'];
@@ -81,6 +82,10 @@ const ARG_TABLE_OPTIONS: readonly SelectOption[] = [
 const SEVERITY_OPTIONS: readonly SelectOption[] = (['critical', 'high', 'medium', 'low', 'info'] as Severity[])
   .map(s => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }));
 
+const KIND_OPTIONS: readonly SelectOption[] = [
+  { value: 'state', label: KIND_LABEL.state },
+  { value: 'advisory', label: KIND_LABEL.advisory },
+];
 // Convert legacy conditionGroups / conditions to VisualQuery for backward compat.
 function condOpToVisual(op: ConditionOperator): VisualFilterOperator {
   return op === 'matches' ? 'matchesRegex' : op as VisualFilterOperator;
@@ -247,6 +252,9 @@ export function RuleForm({
   const [category, setCategory]       = useState<ModuleCategory>(initial?.category ?? 'compliance');
   const [severity, setSeverity]       = useState<Severity>(initial?.severity ?? 'medium');
   const [enabled, setEnabled]         = useState(initial?.enabled ?? true);
+  // Problem or Advisory. A Logs rule is always Activity and is not offered the choice; the server
+  // resolves the stored kind from the backend regardless of what is sent.
+  const [kind, setKind]               = useState<'state' | 'advisory'>(initial?.kind === 'advisory' ? 'advisory' : 'state');
   const [tags, setTags]               = useState<string[]>(initial?.tags ?? []);
   const [scopeLevel, setScopeLevel]   = useState<RuleScope['level']>(initial?.scope.level ?? initialParsed?.scope.level ?? 'resource');
   const [scopeSubscriptions, setScopeSubscriptions]     = useState<string[]>(initial?.scope.subscriptions ?? []);
@@ -459,12 +467,12 @@ export function RuleForm({
   // undoing it would otherwise leave visualQuery permanently different by id alone, even though
   // the query itself is byte-for-byte back to what it was.
   const currentSnapshot = useMemo(() => JSON.stringify({
-    name, description, category, severity, enabled, tags,
+    name, description, category, severity, enabled, tags, kind,
     scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns,
     kql: kqlFromGui,
     graphQuery,
     logsQuery,
-  }), [name, description, category, severity, enabled, tags, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
+  }), [name, description, category, severity, enabled, tags, kind, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
   const [baselineSnapshot, setBaselineSnapshot] = useState(currentSnapshot);
   const dirty = currentSnapshot !== baselineSnapshot;
 
@@ -509,6 +517,7 @@ export function RuleForm({
     });
     const payload = {
       name: name.trim(), description: description.trim(), category, severity, enabled, tags,
+      ...(isLogAnalyticsBackend ? {} : { kind }),
       queryBackend,
       scope: scopeObj,
       resourceTypes: resTypes,
@@ -690,6 +699,32 @@ export function RuleForm({
                     aria-label="Severity"
                   />
                 </div>
+              </div>
+              <div>
+                <Label className="mb-1">Kind</Label>
+                {isLogAnalyticsBackend ? (
+                  <>
+                    <Select
+                      value="activity"
+                      onValueChange={() => {}}
+                      disabled
+                      options={[{ value: 'activity', label: KIND_LABEL.activity }]}
+                      aria-label="Kind"
+                    />
+                    <p className="mt-1 text-xs text-ink-2">A Log Analytics rule reports something that happened, so it is always Activity.</p>
+                  </>
+                ) : (
+                  <>
+                    <Select
+                      value={kind}
+                      onValueChange={v => setKind(v as 'state' | 'advisory')}
+                      disabled={operationalReadOnly}
+                      options={KIND_OPTIONS}
+                      aria-label="Kind"
+                    />
+                    <p className="mt-1 text-xs text-ink-2">{KIND_DESCRIPTION[kind]} Takes effect on the next scan.</p>
+                  </>
+                )}
               </div>
               <div>
                 <Label className="mb-1">Tags</Label>

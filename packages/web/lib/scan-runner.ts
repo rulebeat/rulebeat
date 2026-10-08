@@ -52,6 +52,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   }
   const totalRules = enabledRules.length;
   const ruleNames = new Map(enabledRules.map(r => [r.id, r.name]));
+  const advisoryRuleIds = new Set(enabledRules.filter(r => r.kind === 'advisory').map(r => r.id));
 
   const graphRules = enabledRules.filter(r => r.queryBackend === 'microsoft-graph');
   const lawRules = enabledRules.filter(r => r.queryBackend === 'log-analytics');
@@ -79,8 +80,11 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
       const fingerprint = finding.kind === 'activity'
         ? computeActivityFingerprint(finding.ruleId, finding.dimensionKey ?? '')
         : computeFingerprint(finding.ruleId, finding.resourceId ?? '');
+      // An Advisory rule's findings are stamped from the rule, not the engine: its query is the
+      // same Resource Graph or Graph query a Problem rule runs, so the engine cannot know.
       findings.push({
         ...finding,
+        ...(advisoryRuleIds.has(finding.ruleId) && finding.kind !== 'activity' ? { kind: 'advisory' as const } : {}),
         module: category.id,
         fingerprint,
         detectedAt: finding.detectedAt.toISOString(),

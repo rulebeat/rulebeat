@@ -7,6 +7,7 @@ import { runCategoryScan } from './scan-runner';
 import { resolveCategoriesForSchedule, resolveRulesForSchedule } from './schedule-target';
 import type { ScheduleTargetType } from './db/schedules';
 import { dispatchAndMarkSent } from './notifications/dispatch';
+import { isNotifiable } from './finding-kinds';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -128,7 +129,8 @@ export async function executeTarget(
         ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
         : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }
-    const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.length > 0;
+    // An all-Advisory run has nothing a channel may be told, so it opens no outbox entry.
+    const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.some(isNotifiable);
     await finishRun(run.id, {
       status,
       totalFindings,

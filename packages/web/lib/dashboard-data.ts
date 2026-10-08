@@ -8,7 +8,7 @@ import { listScanMetas } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
-import { countsTowardPosture, countsInFindingTotals } from './finding-kinds';
+import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive — no `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -49,7 +49,7 @@ function enabledRuleIdsForCategory(
     enabled = enabled.filter(r => (r.tags ?? []).some(t => filters.tags!.includes(t)));
   }
   const stateRuleIds = new Set(enabled.filter(countsTowardPosture).map(r => r.id));
-  return { stateRuleIds, activityRuleCount: enabled.length - stateRuleIds.size };
+  return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
 /** Splits a scope's rule ids by outcome against its findings: passing (zero findings, proven
@@ -249,7 +249,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const stateSelected = filters.ruleIds.filter(id => countsTowardPosture(ruleById.get(id) ?? { kind: 'state' }));
     scopedRuleIds = new Set(stateSelected);
     totalRules = scopedRuleIds.size;
-    activityRuleCount = filters.ruleIds.length - stateSelected.length;
+    activityRuleCount = filters.ruleIds.filter(id => ruleById.has(id) && isActivityRule(ruleById.get(id)!)).length;
     const outcome = splitRuleOutcomes(scopedRuleIds, activeFindings, ruleById);
     passingRules = outcome.passing;
     unknownRules = outcome.unknown;

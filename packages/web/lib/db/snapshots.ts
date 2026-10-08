@@ -8,7 +8,7 @@ import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { loadScanHistory } from '../scan-history';
 import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
-import { countsTowardPosture } from '../finding-kinds';
+import { countsTowardPosture, isActivityRule } from '../finding-kinds';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import type { Severity } from '../types';
 
@@ -79,7 +79,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   const stateRuleIds = new Set(stateRules.map(r => r.id));
   const ruleById = new Map(enabledRules.map(r => [r.id, r]));
   const totalRules = stateRules.length;
-  const activityRuleCount = enabledRules.length - stateRules.length;
+  const activityRuleCount = enabledRules.filter(isActivityRule).length;
 
   // An activity finding's ruleId never matches stateRuleIds below, so including it here doesn't
   // affect failingRuleIds.

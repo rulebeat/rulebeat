@@ -9,6 +9,7 @@ import { getPublicUrl } from '@/lib/sign-in-config';
 import { RedirectRefusedError, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
 import { loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
+import { isNotifiable } from '@/lib/finding-kinds';
 import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
 import { postWebhookJson, sendSmtpMail } from './send';
@@ -207,6 +208,9 @@ async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
  * recovery share one decision and a suppression added or expired since the scan is honoured. A
  * batch that is all suppressed is treated like an empty one: nothing is sent and the entry closes.
  *
+ * Advisory findings are left out the same way (issue #176): a channel cannot opt in to receiving
+ * them yet, so only the kinds in NOTIFIABLE_KINDS are announced.
+ *
  * @returns whether this call held the claim and therefore did the dispatching.
  */
 export async function dispatchAndMarkSent(
@@ -215,7 +219,7 @@ export async function dispatchAndMarkSent(
   opts: { now?: Date } = {},
 ): Promise<boolean> {
   if (!(await claimNotifyDispatch(run.id, { now: opts.now }))) return false;
-  const notifiable = await withoutSuppressed(findings);
+  const notifiable = (await withoutSuppressed(findings)).filter(isNotifiable);
   if (notifiable.length > 0) {
     await dispatchNotifications(run, notifiable);
   }

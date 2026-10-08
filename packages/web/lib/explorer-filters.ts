@@ -1,6 +1,6 @@
-import type { Severity } from './types';
+import type { Severity, RuleKind } from './types';
 import type { ExplorerFinding, FindingDisplayStatus } from './explorer-data';
-import { countsInFindingTotals } from './finding-kinds';
+import { countsInFindingTotals, isOfKind } from './finding-kinds';
 
 /** 'open' is every finding open right now; 'new' and 'fixed' are both bounded by the chosen
  *  window, the same way the New and Fixed header tiles count; 'all' is the two together. */
@@ -76,12 +76,16 @@ export interface ExplorerStats {
 }
 
 /** The header tiles. Pass it a pool with every filter applied except severity and status, so the
- *  tiles stay a stable reference while those two are toggled. */
-export function summarizeFindings(findings: ExplorerFinding[], from: string, to: string): ExplorerStats {
+ *  tiles stay a stable reference while those two are toggled. `kinds` is the set of kinds the tiles
+ *  count; by default only the kind a finding-level total counts (Problems). The Advisories tab
+ *  passes its own kind, so its tiles add up to its own Open. */
+export function summarizeFindings(
+  findings: ExplorerFinding[], from: string, to: string, kinds?: readonly RuleKind[],
+): ExplorerStats {
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
   for (const f of findings) {
-    if (!countsInFindingTotals(f)) continue;
+    if (!(kinds ? isOfKind(f, kinds) : countsInFindingTotals(f))) continue;
     const recency = getRecencyStatus(f, from, to);
     if (recency !== 'fixed') counts[f.severity]++;
     if (recency === 'new') newCount++;
@@ -107,10 +111,11 @@ export function countFindingsByRule(
   findings: ExplorerFinding[],
   from: string,
   to: string,
+  kinds?: readonly RuleKind[],
 ): Map<string, RuleCounts> {
   const counts = new Map<string, RuleCounts>();
   for (const f of findings) {
-    if (!countsInFindingTotals(f)) continue;
+    if (!(kinds ? isOfKind(f, kinds) : countsInFindingTotals(f))) continue;
     let c = counts.get(f.ruleId);
     if (!c) { c = { open: 0, new: 0, fixed: 0 }; counts.set(f.ruleId, c); }
     const recency = getRecencyStatus(f, from, to);

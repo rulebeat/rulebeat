@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Rules now have a Kind, Problem or Advisory. An Advisory rule reports something worth knowing that is not a misconfiguration to fix now, such as a VM size Azure is retiring. Choose the kind in the rule form (built-in rules can be marked Advisory too). Its findings are tracked with the same age, resolution and suppressions as any finding, appear on a new Advisories tab on the Scans page, and are left out of posture, the Results tiles, the dashboard counts and notifications. The Rules tab and the Library show each rule's kind. Switching a rule's kind moves its existing findings with it and keeps their age and suppressions. Log Analytics rules stay Activity.
+
 ### Changed
 
 - Posture and finding counts now share one definition of which rule kinds they include.

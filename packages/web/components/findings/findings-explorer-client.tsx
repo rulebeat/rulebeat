@@ -26,7 +26,7 @@ import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import {
   requestSuppress, requestUnsuppress, applySuppress, applyUnsuppress, applySuppressionsLoad, fetchSuppressionList,
 } from '@/lib/suppression-actions';
-import type { Severity, Suppression } from '@/lib/types';
+import type { RuleKind, Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import {
   getRecencyStatus, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
@@ -68,6 +68,13 @@ interface FindingsExplorerClientProps {
   /** Overrides the "no findings yet" empty-state copy — useful when embedded under a specific
    *  category so the hint can name that category instead of a generic message. */
   emptyHint?: string;
+  /** Overrides the "No findings yet" empty-state title, for a tab that has its own reason to be empty. */
+  emptyTitle?: string;
+  /** Which kinds the header tiles and the By rule counts add up. Defaults to what finding-level
+   *  totals count (Problems); the Advisories tab passes its own so its tiles add up to its own Open. */
+  kinds?: readonly RuleKind[];
+  /** Hides the By rule view, for a listing where the per-rule pivot would not add anything. */
+  hideRuleView?: boolean;
 }
 
 // ---- Constants ----
@@ -300,6 +307,7 @@ function SuppressionPanel({
 
 export function FindingsExplorerClient({
   data, suppressions: suppressionsProp, initialFilters, canSuppress, mode = 'page', lockedCategory, basePath = '/findings', extraParams, emptyHint,
+  emptyTitle, kinds, hideRuleView = false,
 }: FindingsExplorerClientProps) {
   const router = useRouter();
 
@@ -485,7 +493,7 @@ export function FindingsExplorerClient({
     [data.findings, passesGlobalFilters],
   );
 
-  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo), [statsPool, rangeFrom, rangeTo]);
+  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo, kinds), [statsPool, rangeFrom, rangeTo, kinds]);
 
   const suppressedCount = useMemo(
     () => data.findings.filter(f => (categoryFilter.size === 0 || categoryFilter.has(f.category)) && suppressedFps.has(f.fingerprint)).length,
@@ -519,7 +527,7 @@ export function FindingsExplorerClient({
   const ruleRows = useMemo(() => {
     const counts = countFindingsByRule(
       data.findings.filter(f => passesGlobalFilters(f, new Set(['status'])) && passesColFilters(f)),
-      rangeFrom, rangeTo,
+      rangeFrom, rangeTo, kinds,
     );
     const map = new Map<string, {
       ruleId: string; name: string; category: string; severity: Severity; disabled: boolean;
@@ -535,7 +543,7 @@ export function FindingsExplorerClient({
       e.findings.push(f);
     }
     return [...map.values()].sort((a, b) => b.open - a.open || b.fixed - a.fixed);
-  }, [data.findings, filtered, passesGlobalFilters, passesColFilters, rangeFrom, rangeTo]);
+  }, [data.findings, filtered, passesGlobalFilters, passesColFilters, rangeFrom, rangeTo, kinds]);
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   const paginated = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -635,7 +643,7 @@ export function FindingsExplorerClient({
     return (
       <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
         <Search className="mb-4 size-7 text-ink-faint" />
-        <h3 className="mb-1 font-heading text-base font-semibold text-ink">No findings yet</h3>
+        <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
         <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
       </div>
     );
@@ -840,6 +848,7 @@ export function FindingsExplorerClient({
         />
 
         {/* View toggle */}
+        {!hideRuleView && (
         <div className="ml-auto flex h-9 items-center border border-rule-strong">
           <button
             type="button"
@@ -858,6 +867,7 @@ export function FindingsExplorerClient({
             <LayoutList className="size-3.5" /> By rule
           </button>
         </div>
+        )}
 
         {suppressedCount > 0 && (
           <Button variant="outline" size="sm" onClick={() => setShowSuppressed(s => !s)}>

@@ -8,7 +8,8 @@ import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
-import type { Finding, Severity } from '../types';
+import { RESOLVABLE_KINDS } from '../finding-kinds';
+import type { Finding, RuleKind, Severity } from '../types';
 
 export interface FindingRecord extends Finding {
   status: 'active' | 'fixed';
@@ -74,7 +75,7 @@ function rowToRecord(row: Row): FindingRecord {
     fingerprint: row.fingerprint,
     severity: row.severity as Severity,
     category: row.category,
-    kind: row.kind as 'state' | 'activity',
+    kind: row.kind as RuleKind,
     dimensionKey: row.dimensionKey ?? undefined,
     resourceId: row.resourceId ?? undefined,
     resourceType: row.resourceType ?? undefined,
@@ -111,9 +112,15 @@ export async function getFindingsByFingerprints(fingerprints: string[]): Promise
   return out;
 }
 
-export async function listFindings(opts: { status?: 'active' | 'fixed' } = {}): Promise<FindingRecord[]> {
-  const rows = opts.status
-    ? await many(db.select().from(findingsTable).where(eq(findingsTable.status, opts.status)))
+export async function listFindings(
+  opts: { status?: 'active' | 'fixed'; kinds?: readonly RuleKind[] } = {},
+): Promise<FindingRecord[]> {
+  const conditions = [
+    ...(opts.status ? [eq(findingsTable.status, opts.status)] : []),
+    ...(opts.kinds ? [inArray(findingsTable.kind, [...opts.kinds])] : []),
+  ];
+  const rows = conditions.length > 0
+    ? await many(db.select().from(findingsTable).where(and(...conditions)))
     : await many(db.select().from(findingsTable));
   return rows.map(rowToRecord);
 }
@@ -172,10 +179,11 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         ruleId: f.ruleId,
         category,
         severity: f.severity,
-        // kind/dimensionKey are baked into the fingerprint's own hash (computeFingerprint vs.
-        // computeActivityFingerprint), so — like resourceId below — they're set once at insert
-        // and deliberately excluded from the conflict-update set: they can't legitimately change
-        // for a fingerprint that already exists.
+        // dimensionKey is baked into the fingerprint's own hash (computeFingerprint vs.
+        // computeActivityFingerprint), so — like resourceId below — it is set once at insert and
+        // deliberately excluded from the conflict-update set. `kind` is the exception between
+        // 'state' and 'advisory': both hash the same way, so a rule's kind switch moves its
+        // existing findings (same fingerprint, same age, same suppressions) via the update set.
         kind: f.kind ?? 'state',
         dimensionKey: f.dimensionKey ?? null,
         resourceId: f.resourceId ?? null,
@@ -202,6 +210,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           ruleId: f.ruleId,
           category,
           severity: f.severity,
+          kind: f.kind ?? 'state',
           resourceType: f.resourceType ?? null,
           resourceName: f.resourceName ?? null,
           subscriptionId: f.subscriptionId,
@@ -238,7 +247,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           .where(and(
             inArray(findingsTable.ruleId, ruleChunk),
             eq(findingsTable.status, 'active'),
-            eq(findingsTable.kind, 'state'),
+            inArray(findingsTable.kind, [...RESOLVABLE_KINDS]),
           )),
       );
       const toResolve = staleActive.filter(r => !seenSet.has(r.fingerprint));

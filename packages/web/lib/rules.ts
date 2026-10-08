@@ -5,7 +5,7 @@ import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 import { buildRuleQuery } from '@rulebeat/core/kql';
-import { definitionOfRow, definitionToColumns } from './rule-versions';
+import { definitionOfRow, definitionToColumns, kindAfterApply } from './rule-versions';
 import { isCommitDateVersion } from './rule-version-markers';
 import type { RuleDefinition } from './shipped-catalogue';
 import type { RuleVersionHistory } from './types';
@@ -59,12 +59,24 @@ export async function listRuleVersions(id: string): Promise<RuleVersionHistory |
 }
 
 /**
- * The one place `kind` is computed. Never independently authored or accepted from a client —
- * `ruleToRow()` always calls this rather than trusting `Rule.kind`, so a stale or forged value on
- * the wire can never stick. See the field's own comment in packages/core/src/engine/types.ts.
+ * The one place `kind` is resolved. `ruleToRow()` always calls this rather than trusting
+ * `Rule.kind`, so a stale or forged value on the wire can never stick. A Logs rule is always
+ * 'activity'. Any other backend is 'advisory' only when that is what was asked for, otherwise
+ * 'state' (the code name for a Problem rule), so 'activity' or a garbage value on a rule that is
+ * not a Logs rule falls back to 'state'. See the field's own comment in
+ * packages/core/src/engine/types.ts.
  */
+export function resolveKind(queryBackend: QueryBackend, requested?: RuleKind): RuleKind {
+  if (queryBackend === 'log-analytics') return 'activity';
+  return requested === 'advisory' ? 'advisory' : 'state';
+}
+
+/** What POST and PUT answer when a Logs rule asks to be Advisory: its findings are occurrences, not resources. */
+export const ADVISORY_ON_LOGS_ERROR = 'A Log Analytics rule cannot be an Advisory rule. Its findings are activity, not resources.';
+
+/** What a rule's kind is when no one has asked for a particular one. */
 export function deriveKind(queryBackend: QueryBackend): RuleKind {
-  return queryBackend === 'log-analytics' ? 'activity' : 'state';
+  return resolveKind(queryBackend);
 }
 
 /**
@@ -160,10 +172,10 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
  * out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
  */
 export type RuleChanges = Partial<Omit<Rule,
-  'id' | 'kind' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion'>>;
+  'id' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion'>>;
 
-// The columns `updateRule()` will write, by the Rule field that feeds each. `kind` follows
-// `queryBackend`; the run-outcome and version columns are never in here, on purpose.
+// The columns `updateRule()` will write, by the Rule field that feeds each. `kind` is resolved from
+// `queryBackend` and the kind asked for; the run-outcome and version columns are never in here, on purpose.
 const UPDATABLE_FIELDS = [
   'name', 'description', 'category', 'severity', 'enabled', 'scope', 'resourceTypes', 'conditions',
   'conditionGroups', 'projectColumns', 'rawKql', 'type', 'pack', 'group', 'tags', 'visualQuery',
@@ -199,13 +211,16 @@ export async function updateRule(id: string, changes: RuleChanges): Promise<Upda
 
     // ruleToRow() does the JSON encoding and the derivation of `kind`; its output is only used to
     // pick the columns the caller named.
-    const row: Record<string, unknown> = ruleToRow({ ...rowToRule(current), ...changes });
+    const merged: Rule = { ...rowToRule(current), ...changes };
+    // A kind the caller left out (or set to undefined) is not a request to reset it to a Problem.
+    if (changes.kind === undefined) merged.kind = rowToRule(current).kind;
+    const row: Record<string, unknown> = ruleToRow(merged);
     const set: Record<string, unknown> = {};
     // An undefined here is a required column the caller left blank; there is nothing to write for it.
     for (const field of UPDATABLE_FIELDS) {
       if (field in changes && row[field] !== undefined) set[field] = row[field];
     }
-    if ('queryBackend' in changes) set.kind = row.kind;
+    if ('queryBackend' in changes || 'kind' in changes) set.kind = row.kind;
 
     if (Object.keys(set).length > 0) {
       await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
@@ -241,7 +256,7 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
     }
 
     await run(tx.update(rulesTable).set({
-      ...definitionToColumns(definition), version, filter: null,
+      ...definitionToColumns(definition, kindAfterApply(current.kind, definition.queryBackend)), version, filter: null,
     }).where(eq(rulesTable.id, id)));
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     return {
@@ -452,7 +467,7 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     tags: r.tags?.length ? JSON.stringify(r.tags) : null,
     visualQuery: r.visualQuery ? JSON.stringify(r.visualQuery) : null,
     queryBackend,
-    kind: deriveKind(queryBackend),
+    kind: resolveKind(queryBackend, r.kind),
     graphQuery: r.graphQuery ? JSON.stringify(r.graphQuery) : null,
     logsQuery: r.logsQuery ? JSON.stringify(r.logsQuery) : null,
     version: r.version ?? null,

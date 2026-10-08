@@ -1,6 +1,6 @@
 import { BEFORE_VERSIONING } from './before-versioning';
 import {
-  CORE_PACK, emptyToNull, parseMaybeJson,
+  CORE_PACK, emptyToNull, kindOfBackend, parseMaybeJson,
   type RuleDefinition, type ShippedCatalogue, type ShippedRule, type VersionScheme,
 } from './shipped-catalogue';
 
@@ -61,8 +61,9 @@ export type SeedAction =
   | { action: 'record'; ruleId: string; version: string; sortKey: string; releaseNote: string; definition: RuleDefinition; upstreamRef?: string }
   /** Set which version a row says it runs, without touching its definition. */
   | { action: 'set-running'; ruleId: string; version: string }
-  /** Move a disabled rule to a shipped version: writes the definition fields and the version. */
-  | { action: 'apply'; rule: ShippedRule }
+  /** Move a disabled rule to a shipped version: writes the definition fields and the version. `kind`
+   *  is the install's own kind, carried over so the move never turns an Advisory back into a Problem. */
+  | { action: 'apply'; rule: ShippedRule; kind: string }
   | { action: 'retire'; ruleId: string }
   | { action: 'unretire'; ruleId: string };
 
@@ -141,15 +142,19 @@ export function sameDefinition(a: RuleDefinition, b: RuleDefinition): boolean {
   return canonicalDefinition(a) === canonicalDefinition(b);
 }
 
-/** The definition fields of a stored row, in the same shape a shipped definition has. */
+/** The definition fields of a stored row, in the same shape a shipped definition has. `kind` is the
+ *  one field that is not the definition's: whether a rule is a Problem or an Advisory is the
+ *  install's choice (#176), so it is taken from the backend, as it is in a shipped definition, and a
+ *  row an editor marked Advisory still compares equal to the definition it runs. */
 export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
+  const queryBackend = row.queryBackend as RuleDefinition['queryBackend'];
   return {
     name: row.name,
     description: row.description,
     category: row.category,
     severity: row.severity,
-    queryBackend: row.queryBackend as RuleDefinition['queryBackend'],
-    kind: row.kind as RuleDefinition['kind'],
+    queryBackend,
+    kind: kindOfBackend(queryBackend),
     resourceTypes: parseMaybeJson<string[]>(row.resourceTypes, []),
     scope: parseMaybeJson<RuleDefinition['scope']>(row.scope, { level: 'resource' }),
     conditions: parseMaybeJson<RuleDefinition['conditions']>(row.conditions, []),
@@ -163,15 +168,16 @@ export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
 }
 
 /** A definition as the `rules` columns hold it: JSON text for the structured fields. Both seeders
- *  write these, so what a version stores and what a row stores are encoded identically. */
-export function definitionToColumns(def: RuleDefinition) {
+ *  write these, so what a version stores and what a row stores are encoded identically. `kind`
+ *  overrides the definition's, for a write to a row that already has one (see `kindAfterApply`). */
+export function definitionToColumns(def: RuleDefinition, kind: string = def.kind) {
   return {
     name: def.name,
     description: def.description,
     category: def.category,
     severity: def.severity,
     queryBackend: def.queryBackend,
-    kind: def.kind,
+    kind,
     resourceTypes: JSON.stringify(def.resourceTypes),
     scope: JSON.stringify(def.scope),
     conditions: JSON.stringify(def.conditions),
@@ -185,6 +191,13 @@ export function definitionToColumns(def: RuleDefinition) {
 }
 
 // ---- The plan --------------------------------------------------------------------------------
+
+/** The kind a row keeps when a shipped definition is applied over it: Logs is always 'activity',
+ *  an Advisory stays Advisory, anything else is a Problem. Never takes the definition's kind. */
+export function kindAfterApply(currentKind: string, queryBackend: RuleDefinition['queryBackend']): string {
+  if (queryBackend === 'log-analytics') return 'activity';
+  return currentKind === 'advisory' ? 'advisory' : 'state';
+}
 
 /** Remembers a stored definition that differs from what ships, so it is never lost. */
 function recordBeforeVersioning(ruleId: string, definition: RuleDefinition): SeedAction {
@@ -263,12 +276,12 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
         actions.push(...runAsBeforeVersioning(row.id, stored));
       } else {
         // Nothing a disabled rule produces can change, so it moves to what ships; its old definition is kept.
-        actions.push(recordBeforeVersioning(row.id, stored), { action: 'apply', rule });
+        actions.push(recordBeforeVersioning(row.id, stored), { action: 'apply', rule, kind: kindAfterApply(effective.kind, rule.definition.queryBackend) });
       }
     } else if (!row.enabled && compareVersions(rule.versionScheme, rule.version, row.version) > 0) {
       // A disabled rule always moves to the newest shipped version, "Before versioning" included
       // (its key sorts before every other).
-      actions.push({ action: 'apply', rule });
+      actions.push({ action: 'apply', rule, kind: kindAfterApply(effective.kind, rule.definition.queryBackend) });
     }
 
     if (row.retiredAt !== null) actions.push({ action: 'unretire', ruleId: row.id });

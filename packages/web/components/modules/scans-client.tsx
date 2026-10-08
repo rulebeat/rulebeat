@@ -31,6 +31,8 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
 import type { ExplorerData } from '@/lib/explorer-data';
+import { ADVISORY_KINDS, KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
+import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
 import {
   ShieldCheck, Library, Search,
 } from 'lucide-react';
@@ -41,7 +43,7 @@ const STATUS_OPTIONS = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const;
-type TabKey = 'results' | 'history' | 'rules' | 'schedules';
+type TabKey = 'results' | 'advisories' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
  *  columns just as much as one that genuinely never ran — both read back as undefined. */
@@ -100,6 +102,8 @@ export interface ScansClientProps {
   /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
    *  Undefined when the tab isn't active — server only computes this for ?tab=rules. */
   ruleFindingCounts?: Record<string, number>;
+  /** Why the Advisories tab is empty. Undefined when the tab isn't active. */
+  advisoriesEmpty?: AdvisoriesEmptyState;
 }
 
 export function ScansClient({
@@ -121,6 +125,7 @@ export function ScansClient({
   canEditSchedules = false,
   notificationChannels = [],
   ruleFindingCounts = {},
+  advisoriesEmpty,
 }: ScansClientProps) {
   const router = useRouter();
   const canRunScans = can(role, 'scans:run');
@@ -265,6 +270,7 @@ export function ScansClient({
       {/* Sub-tabs */}
       <div className="flex gap-0 border-b border-border overflow-x-auto overflow-y-hidden">
         <TabLink href="/scans?tab=results" active={activeTab === 'results'}>Results</TabLink>
+        <TabLink href="/scans?tab=advisories" active={activeTab === 'advisories'}>Advisories</TabLink>
         <TabLink href="/scans?tab=history" active={activeTab === 'history'}>Run History</TabLink>
         <TabLink href="/scans?tab=rules" active={activeTab === 'rules'}>
           Rules <span className="ml-1 text-xs">({enabledCount}/{policies.length})</span>
@@ -281,6 +287,22 @@ export function ScansClient({
           basePath="/scans"
           extraParams={{ tab: 'results' }}
           mode="page"
+        />
+      )}
+
+      {activeTab === 'advisories' && (
+        <FindingsExplorerClient
+          data={explorerData}
+          suppressions={initialSuppressions}
+          canSuppress={canSuppress}
+          initialFilters={resultsInitialFilters}
+          basePath="/scans"
+          extraParams={{ tab: 'advisories' }}
+          mode="page"
+          kinds={ADVISORY_KINDS}
+          hideRuleView
+          emptyTitle={advisoriesEmpty?.title}
+          emptyHint={advisoriesEmpty?.hint}
         />
       )}
 
@@ -492,6 +514,13 @@ export function ScansClient({
                         <CategoryBadge id={policy.category} categories={categories} />
 
                         <SeverityBadge severity={policy.severity} />
+
+                        <span
+                          className="inline-flex w-fit shrink-0 items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
+                          title={KIND_DESCRIPTION[policy.kind ?? 'state']}
+                        >
+                          {KIND_LABEL[policy.kind ?? 'state']}
+                        </span>
 
                         {findingCount > 0 && (
                           <span className="numeral-grid shrink-0 text-xs text-ink-muted">

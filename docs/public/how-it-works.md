@@ -66,8 +66,13 @@ engine for the same reason as the second one. Authoring is paused: the new-rule 
 option as unavailable ([`permissions.md`](permissions.md#4-optional-log-analytics-reader)).
 
 All three run inside the same `runCategoryScan` and feed the same per-rule accounting, so a scan, a
-run history row, a dashboard and a notification neither know nor care which engine produced a
-finding.
+run history row and a dashboard neither know nor care which engine produced a finding.
+
+Separately from the engine, a rule has a **kind**. An Advisory rule runs exactly like a Problem rule
+and its findings have the same fingerprint, lifecycle and suppressions, but they are listed on the
+Advisories tab and left out of posture, every problem count and notifications
+([`posture.md`](posture.md#advisory-rules-are-not-counted)). The kind is a property of your install,
+not of the shipped definition, so an upgrade or a rule version switch never turns it back.
 
 ## How a row becomes a finding
 

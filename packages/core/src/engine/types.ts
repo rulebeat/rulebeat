@@ -200,10 +200,12 @@ export type RuleType = 'builtin' | 'community' | 'custom';
 // uses and how runCategoryScan() dispatches it — see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
-// Derived from queryBackend, never independently authored — see deriveKind() in
-// packages/web/lib/rules.ts. 'state' rules check a point-in-time condition; 'activity' rules
-// check something that happened over a time window (only log-analytics rules are 'activity').
-export type RuleKind = 'state' | 'activity';
+// Resolved from queryBackend plus the kind an author asked for — see resolveKind() in
+// packages/web/lib/rules.ts. 'state' (a Problem) rules check a point-in-time condition and count
+// toward posture; 'advisory' rules report something to act on that is not a failure, so they
+// never count; 'activity' rules check something that happened over a time window (only
+// log-analytics rules are 'activity').
+export type RuleKind = 'state' | 'activity' | 'advisory';
 
 // ── Microsoft Graph rule queries (spec 032) ───────────────────────────────────
 
@@ -293,7 +295,7 @@ export interface Rule {
   type: RuleType;
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
-  kind?: RuleKind;             // absent = 'state' (the SQL-layer default); always derived, never author-set
+  kind?: RuleKind;             // absent = 'state' (the SQL-layer default); Logs rules are always 'activity', any other backend is 'state' or 'advisory'
   group?: string;          // legacy single group; superseded by tags
   tags?: string[];         // multi-dimensional labels (mcsb:*, svc:*, framework:*, waf:*, custom)
   scope: RuleScope;

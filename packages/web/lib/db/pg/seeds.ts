@@ -104,7 +104,7 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
           await t.update(rules).set({ version: a.version }).where(eq(rules.id, a.ruleId));
           break;
         case 'apply':
-          await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })
+          await t.update(rules).set({ ...definitionToColumns(a.rule.definition, a.kind), version: a.rule.version })
             .where(eq(rules.id, a.rule.id));
           break;
         case 'retire':

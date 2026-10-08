@@ -1,10 +1,11 @@
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { queryActiveFindings } from '@/lib/dashboard-data';
-import { countsInFindingTotals } from '@/lib/finding-kinds';
+import { ADVISORY_KINDS, RESULTS_KINDS, countsAsAffected } from '@/lib/finding-kinds';
 import { getScanById, getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { buildExplorerData } from '@/lib/explorer-data';
+import { advisoriesEmptyState } from '@/lib/advisories-empty-state';
 import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
 import { listSchedules } from '@/lib/db/schedules';
 import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
@@ -16,7 +17,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
 import type { Rule, ScanSummary, Severity, Suppression } from '@/lib/types';
 
-type TabKey = 'results' | 'history' | 'rules' | 'schedules';
+type TabKey = 'results' | 'advisories' | 'history' | 'rules' | 'schedules';
 
 export default async function ScansPage({
   searchParams,
@@ -36,7 +37,7 @@ export default async function ScansPage({
   const user = await getCurrentUser();
   const role = user?.role ?? 'viewer';
 
-  const activeTab: TabKey = (tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
+  const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions() as Suppression[];
   const initialCategoryFilter = parseCategoryParam(sectionParam);
 
@@ -65,7 +66,7 @@ export default async function ScansPage({
   if (activeTab === 'rules') {
     ruleFindingCounts = {};
     for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } })) {
-      if (!countsInFindingTotals(f)) continue;
+      if (!countsAsAffected(f)) continue;
       ruleFindingCounts[f.ruleId] = (ruleFindingCounts[f.ruleId] ?? 0) + 1;
     }
   }
@@ -87,13 +88,15 @@ export default async function ScansPage({
     }
   }
 
-  const explorerData = await buildExplorerData();
+  const explorerData = await buildExplorerData({ kinds: activeTab === 'advisories' ? ADVISORY_KINDS : RESULTS_KINDS });
+  const policies = await loadRules() as unknown as Rule[];
+  const advisoriesEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies) : undefined;
 
   return (
     <>
       <Header title="Scans" description="Every rule across every category. Filter, run, and review results" />
       <ScansClient
-        policies={await loadRules() as unknown as Rule[]}
+        policies={policies}
         categories={categories}
         role={role}
         activeTab={activeTab}
@@ -124,6 +127,7 @@ export default async function ScansPage({
         canEditSchedules={can(role, 'schedules:write')}
           notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
+        advisoriesEmpty={advisoriesEmpty}
       />
     </>
   );

@@ -30,8 +30,10 @@ export interface Finding {
    * are absent and `dimensionKey` carries whatever makes this occurrence distinct instead. Optional
    * rather than required so every existing ARG/Graph call site (which only ever produces 'state'
    * findings) needs no change; absence means 'state', same default the `findings` table column uses.
+   * 'advisory' is shaped like 'state' (it has a resource) but comes from a rule an editor marked
+   * Advisory; the scan stamps it from the rule's kind, so no engine ever sets it.
    */
-  kind?: 'state' | 'activity';
+  kind?: 'state' | 'activity' | 'advisory';
   /** Human-readable identity of an 'activity' occurrence's pattern (e.g. "principal foo@bar.com") —
    *  what `computeActivityFingerprint()` hashed. Absent for 'state' findings. */
   dimensionKey?: string;
