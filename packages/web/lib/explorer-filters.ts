@@ -7,6 +7,29 @@ import { countsInFindingTotals, isOfKind } from './finding-kinds';
 export type ExplorerStatusFilter = 'open' | 'new' | 'fixed' | 'all';
 export type ExplorerFilterDim = 'severity' | 'status' | 'subscription' | 'resourceGroup' | 'location' | 'tags';
 
+/** What the filters read off a finding. An explorer finding has all of it; a finding read straight
+ *  from the findings table (the dashboard widget) has no rule name or rule tags, which only the
+ *  search box and the tags filter look at. */
+export interface FilterableFinding {
+  fingerprint: string;
+  category: string;
+  severity: Severity;
+  status: 'active' | 'fixed';
+  ruleId: string;
+  kind?: RuleKind;
+  subscriptionId: string;
+  resourceGroup?: string;
+  location?: string;
+  resourceType?: string;
+  resourceName?: string;
+  resourceId?: string;
+  title: string;
+  firstSeenAt: string;
+  resolvedAt?: string;
+  policyName?: string;
+  ruleTags?: string[];
+}
+
 /** Every dimension findings-explorer-client.tsx's `passesGlobalFilters` checks, pulled into a
  *  plain function (no React state closure) so it can be unit-tested directly and compared against
  *  the dashboard's own filtering (`queryActiveFindings` in dashboard-data.ts) instead of a
@@ -129,17 +152,17 @@ export function countFindingsByRule(
 /** The findings a filter dropdown (subscription, resource group, location, tags) counts its
  *  options from: every filter applied except that dropdown's own, so its counts match the table
  *  and picking one value never hides the others. */
-export function facetPool(
-  findings: ExplorerFinding[],
+export function facetPool<T extends FilterableFinding>(
+  findings: T[],
   state: ExplorerFilterState,
   dim: Exclude<ExplorerFilterDim, 'severity' | 'status'>,
-): ExplorerFinding[] {
+): T[] {
   const exclude = new Set<ExplorerFilterDim>([dim]);
   return findings.filter(f => matchesExplorerFilters(f, state, exclude));
 }
 
 export function matchesExplorerFilters(
-  f: ExplorerFinding,
+  f: FilterableFinding,
   state: ExplorerFilterState,
   exclude?: Set<ExplorerFilterDim>,
 ): boolean {
@@ -158,12 +181,12 @@ export function matchesExplorerFilters(
   if (!exclude?.has('subscription') && state.subscriptions.size > 0 && !state.subscriptions.has(f.subscriptionId)) return false;
   if (!exclude?.has('resourceGroup') && state.resourceGroups.size > 0 && !state.resourceGroups.has(f.resourceGroup ?? '')) return false;
   if (!exclude?.has('location') && state.locations.size > 0 && !state.locations.has(f.location ?? '')) return false;
-  if (!exclude?.has('tags') && state.tags.size > 0 && !f.ruleTags.some(t => state.tags.has(t))) return false;
+  if (!exclude?.has('tags') && state.tags.size > 0 && !(f.ruleTags ?? []).some(t => state.tags.has(t))) return false;
   if (state.search) {
     const q = state.search.toLowerCase();
     if (
       !(f.resourceName ?? '').toLowerCase().includes(q) &&
-      !f.policyName.toLowerCase().includes(q) &&
+      !(f.policyName ?? f.title).toLowerCase().includes(q) &&
       !(f.resourceType ?? '').toLowerCase().includes(q) &&
       !(f.resourceId ?? '').toLowerCase().includes(q)
     ) return false;

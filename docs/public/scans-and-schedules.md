@@ -41,6 +41,24 @@ scheduler tick, with the findings it had already recorded kept and its notificat
 due, sent then. A run interrupted that way is not re-run at boot; the schedule waits for its next
 occurrence.
 
+## Filter, columns and sort on the Results and Advisories tabs
+
+Both tabs filter, sort and page the same way. Besides the built-in filters, in the By resource view
+the Columns menu lists every field the rules' queries returned. Pick a field to show it as a column,
+then use its header to sort or to filter by its values. The Add filter button in the toolbar
+filters by any built-in field or any returned field: pick the field, then tick values among those
+the current findings hold. Every active filter, from the toolbar, a column header or Add filter,
+shows as a chip, and the chip's cross removes that value. A filter is a set of accepted values; a
+finding with several returned rows is kept when at least one row passes every returned-field filter,
+and only those rows are shown and exported. Empty values sort last in both directions, and numbers
+sort as numbers. The whole view is in the address, so a link reproduces it: `cols` for the columns,
+`sort` as `field:asc` or `field:desc` (a returned field is written `row.<name>`), `rf` for a
+returned-field filter (`rf=feature=Retiring|Preview` keeps rows whose value is one of those), `f`
+for the other built-in fields (`f=resourceName=vm1`, `f=firstSeen=2026-10-01`), and `page`. In a
+value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backslash; anything else,
+including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
+and a filter that keeps nothing.
+
 ## Disable, clear findings, or suppress
 
 Three controls make findings go away, and they mean different things.

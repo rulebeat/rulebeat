@@ -27,7 +27,7 @@ export interface ChecklistOption {
 /** At module scope on purpose. Declared inside a parent's render it would be a
  *  new component type on every keystroke, React would remount it, and the search
  *  box would lose focus after the first character. */
-function ChecklistPanel({
+export function ChecklistPanel({
   label,
   options,
   selected,

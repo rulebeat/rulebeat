@@ -31,6 +31,7 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
 import type { ExplorerData } from '@/lib/explorer-data';
+import type { View } from '@/lib/finding-view';
 import { ADVISORY_KINDS, KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
 import {
@@ -79,14 +80,11 @@ export interface ScansClientProps {
   explorerData: ExplorerData;
   initialSuppressions?: ScanHistoryTabProps['initialSuppressions'];
   initialCategoryFilter?: string[];
-  /** Deep-link filters for the Results tab (e.g. from an old `?category=` link, a
-   *  "View in Findings" link carrying a ruleId, or a dashboard widget click-through carrying
-   *  any combination of these). Forwarded as-is into FindingsExplorerClient's `initialFilters`. */
-  resultsInitialFilters?: {
-    categories?: string[]; status?: string; ruleId?: string;
-    severities?: Severity[]; subscriptions?: string[]; resourceGroups?: string[]; locations?: string[];
-    tags?: string[]; windowDays?: number; from?: string; to?: string; search?: string;
-  };
+  /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
+   *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
+   *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
+   *  FindingsExplorerClient's `initialView`. */
+  initialView?: View;
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];
   snapshotScan?: ScanHistoryTabProps['snapshotScan'];
@@ -114,7 +112,7 @@ export function ScansClient({
   explorerData,
   initialSuppressions,
   initialCategoryFilter,
-  resultsInitialFilters,
+  initialView,
   runs,
   runDetail,
   snapshotScan,
@@ -283,7 +281,7 @@ export function ScansClient({
           data={explorerData}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
-          initialFilters={resultsInitialFilters}
+          initialView={initialView}
           basePath="/scans"
           extraParams={{ tab: 'results' }}
           mode="page"
@@ -295,7 +293,7 @@ export function ScansClient({
           data={explorerData}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
-          initialFilters={resultsInitialFilters}
+          initialView={initialView}
           basePath="/scans"
           extraParams={{ tab: 'advisories' }}
           mode="page"
