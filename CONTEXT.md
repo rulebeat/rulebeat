@@ -65,6 +65,19 @@ _Avoid_: obsolete, deprecated, removed
 
 ## Findings
 
+**Finding**:
+One rule's result about one resource (for an Activity rule, about one value of its dimension),
+tracked from the scan that first returns it until it is
+Fixed. It holds every Row the rule's query returned for that resource, so nothing the query
+returned is lost. Its age, status, suppression and notifications belong to the finding, not to
+its rows, and the same resource found by another rule is a separate finding. A finding that gains
+a Row counts as changed. Every rule kind and every query backend follows this.
+_Avoid_: issue, violation, alert
+
+**Row**:
+One line a rule's query returned. A finding has one or more; views group, filter and count rows.
+_Avoid_: result (ambiguous), record, evidence
+
 **Rule kind**:
 What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
 from severity, category and query backend. A Logs rule is always an Activity rule; any other rule
@@ -83,17 +96,19 @@ or toward any problem count.
 _Avoid_: info rule, informational rule, recommendation rule
 
 **Advisory**:
-A finding produced by an Advisory rule. One Advisory per affected resource, grouped by the
-recommendation it came from. It goes through Open, New and Fixed like any finding, keeps a
-severity, and is listed on its own Advisories tab.
+A finding produced by an Advisory rule. It goes through Open, New and Fixed like any finding and
+keeps a severity. It differs from a problem only in what it counts toward, never in how it is
+stored, shown or grouped.
 _Avoid_: notice, recommendation (that is what Azure Advisor calls its own rows), info finding
 
-**Deadline**:
-The date by which an Advisory needs action, read from a column the rule names, such as a
-retirement date. An Advisory may have none.
-_Avoid_: due date, retirement date (that is one source of a Deadline)
+## Views
 
-**Overdue**:
-An open Advisory whose Deadline has passed. It is shown in red and sorted first, and it stays an
-Advisory; it never turns into a problem on its own.
-_Avoid_: expired, breached
+**View**:
+A way of looking at findings: which ones (filters) and how they are arranged (grouping, sort).
+A view works on any finding from any rule, on its built-in fields and on any column its rule's
+query returned. A rule never says how its findings are viewed.
+_Avoid_: report, perspective, group column
+
+**Saved view**:
+A view kept under a name. Every saved view is shared with everyone on the install.
+_Avoid_: favourite, bookmark, preset

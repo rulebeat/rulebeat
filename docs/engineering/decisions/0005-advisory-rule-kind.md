@@ -1,6 +1,7 @@
 # ADR 0005: Advisory is a rule kind, and advisories never count toward posture
 
-Status: accepted, 2026-10-07.
+Status: accepted, 2026-10-07. Partly superseded by ADR 0006: the key, lifecycle and posture parts
+stand; the Deadline, Overdue and grouping parts do not.
 
 ## Decision
 
