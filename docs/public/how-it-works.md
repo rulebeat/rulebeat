@@ -75,6 +75,14 @@ Advisories tab and left out of posture and every problem count
 channel turns on Include advisories ([`notifications.md`](notifications.md)). The kind is a property of your install,
 not of the shipped definition, so an upgrade or a rule version switch never turns it back.
 
+A Resource Graph Advisory rule can also name a **Deadline column**, one of the columns its query
+returns. Each row's value there is read as an ISO 8601 date or a Unix timestamp (below 1e11 it is
+seconds, from there up it is milliseconds) and stored on the finding as its Deadline. A value that
+cannot be read as a date leaves that finding without a Deadline and the rule still succeeds. An open
+Advisory whose Deadline is before now is **Overdue**: the Advisories tab computes that when it is
+read, lists those first, and does not store it or count it anywhere. Like the kind, the Deadline column
+belongs to your install and survives an upgrade or a rule version switch.
+
 ## How a row becomes a finding
 
 Each row gets a **fingerprint**, `sha256(ruleId::resourceId)` (resource id lowercased) truncated to 16

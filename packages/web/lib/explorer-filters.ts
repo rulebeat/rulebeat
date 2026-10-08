@@ -65,6 +65,22 @@ export function parseExplorerStatus(value: string | undefined): ExplorerStatusFi
  *  severity of a real finding, so it gets a tile and a filter button like the rest. */
 export const EXPLORER_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
+/** The Advisories tab's order: Overdue first, then the earliest Deadline, a finding with no Deadline
+ *  after every one that has one, and severity (most severe first) to break the remaining ties. */
+export function compareAdvisories(
+  a: { overdue?: boolean; deadline?: string; severity: Severity },
+  b: { overdue?: boolean; deadline?: string; severity: Severity },
+): number {
+  if (!!a.overdue !== !!b.overdue) return a.overdue ? -1 : 1;
+  if (a.deadline !== b.deadline) {
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    const byDate = Date.parse(a.deadline) - Date.parse(b.deadline);
+    if (byDate !== 0) return byDate;
+  }
+  return EXPLORER_SEVERITIES.indexOf(a.severity) - EXPLORER_SEVERITIES.indexOf(b.severity);
+}
+
 export interface ExplorerStats {
   /** Open right now. Always the sum of `counts`. */
   total: number;

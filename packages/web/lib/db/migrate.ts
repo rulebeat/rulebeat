@@ -791,6 +791,10 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN retired_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_rule_id TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_version TEXT`); } catch { /* already exists */ }
+  // #177: an Advisory rule's Deadline column, and the Deadline each finding carries. Plain nullable
+  // columns, so every existing rule names no Deadline column and every finding has no Deadline.
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN deadline_field TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN deadline TEXT`); } catch { /* already exists */ }
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS rule_versions (
       rule_id TEXT NOT NULL,

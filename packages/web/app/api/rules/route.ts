@@ -5,6 +5,7 @@ import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNa
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
+import { checkDeadlineFieldRequest } from '@/lib/deadline-field-validation';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
@@ -111,13 +112,21 @@ export async function POST(req: Request) {
   const { copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov, ...fields } = body;
   const source = typeof copyFrom === 'string' && copyFrom !== '' ? await loadRule(copyFrom) : null;
 
+  const kind = resolveKind(queryBackend, body.kind);
+  const deadline = await checkDeadlineFieldRequest({
+    requested: body.deadlineField, stored: undefined, kind,
+    rule: { queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
+  });
+  if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
+
   const rule: Rule = {
     ...fields,
     id: globalThis.crypto.randomUUID(),
     type: 'custom',
     pack: undefined,
     queryBackend,
-    kind: resolveKind(queryBackend, body.kind),
+    kind,
+    deadlineField: deadline.field,
     ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);

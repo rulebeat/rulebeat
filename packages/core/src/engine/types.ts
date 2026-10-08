@@ -296,6 +296,10 @@ export interface Rule {
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
   kind?: RuleKind;             // absent = 'state' (the SQL-layer default); Logs rules are always 'activity', any other backend is 'state' or 'advisory'
+  /** Advisory rules on Resource Graph only: the projected column whose value is each result's
+   *  Deadline. Rule details, not part of the query or the shipped definition: it is kept across a
+   *  kind switch and a version switch, and a Problem rule ignores it. */
+  deadlineField?: string;
   group?: string;          // legacy single group; superseded by tags
   tags?: string[];         // multi-dimensional labels (mcsb:*, svc:*, framework:*, waf:*, custom)
   scope: RuleScope;

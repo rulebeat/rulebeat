@@ -16,6 +16,7 @@ export type {
 
 export { createFinding, computeFingerprint, createActivityFinding, computeActivityFingerprint } from './finding.js';
 export { extractAzureErrorMessage } from './errors.js';
+export { parseDeadline, EPOCH_MILLISECONDS_CUTOFF } from './deadline.js';
 export { buildTenantContext, listAccessibleSubscriptions, GraphTruncatedError, GRAPH_MAX_ROWS } from './auth/index.js';
 export {
   fetchWithRetry,

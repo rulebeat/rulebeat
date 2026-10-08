@@ -19,6 +19,7 @@ export interface CreateFindingInput {
   remediationSteps?: RemediationStep[];
   estimatedMonthlyCost?: number;
   azurePortalLink?: string;
+  deadline?: string;
 }
 
 /** Azure resource ids are case-insensitive, and Resource Graph does not always return the same

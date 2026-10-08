@@ -1,7 +1,8 @@
 import { listFindings, type FindingRecord } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
-import { RESULTS_KINDS } from './finding-kinds';
+import { RESULTS_KINDS, isOverdue, listsOnlyAdvisories } from './finding-kinds';
+import { compareAdvisories } from './explorer-filters';
 import type { RuleKind } from './types';
 
 // ---- Types ----
@@ -15,6 +16,9 @@ export interface ExplorerFinding extends FindingRecord {
   policyName: string;
   ruleDisabled: boolean;
   ruleTags: string[];
+  /** An open Advisory past its Deadline, as of the `now` the listing was built with. Display and
+   *  ordering only; no count reads it. */
+  overdue?: boolean;
 }
 
 export interface ExplorerData {
@@ -29,7 +33,10 @@ export interface ExplorerData {
 /** `kinds` picks which findings the listing holds: the Results tab asks for Problems and Activity
  *  (the default), the Advisories tab for Advisory. It is a kind filter on the one findings table,
  *  not a second read model, so the next tab that needs a kind only passes its own. */
-export async function buildExplorerData(opts: { kinds?: readonly RuleKind[] } = {}): Promise<ExplorerData> {
+export async function buildExplorerData(
+  opts: { kinds?: readonly RuleKind[]; now?: Date } = {},
+): Promise<ExplorerData> {
+  const now = opts.now ?? new Date();
   const rules = await loadRules();
   const policyMap = new Map(rules.map(r => [r.id, r]));
   const categories = await listCategories();
@@ -43,8 +50,13 @@ export async function buildExplorerData(opts: { kinds?: readonly RuleKind[] } = 
       policyName: rule?.name ?? f.title,
       ruleDisabled: rule ? !rule.enabled : false,
       ruleTags: rule?.tags ?? [],
+      overdue: isOverdue(f, now),
     };
   });
+
+  // The Advisories listing arrives in its own order, so a viewer who has not picked a sort sees
+  // Overdue first. The stable sort leaves every other listing exactly as listFindings returned it.
+  if (listsOnlyAdvisories(opts.kinds)) findings.sort(compareAdvisories);
 
   const policyOptions = [
     ...new Map(

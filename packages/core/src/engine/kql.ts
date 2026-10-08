@@ -534,6 +534,27 @@ export function buildQueryFromVisual(
   return lines.join('\n');
 }
 
+/**
+ * The column names a query's final `| project` returns, or null when none can be read (no trailing
+ * project, or an empty one). `alias = expr` yields the alias, a bare name yields itself, and a bare
+ * dotted path yields the underscore-joined name Kusto gives it (`properties.x` is `properties_x`);
+ * an unaliased expression has no name that can be known here and is left out. Anything the parser
+ * could not split cleanly is read leniently, so this can name a column the query does not return
+ * but never misses one that it does.
+ */
+export function projectedColumnNames(kql: string): string[] | null {
+  const items = parseKqlToVisualQuery(kql).projectColumns;
+  if (items.length === 0) return null;
+  const names: string[] = [];
+  for (const item of items) {
+    const alias = item.match(/^([A-Za-z_]\w*)\s*=(?!=)/);
+    if (alias) { names.push(alias[1] as string); continue; }
+    if (/^[A-Za-z_]\w*$/.test(item)) { names.push(item); continue; }
+    if (/^[A-Za-z_]\w*(\.\w+)+$/.test(item)) names.push(item.replace(/\./g, '_'));
+  }
+  return names;
+}
+
 // ── Visual Query Builder — KQL parser ────────────────────────────────────────
 
 export interface ParsedVisualResult {

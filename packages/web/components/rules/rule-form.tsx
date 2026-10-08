@@ -21,7 +21,7 @@ import type { LockedTag } from './tag-picker';
 import { PACK_LABELS } from '@/lib/pack-labels';
 import { classifySchemaStatus } from '@/lib/schema-fetch-status';
 import { splitLearnMore } from '@/lib/rule-description';
-import { buildQueryFromVisual, parseKqlToVisualQuery, hasCompilableFilter, DEFAULT_PROJECT_COLUMNS } from '@/lib/kql';
+import { buildQueryFromVisual, parseKqlToVisualQuery, projectedColumnNames, hasCompilableFilter, DEFAULT_PROJECT_COLUMNS } from '@/lib/kql';
 import type { VisualQuery, VisualFilterCondition, VisualFilterOperator, FilterStage } from '@/lib/kql';
 import { isVisualQueryStale } from '@/lib/rule-visual-query-drift';
 import { VisualQueryBuilder, defaultVisualQuery } from './visual-query-builder';
@@ -86,6 +86,8 @@ const KIND_OPTIONS: readonly SelectOption[] = [
   { value: 'state', label: KIND_LABEL.state },
   { value: 'advisory', label: KIND_LABEL.advisory },
 ];
+// The Deadline column Select has no empty value, so "none" is a sentinel the form maps to ''.
+const NO_DEADLINE = '__none__';
 // Convert legacy conditionGroups / conditions to VisualQuery for backward compat.
 function condOpToVisual(op: ConditionOperator): VisualFilterOperator {
   return op === 'matches' ? 'matchesRegex' : op as VisualFilterOperator;
@@ -255,6 +257,9 @@ export function RuleForm({
   // Problem or Advisory. A Logs rule is always Activity and is not offered the choice; the server
   // resolves the stored kind from the backend regardless of what is sent.
   const [kind, setKind]               = useState<'state' | 'advisory'>(initial?.kind === 'advisory' ? 'advisory' : 'state');
+  // The column an Advisory's Deadline is read from. Held in the form whatever the kind, so a switch
+  // to Problem and back keeps it, and sent on every save of a Resource Graph rule ('' clears it).
+  const [deadlineField, setDeadlineField] = useState(initial?.deadlineField ?? '');
   const [tags, setTags]               = useState<string[]>(initial?.tags ?? []);
   const [scopeLevel, setScopeLevel]   = useState<RuleScope['level']>(initial?.scope.level ?? initialParsed?.scope.level ?? 'resource');
   const [scopeSubscriptions, setScopeSubscriptions]     = useState<string[]>(initial?.scope.subscriptions ?? []);
@@ -467,14 +472,22 @@ export function RuleForm({
   // undoing it would otherwise leave visualQuery permanently different by id alone, even though
   // the query itself is byte-for-byte back to what it was.
   const currentSnapshot = useMemo(() => JSON.stringify({
-    name, description, category, severity, enabled, tags, kind,
+    name, description, category, severity, enabled, tags, kind, deadlineField,
     scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns,
     kql: kqlFromGui,
     graphQuery,
     logsQuery,
-  }), [name, description, category, severity, enabled, tags, kind, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
+  }), [name, description, category, severity, enabled, tags, kind, deadlineField, scopeLevel, scopeSubscriptions, scopeManagementGroups, resourceTypes, projectColumns, kqlFromGui, graphQuery, logsQuery]);
   const [baselineSnapshot, setBaselineSnapshot] = useState(currentSnapshot);
   const dirty = currentSnapshot !== baselineSnapshot;
+
+  // What the picker offers: the columns the query returns now, plus the stored one if the query no
+  // longer returns it, so the form shows what is saved and the save is refused with a reason.
+  const deadlineOptions = useMemo<readonly SelectOption[]>(() => {
+    const columns = projectedColumnNames(kqlText) ?? projectColumns;
+    const names = deadlineField && !columns.includes(deadlineField) ? [...columns, deadlineField] : columns;
+    return [{ value: NO_DEADLINE, label: 'None' }, ...names.map(c => ({ value: c, label: c }))];
+  }, [kqlText, projectColumns, deadlineField]);
 
   async function save() {
     if (!name.trim()) return alert('Name is required');
@@ -518,6 +531,7 @@ export function RuleForm({
     const payload = {
       name: name.trim(), description: description.trim(), category, severity, enabled, tags,
       ...(isLogAnalyticsBackend ? {} : { kind }),
+      ...(usesDedicatedEditor ? {} : { deadlineField: deadlineField || null }),
       queryBackend,
       scope: scopeObj,
       resourceTypes: resTypes,
@@ -726,6 +740,21 @@ export function RuleForm({
                   </>
                 )}
               </div>
+              {kind === 'advisory' && !usesDedicatedEditor && (
+                <div>
+                  <Label className="mb-1">Deadline column</Label>
+                  <Select
+                    value={deadlineField || NO_DEADLINE}
+                    onValueChange={v => setDeadlineField(v === NO_DEADLINE ? '' : v)}
+                    disabled={operationalReadOnly}
+                    options={deadlineOptions}
+                    aria-label="Deadline column"
+                  />
+                  <p className="mt-1 text-xs text-ink-2">
+                    The column holding the date each result is due, as an ISO date or an epoch. A result past its date is marked Overdue. Pick a column the query returns.
+                  </p>
+                </div>
+              )}
               <div>
                 <Label className="mb-1">Tags</Label>
                 <TagPicker tags={tags} allTags={allTags} onChange={setTags} disabled={operationalReadOnly} lockedTags={lockedTags} />

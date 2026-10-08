@@ -5,6 +5,7 @@ export {
   buildQueryFromVisual,
   conditionToKql,
   parseKqlToVisualQuery,
+  projectedColumnNames,
   hasCompilableFilter,
   DEFAULT_PROJECT_COLUMNS,
 } from './engine/kql.js';

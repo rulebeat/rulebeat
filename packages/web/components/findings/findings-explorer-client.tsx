@@ -30,13 +30,14 @@ import type { RuleKind, Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import {
   getRecencyStatus, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
-  summarizeFindings, EXPLORER_SEVERITIES,
+  summarizeFindings, compareAdvisories, EXPLORER_SEVERITIES,
   type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
 } from '@/lib/explorer-filters';
+import { listsOnlyAdvisories } from '@/lib/finding-kinds';
 
 // ---- Types ----
 
-type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
+type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'deadline' | 'firstSeen';
 type SortDir = 'asc' | 'desc';
 type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
@@ -120,6 +121,12 @@ function shortDate(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+// A Deadline is a calendar date, often stored at midnight UTC, so it is shown in UTC and with its
+// year: in a local zone behind UTC the same value would read as the day before.
+function deadlineDate(iso?: string) {
+  if (!iso) return 'None';
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
 
 // New and Fixed carry the window in their label, like the header tiles they match.
 function statusFilterOptions(windowLabel: string) {
@@ -141,9 +148,11 @@ const VIEW_TAB_CLS = 'flex h-full items-center gap-1.5 px-3 text-xs font-medium 
 const VIEW_TAB_OFF = 'bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink';
 
 const COL_LABEL: Record<SortCol, string> = {
-  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', firstSeen: 'First seen',
+  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', deadline: 'Deadline', firstSeen: 'First seen',
 };
-const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
+const BASE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
+// Deadline sits beside Severity, and only exists on a listing of Advisories.
+const ADVISORY_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'deadline', 'firstSeen'];
 
 // Builds a sorted { value, label, count } list for a subscription/RG/location filter dropdown,
 // counted from that dropdown's facetPool (every other filter applied, its own left out).
@@ -172,6 +181,7 @@ function getColValue(f: ExplorerFinding, col: SortCol): string {
     case 'rule':      return f.policyName;
     case 'category':  return f.category;
     case 'severity':  return f.severity;
+    case 'deadline':  return f.deadline ?? '';
     case 'firstSeen': return f.firstSeenAt;
   }
 }
@@ -180,6 +190,7 @@ function getColValue(f: ExplorerFinding, col: SortCol): string {
 // firstSeen, which would otherwise produce one option per exact timestamp (effectively unique
 // per finding) instead of one per day.
 function getColFilterKey(f: ExplorerFinding, col: SortCol): string {
+  if (col === 'deadline') return deadlineDate(f.deadline);
   return col === 'firstSeen' ? shortDate(f.firstSeenAt) : getColValue(f, col);
 }
 
@@ -336,8 +347,11 @@ export function FindingsExplorerClient({
   const windowLabel = dateWindowLabel(dateWindow);
   const statusOptions = useMemo(() => statusFilterOptions(windowLabel), [windowLabel]);
 
-  // Sort / pagination / expand
-  const [sortCol, setSortCol] = useState<SortCol>('severity');
+  // Sort / pagination / expand. An Advisories listing opens in its own order (Overdue first, then
+  // the earliest Deadline); every other listing opens by severity as before.
+  const showDeadline = listsOnlyAdvisories(kinds);
+  const columns = showDeadline ? ADVISORY_COLS : BASE_COLS;
+  const [sortCol, setSortCol] = useState<SortCol>(showDeadline ? 'deadline' : 'severity');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -358,7 +372,7 @@ export function FindingsExplorerClient({
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<SortCol>(
     // Each header holds a label, a sort arrow, a filter funnel and a resize handle, so a column
     // sized to its widest *value* truncates its own name. These are sized to the header.
-    { resource: 260, rule: 200, category: 110, severity: 120, firstSeen: 134 },
+    { resource: 260, rule: 200, category: 110, severity: 120, deadline: 150, firstSeen: 134 },
     { flexCol: 'resource' },
   );
 
@@ -455,7 +469,7 @@ export function FindingsExplorerClient({
   // own selection, so picking a value never makes the other options in the same dropdown vanish.
   const colOptions = useMemo(() => {
     const result = {} as Record<SortCol, { value: string; label: string; count: number }[]>;
-    for (const col of RESIZABLE_COLS) {
+    for (const col of columns) {
       const pool = data.findings.filter(f => passesGlobalFilters(f) && passesColFilters(f, col));
       const counts = new Map<string, number>();
       for (const f of pool) {
@@ -471,7 +485,7 @@ export function FindingsExplorerClient({
         .sort((a, b) => col === 'firstSeen' ? b.value.localeCompare(a.value) : a.label.localeCompare(b.label));
     }
     return result;
-  }, [data.findings, data.categories, passesGlobalFilters, passesColFilters]);
+  }, [data.findings, data.categories, passesGlobalFilters, passesColFilters, columns]);
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
     let cmp = 0;
@@ -480,6 +494,7 @@ export function FindingsExplorerClient({
       case 'rule':      cmp = a.policyName.localeCompare(b.policyName); break;
       case 'category':  cmp = a.category.localeCompare(b.category); break;
       case 'severity':  cmp = SEV_ORDER[a.severity] - SEV_ORDER[b.severity]; break;
+      case 'deadline':  cmp = compareAdvisories(a, b); break;
       case 'firstSeen': cmp = a.firstSeenAt.localeCompare(b.firstSeenAt); break;
     }
     return sortDir === 'asc' ? cmp : -cmp;
@@ -623,7 +638,7 @@ export function FindingsExplorerClient({
 
   const resourceFlexible = isFlexible('resource');
   const resourceTrack = resourceFlexible ? `minmax(${colWidths.resource}px, 1fr)` : `${colWidths.resource}px`;
-  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px 28px`;
+  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${showDeadline ? `${colWidths.deadline}px ` : ''}${colWidths.firstSeen}px 28px`;
   // While the Resource column is still flexing to fill the card (default state), the grid should
   // size to 100% of its container so 1fr has room to expand into — forcing max-content here would
   // shrink it back to content width, leaving the table looking squeezed to the left. Once the user
@@ -983,7 +998,7 @@ export function FindingsExplorerClient({
           <div className="scroll-x">
           <div className="grid gap-x-4 border-b border-rule-anchor px-5 py-2" style={{ gridTemplateColumns: gridTemplate, minWidth: rowMinWidth }}>
             <span />
-            {(['resource', 'rule', 'category', 'severity', 'firstSeen'] as SortCol[]).map(col => (
+            {columns.map(col => (
               <div key={col} className="relative flex items-center gap-1 min-w-0 pr-2">
                 <button
                   type="button"
@@ -1043,6 +1058,12 @@ export function FindingsExplorerClient({
 
                       <CategoryBadge id={f.category} categories={data.categories} />
                       <SeverityBadge severity={f.severity} />
+                      {showDeadline && (
+                        <span className={cn('text-xs tabular-nums', f.overdue ? 'font-medium text-destructive' : 'text-ink-2')}>
+                          {deadlineDate(f.deadline)}
+                          {f.overdue && ' · Overdue'}
+                        </span>
+                      )}
                       <span className="text-xs tabular-nums text-ink-muted">{shortDate(f.firstSeenAt)}</span>
 
                       <span className="shrink-0 text-ink-faint transition-colors group-hover:text-ink-muted">

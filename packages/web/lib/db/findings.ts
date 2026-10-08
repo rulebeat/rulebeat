@@ -77,6 +77,7 @@ function rowToRecord(row: Row): FindingRecord {
     category: row.category,
     kind: row.kind as RuleKind,
     dimensionKey: row.dimensionKey ?? undefined,
+    deadline: row.deadline ?? undefined,
     resourceId: row.resourceId ?? undefined,
     resourceType: row.resourceType ?? undefined,
     resourceName: row.resourceName ?? undefined,
@@ -186,6 +187,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         // existing findings (same fingerprint, same age, same suppressions) via the update set.
         kind: f.kind ?? 'state',
         dimensionKey: f.dimensionKey ?? null,
+        deadline: f.deadline ?? null,
         resourceId: f.resourceId ?? null,
         resourceType: f.resourceType ?? null,
         resourceName: f.resourceName ?? null,
@@ -214,6 +216,8 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           resourceType: f.resourceType ?? null,
           resourceName: f.resourceName ?? null,
           subscriptionId: f.subscriptionId,
+          // Re-read from the rule's column on every sighting, so a changed or cleared date follows.
+          deadline: f.deadline ?? null,
           resourceGroup: f.resourceGroup ?? null,
           location: f.location ?? null,
           title: f.title,

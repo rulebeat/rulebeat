@@ -6,6 +6,7 @@ import { writeAudit } from '@/lib/db/audit';
 import { changedFields } from '@/lib/changed-fields';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
+import { checkDeadlineFieldRequest } from '@/lib/deadline-field-validation';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { sameValue } from '@/lib/rule-versions';
@@ -72,6 +73,17 @@ export async function PUT(
 
     if (body.graphQuery && !sameValue(body.graphQuery, existing.graphQuery)) {
       return NextResponse.json({ error: BUILTIN_QUERY_LOCKED_ERROR }, { status: 400 });
+    }
+
+    // The Deadline column is the install's choice like the kind: the query is locked, the column
+    // read from it is not. It is checked against the stored query, and only when the body names it.
+    if ('deadlineField' in body) {
+      const deadline = await checkDeadlineFieldRequest({
+        requested: body.deadlineField, stored: existing.deadlineField,
+        kind: changes.kind ?? existing.kind, rule: existing,
+      });
+      if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
+      changes.deadlineField = deadline.field;
     }
 
     const result = await updateRule(id, changes);
@@ -185,6 +197,17 @@ export async function PUT(
   const kindChange = requestedKindChange(existing, body.kind);
   if (kindChange instanceof NextResponse) return kindChange;
   if (kindChange) changes.kind = kindChange;
+  // Written only when the body names it (null or blank clears it), so a request that predates the
+  // field, or a kind-only change, leaves the stored column alone. An Advisory's stored column is
+  // still checked against the query being saved, so an edit cannot quietly drop the column it reads.
+  const namesDeadline = 'deadlineField' in body;
+  const deadline = await checkDeadlineFieldRequest({
+    requested: namesDeadline ? body.deadlineField : existing.deadlineField, stored: existing.deadlineField,
+    kind: changes.kind ?? existing.kind,
+    rule: { queryBackend: existing.queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
+  });
+  if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
+  if (namesDeadline) changes.deadlineField = deadline.field;
   const result = await updateRule(id, changes);
   if (!result.ok) return updateFailureResponse(result, body.name);
   const updated = result.rule;
