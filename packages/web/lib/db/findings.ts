@@ -9,9 +9,13 @@ import { upsertDailySnapshot } from './snapshots';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
+import { findingRows, mergeFindingsByFingerprint } from '../finding-rows';
 import type { Finding, RuleKind, Severity } from '../types';
 
 export interface FindingRecord extends Finding {
+  /** Every row the rule's query returned for this resource, in query order. Always present on a
+   *  stored finding; one made from its evidence when it was stored before rows existed. */
+  rows: Record<string, unknown>[];
   status: 'active' | 'fixed';
   firstSeenAt: string;
   lastSeenAt: string;
@@ -56,19 +60,20 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-/** Collapses a scan's findings to one row per fingerprint before anything counts, saves, or
- *  classifies them — a rule whose ARG query returns the same resource twice in one page (e.g. a
- *  fan-out join) must still count as one sighting, not two. Last occurrence wins: there's no
- *  ordering signal in ARG's response that would justify preferring the first. */
-export function dedupeFindingsByFingerprint(findings: Finding[]): Finding[] {
-  const byFingerprint = new Map<string, Finding>();
-  for (const f of findings) byFingerprint.set(f.fingerprint, f);
-  return Array.from(byFingerprint.values());
-}
-
 type Row = typeof findingsTable.$inferSelect;
 
+function parseStoredRows(value: string | null): Record<string, unknown>[] | null {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as Record<string, unknown>[] : null;
+  } catch {
+    return null;
+  }
+}
+
 function rowToRecord(row: Row): FindingRecord {
+  const evidence = JSON.parse(row.evidence) as Record<string, unknown>;
   return {
     module: row.category,
     ruleId: row.ruleId,
@@ -85,7 +90,8 @@ function rowToRecord(row: Row): FindingRecord {
     location: row.location ?? undefined,
     title: row.title,
     description: row.description,
-    evidence: JSON.parse(row.evidence) as Record<string, unknown>,
+    evidence,
+    rows: findingRows({ evidence, rows: parseStoredRows(row.evidenceRows) }),
     recommendation: row.recommendation,
     remediationSteps: JSON.parse(row.remediationSteps) as Finding['remediationSteps'],
     azurePortalLink: row.azurePortalLink ?? undefined,
@@ -134,7 +140,7 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
  *  snapshots once the transaction has committed. */
 export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): Promise<DetailedSyncResult> {
   const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent } = opts;
-  const findings = dedupeFindingsByFingerprint(rawFindings);
+  const findings = mergeFindingsByFingerprint(rawFindings);
   const created: string[] = [];
   const reactivated: string[] = [];
   const resolved: string[] = [];
@@ -197,6 +203,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         recommendation: f.recommendation,
         remediationSteps: JSON.stringify(f.remediationSteps ?? []),
         evidence: JSON.stringify(f.evidence ?? {}),
+        evidenceRows: JSON.stringify(f.rows),
         azurePortalLink: f.azurePortalLink ?? null,
         status: 'active',
         firstSeenAt: finishedAt,
@@ -221,6 +228,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           recommendation: f.recommendation,
           remediationSteps: JSON.stringify(f.remediationSteps ?? []),
           evidence: JSON.stringify(f.evidence ?? {}),
+          evidenceRows: JSON.stringify(f.rows),
           azurePortalLink: f.azurePortalLink ?? null,
           status: 'active',
           lastSeenAt: finishedAt,

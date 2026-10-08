@@ -11,7 +11,8 @@ import {
 import { createScanContext } from './scan-context';
 import { loadRules, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
-import { syncScanFindingsDetailed, dedupeFindingsByFingerprint, refreshSnapshotsFor } from './db/findings';
+import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
+import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, Finding, IncompleteRule, ScanSummary } from './types';
 
@@ -108,13 +109,14 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   const ranRuleIds = successRuleIds;
 
   const finishedAt = opts.now ?? new Date();
-  // Deduped before anything counts, saves, or classifies it — a rule whose ARG query returns the
-  // same resource twice in one page (e.g. a fan-out join) must count as one sighting everywhere:
-  // the saved scan blob, Run History, notification counts, and the findings lifecycle table.
-  const dedupedFindings = dedupeFindingsByFingerprint(findings);
+  // A rule that returns several rows for one resource (two retirements on one VM, three failing
+  // node pools of one cluster) is one finding holding all of them, in query order, so it counts as
+  // one sighting everywhere: the saved scan blob, Run History, notification counts, and the
+  // findings lifecycle table.
+  const mergedFindings = mergeFindingsByFingerprint(findings);
   const counts = emptySeverityCounts();
-  for (const f of dedupedFindings) counts[f.severity]++;
-  dedupedFindings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
+  for (const f of mergedFindings) counts[f.severity]++;
+  mergedFindings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
 
   const scanId = crypto.randomUUID();
   const summary: ScanSummary = {
@@ -124,7 +126,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     subscriptionsScanned: ctx.subscriptionIds,
-    findings: dedupedFindings,
+    findings: mergedFindings,
     counts,
     totalRules,
     triggeredBy: opts.triggeredBy ?? 'manual',
@@ -138,11 +140,11 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     scanId,
     category: category.id,
     ranRuleIds,
-    findings: dedupedFindings,
+    findings: mergedFindings,
     finishedAt: summary.finishedAt,
   });
   const newFingerprints = new Set([...created, ...reactivated]);
-  const newFindings = dedupedFindings.filter(f => newFingerprints.has(f.fingerprint));
+  const newFindings = mergedFindings.filter(f => newFingerprints.has(f.fingerprint));
 
   // Persist what this scan actually observed about each rule it ran, so a future "zero findings"
   // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status

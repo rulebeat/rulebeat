@@ -45,4 +45,28 @@ describe('buildFindingsCsv', () => {
       + 'DetectedAt,PortalLink,\'=SUM(A1),"a,b","one\ntwo","say ""hi"""';
     expect(csv.startsWith(`${expectedHeader}\n`)).toBe(true);
   });
+
+  it('writes one line per row a finding holds, repeating the finding\'s own fields', () => {
+    const multi = { ...finding({ owner: 'a' }), rows: [{ owner: 'a' }, { owner: 'b' }, { owner: 'c' }] };
+    const lines = buildFindingsCsv([multi]).split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[0]!.endsWith(',owner')).toBe(true);
+    expect(lines.slice(1).map(l => l.split(',').pop())).toEqual(['a', 'b', 'c']);
+    expect(new Set(lines.slice(1).map(l => l.slice(0, l.lastIndexOf(',')))).size).toBe(1);
+  });
+
+  it('gives every key any row carries its own column, blank where a row lacks it', () => {
+    const multi = { ...finding({ a: 1 }), rows: [{ a: 1 }, { b: 2 }] };
+    const lines = buildFindingsCsv([multi]).split('\n');
+    expect(lines[0]!.endsWith(',a,b')).toBe(true);
+    expect(lines[1]!.endsWith(',1,')).toBe(true);
+    expect(lines[2]!.endsWith(',,2')).toBe(true);
+  });
+
+  it('writes one line for a finding with no rows, and reads an older finding\'s evidence as its one row', () => {
+    expect(buildFindingsCsv([finding({})]).split('\n')).toHaveLength(2);
+    const older = buildFindingsCsv([finding({ owner: 'a' })]).split('\n');
+    expect(older).toHaveLength(2);
+    expect(older[1]!.endsWith(',a')).toBe(true);
+  });
 });

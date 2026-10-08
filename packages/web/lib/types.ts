@@ -34,6 +34,10 @@ export interface Finding {
   title: string;
   description: string;
   evidence: Record<string, unknown>;
+  /** Every row the rule's query returned for this resource, in query order; `evidence` is the
+   *  first. Absent on a finding saved before rows existed, which reads as one row (see
+   *  `findingRows()` in lib/finding-rows.ts). */
+  rows?: Record<string, unknown>[];
   recommendation: string;
   remediationSteps: RemediationStep[];
   estimatedMonthlyCost?: number;

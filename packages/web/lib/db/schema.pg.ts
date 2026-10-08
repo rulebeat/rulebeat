@@ -233,6 +233,7 @@ export const findings = pgTable('findings', {
   recommendation: text('recommendation').notNull().default(''),
   remediationSteps: text('remediation_steps').notNull().default('[]'),
   evidence: text('evidence').notNull().default('{}'),
+  evidenceRows: text('evidence_rows'),
   azurePortalLink: text('azure_portal_link'),
   status: text('status').notNull().default('active'),
   firstSeenAt: text('first_seen_at').notNull(),

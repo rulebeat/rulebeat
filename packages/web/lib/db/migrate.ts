@@ -803,6 +803,9 @@ export function runMigrations(sqlite: Database.Database): void {
       PRIMARY KEY (rule_id, version)
     );
   `);
+  // #192: every row a finding's rule returned for it, as a JSON list. Nullable and never
+  // backfilled: a finding stored before this reads as one row made from its evidence.
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN evidence_rows TEXT`); } catch { /* already exists */ }
 
   // Applies to was removed. Drop its columns from a database created while it existed; a fresh
   // install never has them, and the table_info check makes every later startup a no-op. The three

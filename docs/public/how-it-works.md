@@ -82,8 +82,8 @@ retirement date is shown when Advisor gives one, and the recommendation type id 
 Advisor does not report every retirement and covers the public cloud only, so a resource missing from
 the list is not necessarily safe; the rule's recommendation points to the
 [Azure updates retirements page](https://azure.microsoft.com/updates/?updateType=retirements) for the
-rest. A resource that Advisor lists under two retirements is one Advisory, since a finding is
-identified by rule and resource. A fresh install starts with the rule as an Advisory, and you can
+rest. A resource that Advisor lists under two retirements is one Advisory holding both, since a
+finding is identified by rule and resource. A fresh install starts with the rule as an Advisory, and you can
 switch it to a Problem in the rule form like any other rule. An upgrade never changes that choice: a
 new version of the rule changes what it runs only when it is disabled, and never changes its kind.
 
@@ -96,6 +96,16 @@ its fingerprint is `sha256(ruleId::activity::dimensionKey)` instead. Renaming a 
 every finding under it, which is why built-in rule ids are stable (a UUID, or `cred:` plus a fixed
 name for the two directory credential checks) and a pack sync never changes them. The finding
 carries what the query returned plus the rule's severity, category and title at scan time.
+
+A finding is one rule and one resource (or, for an activity finding, one dimension value), and it
+holds **every distinct row** the rule's query returned for it. If a query returns three rows for one VM, that
+is one finding with three rows, shown in query order in the finding's detail and written as three
+lines in the CSV export. A row that repeats another in every column, as a join can produce, is kept once.
+It still has one age, one set of suppressions and one status: it is fixed
+when the rule succeeds and returns no row for that resource, not when one of its rows goes away. The
+rows are refreshed on every scan that sees the finding. A finding saved before rows were kept reads as
+one row, made from its evidence, until its next scan. A suppression covers the whole finding,
+including rows that appear later.
 
 ## One outcome per rule
 

@@ -5,6 +5,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { csvRow } from '@/lib/csv';
+import { findingRows } from '@/lib/finding-rows';
 import type { Finding } from '@/lib/types';
 import { Download, ChevronDown } from 'lucide-react';
 
@@ -24,14 +25,20 @@ interface ExportButtonProps {
 /**
  * The findings CSV text, header and data rows alike. Extracted so it is testable without a DOM:
  * evidence keys come from rule queries and Azure resource data, so a column name needs the same
- * csvRow guard a data cell gets.
+ * csvRow guard a data cell gets. A finding holds every row its rule returned for it, and each row
+ * is its own line with the finding's fields repeated, so the export matches the explorer's detail.
  */
 export function buildFindingsCsv(findings: (Finding & LifecycleFields)[]): string {
-  // Collect all evidence data keys across all findings (skip internal _rule metadata)
+  const rowsOf = (f: Finding): Record<string, unknown>[] => {
+    const rows = findingRows(f);
+    return rows.length > 0 ? rows : [{}];
+  };
+
+  // Collect all evidence data keys across every row of all findings (skip internal _rule metadata)
   const evidenceKeys = [
     ...new Set(
       findings.flatMap(f =>
-        Object.keys(f.evidence as Record<string, unknown>).filter(k => k !== '_rule'),
+        rowsOf(f).flatMap(row => Object.keys(row).filter(k => k !== '_rule')),
       ),
     ),
   ].sort();
@@ -45,8 +52,7 @@ export function buildFindingsCsv(findings: (Finding & LifecycleFields)[]): strin
   ];
   const headers = [...fixedHeaders, ...evidenceKeys];
 
-  const rows = findings.map(f => {
-    const ev = f.evidence as Record<string, unknown>;
+  const lines = findings.flatMap(f => rowsOf(f).map(ev => {
     // Format violated rule as readable string
     const rule = (ev['_rule'] as Record<string, unknown> | undefined) ?? ev;
     const violation = [
@@ -73,9 +79,9 @@ export function buildFindingsCsv(findings: (Finding & LifecycleFields)[]): strin
 
     const evCols = evidenceKeys.map(k => ev[k]);
     return csvRow([...fixed, ...evCols]);
-  });
+  }));
 
-  return [csvRow(headers), ...rows].join('\n');
+  return [csvRow(headers), ...lines].join('\n');
 }
 
 export function ExportButton({ findings }: ExportButtonProps) {
@@ -98,7 +104,11 @@ export function ExportButton({ findings }: ExportButtonProps) {
     const cleaned = findings.map(f => {
       const ev = f.evidence as Record<string, unknown>;
       const { _rule, ...data } = ev as { _rule?: unknown } & Record<string, unknown>;
-      return { ...f, evidence: data, violatedRule: _rule };
+      const rows = findingRows(f).map(row => {
+        const { _rule: _ignored, ...rowData } = row as { _rule?: unknown } & Record<string, unknown>;
+        return rowData;
+      });
+      return { ...f, evidence: data, rows, violatedRule: _rule };
     });
     triggerDownload('findings.json', 'application/json', JSON.stringify(cleaned, null, 2));
   }

@@ -176,7 +176,9 @@
 | `packages/web/app/api/rules/validate-kql/route.ts` | Validate KQL against ARG, return sample rows |
 | `packages/web/app/api/rules/validate-graph/route.ts` | Validate a Graph query, mirroring `validate-kql`; `GraphTruncatedError` is a capped success, only a `Graph API 400:` message unwraps to something actionable |
 | `packages/web/components/findings/findings-table.tsx` | Expandable findings table with evidence + remediation |
-| `packages/web/components/findings/export-button.tsx` | CSV/JSON export with dynamic evidence columns |
+| `packages/web/components/findings/export-button.tsx` | CSV/JSON export with dynamic evidence columns; one CSV line per row a finding holds |
+| `packages/web/components/findings/finding-rows-detail.tsx` | A finding's rows in its expanded detail, shared by the Results explorer and Run History |
+| `packages/web/lib/finding-rows.ts` | Client-safe: `findingRows()` resolves a finding's rows (an older one reads as its evidence), `mergeFindingsByFingerprint()` folds same-fingerprint findings into one holding every row |
 | `packages/web/components/rules/rule-form.tsx` | Rule form. `readOnly` prop for view mode; KQL pane + Visual Builder, bidirectional sync via `parseKqlToVisualQuery`. Dirty-tracked by diffing a snapshot (scalar fields + generated `kqlFromGui`, never raw `visualQuery`, see the KQL lesson on parser id churn) against a `useRef` baseline; editing an existing rule saves via `router.refresh()`, never navigates away |
 | `packages/web/components/rules/visual-query-builder.tsx` | Visual KQL Builder: 34 operators, `readOnly` wraps in `pointer-events-none` |
 | `packages/web/components/rules/graph-rule-editor.tsx` | Directory rule editor: resource-type picker, `$filter` input, Validate action, "Flag expiring items" expand-config card |

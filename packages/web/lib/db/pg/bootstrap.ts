@@ -252,10 +252,14 @@ CREATE TABLE IF NOT EXISTS findings (
   last_seen_at TEXT NOT NULL,
   resolved_at TEXT,
   last_scan_id TEXT,
-  times_seen INTEGER NOT NULL DEFAULT 1
+  times_seen INTEGER NOT NULL DEFAULT 1,
+  evidence_rows TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_findings_category_status ON findings(category, status);
 CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings(rule_id);
+
+-- Every row a finding's rule returned for it (#192); null reads as one row made from evidence.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS evidence_rows TEXT;
 
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,

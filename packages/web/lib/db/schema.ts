@@ -254,7 +254,8 @@ export const findings = sqliteTable('findings', {
   description: text('description').notNull().default(''),
   recommendation: text('recommendation').notNull().default(''),
   remediationSteps: text('remediation_steps').notNull().default('[]'), // JSON
-  evidence: text('evidence').notNull().default('{}'),                  // JSON, latest sighting
+  evidence: text('evidence').notNull().default('{}'),                  // JSON, latest sighting; the first of the finding's rows
+  evidenceRows: text('evidence_rows'),                                 // JSON array of every row the rule returned for the resource, in query order; null for a finding stored before rows existed
   azurePortalLink: text('azure_portal_link'),
   status: text('status').notNull().default('active'),                  // 'active' | 'fixed' — an 'activity' finding stays 'active' forever; it ages out of a read-time window instead, never transitions to 'fixed'
   firstSeenAt: text('first_seen_at').notNull(),

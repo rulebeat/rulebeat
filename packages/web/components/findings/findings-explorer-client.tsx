@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, Fragment, type Dispatch, type SetStateAction } from 'react';
+import { useState, useMemo, useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search, X, ChevronDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -10,6 +10,7 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { ExportButton } from '@/components/findings/export-button';
+import { FindingRowsDetail } from '@/components/findings/finding-rows-detail';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -1105,53 +1106,10 @@ export function FindingsExplorerClient({
                           )}
                         </div>
 
-                        {/* Resource data — projected columns from the policy query. Mirrors the
-                            same evidence rendering findings-table.tsx (Run History) uses, so a
-                            finding shows the same detail regardless of which tab it's opened from. */}
-                        {(() => {
-                          const evidence = (f.evidence ?? {}) as Record<string, unknown>;
-                          const isNew = '_rule' in evidence;
-                          const ruleInfo = isNew
-                            ? (evidence._rule as Record<string, unknown> | undefined)
-                            : { field: evidence['field'], operator: evidence['operator'], value: evidence['value'], values: evidence['values'] };
-                          const dataEntries = Object.entries(evidence).filter(([k]) =>
-                            isNew ? k !== '_rule' : !['field', 'operator', 'value', 'values', 'presentTags'].includes(k)
-                          );
-                          if (dataEntries.length === 0 && !(ruleInfo && (ruleInfo['field'] || ruleInfo['operator']))) return null;
-                          return (
-                            <div className="space-y-4">
-                              {dataEntries.length > 0 && (
-                                <div>
-                                  <p className="label-grid mb-2">Resource Data</p>
-                                  <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-1.5">
-                                    {dataEntries.map(([k, v]) => (
-                                      <Fragment key={k}>
-                                        <dt className="shrink-0 pt-0.5 font-mono text-xs text-ink-2">{k}</dt>
-                                        <dd className="break-all font-mono text-xs text-ink">
-                                          {typeof v === 'object' && v !== null
-                                            ? <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(v, null, 2)}</pre>
-                                            : String(v ?? '')}
-                                        </dd>
-                                      </Fragment>
-                                    ))}
-                                  </dl>
-                                </div>
-                              )}
-                              {ruleInfo && Boolean(ruleInfo['field'] || ruleInfo['operator']) && (
-                                <div>
-                                  <p className="label-grid mb-1.5">Violated rule</p>
-                                  <p className="font-mono text-xs text-ink">
-                                    {String(ruleInfo['field'] ?? '')}
-                                    {' '}
-                                    <span className="text-ink">{String(ruleInfo['operator'] ?? '')}</span>
-                                    {ruleInfo['value'] != null && <> <span className="font-medium text-ink">&apos;{String(ruleInfo['value'])}&apos;</span></>}
-                                    {Array.isArray(ruleInfo['values']) && <> [{(ruleInfo['values'] as string[]).map(v => `'${v}'`).join(', ')}]</>}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {/* Resource data: projected columns from the policy query, one block per
+                            row. Run History (findings-table.tsx) renders the same component, so a
+                            finding shows the same rows whichever tab it's opened from. */}
+                        <FindingRowsDetail finding={f} />
 
                         {/* Remediation is generated per rule, not authored per rule. Until that
                             ships, say why the block is empty rather than hiding it. */}
