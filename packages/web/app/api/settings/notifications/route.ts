@@ -15,6 +15,7 @@ import {
 import { assertSafeWebhookUrl, assertSafeEmailHost, SsrfGuardError } from '@/lib/ssrf-guard';
 
 const CHANNEL_TYPES = new Set<NotificationChannelType>(['teams', 'slack', 'webhook', 'email']);
+const INCLUDE_ADVISORIES_INVALID = 'includeAdvisories must be true or false.';
 
 function validateEmailConfig(config: unknown): config is EmailChannelConfig {
   if (!config || typeof config !== 'object') return false;
@@ -40,12 +41,18 @@ export async function POST(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const body = await parseJsonBody<{ name?: string; type?: string; url?: string; config?: unknown }>(req);
+  const body = await parseJsonBody<{ name?: string; type?: string; url?: string; config?: unknown; includeAdvisories?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
   const name = body.name?.trim() ?? '';
   const type = body.type?.trim() ?? '';
   const url = body.url?.trim() ?? '';
+  if (body.includeAdvisories !== undefined && typeof body.includeAdvisories !== 'boolean') {
+    return NextResponse.json({ error: INCLUDE_ADVISORIES_INVALID }, { status: 400 });
+  }
+  const includeAdvisories = body.includeAdvisories;
+  // Only a setting the request actually carried is a field of the change.
+  const advisoryField = includeAdvisories === undefined ? [] : ['includeAdvisories'];
 
   if (!name) return NextResponse.json({ error: 'Name is required.' }, { status: 400 });
   if (!CHANNEL_TYPES.has(type as NotificationChannelType)) {
@@ -63,14 +70,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
     try {
-      const channel = await createChannel({ name, type: 'email', url, config: body.config as EmailChannelConfig });
+      const channel = await createChannel({ name, type: 'email', url, config: body.config as EmailChannelConfig, includeAdvisories });
       await writeAudit({
         actor,
         action: 'notification_channel.create',
         entityType: 'notification_channel',
         entityId: channel.id,
         summary: `Created email notification channel "${name}"`,
-        details: { fields: ['name', 'type', 'config'] },
+        details: { fields: ['name', 'type', 'config', ...advisoryField] },
       });
       return NextResponse.json(channel, { status: 201 });
     } catch (err) {
@@ -90,14 +97,14 @@ export async function POST(req: Request) {
   }
 
   try {
-    const channel = await createChannel({ name, type: type as NotificationChannelType, url });
+    const channel = await createChannel({ name, type: type as NotificationChannelType, url, includeAdvisories });
     await writeAudit({
       actor,
       action: 'notification_channel.create',
       entityType: 'notification_channel',
       entityId: channel.id,
       summary: `Created notification channel "${name}" (${type})`,
-      details: { fields: ['name', 'type'] },
+      details: { fields: ['name', 'type', ...advisoryField] },
     });
     return NextResponse.json(channel, { status: 201 });
   } catch (err) {
@@ -109,11 +116,14 @@ export async function PUT(req: Request) {
   const actor = await requireRole('notifications:manage');
   if (actor instanceof NextResponse) return actor;
 
-  const body = await parseJsonBody<{ id?: string; name?: string; type?: string; url?: string; config?: unknown }>(req);
+  const body = await parseJsonBody<{ id?: string; name?: string; type?: string; url?: string; config?: unknown; includeAdvisories?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
   const id = body.id?.trim() ?? '';
   if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });
+  if (body.includeAdvisories !== undefined && typeof body.includeAdvisories !== 'boolean') {
+    return NextResponse.json({ error: INCLUDE_ADVISORIES_INVALID }, { status: 400 });
+  }
 
   const existing = await getChannelSummary(id);
   if (!existing) return NextResponse.json({ error: 'Channel not found.' }, { status: 404 });
@@ -154,6 +164,7 @@ export async function PUT(req: Request) {
       type: body.type as NotificationChannelType | undefined,
       url: body.url,
       config: body.config !== undefined ? (body.config as EmailChannelConfig | undefined) : undefined,
+      includeAdvisories: body.includeAdvisories,
     });
     if (!updated) return NextResponse.json({ error: 'Channel not found.' }, { status: 404 });
 

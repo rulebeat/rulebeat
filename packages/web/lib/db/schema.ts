@@ -312,6 +312,7 @@ export const notificationChannels = sqliteTable('notification_channels', {
   updatedAt: text('updated_at').notNull(),
   lastNotifiedAt: text('last_notified_at'),
   lastError: text('last_error'),
+  includeAdvisories: integer('include_advisories', { mode: 'boolean' }).notNull().default(false), // Advisory findings are sent only when on
 });
 
 // Per-schedule notification assignments. Each row means "when scheduleId runs, post to channelId

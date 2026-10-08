@@ -7,7 +7,8 @@ import { runCategoryScan } from './scan-runner';
 import { resolveCategoriesForSchedule, resolveRulesForSchedule } from './schedule-target';
 import type { ScheduleTargetType } from './db/schedules';
 import { dispatchAndMarkSent } from './notifications/dispatch';
-import { isNotifiable } from './finding-kinds';
+import { scheduleIncludesAdvisories } from './db/schedule-notification-channels';
+import { isAdvisory, isNotifiable } from './finding-kinds';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -129,8 +130,13 @@ export async function executeTarget(
         ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
         : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }
-    // An all-Advisory run has nothing a channel may be told, so it opens no outbox entry.
-    const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.some(isNotifiable);
+    // A Problem or Activity finding is announced to every linked channel. An Advisory is announced
+    // only to a channel that includes advisories, so a run whose only news is Advisories opens an
+    // outbox entry only when the schedule has such a channel.
+    const willNotify = opts.triggeredBy === 'schedule' && (
+      allNewFindings.some(isNotifiable)
+      || (allNewFindings.some(isAdvisory) && await scheduleIncludesAdvisories(run.scheduleId))
+    );
     await finishRun(run.id, {
       status,
       totalFindings,

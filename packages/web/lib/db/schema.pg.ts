@@ -279,6 +279,7 @@ export const notificationChannels = pgTable('notification_channels', {
   updatedAt: text('updated_at').notNull(),
   lastNotifiedAt: text('last_notified_at'),
   lastError: text('last_error'),
+  includeAdvisories: boolean('include_advisories').notNull().default(false),
 });
 
 export const scheduleNotificationChannels = pgTable('schedule_notification_channels', {

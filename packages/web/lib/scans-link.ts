@@ -4,6 +4,8 @@ import type { ExplorerStatusFilter } from './explorer-filters';
 /** Metric-appropriate overrides layered on top of a widget's inherited `WidgetFilters` when
  *  building a click-through link to the Scans Results tab — see `buildScansHref`. */
 export interface ScansLinkOverrides {
+  /** Which tab to open; Results when absent. The Advisories tab reads the same filter params. */
+  tab?: 'results' | 'advisories';
   status?: ExplorerStatusFilter;
   /** Single severity to link to (e.g. a "Critical findings" stat card) — takes precedence over
    *  any inherited `filters.severities`. */
@@ -25,7 +27,7 @@ export interface ScansLinkOverrides {
  *  widget click-through so a new filter dimension only needs to be wired in one place. */
 export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverrides = {}): string {
   const params = new URLSearchParams();
-  params.set('tab', 'results');
+  params.set('tab', overrides.tab ?? 'results');
 
   const category = overrides.category ?? (filters.categories?.length ? filters.categories.join(',') : undefined);
   if (category) params.set('category', category);

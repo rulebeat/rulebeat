@@ -103,6 +103,7 @@ table notification_channels
   last_notified_at TEXT
   last_error TEXT
   config TEXT
+  include_advisories INTEGER NOT NULL DEFAULT 0
 table notification_deliveries
   id TEXT PK(1)
   channel_id TEXT NOT NULL
@@ -485,6 +486,7 @@ table notification_channels
   last_notified_at TEXT
   last_error TEXT
   config TEXT
+  include_advisories INTEGER NOT NULL DEFAULT 0
 table notification_deliveries
   id TEXT PK(1)
   channel_id TEXT NOT NULL
@@ -855,6 +857,7 @@ table notification_channels
   last_notified_at TEXT
   last_error TEXT
   config TEXT
+  include_advisories INTEGER NOT NULL DEFAULT 0
 table notification_deliveries
   id TEXT PK(1)
   channel_id TEXT NOT NULL
@@ -1236,6 +1239,7 @@ table notification_channels
   last_notified_at TEXT
   last_error TEXT
   config TEXT
+  include_advisories INTEGER NOT NULL DEFAULT 0
 table notification_deliveries
   id TEXT PK(1)
   channel_id TEXT NOT NULL
@@ -1619,6 +1623,7 @@ table notification_channels
   last_notified_at TEXT
   last_error TEXT
   config TEXT
+  include_advisories INTEGER NOT NULL DEFAULT 0
 table notification_deliveries
   id TEXT PK(1)
   channel_id TEXT NOT NULL

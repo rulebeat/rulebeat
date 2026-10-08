@@ -294,8 +294,12 @@ CREATE TABLE IF NOT EXISTS notification_channels (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_notified_at TEXT,
-  last_error TEXT
+  last_error TEXT,
+  include_advisories BOOLEAN NOT NULL DEFAULT FALSE
 );
+-- Include advisories (#180), for a Postgres database bootstrapped before this column shipped. Every
+-- existing channel reads back off.
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS include_advisories BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS schedule_notification_channels (
   schedule_id TEXT NOT NULL,

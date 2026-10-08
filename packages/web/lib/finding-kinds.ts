@@ -37,12 +37,25 @@ export function countsInFindingTotals(obj: { kind?: RuleKind }): boolean {
  *  not "not activity", so a future kind never starts resolving by accident. */
 export const RESOLVABLE_KINDS: readonly RuleKind[] = ['state', 'advisory'];
 
-/** Kinds a scheduled scan may announce to a notification channel. An Advisory is left out until a
- *  channel can opt in to receiving them. Absent kind defaults to 'state'. */
+/** Kinds a scheduled scan announces to every notification channel. An Advisory is not here: a
+ *  channel receives those only when its "Include advisories" setting is on (see
+ *  `isDeliverableTo`). Absent kind defaults to 'state'. */
 export const NOTIFIABLE_KINDS: readonly RuleKind[] = ['state', 'activity'];
 
 export function isNotifiable(obj: { kind?: RuleKind }): boolean {
   return NOTIFIABLE_KINDS.includes(obj.kind ?? 'state');
+}
+
+/** Whether a finding is an Advisory. A positive test on purpose: "not notifiable" would also match
+ *  a future kind. */
+export function isAdvisory(obj: { kind?: RuleKind }): boolean {
+  return isOfKind(obj, ADVISORY_KINDS);
+}
+
+/** Whether a channel is sent this finding: Problems and Activity always, an Advisory only when the
+ *  channel includes advisories. */
+export function isDeliverableTo(obj: { kind?: RuleKind }, channel: { includeAdvisories: boolean }): boolean {
+  return isNotifiable(obj) || (channel.includeAdvisories && isAdvisory(obj));
 }
 
 /** Kinds a rule's "resources affected" figure and "clear findings" action cover: every kind that

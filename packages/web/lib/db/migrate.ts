@@ -503,6 +503,10 @@ export function runMigrations(sqlite: Database.Database): void {
   // C1a: email channel config (non-secret fields stored as JSON; SMTP password remains in `url`).
   try { sqlite.exec(`ALTER TABLE notification_channels ADD COLUMN config TEXT`); } catch { /* already exists */ }
 
+  // #180: per-channel "Include advisories". Off for every channel that exists before the upgrade, so
+  // an upgrade never starts sending retirements to a channel nobody asked to receive them.
+  try { sqlite.exec(`ALTER TABLE notification_channels ADD COLUMN include_advisories INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+
   // C1b: per-channel category/subscription scope on the junction table.
   try { sqlite.exec(`ALTER TABLE schedule_notification_channels ADD COLUMN category_ids TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_notification_channels ADD COLUMN subscription_ids TEXT`); } catch { /* already exists */ }

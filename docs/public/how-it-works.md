@@ -70,8 +70,9 @@ run history row and a dashboard neither know nor care which engine produced a fi
 
 Separately from the engine, a rule has a **kind**. An Advisory rule runs exactly like a Problem rule
 and its findings have the same fingerprint, lifecycle and suppressions, but they are listed on the
-Advisories tab and left out of posture, every problem count and notifications
-([`posture.md`](posture.md#advisory-rules-are-not-counted)). The kind is a property of your install,
+Advisories tab and left out of posture and every problem count
+([`posture.md`](posture.md#advisory-rules-are-not-counted)). Notifications skip them unless a
+channel turns on Include advisories ([`notifications.md`](notifications.md)). The kind is a property of your install,
 not of the shipped definition, so an upgrade or a rule version switch never turns it back.
 
 ## How a row becomes a finding

@@ -6,7 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { FieldHint, Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import type { NotificationChannelSummary, NotificationChannelType, EmailChannelConfig } from '@/lib/db/notification-channels';
+import {
+  DEFAULT_FORM, buildSaveBody, emailConfigFromForm, formFromSummary,
+  type EmailFormState, type FormState,
+} from '@/lib/notification-channel-form';
 import type { NotificationDelivery } from '@/lib/db/notification-deliveries';
 import {
   Bell, Check, ChevronDown, ChevronUp, Clock, Loader2, Minus, Plus, Send, Trash2, X,
@@ -33,49 +38,6 @@ const TLS_OPTIONS: { value: EmailChannelConfig['tls']; label: string }[] = [
 
 const CHANNEL_TYPE_OPTIONS = (Object.keys(CHANNEL_TYPE_LABELS) as NotificationChannelType[])
   .map(t => ({ value: t, label: CHANNEL_TYPE_LABELS[t] }));
-
-interface EmailFormState {
-  host: string;
-  port: string;
-  tls: EmailChannelConfig['tls'];
-  username: string;
-  fromAddress: string;
-  toAddresses: string;
-}
-
-const DEFAULT_EMAIL: EmailFormState = {
-  host: '',
-  port: '587',
-  tls: 'starttls',
-  username: '',
-  fromAddress: '',
-  toAddresses: '',
-};
-
-interface FormState {
-  name: string;
-  type: NotificationChannelType;
-  url: string;         // webhook URL or SMTP password
-  email: EmailFormState;
-}
-
-const DEFAULT_FORM: FormState = {
-  name: '',
-  type: 'teams',
-  url: '',
-  email: DEFAULT_EMAIL,
-};
-
-function emailConfigFromForm(e: EmailFormState): EmailChannelConfig {
-  return {
-    host: e.host.trim(),
-    port: parseInt(e.port, 10) || 587,
-    tls: e.tls,
-    username: e.username.trim(),
-    fromAddress: e.fromAddress.trim(),
-    toAddresses: e.toAddresses.trim(),
-  };
-}
 
 function ChannelForm({
   initial,
@@ -239,6 +201,19 @@ function ChannelForm({
             )}
           </div>
         )}
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <label className="flex items-center gap-2">
+            <Switch
+              checked={form.includeAdvisories}
+              onCheckedChange={v => set('includeAdvisories', v)}
+            />
+            <span className="text-sm font-medium text-ink">Include advisories</span>
+          </label>
+          <FieldHint>
+            Also send new advisories to this channel, in their own section of each message. Off by default.
+          </FieldHint>
+        </div>
       </div>
 
       {testResult && (
@@ -267,23 +242,6 @@ function ChannelForm({
   );
 }
 
-function formFromSummary(channel: NotificationChannelSummary): FormState {
-  const cfg = channel.emailConfig;
-  return {
-    name: channel.name,
-    type: channel.type,
-    url: '',
-    email: cfg ? {
-      host: cfg.host,
-      port: String(cfg.port),
-      tls: cfg.tls,
-      username: cfg.username,
-      fromAddress: cfg.fromAddress,
-      toAddresses: cfg.toAddresses,
-    } : DEFAULT_EMAIL,
-  };
-}
-
 export function NotificationsSection({
   initialChannels,
 }: {
@@ -299,19 +257,6 @@ export function NotificationsSection({
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyByChannel, setHistoryByChannel] = useState<Record<string, NotificationDelivery[]>>({});
-
-  function buildSaveBody(values: FormState, id?: string) {
-    const base = {
-      ...(id ? { id } : {}),
-      name: values.name,
-      type: values.type,
-      url: values.url,
-    };
-    if (values.type === 'email') {
-      return { ...base, config: emailConfigFromForm(values.email) };
-    }
-    return base;
-  }
 
   function buildTestBody(values: FormState, id?: string) {
     if (id) return { id };

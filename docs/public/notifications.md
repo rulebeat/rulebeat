@@ -15,6 +15,13 @@ findings sends nothing, and an already-active finding is not re-sent. A finding 
 when the message is about to go out is left out, even if it just came back after being fixed, and a
 batch made up only of suppressed findings sends nothing.
 
+**Advisories** are left out unless a channel asks for them. Each channel has an **Include advisories**
+setting, off by default. A channel with it on also receives the new Advisory findings, in their own
+"Advisories" section after the findings, with a link to the Advisories tab. The assignment's scope and
+minimum severity apply to Advisories the same way they do to findings. A channel with it off gets
+exactly the message it always got, and a run whose only news is Advisories sends to the channels that
+include them and to no one else.
+
 ## Channel types
 
 <!-- count:channel-types -->Four types:
@@ -59,6 +66,19 @@ text only, with the top ten findings.
 `findings` carries at most the first 20 while `totalNewFindings` is the real count, and `counts` has
 a key only for severities that occurred. Point a Logic App, a ticketing webhook or your own function
 at it.
+
+On a channel that includes advisories, and only when the run has new ones, the body also has an
+`advisories` field. Nothing above changes shape, and `findings` is empty when the run has only
+Advisories:
+
+```json
+"advisories": {
+  "totalNewAdvisories": 2,
+  "counts": { "medium": 1, "low": 1 },
+  "findings": [ { "fingerprint": "…", "title": "…", "severity": "medium", "category": "reliability", "resourceId": "…", "resourceName": "…", "subscriptionId": "…" } ],
+  "advisoriesUrl": "https://rulebeat.example.com/scans?tab=advisories&…"
+}
+```
 
 The Teams, Slack and email messages all carry the same header, a severity summary and a link back at
 `<public URL>/scans`, filtered to new findings over the last seven days. That public URL is the one

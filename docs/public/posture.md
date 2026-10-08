@@ -41,7 +41,8 @@ breakdown, the dashboard widgets and the daily snapshots. They
 are listed on the Advisories tab instead. The Rules tab still shows how many resources an Advisory rule affects. Switching a rule between Problem and Advisory moves its
 existing findings with it and keeps their age and suppressions. As with Activity findings, the open
 findings line on the trend chart can step once on the day a rule is switched, because earlier days
-were counted the old way and are not rewritten. Advisory findings do not trigger notifications for now.
+were counted the old way and are not rewritten. Advisory findings are sent only to notification channels that turn on Include advisories
+([`notifications.md`](notifications.md)).
 
 ## Why the number moves when your estate did not
 
