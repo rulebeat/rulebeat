@@ -1,15 +1,15 @@
 import { queryActiveFindings } from './dashboard-data';
 import { loadRules } from './rules';
-import { compareAdvisories } from './explorer-filters';
-import { isAdvisory, isOverdue } from './finding-kinds';
+import { SEVERITY_ORDER } from './severity';
+import { isAdvisory } from './finding-kinds';
 import type { WidgetFilters } from './dashboard-filters';
 import type { AdvisoriesWidgetData } from './advisories-widget';
 
 /**
  * Open Advisories for the dashboard widget: active, not suppressed (unless the filter asks), narrowed
- * by every dimension in `filters`, ordered Overdue first, then the earliest Deadline, then severity.
- * The same read the Advisories tab does, over the findings lifecycle table. Overdue is judged
- * against `now`, never stored, and no count anywhere reads it.
+ * by every dimension in `filters`, ordered by severity (critical first), then most recently seen.
+ * Reads the findings lifecycle table with the same filters as the Advisories tab, but keeps its own
+ * order. Severity ranks by `SEVERITY_ORDER`, the one ordering the dashboard code shares.
  *
  * `hasAdvisoryRules` looks at the rules the filter could reach (category, rule, severity and rule
  * tag), so an empty list can say "no Advisory rules" rather than "nothing open". Resource group and
@@ -17,14 +17,16 @@ import type { AdvisoriesWidgetData } from './advisories-widget';
  */
 export async function queryAdvisoriesWidget(
   filters: WidgetFilters,
-  opts: { limit: number; now?: Date },
+  opts: { limit: number },
 ): Promise<AdvisoriesWidgetData> {
-  const now = opts.now ?? new Date();
   const [active, rules] = await Promise.all([queryActiveFindings(filters), loadRules()]);
   const ruleName = new Map(rules.map(r => [r.id, r.name]));
 
   const open = active
     .filter(isAdvisory)
+    .sort((a, b) =>
+      SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
+      || (a.lastSeenAt < b.lastSeenAt ? 1 : a.lastSeenAt > b.lastSeenAt ? -1 : 0))
     .map(f => ({
       fingerprint: f.fingerprint,
       ruleId: f.ruleId,
@@ -33,10 +35,8 @@ export async function queryAdvisoriesWidget(
       resourceName: f.resourceName ?? '',
       category: f.category,
       severity: f.severity,
-      deadline: f.deadline,
-      overdue: isOverdue(f, now),
-    }))
-    .sort(compareAdvisories);
+      lastSeenAt: f.lastSeenAt,
+    }));
 
   const hasAdvisoryRules = rules.some(r =>
     r.kind === 'advisory'

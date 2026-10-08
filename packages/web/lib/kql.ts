@@ -5,7 +5,6 @@ export {
   buildQueryFromVisual,
   conditionToKql,
   parseKqlToVisualQuery,
-  projectedColumnNames,
   hasCompilableFilter,
   DEFAULT_PROJECT_COLUMNS,
   GRAPH_RESOURCE_PATHS,

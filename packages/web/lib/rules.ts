@@ -179,7 +179,7 @@ export type RuleChanges = Partial<Omit<Rule,
 const UPDATABLE_FIELDS = [
   'name', 'description', 'category', 'severity', 'enabled', 'scope', 'resourceTypes', 'conditions',
   'conditionGroups', 'projectColumns', 'rawKql', 'type', 'pack', 'group', 'tags', 'visualQuery',
-  'queryBackend', 'graphQuery', 'logsQuery', 'deadlineField', 'groupField',
+  'queryBackend', 'graphQuery', 'logsQuery',
 ] as const satisfies readonly (keyof RuleChanges)[];
 
 /**
@@ -434,8 +434,6 @@ function rowToRule(row: Row): Rule {
     visualQuery: row.visualQuery ? JSON.parse(row.visualQuery) as VisualQuery : undefined,
     queryBackend: row.queryBackend as QueryBackend,
     kind: row.kind as RuleKind,
-    deadlineField: row.deadlineField ?? undefined,
-    groupField: row.groupField ?? undefined,
     graphQuery: row.graphQuery ? JSON.parse(row.graphQuery) as GraphQuery : undefined,
     logsQuery: row.logsQuery ? JSON.parse(row.logsQuery) as LogAnalyticsQuery : undefined,
     version: row.version ?? undefined,
@@ -470,8 +468,6 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     visualQuery: r.visualQuery ? JSON.stringify(r.visualQuery) : null,
     queryBackend,
     kind: resolveKind(queryBackend, r.kind),
-    deadlineField: r.deadlineField ?? null,
-    groupField: r.groupField ?? null,
     graphQuery: r.graphQuery ? JSON.stringify(r.graphQuery) : null,
     logsQuery: r.logsQuery ? JSON.stringify(r.logsQuery) : null,
     version: r.version ?? null,

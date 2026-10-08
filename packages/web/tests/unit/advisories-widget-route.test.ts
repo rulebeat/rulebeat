@@ -1,9 +1,9 @@
 /**
  * Issue #179, end to end: Problem, Advisory and Activity rules scan through runCategoryScan() with
  * the fake Azure context, then the Advisories widget route is asked what it lists. Only open
- * Advisories come back (never a Problem, Activity, fixed or suppressed finding), Overdue first and
- * then by Deadline, narrowed by the shared WidgetFilters shape, and the response says whether any
- * Advisory rule is enabled so an empty widget can say why.
+ * Advisories come back (never a Problem, Activity, fixed or suppressed finding), critical first and
+ * then most recently seen, narrowed by the shared WidgetFilters shape, and the response says whether
+ * any Advisory rule is enabled so an empty widget can say why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/client';
@@ -29,18 +29,21 @@ const PROBLEM = 'aw-problem';
 const ACTIVITY = 'aw-activity';
 const SEC_ADV = 'aw-adv-security';
 const REL_ADV = 'aw-adv-reliability';
+const CRIT_ADV = 'aw-adv-critical';
+const SEC_ADV_LATER = 'aw-adv-late-sec';
 const NOW = new Date('2026-06-15T12:00:00.000Z');
+const HOUR = 60 * 60 * 1000;
 
 const secRows = (): Record<string, unknown>[] => [
-  argRow({ name: 'a-past', retiresOn: '2026-06-01T00:00:00Z' }),
-  argRow({ name: 'a-older', retiresOn: '2026-05-01T00:00:00Z' }),
-  argRow({ name: 'a-future', retiresOn: '2026-12-31T00:00:00Z' }),
+  argRow({ name: 'a-past' }),
+  argRow({ name: 'a-older' }),
+  argRow({ name: 'a-future' }),
   argRow({ name: 'a-none' }),
-  argRow({ name: 'a-gone', retiresOn: '2026-01-01T00:00:00Z' }),
-  argRow({ name: 'a-supp', retiresOn: '2026-02-01T00:00:00Z' }),
-  argRow({ name: 'a-subb', retiresOn: '2027-06-01T00:00:00Z', subscriptionId: TEST_SUB_B }),
+  argRow({ name: 'a-gone' }),
+  argRow({ name: 'a-supp' }),
+  argRow({ name: 'a-subb', subscriptionId: TEST_SUB_B }),
 ];
-const relRows = [argRow({ name: 'r-1', retiresOn: '2027-01-01T00:00:00Z' })];
+const relRows = [argRow({ name: 'r-1' })];
 let secResult: () => Record<string, unknown>[] = secRows;
 
 async function insertRule(
@@ -52,7 +55,6 @@ async function insertRule(
     conditions: JSON.stringify([]),
     rawKql: `resources | where type == "microsoft.compute/virtualmachines" // marker-${id}`,
     type: 'custom', kind, tags: tags ? JSON.stringify(tags) : undefined,
-    deadlineField: kind === 'advisory' ? 'retiresOn' : null,
   }));
 }
 
@@ -62,6 +64,8 @@ function ctx() {
     rows: kql => {
       if (kql.includes(`marker-${SEC_ADV}`)) return secResult();
       if (kql.includes(`marker-${REL_ADV}`)) return relRows;
+      if (kql.includes(`marker-${CRIT_ADV}`)) return [argRow({ name: 'c-1' })];
+      if (kql.includes(`marker-${SEC_ADV_LATER}`)) return [argRow({ name: 'b-1' })];
       return [argRow({ name: 'p-1' })];
     },
   });
@@ -79,13 +83,13 @@ async function seedActivityFinding(): Promise<void> {
   });
 }
 
-async function scan(): Promise<void> {
+/** Scans the given rules with the clock at `at`, which is what each finding's last seen becomes. */
+async function scan(ruleIds: string[] = [PROBLEM, SEC_ADV, REL_ADV], at: Date = NOW): Promise<void> {
+  vi.setSystemTime(at);
   for (const id of ['security', 'reliability']) {
-    await runCategoryScan((await getCategory(id))!, {
-      ctx: ctx(),
-      ruleIds: [PROBLEM, SEC_ADV, REL_ADV],
-    });
+    await runCategoryScan((await getCategory(id))!, { ctx: ctx(), ruleIds });
   }
+  vi.setSystemTime(NOW);
 }
 
 async function widget(query = ''): Promise<AdvisoriesWidgetData> {
@@ -115,7 +119,7 @@ afterEach(() => {
 });
 
 describe('the Advisories widget route', () => {
-  it('lists open Advisories only, Overdue first and then by Deadline with none last', async () => {
+  it('lists open Advisories only, never a Problem, Activity, fixed or suppressed finding', async () => {
     await scan();
     secResult = () => secRows().filter(r => r.name !== 'a-gone');
     await scan();
@@ -131,19 +135,39 @@ describe('the Advisories widget route', () => {
     });
 
     const data = await widget();
-    expect(names(data)).toEqual(['a-older', 'a-past', 'a-future', 'r-1', 'a-subb', 'a-none']);
+    // The five open high Advisories come before the one low Advisory.
+    expect(new Set(names(data).slice(0, 5))).toEqual(new Set(['a-past', 'a-older', 'a-future', 'a-none', 'a-subb']));
+    expect(names(data)[5]).toBe('r-1');
     expect(data.total).toBe(6);
   });
 
-  it('carries rule, resource, severity, Deadline and Overdue on each row', async () => {
+  it('orders by severity with critical first, then most recently seen, whatever the scan order', async () => {
+    await insertRule(CRIT_ADV, 'reliability', 'advisory', 'critical');
+    await insertRule(SEC_ADV_LATER, 'security', 'advisory', 'high');
+    await scan([CRIT_ADV], new Date(NOW.getTime() - HOUR));
+    await scan([SEC_ADV], NOW);
+    await scan([SEC_ADV_LATER], new Date(NOW.getTime() + HOUR));
+    await scan([REL_ADV], new Date(NOW.getTime() + 2 * HOUR));
+
+    const found = names(await widget());
+    // Critical seen longest ago still leads; the low one seen most recently still trails; the
+    // later-seen high Advisory comes before the earlier-seen high ones.
+    expect(found[0]).toBe('c-1');
+    expect(found[1]).toBe('b-1');
+    expect(found.at(-1)).toBe('r-1');
+    expect(new Set(found.slice(2, -1))).toEqual(new Set(['a-past', 'a-older', 'a-future', 'a-none', 'a-gone', 'a-supp', 'a-subb']));
+  });
+
+  it('carries rule, resource, severity and when it was last seen on each row, and nothing about a deadline', async () => {
     await scan();
     const data = await widget('?categories=reliability');
     expect(data.items).toEqual([expect.objectContaining({
       ruleId: REL_ADV, ruleName: REL_ADV, resourceName: 'r-1', severity: 'low',
-      category: 'reliability', deadline: '2027-01-01T00:00:00.000Z', overdue: false,
+      category: 'reliability', lastSeenAt: NOW.toISOString(),
     })]);
-    const overdue = (await widget('?categories=security')).items.filter(i => i.overdue).map(i => i.resourceName);
-    expect(overdue).toEqual(['a-gone', 'a-supp', 'a-older', 'a-past']);
+    const keys = Object.keys(data.items[0]);
+    expect(keys).not.toContain('deadline');
+    expect(keys).not.toContain('overdue');
   });
 
   it('shows suppressed Advisories only when the filter asks for them', async () => {

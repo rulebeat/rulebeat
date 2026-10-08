@@ -9,11 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { advisoriesWidgetView, formatDeadline, ADVISORIES_WIDGET_EMPTY, type AdvisoriesWidgetData } from '@/lib/advisories-widget';
+import { advisoriesWidgetView, formatLastSeen, ADVISORIES_WIDGET_EMPTY, type AdvisoriesWidgetData } from '@/lib/advisories-widget';
 
 const ITEM = {
   fingerprint: 'fp', ruleId: 'r', ruleName: 'Rule', resourceId: '/x', resourceName: 'vm-1',
-  category: 'security', severity: 'high' as const, overdue: false,
+  category: 'security', severity: 'high' as const, lastSeenAt: '2026-06-01T00:00:00.000Z',
 };
 const data = (over: Partial<AdvisoriesWidgetData> = {}): AdvisoriesWidgetData => ({
   items: [], total: 0, hasAdvisoryRules: true, ...over,
@@ -46,15 +46,15 @@ describe('advisoriesWidgetView', () => {
   });
 });
 
-describe('formatDeadline', () => {
+describe('formatLastSeen', () => {
   it('shows a midnight-UTC date as that calendar day, whatever the local zone', () => {
-    expect(formatDeadline('2026-06-01T00:00:00.000Z')).toBe('Jun 1, 2026');
-    expect(formatDeadline('2026-12-31T23:59:59.000Z')).toBe('Dec 31, 2026');
+    expect(formatLastSeen('2026-06-01T00:00:00.000Z')).toBe('Jun 1, 2026');
+    expect(formatLastSeen('2026-12-31T23:59:59.000Z')).toBe('Dec 31, 2026');
   });
 
-  it('says None for no Deadline or one that does not parse', () => {
-    expect(formatDeadline(undefined)).toBe('None');
-    expect(formatDeadline('not a date')).toBe('None');
+  it('says Unknown for no date or one that does not parse', () => {
+    expect(formatLastSeen(undefined)).toBe('Unknown');
+    expect(formatLastSeen('not a date')).toBe('Unknown');
   });
 });
 

@@ -24,12 +24,6 @@ export interface Finding {
   kind?: RuleKind;
   /** Human-readable identity of an 'activity' occurrence's pattern. Absent for 'state' findings. */
   dimensionKey?: string;
-  /** Advisory only: the date the rule's Deadline column held for this resource, as a UTC ISO string.
-   *  Absent when the rule has no Deadline column or the value did not parse. */
-  deadline?: string;
-  /** Advisory only: the group the rule's Group column put this resource in (for example a retirement
-   *  feature name). Absent when the rule names no Group column or the value was blank. */
-  groupValue?: string;
   // Resource — absent for kind: 'activity' findings, which have no resource to describe.
   resourceId?: string;
   resourceType?: string;
@@ -340,12 +334,6 @@ export interface Rule {
   pack?: string;
   queryBackend?: QueryBackend; // absent = 'resource-graph' (the SQL-layer default)
   kind?: RuleKind;             // absent = 'state' (the SQL-layer default); Logs rules are always 'activity', any other backend is 'state' or 'advisory'
-  /** Advisory rules on Resource Graph: the projected column that holds each result's Deadline. Kept
-   *  when the kind is switched, and only read while the rule is an Advisory. */
-  deadlineField?: string;
-  /** Advisory rules on Resource Graph: the projected column whose value groups the rule's
-   *  Advisories. Kept when the kind is switched, and only read while the rule is an Advisory. */
-  groupField?: string;
   /** @deprecated Superseded by `tags` (multi-value). Kept for read compat with old rows. */
   group?: string;
   tags?: string[];

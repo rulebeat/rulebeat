@@ -1,7 +1,7 @@
 /**
- * Issue #181: RuleBeat Core ships a "Service retirements" rule as an Advisory with a Deadline and a
- * group column, and an admin can switch it to a Problem. Kind belongs to the install, so only the
- * rule's query is locked, not its kind.
+ * Issue #181: RuleBeat Core ships a "Service retirements" rule as an Advisory, and an admin can
+ * switch it to a Problem. Kind belongs to the install, so only the rule's query is locked, not its
+ * kind.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
@@ -38,14 +38,15 @@ beforeEach(async () => {
 });
 
 describe('the shipped Service retirements rule', () => {
-  it('is seeded as an enabled Advisory with its Deadline and group columns', async () => {
+  it('is seeded as an enabled Advisory at its first version', async () => {
     const rule = await shipped();
     expect(rule).toBeDefined();
     expect(rule.type).toBe('builtin');
     expect(rule.pack).toBe('rulebeat-core');
     expect(rule.category).toBe('reliability');
     expect(rule.enabled).toBe(true);
-    expect([rule.kind, rule.deadlineField, rule.groupField]).toEqual(['advisory', 'retirementDate', 'retirementFeatureName']);
+    expect(rule.kind).toBe('advisory');
+    expect(rule.version).toBe('1.0.0');
   });
 
   it('says plainly that Advisor coverage is incomplete and public cloud only, and points at the retirements page', async () => {

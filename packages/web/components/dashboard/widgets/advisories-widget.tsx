@@ -10,17 +10,16 @@ import {
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import {
-  advisoriesWidgetView, formatDeadline, ADVISORIES_WIDGET_DEFAULT_LIMIT, ADVISORIES_WIDGET_EMPTY,
+  advisoriesWidgetView, formatLastSeen, ADVISORIES_WIDGET_DEFAULT_LIMIT, ADVISORIES_WIDGET_EMPTY,
   type AdvisoriesWidgetData,
 } from '@/lib/advisories-widget';
-import { cn } from '@/lib/utils';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 
-/** Open Advisories, Overdue first, so a dashboard shows what needs action without counting it as a
+/** Open Advisories, by severity then most recently seen, so a dashboard shows what needs action without counting it as a
  *  failure. Backed by /api/widgets/advisories, the same read as the Advisories tab. A row opens
  *  that tab filtered to the Advisory's rule and resource. The empty state says whether no Advisory
  *  rule is enabled or the enabled ones have nothing open; a failed fetch never shows either. */
@@ -67,7 +66,7 @@ export function AdvisoriesWidget({ config, filters, refreshKey }: Props) {
               <TableHead shrink>Severity</TableHead>
               <TableHead>Rule</TableHead>
               <TableHead>Resource</TableHead>
-              <TableHead shrink>Deadline</TableHead>
+              <TableHead shrink>Last seen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -85,10 +84,7 @@ export function AdvisoriesWidget({ config, filters, refreshKey }: Props) {
                     <p className="truncate font-medium text-ink">{item.resourceName}</p>
                   </TableCell>
                   <TableCell shrink>
-                    <span className={cn('text-xs tabular-nums', item.overdue ? 'font-medium text-destructive' : 'text-ink-2')}>
-                      {formatDeadline(item.deadline)}
-                      {item.overdue && ' · Overdue'}
-                    </span>
+                    <span className="text-xs tabular-nums text-ink-2">{formatLastSeen(item.lastSeenAt)}</span>
                   </TableCell>
                 </TableRow>
               );

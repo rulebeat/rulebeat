@@ -35,14 +35,12 @@ export interface RuleDefinition {
 }
 
 /**
- * What a shipped rule says a brand-new install should start as. Kind and the Deadline and Group
- * columns belong to the install (ADR 0005), not to the versioned definition, so these are read once,
- * when seeding first inserts the rule, and never again. Absent means a Problem with no columns.
+ * What a shipped rule says a brand-new install should start as. Kind belongs to the install
+ * (ADR 0005), not to the versioned definition, so it is read once, when seeding first inserts the
+ * rule, and never again. Absent means a Problem.
  */
 export interface RuleInstallDefaults {
   kind?: Rule['kind'];
-  deadlineField?: string;
-  groupField?: string;
 }
 
 export interface ShippedRule {
@@ -99,12 +97,8 @@ export function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): 
 }
 
 /** The install defaults a definition declares, or undefined when it declares none. */
-function installDefaultsOf(declared: { kind?: unknown; deadlineField?: unknown; groupField?: unknown }): RuleInstallDefaults | undefined {
-  const kind = declared.kind === 'advisory' ? 'advisory' : undefined;
-  const deadlineField = nonEmptyString(declared.deadlineField);
-  const groupField = nonEmptyString(declared.groupField);
-  if (!kind && !deadlineField && !groupField) return undefined;
-  return { ...(kind ? { kind } : {}), ...(deadlineField ? { deadlineField } : {}), ...(groupField ? { groupField } : {}) };
+function installDefaultsOf(declared: { kind?: unknown }): RuleInstallDefaults | undefined {
+  return declared.kind === 'advisory' ? { kind: 'advisory' } : undefined;
 }
 
 function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): ShippedRule {

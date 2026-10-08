@@ -1,6 +1,6 @@
 /**
- * Issue #181: a shipped rule can declare its kind (and the Deadline and Group columns an Advisory
- * reads), but only as what a brand-new install starts with. Kind belongs to the install (ADR 0005),
+ * Issue #181: a shipped rule can declare its kind, but only as what a brand-new install starts
+ * with. Kind belongs to the install (ADR 0005),
  * so seeding reads the declaration when it first inserts the rule and never again: not on a restart,
  * not when a disabled rule moves to a newer version, not when a newer version declares something else.
  */
@@ -19,7 +19,7 @@ import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
 
 const ID = 'aaaaaaaa-0000-4000-8000-0000000000c1';
 const dataDir = join(resolve(__dirname, '..', '..'), 'data');
-const ADVISORY_DEFAULTS = { kind: 'advisory', deadlineField: 'retirementDate', groupField: 'retirementFeatureName' } as const;
+const ADVISORY_DEFAULTS = { kind: 'advisory' } as const;
 
 const v1 = (installDefaults?: NonNullable<ReturnType<typeof shippedRule>['installDefaults']>) =>
   shippedRule({ id: ID, installDefaults });
@@ -43,27 +43,14 @@ beforeEach(async () => {
 });
 
 describe('a shipped rule that declares its kind', () => {
-  it('arrives on a fresh install as an Advisory with its Deadline and Group columns', async () => {
+  it('arrives on a fresh install as an Advisory', async () => {
     await seed(catalogueOf(v1(ADVISORY_DEFAULTS)));
-    const rule = await stored();
-    expect(rule.kind).toBe('advisory');
-    expect(rule.deadlineField).toBe('retirementDate');
-    expect(rule.groupField).toBe('retirementFeatureName');
+    expect((await stored()).kind).toBe('advisory');
   });
 
-  it('arrives as a Problem with no columns when it declares nothing', async () => {
+  it('arrives as a Problem when it declares nothing', async () => {
     await seed(catalogueOf(v1()));
-    const rule = await stored();
-    expect(rule.kind).toBe('state');
-    expect(rule.deadlineField).toBeUndefined();
-    expect(rule.groupField).toBeUndefined();
-  });
-
-  it('is still a Problem when it names columns but no kind', async () => {
-    await seed(catalogueOf(v1({ deadlineField: 'retirementDate', groupField: 'retirementFeatureName' })));
-    const rule = await stored();
-    expect(rule.kind).toBe('state');
-    expect(rule.deadlineField).toBeUndefined();
+    expect((await stored()).kind).toBe('state');
   });
 
   it('is never an Advisory on the Logs backend, whatever it declares', async () => {
@@ -89,13 +76,12 @@ describe('an install that switched the shipped Advisory to a Problem', () => {
     expect(rule.kind).toBe('state');
   });
 
-  it('keeps Problem when a disabled rule moves to the new version, with the columns it had', async () => {
+  it('keeps Problem when a disabled rule moves to the new version', async () => {
     await updateRule(ID, { enabled: false });
     await seed(catalogueOf(v2(ADVISORY_DEFAULTS)));
     const rule = await stored();
     expect(rule.version).toBe('2.0.0');
     expect(rule.kind).toBe('state');
-    expect(rule.deadlineField).toBe('retirementDate');
   });
 
   it('keeps Problem across a restart of the same version', async () => {
@@ -111,10 +97,7 @@ describe('an install that already has the shipped rule as a Problem', () => {
 
   it('is never made an Advisory by an upgrade whose version now declares Advisory', async () => {
     await seed(catalogueOf(v2(ADVISORY_DEFAULTS)));
-    const rule = await stored();
-    expect(rule.kind).toBe('state');
-    expect(rule.deadlineField).toBeUndefined();
-    expect(rule.groupField).toBeUndefined();
+    expect((await stored()).kind).toBe('state');
   });
 
   it('is not made an Advisory when a disabled rule moves to the version that declares Advisory', async () => {
@@ -123,7 +106,5 @@ describe('an install that already has the shipped rule as a Problem', () => {
     const rule = await stored();
     expect(rule.version).toBe('2.0.0');
     expect(rule.kind).toBe('state');
-    expect(rule.deadlineField).toBeUndefined();
-    expect(rule.groupField).toBeUndefined();
   });
 });

@@ -5,8 +5,6 @@ import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNa
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
-import { checkDeadlineFieldRequest } from '@/lib/deadline-field-validation';
-import { checkGroupFieldRequest } from '@/lib/group-field-validation';
 import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
@@ -23,7 +21,7 @@ export async function POST(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   // `copyFrom` is the id of the rule the form was duplicated from; it is not a Rule field.
-  const body = await parseJsonBody<Omit<Rule, 'id'> & { copyFrom?: unknown }>(req);
+  const body = await parseJsonBody<Omit<Rule, 'id'> & { copyFrom?: unknown; deadlineField?: unknown; groupField?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
   if ('appliesTo' in body) {
@@ -110,20 +108,13 @@ export async function POST(req: Request) {
   // A version, a retirement and an origin are the server's to set, never a request's: a custom rule
   // has no version of its own and is never retired, and its origin is the rule `copyFrom` names as
   // this server sees it. An unknown or non-string `copyFrom` records no origin and still creates.
-  const { copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov, ...fields } = body;
+  // `deadlineField` and `groupField` are settings rules no longer have; a client that still sends
+  // them is ignored and never sees them echoed back.
+  const {
+    copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov,
+    deadlineField: _df, groupField: _gf, ...fields
+  } = body;
   const source = typeof copyFrom === 'string' && copyFrom !== '' ? await loadRule(copyFrom) : null;
-
-  const kind = resolveKind(queryBackend, body.kind);
-  const deadline = await checkDeadlineFieldRequest({
-    requested: body.deadlineField, stored: undefined, kind,
-    rule: { queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
-  });
-  if (!deadline.ok) return NextResponse.json({ error: deadline.error }, { status: 400 });
-  const group = await checkGroupFieldRequest({
-    requested: body.groupField, stored: undefined, kind,
-    rule: { queryBackend, rawKql: body.rawKql, projectColumns: body.projectColumns },
-  });
-  if (!group.ok) return NextResponse.json({ error: group.error }, { status: 400 });
 
   const rule: Rule = {
     ...fields,
@@ -131,9 +122,7 @@ export async function POST(req: Request) {
     type: 'custom',
     pack: undefined,
     queryBackend,
-    kind,
-    deadlineField: deadline.field,
-    groupField: group.field,
+    kind: resolveKind(queryBackend, body.kind),
     ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);

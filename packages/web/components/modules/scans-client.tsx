@@ -85,7 +85,7 @@ export interface ScansClientProps {
   resultsInitialFilters?: {
     categories?: string[]; status?: string; ruleId?: string;
     severities?: Severity[]; subscriptions?: string[]; resourceGroups?: string[]; locations?: string[];
-    tags?: string[]; windowDays?: number; from?: string; to?: string; search?: string; view?: string;
+    tags?: string[]; windowDays?: number; from?: string; to?: string; search?: string;
   };
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];

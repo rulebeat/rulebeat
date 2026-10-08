@@ -71,24 +71,6 @@ export const RESULTS_KINDS: readonly RuleKind[] = ['state', 'activity'];
 /** What the Advisories tab lists. */
 export const ADVISORY_KINDS: readonly RuleKind[] = ['advisory'];
 
-/** Whether a listing holds only Advisories, the one case that shows Deadline and Overdue. */
-export function listsOnlyAdvisories(kinds: readonly RuleKind[] | undefined): boolean {
-  return !!kinds && kinds.length > 0 && kinds.every(k => k === 'advisory');
-}
-
-/** Whether a finding is Overdue: an open Advisory whose Deadline is before `now`. Read-time only
- *  and never stored, and never an input to any posture or problem count. `now` is a parameter so
- *  the answer is testable and never depends on when a page happened to render. A Deadline that
- *  equals `now` is not yet Overdue. */
-export function isOverdue(
-  f: { kind?: RuleKind; status?: 'active' | 'fixed'; deadline?: string },
-  now: Date,
-): boolean {
-  if (f.kind !== 'advisory' || (f.status ?? 'active') !== 'active' || !f.deadline) return false;
-  const due = Date.parse(f.deadline);
-  return Number.isFinite(due) && due < now.getTime();
-}
-
 /** Whether an object's kind is one of `kinds` (an absent kind is 'state'). */
 export function isOfKind(obj: { kind?: RuleKind }, kinds: readonly RuleKind[]): boolean {
   return kinds.includes(obj.kind ?? 'state');

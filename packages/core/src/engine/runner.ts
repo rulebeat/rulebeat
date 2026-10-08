@@ -1,6 +1,4 @@
 import { createFinding } from '../finding.js';
-import { parseDeadline } from '../deadline.js';
-import { parseGroupValue } from '../group-value.js';
 import { ResourceGraphTruncatedError } from '../clients/resource-graph.js';
 import { extractAzureErrorMessage } from '../errors.js';
 import type { Finding, TenantContext } from '../types.js';
@@ -137,15 +135,6 @@ export async function* runRules(
       const pick = (argKey: string, fallbackVal: string | undefined) =>
         resource[argKey] ?? enriched?.[argKey] ?? fallbackVal;
       const optStr = (v: unknown) => (v != null ? String(v) : undefined);
-      // Only an Advisory rule's findings carry a Deadline. A value that does not parse is no
-      // Deadline, never a failed rule.
-      const deadline = rule.kind === 'advisory' && rule.deadlineField
-        ? parseDeadline(resource[rule.deadlineField]) ?? undefined
-        : undefined;
-      // Same for the group: a blank or missing value is no group, never a failed rule.
-      const groupValue = rule.kind === 'advisory' && rule.groupField
-        ? parseGroupValue(resource[rule.groupField]) ?? undefined
-        : undefined;
       yield {
         kind: 'finding',
         finding: createFinding({
@@ -165,8 +154,6 @@ export async function* runRules(
           recommendation: rule.description,
           remediationSteps: rule.remediationSteps ?? [],
           azurePortalLink: `https://portal.azure.com/#@/resource${resourceId}`,
-          ...(deadline ? { deadline } : {}),
-          ...(groupValue ? { groupValue } : {}),
         }),
       };
     }

@@ -9,15 +9,13 @@ export interface AdvisoryWidgetItem {
   resourceName: string;
   category: string;
   severity: Severity;
-  /** ISO date the Advisory needs action by, when its rule names a Deadline column and the row held one. */
-  deadline?: string;
-  /** Past its Deadline as of the request. Read-time only; never stored and never counted. */
-  overdue: boolean;
+  /** When the latest scan that found it ran, as an ISO timestamp. */
+  lastSeenAt: string;
 }
 
 /** What `/api/widgets/advisories` returns. */
 export interface AdvisoriesWidgetData {
-  /** Open Advisories in scope, Overdue first. Capped at the request's `limit`. */
+  /** Open Advisories in scope, by severity then most recently seen. Capped at the request's `limit`. */
   items: AdvisoryWidgetItem[];
   /** Every open Advisory in scope, so the widget can say how many the cap hid. */
   total: number;
@@ -30,13 +28,12 @@ export interface AdvisoriesWidgetData {
 export const ADVISORIES_WIDGET_DEFAULT_LIMIT = 10;
 export const ADVISORIES_WIDGET_MAX_LIMIT = 50;
 
-/** A Deadline is a calendar date, often stored at midnight UTC, so it is shown in UTC and with its
- *  year: in a local zone behind UTC the same value would read as the day before. Matches the
- *  Advisories tab. */
-export function formatDeadline(iso?: string): string {
-  if (!iso) return 'None';
+/** The day a scan last found the Advisory, shown in UTC and with its year so the same stored value
+ *  reads the same wherever it is viewed. */
+export function formatLastSeen(iso?: string): string {
+  if (!iso) return 'Unknown';
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'None';
+  if (Number.isNaN(date.getTime())) return 'Unknown';
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 

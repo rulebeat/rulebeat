@@ -1,8 +1,8 @@
 /**
  * Issue #181 on Postgres: the same scenarios as rule-versions-install-kind.test.ts, driven through
- * `seedPg()` with an injected catalogue. A shipped rule's declared kind and Deadline and Group
- * columns are read when the rule is first inserted and never again, so an install that switched it
- * to a Problem keeps that through an upgrade, and a Problem is never made an Advisory.
+ * `seedPg()` with an injected catalogue. A shipped rule's declared kind is read when the rule is
+ * first inserted and never again, so an install that switched it to a Problem keeps that through an
+ * upgrade, and a Problem is never made an Advisory.
  *
  * Runs only under the Postgres CI job (RULEBEAT_TEST_PG_URL set); `tests/setup.ts` recreates the
  * `public` schema per test file and importing the client bootstraps it.
@@ -17,7 +17,7 @@ import { catalogueOf, shippedRule } from '../helpers/catalogue';
 
 const REAL_DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
 const ID = 'aaaaaaaa-0000-4000-8000-0000000000c1';
-const ADVISORY_DEFAULTS: RuleInstallDefaults = { kind: 'advisory', deadlineField: 'retirementDate', groupField: 'retirementFeatureName' };
+const ADVISORY_DEFAULTS: RuleInstallDefaults = { kind: 'advisory' };
 
 type Row = Record<string, unknown>;
 
@@ -32,7 +32,7 @@ async function seed(catalogue: ShippedCatalogue): Promise<void> {
 }
 
 async function row(): Promise<Row> {
-  const res = await pgDb!.execute(sql`SELECT version, kind, deadline_field, group_field FROM rules WHERE id = ${ID}`);
+  const res = await pgDb!.execute(sql`SELECT version, kind FROM rules WHERE id = ${ID}`);
   return res.rows[0] as Row;
 }
 
@@ -47,19 +47,14 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule install kind', (
   });
 
   describe('a shipped rule that declares its kind', () => {
-    it('arrives on a fresh install as an Advisory with its Deadline and Group columns', async () => {
+    it('arrives on a fresh install as an Advisory', async () => {
       await seed(catalogueOf(v1(ADVISORY_DEFAULTS)));
-      expect(await row()).toEqual({ version: '1.0.0', kind: 'advisory', deadline_field: 'retirementDate', group_field: 'retirementFeatureName' });
+      expect(await row()).toEqual({ version: '1.0.0', kind: 'advisory' });
     });
 
-    it('arrives as a Problem with no columns when it declares nothing', async () => {
+    it('arrives as a Problem when it declares nothing', async () => {
       await seed(catalogueOf(v1()));
-      expect(await row()).toEqual({ version: '1.0.0', kind: 'state', deadline_field: null, group_field: null });
-    });
-
-    it('is still a Problem when it names columns but no kind', async () => {
-      await seed(catalogueOf(v1({ deadlineField: 'retirementDate', groupField: 'retirementFeatureName' })));
-      expect(await row()).toMatchObject({ kind: 'state', deadline_field: null, group_field: null });
+      expect(await row()).toEqual({ version: '1.0.0', kind: 'state' });
     });
   });
 
@@ -74,10 +69,10 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule install kind', (
       expect(await row()).toMatchObject({ version: '1.0.0', kind: 'state' });
     });
 
-    it('keeps Problem when a disabled rule moves to the new version, with the columns it had', async () => {
+    it('keeps Problem when a disabled rule moves to the new version, ', async () => {
       await pgDb!.execute(sql`UPDATE rules SET enabled = FALSE WHERE id = ${ID}`);
       await seed(catalogueOf(v2(ADVISORY_DEFAULTS)));
-      expect(await row()).toMatchObject({ version: '2.0.0', kind: 'state', deadline_field: 'retirementDate' });
+      expect(await row()).toMatchObject({ version: '2.0.0', kind: 'state' });
     });
 
     it('keeps Problem across a restart of the same version', async () => {
@@ -93,13 +88,13 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule install kind', (
 
     it('is never made an Advisory by an upgrade whose version now declares Advisory', async () => {
       await seed(catalogueOf(v2(ADVISORY_DEFAULTS)));
-      expect(await row()).toEqual({ version: '1.0.0', kind: 'state', deadline_field: null, group_field: null });
+      expect(await row()).toEqual({ version: '1.0.0', kind: 'state' });
     });
 
     it('is not made an Advisory when a disabled rule moves to the version that declares Advisory', async () => {
       await pgDb!.execute(sql`UPDATE rules SET enabled = FALSE WHERE id = ${ID}`);
       await seed(catalogueOf(v2(ADVISORY_DEFAULTS)));
-      expect(await row()).toEqual({ version: '2.0.0', kind: 'state', deadline_field: null, group_field: null });
+      expect(await row()).toEqual({ version: '2.0.0', kind: 'state' });
     });
   });
 });

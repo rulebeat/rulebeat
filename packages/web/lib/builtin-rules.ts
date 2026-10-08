@@ -348,10 +348,10 @@ const IDENTITY_RULES: CoreRuleDefinition[] = [
 
 // ── Reliability / Service retirements (Advisory) ─────────────────────────────
 // Reads Azure Advisor's "Service upgrade and retirement" recommendations, one Advisory per affected
-// resource. Ships as an Advisory with a Deadline (the retirement date) and a group (the retiring
-// feature); kind and those two columns are install defaults, read only when the rule is first
-// inserted (ADR 0005), so an admin who switches it to a Problem keeps that through every upgrade.
-// `description` is also the recommendation, so the coverage caveat lives here where the reader sees it.
+// resource, and keeps every retirement: a recommendation with no retiring feature name is labelled
+// with its problem text instead. Ships as an Advisory; kind is an install default, read only when
+// the rule is first inserted (ADR 0005), so an admin who switches it to a Problem keeps that through
+// every upgrade. `description` is also the recommendation, so the coverage caveat lives here where the reader sees it.
 
 const ADVISORY_RULES: CoreRuleDefinition[] = [
   {
@@ -366,8 +366,6 @@ const ADVISORY_RULES: CoreRuleDefinition[] = [
     severity: 'medium',
     enabled: true,
     kind: 'advisory',
-    deadlineField: 'retirementDate',
-    groupField: 'retirementFeatureName',
     scope: { level: 'resource' },
     resourceTypes: [],
     conditions: [],
@@ -377,10 +375,11 @@ const ADVISORY_RULES: CoreRuleDefinition[] = [
 | where iff(strlen(name) == 36, properties.lastUpdated > ago(1d), properties.platformState == 'New')
 | where isempty(properties.tracked)
 | extend resourceId = tostring(properties.resourceMetadata.resourceId)
-| extend retirementFeatureName = tostring(properties.extendedProperties.retirementFeatureName)
+| extend retiringFeature = iff(isempty(tostring(properties.extendedProperties.retirementFeatureName)), tostring(properties.shortDescription.problem), tostring(properties.extendedProperties.retirementFeatureName))
 | extend retirementDate = tostring(properties.extendedProperties.retirementDate)
-| where isnotempty(resourceId) and isnotempty(retirementFeatureName)
-| project id = resourceId, name = tostring(split(resourceId, '/')[-1]), subscriptionId, resourceGroup, retirementFeatureName, retirementDate, shortDescription = tostring(properties.shortDescription.problem), recommendationTypeId = tostring(properties.recommendationTypeId)`,
+| extend recommendationTypeId = tostring(properties.recommendationTypeId)
+| where isnotempty(resourceId)
+| project id = resourceId, name = tostring(split(resourceId, '/')[-1]), subscriptionId, resourceGroup, retiringFeature, retirementDate, recommendationTypeId`,
   },
 ];
 

@@ -75,35 +75,17 @@ Advisories tab and left out of posture and every problem count
 channel turns on Include advisories ([`notifications.md`](notifications.md)). The kind is a property of your install,
 not of the shipped definition, so an upgrade or a rule version switch never turns it back.
 
-A Resource Graph Advisory rule can also name a **Deadline column**, one of the columns its query
-returns. Each row's value there is read as an ISO 8601 date or a Unix timestamp (below 1e11 it is
-seconds, from there up it is milliseconds) and stored on the finding as its Deadline. A value that
-cannot be read as a date leaves that finding without a Deadline and the rule still succeeds. An open
-Advisory whose Deadline is before now is **Overdue**: the Advisories tab computes that when it is
-read, lists those first, and does not store it or count it anywhere. Like the kind, the Deadline column
-belongs to your install and survives an upgrade or a rule version switch.
-
-An Advisory rule on Resource Graph can also name a **Group column**, another column its query returns.
-Each finding stores that column's value (trimmed; a blank or missing value means no group) every time
-it is seen. The Advisories tab then groups its findings by rule, then by group value, and shows the
-rule's recommendation once per group with the affected resources underneath, each with its own
-status, Deadline and Overdue mark. A group that holds an Overdue finding, or the earliest Deadline,
-is listed first. A rule with no Group column is one group. Grouping only arranges what the tab already
-lists: it changes no count and no fingerprint, so fixing one resource resolves only its own finding.
-The tab opens grouped, and List shows the flat table (`?view=list` in the address). The Group column
-belongs to your install in the same way the Deadline column does.
-
 RuleBeat ships one Advisory rule, **Service retirements** (Reliability). It reads the Azure Advisor
-recommendations in the Service upgrade and retirement subcategory, one Advisory per affected resource,
-with the retirement date as its Deadline and the retiring feature as its group. Advisor does not report
-every retirement and covers the public cloud only, so a resource missing from the list is not
-necessarily safe; the rule's recommendation points to the
+recommendations in the Service upgrade and retirement subcategory, one Advisory per affected resource.
+Every retirement is kept: a recommendation with no feature name is labelled with its problem text, the
+retirement date is shown when Advisor gives one, and the recommendation type id is always recorded.
+Advisor does not report every retirement and covers the public cloud only, so a resource missing from
+the list is not necessarily safe; the rule's recommendation points to the
 [Azure updates retirements page](https://azure.microsoft.com/updates/?updateType=retirements) for the
 rest. A resource that Advisor lists under two retirements is one Advisory, since a finding is
 identified by rule and resource. A fresh install starts with the rule as an Advisory, and you can
 switch it to a Problem in the rule form like any other rule. An upgrade never changes that choice: a
-new version of the rule changes what it runs only when it is disabled, and never changes its kind or
-its Deadline and group columns.
+new version of the rule changes what it runs only when it is disabled, and never changes its kind.
 
 ## How a row becomes a finding
 

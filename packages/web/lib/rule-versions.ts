@@ -200,22 +200,14 @@ export function kindAfterApply(currentKind: string, queryBackend: RuleDefinition
 }
 
 /**
- * What a brand-new row of a shipped rule starts with for the three columns that belong to the install
- * rather than to the versioned definition: its kind and the Deadline and Group columns an Advisory
- * reads. This is the only place seeding decides them, and only the `insert` action calls it: a rule
- * that already has a row keeps what it has, whatever a newer version declares (ADR 0005, ADR 0004).
- * Logs rules are always 'activity', and the columns are only ever set on an Advisory.
+ * What a brand-new row of a shipped rule starts with for the column that belongs to the install
+ * rather than to the versioned definition: its kind. This is the only place seeding decides it, and
+ * only the `insert` action calls it: a rule that already has a row keeps what it has, whatever a
+ * newer version declares (ADR 0005, ADR 0004). Logs rules are always 'activity'.
  */
-export function installColumns(rule: ShippedRule): { kind: string; deadlineField: string | null; groupField: string | null } {
-  const { queryBackend } = rule.definition;
-  if (queryBackend === 'log-analytics') return { kind: 'activity', deadlineField: null, groupField: null };
-  const declared = rule.installDefaults;
-  if (declared?.kind !== 'advisory') return { kind: 'state', deadlineField: null, groupField: null };
-  return {
-    kind: 'advisory',
-    deadlineField: queryBackend === 'resource-graph' ? declared.deadlineField ?? null : null,
-    groupField: declared.groupField ?? null,
-  };
+export function installColumns(rule: ShippedRule): { kind: string } {
+  if (rule.definition.queryBackend === 'log-analytics') return { kind: 'activity' };
+  return { kind: rule.installDefaults?.kind === 'advisory' ? 'advisory' : 'state' };
 }
 
 /** Remembers a stored definition that differs from what ships, so it is never lost. */

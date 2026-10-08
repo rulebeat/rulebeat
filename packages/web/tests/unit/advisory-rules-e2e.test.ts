@@ -19,7 +19,9 @@ import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { buildExplorerData } from '@/lib/explorer-data';
 import { summarizeFindings, countFindingsByRule } from '@/lib/explorer-filters';
 import { addSuppression, loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
-import { updateRule } from '@/lib/rules';
+import { loadRules, updateRule } from '@/lib/rules';
+import { ADVISORY_KINDS, RESULTS_KINDS } from '@/lib/finding-kinds';
+import type { RuleKind } from '@rulebeat/core';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 
@@ -169,6 +171,32 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
     await scan();
     expect((await buildExplorerData({ kinds: ['advisory'] })).findings).toHaveLength(3);
     expect((await listFindings()).find(f => f.fingerprint === before.fingerprint)?.firstSeenAt).toBe(before.firstSeenAt);
+  });
+
+  it('leaves the rule, its findings and how they display unchanged by a kind switch, apart from the tab they list under', async () => {
+    const ruleOf = async () => {
+      const { kind, lastRunAt: _at, lastRunStatus: _status, ...rest } = (await loadRules()).find(r => r.id === ADVISORY)!;
+      return { kind, rest };
+    };
+    const rowsOf = async (kinds: readonly RuleKind[]) => (await buildExplorerData({ kinds })).findings
+      .filter(f => f.ruleId === ADVISORY)
+      .map(({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, evidence, firstSeenAt, status }) =>
+        ({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, evidence, firstSeenAt, status }))
+      .sort((a, b) => (a.resourceId ?? '').localeCompare(b.resourceId ?? ''));
+
+    await scan();
+    const ruleBefore = await ruleOf();
+    const rowsBefore = await rowsOf(ADVISORY_KINDS);
+    expect(rowsBefore).toHaveLength(3);
+
+    await updateRule(ADVISORY, { kind: 'state' });
+    await scan();
+    const ruleAfter = await ruleOf();
+    expect([ruleBefore.kind, ruleAfter.kind]).toEqual(['advisory', 'state']);
+    expect(ruleAfter.rest).toEqual(ruleBefore.rest);
+    expect(await rowsOf(RESULTS_KINDS)).toEqual(rowsBefore);
+    expect(await rowsOf(ADVISORY_KINDS)).toEqual([]);
+    for (const key of ['deadlineField', 'groupField']) expect(ruleAfter.rest).not.toHaveProperty(key);
   });
 
   it('resolves an Advisory finding that stops appearing when the rule ran successfully', async () => {

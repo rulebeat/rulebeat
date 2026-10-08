@@ -100,7 +100,7 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
   {
     type: 'advisories',
     title: 'Advisories',
-    description: 'Open Advisories, Overdue first, with rule, resource, severity and Deadline. Never counted as failures.',
+    description: 'Open Advisories by severity, then most recently seen, with rule and resource. Never counted as failures.',
     defaultConfig: { limit: 10 },
     defaultW: 8, defaultH: 6,
   },

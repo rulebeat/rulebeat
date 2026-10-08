@@ -1,8 +1,9 @@
 /**
  * Issue #181, end to end: the Service retirements rule RuleBeat Core ships scans through
  * runCategoryScan() with the fake Azure context answering as Azure Advisor would. Each affected
- * resource becomes one Advisory keyed on its resource id, carrying the retirement date as its
- * Deadline and the retiring feature as its group, and none of it enters a posture or problem count.
+ * resource becomes one Advisory keyed on its resource id, and none of it enters a posture or problem
+ * count. Every retirement is kept: a recommendation with no feature name is labelled with its
+ * problem text, carries the retirement date when it has one, and always carries its type id.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCategory } from '@/lib/db/categories';
@@ -11,7 +12,6 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { listFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { buildExplorerData } from '@/lib/explorer-data';
-import { groupAdvisories } from '@/lib/advisory-groups';
 import { resetDb } from '../helpers/db';
 import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 import { fakeTenantContext, TEST_SUB_A } from '../helpers/fake-azure';
@@ -19,7 +19,6 @@ import { fakeTenantContext, TEST_SUB_A } from '../helpers/fake-azure';
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
-const NOW = new Date('2026-06-15T12:00:00.000Z');
 const resourceId = (provider: string, name: string) =>
   `/subscriptions/${TEST_SUB_A}/resourcegroups/rg-legacy/providers/${provider}/${name}`;
 
@@ -27,42 +26,67 @@ const REDIS = resourceId('microsoft.cache', 'redis/cache-one');
 const SITE = resourceId('microsoft.web', 'sites/app-one');
 const VM = resourceId('microsoft.compute', 'virtualmachines/vm-one');
 
-/** A row shaped like the rule's own `| project`; the id is whatever the caller says Advisor returned. */
-function retirementRow(id: string, feature: string, date: string): Record<string, unknown> {
-  return {
-    id,
-    name: id.split('/').pop(),
-    subscriptionId: TEST_SUB_A,
-    resourceGroup: 'rg-legacy',
-    retirementFeatureName: feature,
-    retirementDate: date,
-    shortDescription: `${feature} is being retired`,
-    recommendationTypeId: '00000000-0000-0000-0000-00000000abcd',
-  };
+const TYPE_ID = '00000000-0000-0000-0000-00000000abcd';
+
+/** What Azure Advisor holds for one recommendation, before the rule's query shapes it. */
+interface Recommendation {
+  resourceId: string;
+  feature?: string;
+  problem: string;
+  date?: string;
+  typeId?: string;
 }
 
-let advisorRows: () => Record<string, unknown>[];
+const recommendation = (id: string, feature: string | undefined, date?: string): Recommendation => ({
+  resourceId: id, feature, problem: `${feature ?? 'A service'} is being retired`, date, typeId: TYPE_ID,
+});
+
+/**
+ * Answers the rule's own query the way Advisor would, reading the rule's own text for the two
+ * decisions this test cares about: what a recommendation with no feature name is labelled with, and
+ * whether such a recommendation is dropped. Everything else Advisor does is not modelled here.
+ */
+function advisorAnswer(kql: string, held: Recommendation[]): Record<string, unknown>[] {
+  const labelExpr = /\|\s*extend\s+retiringFeature\s*=\s*(.+)/.exec(kql)?.[1] ?? '';
+  const fallsBackToProblem = /iff\(\s*isempty\(tostring\(properties\.extendedProperties\.retirementFeatureName\)\)\s*,\s*tostring\(properties\.shortDescription\.problem\)/.test(labelExpr);
+  const dropsNoFeature = /\|\s*where[^\n]*isnotempty\(\s*(retiringFeature|retirementFeatureName)\s*\)/.test(kql);
+  return held.flatMap(r => {
+    const label = r.feature || (fallsBackToProblem ? r.problem : '');
+    if (dropsNoFeature && !label) return [];
+    return [{
+      id: r.resourceId,
+      name: r.resourceId.split('/').pop(),
+      subscriptionId: TEST_SUB_A,
+      resourceGroup: 'rg-legacy',
+      retiringFeature: label,
+      retirementDate: r.date ?? '',
+      recommendationTypeId: r.typeId ?? '',
+    }];
+  });
+}
+
+let held: Recommendation[];
 
 async function scan() {
   const category = (await getCategory('reliability'))!;
   const ctx = fakeTenantContext({
     // Only the rule's own query reads `advisorresources`; the location follow-up gets nothing back.
-    rows: kql => (/^\s*advisorresources/i.test(kql) ? advisorRows() : []),
+    rows: kql => (/^\s*advisorresources/i.test(kql) ? advisorAnswer(kql, held) : []),
   });
   const outcome = await runCategoryScan(category, { ctx, ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
   return { ctx, outcome };
 }
 
-const advisories = () => buildExplorerData({ kinds: ['advisory'], now: NOW });
+const advisories = () => buildExplorerData({ kinds: ['advisory'] });
 const mine = async () => (await listFindings()).filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID);
 
 beforeEach(async () => {
   await resetDb();
   mockAuth.mockReset();
-  advisorRows = () => [
-    retirementRow(REDIS, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30'),
-    retirementRow(SITE, 'App Service Linux on Python 3.8', '2026-12-31T00:00:00Z'),
-    retirementRow(VM, 'App Service Linux on Python 3.8', '2027-03-01'),
+  held = [
+    recommendation(REDIS, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30'),
+    recommendation(SITE, 'App Service Linux on Python 3.8', '2026-12-31T00:00:00Z'),
+    recommendation(VM, 'App Service Linux on Python 3.8', '2027-03-01'),
   ];
   const viewer = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in viewer) throw new Error(viewer.error);
@@ -84,7 +108,7 @@ describe('the resource id the rule reports', () => {
         if (/^\s*advisorresources/i.test(kql)) {
           const expr = /\|\s*extend\s+resourceId\s*=\s*(.+)/.exec(kql)?.[1] ?? '';
           const id = /^tolower\(/i.test(expr.trim()) ? MIXED.toLowerCase() : MIXED;
-          return [retirementRow(id, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30')];
+          return advisorAnswer(kql, [recommendation(id, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30')]);
         }
         const asked = [...kql.matchAll(/'((?:[^']|'')*)'/g)].map(m => m[1].replace(/''/g, "'"));
         return asked.includes(MIXED)
@@ -105,7 +129,7 @@ describe('the resource id the rule reports', () => {
 });
 
 describe('scanning the shipped Service retirements rule', () => {
-  it('yields one Advisory per affected resource, keyed on the resource id, with its Deadline and group', async () => {
+  it('yields one Advisory per affected resource, keyed on the resource id, with its feature, date and type id', async () => {
     const { outcome } = await scan();
     expect(outcome.summary.incompleteRules).toEqual([]);
     expect(outcome.summary.coverage).not.toBe('partial');
@@ -113,33 +137,52 @@ describe('scanning the shipped Service retirements rule', () => {
     const found = await mine();
     expect(found.map(f => f.resourceId).sort()).toEqual([REDIS, SITE, VM].sort());
     const byId = (id: string) => found.find(f => f.resourceId === id)!;
-    expect(byId(REDIS).deadline).toBe('2026-09-30T00:00:00.000Z');
-    expect(byId(REDIS).groupValue).toBe('Azure Cache for Redis Basic and Standard tiers');
-    expect(byId(SITE).deadline).toBe('2026-12-31T00:00:00.000Z');
-    expect(byId(SITE).groupValue).toBe('App Service Linux on Python 3.8');
-    expect(byId(VM).deadline).toBe('2027-03-01T00:00:00.000Z');
+    expect(byId(REDIS).evidence).toMatchObject({
+      retiringFeature: 'Azure Cache for Redis Basic and Standard tiers', retirementDate: '2026-09-30', recommendationTypeId: TYPE_ID,
+    });
+    expect(byId(SITE).evidence).toMatchObject({ retiringFeature: 'App Service Linux on Python 3.8', retirementDate: '2026-12-31T00:00:00Z' });
+    expect(byId(VM).evidence).toMatchObject({ retirementDate: '2027-03-01' });
     expect(found.every(f => f.status === 'active')).toBe(true);
 
     const { findings } = await advisories();
     expect(findings.filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID)).toHaveLength(3);
   });
 
-  it('groups the Advisories by retiring feature, one group per feature', async () => {
+  it('keeps a retirement that has no feature name, labelled with its problem text', async () => {
+    held = [
+      recommendation(REDIS, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30'),
+      { resourceId: SITE, problem: 'Your App Service plan uses a runtime that is being retired', date: '2026-12-31', typeId: TYPE_ID },
+    ];
+    const { outcome } = await scan();
+    expect(outcome.summary.incompleteRules).toEqual([]);
+
+    const found = await mine();
+    expect(found.map(f => f.resourceId).sort()).toEqual([REDIS, SITE].sort());
+    const site = found.find(f => f.resourceId === SITE)!;
+    expect(site.status).toBe('active');
+    expect(site.evidence).toMatchObject({
+      retiringFeature: 'Your App Service plan uses a runtime that is being retired',
+      retirementDate: '2026-12-31',
+      recommendationTypeId: TYPE_ID,
+    });
+  });
+
+  it('keeps a retirement with no feature name and no date, and still carries its type id', async () => {
+    held = [{ resourceId: VM, problem: 'This VM image is being retired', typeId: TYPE_ID }];
     await scan();
-    const [rule, ...rest] = groupAdvisories((await advisories()).findings);
+
+    const [finding, ...rest] = await mine();
     expect(rest).toEqual([]);
-    expect(rule.ruleId).toBe(SERVICE_RETIREMENTS_RULE_ID);
-    expect(rule.groups.map(g => g.groupValue).sort()).toEqual([
-      'App Service Linux on Python 3.8',
-      'Azure Cache for Redis Basic and Standard tiers',
-    ]);
-    expect(rule.groups.find(g => g.groupValue === 'App Service Linux on Python 3.8')!.findings).toHaveLength(2);
+    expect(finding.evidence).toMatchObject({
+      retiringFeature: 'This VM image is being retired', recommendationTypeId: TYPE_ID,
+    });
+    expect(finding.evidence.retirementDate || undefined).toBeUndefined();
   });
 
   it('records a resource that is affected by two retirements as one Advisory, never two', async () => {
-    advisorRows = () => [
-      retirementRow(REDIS, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30'),
-      retirementRow(REDIS, 'Azure Cache for Redis TLS 1.0 and 1.1', '2026-11-01'),
+    held = [
+      recommendation(REDIS, 'Azure Cache for Redis Basic and Standard tiers', '2026-09-30'),
+      recommendation(REDIS, 'Azure Cache for Redis TLS 1.0 and 1.1', '2026-11-01'),
     ];
     await scan();
     expect(await mine()).toHaveLength(1);
@@ -147,7 +190,7 @@ describe('scanning the shipped Service retirements rule', () => {
 
   it('resolves an Advisory when Advisor stops reporting the resource, and leaves the others open', async () => {
     await scan();
-    advisorRows = () => [retirementRow(SITE, 'App Service Linux on Python 3.8', '2026-12-31T00:00:00Z')];
+    held = [recommendation(SITE, 'App Service Linux on Python 3.8', '2026-12-31T00:00:00Z')];
     const { outcome } = await scan();
     expect(outcome.summary.incompleteRules).toEqual([]);
     const found = await mine();

@@ -791,14 +791,6 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN retired_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_rule_id TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN origin_version TEXT`); } catch { /* already exists */ }
-  // #177: an Advisory rule's Deadline column, and the Deadline each finding carries. Plain nullable
-  // columns, so every existing rule names no Deadline column and every finding has no Deadline.
-  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN deadline_field TEXT`); } catch { /* already exists */ }
-  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN deadline TEXT`); } catch { /* already exists */ }
-  // #178: an Advisory rule's Group column, and the group value each finding carries. Plain nullable
-  // columns, so every existing rule names no Group column and every finding has no group.
-  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN group_field TEXT`); } catch { /* already exists */ }
-  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN group_value TEXT`); } catch { /* already exists */ }
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS rule_versions (
       rule_id TEXT NOT NULL,
@@ -1270,8 +1262,8 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     const now = new Date().toISOString();
 
     const insertRule = sqlite.prepare(`
-      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, condition_groups, project_columns, visual_query, raw_kql, type, pack, query_backend, kind, graph_query, logs_query, version, deadline_field, group_field)
-      VALUES (@id, @name, @description, @category, @severity, @enabled, @scope, @resourceTypes, NULL, @conditions, @conditionGroups, @projectColumns, @visualQuery, @rawKql, 'builtin', @pack, @queryBackend, @kind, @graphQuery, @logsQuery, @version, @deadlineField, @groupField)
+      INSERT OR IGNORE INTO rules (id, name, description, category, severity, enabled, scope, resource_types, filter, conditions, condition_groups, project_columns, visual_query, raw_kql, type, pack, query_backend, kind, graph_query, logs_query, version)
+      VALUES (@id, @name, @description, @category, @severity, @enabled, @scope, @resourceTypes, NULL, @conditions, @conditionGroups, @projectColumns, @visualQuery, @rawKql, 'builtin', @pack, @queryBackend, @kind, @graphQuery, @logsQuery, @version)
     `);
     const adopt = sqlite.prepare(`UPDATE rules SET type = 'builtin', pack = ? WHERE id = ?`);
     const backfillGraph = sqlite.prepare(`UPDATE rules SET query_backend = ?, kind = ?, graph_query = ? WHERE id = ? AND graph_query IS NULL`);

@@ -48,8 +48,7 @@ CREATE TABLE IF NOT EXISTS rules (
   version TEXT,
   retired_at TEXT,
   origin_rule_id TEXT,
-  origin_version TEXT,
-  deadline_field TEXT
+  origin_version TEXT
 );
 -- Applies to was removed; drop its columns from a database bootstrapped while it existed.
 ALTER TABLE rules DROP COLUMN IF EXISTS applies_to;
@@ -60,10 +59,6 @@ ALTER TABLE rules ADD COLUMN IF NOT EXISTS version TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS retired_at TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_rule_id TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_version TEXT;
--- Advisory Deadline column (#177), for a Postgres database bootstrapped before it shipped.
-ALTER TABLE rules ADD COLUMN IF NOT EXISTS deadline_field TEXT;
--- Advisory Group column (#178).
-ALTER TABLE rules ADD COLUMN IF NOT EXISTS group_field TEXT;
 
 CREATE TABLE IF NOT EXISTS rule_versions (
   rule_id TEXT NOT NULL,
@@ -257,15 +252,10 @@ CREATE TABLE IF NOT EXISTS findings (
   last_seen_at TEXT NOT NULL,
   resolved_at TEXT,
   last_scan_id TEXT,
-  times_seen INTEGER NOT NULL DEFAULT 1,
-  deadline TEXT
+  times_seen INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_findings_category_status ON findings(category, status);
 CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings(rule_id);
--- Advisory Deadline (#177), for a Postgres database bootstrapped before it shipped.
-ALTER TABLE findings ADD COLUMN IF NOT EXISTS deadline TEXT;
--- Advisory group value (#178).
-ALTER TABLE findings ADD COLUMN IF NOT EXISTS group_value TEXT;
 
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,
