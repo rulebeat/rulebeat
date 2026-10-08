@@ -366,3 +366,14 @@ export const queryRuns = pgTable('query_runs', {
   ownerId: text('owner_id').notNull(),
   ranAt: text('ran_at').notNull(),
 });
+
+export const savedViews = pgTable('saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tab: text('tab').notNull(),
+  query: text('query').notNull(),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: text('updated_at').notNull(),
+});

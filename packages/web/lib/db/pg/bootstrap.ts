@@ -398,6 +398,17 @@ CREATE TABLE IF NOT EXISTS query_runs (
   ran_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_query_runs_owner ON query_runs(owner_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS saved_views (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  tab TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 /**

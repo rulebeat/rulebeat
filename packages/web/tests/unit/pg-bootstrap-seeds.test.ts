@@ -105,7 +105,7 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres bootstrap and reseed'
       'categories', 'schedules', 'meta', 'users', 'azure_credentials', 'log_analytics_workspaces',
       'local_accounts', 'sso_providers', 'audit_log', 'findings', 'finding_events',
       'posture_snapshots', 'notification_channels', 'schedule_notification_channels',
-      'schedule_runs', 'notification_deliveries', 'saved_queries', 'query_runs',
+      'schedule_runs', 'notification_deliveries', 'saved_queries', 'query_runs', 'saved_views',
     ];
     for (const t of expected) expect(tables).toContain(t);
   });

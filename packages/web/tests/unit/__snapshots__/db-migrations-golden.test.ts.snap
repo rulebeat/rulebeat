@@ -200,6 +200,15 @@ table saved_queries
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   last_run_at TEXT
+table saved_views
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tab TEXT NOT NULL
+  query TEXT NOT NULL
+  created_by TEXT
+  created_at TEXT NOT NULL
+  updated_by TEXT
+  updated_at TEXT NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -322,6 +331,7 @@ resource_types_cache: 0
 rule_versions: 16
 rules: 20
 saved_queries: 0
+saved_views: 0
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 1
@@ -588,6 +598,15 @@ table saved_queries
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   last_run_at TEXT
+table saved_views
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tab TEXT NOT NULL
+  query TEXT NOT NULL
+  created_by TEXT
+  created_at TEXT NOT NULL
+  updated_by TEXT
+  updated_at TEXT NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -710,6 +729,7 @@ resource_types_cache: 0
 rule_versions: 16
 rules: 16
 saved_queries: 0
+saved_views: 0
 scans: 0
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -964,6 +984,15 @@ table saved_queries
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   last_run_at TEXT
+table saved_views
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tab TEXT NOT NULL
+  query TEXT NOT NULL
+  created_by TEXT
+  created_at TEXT NOT NULL
+  updated_by TEXT
+  updated_at TEXT NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1086,6 +1115,7 @@ resource_types_cache: 0
 rule_versions: 19
 rules: 19
 saved_queries: 0
+saved_views: 0
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -1351,6 +1381,15 @@ table saved_queries
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   last_run_at TEXT
+table saved_views
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tab TEXT NOT NULL
+  query TEXT NOT NULL
+  created_by TEXT
+  created_at TEXT NOT NULL
+  updated_by TEXT
+  updated_at TEXT NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1473,6 +1512,7 @@ resource_types_cache: 0
 rule_versions: 20
 rules: 23
 saved_queries: 0
+saved_views: 0
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -1740,6 +1780,15 @@ table saved_queries
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   last_run_at TEXT
+table saved_views
+  id TEXT PK(1)
+  name TEXT NOT NULL
+  tab TEXT NOT NULL
+  query TEXT NOT NULL
+  created_by TEXT
+  created_at TEXT NOT NULL
+  updated_by TEXT
+  updated_at TEXT NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1862,6 +1911,7 @@ resource_types_cache: 0
 rule_versions: 16
 rules: 19
 saved_queries: 0
+saved_views: 0
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0

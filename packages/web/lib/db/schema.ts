@@ -414,3 +414,20 @@ export const queryRuns = sqliteTable('query_runs', {
   ownerId: text('owner_id').notNull(),
   ranAt: text('ran_at').notNull(),
 });
+
+// A View kept under a name and shared with everyone on the install (ADR 0006). It stores the tab it
+// opens on and the View's own query string exactly as `viewToSearchParams` writes it, so whatever
+// the URL carries is saved without this table knowing the View's shape. The name is unique
+// case-insensitively, checked in the write transaction rather than by an index (as rule and
+// dashboard names are), since an index would turn a clash into a startup failure on an install
+// that already holds two names differing only by case. No SQL-level FK, like every other table here.
+export const savedViews = sqliteTable('saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tab: text('tab').notNull(),                // 'results' | 'advisories'
+  query: text('query').notNull(),            // the View as /scans query params, without `tab`
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: text('updated_at').notNull(),
+});

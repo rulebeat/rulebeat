@@ -13,6 +13,7 @@ so on) rather than a role rank, so this table is the single place the mapping li
 | Create or edit schedules | | ✅ | ✅ |
 | Suppress a finding | | ✅ | ✅ |
 | Create, edit, or delete dashboards | | ✅ | ✅ |
+| Save, update, rename, or delete a saved view (`views:write`) | | ✅ | ✅ |
 | Refresh the resource-type schema cache | | ✅ | ✅ |
 | Create or edit categories | | | ✅ |
 | Manage users and their roles | | | ✅ |

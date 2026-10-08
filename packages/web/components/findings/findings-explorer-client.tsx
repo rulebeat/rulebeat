@@ -43,7 +43,8 @@ import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/
 import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
-
+import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import { OPEN_VIEW_PARAM, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
@@ -81,6 +82,26 @@ interface FindingsExplorerClientProps {
   kinds?: readonly RuleKind[];
   /** Hides the By rule view, for a listing where the per-rule pivot would not add anything. */
   hideRuleView?: boolean;
+  /** Shows the saved-views menu (page mode only). The parent owns what opening a view does, since
+   *  applying one means starting the explorer again from that view. */
+  savedViews?: {
+    tab: SavedViewTab;
+    canWrite: boolean;
+    /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
+     *  the URL, and the explorer never keeps its own copy. */
+    openId: string | null;
+    /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
+    onOpen: (view: SavedView) => void;
+    /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
+     *  writes from a navigation that came from elsewhere. */
+    onUrlWrite: (query: string) => void;
+  };
+}
+
+/** The filters a locked category does not own: its category is the page's, so it stays out of the
+ *  URL and out of a saved view. Without a locked category, all of them. */
+function filtersWithoutLockedCategory(filters: ViewFilter[], lockedCategory?: string): ViewFilter[] {
+  return lockedCategory ? filters.filter(f => f.field !== 'category') : filters;
 }
 
 // ---- Constants ----
@@ -351,10 +372,11 @@ function SuppressionPanel({
 
 export function FindingsExplorerClient({
   data, suppressions: suppressionsProp, initialView, canSuppress, mode = 'page', lockedCategory, basePath = '/findings', extraParams, emptyHint,
-  emptyTitle, kinds, hideRuleView = false,
+  emptyTitle, kinds, hideRuleView = false, savedViews,
 }: FindingsExplorerClientProps) {
   const router = useRouter();
   const [initial] = useState<View>(() => initialView ?? emptyView());
+  const openViewId = savedViews?.openId ?? null;
 
   // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
   // the category tabs and the Add filter control all read and write it, and it is the View's own
@@ -688,19 +710,36 @@ export function FindingsExplorerClient({
   // `viewFromSearchParams` reads, so a deep link survives the first render instead of being erased
   // when router.replace rewrites the whole query string from current state. A locked category is
   // the page's own, not the viewer's, so it is not written.
-  const urlQuery = useMemo(() => {
-    const urlView: View = {
-      ...findingView,
-      filters: lockedCategory ? findingView.filters.filter(f => f.field !== 'category') : findingView.filters,
-      page: currentPage,
-    };
-    return viewToSearchParams(urlView, extraParams).toString();
-  }, [findingView, lockedCategory, currentPage, extraParams]);
+  const urlView = useMemo<View>(() => ({
+    ...findingView,
+    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
+    page: currentPage,
+  }), [findingView, lockedCategory, currentPage]);
+  const onUrlWrite = savedViews?.onUrlWrite;
+  const hasSavedViews = !!savedViews;
+  const urlQueryFor = useCallback((viewId: string | null) => (
+    viewToSearchParams(urlView, hasSavedViews && viewId ? { ...extraParams, [OPEN_VIEW_PARAM]: viewId } : extraParams).toString()
+  ), [urlView, extraParams, hasSavedViews]);
+  const writeUrl = useCallback((query: string) => {
+    onUrlWrite?.(query);
+    router.replace(`${basePath}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [router, basePath, onUrlWrite]);
+  const urlQuery = urlQueryFor(openViewId);
   useEffect(() => {
     if (mode !== 'page') return;
-    router.replace(`${basePath}${urlQuery ? `?${urlQuery}` : ''}`, { scroll: false });
+    writeUrl(urlQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlQuery, basePath]);
+  // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
+  const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
+
+  // What a saved view keeps: the View without the page, which is where the viewer happens to be
+  // rather than part of what they set up.
+  const savedViewQuery = useMemo(() => viewToSearchParams({
+    ...findingView,
+    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
+    page: 1,
+  }).toString(), [findingView, lockedCategory]);
 
   async function handleSuppress(finding: ExplorerFinding, reason: string, expiresAt?: string) {
     setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
@@ -1172,6 +1211,17 @@ export function FindingsExplorerClient({
             fieldLabel={fieldLabel}
             onGroupBy={changeGroupBy}
             onGroupSort={changeGroupSort}
+          />
+        )}
+
+        {mode === 'page' && savedViews && (
+          <SavedViewsMenu
+            tab={savedViews.tab}
+            canWrite={savedViews.canWrite}
+            openId={openViewId}
+            onOpenIdChange={setOpenViewId}
+            onOpen={savedViews.onOpen}
+            currentQuery={savedViewQuery}
           />
         )}
 

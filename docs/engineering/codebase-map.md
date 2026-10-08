@@ -64,7 +64,7 @@
 | `packages/web/components/rules/rule-origin.tsx` | The "Duplicated from <rule> <version>" line on a custom rule's page |
 | `scripts/packs/aprl-v2.ts` | APRL v2 pack transform |
 | `tsconfig.scripts.json` | TS config for `scripts/` (Node types, path alias for web types) |
-| `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 24 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs` |
+| `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 25 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs`, `saved_views` |
 | `packages/web/lib/db/schema.pg.ts` | The Postgres twin of `schema.ts`: same tables, column names and nullability, `pgTable` instead of `sqliteTable`. Timestamps and JSON stay text so ordering and row mappers match byte-for-byte |
 | `packages/web/lib/db/backend.ts` | Reads `RULEBEAT_DATABASE_URL` (and `_FILE`) once and exports `dbKind` ('sqlite' or 'pg'), the one place the backend is decided |
 | `packages/web/lib/db/tables.ts` | Exports the active backend's table objects plus the insertion-order tiebreak column (`rowid` on SQLite, `seq` on pg). Repositories and tests import tables from here, never from a schema twin |
@@ -127,6 +127,13 @@
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page |
+| `packages/web/lib/db/saved-views.ts` | Saved views repository: list, get, create, update, delete. A name is unique case-insensitively, checked in the write's transaction after a Postgres advisory lock, and a clash comes back as `name-taken` (409) |
+| `packages/web/lib/saved-views.ts` | Server-side request validation for the saved-view routes: `parseSavedViewFields` (the one validator both use), `SAVED_VIEW_FIELDS` and the name-taken message |
+| `packages/web/lib/saved-view-query.ts` | Client-safe saved-view types (`SavedViewFields`, `SavedView`), limits, `normalizeViewQuery`, `OPEN_VIEW_PARAM` and `savedViewHref`, the `/scans?tab=&view=&...` link that opens a view |
+| `packages/web/lib/saved-view-actions.ts` | The menu's create, update and delete requests (`requestSavedViewChange`) and `upsertSavedView`; the fetch is injectable for tests |
+| `packages/web/lib/own-url-writes.ts` | Tells the explorer's own `router.replace` writes from an outside navigation, so opening a saved view restarts the explorer and a filter edit does not |
+| `packages/web/app/api/views/` | Saved view routes. Reads need `read`, writes need `views:write`; each write audits field names only |
+| `packages/web/components/findings/saved-views-menu.tsx` | The Views button on the Results and Advisories toolbar: list, open, and for editors save, update, rename, delete |
 | `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |

@@ -82,6 +82,23 @@ and `gsort` holds the group sort as `value:asc`, `value:desc`, `count:asc` or `c
 when it is `value:asc`). Fields are written as in `sort` and `rf`, so `\,` stands for a comma inside
 a field name.
 
+### Saved views
+
+The Views button in the toolbar keeps the current view under a name, and the view is shared with
+everyone on the install. A saved view holds the tab it was saved on (Results or Advisories) and
+everything the address carries: filters, search, window, picked columns, sort and grouping. It does not hold
+the page you were on, which findings are suppressed, or the By resource and By rule choice. Choose
+a saved view in the menu to open it. The menu lists the views for the tab you are on, and opening
+one puts its filters in the address, so the link still reproduces what you see.
+
+Viewers can open saved views. Editors and admins can also save the current view, replace an open
+view's filters with the current ones (Update with current view), rename it and delete it. A name
+is unique whatever its case, and saving a name already in use says so. A saved view stores the
+columns and filters by name, so a view that mentions a returned field no finding has yet still
+opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
+view never changes findings. The audit log records each save, update, rename and delete with the
+names of the fields that changed, never their values.
+
 ## Disable, clear findings, or suppress
 
 Three controls make findings go away, and they mean different things.

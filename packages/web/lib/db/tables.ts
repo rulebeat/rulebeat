@@ -48,6 +48,7 @@ export const scheduleRuns = pick('scheduleRuns');
 export const notificationDeliveries = pick('notificationDeliveries');
 export const savedQueries = pick('savedQueries');
 export const queryRuns = pick('queryRuns');
+export const savedViews = pick('savedViews');
 
 /**
  * Insertion-order tiebreaks, for ORDER BY clauses that must stay stable when rapid inserts share

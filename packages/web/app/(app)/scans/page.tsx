@@ -33,6 +33,7 @@ export default async function ScansPage({
   const compareCategory = one(params.compareCategory);
   // Every filter, column, sort and page param is read by the one reader the explorer writes with.
   const initialView = viewFromSearchParams(params);
+  const initialSavedViewId = one(params.view);
   const categories = await listCategories();
   const user = await getCurrentUser();
   const role = user?.role ?? 'viewer';
@@ -104,6 +105,7 @@ export default async function ScansPage({
         initialSuppressions={initialSuppressions}
         initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}
+        initialSavedViewId={initialSavedViewId}
         runs={activeTab === 'history' ? await listAllRuns(50) : undefined}
         runDetail={runDetail}
         snapshotScan={snapshotScan}

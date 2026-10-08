@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { FindingsExplorerClient } from '@/components/findings/findings-explorer-client';
@@ -32,6 +32,9 @@ import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
 import type { ExplorerData } from '@/lib/explorer-data';
 import type { View } from '@/lib/finding-view';
+import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import { savedViewHref } from '@/lib/saved-view-query';
+import { OwnUrlWrites } from '@/lib/own-url-writes';
 import { ADVISORY_KINDS, KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
 import {
@@ -85,6 +88,8 @@ export interface ScansClientProps {
    *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
    *  FindingsExplorerClient's `initialView`. */
   initialView?: View;
+  /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
+  initialSavedViewId?: string;
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];
   snapshotScan?: ScanHistoryTabProps['snapshotScan'];
@@ -113,6 +118,7 @@ export function ScansClient({
   initialSuppressions,
   initialCategoryFilter,
   initialView,
+  initialSavedViewId,
   runs,
   runDetail,
   snapshotScan,
@@ -126,12 +132,37 @@ export function ScansClient({
   advisoriesEmpty,
 }: ScansClientProps) {
   const router = useRouter();
+  const searchString = useSearchParams().toString();
   const canRunScans = can(role, 'scans:run');
   const canEditRules = can(role, 'rules:write');
   // Same action as deleting a rule: clearing its findings reaches the same primitive that rule
   // deletion already does, so it is not an escalation for anyone who holds rules:delete.
   const canClearFindings = can(role, 'rules:delete');
   const canSuppress = can(role, 'suppressions:write');
+  const canWriteViews = can(role, 'views:write');
+
+  // The explorer reads its initial view once and then writes every change back to the URL. So when
+  // the URL changes by anything other than one of its own writes (a saved view opened from the
+  // menu, a Back or Forward, a link from another page), it starts again from the new URL. The key
+  // only counts those restarts; what the explorer shows always comes from the URL.
+  const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
+  const [explorerKey, setExplorerKey] = useState(0);
+  useEffect(() => {
+    if (!ownWrites.isOutside(searchString)) return;
+    // Restarting the explorer for a navigation it did not make, not state derived from props.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExplorerKey(k => k + 1);
+  }, [searchString, ownWrites]);
+  const savedViewsFor = (tab: SavedViewTab) => ({
+    tab,
+    canWrite: canWriteViews,
+    openId: initialSavedViewId ?? null,
+    onOpen: (saved: SavedView) => {
+      ownWrites.forget();
+      router.push(savedViewHref(saved));
+    },
+    onUrlWrite: (query: string) => ownWrites.record(query),
+  });
   const [policies, setPolicies] = useState(initialPolicies);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
@@ -278,6 +309,7 @@ export function ScansClient({
 
       {activeTab === 'results' && (
         <FindingsExplorerClient
+          key={explorerKey}
           data={explorerData}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
@@ -285,11 +317,13 @@ export function ScansClient({
           basePath="/scans"
           extraParams={{ tab: 'results' }}
           mode="page"
+          savedViews={savedViewsFor('results')}
         />
       )}
 
       {activeTab === 'advisories' && (
         <FindingsExplorerClient
+          key={explorerKey}
           data={explorerData}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
@@ -297,6 +331,7 @@ export function ScansClient({
           basePath="/scans"
           extraParams={{ tab: 'advisories' }}
           mode="page"
+          savedViews={savedViewsFor('advisories')}
           kinds={ADVISORY_KINDS}
           hideRuleView
           emptyTitle={advisoriesEmpty?.title}

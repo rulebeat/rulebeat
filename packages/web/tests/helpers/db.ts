@@ -33,6 +33,7 @@ const CLEARABLE = [
   'sso_providers',
   'saved_queries',
   'query_runs',
+  'saved_views',
 ] as const;
 
 /** Resets the mutable state a test creates, leaving the seeded baseline intact.
