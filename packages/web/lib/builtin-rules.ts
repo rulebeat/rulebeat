@@ -349,9 +349,8 @@ const IDENTITY_RULES: CoreRuleDefinition[] = [
 // ── Reliability / Service retirements (Advisory) ─────────────────────────────
 // Reads Azure Advisor's "Service upgrade and retirement" recommendations, one Advisory per affected
 // resource, and keeps every retirement: a recommendation with no retiring feature name is labelled
-// with its problem text instead. Ships as an Advisory; kind is an install default, read only when
-// the rule is first inserted (ADR 0005), so an admin who switches it to a Problem keeps that through
-// every upgrade. `description` is also the recommendation, so the coverage caveat lives here where the reader sees it.
+// with its problem text instead. Ships as an Advisory. Kind is part of the versioned definition and
+// cannot be changed on the install (ADR 0005); duplicate the rule to run it as a Problem. `description` is also the recommendation, so the coverage caveat lives here where the reader sees it.
 
 const ADVISORY_RULES: CoreRuleDefinition[] = [
   {

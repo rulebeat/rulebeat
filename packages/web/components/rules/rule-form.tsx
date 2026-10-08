@@ -718,11 +718,16 @@ export function RuleForm({
                     <Select
                       value={kind}
                       onValueChange={v => setKind(v as 'state' | 'advisory')}
-                      disabled={operationalReadOnly}
+                      disabled={operationalReadOnly || isBuiltinCheck}
                       options={KIND_OPTIONS}
                       aria-label="Kind"
                     />
-                    <p className="mt-1 text-xs text-ink-2">{KIND_DESCRIPTION[kind]} Takes effect on the next scan.</p>
+                    <p className="mt-1 text-xs text-ink-2">
+                      {KIND_DESCRIPTION[kind]}{' '}
+                      {isBuiltinCheck
+                        ? 'RuleBeat sets the kind of a built-in rule. Duplicate the rule to run it as a different kind.'
+                        : 'Takes effect on the next scan.'}
+                    </p>
                   </>
                 )}
               </div>

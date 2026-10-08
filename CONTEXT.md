@@ -80,8 +80,9 @@ _Avoid_: result (ambiguous), record, evidence
 
 **Rule kind**:
 What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
-from severity, category and query backend. A Logs rule is always an Activity rule; any other rule
-is a Problem rule unless someone sets it to Advisory, and it can be switched back.
+from severity, category and query backend. A Logs rule is always an Activity rule. A custom rule
+is a Problem rule unless someone sets it to Advisory, and it can be switched back. A built-in
+rule's kind is set by RuleBeat with its version and cannot be changed on an install.
 _Avoid_: rule type (that is builtin, community or custom), mode
 
 **Problem rule**:

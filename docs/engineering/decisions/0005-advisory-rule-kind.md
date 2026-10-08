@@ -1,13 +1,15 @@
 # ADR 0005: Advisory is a rule kind, and advisories never count toward posture
 
 Status: accepted, 2026-10-07. Partly superseded by ADR 0006: the key, lifecycle and posture parts
-stand; the Deadline, Overdue and grouping parts do not.
+stand; the Deadline, Overdue and grouping parts do not. Amended 2026-10-08: a built-in rule's kind
+is set by RuleBeat as part of its version, not chosen by the install.
 
 ## Decision
 
-A rule has a kind: Problem, Activity or Advisory. Activity stays tied to the Logs backend. Problem
-and Advisory are chosen in the rule details, default to Problem, and can be switched either way at
-any time. Kind is its own field. It is not a severity, a category or a query backend, so an
+A rule has a kind: Problem, Activity or Advisory. Activity stays tied to the Logs backend. On a
+custom rule, Problem and Advisory are chosen in the rule details, default to Problem, and can be
+switched either way at any time. On a built-in rule the kind is set by RuleBeat and cannot be
+changed; duplicating the rule gives a custom copy whose kind is yours. Kind is its own field. It is not a severity, a category or a query backend, so an
 advisory rule is an ordinary Resource Graph (or later Microsoft Graph) rule in an ordinary
 category. A service retirement rule is a Resource Graph query over `advisorresources` in
 Reliability.
@@ -22,8 +24,10 @@ severity breakdowns, top rules, top resources, recent findings and stat cards. T
 an Advisories tab on `/scans` and in an advisory dashboard widget. A schedule sends them only to a
 channel whose "Include advisories" setting is on, and that setting is off by default.
 
-On shipped rules the kind belongs to the install. An upgrade never sets or resets it, the same way
-it never changes what an enabled rule runs (ADR 0004).
+On shipped rules the kind is part of the versioned definition (ADR 0004), like the query and the
+severity. RuleBeat picks the kind it believes is right for each rule. A version that corrects it
+reaches an enabled rule only when someone switches the rule to that version, and a disabled rule
+moves to it on its own, the same as any other change of definition.
 
 Advisory rules read only the tenant's own data through the credential RuleBeat already has. Public
 feeds such as Azure Updates are out of scope.
@@ -47,12 +51,17 @@ used for real failures of low weight.
   the others stay open.
 - **Turn an overdue advisory into a problem automatically.** Rejected. A rule's meaning changing on
   a date is the kind of silent posture move ADR 0004 exists to prevent.
-- **Ship advisory rules locked to the Advisory kind.** Rejected. Whether a retirement counts as a
-  failure is the admin's call.
+- **Ship advisory rules locked to the Advisory kind.** First rejected, because whether a retirement
+  counts as a failure seemed the admin's call. Adopted in the 2026-10-08 amendment: a built-in's
+  definition is RuleBeat's and every other part of it is already locked, so a kind the install
+  could flip made the built-in half custom and left a release no clean way to correct a wrong
+  kind. An admin who disagrees duplicates the rule.
+- **Keep the kind as an install default, read once when the rule is first added.** Rejected in the
+  amendment, for the same reason: a kind RuleBeat got wrong could never be corrected by a release.
 
 ## Consequences
 
-- Switching a rule's kind keeps its findings, their age, history and suppressions, because the key
+- Switching a custom rule's kind, or switching a built-in to a version with a different kind, keeps its findings, their age, history and suppressions, because the key
   does not include the kind. Posture changes from the next scan; past snapshots are not rewritten.
   The switch is audited.
 - Every query that counts findings has to filter on kind. A count that forgets to is a bug, and the

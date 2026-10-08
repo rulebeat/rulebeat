@@ -93,9 +93,12 @@ this way. The full guide is [`directory-rules.md`](directory-rules.md).
 
 Every rule has a `type`: `builtin` (shipped with RuleBeat, including the
 <!-- count:pack-rules:aprl-v2 -->143-rule Azure Proactive Resiliency Library pack, pinned to a named
-upstream commit), `community`, or `custom`. Built-in rules can be disabled or have their severity and
-tags edited, but not overwritten, so an update never silently discards a change you made. Custom
-rules are entirely yours; duplicate any rule to start one from it.
+upstream commit), `community`, or `custom`. On a built-in rule you can turn it on or off
+and set its tags. Its name, description, category, severity, query and Kind are set by RuleBeat and
+change only through a new version of the rule
+([`how-it-works.md`](how-it-works.md)), so an update never discards a change you made. To run a
+built-in rule differently, duplicate it: the copy is a custom rule, and custom rules are entirely
+yours.
 
 Tags are free-form labels (`mcsb:*` for Microsoft Cloud Security Benchmark mappings, or your own
 convention) used for filtering, dashboard scoping and schedule targeting. They are independent of

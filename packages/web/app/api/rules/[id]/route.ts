@@ -14,6 +14,8 @@ import type { Rule, RuleKind } from '@rulebeat/core';
 
 const BUILTIN_QUERY_LOCKED_ERROR =
   'A built-in rule\'s query cannot be edited. Duplicate the rule to get a custom copy you can change.';
+const BUILTIN_KIND_LOCKED_ERROR =
+  "A built-in rule's kind is set by RuleBeat and cannot be changed. Duplicate the rule to get a custom copy you can change.";
 
 /**
  * The kind an edit asks for, resolved against the rule's own backend (which an edit cannot
@@ -48,10 +50,10 @@ export async function PUT(
   const existing = (await loadRules()).find(r => r.id === id);
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Built-ins: only the enabled toggle and tag assignment are allowed. What a built-in runs changes
-  // only through a version switch, so a different Graph query is refused and the caller is pointed
-  // at Duplicate. A body that carries the stored query back unchanged (the Rules tab toggle sends
-  // the whole rule) is not an edit of it.
+  // Built-ins: only the enabled toggle and tag assignment are allowed. What a built-in runs and its
+  // kind change only through a version switch, so a different Graph query or kind is refused and the
+  // caller is pointed at Duplicate. A body that carries the stored value back unchanged (the Rules
+  // tab toggle sends the whole rule) is not an edit of it.
   if (existing.type === 'builtin') {
     const body = await parseJsonBody<Partial<Rule>>(req);
     if (body instanceof NextResponse) return body;
@@ -64,12 +66,9 @@ export async function PUT(
     const changes: RuleChanges = { enabled: Boolean(body.enabled) };
     const newTags = body.tags ?? (body.group ? [body.group] : undefined);
     if (newTags) changes.tags = newTags;
-    // Whether a built-in is a Problem or an Advisory is the install's choice; only its query is
-    // locked. A body that omits kind leaves the stored one alone.
-    const kindChange = requestedKindChange(existing, body.kind);
-    if (kindChange instanceof NextResponse) return kindChange;
-    if (kindChange) changes.kind = kindChange;
-
+    if (body.kind !== undefined && body.kind !== existing.kind) {
+      return NextResponse.json({ error: BUILTIN_KIND_LOCKED_ERROR }, { status: 400 });
+    }
     if (body.graphQuery && !sameValue(body.graphQuery, existing.graphQuery)) {
       return NextResponse.json({ error: BUILTIN_QUERY_LOCKED_ERROR }, { status: 400 });
     }

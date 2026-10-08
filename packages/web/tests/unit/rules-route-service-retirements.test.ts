@@ -1,7 +1,7 @@
 /**
- * Issue #181: RuleBeat Core ships a "Service retirements" rule as an Advisory, and an admin can
- * switch it to a Problem. Kind belongs to the install, so only the rule's query is locked, not its
- * kind.
+ * Issue #181: RuleBeat Core ships a "Service retirements" rule as an Advisory. A built-in rule's
+ * kind is part of its versioned definition (ADR 0005, amended), so like its query it cannot be
+ * changed on the install; duplicating the rule is how to run it as a Problem.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
@@ -57,25 +57,28 @@ describe('the shipped Service retirements rule', () => {
     expect(description).not.toContain('—');
   });
 
-  it('is not locked: an admin can switch it to a Problem, and the query stays as shipped', async () => {
+  it('cannot be switched to a Problem, and the refusal points at Duplicate', async () => {
     const before = await shipped();
     const res = await put(before.id, { ...before, kind: 'state' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Duplicate/);
+    expect((await shipped()).kind).toBe('advisory');
+  });
+
+  it('cannot be switched to a Problem by a body that names only the kind and the enabled toggle', async () => {
+    const res = await put(SERVICE_RETIREMENTS_RULE_ID, { enabled: false, kind: 'state' });
+    expect(res.status).toBe(400);
+    const after = await shipped();
+    expect(after.kind).toBe('advisory');
+    expect(after.enabled).toBe(true);
+  });
+
+  it('can still be disabled by a body that carries its own kind back', async () => {
+    const before = await shipped();
+    const res = await put(before.id, { ...before, enabled: false });
     expect(res.status).toBe(200);
     const after = await shipped();
-    expect(after.kind).toBe('state');
-    expect(after.rawKql).toBe(before.rawKql);
-  });
-
-  it('can be switched to a Problem by a body that names only the kind and the enabled toggle', async () => {
-    const res = await put(SERVICE_RETIREMENTS_RULE_ID, { enabled: true, kind: 'state' });
-    expect(res.status).toBe(200);
-    expect((await shipped()).kind).toBe('state');
-  });
-
-  it('can be switched back to an Advisory', async () => {
-    await put(SERVICE_RETIREMENTS_RULE_ID, { enabled: true, kind: 'state' });
-    const res = await put(SERVICE_RETIREMENTS_RULE_ID, { enabled: true, kind: 'advisory' });
-    expect(res.status).toBe(200);
-    expect((await shipped()).kind).toBe('advisory');
+    expect(after.enabled).toBe(false);
+    expect(after.kind).toBe('advisory');
   });
 });

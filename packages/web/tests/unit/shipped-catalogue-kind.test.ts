@@ -1,6 +1,6 @@
 /**
- * Issue #181: a pack JSON rule may declare its kind. The loader reads the declaration; seeding
- * honours it when the rule is first inserted.
+ * A pack JSON rule may declare its kind. The loader reads it into the rule's versioned definition
+ * (ADR 0005, amended), and seeding writes it like every other definition field.
  * Absent means a Problem, and a value that is not a kind a pack may declare is ignored.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -29,7 +29,7 @@ function entry(id: string, name: string, extra: Record<string, unknown> = {}): R
 
 /** A data directory holding one pack file, and the catalogue it loads, without RuleBeat Core's rules. */
 function packCatalogue(entries: Array<Record<string, unknown>>): ShippedCatalogue {
-  const dir = mkdtempSync(join(tmpdir(), 'rb-install-defaults-'));
+  const dir = mkdtempSync(join(tmpdir(), 'rb-pack-kind-'));
   mkdirSync(join(dir, 'packs'));
   writeFileSync(join(dir, 'packs', 'pack-manifest.json'), JSON.stringify({ [PACK]: { versionScheme: 'semver', version: '1.0.0' } }));
   writeFileSync(join(dir, 'packs', `${PACK}.json`), JSON.stringify(entries));
@@ -56,11 +56,11 @@ describe('a pack rule that declares its kind', () => {
     entry(FORGED_ID, 'Pack forged', { kind: 'activity' }),
   ]);
 
-  it('is read by the loader as an install default, not as part of the versioned definition', () => {
+  it('is read by the loader as part of the versioned definition', () => {
     const rules = catalogue().rules;
-    expect(rules.find(r => r.id === ADVISORY_ID)?.installDefaults).toEqual({ kind: 'advisory' });
-    expect(rules.find(r => r.id === ADVISORY_ID)?.definition.kind).toBe('state');
-    expect(rules.find(r => r.id === PROBLEM_ID)?.installDefaults).toBeUndefined();
+    expect(rules.find(r => r.id === ADVISORY_ID)?.definition.kind).toBe('advisory');
+    expect(rules.find(r => r.id === PROBLEM_ID)?.definition.kind).toBe('state');
+    expect(rules.find(r => r.id === FORGED_ID)?.definition.kind).toBe('state');
   });
 
   it('is inserted as an Advisory, and a rule that declares nothing as a Problem', async () => {

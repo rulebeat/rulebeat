@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { PACK_LABELS } from '@/lib/pack-labels';
+import { KIND_LABEL } from '@/lib/finding-kinds';
 import { changedFields } from '@/lib/changed-fields';
 import { diffQueryLines, versionLabel } from '@/lib/rule-version-preview';
 import { formatVersionDate, isCommitDateVersion } from '@/lib/rule-version-markers';
-import type { Rule, RuleVersionDefinition, RuleVersionHistory } from '@/lib/types';
+import type { Rule, RuleKind, RuleVersionDefinition, RuleVersionHistory } from '@/lib/types';
 
 const FIELD_LABELS: Record<keyof RuleVersionDefinition, string> = {
   name: 'Name', description: 'Description and recommendation', category: 'Category', severity: 'Severity',
@@ -18,8 +19,9 @@ const FIELD_LABELS: Record<keyof RuleVersionDefinition, string> = {
   projectColumns: 'Output columns', rawKql: 'Raw KQL', graphQuery: 'Microsoft Graph query', logsQuery: 'Logs query',
 };
 
-function displayValue(value: unknown): string {
+function displayValue(field: keyof RuleVersionDefinition, value: unknown): string {
   if (value === null) return 'Not set';
+  if (field === 'kind') return KIND_LABEL[value as RuleKind] ?? String(value);
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
@@ -143,11 +145,11 @@ export function RuleVersionSelector({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="bg-surface-sunken p-3">
                     <p className="label-grid mb-2">Before</p>
-                    <pre className="whitespace-pre-wrap break-all text-xs text-ink-2">{displayValue(history.currentDefinition[field])}</pre>
+                    <pre className="whitespace-pre-wrap break-all text-xs text-ink-2">{displayValue(field, history.currentDefinition[field])}</pre>
                   </div>
                   <div className="bg-surface-sunken p-3">
                     <p className="label-grid mb-2">After</p>
-                    <pre className="whitespace-pre-wrap break-all text-xs text-ink-2">{displayValue(selected.definition[field])}</pre>
+                    <pre className="whitespace-pre-wrap break-all text-xs text-ink-2">{displayValue(field, selected.definition[field])}</pre>
                   </div>
                 </div>
               </div>

@@ -173,14 +173,14 @@ describe('PUT /api/rules/[id], kind', () => {
     expect(await storedKind(logsId)).toBe('activity');
   });
 
-  it('lets a built-in rule be marked Advisory while its query stays locked', async () => {
-    const builtin = (await loadRules()).find(r => r.type === 'builtin' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
+  it('refuses to change the kind of a built-in rule, which is part of its version, and keeps the stored one', async () => {
+    const builtin = (await loadRules()).find(r => r.type === 'builtin' && r.kind === 'state' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
     expect(builtin).toBeDefined();
     const res = await put(builtin.id, { ...builtin, kind: 'advisory' });
-    expect(res.status).toBe(200);
-    expect(await storedKind(builtin.id)).toBe('advisory');
+    expect(res.status).toBe(400);
+    expect(await storedKind(builtin.id)).toBe('state');
     const omitted = await put(builtin.id, { ...builtin, kind: undefined, enabled: false });
     expect(omitted.status).toBe(200);
-    expect(await storedKind(builtin.id)).toBe('advisory');
+    expect(await storedKind(builtin.id)).toBe('state');
   });
 });

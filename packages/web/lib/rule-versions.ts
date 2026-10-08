@@ -1,6 +1,6 @@
 import { BEFORE_VERSIONING } from './before-versioning';
 import {
-  CORE_PACK, emptyToNull, kindOfBackend, parseMaybeJson,
+  CORE_PACK, emptyToNull, definitionKind, parseMaybeJson,
   type RuleDefinition, type ShippedCatalogue, type ShippedRule, type VersionScheme,
 } from './shipped-catalogue';
 
@@ -63,7 +63,7 @@ export type SeedAction =
   | { action: 'set-running'; ruleId: string; version: string }
   /** Move a disabled rule to a shipped version: writes the definition fields and the version. `kind`
    *  is the install's own kind, carried over so the move never turns an Advisory back into a Problem. */
-  | { action: 'apply'; rule: ShippedRule; kind: string }
+  | { action: 'apply'; rule: ShippedRule }
   | { action: 'retire'; ruleId: string }
   | { action: 'unretire'; ruleId: string };
 
@@ -142,10 +142,7 @@ export function sameDefinition(a: RuleDefinition, b: RuleDefinition): boolean {
   return canonicalDefinition(a) === canonicalDefinition(b);
 }
 
-/** The definition fields of a stored row, in the same shape a shipped definition has. `kind` is the
- *  one field that is not the definition's: whether a rule is a Problem or an Advisory is the
- *  install's choice (#176), so it is taken from the backend, as it is in a shipped definition, and a
- *  row an editor marked Advisory still compares equal to the definition it runs. */
+/** The definition fields of a stored row, in the same shape a shipped definition has. */
 export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
   const queryBackend = row.queryBackend as RuleDefinition['queryBackend'];
   return {
@@ -154,7 +151,7 @@ export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
     category: row.category,
     severity: row.severity,
     queryBackend,
-    kind: kindOfBackend(queryBackend),
+    kind: definitionKind(queryBackend, row.kind),
     resourceTypes: parseMaybeJson<string[]>(row.resourceTypes, []),
     scope: parseMaybeJson<RuleDefinition['scope']>(row.scope, { level: 'resource' }),
     conditions: parseMaybeJson<RuleDefinition['conditions']>(row.conditions, []),
@@ -168,16 +165,15 @@ export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
 }
 
 /** A definition as the `rules` columns hold it: JSON text for the structured fields. Both seeders
- *  write these, so what a version stores and what a row stores are encoded identically. `kind`
- *  overrides the definition's, for a write to a row that already has one (see `kindAfterApply`). */
-export function definitionToColumns(def: RuleDefinition, kind: string = def.kind) {
+ *  write these, so what a version stores and what a row stores are encoded identically. */
+export function definitionToColumns(def: RuleDefinition) {
   return {
     name: def.name,
     description: def.description,
     category: def.category,
     severity: def.severity,
     queryBackend: def.queryBackend,
-    kind,
+    kind: definitionKind(def.queryBackend, def.kind),
     resourceTypes: JSON.stringify(def.resourceTypes),
     scope: JSON.stringify(def.scope),
     conditions: JSON.stringify(def.conditions),
@@ -191,24 +187,6 @@ export function definitionToColumns(def: RuleDefinition, kind: string = def.kind
 }
 
 // ---- The plan --------------------------------------------------------------------------------
-
-/** The kind a row keeps when a shipped definition is applied over it: Logs is always 'activity',
- *  an Advisory stays Advisory, anything else is a Problem. Never takes the definition's kind. */
-export function kindAfterApply(currentKind: string, queryBackend: RuleDefinition['queryBackend']): string {
-  if (queryBackend === 'log-analytics') return 'activity';
-  return currentKind === 'advisory' ? 'advisory' : 'state';
-}
-
-/**
- * What a brand-new row of a shipped rule starts with for the column that belongs to the install
- * rather than to the versioned definition: its kind. This is the only place seeding decides it, and
- * only the `insert` action calls it: a rule that already has a row keeps what it has, whatever a
- * newer version declares (ADR 0005, ADR 0004). Logs rules are always 'activity'.
- */
-export function installColumns(rule: ShippedRule): { kind: string } {
-  if (rule.definition.queryBackend === 'log-analytics') return { kind: 'activity' };
-  return { kind: rule.installDefaults?.kind === 'advisory' ? 'advisory' : 'state' };
-}
 
 /** Remembers a stored definition that differs from what ships, so it is never lost. */
 function recordBeforeVersioning(ruleId: string, definition: RuleDefinition): SeedAction {
@@ -287,12 +265,12 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
         actions.push(...runAsBeforeVersioning(row.id, stored));
       } else {
         // Nothing a disabled rule produces can change, so it moves to what ships; its old definition is kept.
-        actions.push(recordBeforeVersioning(row.id, stored), { action: 'apply', rule, kind: kindAfterApply(effective.kind, rule.definition.queryBackend) });
+        actions.push(recordBeforeVersioning(row.id, stored), { action: 'apply', rule });
       }
     } else if (!row.enabled && compareVersions(rule.versionScheme, rule.version, row.version) > 0) {
       // A disabled rule always moves to the newest shipped version, "Before versioning" included
       // (its key sorts before every other).
-      actions.push({ action: 'apply', rule, kind: kindAfterApply(effective.kind, rule.definition.queryBackend) });
+      actions.push({ action: 'apply', rule });
     }
 
     if (row.retiredAt !== null) actions.push({ action: 'unretire', ruleId: row.id });

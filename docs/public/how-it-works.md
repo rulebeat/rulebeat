@@ -72,8 +72,9 @@ Separately from the engine, a rule has a **kind**. An Advisory rule runs exactly
 and its findings have the same fingerprint, lifecycle and suppressions, but they are listed on the
 Advisories tab and left out of posture and every problem count
 ([`posture.md`](posture.md#advisory-rules-are-not-counted)). Notifications skip them unless a
-channel turns on Include advisories ([`notifications.md`](notifications.md)). The kind is a property of your install,
-not of the shipped definition, so an upgrade or a rule version switch never turns it back.
+channel turns on Include advisories ([`notifications.md`](notifications.md)). On a custom rule you choose the kind. On a
+built-in rule RuleBeat sets it as part of the rule's version and you cannot change it; duplicate
+the rule to run it as a different kind.
 
 RuleBeat ships one Advisory rule, **Service retirements** (Reliability). It reads the Azure Advisor
 recommendations in the Service upgrade and retirement subcategory, one Advisory per affected resource.
@@ -83,9 +84,10 @@ Advisor does not report every retirement and covers the public cloud only, so a 
 the list is not necessarily safe; the rule's recommendation points to the
 [Azure updates retirements page](https://azure.microsoft.com/updates/?updateType=retirements) for the
 rest. A resource that Advisor lists under two retirements is one Advisory holding both, since a
-finding is identified by rule and resource. A fresh install starts with the rule as an Advisory, and you can
-switch it to a Problem in the rule form like any other rule. An upgrade never changes that choice: a
-new version of the rule changes what it runs only when it is disabled, and never changes its kind.
+finding is identified by rule and resource. The rule is an Advisory and its kind cannot be changed.
+To count retirements as problems, duplicate the rule and set the copy's kind to Problem. A new
+version of the rule, including one that changes its kind, reaches it only when it is disabled or
+when you switch it to that version.
 
 ## How a row becomes a finding
 

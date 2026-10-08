@@ -34,15 +34,6 @@ export interface RuleDefinition {
   logsQuery: NonNullable<Rule['logsQuery']> | null;
 }
 
-/**
- * What a shipped rule says a brand-new install should start as. Kind belongs to the install
- * (ADR 0005), not to the versioned definition, so it is read once, when seeding first inserts the
- * rule, and never again. Absent means a Problem.
- */
-export interface RuleInstallDefaults {
-  kind?: Rule['kind'];
-}
-
 export interface ShippedRule {
   id: string;
   pack: string;
@@ -55,8 +46,6 @@ export interface ShippedRule {
   /** Whether a brand-new install runs it. An existing rule's enabled state is never touched. */
   enabled: boolean;
   definition: RuleDefinition;
-  /** Only read when the rule is first inserted. See `RuleInstallDefaults`. */
-  installDefaults?: RuleInstallDefaults;
 }
 
 export interface ShippedCatalogue {
@@ -91,14 +80,12 @@ export function emptyToNull<T>(value: T[] | null | undefined): T[] | null {
   return value && value.length > 0 ? value : null;
 }
 
-/** What a rule on this backend means: Logs rules report activity, the other two report state. */
-export function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): NonNullable<Rule['kind']> {
-  return queryBackend === 'log-analytics' ? 'activity' : 'state';
-}
-
-/** The install defaults a definition declares, or undefined when it declares none. */
-function installDefaultsOf(declared: { kind?: unknown }): RuleInstallDefaults | undefined {
-  return declared.kind === 'advisory' ? { kind: 'advisory' } : undefined;
+/** The kind a definition carries: Logs rules report activity, a rule declared Advisory is an
+ *  Advisory, anything else is a Problem ('state'). A built-in's kind is part of its versioned
+ *  definition (ADR 0005), so a shipped entry, a stored row and a recorded version all read it here. */
+export function definitionKind(queryBackend: NonNullable<Rule['queryBackend']>, declared?: unknown): NonNullable<Rule['kind']> {
+  if (queryBackend === 'log-analytics') return 'activity';
+  return declared === 'advisory' ? 'advisory' : 'state';
 }
 
 function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): ShippedRule {
@@ -110,15 +97,13 @@ function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): Shi
     version: r.version,
     releaseNote: r.releaseNote,
     enabled: r.enabled,
-    installDefaults: installDefaultsOf(r),
     definition: {
       name: r.name,
       description: r.description,
       category: r.category,
       severity: r.severity,
       queryBackend,
-      // The definition's kind is what the backend means. A declared Advisory is an install default.
-      kind: kindOfBackend(queryBackend),
+      kind: definitionKind(queryBackend, r.kind),
       resourceTypes: r.resourceTypes,
       scope: r.scope,
       conditions: r.conditions,
@@ -173,7 +158,7 @@ export function packEntryDefinition(p: Record<string, unknown>): RuleDefinition 
     category: p.category as string,
     severity: p.severity as string,
     queryBackend,
-    kind: kindOfBackend(queryBackend),
+    kind: definitionKind(queryBackend, p.kind),
     resourceTypes: parseMaybeJson<string[]>(p.resourceTypes, []),
     scope: parseMaybeJson<Rule['scope']>(p.scope, { level: 'resource' }),
     conditions,
@@ -222,7 +207,6 @@ function packRuleToShipped(
       ?? (upstreamRef ? syncedFromCommitNote(upstreamRef) : `Version ${version}.`),
     upstreamRef,
     enabled: Boolean(p.enabled),
-    installDefaults: installDefaultsOf(p),
     definition: packEntryDefinition(p),
   };
 }

@@ -7,7 +7,7 @@ import { join } from 'path';
 import { computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { buildRuleQuery, type Rule } from '@rulebeat/core/kql';
 import {
-  definitionToColumns, installColumns, planRuleSeeding, versionKey,
+  definitionToColumns, planRuleSeeding, versionKey,
   type SeedAction, type StoredRuleRow,
 } from '../rule-versions';
 import { loadShippedCatalogue, type ShippedCatalogue } from '../shipped-catalogue';
@@ -1308,7 +1308,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       switch (a.action) {
         case 'insert':
           insertRule.run({
-            id: a.rule.id, ...definitionToColumns(a.rule.definition), ...installColumns(a.rule),
+            id: a.rule.id, ...definitionToColumns(a.rule.definition),
             enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version,
           });
           break;
@@ -1321,7 +1321,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
           record.run(a.ruleId, a.version, a.sortKey, a.releaseNote, JSON.stringify(a.definition), a.upstreamRef ?? null, now);
           break;
         case 'set-running': setRunning.run(a.version, a.ruleId); break;
-        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition, a.kind), version: a.rule.version }); break;
+        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
         case 'retire': setRetired.run(now, a.ruleId); break;
         case 'unretire': setRetired.run(null, a.ruleId); break;
       }

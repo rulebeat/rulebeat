@@ -5,7 +5,7 @@ import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 import { buildRuleQuery } from '@rulebeat/core/kql';
-import { definitionOfRow, definitionToColumns, kindAfterApply } from './rule-versions';
+import { definitionOfRow, definitionToColumns } from './rule-versions';
 import { isCommitDateVersion } from './rule-version-markers';
 import type { RuleDefinition } from './shipped-catalogue';
 import type { RuleVersionHistory } from './types';
@@ -256,7 +256,7 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
     }
 
     await run(tx.update(rulesTable).set({
-      ...definitionToColumns(definition, kindAfterApply(current.kind, definition.queryBackend)), version, filter: null,
+      ...definitionToColumns(definition), version, filter: null,
     }).where(eq(rulesTable.id, id)));
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     return {
