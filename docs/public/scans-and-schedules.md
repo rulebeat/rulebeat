@@ -70,7 +70,8 @@ two groups appears under both, and its row count in each is only the rows that f
 Rows with no value for a field go in a No value group, which comes last whichever way groups are
 sorted. Groups sort by value or by resource count, ascending or descending, at every level. Sorting
 by value follows what the header shows: rules, categories and subscriptions go by name, and
-severities go from critical down. The top
+severities go from critical down, with any severity outside critical to info last in both
+directions. The top
 level is paged too, and filters apply before grouping, so a returned-field filter narrows the rows
 that are grouped. The counts at the top of the page, the tiles and the exports do not change.
 

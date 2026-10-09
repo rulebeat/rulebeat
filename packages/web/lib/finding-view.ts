@@ -517,10 +517,17 @@ function compareGroupValues(field: ViewField, a: string, b: string, labelFor: Gr
   return compareText(a, b);
 }
 
-/** Groups order by `groupSort`, the empty-value group last whichever way it runs. Equal counts keep
+/** Groups order by `groupSort`, the empty-value group last whichever way it runs (and, sorting by
+ *  value, a severity off the ramp too). Equal counts keep
  *  value order, so the order never depends on the order findings arrived in. */
 function compareGroups(a: ViewGroup<ViewFinding>, b: ViewGroup<ViewFinding>, sort: GroupSort, labelFor: GroupOptions['labelFor']): number {
   if (a.value === null || b.value === null) return a.value === b.value ? 0 : a.value === null ? 1 : -1;
+  // A severity off the ramp goes last whichever way the ramp runs, like the empty-value group.
+  if (sort.by === 'value' && a.field === 'severity') {
+    const offA = !SEVERITY_ORDER.includes(a.value as Severity);
+    const offB = !SEVERITY_ORDER.includes(b.value as Severity);
+    if (offA !== offB) return offA ? 1 : -1;
+  }
   const byValue = compareGroupValues(a.field, a.value, b.value, labelFor);
   if (sort.by === 'value') return sort.dir === 'asc' ? byValue : -byValue;
   const byCount = a.resourceCount - b.resourceCount;

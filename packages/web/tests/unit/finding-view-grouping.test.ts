@@ -237,7 +237,8 @@ describe('sorting groups by value follows what the header shows', () => {
     const sevs = (['low', 'critical', 'info', 'medium', 'high', 'unrated'] as const)
       .map((severity, i) => f(`v${i}`, { severity: severity as F['severity'] }));
     expect(order(sevs, 'severity', 'asc')).toEqual(['critical', 'high', 'medium', 'low', 'info', 'unrated']);
-    expect(order(sevs, 'severity', 'desc')).toEqual(['unrated', 'info', 'low', 'medium', 'high', 'critical']);
+    // Off the ramp stays last when the ramp runs the other way, the same as the empty-value group.
+    expect(order(sevs, 'severity', 'desc')).toEqual(['info', 'low', 'medium', 'high', 'critical', 'unrated']);
   });
 });
 
