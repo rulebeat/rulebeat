@@ -19,7 +19,7 @@ function f(id: string, overrides: Partial<ExplorerFinding>): ExplorerFinding {
   return {
     module: 'compliance', category: 'compliance', fingerprint: id, ruleId: 'rule-a', resourceId: `/subscriptions/sub-1/x/${id}`,
     resourceType: 'microsoft.compute/virtualmachines', resourceName: id, subscriptionId: 'sub-1',
-    title: 't', description: 'd', evidence: {}, rows: [], recommendation: 'r', remediationSteps: [], detectedAt: '2026-10-07T00:00:00.000Z',
+    title: 't', description: 'd', rows: [], recommendation: 'r', remediationSteps: [], detectedAt: '2026-10-07T00:00:00.000Z',
     severity: 'medium', status: 'active', firstSeenAt: '2026-09-01T00:00:00.000Z', lastSeenAt: '2026-10-07T00:00:00.000Z',
     timesSeen: 1, policyName: 'Rule A', ruleDisabled: false, ruleTags: [],
     ...overrides,

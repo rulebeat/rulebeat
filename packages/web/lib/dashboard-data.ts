@@ -1,4 +1,4 @@
-import { listFindings, getFindingEventCounts, getActivityOccurrenceCounts, type FindingRecord } from './db/findings';
+import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityOccurrenceCounts, type FindingRecord, type FindingSummary } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
@@ -57,7 +57,7 @@ function enabledRuleIdsForCategory(
  *  with an active finding is skipped — it's implicitly failing, and never 'unknown' even if its
  *  last run technically errored, since the finding is real even if not exhaustive (spec 004's
  *  capped/failed distinction). */
-function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingRecord[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
+function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
   const failingIds = new Set(findings.map(f => f.ruleId).filter(id => ruleIds.has(id)));
   let passing = 0;
   let unknown = 0;
@@ -70,7 +70,7 @@ function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingRecord[], rule
 }
 
 function matchesFilters(
-  f: FindingRecord,
+  f: FindingSummary,
   filters: WidgetFilters,
   ruleById: Map<string, Rule>,
   suppressedFingerprints: Set<string>,
@@ -95,18 +95,25 @@ async function suppressedFingerprintSet(filters: WidgetFilters): Promise<Set<str
 
 /** Active findings matching every dimension in `filters`. Excludes actively-suppressed
  *  fingerprints unless `filters.includeSuppressed`. */
-export async function queryActiveFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
-  const all = await listFindings({ status: 'active' });
+async function narrow<T extends FindingSummary>(all: T[], filters: WidgetFilters): Promise<T[]> {
   const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
   const suppressed = await suppressedFingerprintSet(filters);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
 }
 
-async function queryFixedFindings(filters: WidgetFilters): Promise<FindingRecord[]> {
-  const all = await listFindings({ status: 'fixed' });
-  const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
-  const suppressed = await suppressedFingerprintSet(filters);
-  return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
+/** Without their rows: every caller counts or lists findings and none reads a row. A caller that
+ *  runs a view over rows uses queryActiveFindingsWithRows. */
+export async function queryActiveFindings(filters: WidgetFilters): Promise<FindingSummary[]> {
+  return narrow(await listFindingSummaries({ status: 'active' }), filters);
+}
+
+/** queryActiveFindings() with every finding's rows, for a caller that runs the view engine. */
+export async function queryActiveFindingsWithRows(filters: WidgetFilters): Promise<FindingRecord[]> {
+  return narrow(await listFindings({ status: 'active' }), filters);
+}
+
+async function queryFixedFindings(filters: WidgetFilters): Promise<FindingSummary[]> {
+  return narrow(await listFindingSummaries({ status: 'fixed' }), filters);
 }
 
 function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }> {

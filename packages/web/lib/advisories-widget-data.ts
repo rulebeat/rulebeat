@@ -1,4 +1,4 @@
-import { queryActiveFindings } from './dashboard-data';
+import { queryActiveFindingsWithRows } from './dashboard-data';
 import { loadRules } from './rules';
 import { ADVISORY_KINDS } from './finding-kinds';
 import { applyView, emptyView, type View } from './finding-view';
@@ -21,7 +21,7 @@ export async function queryAdvisoriesWidget(
   filters: WidgetFilters,
   opts: { limit: number },
 ): Promise<AdvisoriesWidgetData> {
-  const [active, rules] = await Promise.all([queryActiveFindings(filters), loadRules()]);
+  const [active, rules] = await Promise.all([queryActiveFindingsWithRows(filters), loadRules()]);
   const ruleName = new Map(rules.map(r => [r.id, r.name]));
 
   const view: View = {
@@ -30,7 +30,7 @@ export async function queryAdvisoriesWidget(
     sort: { field: 'severity', dir: 'asc', then: { field: 'lastSeen', dir: 'desc' } },
     pageSize: opts.limit,
   };
-  // Suppression is already applied by queryActiveFindings, which honours the widget's own filter.
+  // Suppression is already applied by queryActiveFindingsWithRows, which honours the widget's own filter.
   const page = applyView(active, view);
   const items = page.items.map(({ finding: f }) => ({
     fingerprint: f.fingerprint,

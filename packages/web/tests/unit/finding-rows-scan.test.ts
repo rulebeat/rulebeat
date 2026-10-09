@@ -17,7 +17,7 @@ import { findings as findingsTable, rules as rulesTable } from '@/lib/db/tables'
 import { getCategory } from '@/lib/db/categories';
 import { listFindings } from '@/lib/db/findings';
 import { runCategoryScan } from '@/lib/scan-runner';
-import { queryActiveFindings } from '@/lib/dashboard-data';
+import { queryActiveFindings, queryActiveFindingsWithRows } from '@/lib/dashboard-data';
 import { saveSuppressions } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { resetDb } from '../helpers/db';
@@ -142,7 +142,7 @@ describe('Resource Graph rules', () => {
     await scan([ARG_RULE], { rows: [{ ...VM_ONE, retirement: 'a' }, { ...VM_ONE, retirement: 'b' }] }, 24);
 
     expect((await queryActiveFindings(FILTERS)).map(f => f.fingerprint)).not.toContain(fingerprint);
-    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).find(f => f.fingerprint === fingerprint)!.rows).toHaveLength(2);
+    expect((await queryActiveFindingsWithRows({ ...FILTERS, includeSuppressed: true })).find(f => f.fingerprint === fingerprint)!.rows).toHaveLength(2);
   });
 
   it('keeps the same resource found by two rules as two findings, each with its own rows', async () => {

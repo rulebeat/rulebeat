@@ -80,7 +80,8 @@ export interface ScansClientProps {
   categories: Category[];
   role: Role;
   activeTab: TabKey;
-  explorerData: ExplorerData;
+  /** Undefined when the tab isn't Results or Advisories, the only two that show the explorer. */
+  explorerData?: ExplorerData;
   initialSuppressions?: ScanHistoryTabProps['initialSuppressions'];
   initialCategoryFilter?: string[];
   /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
@@ -307,7 +308,7 @@ export function ScansClient({
         <TabLink href="/scans?tab=schedules" active={activeTab === 'schedules'}>Schedules</TabLink>
       </div>
 
-      {activeTab === 'results' && (
+      {activeTab === 'results' && explorerData && (
         <FindingsExplorerClient
           key={explorerKey}
           data={explorerData}
@@ -321,7 +322,7 @@ export function ScansClient({
         />
       )}
 
-      {activeTab === 'advisories' && (
+      {activeTab === 'advisories' && explorerData && (
         <FindingsExplorerClient
           key={explorerKey}
           data={explorerData}

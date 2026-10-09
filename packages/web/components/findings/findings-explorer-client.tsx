@@ -891,7 +891,7 @@ export function FindingsExplorerClient({
             {/* Resource data: projected columns from the policy query, one block per
                 row. Run History (findings-table.tsx) renders the same component, so a
                 finding shows the same rows whichever tab it's opened from. */}
-            <FindingRowsDetail finding={{ evidence: rows[0] ?? f.evidence, rows }} />
+            <FindingRowsDetail finding={{ rows }} />
 
             {/* Remediation is generated per rule, not authored per rule. Until that
                 ships, say why the block is empty rather than hiding it. */}
@@ -1260,7 +1260,7 @@ export function FindingsExplorerClient({
           </Button>
         )}
 
-        <ExportButton findings={result.matched.map(({ finding, rows }) => ({ ...finding, rows, evidence: rows[0] ?? finding.evidence }))} />
+        <ExportButton findings={result.matched.map(({ finding, rows }) => ({ ...finding, rows, evidence: rows[0] ?? {} }))} />
       </div>
 
       <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
