@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { dbKind } from './backend';
-import { db, dbReady, pgDb, rawSqlite } from './client';
+import { db, dbReady, pgDb, rawSqlite, sqliteFilePath } from './client';
+import { openSnapshot } from './snapshot';
 
 /**
  * The terminator seam of the dual-backend design (issue #73).
@@ -84,6 +85,32 @@ export function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
  */
 export function inReadTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
   return runInTransaction(fn, 'read');
+}
+
+/**
+ * Like `inReadTransaction`, for a read that stays open for as long as a download is being read (an
+ * export). On Postgres it is the same read-only REPEATABLE READ transaction, which holds one pool
+ * connection and takes no lock anyone else waits on. On SQLite it is a read-only connection of its own
+ * (lib/db/snapshot.ts) with a snapshot of the WAL, so it never takes the lock above: a scan save or a
+ * view read does not wait for the download, and what the export reads does not change under it. The
+ * connection is closed when `fn` settles, however it does.
+ *
+ * A database that is not a file (`:memory:`, which only tests use) cannot be opened a second time, so
+ * there it is `inReadTransaction`. Joins a transaction that is already open.
+ */
+export async function inSnapshotRead<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+  const enclosing = txStore.getStore();
+  if (enclosing) return fn(enclosing);
+
+  await dbReady;
+  if (dbKind === 'pg' || !sqliteFilePath || sqliteFilePath === ':memory:') return runInTransaction(fn, 'read');
+
+  const snapshot = openSnapshot(sqliteFilePath);
+  try {
+    return await txStore.run(snapshot.handle, () => fn(snapshot.handle));
+  } finally {
+    snapshot.end();
+  }
 }
 
 async function runInTransaction<T>(fn: (tx: DbHandle) => Promise<T>, mode: 'write' | 'read'): Promise<T> {

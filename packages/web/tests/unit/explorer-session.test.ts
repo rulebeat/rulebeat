@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyView, filterValues, rowField, viewFromSearchParams, viewToSearchParams, type View } from '@/lib/finding-view';
 import {
-  ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
+  ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, exportUrl, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
   viewQuery, viewUrl, type FetchFn, type ViewRequest,
 } from '@/lib/explorer-session';
 import type { ViewResponse } from '@/lib/view-response';
@@ -563,48 +563,30 @@ describe('what a dropdown of a returned column reads', () => {
   });
 });
 
-describe('reading every finding for an export', () => {
-  const finding = (n: number) => ({ fingerprint: `fp${n}`, ruleId: 'r', title: `t${n}` });
+describe('the export request', () => {
+  const params = (url: string) => new URL(`http://x${url}`).searchParams;
 
-  it('pages through the view with no grouping, and takes a finding\'s further rows from the rows route', async () => {
-    const { urls, fetchFn } = answeringFetch(url => {
-      const params = new URL(`http://x${url}`).searchParams;
-      if (url.startsWith('/api/findings/rows')) {
-        return json({ fingerprint: 'fp1', rows: [{ n: 3 }], page: Number(params.get('rowsPage')), pageCount: 2, matchedRowCount: 3, rowCount: 3, firstIndex: 2 });
-      }
-      const page = Number(params.get('page') ?? 1);
-      return json(page === 1
-        ? { page: 1, pageCount: 2, items: [{ finding: finding(1), rows: [{ n: 1 }, { n: 2 }], rowCount: 3, matchedRowCount: 3 }] }
-        : { page: 2, pageCount: 2, items: [{ finding: finding(2), rows: [], rowCount: 0, matchedRowCount: 0 }] });
-    });
-    const out = await new ExplorerSession(fetchFn).readEvery(request({ ...emptyView(), groupBy: ['category'], page: 5 }));
-    expect(out.ok && out.data).toEqual([
-      { ...finding(1), rows: [{ n: 1 }, { n: 2 }, { n: 3 }], evidence: { n: 1 } },
-      { ...finding(2), rows: [], evidence: {} },
+  it('asks the export route for the view\'s own query, in the format chosen, and leaves out the page', () => {
+    const view: View = { ...withFilter('severity', ['high']), search: 'vm', sort: { field: 'rule', dir: 'desc' }, groupBy: ['category'], page: 4 };
+    const url = exportUrl(request(view), 'csv');
+    expect(url.startsWith('/api/findings/export?')).toBe(true);
+    expect([...params(url).entries()]).toEqual([
+      ['tab', 'results'], ['severity', 'high'], ['q', 'vm'], ['sort', 'rule:desc'], ['group', 'category'], ['format', 'csv'],
     ]);
-    expect(urls).toEqual([
-      '/api/findings/view?tab=results&pageSize=1000',
-      '/api/findings/rows?tab=results&fingerprint=fp1&rowsPage=2',
-      '/api/findings/view?tab=results&page=2&pageSize=1000',
-    ]);
+    expect(params(exportUrl(request(view), 'json')).get('format')).toBe('json');
   });
 
-  it('asks for 1,000 findings a page, and for further rows only of a finding that holds more than it carried', async () => {
-    const twenty = Array.from({ length: 20 }, (_, i) => ({ n: i }));
-    const items = [
-      { finding: finding(1), rows: twenty, rowCount: 20, matchedRowCount: 20 },
-      { finding: finding(2), rows: [{ n: 0 }], rowCount: 1, matchedRowCount: 1 },
-      { finding: finding(3), rows: twenty, rowCount: 25, matchedRowCount: 25 },
-    ];
-    const { urls, fetchFn } = answeringFetch(url => (url.startsWith('/api/findings/rows')
-      ? json({ fingerprint: 'fp3', rows: [{ n: 20 }, { n: 21 }, { n: 22 }, { n: 23 }, { n: 24 }], page: 2, pageCount: 2, matchedRowCount: 25, rowCount: 25, firstIndex: 20 })
-      : json({ page: 1, pageCount: 1, items })));
-    const out = await new ExplorerSession(fetchFn).readEvery(request());
-    expect(out.ok && out.data.map(f => f.rows.length)).toEqual([20, 1, 25]);
-    expect(urls).toEqual([
-      '/api/findings/view?tab=results&pageSize=1000',
-      '/api/findings/rows?tab=results&fingerprint=fp3&rowsPage=2',
-    ]);
+  it('carries the Advisories tab, the suppressed flag and a locked category, so the file holds what the list holds', () => {
+    const view: View = { ...emptyView(), filters: [{ field: 'category', values: ['security'] }, { field: 'severity', values: ['high'] }] };
+    const read = params(exportUrl(request(view, { tab: 'advisories', showSuppressed: true }), 'json'));
+    expect(read.get('tab')).toBe('advisories');
+    expect(read.get('suppressed')).toBe('1');
+    expect(read.get('category')).toBe('security');
+  });
+
+  it('reads back, through the same reader the route uses, as the view that was asked for', () => {
+    const view: View = { ...withFilter('category', ['security']), search: 'x y', columns: ['a.b', 'zone'], groupBy: ['severity', rowField('zone')], filters: [{ field: rowField('zone'), values: ['a'] }] };
+    expect(viewFromSearchParams(params(exportUrl(request(view), 'csv')))).toEqual({ ...view, page: 1 });
   });
 
   it('keeps the page size out of the address and out of every other read', () => {
@@ -612,14 +594,8 @@ describe('reading every finding for an export', () => {
     for (const url of [
       viewUrl(request(view)), rowsUrl(request(view), 'fp1', 2), groupUrl(request(view), ['a'], 2),
       columnValuesUrl(request(view), rowField('zone'), 'q'), ruleFindingsUrl(request(view), 'r1', 2),
+      exportUrl(request(view), 'csv'),
     ]) expect(url).not.toContain('pageSize');
     expect(viewToSearchParams(view, { tab: 'results' }).toString()).not.toContain('pageSize');
-  });
-
-  it('fails as a whole, with why, when any read fails', async () => {
-    const { fetchFn } = answeringFetch(() => json({ error: 'Could not load the findings. Check the RuleBeat server logs for details.' }, 500));
-    expect(await new ExplorerSession(fetchFn).readEvery(request())).toEqual({
-      ok: false, message: 'Could not load the findings. Check the RuleBeat server logs for details.',
-    });
   });
 });

@@ -269,6 +269,19 @@ export function answerView(
   };
 }
 
+/** The findings an export holds, in the order the view lists them: every finding that passes the view's
+ *  filters, with no paging and no grouping. A row filter keeps a finding only when one of its rows
+ *  passes, and a sort on a returned column reads the first of those rows. */
+export function answerExport(slim: readonly SlimFinding[], index: RowIndex, view: View, ctx: ResolvedContext): SlimFinding[] {
+  const rowFilters = activeRowFilters(view.filters);
+  const sort = view.sort ?? DEFAULT_SORT;
+  return filterFindings(slim, builtinOnly(view), ctx)
+    .filter(f => rowFilters.length === 0 || index.count(f) > 0)
+    .map(finding => ({ finding, rows: index.rows(finding) }))
+    .sort((a, b) => compareBy(a, b, sort))
+    .map(m => m.finding);
+}
+
 /** One group's contents, walked down `groupPath` one level at a time. Only that group's findings are
  *  bucketed again for the next level, and only the last level is sorted and paged. */
 export function answerGroup(

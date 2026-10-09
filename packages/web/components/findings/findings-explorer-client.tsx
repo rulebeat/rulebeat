@@ -41,7 +41,7 @@ import {
   type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
 import {
-  explorerAddress, remoteValuesFor, ruleFindingsUrl, viewQuery,
+  explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
 import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
@@ -1298,7 +1298,7 @@ export function FindingsExplorerClient({
           </Button>
         )}
 
-        <ExportButton read={() => session.readEvery(request)} />
+        <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
       <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />

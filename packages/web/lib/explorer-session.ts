@@ -1,6 +1,6 @@
 /**
  * What the explorer holds in place of every finding: one answer from the server view routes
- * (`/api/findings/{view,rows,group,column-values}`) for the view on screen, plus the lazy reads a
+ * (`/api/findings/{view,rows,group,column-values}`; the export's file is `/api/findings/export`) for the view on screen, plus the lazy reads a
  * viewer opens (a column's values, a group's contents, a finding's further rows). Written without
  * React or the DOM so the whole read path can be tested against a stubbed `fetch`; the explorer
  * subscribes to these stores and draws what they hold.
@@ -11,11 +11,10 @@
  * (`viewToSearchParams`) plus the tab and the suppressed flag, so a link and a request cannot disagree.
  */
 import { isRowField, rowField, viewToSearchParams, type RowField, type View, type ViewField, type ViewFilter } from './finding-view';
-import { MAX_VIEW_PAGE_SIZE } from './view-request';
+import type { ExportFormat } from './findings-export';
 import {
-  type ColumnValuesResponse, type FindingRowsResponse, type GroupResponse, type ResponseFinding, type ViewResponse, type ViewTab,
+  type ColumnValuesResponse, type FindingRowsResponse, type GroupResponse, type ViewResponse, type ViewTab,
 } from './view-response';
-import type { FindingRow } from './finding-rows';
 import { OPEN_VIEW_PARAM } from './saved-view-query';
 
 /** How long typing in the search box waits before the view is read again. Every other change reads at once. */
@@ -106,6 +105,14 @@ export function columnValuesUrl(request: ViewRequest, column: RowField, valueQue
   params.set('column', column);
   if (valueQuery !== '') params.set('valueQuery', valueQuery);
   return `${ROUTE}/column-values?${params}`;
+}
+
+/** Where the file of the view's findings comes from. It is the view's own query, so the file holds
+ *  what the list holds, every page of it; the page is dropped because the export has none. */
+export function exportUrl(request: ViewRequest, format: ExportFormat): string {
+  const params = lazyParams(request);
+  params.set('format', format);
+  return `${ROUTE}/export?${params}`;
 }
 
 // ---- Reading one answer ----
@@ -320,13 +327,6 @@ export function remoteValuesFor(session: ExplorerSession, request: ViewRequest, 
   };
 }
 
-/** A finding as the export files take it: the summary with every row, and the first row as evidence. */
-export type ExportedFinding = ResponseFinding & { rows: FindingRow[]; evidence: FindingRow };
-
-/** How many findings an export asks the view route for at once. The route holds this as its ceiling,
- *  so asking for more would be answered with this many. */
-const EXPORT_PAGE_SIZE = MAX_VIEW_PAGE_SIZE;
-
 /** Everything one explorer reads from the server. */
 export class ExplorerSession {
   readonly view: ViewFeed;
@@ -354,30 +354,5 @@ export class ExplorerSession {
 
   dispose(): void {
     this.view.dispose();
-  }
-
-  /** Every finding the view matches, each with all its matching rows, read through the same routes the
-   *  explorer uses: the view in pages of `EXPORT_PAGE_SIZE` with no grouping, then the rows route for
-   *  a finding that matched more rows than its first page carried. Built for a file written once, not
-   *  a stream. The page size is a request of this read alone, so it never reaches the address. */
-  async readEvery(request: ViewRequest): Promise<Fetched<ExportedFinding[]>> {
-    const flat: ViewRequest = { ...request, view: { ...request.view, groupBy: [], page: 1 } };
-    const out: ExportedFinding[] = [];
-    for (let page = 1; ; page++) {
-      const url = `${viewUrl({ ...flat, view: { ...flat.view, page } })}&pageSize=${EXPORT_PAGE_SIZE}`;
-      const first = await readJson<ViewResponse>(this.fetchFn, url, 'the findings');
-      if (!first.ok) return first;
-      for (const item of first.data.items) {
-        const rows = [...item.rows];
-        for (let rowsPage = 2; rows.length < item.matchedRowCount; rowsPage++) {
-          const more = await readJson<FindingRowsResponse>(this.fetchFn, rowsUrl(flat, item.finding.fingerprint, rowsPage), 'the rows');
-          if (!more.ok) return more;
-          if (more.data.rows.length === 0) break;
-          rows.push(...more.data.rows);
-        }
-        out.push({ ...item.finding, rows, evidence: rows[0] ?? {} });
-      }
-      if (page >= first.data.pageCount) return { ok: true, data: out };
-    }
   }
 }

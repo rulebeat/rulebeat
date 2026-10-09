@@ -20,24 +20,31 @@
  *     filter or a group on a returned column puts a condition on those rows, so the page's findings'
  *     rows are read once more, at most a page of findings.
  *
+ * The export is the one reader that does want every row of every finding the view matches. It reads
+ * them a batch of findings at a time, inside one read snapshot that stays open while the file is sent
+ * (a connection of its own on SQLite, so a slow download never holds up a scan save or another read),
+ * and never holds more than a batch (a finding with more rows than a block is read in blocks).
+ *
  * Before the upgrade's copy into finding_rows has been proven, the old row columns are the truth (as
  * in listFindings()), so a view then reads every finding in full and the reference answers it.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { many, inReadTransaction, type DbHandle } from './exec';
+import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import {
   categories as categoriesTable, findingRows as findingRowsTable, findings as findingsTable,
   rules as rulesTable, suppressions as suppressionsTable,
 } from './tables';
-import { chunk } from './chunk';
+import { CHUNK_SIZE, chunk } from './chunk';
 import { listReturnedColumnsIn } from './column-catalogue';
 import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSummary, rowsTableReady, summaryColumns } from './findings';
 import { ruleTagsOf } from '../rules';
+import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
-import { activeRowFilters, readPath, rowPath, valueText, type RowField, type View, type ViewContext } from '../finding-view';
+import { activeRowFilters, applyView, readPath, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
+import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { isActiveSuppression } from '../suppressions';
 import {
-  ColumnCounter, RowMatcher, answerGroup, answerView, candidatesOf, columnPool, finishColumnValues, indexOf, rawGateOf, resolveContext, rowNeeds,
+  ColumnCounter, RowMatcher, answerExport, answerGroup, answerView, candidatesOf, columnPool, finishColumnValues, indexOf, rawGateOf, resolveContext, rowNeeds,
   type PageEntry, type ResolvedContext, type RowIndex, type SlimFinding,
 } from '../view-pass';
 import {
@@ -325,4 +332,120 @@ export function queryColumnValues(view: View, query: ViewQuery & { column: RowFi
     await streamRows(tx, columnPool(slim, view, ctx).map(f => f.fingerprint), (fp, row) => counter.add(fp, row), rawGateOf(others));
     return finishColumnValues(counter.result(), query.column, query.q);
   });
+}
+
+// ---- The export ----
+
+/** A finding with more rows than this is read a block of rows at a time, so no read holds more than a
+ *  block of one finding's rows. */
+export const EXPORT_ROW_BLOCK = 500;
+/** The most findings, and the most rows, one read of smaller findings holds. */
+export const EXPORT_BATCH_FINDINGS = CHUNK_SIZE;
+export const EXPORT_BATCH_ROWS = 4 * EXPORT_ROW_BLOCK;
+
+/** Some of one finding's matched rows: all of them, or a block of a larger finding's. */
+interface RowBlock { fingerprint: string; rows: FindingRow[]; start: boolean; end: boolean }
+
+/** A read of findings that are small enough to read together, or one that is not. */
+type ExportRead = { fingerprints: string[] } | { block: string };
+
+/** Splits the findings, in order, into reads that stay under the limits above. */
+export function planExportReads(fingerprints: readonly string[], counts: ReadonlyMap<string, number>): ExportRead[] {
+  const reads: ExportRead[] = [];
+  let run: string[] = [];
+  let runRows = 0;
+  const close = () => {
+    if (run.length > 0) reads.push({ fingerprints: run });
+    run = [];
+    runRows = 0;
+  };
+  for (const fingerprint of fingerprints) {
+    const rows = counts.get(fingerprint) ?? 0;
+    if (rows > EXPORT_ROW_BLOCK) {
+      close();
+      reads.push({ block: fingerprint });
+      continue;
+    }
+    if (run.length >= EXPORT_BATCH_FINDINGS || runRows + rows > EXPORT_BATCH_ROWS) close();
+    run.push(fingerprint);
+    runRows += rows;
+  }
+  close();
+  return reads;
+}
+
+/** Each read's rows that pass the view's row filters, a read at a time. */
+async function* readExportRows(tx: DbHandle, reads: readonly ExportRead[], rowFilters: readonly RowFilter[]): AsyncGenerator<RowBlock[]> {
+  const passing = (rows: FindingRow[]) => (rowFilters.length === 0 ? rows : rows.filter(row => rowFilters.every(f => rowMatches(row, f))));
+  for (const read of reads) {
+    if (!('block' in read)) {
+      const loaded = await loadFindingRows(tx, read.fingerprints);
+      yield read.fingerprints.map(fingerprint => ({ fingerprint, rows: passing(loaded.get(fingerprint) ?? []), start: true, end: true }));
+      continue;
+    }
+    // The next block is read before this one is handed on, which is how its last block is known.
+    let block = await loadFindingRowsRange(tx, read.block, 0, EXPORT_ROW_BLOCK);
+    for (let from = 0, start = true; ; from += EXPORT_ROW_BLOCK, start = false) {
+      const next = block.length === EXPORT_ROW_BLOCK ? await loadFindingRowsRange(tx, read.block, from + EXPORT_ROW_BLOCK, EXPORT_ROW_BLOCK) : [];
+      yield [{ fingerprint: read.block, rows: passing(block), start, end: next.length === 0 }];
+      if (next.length === 0) break;
+      block = next;
+    }
+  }
+}
+
+/** Every matched row of the findings, as pieces with their finding's own fields beside them. */
+async function* exportPieces(
+  tx: DbHandle, reads: readonly ExportRead[], rowFilters: readonly RowFilter[], rules: ReadonlyMap<string, RuleDetails>,
+): AsyncGenerator<ExportPiece[]> {
+  for await (const blocks of readExportRows(tx, reads, rowFilters)) {
+    const stored = new Map((await readSummaries(tx, [...new Set(blocks.map(b => b.fingerprint))])).map(r => [r.fingerprint, r]));
+    yield blocks.map(({ fingerprint, rows, start, end }) => {
+      const row = stored.get(fingerprint)!;
+      return { finding: { ...rowToSummary(row), ...ruleDecoration(row, rules.get(row.ruleId)) }, rows, start, end };
+    });
+  }
+}
+
+/** What an export of the view reads: the findings the view lists in its order, ungrouped, with every
+ *  row that passes its row filters. */
+async function exportSource(tx: DbHandle, view: View, query: ViewQuery): Promise<ExportSource> {
+  const flat: View = { ...view, groupBy: [] };
+  const { rules, ctx } = await prepare(tx, flat, query);
+  const rowFilters = activeRowFilters(flat.filters);
+
+  if (!(await rowsTableReady(tx))) {
+    const pieces = applyView(await readWhole(tx, query.tab, rules), flat, ctx).matched.map(({ finding, rows }): ExportPiece => {
+      const { rows: _rows, ...own } = finding;
+      return { finding: own, rows, start: true, end: true };
+    });
+    return {
+      async columns() {
+        const keys = new Set<string>();
+        for (const piece of pieces) for (const row of piece.rows) addEvidenceKeys(keys, row);
+        return { evidenceKeys: sortedKeys(keys), lifecycle: pieces.length > 0 };
+      },
+      async *batches() { yield* chunk(pieces, EXPORT_BATCH_FINDINGS); },
+    };
+  }
+
+  const slim = await readSlim(tx, query.tab, rules);
+  // An empty path asks for the listed findings alone: the facets and tiles of a view are not wanted.
+  const index = await buildIndex(tx, slim, flat, ctx, []);
+  const fingerprints = answerExport(slim, index, flat, ctx).map(f => f.fingerprint);
+  const reads = planExportReads(fingerprints, await countRowsOf(tx, fingerprints));
+  return {
+    async columns() {
+      const keys = new Set<string>();
+      for await (const blocks of readExportRows(tx, reads, rowFilters)) for (const block of blocks) for (const row of block.rows) addEvidenceKeys(keys, row);
+      return { evidenceKeys: sortedKeys(keys), lifecycle: fingerprints.length > 0 };
+    },
+    batches: () => exportPieces(tx, reads, rowFilters, rules),
+  };
+}
+
+/** The export of a view, to be read inside a snapshot that stays open as long as `use` runs
+ *  (lib/export-stream.ts keeps it open for as long as the download reads). */
+export function openExport(view: View, query: ViewQuery): OpenExport {
+  return use => inSnapshotRead(async tx => use(await exportSource(tx, view, query)));
 }

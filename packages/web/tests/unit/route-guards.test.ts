@@ -162,6 +162,7 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['findings/rows/route.ts', 'read'],
     ['findings/group/route.ts', 'read'],
     ['findings/column-values/route.ts', 'read'],
+    ['findings/export/route.ts', 'read'],
   ];
 
   for (const [route, action] of PINNED) {

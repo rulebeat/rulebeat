@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { queryView } from '@/lib/db/finding-views';
-import { parsePageSizeParam, parseViewRequest } from '@/lib/view-request';
+import { parseViewRequest } from '@/lib/view-request';
 
 export async function GET(req: Request) {
   const actor = await requireRole('read');
@@ -14,8 +14,7 @@ export async function GET(req: Request) {
 
   try {
     const { view, tab, showSuppressed } = request.value;
-    const pageSize = parsePageSizeParam(params.get('pageSize'), view.pageSize);
-    return Response.json(await queryView({ ...view, pageSize }, { tab, showSuppressed }));
+    return Response.json(await queryView(view, { tab, showSuppressed }));
   } catch (err) {
     return serverError('Could not load the findings', err);
   }

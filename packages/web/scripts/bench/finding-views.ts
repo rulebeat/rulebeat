@@ -7,12 +7,19 @@
  * Two halves, both importable so a test can run them at a tiny size:
  *  - `generateDataset()` is pure. The same seed always gives the same rules, resources and rows.
  *  - `runBench()` writes that dataset through the real scan save (`runCategoryScan` over the fake
- *    Azure context), then runs a list of named async measurements through one harness.
+ *    Azure context), then runs a list of named async measurements through one harness. The file the
+ *    export streams is measured apart from them, since it is the time to the first byte and the
+ *    memory held on the way that matter there, not one number.
  *
  * It uses whichever database the process has open and never opens one itself, so the CLI wrapper
  * (`scripts/bench-finding-views.ts`) points a fresh temp file at the process first and a test uses
  * its own. Every repository import here is dynamic for the same reason as in `generate-demo.ts`.
  */
+
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
+import type { OpenExport } from '../../lib/export-stream';
+import type { View } from '../../lib/finding-view';
 
 // ---- The dataset ----
 
@@ -177,6 +184,7 @@ export interface BenchResult {
   options: BenchOptions;
   dataset: { findings: number; rows: number; averageRowBytes: number; fixed: number; suppressed: number };
   measurements: MeasurementResult[];
+  exports: ExportMeasurement[];
 }
 
 export function median(values: readonly number[]): number {
@@ -303,12 +311,109 @@ export async function buildMeasurements(): Promise<Measurement[]> {
   ];
 }
 
+// ---- The export ----
+
+export interface ExportMeasurement {
+  name: string;
+  format: 'csv' | 'json';
+  /** The size of the whole file. */
+  bytes: number;
+  /** From the request to the first chunk a client could read; a CSV waits for its header to be known. */
+  ttfbColdMs: number;
+  ttfbMedianMs: number;
+  totalColdMs: number;
+  totalMedianMs: number;
+  /** The most the live heap and the process grew over what they held just before one extra run, which
+   *  collects garbage before every sample so what is counted is what the export still holds. It is not
+   *  one of the timed runs, since collecting garbage at every batch would be what they time. */
+  peakHeapGrowthBytes: number;
+  peakRssGrowthBytes: number;
+}
+
+/** Collects garbage if the runtime lets a script ask. Returns whether it did. */
+function collectGarbage(): boolean {
+  try {
+    setFlagsFromString('--expose-gc');
+    (runInNewContext('gc') as () => void)();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Streams the view's file the way the route does and reads it the way a browser would. It runs before
+ *  the other measurements, since a process's resident size seldom shrinks and would carry theirs. */
+export async function measureExports(warmRuns: number, log: (line: string) => void = () => {}): Promise<ExportMeasurement[]> {
+  const { openExport } = await import('../../lib/db/finding-views');
+  const { streamExport } = await import('../../lib/export-stream');
+  const { emptyView, rowField } = await import('../../lib/finding-view');
+
+  const query = { tab: 'results', showSuppressed: false } as const;
+  const defaultView = emptyView();
+  const rowFilterView = { ...emptyView(), filters: [{ field: rowField(BENCH_ROW_PATH), values: ['S1'] }] };
+  const cases = [
+    { name: 'export: CSV, default view', format: 'csv', view: defaultView },
+    { name: 'export: CSV, row-filtered view', format: 'csv', view: rowFilterView },
+    { name: 'export: JSON, default view', format: 'json', view: defaultView },
+  ] as const;
+
+  /** One whole export. `sample`, when given, is called after every read the server and the client make. */
+  const readOnce = async (view: View, format: 'csv' | 'json', sample?: () => void) => {
+    const open: OpenExport = use => openExport(view, query)(source => use({
+      columns: async () => { const columns = await source.columns(); sample?.(); return columns; },
+      batches: () => (async function* () { for await (const batch of source.batches()) { sample?.(); yield batch; } })(),
+    }));
+    const start = performance.now();
+    const reader = (await streamExport(open, format)).getReader();
+    let bytes = 0;
+    let first: number | undefined;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      first ??= performance.now() - start;
+      bytes += value.byteLength;
+      sample?.();
+    }
+    const total = performance.now() - start;
+    return { ttfb: first ?? total, total, bytes };
+  };
+
+  const results: ExportMeasurement[] = [];
+  for (const { name, format, view } of cases) {
+    log(`measuring ${name}`);
+    const runs: Awaited<ReturnType<typeof readOnce>>[] = [];
+    for (let run = 0; run <= warmRuns; run += 1) runs.push(await readOnce(view, format));
+
+    collectGarbage();
+    const baseline = process.memoryUsage();
+    let peakHeap = 0;
+    let peakRss = 0;
+    await readOnce(view, format, () => {
+      collectGarbage();
+      const now = process.memoryUsage();
+      peakHeap = Math.max(peakHeap, now.heapUsed - baseline.heapUsed);
+      peakRss = Math.max(peakRss, now.rss - baseline.rss);
+    });
+
+    const warm = runs.slice(1);
+    const medianOf = (pick: (run: (typeof runs)[number]) => number): number => (warm.length ? median(warm.map(pick)) : pick(runs[0]!));
+    results.push({
+      name, format, bytes: runs[0]!.bytes,
+      ttfbColdMs: runs[0]!.ttfb, ttfbMedianMs: medianOf(r => r.ttfb),
+      totalColdMs: runs[0]!.total, totalMedianMs: medianOf(r => r.total),
+      peakHeapGrowthBytes: peakHeap, peakRssGrowthBytes: peakRss,
+    });
+  }
+  return results;
+}
+
 export async function runBench(opts: BenchOptions, log: (line: string) => void = () => {}): Promise<BenchResult> {
   const dataset = generateDataset(opts);
   log(`seeding ${dataset.resources.length} findings`);
   const scans = await seedDatabase(dataset, opts.seed, log);
 
   const sample = dataset.resources.slice(0, 200).flatMap(r => Array.from({ length: r.rowCount }, (_, n) => Buffer.byteLength(JSON.stringify(generateRow(opts.seed, r, n)))));
+  const exports = await measureExports(opts.warmRuns, log);
   const measurements = await runMeasurements(await buildMeasurements(), opts.warmRuns, log);
 
   return {
@@ -325,6 +430,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
       { name: 'scan save: second scan', coldMs: scans.secondScanMs, medianMs: scans.secondScanMs },
       ...measurements,
     ],
+    exports,
   };
 }
 
@@ -333,21 +439,28 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
 const ms = (value: number) => (value >= 100 ? Math.round(value) : Math.round(value * 10) / 10).toLocaleString('en-US');
 const size = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`);
 
+/** Left-aligns the first column and right-aligns the rest, each as wide as its widest cell. */
+function layout(header: string[], body: string[][]): string[] {
+  const widths = header.map((h, i) => Math.max(h.length, ...body.map(row => row[i]!.length)));
+  const line = (cells: string[]) => cells.map((c, i) => (i === 0 ? c.padEnd(widths[i]!) : c.padStart(widths[i]!))).join('  ').trimEnd();
+  return [line(header), line(widths.map(w => '-'.repeat(w))), ...body.map(line)];
+}
+
 export function formatTable(result: BenchResult): string {
   const { dataset, options } = result;
-  const header = ['measurement', 'cold ms', 'median ms', 'bytes sent'];
   const body = result.measurements.map(m => [
     m.name, ms(m.coldMs), m.name.startsWith('scan save') ? 'n/a' : ms(m.medianMs), m.bytes === undefined ? '' : size(m.bytes),
   ]);
-  const widths = header.map((h, i) => Math.max(h.length, ...body.map(row => row[i]!.length)));
-  const line = (cells: string[]) => cells.map((c, i) => (i === 0 ? c.padEnd(widths[i]!) : c.padStart(widths[i]!))).join('  ').trimEnd();
+  const exported = result.exports.map(e => [
+    e.name, ms(e.ttfbColdMs), ms(e.ttfbMedianMs), ms(e.totalColdMs), ms(e.totalMedianMs), size(e.bytes), size(e.peakHeapGrowthBytes), size(e.peakRssGrowthBytes),
+  ]);
   return [
     `${dataset.findings.toLocaleString('en-US')} findings, ${dataset.rows.toLocaleString('en-US')} rows (about ${dataset.averageRowBytes} bytes each), `
       + `${dataset.fixed.toLocaleString('en-US')} fixed by the second scan, ${dataset.suppressed.toLocaleString('en-US')} suppressed, `
       + `seed ${options.seed}, ${options.warmRuns} warm runs`,
     '',
-    line(header),
-    line(widths.map(w => '-'.repeat(w))),
-    ...body.map(line),
+    ...layout(['measurement', 'cold ms', 'median ms', 'bytes sent'], body),
+    '',
+    ...layout(['export', 'first byte cold ms', 'first byte median ms', 'total cold ms', 'total median ms', 'file', 'peak heap growth', 'peak RSS growth'], exported),
   ].join('\n');
 }

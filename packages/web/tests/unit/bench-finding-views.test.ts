@@ -6,7 +6,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { listFindings } from '@/lib/db/findings';
-import { queryView } from '@/lib/db/finding-views';
+import { openExport, queryView } from '@/lib/db/finding-views';
+import { streamExport } from '@/lib/export-stream';
 import { RESULTS_KINDS } from '@/lib/finding-kinds';
 import { applyView, emptyView } from '@/lib/finding-view';
 import {
@@ -132,11 +133,30 @@ describe('a run over a tiny database', () => {
     expect(bytesOf('new: row-filtered view')).toBeLessThan(bytesOf('new: default view'));
   });
 
-  it('prints a table naming every measurement and the dataset behind it', () => {
+  it('measures the export as a file the size of the one the route sends, with the first byte before the end', async () => {
+    expect(result.exports.map(e => e.name)).toEqual(['export: CSV, default view', 'export: CSV, row-filtered view', 'export: JSON, default view']);
+    for (const e of result.exports) {
+      expect(e.bytes, e.name).toBeGreaterThan(0);
+      expect(e.ttfbColdMs, e.name).toBeGreaterThan(0);
+      expect(e.ttfbMedianMs, e.name).toBeLessThanOrEqual(e.totalMedianMs);
+      expect(e.ttfbColdMs, e.name).toBeLessThanOrEqual(e.totalColdMs);
+      expect(e.peakHeapGrowthBytes, e.name).toBeGreaterThanOrEqual(0);
+    }
+    const byName = (name: string) => result.exports.find(e => e.name === name)!;
+    expect(byName('export: CSV, row-filtered view').bytes).toBeLessThan(byName('export: CSV, default view').bytes);
+
+    // The file measured is the file the route streams for the same view.
+    const file = await new Response(await streamExport(openExport(emptyView(), { tab: 'results', showSuppressed: false }), 'csv')).text();
+    expect(Buffer.byteLength(file)).toBe(byName('export: CSV, default view').bytes);
+  });
+
+  it('prints a table naming every measurement and the dataset behind it, and a second for the export', () => {
     const table = formatTable(result);
     expect(table).toContain('60 findings');
     expect(table).toContain('seed 7');
     for (const m of result.measurements) expect(table).toContain(m.name);
+    for (const e of result.exports) expect(table).toContain(e.name);
     expect(table.split('\n')[2]).toMatch(/^measurement\s+cold ms\s+median ms\s+bytes sent$/);
+    expect(table).toMatch(/^export\s+first byte cold ms\s+first byte median ms\s+total cold ms\s+total median ms\s+file\s+peak heap growth\s+peak RSS growth$/m);
   });
 });
