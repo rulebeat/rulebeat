@@ -76,6 +76,8 @@ _Avoid_: issue, violation, alert
 
 **Row**:
 One line a rule's query returned. A finding has one or more; views group, filter and count rows.
+A service retirements rule that returns two retirements for one VM gives one finding with two
+rows.
 _Avoid_: result (ambiguous), record, evidence
 
 **Rule kind**:
