@@ -241,7 +241,17 @@ export const findings = pgTable('findings', {
   resolvedAt: text('resolved_at'),
   lastScanId: text('last_scan_id'),
   timesSeen: integer('times_seen').notNull().default(1),
+  rowCount: integer('row_count'),
+  rowsScanId: text('rows_scan_id'),
 });
+
+export const findingRows = pgTable('finding_rows', {
+  fingerprint: text('fingerprint').notNull(),
+  position: integer('position').notNull(),
+  data: text('data').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.fingerprint, table.position] }),
+}));
 
 export const findingEvents = pgTable('finding_events', {
   id: text('id').primaryKey(),

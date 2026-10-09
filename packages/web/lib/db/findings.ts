@@ -1,6 +1,7 @@
 import { eq, and, inArray, sql, getTableColumns } from 'drizzle-orm';
 import { db } from './client';
-import { findings as findingsTable, findingEvents as findingEventsTable } from './tables';
+import { findings as findingsTable, findingEvents as findingEventsTable, findingRows as findingRowsTable } from './tables';
+import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
 import { many, run, inTransaction, type DbHandle } from './exec';
 import { loadScanHistory } from '../scan-history';
 import { loadRules } from '../rules';
@@ -76,13 +77,64 @@ function parseStoredRows(value: string | null): FindingRow[] | null {
   }
 }
 
-function rowToRecord(row: Row): FindingRecord {
+/** A finding read from its old row columns, the way every finding was read before ADR 0007. */
+function rowToRecordFromColumns(row: Row): FindingRecord {
   const evidence = JSON.parse(row.evidence) as Record<string, unknown>;
   return {
     ...rowToSummary(row),
     evidence,
     rows: findingRows({ evidence, rows: parseStoredRows(row.evidenceRows) }),
   };
+}
+
+// Once seen, the marker never goes away, so a process stops asking.
+let rowsTableProven = false;
+
+/** Whether finding_rows is where rows are read from: only once the upgrade's copy into it has been
+ *  proven (lib/db/finding-rows-copy.ts). Until then the old columns, which scans keep filling, are. */
+async function readRowsFromTable(): Promise<boolean> {
+  if (!rowsTableProven) rowsTableProven = (await getMeta(FINDING_ROWS_COPY_MARKER)) !== null;
+  return rowsTableProven;
+}
+
+/** Each finding's rows from finding_rows, in query order. A finding with none is absent. */
+async function loadRows(handle: DbHandle, fingerprints: string[]): Promise<Map<string, FindingRow[]>> {
+  const records: { fingerprint: string; position: number; data: string }[] = [];
+  for (const fpChunk of chunk(fingerprints, CHUNK_SIZE)) {
+    if (fpChunk.length === 0) continue;
+    records.push(...await many(handle.select().from(findingRowsTable).where(inArray(findingRowsTable.fingerprint, fpChunk))));
+  }
+  records.sort((a, b) => a.position - b.position);
+  const out = new Map<string, FindingRow[]>();
+  for (const r of records) {
+    const rows = out.get(r.fingerprint) ?? [];
+    rows.push(JSON.parse(r.data) as FindingRow);
+    out.set(r.fingerprint, rows);
+  }
+  return out;
+}
+
+/** Stored findings with their rows. `evidence` is the first row, which is what the old column held. */
+async function toRecords(rows: Row[], handle: DbHandle = db): Promise<FindingRecord[]> {
+  if (!(await readRowsFromTable())) return rows.map(rowToRecordFromColumns);
+  const byFingerprint = await loadRows(handle, rows.map(r => r.fingerprint));
+  return rows.map((row) => {
+    const findingRowList = byFingerprint.get(row.fingerprint) ?? [];
+    return { ...rowToSummary(row), evidence: findingRowList[0] ?? {}, rows: findingRowList };
+  });
+}
+
+/** Replaces each finding's records in finding_rows with `rows`, in order. */
+async function writeRows(handle: DbHandle, findingsWithRows: { fingerprint: string; rows: FindingRow[] }[]): Promise<void> {
+  for (const fpChunk of chunk(findingsWithRows.map(f => f.fingerprint), CHUNK_SIZE)) {
+    if (fpChunk.length === 0) continue;
+    await run(handle.delete(findingRowsTable).where(inArray(findingRowsTable.fingerprint, fpChunk)));
+  }
+  const records = findingsWithRows.flatMap(f => f.rows.map((row, position) => ({ fingerprint: f.fingerprint, position, data: JSON.stringify(row) })));
+  // Three bound values a record, under SQLite's 999.
+  for (const recordChunk of chunk(records, 300)) {
+    await run(handle.insert(findingRowsTable).values(recordChunk));
+  }
 }
 
 /** A stored finding without its rows: everything a count, a feed or a filter list reads. Reading a
@@ -130,7 +182,7 @@ export async function getFindingsByFingerprints(fingerprints: string[]): Promise
   const out: FindingRecord[] = [];
   for (const fpChunk of chunk(fingerprints, CHUNK_SIZE)) {
     const rows = await many(db.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)));
-    out.push(...rows.map(rowToRecord));
+    out.push(...await toRecords(rows));
   }
   return out;
 }
@@ -150,7 +202,7 @@ function listConditions(opts: ListFindingsOptions) {
 
 export async function listFindings(opts: ListFindingsOptions = {}): Promise<FindingRecord[]> {
   const rows = await many(db.select().from(findingsTable).where(listConditions(opts)));
-  return rows.map(rowToRecord);
+  return toRecords(rows);
 }
 
 /** listFindings() without the rows: the same findings, never reading the stored row columns. */
@@ -199,6 +251,10 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
       const rows = await many(tx.select().from(findingsTable).where(inArray(findingsTable.fingerprint, fpChunk)));
       for (const r of rows) existingByFp.set(r.fingerprint, r);
     }
+    // The open findings' stored rows, which the row diff below compares against.
+    const storedRowsByFp = new Map(
+      (await toRecords([...existingByFp.values()].filter(r => r.status === 'active'), tx)).map(r => [r.fingerprint, r.rows]),
+    );
     for (const f of findings) {
       const existing = existingByFp.get(f.fingerprint);
       // The upsert below re-records the row under the scanned category, so a row that sat under
@@ -215,7 +271,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         // compares against the last complete picture. A silent (backfill) sync observed nothing.
         if (!ranRuleSet.has(f.ruleId)) keepStoredRows.set(f.fingerprint, existing);
         else if (!silent) {
-          const { added, removed } = diffRows(rowToRecord(existing).rows, f.rows);
+          const { added, removed } = diffRows(storedRowsByFp.get(f.fingerprint) ?? [], f.rows);
           if (added.length > 0 || removed.length > 0) rowChanges.set(f.fingerprint, { added, removed });
         }
       }
@@ -248,6 +304,8 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         remediationSteps: JSON.stringify(f.remediationSteps ?? []),
         evidence: JSON.stringify(f.evidence ?? {}),
         evidenceRows: JSON.stringify(f.rows),
+        rowCount: f.rows.length,
+        rowsScanId: scanId,
         azurePortalLink: f.azurePortalLink ?? null,
         status: 'active',
         firstSeenAt: finishedAt,
@@ -273,6 +331,10 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           remediationSteps: JSON.stringify(f.remediationSteps ?? []),
           evidence: kept ? kept.evidence : JSON.stringify(f.evidence ?? {}),
           evidenceRows: kept ? kept.evidenceRows : JSON.stringify(f.rows),
+          rowCount: kept ? kept.rowCount : f.rows.length,
+          // Kept rows are still the ones this scan stands by, so rows that were current stay current.
+          // Rows that were not, because a start's copy failed, stay marked for the next start's copy.
+          rowsScanId: kept ? (kept.rowsScanId !== null && kept.rowsScanId === kept.lastScanId ? scanId : kept.rowsScanId) : scanId,
           azurePortalLink: f.azurePortalLink ?? null,
           status: 'active',
           lastSeenAt: finishedAt,
@@ -282,6 +344,9 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         },
       }));
     }
+    // The rows of every finding upserted above, except one whose rule did not complete: its stored
+    // rows stay, as its old columns do. The old columns stay filled for one release (ADR 0007).
+    await writeRows(tx, findings.filter(f => !keepStoredRows.has(f.fingerprint)));
 
     // 3. Resolve: findings that were active for a rule this scan actually ran, but didn't
     // reappear. Scoping to ranRuleIds means disabled rules and tag/rule-scoped schedules never
@@ -510,6 +575,11 @@ export async function removeFindingRowsForRule(
   );
 
   await run(tx.delete(findingEventsTable).where(eq(findingEventsTable.ruleId, ruleId)));
+  // Before the findings themselves, while their fingerprints can still be selected.
+  await run(tx.delete(findingRowsTable).where(inArray(
+    findingRowsTable.fingerprint,
+    tx.select({ fingerprint: findingsTable.fingerprint }).from(findingsTable).where(eq(findingsTable.ruleId, ruleId)),
+  )));
   await run(tx.delete(findingsTable).where(eq(findingsTable.ruleId, ruleId)));
 
   return { deleted: rows.length, categories: [...new Set(rows.map(r => r.category))] };

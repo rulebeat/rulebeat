@@ -21,6 +21,7 @@ import { dbKind } from '@/lib/db/backend';
  */
 const CLEARABLE = [
   'finding_events',
+  'finding_rows',
   'findings',
   'posture_snapshots',
   'schedule_runs',

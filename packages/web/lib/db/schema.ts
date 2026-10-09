@@ -263,7 +263,21 @@ export const findings = sqliteTable('findings', {
   resolvedAt: text('resolved_at'),
   lastScanId: text('last_scan_id'),
   timesSeen: integer('times_seen').notNull().default(1),
+  rowCount: integer('row_count'),                                      // how many records finding_rows holds for this finding (ADR 0007); null until the upgrade's copy has filled it
+  rowsScanId: text('rows_scan_id'),                                    // the scan finding_rows was last written for; differs from last_scan_id after a release that did not write the table rescanned it (lib/db/finding-rows-copy.ts)
 });
+
+/** Every row a finding's rule returned for it, one record per row in query order (ADR 0007). A row
+ *  is JSON text the database never parses, so its keys keep the order the query returned them in.
+ *  No foreign key on purpose: a migration that rebuilt `findings` by dropping it would cascade every
+ *  row away. Whatever rewrites or deletes a finding's fingerprint rewrites or deletes these too. */
+export const findingRows = sqliteTable('finding_rows', {
+  fingerprint: text('fingerprint').notNull(),
+  position: integer('position').notNull(),  // 0-based, in query order
+  data: text('data').notNull(),             // JSON object, one row
+}, (table) => ({
+  pk: primaryKey({ columns: [table.fingerprint, table.position] }),
+}));
 
 export const findingEvents = sqliteTable('finding_events', {
   id: text('id').primaryKey(),

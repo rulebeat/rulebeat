@@ -40,6 +40,7 @@ export const localAccounts = pick('localAccounts');
 export const ssoProviders = pick('ssoProviders');
 export const auditLog = pick('auditLog');
 export const findings = pick('findings');
+export const findingRows = pick('findingRows');
 export const findingEvents = pick('findingEvents');
 export const postureSnapshots = pick('postureSnapshots');
 export const notificationChannels = pick('notificationChannels');

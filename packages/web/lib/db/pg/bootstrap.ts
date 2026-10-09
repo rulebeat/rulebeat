@@ -5,6 +5,11 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from '../fingerprint-rekey';
+import {
+  FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
+  planRowCopy, rowCopyMismatch,
+  type RowCopySource, type RowRecord,
+} from '../finding-rows-copy';
 
 /**
  * Brings a Postgres database up to the current schema. The Postgres analog of `migrate.ts`'s
@@ -261,6 +266,17 @@ CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings(rule_id);
 -- Every row a finding's rule returned for it (#192); null reads as one row made from evidence.
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS evidence_rows TEXT;
 
+-- ADR 0007: a finding's rows in their own table, plain JSON text (not jsonb, which reorders keys),
+-- the finding's row count and the scan its rows were written for. Kept in step by copyFindingRows().
+CREATE TABLE IF NOT EXISTS finding_rows (
+  fingerprint TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (fingerprint, position)
+);
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS row_count INTEGER;
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS rows_scan_id TEXT;
+
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,
   fingerprint TEXT NOT NULL,
@@ -433,6 +449,12 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not move finding fingerprints onto the case-insensitive formula:', err);
     }
+    // After the rekey, and in its own savepoint for the same reason.
+    try {
+      await tx.transaction(async (sp) => { await copyFindingRows(sp); });
+    } catch (err) {
+      console.error('[bootstrap] could not copy finding rows into their own table:', err);
+    }
   });
 }
 
@@ -459,4 +481,39 @@ async function rekeyFingerprintCase(tx: PgTx): Promise<void> {
     await tx.execute(sql.join(chunks, sql.raw('')));
   }
   await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINGERPRINT_CASE_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
+}
+
+/** 1000 a statement keeps each well under Postgres's 65535 bind parameters. */
+function batches<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += 1000) out.push(items.slice(i, i + 1000));
+  return out;
+}
+
+/** The Postgres half of migrate.ts's copyFindingRows(): the same plan and the same proof. A throw
+ *  rolls the savepoint back, so a copy that fails changes nothing. */
+async function copyFindingRows(tx: PgTx): Promise<void> {
+  const copied = (await tx.execute(sql`SELECT value FROM meta WHERE key = ${FINDING_ROWS_COPY_MARKER}`)).rows.length > 0;
+  const plan = planRowCopy((await tx.execute(sql.raw(copied ? ROW_COPY_READ_STALE : ROW_COPY_READ_ALL))).rows as unknown as RowCopySource[]);
+  for (const batch of batches(plan.fingerprints)) {
+    await tx.execute(sql`DELETE FROM finding_rows WHERE fingerprint IN (${sql.join(batch.map(fp => sql`${fp}`), sql`, `)})`);
+  }
+  for (const batch of batches(plan.records)) {
+    const values = batch.map(r => sql`(${r.fingerprint}, ${r.position}, ${r.data})`);
+    await tx.execute(sql`INSERT INTO finding_rows (fingerprint, position, data) VALUES ${sql.join(values, sql`, `)}`);
+  }
+  for (const batch of batches(plan.findings)) {
+    const values = batch.map(f => sql`(${f.fingerprint}::text, ${f.rowCount}::integer, ${f.rowsScanId}::text)`);
+    await tx.execute(sql`UPDATE findings SET row_count = v.row_count, rows_scan_id = v.rows_scan_id
+      FROM (VALUES ${sql.join(values, sql`, `)}) AS v(fingerprint, row_count, rows_scan_id)
+      WHERE findings.fingerprint = v.fingerprint`);
+  }
+  if (plan.fingerprints.length > 0) {
+    const mismatch = rowCopyMismatch(plan, (await tx.execute(sql.raw(ROW_COPY_READ_BACK))).rows as unknown as RowRecord[]);
+    if (mismatch) throw new Error(`the copy did not match: ${mismatch}`);
+  }
+  await tx.execute(sql.raw(ROW_COPY_DELETE_ORPHANS));
+  if (!copied) {
+    await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINDING_ROWS_COPY_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
+  }
 }
