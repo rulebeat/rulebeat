@@ -28,6 +28,9 @@ afterEach(() => {
  *  migrations, and the repositories then read that database, exactly as the running app does. */
 async function startProductOn(file: string) {
   vi.resetModules();
+  // A SQLite upgrade test: the Postgres CI job must not point the product at its database instead.
+  vi.stubEnv('RULEBEAT_DATABASE_URL', '');
+  vi.stubEnv('RULEBEAT_DATABASE_URL_FILE', '');
   vi.stubEnv('RULEBEAT_DB_PATH', file);
   const client = await import('@/lib/db/client');
   closeProductDb = () => client.rawSqlite?.close();
@@ -77,7 +80,7 @@ describe('upgrading to a database that records changed findings', () => {
 
   it('records changed findings on a run that was stored before the column existed', async () => {
     const sample = makeSample('current');
-    let db = open(sample.file);
+    const db = open(sample.file);
     runMigrations(db);
     db.exec(`ALTER TABLE schedule_runs DROP COLUMN changed_findings;`);
     db.prepare(`

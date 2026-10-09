@@ -32,6 +32,9 @@ afterEach(() => {
  *  migrations, and the repositories then read that database, exactly as the running app does. */
 async function startProductOn(file: string) {
   vi.resetModules();
+  // A SQLite upgrade test: the Postgres CI job must not point the product at its database instead.
+  vi.stubEnv('RULEBEAT_DATABASE_URL', '');
+  vi.stubEnv('RULEBEAT_DATABASE_URL_FILE', '');
   vi.stubEnv('RULEBEAT_DB_PATH', file);
   const client = await import('@/lib/db/client');
   closeProductDb = () => client.rawSqlite?.close();
