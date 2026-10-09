@@ -72,13 +72,15 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres bootstrap drops the A
     expect(before.rule, 'fixture rule missing').toBeDefined();
     expect(before.findings).toHaveLength(1);
     expect(before.suppressions).toHaveLength(1);
+    // The one expected difference is the finding-rows copy recording that this finding has no rows.
+    const expected = { ...before, findings: before.findings.map(f => ({ ...(f as object), row_count: 0 })) };
 
     await bootstrapPg(pgDb!);
     for (const column of REMOVED_COLUMNS) expect(await ruleColumns(), `${column} survived the bootstrap`).not.toContain(column);
-    expect(await ruleAndDependents()).toEqual(before);
+    expect(await ruleAndDependents()).toEqual(expected);
 
     await bootstrapPg(pgDb!);
     for (const column of REMOVED_COLUMNS) expect(await ruleColumns(), `${column} came back on a later start`).not.toContain(column);
-    expect(await ruleAndDependents()).toEqual(before);
+    expect(await ruleAndDependents()).toEqual(expected);
   });
 });
