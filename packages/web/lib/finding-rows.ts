@@ -39,10 +39,16 @@ export const ROWS_PER_PAGE = 20;
  *  are; only how many are shown at once is limited. `page` is 1-based and clamped to a real page,
  *  and `firstIndex` is the first shown row's position in the whole list, for "Row n of total". */
 export function pageFindingRows(rows: readonly FindingRow[], page: number, pageSize = ROWS_PER_PAGE) {
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const bounds = pageBounds(rows.length, page, pageSize);
+  return { rows: rows.slice(bounds.firstIndex, bounds.firstIndex + pageSize), ...bounds, total: rows.length };
+}
+
+/** Where a page of `total` rows sits, without the rows: the page clamped to a real one, how many
+ *  pages there are, and the first row's position. For a read that has only the count. */
+export function pageBounds(total: number, page: number, pageSize = ROWS_PER_PAGE) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const clamped = Math.min(Math.max(1, Math.floor(page) || 1), pageCount);
-  const firstIndex = (clamped - 1) * pageSize;
-  return { rows: rows.slice(firstIndex, firstIndex + pageSize), page: clamped, pageCount, total: rows.length, firstIndex };
+  return { page: clamped, pageCount, firstIndex: (clamped - 1) * pageSize };
 }
 
 /** A row's canonical form: JSON with keys sorted at every level and values as returned (array order

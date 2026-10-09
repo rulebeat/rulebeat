@@ -26,6 +26,17 @@ export function parsePageParam(value: string | null): number {
   return Number.isInteger(page) && page >= 1 ? page : 1;
 }
 
+/** The most findings one response of the view route may hold, whatever `pageSize` asks for. An export
+ *  reads every finding in pages this size; the explorer itself never asks, and lists 50. */
+export const MAX_VIEW_PAGE_SIZE = 1000;
+
+/** `pageSize`: a positive whole number up to `MAX_VIEW_PAGE_SIZE`, or the view's own page size when
+ *  absent or anything else. Not part of the address, so `viewFromSearchParams` does not read it. */
+export function parsePageSizeParam(value: string | null, fallback: number): number {
+  const size = Number(value);
+  return value !== null && Number.isInteger(size) && size >= 1 ? Math.min(size, MAX_VIEW_PAGE_SIZE) : fallback;
+}
+
 /** `groupPath` as a JSON array of group values, one per level, `null` for the empty-value group. */
 export function parseGroupPath(value: string | null): Parsed<(string | null)[]> {
   if (value === null) return fail('groupPath is required.');

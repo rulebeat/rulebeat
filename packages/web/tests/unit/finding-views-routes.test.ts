@@ -82,6 +82,31 @@ describe('GET /api/findings/view', () => {
       search: 'alpha', sort: { field: 'rule', dir: 'desc' }, page: 2,
     });
   });
+
+  it('lists 50 findings a page unless a page size is asked for', async () => {
+    await get(view, 'view');
+    expect(queries.queryView.mock.calls[0]![0]).toMatchObject({ pageSize: 50 });
+  });
+
+  it('lists as many findings a page as asked for, up to 1,000, and never more', async () => {
+    await get(view, 'view', 'pageSize=200');
+    await get(view, 'view', 'pageSize=1000');
+    await get(view, 'view', 'pageSize=1001');
+    await get(view, 'view', 'pageSize=99999999');
+    expect(queries.queryView.mock.calls.map(c => (c[0] as { pageSize: number }).pageSize)).toEqual([200, 1000, 1000, 1000]);
+  });
+
+  it.each(['0', '-5', '2.5', 'many', ''])('lists 50 a page for a page size of %j', async (size) => {
+    await get(view, 'view', `pageSize=${size}`);
+    expect(queries.queryView.mock.calls[0]![0]).toMatchObject({ pageSize: 50 });
+  });
+});
+
+describe('a page size on the other view routes', () => {
+  it('is ignored: a group lists 50 findings a page whatever is asked for', async () => {
+    await get(group, 'group', 'group=category&groupPath=%5B%22security%22%5D&pageSize=1000');
+    expect(queries.queryGroup.mock.calls[0]![0]).toMatchObject({ pageSize: 50 });
+  });
 });
 
 describe('GET /api/findings/rows', () => {

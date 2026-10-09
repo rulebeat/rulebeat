@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search, X, ChevronDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -10,12 +10,13 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { ExportButton } from '@/components/findings/export-button';
-import { FindingRowsDetail } from '@/components/findings/finding-rows-detail';
+import { LazyFindingRows } from '@/components/findings/lazy-finding-rows';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Callout } from '@/components/ui/callout';
 import { ChecklistDropdown, ColumnFilterIcon, type ChecklistOption } from '@/components/ui/checklist-dropdown';
+import { ReadStatus } from '@/components/ui/read-status';
 import { CodeBlock } from '@/components/ui/code-block';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -28,23 +29,33 @@ import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import {
   requestSuppress, requestUnsuppress, applySuppress, applyUnsuppress, applySuppressionsLoad, fetchSuppressionList,
 } from '@/lib/suppression-actions';
-import type { RuleKind, Severity, Suppression } from '@/lib/types';
-import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
+import type { Severity, Suppression } from '@/lib/types';
+import type { FindingDisplayStatus } from '@/lib/explorer-data';
 import {
-  getRecencyStatus, parseExplorerStatus, countFindingsByRule, summarizeFindings, EXPLORER_SEVERITIES,
-  type ExplorerStatusFilter,
+  getRecencyStatus, parseExplorerStatus, EXPLORER_SEVERITIES,
+  type ExplorerStatusFilter, type ExplorerStats,
 } from '@/lib/explorer-filters';
 import {
-  BUILTIN_FIELDS, DEFAULT_SORT, applyGroupedView, applyView, clearFilter, columnCell, emptyView, fieldOptions, filterFindings, filterValues,
-  findingSubject, isRowField, isRowFilter, pageGroupItems, rowField, rowFieldOptions, rowLeafPaths, rowPath, toggleFilterValue, viewToSearchParams,
-  type BuiltinField, type GroupSort, type View, type ViewContext, type ViewField, type ViewFilter, type ViewGroup, type ViewItem, type ViewSort,
+  BUILTIN_FIELDS, DEFAULT_SORT, clearFilter, columnCell, emptyView, filterValues,
+  findingSubject, isRowField, rowField, rowPath, toggleFilterValue,
+  type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
+import {
+  explorerAddress, remoteValuesFor, ruleFindingsUrl, viewQuery,
+  type ExplorerSession, type RowCondition, type ViewRequest,
+} from '@/lib/explorer-session';
+import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
+import {
+  NO_VALUE_LABEL,
+  type ExplorerCategory, type GroupHeader, type GroupResponse, type ResponseFinding, type ViewItemResponse, type ViewTab,
+} from '@/lib/view-response';
 import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
 import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
-import { OPEN_VIEW_PARAM, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
+import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
@@ -52,7 +63,12 @@ type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
 
 interface FindingsExplorerClientProps {
-  data: ExplorerData;
+  /** Which list this is. The server view reads it for the kinds the list holds and the tiles add up. */
+  tab: ViewTab;
+  /** The categories the tabs and badges name, which are static to the page and not part of a read. */
+  categories: ExplorerCategory[];
+  /** Counts the scans that finished while this list was open; each one reads the view again. */
+  scansFinished?: number;
   suppressions?: Suppression[];
   /** The view the page opens on: filters, search, window, picked columns, sort and page. In page
    *  mode (mode='page') all of it is synced back to the URL (see the URL-sync effect below), and
@@ -77,9 +93,6 @@ interface FindingsExplorerClientProps {
   emptyHint?: string;
   /** Overrides the "No findings yet" empty-state title, for a tab that has its own reason to be empty. */
   emptyTitle?: string;
-  /** Which kinds the header tiles and the By rule counts add up. Defaults to what finding-level
-   *  totals count (Problems); the Advisories tab passes its own so its tiles add up to its own Open. */
-  kinds?: readonly RuleKind[];
   /** Hides the By rule view, for a listing where the per-rule pivot would not add anything. */
   hideRuleView?: boolean;
   /** Shows the saved-views menu (page mode only). The parent owns what opening a view does, since
@@ -98,11 +111,6 @@ interface FindingsExplorerClientProps {
   };
 }
 
-/** The filters a locked category does not own: its category is the page's, so it stays out of the
- *  URL and out of a saved view. Without a locked category, all of them. */
-function filtersWithoutLockedCategory(filters: ViewFilter[], lockedCategory?: string): ViewFilter[] {
-  return lockedCategory ? filters.filter(f => f.field !== 'category') : filters;
-}
 
 // ---- Constants ----
 
@@ -120,19 +128,86 @@ const FIELD_LABEL: Record<BuiltinField, string> = {
 };
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
 
-/** What the empty-value group is called. The engine only knows it as a null value. */
-const NO_VALUE_LABEL = 'No value';
 /** How far each nesting level indents a group header's content. */
 const GROUP_INDENT_REM = 1.5;
 
 /** The fields and values from the outermost group down to one group, in order; a null value is the
  *  empty-value group. */
-type GroupPath = readonly (string | null)[];
+type GroupPath = readonly { field: ViewField; value: string | null }[];
 /** The one place a group's open state and page are keyed. A JSON array of the path, so a value that
  *  holds any character still cannot run into its neighbour, and the same value under two parents is
- *  two keys. A finding row inside a group appends its fingerprint, so a finding listed under two
+ *  two keys. A finding inside a group appends its fingerprint, so a finding listed under two
  *  groups opens independently in each. */
-const groupStateKey = (path: GroupPath) => JSON.stringify(path);
+const groupStateKey = (path: GroupPath, fingerprint?: string) => JSON.stringify(fingerprint === undefined ? path : [...path, fingerprint]);
+
+/** What a group puts on its findings' rows: one condition per returned column it is grouped by. */
+function rowConditions(path: GroupPath): RowCondition[] {
+  return path.flatMap(step => (isRowField(step.field) ? [{ path: rowPath(step.field), value: step.value }] : []));
+}
+
+/** What an open group shows, read from the server when it opens: its child groups one step further
+ *  in, or at the last level its findings, 50 to a page with their own pager, so a retirement affecting
+ *  2,000 resources never sends 2,000 rows. */
+function GroupBody({
+  session, request, open, valuesPath, page, onPage, renderGroups, renderItem,
+}: {
+  session: ExplorerSession;
+  request: ViewRequest;
+  /** A closed group reads nothing and draws nothing. */
+  open: boolean;
+  /** The values from the outermost group down to this one. The view's own grouping names the fields. */
+  valuesPath: readonly (string | null)[];
+  page: number;
+  onPage: (page: number) => void;
+  renderGroups: (groups: GroupHeader[]) => React.ReactNode;
+  renderItem: (item: ViewItemResponse) => React.ReactNode;
+}) {
+  const { state, retry } = useLazyRead(session.groups, openGroupUrl(open, request, valuesPath, page));
+  if (!open) return null;
+  if (state?.status !== 'ready') {
+    return <ReadStatus failure={state?.status === 'failed' ? state.message : null} retry={retry} loading="Loading group" className="px-5 py-3" />;
+  }
+  const group: GroupResponse = state.data;
+  // A group the view no longer has, such as one a changed filter emptied while it was open.
+  if (group.group === null) return <p className="px-5 py-3 text-xs text-ink-2">This group is not in the current view.</p>;
+  return (
+    <div>
+      {group.groups.length > 0 && renderGroups(group.groups)}
+      {group.items.length > 0 && (
+        <>
+          <div>{group.items.map(renderItem)}</div>
+          <FindingsPager page={group.page} pageCount={group.pageCount} onPage={onPage} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The findings of one rule on the By rule list, read when the rule is opened, a page at a time. */
+function RuleFindings({
+  session, request, ruleId, rangeFrom, rangeTo,
+}: { session: ExplorerSession; request: ViewRequest; ruleId: string; rangeFrom: string; rangeTo: string }) {
+  const [page, setPage] = useState(1);
+  const { state, retry } = useLazyRead(session.ruleFindings, ruleFindingsUrl(request, ruleId, page));
+  if (state?.status !== 'ready') {
+    return <ReadStatus failure={state?.status === 'failed' ? state.message : null} retry={retry} loading="Loading findings" className="px-5 py-3" />;
+  }
+  return (
+    <>
+      {state.data.items.map(({ finding: f }) => {
+        const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
+        return (
+          <div key={f.fingerprint} className="flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-surface-hover">
+            <span className={cn('size-1.5 shrink-0', sCfg.dot)} title={sCfg.label} />
+            <span className="min-w-0 flex-1 truncate text-ink">{findingSubject(f)}</span>
+            <span className="shrink-0 text-ink-muted">{shortDate(f.lastSeenAt)}</span>
+          </div>
+        );
+      })}
+      <FindingsPager page={state.data.page} pageCount={state.data.pageCount} onPage={setPage} />
+    </>
+  );
+}
 
 const KIND_LABEL: Record<string, string> = { state: 'Problem', advisory: 'Advisory', activity: 'Activity' };
 /** Status has its own select in the toolbar, so the Add filter list leaves it out. */
@@ -207,18 +282,24 @@ const COL_LABEL: Record<SortCol, string> = {
 };
 const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
 
-// Builds a sorted { value, label, count } list for a subscription/RG/location filter dropdown,
-// counted from that dropdown's facetPool (every other filter applied, its own left out).
-function buildMetaOptions(pool: ExplorerFinding[], getter: (f: ExplorerFinding) => string | undefined) {
-  const counts = new Map<string, number>();
-  for (const f of pool) {
-    const v = getter(f);
-    if (!v) continue;
-    counts.set(v, (counts.get(v) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([value, count]) => ({ value, label: value, count }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+/** What the header tiles read before the first answer, so they show zeros rather than nothing. */
+const NO_TILES: ExplorerStats = {
+  total: 0, counts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, newCount: 0, activeCount: 0, recentlyFixedCount: 0,
+};
+
+/** The message a failed read shows in place of the list, with a way to try again. It names what could
+ *  not load and why, and is never the "no findings" state. */
+function ViewUnavailable({ message, onRetry, onClear }: { message: string; onRetry: () => void; onClear?: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center justify-center bg-surface py-16 text-center">
+      <h3 className="mb-1 font-heading text-base font-semibold text-ink">Findings could not be loaded</h3>
+      <p className="max-w-md text-sm text-ink-2">{message}</p>
+      <div className="mt-4 flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+        {onClear && <Button variant="outline" size="sm" onClick={onClear}>Clear filters</Button>}
+      </div>
+    </div>
+  );
 }
 
 function SortIcon({ field, active, dir }: { field: ViewField; active: ViewField; dir: 'asc' | 'desc' }) {
@@ -300,14 +381,14 @@ function PropertyCard({ label, value, mono, copyLabel }: { label: string; value?
 function SuppressionPanel({
   finding, suppression, canSuppress, error, onSuppress, onUnsuppress,
 }: {
-  finding: ExplorerFinding;
+  finding: ResponseFinding;
   suppression?: Suppression;
   canSuppress: boolean;
   /** Set only when this finding's own last suppress/unsuppress request was refused — the server's
    *  own message when the route returns one, a stable fallback otherwise. Never a raw error. */
   error?: string;
-  onSuppress: (finding: ExplorerFinding, reason: string, expiresAt?: string) => void;
-  onUnsuppress: (finding: ExplorerFinding, id: string) => void;
+  onSuppress: (finding: ResponseFinding, reason: string, expiresAt?: string) => void;
+  onUnsuppress: (finding: ResponseFinding, id: string) => void;
 }) {
   const [reason, setReason] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -371,10 +452,11 @@ function SuppressionPanel({
 // ---- Main component ----
 
 export function FindingsExplorerClient({
-  data, suppressions: suppressionsProp, initialView, canSuppress, mode = 'page', lockedCategory, basePath = '/findings', extraParams, emptyHint,
-  emptyTitle, kinds, hideRuleView = false, savedViews,
+  tab, categories, scansFinished = 0, suppressions: suppressionsProp, initialView, canSuppress, mode = 'page', lockedCategory, basePath = '/findings',
+  extraParams, emptyHint, emptyTitle, hideRuleView = false, savedViews,
 }: FindingsExplorerClientProps) {
   const router = useRouter();
+  const session = useExplorerSession();
   const [initial] = useState<View>(() => initialView ?? emptyView());
   const openViewId = savedViews?.openId ?? null;
 
@@ -405,7 +487,6 @@ export function FindingsExplorerClient({
   const locFilter = valueSets.location;
   const tagFilter = valueSets.tags;
   const statusFilter: StatusFilterValue = parseExplorerStatus(filterValues(filters, 'status')[0]);
-  const rowFilters = useMemo(() => filters.filter(isRowFilter), [filters]);
 
   // Columns the rules returned, picked by the viewer
   const [columns, setColumns] = useState<string[]>(initial.columns);
@@ -475,66 +556,69 @@ export function FindingsExplorerClient({
   // Subscription id → display name, for labelling the Subscription filter.
   const subNames = useSubscriptionNames();
 
-  const suppressedFps = useMemo(() => new Set(
-    suppressions.filter(s => !s.expiresAt || new Date(s.expiresAt) > new Date()).map(s => s.fingerprint),
-  ), [suppressions]);
   const suppMap = useMemo(() => new Map(suppressions.map(s => [s.fingerprint, s])), [suppressions]);
 
-  // The view the engine runs: every control on this page, as one View (lib/finding-view.ts). The
-  // same engine serves the Advisories widget, so a view this page can express is one the widget can.
-  // Counts, the stats pool and each dropdown's options all come from `filterFindings` with the
-  // fields they leave out named in `except`, so they can never disagree with the table.
+  // The view on screen: every control on this page, as one View (lib/finding-view.ts). The server
+  // view route answers it, the same route that serves the Advisories widget, so a view this page can
+  // express is one the widget can. Tiles, option counts and the By rule list all come back in that
+  // one answer, counted by the same pass as the list, so they can never disagree with the table.
   const findingView = useMemo<View>(() => ({
     ...emptyView(),
     filters, search, window: dateWindow, columns, sort, groupBy, groupSort, page: page + 1,
   }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page]);
-  const viewCtx = useMemo<ViewContext>(() => ({
-    showSuppressed, suppressedFingerprints: suppressedFps, range: { from: rangeFrom, to: rangeTo },
-  }), [showSuppressed, suppressedFps, rangeFrom, rangeTo]);
-  const globalPool = useCallback(
-    (except?: ViewField[]) => filterFindings(data.findings, findingView, viewCtx, { except: new Set(except) }),
-    [data.findings, findingView, viewCtx],
-  );
+  const request = useMemo<ViewRequest>(() => ({ view: findingView, tab, showSuppressed }), [findingView, tab, showSuppressed]);
+  const requestQuery = useMemo(() => viewQuery(request), [request]);
+  useEffect(() => { session.view.request(request); }, [session, request]);
 
-  const result = useMemo(() => applyView(data.findings, findingView, viewCtx), [data.findings, findingView, viewCtx]);
-  const filtered = useMemo<ExplorerFinding[]>(() => result.matched.map(m => m.finding), [result.matched]);
+  // A scan that finished while this list was open reads the view again, and so does a change to what
+  // is suppressed, which the server applies to the list.
+  const seenScans = useRef(scansFinished);
+  useEffect(() => {
+    if (scansFinished === seenScans.current) return;
+    seenScans.current = scansFinished;
+    session.refresh();
+  }, [scansFinished, session]);
+
+  const feed = useStore(session.view);
+  // What is on screen: the answer, or the last one while the next is on its way. Null until the first.
+  const data = feed.status === 'ready' ? feed.data : feed.stale ?? null;
+  const failure = feed.status === 'failed' ? feed.message : null;
+  // The page the server answered with is the page of the address, since it clamps a page that is out of range.
+  const answered = feed.status === 'ready' && feed.query === requestQuery;
+
   // What a filter value is called on screen: a rule by name, a category by label, a subscription by
   // its display name, a day as a date. The value itself, which the URL carries, stays the id.
-  const ruleNames = useMemo(() => {
-    const names = new Map(data.findings.map(f => [f.ruleId, f.policyName] as const));
-    for (const p of data.policyOptions) names.set(p.id, p.name);
-    return names;
-  }, [data.findings, data.policyOptions]);
+  const ruleNames = useMemo(() => new Map((data?.policyOptions ?? []).map(p => [p.id, p.name] as const)), [data?.policyOptions]);
   const valueLabel = useCallback((field: ViewField, value: string): string => {
     switch (field) {
       case 'rule': return ruleNames.get(value) ?? value;
-      case 'category': return data.categories.find(c => c.id === value)?.label ?? value;
+      case 'category': return categories.find(c => c.id === value)?.label ?? value;
       case 'subscription': return subNames[value] ?? value;
       case 'kind': return KIND_LABEL[value] ?? value;
       case 'firstSeen':
       case 'lastSeen': return dayKeyLabel(value);
       default: return value;
     }
-  }, [ruleNames, data.categories, subNames]);
-  // The grouped tree, only when the By resource list is grouped. Counts, tiles and the export stay
-  // on `result`, so grouping never changes one of them. Groups sort by value as `valueLabel` names
-  // them, the same function the headers are drawn with.
-  const grouped = useMemo(
-    () => (layout === 'resource' && groupBy.length > 0
-      ? applyGroupedView(data.findings, findingView, viewCtx, { labelFor: valueLabel })
-      : null),
-    [layout, groupBy, data.findings, findingView, viewCtx, valueLabel],
-  );
+  }, [ruleNames, categories, subNames]);
+  /** A group header's label. The server names rules, categories and kinds; a subscription and a day are
+   *  named here, like every other place they appear. */
+  const headerLabel = useCallback((h: GroupHeader): string => {
+    if (h.value === null) return NO_VALUE_LABEL;
+    return h.field === 'subscription' || h.field === 'firstSeen' || h.field === 'lastSeen' ? valueLabel(h.field, h.value) : h.label;
+  }, [valueLabel]);
   const fieldLabel = useCallback((field: ViewField) => (isRowField(field) ? `${rowPath(field)} (returned)` : FIELD_LABEL[field]), []);
 
-  // Option lists for a built-in field, counted from every filter except that field's own, so
-  // picking a value never makes the other options in the same list vanish.
+  // Option lists for a built-in field. The server counted each from every filter except that field's
+  // own, so picking a value never makes the other options in the same list vanish.
   const builtinOptions = useCallback((field: BuiltinField): ChecklistOption[] => {
-    const options = fieldOptions(globalPool([field]), field).map(o => ({ ...o, label: valueLabel(field, o.value) }));
-    if (field === 'severity') return options.sort((a, b) => EXPLORER_SEVERITIES.indexOf(a.value as Severity) - EXPLORER_SEVERITIES.indexOf(b.value as Severity));
-    if (field === 'firstSeen' || field === 'lastSeen') return options.sort((a, b) => b.value.localeCompare(a.value));
-    return options.sort((a, b) => a.label.localeCompare(b.label));
-  }, [globalPool, valueLabel]);
+    if (field === 'status' || !data) return [];
+    const options = data.facets[field].map(o => ({
+      ...o,
+      label: field === 'subscription' ? subNames[o.value] ?? o.label : field === 'firstSeen' || field === 'lastSeen' ? dayKeyLabel(o.value) : o.label,
+    }));
+    // The server orders by what it can name; a subscription is named here.
+    return field === 'subscription' ? options.sort((a, b) => a.label.localeCompare(b.label)) : options;
+  }, [data, subNames]);
 
   // Column filter option lists, one per header funnel.
   const colOptions = useMemo(() => {
@@ -543,21 +627,13 @@ export function FindingsExplorerClient({
     return options;
   }, [builtinOptions]);
 
-  // The returned columns on offer, and the values each one holds, come from the findings that pass
-  // every filter except the ones on returned columns, so picking a value never hides the others.
-  const rowPool = useMemo(
-    () => globalPool(rowFilters.map(f => f.field)),
-    [globalPool, rowFilters],
+  // The returned columns on offer are those the rules in play have returned, and the picked ones.
+  // The values of one are read from the server when its dropdown opens, never held here.
+  const columnChoices = useMemo(
+    () => [...new Set([...(data?.columns ?? []), ...columns])].sort((a, b) => a.localeCompare(b)).map(path => ({ value: path, label: path })),
+    [data?.columns, columns],
   );
-  const columnChoices = useMemo(() => {
-    const paths = new Set(rowLeafPaths(rowPool));
-    for (const picked of columns) paths.add(picked);
-    return [...paths].sort((a, b) => a.localeCompare(b)).map(path => ({ value: path, label: path }));
-  }, [rowPool, columns]);
-  const returnedOptions = useCallback(
-    (path: string): ChecklistOption[] => rowFieldOptions(rowPool, filters, path).map(o => ({ value: o.value, label: o.value, count: o.count })),
-    [rowPool, filters],
-  );
+  const remoteFor = useCallback((field: ViewField) => remoteValuesFor(session, request, field), [session, request]);
   const returnedSelected = useCallback((path: string) => new Set(filterValues(filters, rowField(path))), [filters]);
 
   const addFilterFields = useMemo<AddFilterField[]>(() => [
@@ -565,74 +641,32 @@ export function FindingsExplorerClient({
     ...columnChoices.map(c => ({ field: rowField(c.value), label: fieldLabel(rowField(c.value)) })),
   ], [columnChoices, fieldLabel]);
   const addFilterOptions = useCallback(
-    (field: ViewField): ChecklistOption[] => (isRowField(field) ? returnedOptions(rowPath(field)) : builtinOptions(field)),
-    [builtinOptions, returnedOptions],
+    (field: ViewField): ChecklistOption[] => (isRowField(field) ? [] : builtinOptions(field)),
+    [builtinOptions],
   );
   const chips = useMemo<FilterChip[]>(() => filters
     .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
     .flatMap(f => f.values.map(value => ({ field: f.field, value, fieldLabel: fieldLabel(f.field), valueLabel: isRowField(f.field) ? value : valueLabel(f.field, value) }))),
   [filters, lockedCategory, fieldLabel, valueLabel]);
 
-  // Global stats — respects every active filter (subscription/RG/location/tags/rule/search/
-  // category) except severity and status themselves, so the pills stay a meaningful, stable
-  // reference point to toggle from rather than one severity/status selection zeroing out the rest.
-  // The Resource and First seen funnels pick single findings out, so they are left out as well.
-  const statsPool = useMemo(() => globalPool(['severity', 'status', 'resourceName', 'firstSeen']), [globalPool]);
+  const stats = data?.tiles ?? NO_TILES;
+  const suppressedCount = data?.suppressedCount ?? 0;
+  const subOptions = useMemo(() => builtinOptions('subscription'), [builtinOptions]);
+  const rgOptions = useMemo(() => builtinOptions('resourceGroup'), [builtinOptions]);
+  const locOptions = useMemo(() => builtinOptions('location'), [builtinOptions]);
+  const tagOptions = useMemo(() => builtinOptions('tags'), [builtinOptions]);
 
-  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo, kinds), [statsPool, rangeFrom, rangeTo, kinds]);
-
-  const suppressedCount = useMemo(
-    () => data.findings.filter(f => (categoryFilter.size === 0 || categoryFilter.has(f.category)) && suppressedFps.has(f.fingerprint)).length,
-    [data.findings, categoryFilter, suppressedFps],
-  );
-
-  // Each dropdown counts from every filter except its own, so its counts match the table, and
-  // picking one Resource Group never removes the other Resource Groups from its list.
-  const subOptions = useMemo(() => {
-    return buildMetaOptions(globalPool(['subscription']), f => f.subscriptionId)
-      .map(o => ({ ...o, label: subNames[o.value] ?? o.value }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [globalPool, subNames]);
-  const rgOptions = useMemo(
-    () => buildMetaOptions(globalPool(['resourceGroup']), f => f.resourceGroup),
-    [globalPool],
-  );
-  const locOptions = useMemo(
-    () => buildMetaOptions(globalPool(['location']), f => f.location),
-    [globalPool],
-  );
-  const tagOptions = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const f of globalPool(['tags'])) for (const t of f.ruleTags) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()].map(([value, count]) => ({ value, label: value, count })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [globalPool]);
-
-  // By-rule pivot. The status filter decides which rules are listed and which findings expand
-  // under each; the Open/New/Fixed numbers are counted with every filter except status, so a
-  // rule's Open count is the same whatever window or status is picked.
-  const ruleRows = useMemo(() => {
-    const counts = countFindingsByRule(globalPool(['status']), rangeFrom, rangeTo, kinds);
-    const map = new Map<string, {
-      ruleId: string; name: string; category: string; severity: Severity; disabled: boolean;
-      open: number; new: number; fixed: number; findings: ExplorerFinding[];
-    }>();
-    for (const f of filtered) {
-      let e = map.get(f.ruleId);
-      if (!e) {
-        const c = counts.get(f.ruleId) ?? { open: 0, new: 0, fixed: 0 };
-        e = { ruleId: f.ruleId, name: f.policyName, category: f.category, severity: f.severity, disabled: f.ruleDisabled, ...c, findings: [] };
-        map.set(f.ruleId, e);
-      }
-      e.findings.push(f);
-    }
-    return [...map.values()].sort((a, b) => b.open - a.open || b.fixed - a.fixed);
-  }, [filtered, globalPool, rangeFrom, rangeTo, kinds]);
+  // By-rule pivot. The status filter decides which rules are listed; the Open/New/Fixed numbers are
+  // counted with every filter except status, so a rule's Open count is the same whatever window or
+  // status is picked. A rule's findings are read when it is opened.
+  const ruleRows = data?.ruleRows ?? [];
 
   // Grouped, the page is a page of top-level groups; flat, a page of findings.
-  const currentPage = grouped?.page ?? result.page;
-  const totalPages = grouped?.pageCount ?? result.pageCount;
+  const grouped = data?.grouped ?? null;
+  const currentPage = answered && data ? data.page : page + 1;
+  const totalPages = data?.pageCount ?? 1;
   const pageIndex = currentPage - 1;
-  const paginated = result.items;
+  const paginated = data?.items ?? [];
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds(prev => toggleInSet(prev, id));
@@ -688,38 +722,36 @@ export function FindingsExplorerClient({
   // exactly one category is picked — two or more selected categories fall back to showing every
   // rule, since there's no single category left to scope the list to.
   const activeCategory = lockedCategory ?? (categoryFilter.size === 1 ? [...categoryFilter][0] : undefined);
+  const policyOptions = data?.policyOptions;
   const availablePolicyOptions = useMemo(
-    () => activeCategory ? data.policyOptions.filter(p => p.category === activeCategory) : data.policyOptions,
-    [data.policyOptions, activeCategory],
+    () => (policyOptions ?? []).filter(p => !activeCategory || p.category === activeCategory),
+    [policyOptions, activeCategory],
   );
 
   // If the category changes out from under a selected rule (e.g. switching category tabs while
   // "Rule X" is pinned), drop whichever selected rules are no longer even listed in the dropdown
   // instead of silently filtering on them.
   useEffect(() => {
-    if (policyFilter.size === 0) return;
+    // Until the first answer there is no list of rules to check against.
+    if (policyFilter.size === 0 || !policyOptions) return;
     const validIds = new Set(availablePolicyOptions.map(p => p.id));
     const next = new Set([...policyFilter].filter(id => validIds.has(id)));
     // Pruning a selection made stale by an external category change, not deriving it from props —
     // legitimate effect setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (next.size !== policyFilter.size) setValues('rule', [...next]);
-  }, [availablePolicyOptions, policyFilter, setValues]);
+  }, [availablePolicyOptions, policyOptions, policyFilter, setValues]);
 
-  // URL sync (page mode only). `viewToSearchParams` is the one writer of every param
+  // URL sync (page mode only). `explorerAddress` is the one writer of every param
   // `viewFromSearchParams` reads, so a deep link survives the first render instead of being erased
   // when router.replace rewrites the whole query string from current state. A locked category is
   // the page's own, not the viewer's, so it is not written.
-  const urlView = useMemo<View>(() => ({
-    ...findingView,
-    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
-    page: currentPage,
-  }), [findingView, lockedCategory, currentPage]);
+  const urlView = useMemo<View>(() => ({ ...findingView, page: currentPage }), [findingView, currentPage]);
   const onUrlWrite = savedViews?.onUrlWrite;
   const hasSavedViews = !!savedViews;
   const urlQueryFor = useCallback((viewId: string | null) => (
-    viewToSearchParams(urlView, hasSavedViews && viewId ? { ...extraParams, [OPEN_VIEW_PARAM]: viewId } : extraParams).toString()
-  ), [urlView, extraParams, hasSavedViews]);
+    explorerAddress(urlView, { extraParams, viewId: hasSavedViews ? viewId : null, lockedCategory })
+  ), [urlView, extraParams, hasSavedViews, lockedCategory]);
   const writeUrl = useCallback((query: string) => {
     onUrlWrite?.(query);
     router.replace(`${basePath}${query ? `?${query}` : ''}`, { scroll: false });
@@ -735,26 +767,27 @@ export function FindingsExplorerClient({
 
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
-  const savedViewQuery = useMemo(() => viewToSearchParams({
-    ...findingView,
-    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
-    page: 1,
-  }).toString(), [findingView, lockedCategory]);
+  const savedViewQuery = useMemo(
+    () => explorerAddress({ ...findingView, page: 1 }, { lockedCategory }),
+    [findingView, lockedCategory],
+  );
 
-  async function handleSuppress(finding: ExplorerFinding, reason: string, expiresAt?: string) {
+  async function handleSuppress(finding: ResponseFinding, reason: string, expiresAt?: string) {
     setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
     const outcome = await requestSuppress(finding, reason, expiresAt);
     if (outcome.ok) {
       setSuppressions(prev => applySuppress(prev, outcome));
+      session.refresh();
     } else {
       setSuppressionErrors(prev => new Map(prev).set(finding.fingerprint, outcome.error));
     }
   }
-  async function handleUnsuppress(finding: ExplorerFinding, id: string) {
+  async function handleUnsuppress(finding: ResponseFinding, id: string) {
     setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
     const outcome = await requestUnsuppress(id);
     setSuppressions(prev => applyUnsuppress(prev, outcome));
-    if (!outcome.ok) setSuppressionErrors(prev => new Map(prev).set(finding.fingerprint, outcome.error));
+    if (outcome.ok) session.refresh();
+    else setSuppressionErrors(prev => new Map(prev).set(finding.fingerprint, outcome.error));
   }
 
   const resourceFlexible = isFlexible('resource');
@@ -767,15 +800,23 @@ export function FindingsExplorerClient({
   // the existing horizontal scroll wrapper knows the true (possibly wider-than-viewport) content width.
   const rowMinWidth: string | undefined = resourceFlexible ? undefined : 'max-content';
 
-  // A failed suppressions load (widget mode only — page mode always gets the prop) must not look
-  // like "no suppressions": every finding would briefly read as unsuppressed instead of showing
-  // that the widget itself couldn't load. Checked ahead of the empty-findings state below, which
-  // is a genuine "nothing to show" and would otherwise mask the real failure.
-  if (mode === 'widget' && suppressionsFailed) {
+  // Which screen to draw is decided by `screenOf` (lib/explorer-screen.ts): a failed suppressions load
+  // in the widget, then a failed read, then loading, then the empty state, so a failure is never
+  // drawn as "no findings".
+  const screen = screenOf({ mode, suppressionsFailed, failure, data });
+  if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
   }
 
-  if (data.findings.length === 0) {
+  if (screen === 'unavailable' && failure) {
+    return <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />;
+  }
+
+  if (screen === 'loading' || !data) {
+    return <p role="status" className="bg-surface py-16 text-center text-sm text-ink-2">Loading findings</p>;
+  }
+
+  if (screen === 'empty') {
     return (
       <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
         <Search className="mb-4 size-7 text-ink-faint" />
@@ -785,11 +826,16 @@ export function FindingsExplorerClient({
     );
   }
 
+  // What fills the list's place: the failure, a message that nothing matches, or the rows.
+  const listBody = listBodyOf({ layout, failure, ruleRows: ruleRows.length, grouped, items: paginated.length });
+
   // One finding as a row of the list, and its detail when expanded. The flat list and every expanded
   // group render through here, so a finding looks the same wherever it is listed. `expandKey` is what
   // its open or closed state is kept under: the fingerprint in the flat list, and one per group
-  // inside a group, so opening a finding under one group leaves its other groups closed.
-  const renderFinding = ({ finding: f, rows }: ViewItem<ExplorerFinding>, expandKey: string = f.fingerprint) => {
+  // inside a group, so opening a finding under one group leaves its other groups closed. A finding
+  // inside a group holds that group's rows, so `conditions` name the group.
+  const renderFinding = (item: ViewItemResponse, expandKey: string = item.finding.fingerprint, conditions?: readonly RowCondition[]) => {
+    const { finding: f, rows } = item;
     const isExpanded = expandedIds.has(expandKey);
     const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
     const suppression = suppMap.get(f.fingerprint);
@@ -816,7 +862,7 @@ export function FindingsExplorerClient({
             {f.ruleDisabled && <span className="label-grid shrink-0 border border-border bg-surface px-1 py-0.5">Off</span>}
           </div>
 
-          <CategoryBadge id={f.category} categories={data.categories} />
+          <CategoryBadge id={f.category} categories={categories} />
           <SeverityBadge severity={f.severity} />
           <span className="text-xs tabular-nums text-ink-muted">{shortDate(f.firstSeenAt)}</span>
 
@@ -891,7 +937,7 @@ export function FindingsExplorerClient({
             {/* Resource data: projected columns from the policy query, one block per
                 row. Run History (findings-table.tsx) renders the same component, so a
                 finding shows the same rows whichever tab it's opened from. */}
-            <FindingRowsDetail finding={{ rows }} />
+            <LazyFindingRows item={item} session={session} request={request} conditions={conditions} />
 
             {/* Remediation is generated per rule, not authored per rule. Until that
                 ships, say why the block is empty rather than hiding it. */}
@@ -948,19 +994,16 @@ export function FindingsExplorerClient({
     );
   };
 
-  // The groups of a grouped list. A header is a real button that opens its group. An open group that
-  // has child groups lists them one step further in; an open last-level group lists its findings,
-  // 50 to a page with its own pager, so a retirement affecting 2,000 resources never renders 2,000
-  // rows. Nesting indents the header's content only, so the findings underneath keep their cells
-  // under the shared column header. `path` is the fields and values above, so the same value under
-  // two parents is two groups.
-  function renderGroups(groups: ViewGroup<ExplorerFinding>[], depth = 0, path: GroupPath = []): React.ReactNode {
+  // The groups of a grouped list. A header is a real button that opens its group, and an open group
+  // reads its contents from the server then (GroupBody). Nesting indents the header's content only, so
+  // the findings underneath keep their cells under the shared column header. `path` is the fields and
+  // values above, so the same value under two parents is two groups.
+  function renderGroups(groups: GroupHeader[], depth = 0, path: GroupPath = []): React.ReactNode {
     return groups.map(group => {
-      const groupPath = [...path, group.field, group.value];
+      const groupPath: GroupPath = [...path, { field: group.field, value: group.value }];
       const key = groupStateKey(groupPath);
       const isOpen = expandedGroups.has(key);
-      const label = group.value === null ? NO_VALUE_LABEL : isRowField(group.field) ? group.value : valueLabel(group.field, group.value);
-      const itemsPage = group.items.length > 0 ? pageGroupItems(group.items, groupPages.get(key) ?? 1) : null;
+      const label = headerLabel(group);
       return (
         <div key={key}>
           <button
@@ -977,23 +1020,16 @@ export function FindingsExplorerClient({
               {group.resourceCount} {group.resourceCount === 1 ? 'resource' : 'resources'}, {group.rowCount} {group.rowCount === 1 ? 'row' : 'rows'}
             </span>
           </button>
-          {isOpen && (
-            <div>
-              {group.groups.length > 0 && renderGroups(group.groups, depth + 1, groupPath)}
-              {itemsPage && (
-                <>
-                  <div>
-                    {itemsPage.items.map(item => renderFinding(item, groupStateKey([...groupPath, item.finding.fingerprint])))}
-                  </div>
-                  <FindingsPager
-                    page={itemsPage.page}
-                    pageCount={itemsPage.pageCount}
-                    onPage={next => setGroupPages(prev => new Map(prev).set(key, next))}
-                  />
-                </>
-              )}
-            </div>
-          )}
+          <GroupBody
+            session={session}
+            request={request}
+            open={isOpen}
+            valuesPath={groupPath.map(step => step.value)}
+            page={groupPages.get(key) ?? 1}
+            onPage={next => setGroupPages(prev => new Map(prev).set(key, next))}
+            renderGroups={children => renderGroups(children, depth + 1, groupPath)}
+            renderItem={item => renderFinding(item, groupStateKey(groupPath, item.finding.fingerprint), rowConditions(groupPath))}
+          />
         </div>
       );
     });
@@ -1008,6 +1044,7 @@ export function FindingsExplorerClient({
           {data.lastScanAt
             ? <><span className="font-medium text-ink">Last activity:</span> {fmt(data.lastScanAt)}</>
             : 'No scans yet'}
+          {feed.status === 'loading' && <span role="status" className="ml-3 text-ink-2">Updating</span>}
         </span>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-ink-2">
@@ -1089,7 +1126,7 @@ export function FindingsExplorerClient({
           >
             All categories
           </button>
-          {data.categories.map(cat => (
+          {categories.map(cat => (
             <button
               key={cat.id}
               type="button"
@@ -1188,6 +1225,7 @@ export function FindingsExplorerClient({
         <AddFilter
           fields={addFilterFields}
           optionsFor={addFilterOptions}
+          remoteFor={remoteFor}
           selectedFor={field => new Set(filterValues(filters, field))}
           onToggle={toggleValue}
           onClear={clearField}
@@ -1260,12 +1298,14 @@ export function FindingsExplorerClient({
           </Button>
         )}
 
-        <ExportButton findings={result.matched.map(({ finding, rows }) => ({ ...finding, rows, evidence: rows[0] ?? {} }))} />
+        <ExportButton read={() => session.readEvery(request)} />
       </div>
 
       <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
-      {layout === 'rule' ? (
+      {listBody === 'unavailable' && failure && layout === 'rule' ? (
+        <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+      ) : layout === 'rule' ? (
         /* ---- By-rule pivot ---- */
         /* No height cap. This was `max-h-[65vh]`, which put a second scrollbar inside the
            page's own and cut the table off at two thirds of the screen no matter how tall
@@ -1285,7 +1325,7 @@ export function FindingsExplorerClient({
             <span className="label-grid text-right">New</span>
             <span className="label-grid text-right">Fixed</span>
           </div>
-          {ruleRows.length === 0 ? (
+          {listBody === 'empty' ? (
             <div className="py-16 text-center text-sm text-ink-muted">No rules match your filters</div>
           ) : ruleRows.map(r => {
             const isOpen = expandedRules.has(r.ruleId);
@@ -1303,7 +1343,7 @@ export function FindingsExplorerClient({
                     <span className="truncate text-sm font-medium text-ink">{r.name}</span>
                     {r.disabled && <span className="label-grid shrink-0 border border-border bg-surface-sunken px-1.5 py-0.5">Off</span>}
                   </span>
-                  <CategoryBadge id={r.category} categories={data.categories} />
+                  <CategoryBadge id={r.category} categories={categories} />
                   <SeverityBadge severity={r.severity} />
                   <span className="text-right text-sm font-semibold tabular-nums text-ink">{r.open}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-sev-critical">{r.new || ''}</span>
@@ -1319,16 +1359,7 @@ export function FindingsExplorerClient({
                         Filter to this rule
                       </Button>
                     </div>
-                    {r.findings.map(f => {
-                      const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
-                      return (
-                        <div key={f.fingerprint} className="flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-surface-hover">
-                          <span className={cn('size-1.5 shrink-0', sCfg.dot)} title={sCfg.label} />
-                          <span className="min-w-0 flex-1 truncate text-ink">{findingSubject(f)}</span>
-                          <span className="shrink-0 text-ink-muted">{shortDate(f.lastSeenAt)}</span>
-                        </div>
-                      );
-                    })}
+                    <RuleFindings session={session} request={request} ruleId={r.ruleId} rangeFrom={rangeFrom} rangeTo={rangeTo} />
                   </div>
                 )}
               </div>
@@ -1341,7 +1372,7 @@ export function FindingsExplorerClient({
         <div className="bg-surface">
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <h3 className="title-grid">
-              {result.total} {result.total === 1 ? 'finding' : 'findings'}
+              {data.total} {data.total === 1 ? 'finding' : 'findings'}
             </h3>
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5">
@@ -1406,7 +1437,7 @@ export function FindingsExplorerClient({
                   </button>
                   <ColumnFilterIcon
                     label={path}
-                    options={returnedOptions(path)}
+                    remote={remoteFor(field)}
                     selected={returnedSelected(path)}
                     onToggle={v => toggleValue(field, v)}
                     onClear={() => clearField(field)}
@@ -1417,7 +1448,9 @@ export function FindingsExplorerClient({
             <span />
           </div>
 
-          {(grouped ? grouped.groupTotal === 0 : paginated.length === 0) ? (
+          {listBody === 'unavailable' && failure ? (
+            <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+          ) : listBody === 'empty' ? (
             <div className="py-16 text-center text-sm text-ink-muted">No findings match your filters</div>
           ) : (
             <div style={{ minWidth: rowMinWidth }}>

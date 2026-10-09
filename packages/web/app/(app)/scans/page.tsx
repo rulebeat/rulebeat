@@ -1,10 +1,9 @@
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { queryActiveFindings } from '@/lib/dashboard-data';
-import { ADVISORY_KINDS, RESULTS_KINDS, countsAsAffected } from '@/lib/finding-kinds';
+import { countsAsAffected } from '@/lib/finding-kinds';
 import { getScanById, getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
-import { buildExplorerData } from '@/lib/explorer-data';
 import { advisoriesEmptyState } from '@/lib/advisories-empty-state';
 import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
 import { listSchedules } from '@/lib/db/schedules';
@@ -89,11 +88,8 @@ export default async function ScansPage({
     }
   }
 
-  // Only the Results and Advisories tabs show the explorer; every tab is its own page load, so the
-  // others never send it.
-  const explorerData = activeTab === 'results' || activeTab === 'advisories'
-    ? await buildExplorerData({ kinds: activeTab === 'advisories' ? ADVISORY_KINDS : RESULTS_KINDS })
-    : undefined;
+  // The Results and Advisories tabs send no findings: the explorer reads them from the server view
+  // as the view changes, starting from `initialView`.
   const policies = await loadRules() as unknown as Rule[];
   const advisoriesEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies) : undefined;
 
@@ -105,7 +101,6 @@ export default async function ScansPage({
         categories={categories}
         role={role}
         activeTab={activeTab}
-        explorerData={explorerData}
         initialSuppressions={initialSuppressions}
         initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}

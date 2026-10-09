@@ -1,4 +1,4 @@
-import { eq, and, inArray, lt, sql, getTableColumns } from 'drizzle-orm';
+import { eq, and, asc, gte, inArray, lt, sql, getTableColumns } from 'drizzle-orm';
 import { db } from './client';
 import { findings as findingsTable, findingEvents as findingEventsTable, findingRows as findingRowsTable, meta as metaTable } from './tables';
 import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
@@ -111,6 +111,16 @@ export async function loadFindingRows(
     out.set(r.fingerprint, rows);
   }
   return out;
+}
+
+/** One finding's rows from position `from` up to `count` of them, parsed, in query order. */
+export async function loadFindingRowsRange(handle: DbHandle, fingerprint: string, from: number, count: number): Promise<FindingRow[]> {
+  const stored = await many(handle.select().from(findingRowsTable).where(and(
+    eq(findingRowsTable.fingerprint, fingerprint),
+    gte(findingRowsTable.position, from),
+    lt(findingRowsTable.position, from + count),
+  )).orderBy(asc(findingRowsTable.position)));
+  return stored.map(r => JSON.parse(r.data) as FindingRow);
 }
 
 /** Stored findings with their rows. `evidence` is the first row, which is what the old column held. */

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { TargetPicker } from './target-picker';
+import { refreshAfterScan } from '@/lib/scan-refresh';
 import type { Category, Rule } from '@/lib/types';
 import type { ScheduleTargetType } from '@/lib/db/schedules';
 import { Play, Loader2 } from 'lucide-react';
@@ -15,9 +16,12 @@ interface RunScanButtonProps {
   /** Prefills the target picker from whatever the caller is currently viewing/filtering by. */
   defaultTargetType?: ScheduleTargetType;
   defaultTargetValues?: string[];
+  /** A tab that reads its own view passes this to read it again once the scan has stored its
+   *  findings, in place of refreshing the whole page. */
+  onScanFinished?: () => void;
 }
 
-export function RunScanButton({ categories, rules, defaultTargetType = 'all', defaultTargetValues = [] }: RunScanButtonProps) {
+export function RunScanButton({ categories, rules, defaultTargetType = 'all', defaultTargetValues = [], onScanFinished }: RunScanButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [targetType, setTargetType] = useState<ScheduleTargetType>(defaultTargetType);
@@ -52,9 +56,9 @@ export function RunScanButton({ categories, rules, defaultTargetType = 'all', de
         throw new Error(body.error ?? 'Failed to start scan');
       }
       setOpen(false);
-      // The scan runs in the background — refresh after a delay so Results/Run History pick it
-      // up, matching the schedule "Run now" UX (no request held open for the full scan).
-      setTimeout(() => router.refresh(), 4000);
+      // The scan runs in the background, so read again after a delay for Results and Run History to
+      // pick it up, matching the schedule "Run now" UX (no request held open for the full scan).
+      refreshAfterScan(onScanFinished, () => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {

@@ -5,7 +5,7 @@ import { FindingsPager } from '@/components/findings/findings-pager';
 import { findingRows, pageFindingRows, type FindingRow } from '@/lib/finding-rows';
 
 /** One row's columns and, for a row made by the visual builder, the condition it violated. */
-function RowEvidence({ row }: { row: FindingRow }) {
+export function RowEvidence({ row }: { row: FindingRow }) {
   // Support both old evidence format {field,operator,value} and new {_rule,...data}
   const isNew = '_rule' in row;
   const ruleInfo = isNew

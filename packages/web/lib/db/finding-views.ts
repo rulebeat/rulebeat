@@ -31,9 +31,9 @@ import {
 } from './tables';
 import { chunk } from './chunk';
 import { listReturnedColumnsIn } from './column-catalogue';
-import { loadFindingRows, rowToRecordFromColumns, rowToSummary, rowsTableReady, summaryColumns } from './findings';
+import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSummary, rowsTableReady, summaryColumns } from './findings';
 import { ruleTagsOf } from '../rules';
-import type { FindingRow } from '../finding-rows';
+import { pageBounds, type FindingRow } from '../finding-rows';
 import { activeRowFilters, readPath, rowPath, valueText, type RowField, type View, type ViewContext } from '../finding-view';
 import { isActiveSuppression } from '../suppressions';
 import {
@@ -247,12 +247,25 @@ export function queryFindingRows(view: View, query: ViewQuery & { fingerprint: s
       ? await many(tx.select(summaryColumns).from(findingsTable).where(where))
       : await many(tx.select().from(findingsTable).where(where));
     if (!row) return null;
+    // Nothing to match a row against: the page is a slice of the stored rows, so read that slice.
+    if (ready && activeRowFilters(view.filters).length === 0) return readRowsPage(tx, row, query);
     const record = ready
       ? await withRows(tx, row)
       : rowToRecordFromColumns(row as typeof findingsTable.$inferSelect);
     const finding = decorateFinding(record, rules.get(row.ruleId));
     return buildFindingRowsResponse([finding], view, {}, { tab: query.tab, fingerprint: query.fingerprint, rowsPage: query.rowsPage });
   });
+}
+
+/** What `buildFindingRowsResponse` answers for a finding no row filter narrows, from the stored row
+ *  count and the one page of rows asked for. */
+async function readRowsPage(
+  tx: DbHandle, row: Pick<typeof findingsTable.$inferSelect, 'fingerprint' | 'rowCount'>, query: { rowsPage: number },
+): Promise<FindingRowsResponse> {
+  const total = row.rowCount ?? (await countRowsOf(tx, [row.fingerprint])).get(row.fingerprint) ?? 0;
+  const bounds = pageBounds(total, query.rowsPage, ITEM_ROWS_PER_PAGE);
+  const rows = await loadFindingRowsRange(tx, row.fingerprint, bounds.firstIndex, ITEM_ROWS_PER_PAGE);
+  return { fingerprint: row.fingerprint, rows, ...bounds, matchedRowCount: total, rowCount: total };
 }
 
 async function withRows(tx: DbHandle, row: Parameters<typeof rowToSummary>[0]) {
@@ -273,6 +286,28 @@ export function queryGroup(view: View, query: ViewQuery & { groupPath: readonly 
     const index = await buildIndex(tx, slim, view, ctx, valid ? query.groupPath : undefined);
     const { entries, ...answer } = answerGroup(slim, index, view, ctx, options);
     return { ...answer, items: await fillEntries(tx, entries, view, rules) };
+  });
+}
+
+export interface FilterOptions {
+  subscriptions: string[];
+  resourceGroups: string[];
+  rules: { id: string; name: string }[];
+}
+
+/** What the dashboard's filter lists offer: every subscription, resource group and rule that has a
+ *  finding on either tab, whatever its status. A view's facets cannot answer this, since they count
+ *  one tab's findings under that view's filters and window. Reads no rows. */
+export function queryFilterOptions(): Promise<FilterOptions> {
+  return inReadTransaction(async (tx) => {
+    const rules = await readRuleDetails(tx);
+    const found = [...await readSlim(tx, 'results', rules), ...await readSlim(tx, 'advisories', rules)];
+    const named = new Map(found.map(f => [f.ruleId, { id: f.ruleId, name: rules.get(f.ruleId)?.name ?? f.title }]));
+    return {
+      subscriptions: [...new Set(found.map(f => f.subscriptionId).filter(Boolean))].sort(),
+      resourceGroups: [...new Set(found.map(f => f.resourceGroup).filter((g): g is string => Boolean(g)))].sort(),
+      rules: [...named.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    };
   });
 }
 

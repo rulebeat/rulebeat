@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { csvRow } from '@/lib/csv';
+import type { Fetched } from '@/lib/explorer-session';
 import { findingRows } from '@/lib/finding-rows';
 import type { Finding } from '@/lib/types';
 import { Download, ChevronDown } from 'lucide-react';
@@ -18,9 +20,13 @@ interface LifecycleFields {
   timesSeen?: number;
 }
 
-interface ExportButtonProps {
-  findings: (Finding & LifecycleFields)[];
-}
+type ExportedFindings = (Finding & LifecycleFields)[];
+
+/** The findings to export, either held already or read when the viewer asks, for a list that does not
+ *  hold them all (the explorer). A read that fails says why and writes no file. */
+type ExportButtonProps =
+  | { findings: ExportedFindings; read?: undefined }
+  | { read: () => Promise<Fetched<ExportedFindings>>; findings?: undefined };
 
 /**
  * The findings CSV text, header and data rows alike. Extracted so it is testable without a DOM:
@@ -84,7 +90,24 @@ export function buildFindingsCsv(findings: (Finding & LifecycleFields)[]): strin
   return [csvRow(headers), ...lines].join('\n');
 }
 
-export function ExportButton({ findings }: ExportButtonProps) {
+export function ExportButton({ findings: held, read }: ExportButtonProps) {
+  const [reading, setReading] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /** The findings to write, or null when reading them failed (the failure is on screen). */
+  async function findingsToExport(): Promise<ExportedFindings | null> {
+    if (!read) return held ?? [];
+    setReading(true);
+    setFailure(null);
+    const result = await read();
+    setReading(false);
+    if (!result.ok) {
+      setFailure(result.message);
+      return null;
+    }
+    return result.data;
+  }
+
   function triggerDownload(filename: string, mimeType: string, content: string) {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -95,11 +118,14 @@ export function ExportButton({ findings }: ExportButtonProps) {
     URL.revokeObjectURL(url);
   }
 
-  function exportCsv() {
-    triggerDownload('findings.csv', 'text/csv', buildFindingsCsv(findings));
+  async function exportCsv() {
+    const findings = await findingsToExport();
+    if (findings) triggerDownload('findings.csv', 'text/csv', buildFindingsCsv(findings));
   }
 
-  function exportJson() {
+  async function exportJson() {
+    const findings = await findingsToExport();
+    if (!findings) return;
     // Flatten _rule into top-level for cleaner JSON output
     const cleaned = findings.map(f => {
       const ev = f.evidence as Record<string, unknown>;
@@ -114,20 +140,23 @@ export function ExportButton({ findings }: ExportButtonProps) {
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="outline" size="xs" className="gap-1">
-            <Download className="size-3" />
-            Export
-            <ChevronDown className="size-3" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end" className="w-36">
-        <DropdownMenuItem onClick={exportCsv}>Export CSV</DropdownMenuItem>
-        <DropdownMenuItem onClick={exportJson}>Export JSON</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="outline" size="xs" className="gap-1" disabled={reading}>
+              <Download className="size-3" />
+              {reading ? 'Preparing export' : 'Export'}
+              <ChevronDown className="size-3" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuItem onClick={exportCsv}>Export CSV</DropdownMenuItem>
+          <DropdownMenuItem onClick={exportJson}>Export JSON</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {failure && <span role="alert" className="text-xs text-ink">{failure}</span>}
+    </>
   );
 }
