@@ -11,6 +11,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "generate-demo": "tsx scripts/generate-demo.ts",
+    "bench:views": "tsx scripts/bench-finding-views.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

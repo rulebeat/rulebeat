@@ -10,6 +10,10 @@ import {
   planRowCopy, rowCopyMismatch,
   type RowCopySource, type RowRecord,
 } from '../finding-rows-copy';
+import {
+  CATALOGUE_READ_BACK, CATALOGUE_READ_RULES, COLUMN_CATALOGUE_MARKER, PathCollector, catalogueMismatch,
+  type CatalogueRecord,
+} from '../column-catalogue-build';
 
 /**
  * Brings a Postgres database up to the current schema. The Postgres analog of `migrate.ts`'s
@@ -277,6 +281,14 @@ CREATE TABLE IF NOT EXISTS finding_rows (
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS row_count INTEGER;
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS rows_scan_id TEXT;
 
+-- The columns each rule's findings returned. Filled once by buildColumnCatalogue(), then kept
+-- in step by every scan save.
+CREATE TABLE IF NOT EXISTS column_catalogue (
+  rule_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  PRIMARY KEY (rule_id, path)
+);
+
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,
   fingerprint TEXT NOT NULL,
@@ -455,6 +467,12 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not copy finding rows into their own table:', err);
     }
+    // After the copy, whose rows it reads, and in its own savepoint for the same reason.
+    try {
+      await tx.transaction(async (sp) => { await buildColumnCatalogue(sp); });
+    } catch (err) {
+      console.error('[bootstrap] could not build the column catalogue:', err);
+    }
   });
 }
 
@@ -516,4 +534,26 @@ async function copyFindingRows(tx: PgTx): Promise<void> {
   if (!copied) {
     await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINDING_ROWS_COPY_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
   }
+}
+
+/** The Postgres half of migrate.ts's buildColumnCatalogue(): the same build and the same proof, once,
+ *  and only after the rows copy has proved out. A throw rolls the savepoint back. */
+async function buildColumnCatalogue(tx: PgTx): Promise<void> {
+  if ((await tx.execute(sql`SELECT value FROM meta WHERE key = ${COLUMN_CATALOGUE_MARKER}`)).rows.length > 0) return;
+  if ((await tx.execute(sql`SELECT value FROM meta WHERE key = ${FINDING_ROWS_COPY_MARKER}`)).rows.length === 0) return;
+  const planned: CatalogueRecord[] = [];
+  for (const { rule_id } of (await tx.execute(sql.raw(CATALOGUE_READ_RULES))).rows as unknown as { rule_id: string }[]) {
+    const rows = (await tx.execute(sql`SELECT r.data AS data FROM finding_rows r JOIN findings f ON f.fingerprint = r.fingerprint WHERE f.rule_id = ${rule_id}`)).rows as unknown as { data: string }[];
+    const collector = new PathCollector();
+    for (const row of rows) collector.add(row.data);
+    for (const path of collector.result()) planned.push({ rule_id, path });
+  }
+  await tx.execute(sql`DELETE FROM column_catalogue`);
+  for (const batch of batches(planned)) {
+    const values = batch.map(p => sql`(${p.rule_id}, ${p.path})`);
+    await tx.execute(sql`INSERT INTO column_catalogue (rule_id, path) VALUES ${sql.join(values, sql`, `)}`);
+  }
+  const mismatch = catalogueMismatch(planned, (await tx.execute(sql.raw(CATALOGUE_READ_BACK))).rows as unknown as CatalogueRecord[]);
+  if (mismatch) throw new Error(`the build did not match: ${mismatch}`);
+  await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${COLUMN_CATALOGUE_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
 }

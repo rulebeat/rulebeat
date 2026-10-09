@@ -157,6 +157,11 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     // viewer only reads.
     ['views/route.ts', 'views:write'],
     ['views/[id]/route.ts', 'views:write'],
+    // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
+    ['findings/view/route.ts', 'read'],
+    ['findings/rows/route.ts', 'read'],
+    ['findings/group/route.ts', 'read'],
+    ['findings/column-values/route.ts', 'read'],
   ];
 
   for (const [route, action] of PINNED) {

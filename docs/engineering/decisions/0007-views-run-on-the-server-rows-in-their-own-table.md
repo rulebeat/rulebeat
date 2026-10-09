@@ -100,3 +100,66 @@ times in the benchmark), so the integrity rule and the speed point the same way.
   is proven by a content test, and the old columns remain for one release.
 - Run History's snapshot and compare views read stored scan results, not the findings table, and
   are not covered here. They are a separate change.
+
+## Decisions made while building it
+
+Routes and response shapes:
+
+- The column-values route takes its text search as `valueQuery`, not `q`, because `q` is the view's
+  own search and a view and a column search travel together.
+- The rows route answers 404 for a fingerprint that is not on the asked tab, rather than an empty
+  page that looks like a finding with no rows.
+- A facet option carries a `label` beside its `value`, so the browser shows rule names and
+  subscription names without a second lookup.
+- There is no status facet. Status has a fixed set of choices and its counts are the tiles.
+
+Ordering:
+
+- Findings that tie on the sorted value fall to the fingerprint, ascending, whichever way the sort
+  runs. Without a fixed tie-break two pages of one view could repeat or skip a finding. The
+  reference is held to the same order by the parity test.
+
+How a view reads the database:
+
+- The built-in side of a view (filters, search, window, suppression, facets, tiles, the by-rule
+  rows, sort and paging) runs in TypeScript over one slim read of the tab's findings: no rows, no
+  evidence, no long text. It uses the engine's own functions, so it cannot drift from the
+  reference. Per-facet SQL was measured and rejected: at 50,000 findings the one slim read takes
+  about 340 ms and a `GROUP BY` for one facet about 400 ms, so the dozen facets and tiles of a
+  view would cost about 5 s.
+- A view that looks at a row value (a row filter, or a sort or group on a returned column) streams
+  the rows of its candidate findings in chunks of 500 fingerprints, parses each row once and keeps
+  only a count of matching rows, plus the few values a sort or group reads. Nothing parsed is held
+  past its chunk. A second phase reads all rows of the findings on the page and parses them again,
+  so the cost is bounded by the page size.
+- The candidates are the findings that fail at most one built-in filter, because only those can
+  change a facet, tile or by-rule count. A finding that fails two is never read.
+- Before a row is parsed its text is checked for the filter's value, when that value is plain text.
+  The check can only skip a row that cannot match. A value that could be written other ways (a
+  number, an object's text, an empty value) is not checked and the row is parsed.
+- How many rows each finding holds comes from the `finding_rows` primary key index
+  (32 to 45 ms at 50,000 findings), not from the finding's `row_count` column (500 to 616 ms).
+  `row_count` is read for the findings on a page.
+- A covering index on `findings` for the slim read was left as a later lever. It would speed one
+  read that is a third of the default view, and every scan would pay for it.
+
+Scan save:
+
+- A scan rebuilds a rule's catalogue from the rows it just wrote. It reads stored rows only when a
+  column could be missing: when the catalogue has not yet been proven built, or when the rows
+  written dropped a column the rule had. It then reads only the rule's findings the scan did not
+  rewrite. Only the entries that changed are written.
+
+Measured on the benchmark harness, one machine, SQLite, 5 rows of about 1.5 KB per finding
+(about 7.5 KB a finding, against about 4.5 KB for the 3 rows the figures above were taken on):
+
+| 50,000 findings | today | server |
+| --- | --- | --- |
+| default view | 3.6 s | 0.8 s |
+| row filter on one column | 3.6 s | 2.4 s |
+| a column's values | 3.5 s | 2.2 s |
+| peak memory | 2.4 GB | 0.7 GB |
+
+A row-filtered view therefore costs more than the 275 ms above, which was taken on fewer and lighter
+rows. Reading the text of 250,000 rows out of SQLite is the floor (about 0.75 s), and the rest is
+the slim read, the pools and parsing the rows that pass the text check.

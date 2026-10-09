@@ -22,6 +22,10 @@ import {
   planRowCopy, rowCopyMismatch,
   type RowCopySource, type RowRecord,
 } from './finding-rows-copy';
+import {
+  CATALOGUE_READ_BACK, CATALOGUE_READ_RULES, COLUMN_CATALOGUE_MARKER, PathCollector, catalogueMismatch,
+  type CatalogueRecord,
+} from './column-catalogue-build';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -851,6 +855,16 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE findings ADD COLUMN row_count INTEGER`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE findings ADD COLUMN rows_scan_id TEXT`); } catch { /* already exists */ }
 
+  // The columns each rule's findings returned. Empty here; buildColumnCatalogue() at the end of
+  // this function fills it from the rows in finding_rows, once.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS column_catalogue (
+      rule_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      PRIMARY KEY (rule_id, path)
+    );
+  `);
+
   // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
   try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
 
@@ -1052,6 +1066,14 @@ export function runMigrations(sqlite: Database.Database): void {
     );
     const renameInFindingsTable = sqlite.prepare(`UPDATE findings SET rule_id = ? WHERE rule_id = ?`);
     const renameInFindingEvents = sqlite.prepare(`UPDATE finding_events SET rule_id = ? WHERE rule_id = ?`);
+    // A database from before the catalogue has no catalogue to move. A path the new id already holds stays one
+    // entry, so the move cannot trip the key.
+    let copyCatalogue: Database.Statement | undefined;
+    let dropCatalogue: Database.Statement | undefined;
+    try {
+      copyCatalogue = sqlite.prepare(`INSERT OR IGNORE INTO column_catalogue (rule_id, path) SELECT ?, path FROM column_catalogue WHERE rule_id = ?`);
+      dropCatalogue = sqlite.prepare(`DELETE FROM column_catalogue WHERE rule_id = ?`);
+    } catch { /* no table yet */ }
 
     for (const [oldId, newId] of pairs) {
       try {
@@ -1078,6 +1100,8 @@ export function runMigrations(sqlite: Database.Database): void {
         renameInDashboards.run(oldQuoted, newQuoted, `%${oldQuoted}%`);
         renameInFindingsTable.run(newId, oldId);
         renameInFindingEvents.run(newId, oldId);
+        copyCatalogue?.run(newId, oldId);
+        dropCatalogue?.run(oldId);
       } catch { /* ignore this pair, continue with the rest */ }
     }
   }
@@ -1135,6 +1159,42 @@ export function runMigrations(sqlite: Database.Database): void {
   rekeyFingerprintCase(sqlite);
   // After the rekey, so the rows are copied under the fingerprints the findings end up with.
   copyFindingRows(sqlite);
+  // After the copy, whose rows it reads, and only once the copy has proved out.
+  buildColumnCatalogue(sqlite);
+}
+
+/**
+ * Builds `column_catalogue` once, for every rule, from the rows in `finding_rows` through
+ * lib/db/column-catalogue-build.ts, then reads it back, proves it is exactly what was planned and
+ * writes its marker, all in one transaction. A mismatch or an error changes nothing: it is logged and
+ * retried on the next start, and until then a view lists only the columns scans have recorded since.
+ * Nothing runs until the rows copy has proved out, since before it the table may not hold every row.
+ */
+function buildColumnCatalogue(sqlite: Database.Database): void {
+  try {
+    sqlite.transaction(() => {
+      if (sqlite.prepare(`SELECT value FROM meta WHERE key = ?`).get(COLUMN_CATALOGUE_MARKER)) return;
+      if (!sqlite.prepare(`SELECT value FROM meta WHERE key = ?`).get(FINDING_ROWS_COPY_MARKER)) return;
+      const rowsOfRule = sqlite.prepare(
+        `SELECT r.data AS data FROM finding_rows r JOIN findings f ON f.fingerprint = r.fingerprint WHERE f.rule_id = ?`,
+      );
+      const planned: CatalogueRecord[] = [];
+      for (const { rule_id } of sqlite.prepare(CATALOGUE_READ_RULES).all() as { rule_id: string }[]) {
+        const collector = new PathCollector();
+        for (const row of rowsOfRule.iterate(rule_id) as IterableIterator<{ data: string }>) collector.add(row.data);
+        for (const path of collector.result()) planned.push({ rule_id, path });
+      }
+      sqlite.exec(`DELETE FROM column_catalogue`);
+      const insert = sqlite.prepare(`INSERT INTO column_catalogue (rule_id, path) VALUES (?, ?)`);
+      for (const p of planned) insert.run(p.rule_id, p.path);
+      const mismatch = catalogueMismatch(planned, sqlite.prepare(CATALOGUE_READ_BACK).all() as CatalogueRecord[]);
+      if (mismatch) throw new Error(`the build did not match: ${mismatch}`);
+      sqlite.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)`)
+        .run(COLUMN_CATALOGUE_MARKER, new Date().toISOString());
+    })();
+  } catch (err) {
+    console.error('[migrate] could not build the column catalogue:', err);
+  }
 }
 
 /**

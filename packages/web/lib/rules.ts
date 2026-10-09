@@ -407,6 +407,10 @@ function uid(): string {
   return globalThis.crypto.randomUUID();
 }
 
+/** A stored rule's tags: its tag list, or its old single group as one tag. Undefined when it has neither. */
+export function ruleTagsOf(row: { tags: string | null; group: string | null }): string[] | undefined {
+  return row.tags ? JSON.parse(row.tags) as string[] : (row.group ? [row.group] : undefined);
+}
 function rowToRule(row: Row): Rule {
   // Read conditions (new name); fall back to 'rules' column (legacy name stored during migration window)
   const rawConditions = row.conditions ?? '[]';
@@ -426,7 +430,7 @@ function rowToRule(row: Row): Rule {
     type: (row.type ?? 'custom') as RuleType,
     pack: row.pack ?? undefined,
     group: row.group ?? undefined,
-    tags: row.tags ? JSON.parse(row.tags) as string[] : (row.group ? [row.group] : undefined),
+    tags: ruleTagsOf(row),
     scope: migrateScope(JSON.parse(row.scope) as Rule['scope'] & { include?: string[]; exclude?: string[] }),
     resourceTypes: JSON.parse(row.resourceTypes) as string[],
     conditions: [...migratedConditions, ...conditions],
