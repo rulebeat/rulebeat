@@ -17,6 +17,11 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from './fingerprint-rekey';
+import {
+  FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
+  planRowCopy, rowCopyMismatch,
+  type RowCopySource, type RowRecord,
+} from './finding-rows-copy';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -65,6 +70,9 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
   const updateFinding = sqlite.prepare(`UPDATE findings SET fingerprint = ? WHERE fingerprint = ?`);
   const updateEvents = sqlite.prepare(`UPDATE finding_events SET fingerprint = ? WHERE fingerprint = ?`);
   const updateSuppression = sqlite.prepare(`UPDATE suppressions SET fingerprint = ? WHERE fingerprint = ?`);
+  // A database from before ADR 0007 has no finding_rows yet; there is nothing of it to rewrite.
+  let updateRows: Database.Statement | undefined;
+  try { updateRows = sqlite.prepare(`UPDATE finding_rows SET fingerprint = ? WHERE fingerprint = ?`); } catch { /* no table yet */ }
 
   const remap = (resourceId: string, storedFingerprint: string): void => {
     // A database from before computeFingerprint() ignored casing still holds the legacy value; it
@@ -75,9 +83,14 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
     if (next === storedFingerprint) return;
     // Each in its own try/catch: `findings.fingerprint` is a primary key, so a row already sitting
     // at the new value (from an interrupted earlier run) must not abort the remaining rewrites.
-    try { updateFinding.run(next, storedFingerprint); } catch { /* collision — leave it */ }
+    let findingMoved = false;
+    try { findingMoved = updateFinding.run(next, storedFingerprint).changes > 0; } catch { /* collision — leave it */ }
     try { updateEvents.run(next, storedFingerprint); } catch { /* collision — leave it */ }
     try { updateSuppression.run(next, storedFingerprint); } catch { /* collision — leave it */ }
+    // A finding's rows go where the finding goes, and stay with it when it could not move.
+    if (findingMoved) {
+      try { updateRows?.run(next, storedFingerprint); } catch { /* collision — leave it */ }
+    }
   };
 
   try {
@@ -137,6 +150,12 @@ export function openDatabase(dbPath: string): Database.Database {
     }
   }
   sqlite.pragma('foreign_keys = ON');
+  // ADR 0007: SQLite's default page cache is 2 MB, so with tens of thousands of findings a view
+  // re-reads its pages from the file on every request. 64 MB of cache (negative = KiB) and reads
+  // through a memory map of up to 256 MB keep them in memory. Both are per-connection settings and
+  // change nothing stored.
+  sqlite.pragma('cache_size = -65536');
+  sqlite.pragma('mmap_size = 268435456');
   // On a brand-new, still-empty database file, `journal_mode = WAL` above does not create the
   // `-wal` sidecar: SQLite has no existing page-1 header to convert yet, so it defers that until
   // the first write. A fresh install's very first writes are the migrations and the initial admin
@@ -818,6 +837,20 @@ export function runMigrations(sqlite: Database.Database): void {
   // backfilled: a finding stored before this reads as one row made from its evidence.
   try { sqlite.exec(`ALTER TABLE findings ADD COLUMN evidence_rows TEXT`); } catch { /* already exists */ }
 
+  // ADR 0007: a finding's rows in their own table, one record per row, the finding's row count and
+  // the scan its rows were written for. All empty here; copyFindingRows() at the end of this function
+  // fills them from the columns above, which stay filled but unread for one release.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS finding_rows (
+      fingerprint TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      PRIMARY KEY (fingerprint, position)
+    );
+  `);
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN row_count INTEGER`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN rows_scan_id TEXT`); } catch { /* already exists */ }
+
   // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
   try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
 
@@ -1100,6 +1133,42 @@ export function runMigrations(sqlite: Database.Database): void {
 
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);
+  // After the rekey, so the rows are copied under the fingerprints the findings end up with.
+  copyFindingRows(sqlite);
+}
+
+/**
+ * Runs lib/db/finding-rows-copy.ts's plan: copies the rows of every finding the table does not hold
+ * current rows for (all of them, the first time), reads them back and proves they are exactly the
+ * plan, removes the records of findings that are gone, and writes the marker reads wait for. All in
+ * one transaction, so a mismatch or an error changes nothing. That is logged and retried on the next
+ * start rather than allowed to stop the app booting; until the first copy succeeds the app reads
+ * rows from the old columns, which scans keep filling.
+ */
+function copyFindingRows(sqlite: Database.Database): void {
+  try {
+    sqlite.transaction(() => {
+      const copied = sqlite.prepare(`SELECT value FROM meta WHERE key = ?`).get(FINDING_ROWS_COPY_MARKER);
+      const plan = planRowCopy(sqlite.prepare(copied ? ROW_COPY_READ_STALE : ROW_COPY_READ_ALL).all() as RowCopySource[]);
+      const remove = sqlite.prepare(`DELETE FROM finding_rows WHERE fingerprint = ?`);
+      for (const fingerprint of plan.fingerprints) remove.run(fingerprint);
+      const insert = sqlite.prepare(`INSERT INTO finding_rows (fingerprint, position, data) VALUES (?, ?, ?)`);
+      for (const r of plan.records) insert.run(r.fingerprint, r.position, r.data);
+      const setColumns = sqlite.prepare(`UPDATE findings SET row_count = ?, rows_scan_id = ? WHERE fingerprint = ?`);
+      for (const f of plan.findings) setColumns.run(f.rowCount, f.rowsScanId, f.fingerprint);
+      if (plan.fingerprints.length > 0) {
+        const mismatch = rowCopyMismatch(plan, sqlite.prepare(ROW_COPY_READ_BACK).all() as RowRecord[]);
+        if (mismatch) throw new Error(`the copy did not match: ${mismatch}`);
+      }
+      sqlite.exec(ROW_COPY_DELETE_ORPHANS);
+      if (!copied) {
+        sqlite.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)`)
+          .run(FINDING_ROWS_COPY_MARKER, new Date().toISOString());
+      }
+    })();
+  } catch (err) {
+    console.error('[migrate] could not copy finding rows into their own table:', err);
+  }
 }
 
 /**

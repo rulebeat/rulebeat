@@ -676,7 +676,9 @@ describe('TS-25 · removing Applies to drops its columns and nothing else', () =
     try {
       const columns = columnsOf(sqlite, 'rules');
       for (const column of APPLIES_TO_COLUMNS) expect(columns, `${column} survived the upgrade`).not.toContain(column);
-      expect(ruleAndDependents(sqlite, ruleId)).toEqual(before);
+      // The one expected difference is the finding-rows copy recording that this finding has no rows.
+      const expected = { ...before, findings: before.findings.map(f => ({ ...(f as object), row_count: 0 })) };
+      expect(ruleAndDependents(sqlite, ruleId)).toEqual(expected);
       // The suppression still silences the finding: its fingerprint is what the next scan computes.
       const finding = before.findings[0] as { fingerprint: string; resource_id: string };
       expect(computeFingerprint(ruleId, finding.resource_id)).toBe(finding.fingerprint);

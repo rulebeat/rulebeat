@@ -104,12 +104,15 @@ export function planFingerprintRekey(input: RekeyInput): RekeyStatement[] {
         sql: `UPDATE findings SET first_seen_at = ?, times_seen = ? WHERE fingerprint = ?`,
         params: [firstSeenAt, timesSeen, survivor!.fingerprint],
       });
+      // A merged-away finding's rows go with it: the survivor's are the most recent sighting's.
       for (const f of merged) {
         statements.push({ sql: `DELETE FROM findings WHERE fingerprint = ?`, params: [f.fingerprint] });
+        statements.push({ sql: `DELETE FROM finding_rows WHERE fingerprint = ?`, params: [f.fingerprint] });
       }
     }
     if (survivor!.fingerprint !== next) {
       statements.push({ sql: `UPDATE findings SET fingerprint = ? WHERE fingerprint = ?`, params: [next, survivor!.fingerprint] });
+      statements.push({ sql: `UPDATE finding_rows SET fingerprint = ? WHERE fingerprint = ?`, params: [next, survivor!.fingerprint] });
     }
   }
 
