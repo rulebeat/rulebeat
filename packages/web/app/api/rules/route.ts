@@ -108,10 +108,12 @@ export async function POST(req: Request) {
   // A version, a retirement and an origin are the server's to set, never a request's: a custom rule
   // has no version of its own and is never retired, and its origin is the rule `copyFrom` names as
   // this server sees it. An unknown or non-string `copyFrom` records no origin and still creates.
+  // The last run status and time are the scan's to write, so a new rule starts with neither.
   // `deadlineField` and `groupField` are settings rules no longer have; a client that still sends
   // them is ignored and never sees them echoed back.
   const {
     copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov,
+    lastRunStatus: _ls, lastRunAt: _la,
     deadlineField: _df, groupField: _gf, ...fields
   } = body;
   const source = typeof copyFrom === 'string' && copyFrom !== '' ? await loadRule(copyFrom) : null;

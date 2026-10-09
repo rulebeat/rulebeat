@@ -31,6 +31,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - The status filter's options are now Open, New, Fixed and All, with the window in the New and Fixed labels. Fixed lists only findings fixed inside the window, so it matches the Fixed count above it. "Ongoing only" is gone, and a saved link that used it opens as Open.
 - The Subscription, Resource Group, Location and Tags filter counts now follow every other filter, including severity and status, so they add up to what the table shows. They no longer count fixed findings while Open is selected.
 - The Results tab now has an Info tile and an Info severity filter. Open findings with Info severity were counted in Open but had no tile and could not be filtered on, so the severity tiles did not add up to Open.
+- Creating a rule through the API now answers with the rule as it was saved. The response used to repeat back fields the rule does not have, and a request could set the rule's last run status, which only a scan should write.
 
 ## [0.8.0] - 2026-10-07
 

@@ -162,7 +162,9 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
     await run(tx.insert(rulesTable).values(ruleToRow(rule)));
-    return { ok: true, rule };
+    // The stored row, not the input: a field the table has no column for is not echoed back.
+    const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
+    return { ok: true, rule: rowToRule(stored!) };
   });
 }
 
