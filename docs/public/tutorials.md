@@ -12,3 +12,11 @@ are best watched. Each one links the page that covers the same ground in writing
 Find orphaned Azure resources with built-in cost rules: run a scan, read the findings, export a CSV, and never rebuild the list.
 
 ▶ [Watch on YouTube](https://youtu.be/1ToeGihqaAI), 2 min. Read more: [How it works](how-it-works.md).
+
+## Turn your query into a rule
+
+[![Watch: Turn your query into a rule](img/tutorials/query-to-rule.png)](https://youtu.be/pW1JhFLIjKI)
+
+Turn a KQL query you run by hand into a RuleBeat rule: paste it on the Query page, check the visual builder, and save it to the Library.
+
+▶ [Watch on YouTube](https://youtu.be/pW1JhFLIjKI), 2 min. Read more: [Authoring rules](authoring-rules.md).
