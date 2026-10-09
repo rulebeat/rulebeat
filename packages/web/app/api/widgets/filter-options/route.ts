@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { listCategories } from '@/lib/db/categories';
 import { loadRules } from '@/lib/rules';
-import { listFindings } from '@/lib/db/findings';
+import { listFindingSummaries } from '@/lib/db/findings';
 
 export async function GET() {
   const actor = await requireRole('read');
@@ -11,7 +11,7 @@ export async function GET() {
   const categories = await listCategories();
   const allRules = await loadRules();
   const tags = Array.from(new Set(allRules.flatMap(r => r.tags ?? []))).sort((a, b) => a.localeCompare(b));
-  const allFindings = await listFindings();
+  const allFindings = await listFindingSummaries();
   // Raw subscription ids only — display-name enrichment happens client-side via
   // /api/azure/subscriptions, same as findings-explorer-client.tsx does today.
   const subscriptions = Array.from(new Set(allFindings.map(f => f.subscriptionId).filter(Boolean))).sort();

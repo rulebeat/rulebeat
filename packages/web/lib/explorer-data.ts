@@ -11,7 +11,9 @@ import type { RuleKind } from './types';
  *  something relative to a chosen time window, which is a UI setting, not stored data. */
 export type FindingDisplayStatus = 'new' | 'active' | 'fixed';
 
-export interface ExplorerFinding extends FindingRecord {
+/** A finding as the explorer receives it. It has no `evidence`: that is a stored copy of the first
+ *  row, and `rows` already holds every row, so sending both would send the first one twice. */
+export interface ExplorerFinding extends Omit<FindingRecord, 'evidence'> {
   policyName: string;
   ruleDisabled: boolean;
   ruleTags: string[];
@@ -38,7 +40,7 @@ export async function buildExplorerData(
 
   const all = await listFindings({ kinds: opts.kinds ?? RESULTS_KINDS });
 
-  const findings: ExplorerFinding[] = all.map(f => {
+  const findings: ExplorerFinding[] = all.map(({ evidence: _evidence, ...f }) => {
     const rule = policyMap.get(f.ruleId);
     return {
       ...f,

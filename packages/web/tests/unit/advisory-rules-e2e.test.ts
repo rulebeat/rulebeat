@@ -180,8 +180,8 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
     };
     const rowsOf = async (kinds: readonly RuleKind[]) => (await buildExplorerData({ kinds })).findings
       .filter(f => f.ruleId === ADVISORY)
-      .map(({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, evidence, firstSeenAt, status }) =>
-        ({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, evidence, firstSeenAt, status }))
+      .map(({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, rows, firstSeenAt, status }) =>
+        ({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, rows, firstSeenAt, status }))
       .sort((a, b) => (a.resourceId ?? '').localeCompare(b.resourceId ?? ''));
 
     await scan();

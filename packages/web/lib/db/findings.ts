@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, getTableColumns } from 'drizzle-orm';
 import { db } from './client';
 import { findings as findingsTable, findingEvents as findingEventsTable } from './tables';
 import { many, run, inTransaction, type DbHandle } from './exec';
@@ -79,6 +79,21 @@ function parseStoredRows(value: string | null): FindingRow[] | null {
 function rowToRecord(row: Row): FindingRecord {
   const evidence = JSON.parse(row.evidence) as Record<string, unknown>;
   return {
+    ...rowToSummary(row),
+    evidence,
+    rows: findingRows({ evidence, rows: parseStoredRows(row.evidenceRows) }),
+  };
+}
+
+/** A stored finding without its rows: everything a count, a feed or a filter list reads. Reading a
+ *  finding's rows is most of what listing findings costs, so a caller that never looks at them
+ *  should not pay for them. */
+export type FindingSummary = Omit<FindingRecord, 'evidence' | 'rows'>;
+
+const { evidence: _evidence, evidenceRows: _evidenceRows, ...summaryColumns } = getTableColumns(findingsTable);
+
+function rowToSummary(row: Omit<Row, 'evidence' | 'evidenceRows'>): FindingSummary {
+  return {
     module: row.category,
     ruleId: row.ruleId,
     fingerprint: row.fingerprint,
@@ -94,8 +109,6 @@ function rowToRecord(row: Row): FindingRecord {
     location: row.location ?? undefined,
     title: row.title,
     description: row.description,
-    evidence,
-    rows: findingRows({ evidence, rows: parseStoredRows(row.evidenceRows) }),
     recommendation: row.recommendation,
     remediationSteps: JSON.parse(row.remediationSteps) as Finding['remediationSteps'],
     azurePortalLink: row.azurePortalLink ?? undefined,
@@ -122,17 +135,28 @@ export async function getFindingsByFingerprints(fingerprints: string[]): Promise
   return out;
 }
 
-export async function listFindings(
-  opts: { status?: 'active' | 'fixed'; kinds?: readonly RuleKind[] } = {},
-): Promise<FindingRecord[]> {
+interface ListFindingsOptions {
+  status?: 'active' | 'fixed';
+  kinds?: readonly RuleKind[];
+}
+
+function listConditions(opts: ListFindingsOptions) {
   const conditions = [
     ...(opts.status ? [eq(findingsTable.status, opts.status)] : []),
     ...(opts.kinds ? [inArray(findingsTable.kind, [...opts.kinds])] : []),
   ];
-  const rows = conditions.length > 0
-    ? await many(db.select().from(findingsTable).where(and(...conditions)))
-    : await many(db.select().from(findingsTable));
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+export async function listFindings(opts: ListFindingsOptions = {}): Promise<FindingRecord[]> {
+  const rows = await many(db.select().from(findingsTable).where(listConditions(opts)));
   return rows.map(rowToRecord);
+}
+
+/** listFindings() without the rows: the same findings, never reading the stored row columns. */
+export async function listFindingSummaries(opts: ListFindingsOptions = {}): Promise<FindingSummary[]> {
+  const rows = await many(db.select(summaryColumns).from(findingsTable).where(listConditions(opts)));
+  return rows.map(rowToSummary);
 }
 
 export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<SyncResult> {

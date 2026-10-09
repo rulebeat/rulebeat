@@ -89,7 +89,11 @@ export default async function ScansPage({
     }
   }
 
-  const explorerData = await buildExplorerData({ kinds: activeTab === 'advisories' ? ADVISORY_KINDS : RESULTS_KINDS });
+  // Only the Results and Advisories tabs show the explorer; every tab is its own page load, so the
+  // others never send it.
+  const explorerData = activeTab === 'results' || activeTab === 'advisories'
+    ? await buildExplorerData({ kinds: activeTab === 'advisories' ? ADVISORY_KINDS : RESULTS_KINDS })
+    : undefined;
   const policies = await loadRules() as unknown as Rule[];
   const advisoriesEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies) : undefined;
 
