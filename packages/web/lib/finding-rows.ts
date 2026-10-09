@@ -32,6 +32,19 @@ export function findingRows(finding: HasRows): FindingRow[] {
   return isEmptyRow(finding.evidence) ? [] : [finding.evidence as FindingRow];
 }
 
+/** How many of a finding's rows its detail shows at once. */
+export const ROWS_PER_PAGE = 20;
+
+/** One page of a finding's rows. A finding keeps every row its query returned however many there
+ *  are; only how many are shown at once is limited. `page` is 1-based and clamped to a real page,
+ *  and `firstIndex` is the first shown row's position in the whole list, for "Row n of total". */
+export function pageFindingRows(rows: readonly FindingRow[], page: number, pageSize = ROWS_PER_PAGE) {
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const clamped = Math.min(Math.max(1, Math.floor(page) || 1), pageCount);
+  const firstIndex = (clamped - 1) * pageSize;
+  return { rows: rows.slice(firstIndex, firstIndex + pageSize), page: clamped, pageCount, total: rows.length, firstIndex };
+}
+
 /** A row's canonical form: JSON with keys sorted at every level and values as returned (array order
  *  is kept). Two rows are the same row when this is equal; a change detector compares a finding's
  *  previous and new rows as sets of these keys. */

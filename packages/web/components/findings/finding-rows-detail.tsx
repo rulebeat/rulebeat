@@ -1,7 +1,8 @@
 'use client';
 
-import { Fragment } from 'react';
-import { findingRows, type FindingRow } from '@/lib/finding-rows';
+import { Fragment, useState } from 'react';
+import { FindingsPager } from '@/components/findings/findings-pager';
+import { findingRows, pageFindingRows, type FindingRow } from '@/lib/finding-rows';
 
 /** One row's columns and, for a row made by the visual builder, the condition it violated. */
 function RowEvidence({ row }: { row: FindingRow }) {
@@ -51,19 +52,25 @@ function RowEvidence({ row }: { row: FindingRow }) {
 }
 
 /** Every row a finding holds. One row renders as it always has; several render as a numbered list
- *  of the same rendering, in query order. Shared by the explorer detail and Run History so a
+ *  of the same rendering, in query order, a page at a time so a finding with thousands of rows stays
+ *  readable. Shared by the explorer detail and Run History so a
  *  finding shows the same rows whichever tab it is opened from. */
 export function FindingRowsDetail({ finding }: { finding: { evidence?: FindingRow | null; rows?: FindingRow[] | null } }) {
+  const [page, setPage] = useState(1);
   const rows = findingRows(finding);
   if (rows.length <= 1) return <RowEvidence row={rows[0] ?? {}} />;
+  const shown = pageFindingRows(rows, page);
   return (
-    <ol className="space-y-6">
-      {rows.map((row, i) => (
-        <li key={i}>
-          <p className="label-grid mb-2">Row {i + 1} of {rows.length}</p>
-          <RowEvidence row={row} />
-        </li>
-      ))}
-    </ol>
+    <div className="space-y-6">
+      <ol className="space-y-6">
+        {shown.rows.map((row, i) => (
+          <li key={shown.firstIndex + i}>
+            <p className="label-grid mb-2">Row {shown.firstIndex + i + 1} of {shown.total}</p>
+            <RowEvidence row={row} />
+          </li>
+        ))}
+      </ol>
+      <FindingsPager page={shown.page} pageCount={shown.pageCount} onPage={setPage} />
+    </div>
   );
 }

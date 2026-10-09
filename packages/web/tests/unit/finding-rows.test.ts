@@ -3,7 +3,7 @@
  * resolved for reading, and how findings sharing a fingerprint fold into one.
  */
 import { describe, expect, it } from 'vitest';
-import { findingRows, mergeFindingsByFingerprint, rowKey } from '@/lib/finding-rows';
+import { findingRows, mergeFindingsByFingerprint, pageFindingRows, rowKey, ROWS_PER_PAGE } from '@/lib/finding-rows';
 
 describe('rowKey', () => {
   it('is the same for rows equal at every level whatever their key order, and differs otherwise', () => {
@@ -79,5 +79,24 @@ describe('mergeFindingsByFingerprint', () => {
       f('x', { n: 1 }, { rows: [{ n: 1 }, { n: 2 }] }), f('x', { n: 3 }),
     ]);
     expect(only!.rows).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+  });
+});
+
+describe('pageFindingRows', () => {
+  const rows = Array.from({ length: 45 }, (_, i) => ({ n: i }));
+
+  it('keeps every row and hands out one page of them at a time', () => {
+    const first = pageFindingRows(rows, 1);
+    expect(first).toMatchObject({ page: 1, pageCount: 3, total: 45, firstIndex: 0 });
+    expect(first.rows).toEqual(rows.slice(0, ROWS_PER_PAGE));
+    const last = pageFindingRows(rows, 3);
+    expect(last.rows).toEqual(rows.slice(2 * ROWS_PER_PAGE));
+    expect(last.firstIndex).toBe(2 * ROWS_PER_PAGE);
+  });
+
+  it('clamps a page past either end to the nearest real one', () => {
+    expect(pageFindingRows(rows, 9).page).toBe(3);
+    expect(pageFindingRows(rows, 0).page).toBe(1);
+    expect(pageFindingRows([], 4)).toMatchObject({ rows: [], page: 1, pageCount: 1, total: 0 });
   });
 });
