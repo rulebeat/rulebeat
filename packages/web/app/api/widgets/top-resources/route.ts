@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { listCategories } from '@/lib/db/categories';
 import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
+import { countsInFindingTotals } from '@/lib/finding-kinds';
 import type { Severity } from '@/lib/types';
 
 const SEV_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -15,7 +16,8 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  const findings = await queryActiveFindings(filters);
+  // A no-op today: 'activity' findings are already excluded below by the resourceId check.
+  const findings = (await queryActiveFindings(filters)).filter(countsInFindingTotals);
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { FindingsExplorerClient } from '@/components/findings/findings-explorer-client';
@@ -31,6 +31,12 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
 import type { ExplorerData } from '@/lib/explorer-data';
+import type { View } from '@/lib/finding-view';
+import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import { savedViewHref } from '@/lib/saved-view-query';
+import { OwnUrlWrites } from '@/lib/own-url-writes';
+import { ADVISORY_KINDS, KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
+import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
 import {
   ShieldCheck, Library, Search,
 } from 'lucide-react';
@@ -41,7 +47,7 @@ const STATUS_OPTIONS = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const;
-type TabKey = 'results' | 'history' | 'rules' | 'schedules';
+type TabKey = 'results' | 'advisories' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
  *  columns just as much as one that genuinely never ran — both read back as undefined. */
@@ -77,14 +83,13 @@ export interface ScansClientProps {
   explorerData: ExplorerData;
   initialSuppressions?: ScanHistoryTabProps['initialSuppressions'];
   initialCategoryFilter?: string[];
-  /** Deep-link filters for the Results tab (e.g. from an old `?category=` link, a
-   *  "View in Findings" link carrying a ruleId, or a dashboard widget click-through carrying
-   *  any combination of these). Forwarded as-is into FindingsExplorerClient's `initialFilters`. */
-  resultsInitialFilters?: {
-    categories?: string[]; status?: string; ruleId?: string;
-    severities?: Severity[]; subscriptions?: string[]; resourceGroups?: string[]; locations?: string[];
-    tags?: string[]; windowDays?: number; from?: string; to?: string; search?: string;
-  };
+  /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
+   *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
+   *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
+   *  FindingsExplorerClient's `initialView`. */
+  initialView?: View;
+  /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
+  initialSavedViewId?: string;
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];
   snapshotScan?: ScanHistoryTabProps['snapshotScan'];
@@ -100,6 +105,8 @@ export interface ScansClientProps {
   /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
    *  Undefined when the tab isn't active — server only computes this for ?tab=rules. */
   ruleFindingCounts?: Record<string, number>;
+  /** Why the Advisories tab is empty. Undefined when the tab isn't active. */
+  advisoriesEmpty?: AdvisoriesEmptyState;
 }
 
 export function ScansClient({
@@ -110,7 +117,8 @@ export function ScansClient({
   explorerData,
   initialSuppressions,
   initialCategoryFilter,
-  resultsInitialFilters,
+  initialView,
+  initialSavedViewId,
   runs,
   runDetail,
   snapshotScan,
@@ -121,14 +129,40 @@ export function ScansClient({
   canEditSchedules = false,
   notificationChannels = [],
   ruleFindingCounts = {},
+  advisoriesEmpty,
 }: ScansClientProps) {
   const router = useRouter();
+  const searchString = useSearchParams().toString();
   const canRunScans = can(role, 'scans:run');
   const canEditRules = can(role, 'rules:write');
   // Same action as deleting a rule: clearing its findings reaches the same primitive that rule
   // deletion already does, so it is not an escalation for anyone who holds rules:delete.
   const canClearFindings = can(role, 'rules:delete');
   const canSuppress = can(role, 'suppressions:write');
+  const canWriteViews = can(role, 'views:write');
+
+  // The explorer reads its initial view once and then writes every change back to the URL. So when
+  // the URL changes by anything other than one of its own writes (a saved view opened from the
+  // menu, a Back or Forward, a link from another page), it starts again from the new URL. The key
+  // only counts those restarts; what the explorer shows always comes from the URL.
+  const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
+  const [explorerKey, setExplorerKey] = useState(0);
+  useEffect(() => {
+    if (!ownWrites.isOutside(searchString)) return;
+    // Restarting the explorer for a navigation it did not make, not state derived from props.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExplorerKey(k => k + 1);
+  }, [searchString, ownWrites]);
+  const savedViewsFor = (tab: SavedViewTab) => ({
+    tab,
+    canWrite: canWriteViews,
+    openId: initialSavedViewId ?? null,
+    onOpen: (saved: SavedView) => {
+      ownWrites.forget();
+      router.push(savedViewHref(saved));
+    },
+    onUrlWrite: (query: string) => ownWrites.record(query),
+  });
   const [policies, setPolicies] = useState(initialPolicies);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
@@ -265,6 +299,7 @@ export function ScansClient({
       {/* Sub-tabs */}
       <div className="flex gap-0 border-b border-border overflow-x-auto overflow-y-hidden">
         <TabLink href="/scans?tab=results" active={activeTab === 'results'}>Results</TabLink>
+        <TabLink href="/scans?tab=advisories" active={activeTab === 'advisories'}>Advisories</TabLink>
         <TabLink href="/scans?tab=history" active={activeTab === 'history'}>Run History</TabLink>
         <TabLink href="/scans?tab=rules" active={activeTab === 'rules'}>
           Rules <span className="ml-1 text-xs">({enabledCount}/{policies.length})</span>
@@ -274,13 +309,33 @@ export function ScansClient({
 
       {activeTab === 'results' && (
         <FindingsExplorerClient
+          key={explorerKey}
           data={explorerData}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
-          initialFilters={resultsInitialFilters}
+          initialView={initialView}
           basePath="/scans"
           extraParams={{ tab: 'results' }}
           mode="page"
+          savedViews={savedViewsFor('results')}
+        />
+      )}
+
+      {activeTab === 'advisories' && (
+        <FindingsExplorerClient
+          key={explorerKey}
+          data={explorerData}
+          suppressions={initialSuppressions}
+          canSuppress={canSuppress}
+          initialView={initialView}
+          basePath="/scans"
+          extraParams={{ tab: 'advisories' }}
+          mode="page"
+          savedViews={savedViewsFor('advisories')}
+          kinds={ADVISORY_KINDS}
+          hideRuleView
+          emptyTitle={advisoriesEmpty?.title}
+          emptyHint={advisoriesEmpty?.hint}
         />
       )}
 
@@ -492,6 +547,13 @@ export function ScansClient({
                         <CategoryBadge id={policy.category} categories={categories} />
 
                         <SeverityBadge severity={policy.severity} />
+
+                        <span
+                          className="inline-flex w-fit shrink-0 items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
+                          title={KIND_DESCRIPTION[policy.kind ?? 'state']}
+                        >
+                          {KIND_LABEL[policy.kind ?? 'state']}
+                        </span>
 
                         {findingCount > 0 && (
                           <span className="numeral-grid shrink-0 text-xs text-ink-muted">

@@ -493,6 +493,17 @@ export function runMigrations(sqlite: Database.Database): void {
       ran_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_query_runs_owner ON query_runs(owner_id, ran_at DESC);
+
+    CREATE TABLE IF NOT EXISTS saved_views (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      tab TEXT NOT NULL,
+      query TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Drop columns that moved from notification_channels to schedule_notification_channels.
@@ -502,6 +513,10 @@ export function runMigrations(sqlite: Database.Database): void {
 
   // C1a: email channel config (non-secret fields stored as JSON; SMTP password remains in `url`).
   try { sqlite.exec(`ALTER TABLE notification_channels ADD COLUMN config TEXT`); } catch { /* already exists */ }
+
+  // #180: per-channel "Include advisories". Off for every channel that exists before the upgrade, so
+  // an upgrade never starts sending retirements to a channel nobody asked to receive them.
+  try { sqlite.exec(`ALTER TABLE notification_channels ADD COLUMN include_advisories INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
 
   // C1b: per-channel category/subscription scope on the junction table.
   try { sqlite.exec(`ALTER TABLE schedule_notification_channels ADD COLUMN category_ids TEXT`); } catch { /* already exists */ }
@@ -799,6 +814,12 @@ export function runMigrations(sqlite: Database.Database): void {
       PRIMARY KEY (rule_id, version)
     );
   `);
+  // #192: every row a finding's rule returned for it, as a JSON list. Nullable and never
+  // backfilled: a finding stored before this reads as one row made from its evidence.
+  try { sqlite.exec(`ALTER TABLE findings ADD COLUMN evidence_rows TEXT`); } catch { /* already exists */ }
+
+  // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
+  try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
 
   // Applies to was removed. Drop its columns from a database created while it existed; a fresh
   // install never has them, and the table_info check makes every later startup a no-op. The three
@@ -918,6 +939,10 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN notify_claimed_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN heartbeat_at TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN owner_id TEXT`); } catch { /* already exists */ }
+
+  // #193: the findings a run saw gain a row, carried to notification dispatch and recovery. NULL on
+  // every earlier row, which reads as none.
+  try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN changed_findings TEXT`); } catch { /* already exists */ }
 
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any
@@ -1282,7 +1307,10 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     const execute = (a: SeedAction) => {
       switch (a.action) {
         case 'insert':
-          insertRule.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version });
+          insertRule.run({
+            id: a.rule.id, ...definitionToColumns(a.rule.definition),
+            enabled: a.rule.enabled ? 1 : 0, pack: a.rule.pack, version: a.rule.version,
+          });
           break;
         case 'adopt': adopt.run(a.pack, a.ruleId); break;
         case 'backfill-graph':

@@ -45,7 +45,7 @@ describe('B3 · the committed pack JSON default', () => {
 });
 
 describe('B3 · a fresh install starts quiet', () => {
-  it('exactly 12 rules are enabled — the builtin core set plus the two identity checks, none of APRL', async () => {
+  it('exactly 13 rules are enabled — the builtin core set plus the two identity checks and the service retirements Advisory, none of APRL', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);
@@ -55,8 +55,8 @@ describe('B3 · a fresh install starts quiet', () => {
       // 10 rulebeat-core resource-graph rules + 2 identity checks (spec 029 made the identity checks
       // real, disableable `rules` rows instead of an isSpecial category that always ran unconditionally
       // — seeded enabled:1 so the upgrade doesn't silently stop checking credentials that were always
-      // being checked before).
-      expect(enabled.n).toBe(12);
+      // being checked before). Plus the Service retirements Advisory (issue #181), enabled by default.
+      expect(enabled.n).toBe(13);
     } finally {
       sqlite.close();
     }

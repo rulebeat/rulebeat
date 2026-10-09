@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
@@ -11,6 +11,7 @@ import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
 import { Input } from '@/components/ui/input';
 import { SeverityBadge, SeverityChip } from './severity-badge';
 import { ExportButton } from './export-button';
+import { FindingRowsDetail } from './finding-rows-detail';
 import type { Finding, Suppression, Severity } from '@/lib/types';
 import { ExternalLink, ChevronDown, ChevronRight, Copy, Check, EyeOff, Eye, Terminal, X, Sparkles } from 'lucide-react';
 import type { RemediationStepType } from '@/lib/types';
@@ -169,50 +170,8 @@ function FindingRow({
                 )}
               </div>
 
-              {/* Resource data — projected columns from the policy query */}
-              {(() => {
-                // Support both old evidence format {field,operator,value} and new {_rule,...data}
-                const isNew = '_rule' in evidence;
-                const ruleInfo = isNew
-                  ? (evidence._rule as Record<string, unknown> | undefined)
-                  : { field: evidence['field'], operator: evidence['operator'], value: evidence['value'], values: evidence['values'] };
-                const dataEntries = Object.entries(evidence).filter(([k]) =>
-                  isNew ? k !== '_rule' : !['field', 'operator', 'value', 'values', 'presentTags'].includes(k)
-                );
-                return (
-                  <>
-                    {dataEntries.length > 0 && (
-                      <div>
-                        <p className="label-grid mb-2.5">Resource Data</p>
-                        <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-1.5">
-                          {dataEntries.map(([k, v]) => (
-                            <Fragment key={k}>
-                              <dt className="shrink-0 pt-0.5 font-mono text-xs text-ink-2">{k}</dt>
-                              <dd className="break-all font-mono text-xs text-ink">
-                                {typeof v === 'object' && v !== null
-                                  ? <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(v, null, 2)}</pre>
-                                  : String(v ?? '')}
-                              </dd>
-                            </Fragment>
-                          ))}
-                        </dl>
-                      </div>
-                    )}
-                    {ruleInfo && (ruleInfo['field'] || ruleInfo['operator']) && (
-                      <div>
-                        <p className="label-grid mb-1.5">Violated rule</p>
-                        <p className="font-mono text-xs text-ink">
-                          {String(ruleInfo['field'] ?? '')}
-                          {' '}
-                          <span className="text-ink">{String(ruleInfo['operator'] ?? '')}</span>
-                          {ruleInfo['value'] != null && <> <span className="font-medium text-ink">&apos;{String(ruleInfo['value'])}&apos;</span></>}
-                          {Array.isArray(ruleInfo['values']) && <> [{(ruleInfo['values'] as string[]).map(v => `'${v}'`).join(', ')}]</>}
-                        </p>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+              {/* Resource data: projected columns from the policy query, one block per row */}
+              <FindingRowsDetail finding={finding} />
 
               {/* Recommendation — the trailing "Learn more" URL is split out and linked, never shown as raw text */}
               {(() => {

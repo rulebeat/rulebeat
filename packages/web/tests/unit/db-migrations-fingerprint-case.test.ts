@@ -124,6 +124,26 @@ describe('upgrading fingerprints onto the case-insensitive formula', () => {
     expect(rows(sqlite, `SELECT fingerprint FROM suppressions`)).toEqual([{ fingerprint: next }]);
   });
 
+  it('keeps a finding\'s stored rows with the row that survives a rekey or a merge', () => {
+    const upper = vm('RG-APP');
+    const lower = vm('rg-app');
+    const fpUpper = computeLegacyFingerprint(RULE, upper);
+    const fpLower = computeLegacyFingerprint(RULE, lower);
+    const newRows = '[{"owner":"a"},{"owner":"b"}]';
+    sqlite = preUpgradeDatabase(db => {
+      insertFinding(db, { fingerprint: fpUpper, resourceId: upper, status: 'fixed', firstSeenAt: '2026-06-01T08:00:00.000Z', lastSeenAt: '2026-09-01T08:00:00.000Z', resolvedAt: '2026-09-02T08:00:00.000Z', timesSeen: 10, evidence: '{"owner":"old"}' });
+      insertFinding(db, { fingerprint: fpLower, resourceId: lower, status: 'active', firstSeenAt: '2026-09-02T08:00:00.000Z', lastSeenAt: '2026-09-03T08:00:00.000Z', timesSeen: 2, evidence: '{"owner":"a"}' });
+      db.prepare(`UPDATE findings SET evidence_rows = ? WHERE fingerprint = ?`).run('[{"owner":"old"}]', fpUpper);
+      db.prepare(`UPDATE findings SET evidence_rows = ? WHERE fingerprint = ?`).run(newRows, fpLower);
+    });
+
+    runMigrations(sqlite);
+
+    expect(rows(sqlite, `SELECT fingerprint, evidence_rows FROM findings`)).toEqual([
+      { fingerprint: computeFingerprint(RULE, lower), evidence_rows: newRows },
+    ]);
+  });
+
   it('moves a suppression whose finding row is gone by recognising its rule exactly', () => {
     const id = vm('RG-APP');
     sqlite = preUpgradeDatabase(db => insertSuppression(db, 's1', computeLegacyFingerprint(RULE, id), id));

@@ -252,10 +252,14 @@ CREATE TABLE IF NOT EXISTS findings (
   last_seen_at TEXT NOT NULL,
   resolved_at TEXT,
   last_scan_id TEXT,
-  times_seen INTEGER NOT NULL DEFAULT 1
+  times_seen INTEGER NOT NULL DEFAULT 1,
+  evidence_rows TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_findings_category_status ON findings(category, status);
 CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings(rule_id);
+
+-- Every row a finding's rule returned for it (#192); null reads as one row made from evidence.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS evidence_rows TEXT;
 
 CREATE TABLE IF NOT EXISTS finding_events (
   id TEXT PRIMARY KEY,
@@ -264,9 +268,13 @@ CREATE TABLE IF NOT EXISTS finding_events (
   category TEXT NOT NULL,
   scan_id TEXT NOT NULL,
   type TEXT NOT NULL,
-  occurred_at TEXT NOT NULL
+  occurred_at TEXT NOT NULL,
+  row_payload TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_finding_events_time ON finding_events(occurred_at DESC);
+
+-- The row a 'row_added' / 'row_removed' event is about (#193); null for every other event type.
+ALTER TABLE finding_events ADD COLUMN IF NOT EXISTS row_payload TEXT;
 
 CREATE TABLE IF NOT EXISTS posture_snapshots (
   category TEXT NOT NULL,
@@ -294,8 +302,12 @@ CREATE TABLE IF NOT EXISTS notification_channels (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_notified_at TEXT,
-  last_error TEXT
+  last_error TEXT,
+  include_advisories BOOLEAN NOT NULL DEFAULT FALSE
 );
+-- Include advisories (#180), for a Postgres database bootstrapped before this column shipped. Every
+-- existing channel reads back off.
+ALTER TABLE notification_channels ADD COLUMN IF NOT EXISTS include_advisories BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS schedule_notification_channels (
   schedule_id TEXT NOT NULL,
@@ -324,13 +336,16 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   notify_status TEXT NOT NULL DEFAULT 'none',
   notify_claimed_at TEXT,
   heartbeat_at TEXT,
-  owner_id TEXT
+  owner_id TEXT,
+  changed_findings TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id, started_at DESC);
 -- Overlap safety (issue #88), for a Postgres database bootstrapped before these columns shipped.
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS notify_claimed_at TEXT;
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS heartbeat_at TEXT;
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
+-- Findings that gained a row, carried to notification dispatch and recovery (#193).
+ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS changed_findings TEXT;
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id TEXT PRIMARY KEY,
@@ -383,6 +398,17 @@ CREATE TABLE IF NOT EXISTS query_runs (
   ran_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_query_runs_owner ON query_runs(owner_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS saved_views (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  tab TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 /**

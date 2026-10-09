@@ -28,6 +28,7 @@ import { TopResourcesWidget } from '@/components/dashboard/widgets/top-resources
 import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage-freshness-widget';
 import { NewVsFixedWidget } from '@/components/dashboard/widgets/new-vs-fixed-widget';
 import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activity-occurrences-widget';
+import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
@@ -90,6 +91,8 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, onRem
         return <NewVsFixedWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
       case 'activity-occurrences':
         return <ActivityOccurrencesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+      case 'advisories':
+        return <AdvisoriesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
       default:
         return <div className="flex h-full items-center justify-center text-sm text-ink-muted">Unknown widget</div>;
     }

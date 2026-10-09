@@ -1,6 +1,8 @@
 import { listFindings, type FindingRecord } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
+import { RESULTS_KINDS } from './finding-kinds';
+import type { RuleKind } from './types';
 
 // ---- Types ----
 
@@ -24,12 +26,17 @@ export interface ExplorerData {
 
 // ---- Builder ----
 
-export async function buildExplorerData(): Promise<ExplorerData> {
+/** `kinds` picks which findings the listing holds: the Results tab asks for Problems and Activity
+ *  (the default), the Advisories tab for Advisory. It is a kind filter on the one findings table,
+ *  not a second read model, so the next tab that needs a kind only passes its own. */
+export async function buildExplorerData(
+  opts: { kinds?: readonly RuleKind[] } = {},
+): Promise<ExplorerData> {
   const rules = await loadRules();
   const policyMap = new Map(rules.map(r => [r.id, r]));
   const categories = await listCategories();
 
-  const all = await listFindings();
+  const all = await listFindings({ kinds: opts.kinds ?? RESULTS_KINDS });
 
   const findings: ExplorerFinding[] = all.map(f => {
     const rule = policyMap.get(f.ruleId);

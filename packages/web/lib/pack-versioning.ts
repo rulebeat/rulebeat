@@ -99,8 +99,12 @@ export function versionPackRules(input: VersionPackInput): { rules: PackFileRule
   const summary: VersionPackSummary = { unchanged: [], changed: [], added: [], dropped: [] };
 
   const rules = input.next.map((fresh): PackFileRule => {
-    // A fetched entry carries no version; whatever it was given is replaced below.
-    const { version: _v, releaseNote: _n, upstreamRef: _u, ...entry } = fresh;
+    const before = previousById.get(fresh.id);
+    // A fetched entry carries no version; whatever it was given is replaced below. Upstream never
+    // declares a kind either, so one RuleBeat added to the previous file is kept unless upstream now
+    // states its own; dropping it would ship an Advisory back as a Problem under a new version.
+    const { version: _v, releaseNote: _n, upstreamRef: _u, ...fetched } = fresh;
+    const entry = fetched.kind === undefined && before?.kind !== undefined ? { ...fetched, kind: before.kind } : fetched;
     const stamp = (v: PackVersionDefaults): PackFileRule => {
       const stamped: PackFileRule = { ...entry, version: v.version, releaseNote: v.releaseNote };
       if (v.upstreamRef) stamped.upstreamRef = v.upstreamRef;
@@ -109,14 +113,13 @@ export function versionPackRules(input: VersionPackInput): { rules: PackFileRule
     const atPinnedCommit = (releaseNote: string) =>
       stamp({ version: input.pinnedCommitDate, releaseNote, upstreamRef: input.pinnedCommit });
 
-    const before = previousById.get(fresh.id);
     if (!before) {
       summary.added.push(fresh.id);
       return atPinnedCommit('Added to the pack.');
     }
 
     const beforeDefinition = packEntryDefinition(before);
-    const afterDefinition = packEntryDefinition(fresh);
+    const afterDefinition = packEntryDefinition(entry as PackFileRule);
     if (definitionHash(beforeDefinition) === definitionHash(afterDefinition)) {
       summary.unchanged.push(fresh.id);
       return stamp(ownVersionOf(before, input.previousPackDefaults));

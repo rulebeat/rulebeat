@@ -8,6 +8,7 @@ import { listScanMetas } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
+import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive — no `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -47,8 +48,8 @@ function enabledRuleIdsForCategory(
   if (filters?.tags?.length) {
     enabled = enabled.filter(r => (r.tags ?? []).some(t => filters.tags!.includes(t)));
   }
-  const stateRuleIds = new Set(enabled.filter(r => (r.kind ?? 'state') === 'state').map(r => r.id));
-  return { stateRuleIds, activityRuleCount: enabled.length - stateRuleIds.size };
+  const stateRuleIds = new Set(enabled.filter(countsTowardPosture).map(r => r.id));
+  return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
 /** Splits a scope's rule ids by outcome against its findings: passing (zero findings, proven
@@ -224,7 +225,9 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     ? allCategories.filter(c => filters.categories!.includes(c.id))
     : allCategories;
 
-  const activeFindings = await queryActiveFindings(filters);
+  // queryActiveFindings stays unfiltered here (other callers, e.g. suppression round-trips, need
+  // the full active set); this view filters to what counts toward a finding-level total.
+  const activeFindings = (await queryActiveFindings(filters)).filter(countsInFindingTotals);
 
   const severityCounts = emptySeverityCounts();
   for (const f of activeFindings) {
@@ -240,12 +243,13 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (filters.ruleIds?.length) {
     // Rule-scoped widget (replaces the old policy-data route): pct is selected-rules
     // passing/total, computed live — rule-level history isn't tracked in posture_snapshots.
-    // An explicitly-selected activity rule still can't be scored the same way as a state rule
-    // (spec 030), so it's excluded from totalRules here too, not just in the category-wide branch.
-    const stateSelected = filters.ruleIds.filter(id => (ruleById.get(id)?.kind ?? 'state') === 'state');
+    // Excluded here too, not just in the category-wide branch below.
+    // A ruleId not found in ruleById (stale selection) defaults to 'state', same as the predicate's
+    // own default for an absent kind.
+    const stateSelected = filters.ruleIds.filter(id => countsTowardPosture(ruleById.get(id) ?? { kind: 'state' }));
     scopedRuleIds = new Set(stateSelected);
     totalRules = scopedRuleIds.size;
-    activityRuleCount = filters.ruleIds.length - stateSelected.length;
+    activityRuleCount = filters.ruleIds.filter(id => ruleById.has(id) && isActivityRule(ruleById.get(id)!)).length;
     const outcome = splitRuleOutcomes(scopedRuleIds, activeFindings, ruleById);
     passingRules = outcome.passing;
     unknownRules = outcome.unknown;
@@ -274,7 +278,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const pct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
 
   const newInWindow = activeFindings.filter(f => isWithinRange(f.firstSeenAt, from, to)).length;
-  const fixedFindings = await queryFixedFindings(filters);
+  const fixedFindings = (await queryFixedFindings(filters)).filter(countsInFindingTotals);
   const fixedInWindow = fixedFindings.filter(f => isWithinRange(f.resolvedAt, from, to)).length;
 
   // Findings-sourced, not snapshot-sourced: net lifecycle change over the window, using the same

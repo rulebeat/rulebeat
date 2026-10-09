@@ -57,7 +57,12 @@ async function scanWith(rows: Record<string, unknown>[]): Promise<FakeTenantCont
   const category = (await categories.listCategories()).find(c => c.id === RULE.category);
   expect(category, `category ${RULE.category} is missing after the upgrade`).toBeDefined();
 
-  const ctx = fakeTenantContext({ rows, subscriptionIds: [TEST_SUB_A] });
+  // The same rows answer every rule's query, as before. The shipped Service retirements rule reads
+  // `advisorresources` (issue #181), which the old estate has no rows for, so it gets none.
+  const ctx = fakeTenantContext({
+    rows: kql => (/advisorresources/i.test(kql) ? [] : rows),
+    subscriptionIds: [TEST_SUB_A],
+  });
   await scanRunner.runCategoryScan(category!, { ctx });
   return ctx;
 }

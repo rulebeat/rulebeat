@@ -26,6 +26,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'schedules:write',
     'suppressions:write',
     'dashboards:write',
+    'views:write',
     'schemas:refresh',
   ],
   admin: [
@@ -38,6 +39,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'schedules:write',
     'suppressions:write',
     'dashboards:write',
+    'views:write',
     'schemas:refresh',
     'categories:write',
     'users:manage',

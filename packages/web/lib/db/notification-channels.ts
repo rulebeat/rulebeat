@@ -37,6 +37,8 @@ export interface StoredNotificationChannel {
   type: NotificationChannelType;
   url: string;             // decrypted: webhook URL for webhook types, SMTP password for email
   emailConfig: EmailChannelConfig | null;
+  /** Whether new Advisories are sent to this channel. Problems are sent either way. */
+  includeAdvisories: boolean;
   createdAt: string;
   updatedAt: string;
   lastNotifiedAt: string | null;
@@ -51,6 +53,7 @@ export interface NotificationChannelSummary {
   /** Webhook hostname or "smtp.host:port" for email — enough for display, not enough to call. */
   urlHost: string;
   emailConfig: EmailChannelConfig | null;
+  includeAdvisories: boolean;
   createdAt: string;
   updatedAt: string;
   lastNotifiedAt: string | null;
@@ -86,6 +89,7 @@ function rowToSummary(row: Row): NotificationChannelSummary {
     type: row.type as NotificationChannelType,
     urlHost: safeHost(row),
     emailConfig: parseEmailConfig(row.config ?? null),
+    includeAdvisories: row.includeAdvisories,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastNotifiedAt: row.lastNotifiedAt ?? null,
@@ -103,6 +107,7 @@ export function rowToStoredChannel(row: Row): StoredNotificationChannel | null {
     type: row.type as NotificationChannelType,
     url,
     emailConfig: parseEmailConfig(row.config ?? null),
+    includeAdvisories: row.includeAdvisories,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastNotifiedAt: row.lastNotifiedAt ?? null,
@@ -136,6 +141,7 @@ export interface SaveChannelInput {
   type: NotificationChannelType;
   url: string;                      // webhook URL or SMTP password (may be empty for anonymous SMTP)
   config?: EmailChannelConfig;      // required when type === 'email', absent otherwise
+  includeAdvisories?: boolean;      // absent means off
 }
 
 export async function createChannel(input: SaveChannelInput): Promise<NotificationChannelSummary> {
@@ -147,6 +153,7 @@ export async function createChannel(input: SaveChannelInput): Promise<Notificati
     type: input.type,
     url: encryptSecret(input.url.trim()),
     config: input.config ? JSON.stringify(input.config) : null,
+    includeAdvisories: input.includeAdvisories === true,
     createdAt: now,
     updatedAt: now,
     lastNotifiedAt: null,
@@ -167,6 +174,7 @@ export async function updateChannel(id: string, input: Partial<SaveChannelInput>
   if (input.type !== undefined) updates.type = input.type;
   if (input.url !== undefined && input.url.trim()) updates.url = encryptSecret(input.url.trim());
   if (input.config !== undefined) updates.config = input.config ? JSON.stringify(input.config) : null;
+  if (input.includeAdvisories !== undefined) updates.includeAdvisories = input.includeAdvisories;
 
   await run(db.update(notificationChannels).set(updates).where(eq(notificationChannels.id, id)));
   const updated = await one(

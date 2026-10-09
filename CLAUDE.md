@@ -159,7 +159,7 @@ flow through the same Results/Run History/Rules tabs as every other category.
 
 Sub-path export `@rulebeat/core/kql` is the client-safe re-export (no Node SDK deps); web re-exports
 via `lib/kql.ts`. Rules live in the database (`lib/rules.ts` repository layer); built-ins
-(`lib/builtin-rules.ts`) seed via `INSERT OR IGNORE`; users can edit/disable but not overwrite. A rule
+(`lib/builtin-rules.ts`) seed via `INSERT OR IGNORE`; users can disable a built-in and set its tags, but its definition (kind included) changes only by version; duplicating it gives an editable custom copy. A rule
 name is unique case-insensitively, checked inside the write transaction of `createRule`/`updateRule`/
 `duplicateRule` (Postgres takes a `pg_advisory_xact_lock` first), not by a database index. A clash
 on create or rename comes back as `'name-taken'` and the routes answer 409; `duplicateRule` picks the

@@ -15,7 +15,7 @@
  *  - expired vs. permanent suppressions, read through await queryActiveFindings()
  *
  * Duplicate ARG rows sharing one fingerprint within a single scan are covered below (RB-QA-019,
- * fixed via dedupeFindingsByFingerprint()) — one sighting per fingerprint regardless of how many
+ * fixed via mergeFindingsByFingerprint()) — one sighting per fingerprint regardless of how many
  * times it appeared in the scan's own findings array.
  */
 import { beforeEach, describe, expect, it } from 'vitest';

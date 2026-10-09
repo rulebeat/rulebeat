@@ -11,6 +11,7 @@ export type AuditAction =
   | 'schedule.create' | 'schedule.update' | 'schedule.delete' | 'schedule.run'
   | 'category.create' | 'category.update' | 'category.delete'
   | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate'
+  | 'view.create' | 'view.rename' | 'view.update' | 'view.delete'
   | 'scan.run'
   | 'user.invite' | 'user.invite_claimed' | 'user.role_change' | 'user.remove' | 'user.default_role_change'
   | 'user.password_set' | 'user.password_reset' | 'user.password_removed'
@@ -29,7 +30,7 @@ export type AuditAction =
 export type AuditEntityType =
   | 'rule' | 'suppression' | 'schedule' | 'category' | 'dashboard' | 'scan' | 'user' | 'auth'
   | 'azure_connection' | 'log_analytics_workspace' | 'local_account' | 'sign_in_config'
-  | 'notification_channel' | 'onboarding' | 'schema_cache' | 'query';
+  | 'notification_channel' | 'onboarding' | 'schema_cache' | 'query' | 'saved_view';
 
 export interface AuditEntry {
   id: string;

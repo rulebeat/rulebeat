@@ -8,6 +8,8 @@ import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { loadScanHistory } from '../scan-history';
 import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
+import { countsTowardPosture, isActivityRule } from '../finding-kinds';
+import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import type { Severity } from '../types';
 
 const RETENTION_DAYS = 365;
@@ -73,14 +75,16 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   if (!category) return;
 
   const enabledRules = (await loadRules()).filter(r => r.enabled && r.category === categoryId);
-  const stateRules = enabledRules.filter(r => (r.kind ?? 'state') === 'state');
+  const stateRules = enabledRules.filter(countsTowardPosture);
   const stateRuleIds = new Set(stateRules.map(r => r.id));
   const ruleById = new Map(enabledRules.map(r => [r.id, r]));
   const totalRules = stateRules.length;
-  const activityRuleCount = enabledRules.length - stateRules.length;
+  const activityRuleCount = enabledRules.filter(isActivityRule).length;
 
+  // An activity finding's ruleId never matches stateRuleIds below, so including it here doesn't
+  // affect failingRuleIds.
   const activeRows = await many(db.select().from(findingsTable)
-    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'))));
+    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'), countsInFindingTotalsSql)));
 
   const suppressedFingerprints = new Set(
     (await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint),

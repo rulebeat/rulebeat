@@ -11,13 +11,16 @@ import {
 import { createScanContext } from './scan-context';
 import { loadRules, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
-import { syncScanFindingsDetailed, dedupeFindingsByFingerprint, refreshSnapshotsFor } from './db/findings';
+import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
+import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
-import type { Category, Finding, IncompleteRule, ScanSummary } from './types';
+import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';
 
 export interface ScanRunOutcome {
   summary: ScanSummary;
   newFindings: Finding[];
+  /** Findings that gained a row since their last successful scan, each with just the added rows. */
+  changedFindings: ChangedFindingDetail[];
 }
 
 export interface RunScanOptions {
@@ -52,6 +55,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   }
   const totalRules = enabledRules.length;
   const ruleNames = new Map(enabledRules.map(r => [r.id, r.name]));
+  const advisoryRuleIds = new Set(enabledRules.filter(r => r.kind === 'advisory').map(r => r.id));
 
   const graphRules = enabledRules.filter(r => r.queryBackend === 'microsoft-graph');
   const lawRules = enabledRules.filter(r => r.queryBackend === 'log-analytics');
@@ -79,8 +83,11 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
       const fingerprint = finding.kind === 'activity'
         ? computeActivityFingerprint(finding.ruleId, finding.dimensionKey ?? '')
         : computeFingerprint(finding.ruleId, finding.resourceId ?? '');
+      // An Advisory rule's findings are stamped from the rule, not the engine: its query is the
+      // same Resource Graph or Graph query a Problem rule runs, so the engine cannot know.
       findings.push({
         ...finding,
+        ...(advisoryRuleIds.has(finding.ruleId) && finding.kind !== 'activity' ? { kind: 'advisory' as const } : {}),
         module: category.id,
         fingerprint,
         detectedAt: finding.detectedAt.toISOString(),
@@ -104,13 +111,14 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   const ranRuleIds = successRuleIds;
 
   const finishedAt = opts.now ?? new Date();
-  // Deduped before anything counts, saves, or classifies it — a rule whose ARG query returns the
-  // same resource twice in one page (e.g. a fan-out join) must count as one sighting everywhere:
-  // the saved scan blob, Run History, notification counts, and the findings lifecycle table.
-  const dedupedFindings = dedupeFindingsByFingerprint(findings);
+  // A rule that returns several rows for one resource (two retirements on one VM, three failing
+  // node pools of one cluster) is one finding holding all of them, in query order, so it counts as
+  // one sighting everywhere: the saved scan blob, Run History, notification counts, and the
+  // findings lifecycle table.
+  const mergedFindings = mergeFindingsByFingerprint(findings);
   const counts = emptySeverityCounts();
-  for (const f of dedupedFindings) counts[f.severity]++;
-  dedupedFindings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
+  for (const f of mergedFindings) counts[f.severity]++;
+  mergedFindings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
 
   const scanId = crypto.randomUUID();
   const summary: ScanSummary = {
@@ -120,7 +128,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     subscriptionsScanned: ctx.subscriptionIds,
-    findings: dedupedFindings,
+    findings: mergedFindings,
     counts,
     totalRules,
     triggeredBy: opts.triggeredBy ?? 'manual',
@@ -130,15 +138,19 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
 
   await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
 
-  const { created, reactivated, affectedCategories } = await syncScanFindingsDetailed({
+  const { created, reactivated, changed, affectedCategories } = await syncScanFindingsDetailed({
     scanId,
     category: category.id,
     ranRuleIds,
-    findings: dedupedFindings,
+    findings: mergedFindings,
     finishedAt: summary.finishedAt,
   });
   const newFingerprints = new Set([...created, ...reactivated]);
-  const newFindings = dedupedFindings.filter(f => newFingerprints.has(f.fingerprint));
+  const newFindings = mergedFindings.filter(f => newFingerprints.has(f.fingerprint));
+  const addedRowsByFingerprint = new Map(changed.map(c => [c.fingerprint, c.addedRows]));
+  const changedFindings: ChangedFindingDetail[] = mergedFindings
+    .filter(f => addedRowsByFingerprint.has(f.fingerprint))
+    .map(f => ({ ...f, addedRows: addedRowsByFingerprint.get(f.fingerprint)! }));
 
   // Persist what this scan actually observed about each rule it ran, so a future "zero findings"
   // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status
@@ -154,5 +166,5 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   // recorded under its old one, so every category the sync touched is refreshed, not only this one.
   await refreshSnapshotsFor([...new Set([category.id, ...affectedCategories])], opts.now);
 
-  return { summary, newFindings };
+  return { summary, newFindings, changedFindings };
 }

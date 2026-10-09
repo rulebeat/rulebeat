@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNameTakenError, deriveKind, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
+import { loadRules, loadRule, createRule, copiedOrigin, validateRuleName, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { createTenantContext } from '@/lib/azure-credential';
 import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   // `copyFrom` is the id of the rule the form was duplicated from; it is not a Rule field.
-  const body = await parseJsonBody<Omit<Rule, 'id'> & { copyFrom?: unknown }>(req);
+  const body = await parseJsonBody<Omit<Rule, 'id'> & { copyFrom?: unknown; deadlineField?: unknown; groupField?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
   if ('appliesTo' in body) {
@@ -38,6 +38,10 @@ export async function POST(req: Request) {
   const queryBackend: QueryBackend = body.queryBackend ?? 'resource-graph';
   if (queryBackend !== 'resource-graph' && queryBackend !== 'microsoft-graph' && queryBackend !== 'log-analytics') {
     return NextResponse.json({ error: `"${queryBackend}" rules cannot be authored yet.` }, { status: 400 });
+  }
+
+  if (body.kind === 'advisory' && queryBackend === 'log-analytics') {
+    return NextResponse.json({ error: ADVISORY_ON_LOGS_ERROR }, { status: 400 });
   }
 
   // RB-RM-004: the UI guard (rule-form.tsx's save()) is client-side only — an API caller submitting
@@ -104,7 +108,14 @@ export async function POST(req: Request) {
   // A version, a retirement and an origin are the server's to set, never a request's: a custom rule
   // has no version of its own and is never retired, and its origin is the rule `copyFrom` names as
   // this server sees it. An unknown or non-string `copyFrom` records no origin and still creates.
-  const { copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov, ...fields } = body;
+  // The last run status and time are the scan's to write, so a new rule starts with neither.
+  // `deadlineField` and `groupField` are settings rules no longer have; a client that still sends
+  // them is ignored and never sees them echoed back.
+  const {
+    copyFrom, version: _v, retiredAt: _r, originRuleId: _o, originVersion: _ov,
+    lastRunStatus: _ls, lastRunAt: _la,
+    deadlineField: _df, groupField: _gf, ...fields
+  } = body;
   const source = typeof copyFrom === 'string' && copyFrom !== '' ? await loadRule(copyFrom) : null;
 
   const rule: Rule = {
@@ -113,7 +124,7 @@ export async function POST(req: Request) {
     type: 'custom',
     pack: undefined,
     queryBackend,
-    kind: deriveKind(queryBackend),
+    kind: resolveKind(queryBackend, body.kind),
     ...(source ? copiedOrigin(source) : {}),
   };
   const result = await createRule(rule);

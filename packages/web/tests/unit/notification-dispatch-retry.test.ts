@@ -35,6 +35,7 @@ function makeRun(scheduleId: string): ScheduleRun {
     notifyClaimedAt: null,
     heartbeatAt: null,
     ownerId: null,
+    changedFindings: [],
   };
 }
 

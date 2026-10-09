@@ -97,6 +97,13 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
     defaultConfig: { period: '30d' },
     defaultW: 12, defaultH: 5,
   },
+  {
+    type: 'advisories',
+    title: 'Advisories',
+    description: 'Open Advisories by severity, then most recently seen, with rule and resource. Never counted as failures.',
+    defaultConfig: { limit: 10 },
+    defaultW: 8, defaultH: 6,
+  },
 ];
 
 interface Props {

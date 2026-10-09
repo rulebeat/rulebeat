@@ -41,6 +41,65 @@ scheduler tick, with the findings it had already recorded kept and its notificat
 due, sent then. A run interrupted that way is not re-run at boot; the schedule waits for its next
 occurrence.
 
+## Filter, columns and sort on the Results and Advisories tabs
+
+Both tabs filter, sort and page the same way. Besides the built-in filters, in the By resource view
+the Columns menu lists every field the rules' queries returned. Pick a field to show it as a column,
+then use its header to sort or to filter by its values. The Add filter button in the toolbar
+filters by any built-in field or any returned field: pick the field, then tick values among those
+the current findings hold. Every active filter, from the toolbar, a column header or Add filter,
+shows as a chip, and the chip's cross removes that value. A filter is a set of accepted values; a
+finding with several returned rows is kept when at least one row passes every returned-field filter,
+and only those rows are shown and exported. Empty values sort last in both directions, and numbers
+sort as numbers. The whole view is in the address, so a link reproduces it: `cols` for the columns,
+`sort` as `field:asc` or `field:desc` (a returned field is written `row.<name>`), `rf` for a
+returned-field filter (`rf=feature=Retiring|Preview` keeps rows whose value is one of those), `f`
+for the other built-in fields (`f=resourceName=vm1`, `f=firstSeen=2026-10-01`), and `page`. In a
+value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backslash; anything else,
+including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
+and a filter that keeps nothing.
+
+### Group by
+
+The Group by button in the By resource toolbar groups the list by one or more fields, the same
+built-in and returned fields Add filter offers. Pick a field to add it, and use the arrows to move
+it earlier or later: groups nest in that order. Each group shows its value, the number of resources
+in it and the number of rows, and opening it shows the groups under it or, at the last level, the
+resources, 50 to a page with a pager of their own. Grouping is over rows, so a resource with rows in
+two groups appears under both, and its row count in each is only the rows that fall in that group.
+Rows with no value for a field go in a No value group, which comes last whichever way groups are
+sorted. Groups sort by value or by resource count, ascending or descending, at every level. Sorting
+by value follows what the header shows: rules, categories and subscriptions go by name, and
+severities go from critical down, with any severity outside critical to info last in both
+directions. The top
+level is paged too, and filters apply before grouping, so a returned-field filter narrows the rows
+that are grouped. The counts at the top of the page, the tiles and the exports do not change.
+
+To rebuild the Azure Advisor service retirement workbook, group the Service retirements rule by its
+retiring feature, then by its retirement date. Each feature shows how many resources it affects,
+each date under it shows the resources retiring then, and the affected resources are listed
+underneath. In the address, `group` lists the fields in order (`group=row.retiringFeature,row.retirementDate`)
+and `gsort` holds the group sort as `value:asc`, `value:desc`, `count:asc` or `count:desc` (left out
+when it is `value:asc`). Fields are written as in `sort` and `rf`, so `\,` stands for a comma inside
+a field name.
+
+### Saved views
+
+The Views button in the toolbar keeps the current view under a name, and the view is shared with
+everyone on the install. A saved view holds the tab it was saved on (Results or Advisories) and
+everything the address carries: filters, search, window, picked columns, sort and grouping. It does not hold
+the page you were on, which findings are suppressed, or the By resource and By rule choice. Choose
+a saved view in the menu to open it. The menu lists the views for the tab you are on, and opening
+one puts its filters in the address, so the link still reproduces what you see.
+
+Viewers can open saved views. Editors and admins can also save the current view, replace an open
+view's filters with the current ones (Update with current view), rename it and delete it. A name
+is unique whatever its case, and saving a name already in use says so. A saved view stores the
+columns and filters by name, so a view that mentions a returned field no finding has yet still
+opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
+view never changes findings. The audit log records each save, update, rename and delete with the
+names of the fields that changed, never their values.
+
 ## Disable, clear findings, or suppress
 
 Three controls make findings go away, and they mean different things.

@@ -19,7 +19,7 @@ function f(id: string, overrides: Partial<ExplorerFinding>): ExplorerFinding {
   return {
     module: 'compliance', category: 'compliance', fingerprint: id, ruleId: 'rule-a', resourceId: `/subscriptions/sub-1/x/${id}`,
     resourceType: 'microsoft.compute/virtualmachines', resourceName: id, subscriptionId: 'sub-1',
-    title: 't', description: 'd', evidence: {}, recommendation: 'r', remediationSteps: [], detectedAt: '2026-10-07T00:00:00.000Z',
+    title: 't', description: 'd', evidence: {}, rows: [], recommendation: 'r', remediationSteps: [], detectedAt: '2026-10-07T00:00:00.000Z',
     severity: 'medium', status: 'active', firstSeenAt: '2026-09-01T00:00:00.000Z', lastSeenAt: '2026-10-07T00:00:00.000Z',
     timesSeen: 1, policyName: 'Rule A', ruleDisabled: false, ruleTags: [],
     ...overrides,
@@ -105,6 +105,39 @@ describe('filter dropdown counts', () => {
   it('picking a subscription keeps the other subscriptions in its own dropdown', () => {
     const pool = facetPool(ALL, state({ subscriptions: new Set(['sub-1']) }), 'subscription');
     expect(new Set(pool.map(x => x.subscriptionId))).toEqual(new Set(['sub-1', 'sub-2']));
+  });
+});
+
+describe('finding-level totals include state findings only, not activity or a future kind', () => {
+  const ACTIVITY_OPEN = f('activity-open', { kind: 'activity', resourceId: undefined, dimensionKey: 'dim-a' });
+  // Stands in for a kind that does not exist yet (e.g. 'advisory', ADR 0005), cast past the type
+  // system since ExplorerFinding's kind has no third member today.
+  const FUTURE_KIND_OPEN = f('future-kind-open', {
+    kind: 'advisory' as unknown as ExplorerFinding['kind'], resourceId: undefined, dimensionKey: 'dim-b',
+  });
+
+  it('the header tiles leave an activity finding out, the same as posture does', () => {
+    const withoutActivity = summarizeFindings(ALL, FROM, TO);
+    const withActivity = summarizeFindings([...ALL, ACTIVITY_OPEN], FROM, TO);
+    expect(withActivity).toEqual(withoutActivity);
+  });
+
+  it('the header tiles exclude a future-kind finding entirely, not just from its own severity, from `total` too', () => {
+    const withoutFutureKind = summarizeFindings(ALL, FROM, TO);
+    const withFutureKind = summarizeFindings([...ALL, FUTURE_KIND_OPEN], FROM, TO);
+    expect(withFutureKind).toEqual(withoutFutureKind);
+  });
+
+  it('both still show in the table', () => {
+    expect(matchesExplorerFilters(ACTIVITY_OPEN, state({ status: 'open' }))).toBe(true);
+    expect(matchesExplorerFilters(FUTURE_KIND_OPEN, state({ status: 'open' }))).toBe(true);
+  });
+
+  it('by-rule Open sums to the same total as the Open tile, for a pool with state, activity and a future kind', () => {
+    const pool = [...ALL, ACTIVITY_OPEN, FUTURE_KIND_OPEN];
+    const tileOpen = summarizeFindings(pool, FROM, TO).total;
+    const byRuleOpen = [...countFindingsByRule(pool, FROM, TO).values()].reduce((n, c) => n + c.open, 0);
+    expect(byRuleOpen).toBe(tileOpen);
   });
 });
 

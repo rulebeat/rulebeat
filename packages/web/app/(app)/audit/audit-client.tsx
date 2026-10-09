@@ -12,7 +12,7 @@ import type { AuditEntry, AuditEntityType } from '@/lib/db/audit';
 import {
   ChevronDown, ChevronRight, ChevronLeft, ScrollText, Download,
   FileCode, EyeOff, CalendarClock, Folder, LayoutDashboard, Radar, Users, LogIn, Cloud, KeyRound,
-  ShieldCheck, Bell, Compass, Database, Search, Terminal,
+  ShieldCheck, Bell, Compass, Database, Search, Terminal, Bookmark,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -35,13 +35,14 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
   onboarding: Compass,
   schema_cache: Database,
   query: Terminal,
+  saved_view: Bookmark,
 };
 
 // Destructive and access-changing actions are tinted so they stand out when scanning the list —
 // which is exactly what someone opens this page to look for.
 const NOTABLE_ACTIONS = new Set([
   'rule.delete', 'rule.clear_findings', 'suppression.create', 'schedule.delete', 'category.delete',
-  'dashboard.delete', 'user.remove', 'user.role_change', 'user.default_role_change',
+  'dashboard.delete', 'view.delete', 'user.remove', 'user.role_change', 'user.default_role_change',
   'user.invite_claimed',
   'user.password_reset', 'user.password_removed', 'auth.locked_out',
   'sign_in_config.delete', 'sign_in_config.policy_change',

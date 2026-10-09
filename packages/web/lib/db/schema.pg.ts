@@ -233,6 +233,7 @@ export const findings = pgTable('findings', {
   recommendation: text('recommendation').notNull().default(''),
   remediationSteps: text('remediation_steps').notNull().default('[]'),
   evidence: text('evidence').notNull().default('{}'),
+  evidenceRows: text('evidence_rows'),
   azurePortalLink: text('azure_portal_link'),
   status: text('status').notNull().default('active'),
   firstSeenAt: text('first_seen_at').notNull(),
@@ -250,6 +251,7 @@ export const findingEvents = pgTable('finding_events', {
   scanId: text('scan_id').notNull(),
   type: text('type').notNull(),
   occurredAt: text('occurred_at').notNull(),
+  rowPayload: text('row_payload'),
 });
 
 export const postureSnapshots = pgTable('posture_snapshots', {
@@ -279,6 +281,7 @@ export const notificationChannels = pgTable('notification_channels', {
   updatedAt: text('updated_at').notNull(),
   lastNotifiedAt: text('last_notified_at'),
   lastError: text('last_error'),
+  includeAdvisories: boolean('include_advisories').notNull().default(false),
 });
 
 export const scheduleNotificationChannels = pgTable('schedule_notification_channels', {
@@ -310,6 +313,7 @@ export const scheduleRuns = pgTable('schedule_runs', {
   notifyClaimedAt: text('notify_claimed_at'),
   heartbeatAt: text('heartbeat_at'),
   ownerId: text('owner_id'),
+  changedFindings: text('changed_findings'),
 });
 
 export const notificationDeliveries = pgTable('notification_deliveries', {
@@ -361,4 +365,15 @@ export const queryRuns = pgTable('query_runs', {
   savedQueryId: text('saved_query_id'),
   ownerId: text('owner_id').notNull(),
   ranAt: text('ran_at').notNull(),
+});
+
+export const savedViews = pgTable('saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tab: text('tab').notNull(),
+  query: text('query').notNull(),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: text('updated_at').notNull(),
 });

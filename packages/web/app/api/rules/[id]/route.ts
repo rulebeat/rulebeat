@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, updateRule, deleteRule, validateRuleName, ruleNameTakenError, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
+import { loadRules, updateRule, deleteRule, validateRuleName, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { changedFields } from '@/lib/changed-fields';
 import { createTenantContext } from '@/lib/azure-credential';
@@ -10,10 +10,26 @@ import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule
 import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
 import { sameValue } from '@/lib/rule-versions';
 import { hasCompilableFilter } from '@rulebeat/core/kql';
-import type { Rule } from '@rulebeat/core';
+import type { Rule, RuleKind } from '@rulebeat/core';
 
 const BUILTIN_QUERY_LOCKED_ERROR =
   'A built-in rule\'s query cannot be edited. Duplicate the rule to get a custom copy you can change.';
+const BUILTIN_KIND_LOCKED_ERROR =
+  "A built-in rule's kind is set by RuleBeat and cannot be changed. Duplicate the rule to get a custom copy you can change.";
+
+/**
+ * The kind an edit asks for, resolved against the rule's own backend (which an edit cannot
+ * change): undefined when the body names none, so the stored kind stays; a 400 when a Logs rule
+ * asks to be Advisory; otherwise the resolved kind, where a forged value falls back to 'state'.
+ */
+function requestedKindChange(existing: Rule, requested: unknown): RuleKind | undefined | NextResponse {
+  if (requested === undefined) return undefined;
+  const backend = existing.queryBackend ?? 'resource-graph';
+  if (requested === 'advisory' && backend === 'log-analytics') {
+    return NextResponse.json({ error: ADVISORY_ON_LOGS_ERROR }, { status: 400 });
+  }
+  return resolveKind(backend, requested as RuleKind);
+}
 
 /** Maps an `updateRule()` failure to the response both branches below return for it. */
 function updateFailureResponse(result: Extract<UpdateRuleResult, { ok: false }>, name: string): NextResponse {
@@ -34,10 +50,10 @@ export async function PUT(
   const existing = (await loadRules()).find(r => r.id === id);
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Built-ins: only the enabled toggle and tag assignment are allowed. What a built-in runs changes
-  // only through a version switch, so a different Graph query is refused and the caller is pointed
-  // at Duplicate. A body that carries the stored query back unchanged (the Rules tab toggle sends
-  // the whole rule) is not an edit of it.
+  // Built-ins: only the enabled toggle and tag assignment are allowed. What a built-in runs and its
+  // kind change only through a version switch, so a different Graph query or kind is refused and the
+  // caller is pointed at Duplicate. A body that carries the stored value back unchanged (the Rules
+  // tab toggle sends the whole rule) is not an edit of it.
   if (existing.type === 'builtin') {
     const body = await parseJsonBody<Partial<Rule>>(req);
     if (body instanceof NextResponse) return body;
@@ -50,7 +66,9 @@ export async function PUT(
     const changes: RuleChanges = { enabled: Boolean(body.enabled) };
     const newTags = body.tags ?? (body.group ? [body.group] : undefined);
     if (newTags) changes.tags = newTags;
-
+    if (body.kind !== undefined && body.kind !== existing.kind) {
+      return NextResponse.json({ error: BUILTIN_KIND_LOCKED_ERROR }, { status: 400 });
+    }
     if (body.graphQuery && !sameValue(body.graphQuery, existing.graphQuery)) {
       return NextResponse.json({ error: BUILTIN_QUERY_LOCKED_ERROR }, { status: 400 });
     }
@@ -141,8 +159,8 @@ export async function PUT(
   }
 
   // The form sends the whole editable definition, so every editable field is named here and one the
-  // payload omits is cleared, as before. Type/pack/queryBackend/kind are left out so they cannot be
-  // changed via edit, and so are the scan-outcome fields (lastRunStatus/lastRunAt): they are the
+  // payload omits is cleared, as before. Type/pack/queryBackend are left out so they cannot be
+  // changed via edit (kind is added below, only when the body names one), and so are the scan-outcome fields (lastRunStatus/lastRunAt): they are the
   // scan's, `updateRule()` never writes them, and an edit can neither reset a rule's outcome history
   // to "never run" nor put back a stale one.
   const changes: RuleChanges = {
@@ -163,6 +181,9 @@ export async function PUT(
     graphQuery: body.graphQuery,
     logsQuery: body.logsQuery,
   };
+  const kindChange = requestedKindChange(existing, body.kind);
+  if (kindChange instanceof NextResponse) return kindChange;
+  if (kindChange) changes.kind = kindChange;
   const result = await updateRule(id, changes);
   if (!result.ok) return updateFailureResponse(result, body.name);
   const updated = result.rule;

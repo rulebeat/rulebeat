@@ -74,7 +74,7 @@ two.
 The compliance blade filters by assignment, scope, definition type and compliance state. RuleBeat's
 Results tab filters by category, severity, status, rule, subscription, resource group, location, tag
 and date window, and exports to CSV and JSON. Every dashboard widget takes the same filters, and
-there are <!-- count:widget-types -->12 widget types to arrange ([`dashboards.md`](dashboards.md)).
+there are <!-- count:widget-types -->13 widget types to arrange ([`dashboards.md`](dashboards.md)).
 
 ## Who hears about it
 

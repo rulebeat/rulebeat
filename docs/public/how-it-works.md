@@ -66,8 +66,28 @@ engine for the same reason as the second one. Authoring is paused: the new-rule 
 option as unavailable ([`permissions.md`](permissions.md#4-optional-log-analytics-reader)).
 
 All three run inside the same `runCategoryScan` and feed the same per-rule accounting, so a scan, a
-run history row, a dashboard and a notification neither know nor care which engine produced a
-finding.
+run history row and a dashboard neither know nor care which engine produced a finding.
+
+Separately from the engine, a rule has a **kind**. An Advisory rule runs exactly like a Problem rule
+and its findings have the same fingerprint, lifecycle and suppressions, but they are listed on the
+Advisories tab and left out of posture and every problem count
+([`posture.md`](posture.md#advisory-rules-are-not-counted)). Notifications skip them unless a
+channel turns on Include advisories ([`notifications.md`](notifications.md)). On a custom rule you choose the kind. On a
+built-in rule RuleBeat sets it as part of the rule's version and you cannot change it; duplicate
+the rule to run it as a different kind.
+
+RuleBeat ships one Advisory rule, **Service retirements** (Reliability). It reads the Azure Advisor
+recommendations in the Service upgrade and retirement subcategory, one Advisory per affected resource.
+Every retirement is kept: a recommendation with no feature name is labelled with its problem text, the
+retirement date is shown when Advisor gives one, and the recommendation type id is always recorded.
+Advisor does not report every retirement and covers the public cloud only, so a resource missing from
+the list is not necessarily safe; the rule's recommendation points to the
+[Azure updates retirements page](https://azure.microsoft.com/updates/?updateType=retirements) for the
+rest. A resource that Advisor lists under two retirements is one Advisory holding both, since a
+finding is identified by rule and resource. The rule is an Advisory and its kind cannot be changed.
+To count retirements as problems, duplicate the rule and set the copy's kind to Problem. A new
+version of the rule, including one that changes its kind, reaches it only when it is disabled or
+when you switch it to that version.
 
 ## How a row becomes a finding
 
@@ -78,6 +98,30 @@ its fingerprint is `sha256(ruleId::activity::dimensionKey)` instead. Renaming a 
 every finding under it, which is why built-in rule ids are stable (a UUID, or `cred:` plus a fixed
 name for the two directory credential checks) and a pack sync never changes them. The finding
 carries what the query returned plus the rule's severity, category and title at scan time.
+
+**A finding that gains or loses a row.** A finding keeps every distinct row its rule returned for the
+resource. When a finding was open and is returned again, the sync compares the new rows with the
+stored ones, row against row on every column, so the order of rows does not matter and a row whose
+values changed is one row removed and one added. Each added row is recorded with the finding's events as
+a `row_added` event and each lost row as a `row_removed` event, one event per row. A finding with at
+least one added row is *changed*: the scan reports it beside its new findings, and a scheduled run
+notifies about it ([`notifications.md`](notifications.md)). A lost row is only recorded. A finding that
+is new or reactivated records no row events, since its whole content is new.
+
+Only a rule that ran to a `success` outcome is compared. A rule that `failed`, was `capped` or was
+`invalid` records no row events, and its finding keeps the rows from the last complete scan, which the
+next complete scan is compared against. The run records its changed findings as it goes, per category,
+so a restart in the middle of a run still sends them.
+
+A finding is one rule and one resource (or, for an activity finding, one dimension value), and it
+holds **every distinct row** the rule's query returned for it. If a query returns three rows for one VM, that
+is one finding with three rows, shown in query order in the finding's detail and written as three
+lines in the CSV export. A row that repeats another in every column, as a join can produce, is kept once.
+It still has one age, one set of suppressions and one status: it is fixed
+when the rule succeeds and returns no row for that resource, not when one of its rows goes away. The
+rows are refreshed on every scan that sees the finding. A finding saved before rows were kept reads as
+one row, made from its evidence, until its next scan. A suppression covers the whole finding,
+including rows that appear later.
 
 ## One outcome per rule
 

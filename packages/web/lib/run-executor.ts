@@ -7,6 +7,10 @@ import { runCategoryScan } from './scan-runner';
 import { resolveCategoriesForSchedule, resolveRulesForSchedule } from './schedule-target';
 import type { ScheduleTargetType } from './db/schedules';
 import { dispatchAndMarkSent } from './notifications/dispatch';
+import { scheduleIncludesAdvisories } from './db/schedule-notification-channels';
+import { isAdvisory, isNotifiable } from './finding-kinds';
+import type { ChangedFinding } from './finding-rows';
+import type { ChangedFindingDetail } from './types';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -78,6 +82,7 @@ export async function executeTarget(
     let newFindings = 0;
     const newFingerprints: string[] = [];
     const allNewFindings: import('./types').Finding[] = [];
+    const allChangedFindings: ChangedFindingDetail[] = [];
     const errors: string[] = [];
     // A category can come back with coverage: 'partial' — one or more rules failed or returned a
     // capped/truncated result — without throwing at all, since runCategoryScan() completes
@@ -97,8 +102,11 @@ export async function executeTarget(
         totalFindings += outcome.summary.findings.length;
         newFindings += outcome.newFindings.length;
         const categoryFingerprints = outcome.newFindings.map(f => f.fingerprint);
+        // The run stores only the record (fingerprint and added rows), not the whole finding.
+        const categoryChanged: ChangedFinding[] = outcome.changedFindings.map(({ fingerprint, addedRows }) => ({ fingerprint, addedRows }));
         newFingerprints.push(...categoryFingerprints);
         allNewFindings.push(...outcome.newFindings);
+        allChangedFindings.push(...outcome.changedFindings);
         if (outcome.summary.coverage === 'partial') partialCategories.push(categoryId);
         // Durable the moment this category's findings are durable (scan-runner.ts's
         // syncScanFindings already wrote them) — not just once at the very end in finishRun(). A
@@ -109,6 +117,7 @@ export async function executeTarget(
           totalFindings: outcome.summary.findings.length,
           newFindings: outcome.newFindings.length,
           newFindingFingerprints: categoryFingerprints,
+          changedFindings: categoryChanged,
         });
       } catch (err) {
         // Never put String(err) in a message that reaches the browser — an Azure SDK error carries
@@ -128,7 +137,15 @@ export async function executeTarget(
         ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
         : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }
-    const willNotify = opts.triggeredBy === 'schedule' && allNewFindings.length > 0;
+    // A Problem or Activity finding is announced to every linked channel. An Advisory is announced
+    // only to a channel that includes advisories, so a run whose only news is Advisories opens an
+    // outbox entry only when the schedule has such a channel. A finding that gained rows (#193) is
+    // news by the same rule as a new one.
+    const announced = [...allNewFindings, ...allChangedFindings];
+    const willNotify = opts.triggeredBy === 'schedule' && (
+      announced.some(isNotifiable)
+      || (announced.some(isAdvisory) && await scheduleIncludesAdvisories(run.scheduleId))
+    );
     await finishRun(run.id, {
       status,
       totalFindings,
@@ -142,7 +159,7 @@ export async function executeTarget(
 
     if (willNotify) {
       const finished = (await getRun(run.id))!;
-      void dispatchAndMarkSent(finished, allNewFindings).catch(() => {});
+      void dispatchAndMarkSent(finished, allNewFindings, { changed: allChangedFindings }).catch(() => {});
     }
   } catch (err) {
     console.error(`[RuleBeat] scan run ${run.id} failed:`, err);

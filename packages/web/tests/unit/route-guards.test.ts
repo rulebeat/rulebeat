@@ -153,6 +153,10 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['onboarding/route.ts', 'azure:manage'],
     ['settings/notifications/route.ts', 'notifications:manage'],
     ['settings/notifications/test/route.ts', 'notifications:manage'],
+    // Saved views are shared with everyone on the install, so a write is an editor's call and a
+    // viewer only reads.
+    ['views/route.ts', 'views:write'],
+    ['views/[id]/route.ts', 'views:write'],
   ];
 
   for (const [route, action] of PINNED) {

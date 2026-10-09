@@ -1,14 +1,16 @@
-import type { Finding } from '@/lib/types';
+import type { ChangedFindingDetail, Finding } from '@/lib/types';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import { recordChannelResult, type StoredNotificationChannel } from '@/lib/db/notification-channels';
 import { getChannelsForSchedule } from '@/lib/db/schedule-notification-channels';
 import { recordDelivery } from '@/lib/db/notification-deliveries';
 import { SEVERITY_ORDER } from '@/lib/severity';
 import { buildScansHref } from '@/lib/scans-link';
+import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { getPublicUrl } from '@/lib/sign-in-config';
 import { RedirectRefusedError, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
 import { loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
+import { isAdvisory, isDeliverableTo, isNotifiable } from '@/lib/finding-kinds';
 import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
 import { postWebhookJson, sendSmtpMail } from './send';
@@ -113,29 +115,44 @@ async function sendEmail(channel: StoredNotificationChannel, subject: string, te
  *
  * C1b: each channel's findings are pre-filtered by its category/subscription scope before
  * applying the severity threshold, so a channel scoped to "Security" never fires for Cost findings.
+ *
+ * Issue #180: Problems and Activity go to every channel. An Advisory goes only to a channel with
+ * "Include advisories" on, as its own section of the message, and is scoped and thresholded like
+ * the rest. A channel with nothing left after that is skipped.
  */
-export async function dispatchNotifications(run: ScheduleRun, newFindings: Finding[]): Promise<void> {
+export async function dispatchNotifications(
+  run: ScheduleRun,
+  newFindings: Finding[],
+  changedFindings: ChangedFindingDetail[] = [],
+): Promise<void> {
   const channels = await getChannelsForSchedule(run.scheduleId);
   if (channels.length === 0) return;
 
-  const scansPath = buildScansHref(
-    { categories: [], severities: [], subscriptions: [], resourceGroups: [], tags: [], ruleIds: [], dateWindow: { mode: 'relative', days: 7 } },
-    { status: 'new' },
-  );
-  const href = await buildAbsoluteHref(scansPath);
+  const scansFilters: WidgetFilters = { categories: [], severities: [], subscriptions: [], resourceGroups: [], tags: [], ruleIds: [], dateWindow: { mode: 'relative', days: 7 } };
+  const href = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'new' }));
+  const advisoriesHref = await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'advisories', status: 'new' }));
+  // A changed finding is not new, so its link shows what is open; the section names which ones changed.
+  const changedHref = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'open' }));
   const demo = await isDemoMode();
 
   await Promise.allSettled(
     channels.map(async channel => {
-      // C1b: apply category/subscription scope before severity threshold
-      const scoped = newFindings.filter(f => {
-        if (channel.categoryIds && !channel.categoryIds.includes(f.category)) return false;
-        if (channel.subscriptionIds && !channel.subscriptionIds.includes(f.subscriptionId)) return false;
-        return true;
-      });
+      // C1b: apply category/subscription scope before severity threshold. The same four rules
+      // (scope, kind, severity, suppression upstream) decide a changed finding as a new one.
+      const reaches = <T extends Finding>(findings: T[]): T[] => findings
+        .filter(f => {
+          if (channel.categoryIds && !channel.categoryIds.includes(f.category)) return false;
+          if (channel.subscriptionIds && !channel.subscriptionIds.includes(f.subscriptionId)) return false;
+          return true;
+        })
+        .filter(f => isDeliverableTo(f, channel))
+        .filter(f => meetsThreshold(f.severity, channel.minSeverity));
 
-      const filtered = scoped.filter(f => meetsThreshold(f.severity, channel.minSeverity));
-      if (filtered.length === 0) return;
+      const wanted = reaches(newFindings);
+      const changed = reaches(changedFindings);
+      const advisories = wanted.filter(isAdvisory);
+      const filtered = wanted.filter(f => !isAdvisory(f));
+      if (wanted.length === 0 && changed.length === 0) return;
 
       // A Demo records what would have been sent, with zero attempts, and contacts nothing. The
       // channel's own last-result fields are left alone: nothing was tried, so nothing failed.
@@ -148,12 +165,12 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
           attempts: 0,
           httpStatus: null,
           error: DEMO_NOT_SENT,
-          findingsCount: filtered.length,
+          findingsCount: wanted.length + changed.length,
         });
         return;
       }
 
-      const payload = buildPayload(channel.type, filtered, href, run);
+      const payload = buildPayload(channel.type, filtered, href, run, advisories, advisoriesHref, { findings: changed, href: changedHref });
 
       let result: SendResult;
       if (payload.kind === 'email') {
@@ -171,7 +188,7 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
         attempts: result.attempts,
         httpStatus: result.httpStatus,
         error: result.error,
-        findingsCount: filtered.length,
+        findingsCount: wanted.length + changed.length,
       });
     }),
   );
@@ -179,7 +196,7 @@ export async function dispatchNotifications(run: ScheduleRun, newFindings: Findi
 
 /** Drops findings whose fingerprint has an active suppression, by the same predicate the Results
  *  tab and dashboards use (`isActiveSuppression`, so an expired suppression hides nothing). */
-async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
+async function withoutSuppressed<T extends Finding>(findings: T[]): Promise<T[]> {
   if (findings.length === 0) return findings;
   const suppressed = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
   return findings.filter(f => !suppressed.has(f.fingerprint));
@@ -207,17 +224,28 @@ async function withoutSuppressed(findings: Finding[]): Promise<Finding[]> {
  * recovery share one decision and a suppression added or expired since the scan is honoured. A
  * batch that is all suppressed is treated like an empty one: nothing is sent and the entry closes.
  *
+ * Advisory findings go through the same suppression check, and then only to the channels that
+ * include advisories (issues #176 and #180); `dispatchNotifications` makes that per-channel call.
+ * A kind that is neither announced to every channel nor an Advisory is dropped here.
+ *
+ * Changed findings (#193, `opts.changed`) go through the same suppression check and the same kind
+ * filter, so a suppressed changed finding is never announced; a batch with neither new nor changed
+ * findings left is empty.
+ *
  * @returns whether this call held the claim and therefore did the dispatching.
  */
 export async function dispatchAndMarkSent(
   run: ScheduleRun,
   findings: Finding[],
-  opts: { now?: Date } = {},
+  opts: { now?: Date; changed?: ChangedFindingDetail[] } = {},
 ): Promise<boolean> {
   if (!(await claimNotifyDispatch(run.id, { now: opts.now }))) return false;
-  const notifiable = await withoutSuppressed(findings);
-  if (notifiable.length > 0) {
-    await dispatchNotifications(run, notifiable);
+  const announceable = async <T extends Finding>(list: T[]) =>
+    (await withoutSuppressed(list)).filter(f => isNotifiable(f) || isAdvisory(f));
+  const newFindings = await announceable(findings);
+  const changed = await announceable(opts.changed ?? []);
+  if (newFindings.length > 0 || changed.length > 0) {
+    await dispatchNotifications(run, newFindings, changed);
   }
   await markNotifySent(run.id);
   return true;

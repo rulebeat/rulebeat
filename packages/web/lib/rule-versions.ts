@@ -1,6 +1,6 @@
 import { BEFORE_VERSIONING } from './before-versioning';
 import {
-  CORE_PACK, emptyToNull, parseMaybeJson,
+  CORE_PACK, emptyToNull, definitionKind, parseMaybeJson,
   type RuleDefinition, type ShippedCatalogue, type ShippedRule, type VersionScheme,
 } from './shipped-catalogue';
 
@@ -61,7 +61,8 @@ export type SeedAction =
   | { action: 'record'; ruleId: string; version: string; sortKey: string; releaseNote: string; definition: RuleDefinition; upstreamRef?: string }
   /** Set which version a row says it runs, without touching its definition. */
   | { action: 'set-running'; ruleId: string; version: string }
-  /** Move a disabled rule to a shipped version: writes the definition fields and the version. */
+  /** Move a disabled rule to a shipped version: writes the definition fields and the version. `kind`
+   *  is the install's own kind, carried over so the move never turns an Advisory back into a Problem. */
   | { action: 'apply'; rule: ShippedRule }
   | { action: 'retire'; ruleId: string }
   | { action: 'unretire'; ruleId: string };
@@ -143,13 +144,14 @@ export function sameDefinition(a: RuleDefinition, b: RuleDefinition): boolean {
 
 /** The definition fields of a stored row, in the same shape a shipped definition has. */
 export function definitionOfRow(row: StoredRuleRow): RuleDefinition {
+  const queryBackend = row.queryBackend as RuleDefinition['queryBackend'];
   return {
     name: row.name,
     description: row.description,
     category: row.category,
     severity: row.severity,
-    queryBackend: row.queryBackend as RuleDefinition['queryBackend'],
-    kind: row.kind as RuleDefinition['kind'],
+    queryBackend,
+    kind: definitionKind(queryBackend, row.kind),
     resourceTypes: parseMaybeJson<string[]>(row.resourceTypes, []),
     scope: parseMaybeJson<RuleDefinition['scope']>(row.scope, { level: 'resource' }),
     conditions: parseMaybeJson<RuleDefinition['conditions']>(row.conditions, []),
@@ -171,7 +173,7 @@ export function definitionToColumns(def: RuleDefinition) {
     category: def.category,
     severity: def.severity,
     queryBackend: def.queryBackend,
-    kind: def.kind,
+    kind: definitionKind(def.queryBackend, def.kind),
     resourceTypes: JSON.stringify(def.resourceTypes),
     scope: JSON.stringify(def.scope),
     conditions: JSON.stringify(def.conditions),

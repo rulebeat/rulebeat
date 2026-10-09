@@ -60,6 +60,16 @@ export async function deleteLinksForSchedule(scheduleId: string): Promise<void> 
 }
 
 /**
+ * Whether any channel linked to a schedule includes advisories. A scan of only new Advisories
+ * opens a notification outbox entry only when this is true, so a run is never marked "pending"
+ * for a send that no channel would receive.
+ */
+export async function scheduleIncludesAdvisories(scheduleId: string): Promise<boolean> {
+  const channels = await getChannelsForSchedule(scheduleId);
+  return channels.some(c => c.includeAdvisories);
+}
+
+/**
  * Returns the resolved channels (with decrypted URLs/passwords) assigned to a schedule, each
  * carrying its per-schedule minSeverity and scope. Used by the dispatcher.
  */

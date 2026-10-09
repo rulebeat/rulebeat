@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, Fragment, type Dispatch, type SetStateAction } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search, X, ChevronDown, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -10,11 +10,12 @@ import { splitLearnMore } from '@/lib/rule-description';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { ExportButton } from '@/components/findings/export-button';
+import { FindingRowsDetail } from '@/components/findings/finding-rows-detail';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Callout } from '@/components/ui/callout';
-import { ChecklistDropdown, ColumnFilterIcon } from '@/components/ui/checklist-dropdown';
+import { ChecklistDropdown, ColumnFilterIcon, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import { CodeBlock } from '@/components/ui/code-block';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -22,37 +23,43 @@ import { useResizableColumns, ColumnResizeHandle } from '@/lib/hooks/use-resizab
 import { cn } from '@/lib/utils';
 import { resolveDateWindow, dateWindowLabel, type DateWindow } from '@/lib/date-window';
 import { toggleInSet } from '@/lib/toggle-set';
+import { Segmented, type SegmentedOption } from '@/components/ui/segmented';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import {
   requestSuppress, requestUnsuppress, applySuppress, applyUnsuppress, applySuppressionsLoad, fetchSuppressionList,
 } from '@/lib/suppression-actions';
-import type { Severity, Suppression } from '@/lib/types';
+import type { RuleKind, Severity, Suppression } from '@/lib/types';
 import type { ExplorerData, ExplorerFinding, FindingDisplayStatus } from '@/lib/explorer-data';
 import {
-  getRecencyStatus, matchesExplorerFilters, parseExplorerStatus, countFindingsByRule, facetPool,
-  summarizeFindings, EXPLORER_SEVERITIES,
-  type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter,
+  getRecencyStatus, parseExplorerStatus, countFindingsByRule, summarizeFindings, EXPLORER_SEVERITIES,
+  type ExplorerStatusFilter,
 } from '@/lib/explorer-filters';
-
+import {
+  BUILTIN_FIELDS, DEFAULT_SORT, applyGroupedView, applyView, clearFilter, columnCell, emptyView, fieldOptions, filterFindings, filterValues,
+  findingSubject, isRowField, isRowFilter, pageGroupItems, rowField, rowFieldOptions, rowLeafPaths, rowPath, toggleFilterValue, viewToSearchParams,
+  type BuiltinField, type GroupSort, type View, type ViewContext, type ViewField, type ViewFilter, type ViewGroup, type ViewItem, type ViewSort,
+} from '@/lib/finding-view';
+import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
+import { GroupBy } from '@/components/findings/group-by';
+import { FindingsPager } from '@/components/findings/findings-pager';
+import type { FindingRow } from '@/lib/finding-rows';
+import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import { OPEN_VIEW_PARAM, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
-type SortDir = 'asc' | 'desc';
 type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
 
 interface FindingsExplorerClientProps {
   data: ExplorerData;
   suppressions?: Suppression[];
-  initialFilters?: {
-    categories?: string[]; status?: string; ruleId?: string;
-    /** In page mode (mode='page'), every one of these is also synced back to the URL (see the
-     *  URL-sync effect below) — the initializer and that effect must read/write the exact same
-     *  param set, or a deep-link/click-through value gets silently stripped on first render. In
-     *  widget mode they're just one-shot initial values from the dashboard filter bar. */
-    subscriptions?: string[]; tags?: string[]; severities?: Severity[];
-    resourceGroups?: string[]; locations?: string[]; windowDays?: number; from?: string; to?: string; search?: string;
-  };
+  /** The view the page opens on: filters, search, window, picked columns, sort and page. In page
+   *  mode (mode='page') all of it is synced back to the URL (see the URL-sync effect below), and
+   *  `viewFromSearchParams` / `viewToSearchParams` in lib/finding-view.ts are the one reader and
+   *  writer of that param set, so a deep link is never silently stripped on first render. In
+   *  widget mode it is just a one-shot initial value. */
+  initialView?: View;
   /** Whether the viewer may create or remove suppressions. An existing suppression's reason is
    *  shown either way — only the create/remove controls are gated. */
   canSuppress: boolean;
@@ -68,12 +75,70 @@ interface FindingsExplorerClientProps {
   /** Overrides the "no findings yet" empty-state copy — useful when embedded under a specific
    *  category so the hint can name that category instead of a generic message. */
   emptyHint?: string;
+  /** Overrides the "No findings yet" empty-state title, for a tab that has its own reason to be empty. */
+  emptyTitle?: string;
+  /** Which kinds the header tiles and the By rule counts add up. Defaults to what finding-level
+   *  totals count (Problems); the Advisories tab passes its own so its tiles add up to its own Open. */
+  kinds?: readonly RuleKind[];
+  /** Hides the By rule view, for a listing where the per-rule pivot would not add anything. */
+  hideRuleView?: boolean;
+  /** Shows the saved-views menu (page mode only). The parent owns what opening a view does, since
+   *  applying one means starting the explorer again from that view. */
+  savedViews?: {
+    tab: SavedViewTab;
+    canWrite: boolean;
+    /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
+     *  the URL, and the explorer never keeps its own copy. */
+    openId: string | null;
+    /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
+    onOpen: (view: SavedView) => void;
+    /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
+     *  writes from a navigation that came from elsewhere. */
+    onUrlWrite: (query: string) => void;
+  };
+}
+
+/** The filters a locked category does not own: its category is the page's, so it stays out of the
+ *  URL and out of a saved view. Without a locked category, all of them. */
+function filtersWithoutLockedCategory(filters: ViewFilter[], lockedCategory?: string): ViewFilter[] {
+  return lockedCategory ? filters.filter(f => f.field !== 'category') : filters;
 }
 
 // ---- Constants ----
 
-const SEV_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-const PAGE_SIZE = 50;
+/** The width of a column the viewer picked from what the rules returned. */
+const RETURNED_COL_WIDTH = 180;
+/** The built-in field each column header filters and sorts by. */
+const COL_FIELD: Record<SortCol, BuiltinField> = {
+  resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', firstSeen: 'firstSeen',
+};
+/** How a built-in field is named in the Add filter list and on a filter chip. */
+const FIELD_LABEL: Record<BuiltinField, string> = {
+  rule: 'Rule', kind: 'Kind', category: 'Category', severity: 'Severity', status: 'Status',
+  subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
+  resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
+};
+const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
+
+/** What the empty-value group is called. The engine only knows it as a null value. */
+const NO_VALUE_LABEL = 'No value';
+/** How far each nesting level indents a group header's content. */
+const GROUP_INDENT_REM = 1.5;
+
+/** The fields and values from the outermost group down to one group, in order; a null value is the
+ *  empty-value group. */
+type GroupPath = readonly (string | null)[];
+/** The one place a group's open state and page are keyed. A JSON array of the path, so a value that
+ *  holds any character still cannot run into its neighbour, and the same value under two parents is
+ *  two keys. A finding row inside a group appends its fingerprint, so a finding listed under two
+ *  groups opens independently in each. */
+const groupStateKey = (path: GroupPath) => JSON.stringify(path);
+
+const KIND_LABEL: Record<string, string> = { state: 'Problem', advisory: 'Advisory', activity: 'Activity' };
+/** Status has its own select in the toolbar, so the Add filter list leaves it out. */
+const ADD_FILTER_BUILTINS = BUILTIN_FIELDS.filter(f => f !== 'status');
+/** The filters the chip row shows. Status is the toolbar select, and a locked category is the page's own. */
+const NO_CHIP_FIELDS: readonly ViewField[] = ['status'];
 
 /* Status is an outcome, so it uses the status tokens rather than severity's. The
  * three are genuinely different states and colour is the fastest way to tell them
@@ -112,6 +177,10 @@ function fmt(iso?: string) {
 function shortDate(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+// A day key (YYYY-MM-DD) as a date, read at noon so a time zone cannot move it to the next day.
+function dayKeyLabel(key: string) {
+  return shortDate(`${key}T12:00:00`);
 }
 
 // New and Fixed carry the window in their label, like the header tiles they match.
@@ -152,32 +221,8 @@ function buildMetaOptions(pool: ExplorerFinding[], getter: (f: ExplorerFinding) 
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Display subject for a finding row: a state finding's resource name (falling back to the tail
- *  of its resourceId), or an activity finding's dimensionKey ("pattern") — there is no resource
- *  to name (spec 034). */
-function subjectLabel(f: Pick<ExplorerFinding, 'resourceName' | 'resourceId' | 'dimensionKey'>): string {
-  return f.resourceName || f.dimensionKey || f.resourceId?.split('/').pop() || '';
-}
-
-function getColValue(f: ExplorerFinding, col: SortCol): string {
-  switch (col) {
-    case 'resource':  return subjectLabel(f);
-    case 'rule':      return f.policyName;
-    case 'category':  return f.category;
-    case 'severity':  return f.severity;
-    case 'firstSeen': return f.firstSeenAt;
-  }
-}
-
-// Grouping key for the per-column Excel-style filter — distinct from the raw sort value for
-// firstSeen, which would otherwise produce one option per exact timestamp (effectively unique
-// per finding) instead of one per day.
-function getColFilterKey(f: ExplorerFinding, col: SortCol): string {
-  return col === 'firstSeen' ? shortDate(f.firstSeenAt) : getColValue(f, col);
-}
-
-function SortIcon({ col, active, dir }: { col: SortCol; active: SortCol; dir: SortDir }) {
-  if (active !== col) return <ChevronsUpDown className="size-3 shrink-0 text-ink-faint" />;
+function SortIcon({ field, active, dir }: { field: ViewField; active: ViewField; dir: 'asc' | 'desc' }) {
+  if (active !== field) return <ChevronsUpDown className="size-3 shrink-0 text-ink-faint" />;
   // The sorted column is marked in ink, not the accent. Sorting a table is not a
   // critical state, and red here would put a permanent alarm colour in the header.
   return dir === 'asc'
@@ -206,6 +251,33 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     >
       {copied ? <Check className="size-3.5 text-status-ok" /> : <Copy className="size-3.5" />}
     </button>
+  );
+}
+
+/** One returned-column cell of the flat list. A URL is a link that opens in a new tab, an object or
+ *  array is compact JSON, an empty value is an empty cell, and a finding with several distinct
+ *  values in the column shows the first and how many more. */
+function ReturnedCell({ rows, path }: { rows: readonly FindingRow[]; path: string }) {
+  const { value, more } = columnCell(rows, path);
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink">
+      {value.kind === 'empty' && <span className="sr-only">No value</span>}
+      {value.kind === 'url' && (
+        <a
+          href={value.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          title={value.href}
+          className="min-w-0 truncate underline decoration-ink-faint underline-offset-2 hover:decoration-ink"
+        >
+          {value.text}
+        </a>
+      )}
+      {value.kind === 'json' && <span className="min-w-0 truncate font-mono" title={value.text}>{value.text}</span>}
+      {value.kind === 'text' && <span className="min-w-0 truncate" title={value.text}>{value.text}</span>}
+      {more > 0 && <span className="shrink-0 text-ink-2">+{more} more</span>}
+    </div>
   );
 }
 
@@ -299,53 +371,77 @@ function SuppressionPanel({
 // ---- Main component ----
 
 export function FindingsExplorerClient({
-  data, suppressions: suppressionsProp, initialFilters, canSuppress, mode = 'page', lockedCategory, basePath = '/findings', extraParams, emptyHint,
+  data, suppressions: suppressionsProp, initialView, canSuppress, mode = 'page', lockedCategory, basePath = '/findings', extraParams, emptyHint,
+  emptyTitle, kinds, hideRuleView = false, savedViews,
 }: FindingsExplorerClientProps) {
   const router = useRouter();
+  const [initial] = useState<View>(() => initialView ?? emptyView());
+  const openViewId = savedViews?.openId ?? null;
 
-  // Filters
-  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(
-    lockedCategory ? new Set([lockedCategory]) : new Set(initialFilters?.categories ?? []),
-  );
-  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set(initialFilters?.severities ?? []));
-  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>(parseExplorerStatus(initialFilters?.status));
-  const [policyFilter, setPolicyFilter] = useState<Set<string>>(
-    new Set(initialFilters?.ruleId ? initialFilters.ruleId.split(',').filter(Boolean) : []),
-  );
-  const [subFilter, setSubFilter] = useState<Set<string>>(new Set(initialFilters?.subscriptions ?? []));
-  const [rgFilter, setRgFilter] = useState<Set<string>>(new Set(initialFilters?.resourceGroups ?? []));
-  const [locFilter, setLocFilter] = useState<Set<string>>(new Set(initialFilters?.locations ?? []));
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set(initialFilters?.tags ?? []));
-  const [search, setSearch] = useState(initialFilters?.search ?? '');
-  const [view, setView] = useState<ViewMode>('resource');
+  // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
+  // the category tabs and the Add filter control all read and write it, and it is the View's own
+  // `filters`, so nothing the viewer can narrow by is missing from the URL. A locked category is
+  // the page's own and replaces whatever the URL held for it.
+  const [filters, setFilters] = useState<ViewFilter[]>(() => (
+    lockedCategory ? [...clearFilter(initial.filters, 'category'), { field: 'category', values: [lockedCategory] }] : initial.filters
+  ));
+  const [search, setSearch] = useState(initial.search);
+  const [layout, setLayout] = useState<ViewMode>('resource');
   const [showSuppressed, setShowSuppressed] = useState(false);
-  const [dateWindow, setDateWindow] = useState<DateWindow>(
-    initialFilters?.from && initialFilters?.to
-      ? { mode: 'custom', from: initialFilters.from, to: initialFilters.to }
-      : { mode: 'relative', days: initialFilters?.windowDays ?? 7 },
-  );
+  const [dateWindow, setDateWindow] = useState<DateWindow>(initial.window);
   const { from: rangeFrom, to: rangeTo } = useMemo(() => resolveDateWindow(dateWindow), [dateWindow]);
   const windowLabel = dateWindowLabel(dateWindow);
   const statusOptions = useMemo(() => statusFilterOptions(windowLabel), [windowLabel]);
 
-  // Sort / pagination / expand
-  const [sortCol, setSortCol] = useState<SortCol>('severity');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [page, setPage] = useState(0);
+  const valueSets = useMemo(
+    () => Object.fromEntries(BUILTIN_FIELDS.map(field => [field, new Set(filterValues(filters, field))])) as Record<BuiltinField, Set<string>>,
+    [filters],
+  );
+  const categoryFilter = valueSets.category;
+  const severityFilter = valueSets.severity as Set<Severity>;
+  const policyFilter = valueSets.rule;
+  const subFilter = valueSets.subscription;
+  const rgFilter = valueSets.resourceGroup;
+  const locFilter = valueSets.location;
+  const tagFilter = valueSets.tags;
+  const statusFilter: StatusFilterValue = parseExplorerStatus(filterValues(filters, 'status')[0]);
+  const rowFilters = useMemo(() => filters.filter(isRowFilter), [filters]);
+
+  // Columns the rules returned, picked by the viewer
+  const [columns, setColumns] = useState<string[]>(initial.columns);
+
+  // Sort / pagination / expand. A null sort is the default, severity most severe first, which is
+  // how a link to the default view carries no sort param.
+  const [sort, setSort] = useState<ViewSort | null>(initial.sort);
+  const [page, setPage] = useState(Math.max(0, initial.page - 1));
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
+  const activeSort = sort ?? DEFAULT_SORT;
 
-  // Per-column Excel-style filters (funnel icon in each header) — separate from the global
-  // toolbar filters above so a column filter can be cleared independently.
-  const [colFilters, setColFilters] = useState<Partial<Record<SortCol, Set<string>>>>({});
-  const toggleColFilter = useCallback((col: SortCol, value: string) => {
-    setColFilters(prev => ({ ...prev, [col]: toggleInSet(prev[col] ?? new Set(), value) }));
+  // Grouping is part of the view (and the URL). Which groups are open, and the page each open group
+  // is on, are local: a link opens with every group closed.
+  const [groupBy, setGroupBy] = useState<ViewField[]>(initial.groupBy);
+  const [groupSort, setGroupSort] = useState<GroupSort>(initial.groupSort);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [groupPages, setGroupPages] = useState<Map<string, number>>(new Map());
+
+  const resetPage = useCallback(() => setPage(0), []);
+  const toggleValue = useCallback((field: ViewField, value: string) => {
+    setFilters(prev => toggleFilterValue(prev, field, value));
     setPage(0);
   }, []);
-  const clearColFilter = useCallback((col: SortCol) => {
-    setColFilters(prev => { const next = { ...prev }; delete next[col]; return next; });
+  const clearField = useCallback((field: ViewField) => {
+    setFilters(prev => clearFilter(prev, field));
     setPage(0);
   }, []);
+  const setValues = useCallback((field: ViewField, values: string[]) => {
+    setFilters(prev => {
+      const others = clearFilter(prev, field);
+      return values.length > 0 ? [...others, { field, values } as ViewFilter] : others;
+    });
+    setPage(0);
+  }, []);
+  const setStatus = useCallback((status: StatusFilterValue) => setValues('status', status === 'open' ? [] : [status]), [setValues]);
 
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<SortCol>(
     // Each header holds a label, a sort arrow, a filter funnel and a resize handle, so a column
@@ -379,148 +475,143 @@ export function FindingsExplorerClient({
   // Subscription id → display name, for labelling the Subscription filter.
   const subNames = useSubscriptionNames();
 
-  const resetPage = useCallback(() => setPage(0), []);
-
-  // URL sync (page mode only) — must write back every param the initializer above can read, or a
-  // deep-link/click-through value survives one render then gets silently erased the moment this
-  // effect first runs (router.replace rewrites the whole query string from current state).
-  useEffect(() => {
-    if (mode !== 'page') return;
-    const params = new URLSearchParams(extraParams);
-    if (!lockedCategory && categoryFilter.size > 0) params.set('category', [...categoryFilter].join(','));
-    if (statusFilter !== 'open') params.set('status', statusFilter);
-    if (policyFilter.size > 0) params.set('ruleId', [...policyFilter].join(','));
-    if (severityFilter.size > 0) params.set('severity', [...severityFilter].join(','));
-    if (subFilter.size > 0) params.set('subscription', [...subFilter].join(','));
-    if (rgFilter.size > 0) params.set('rg', [...rgFilter].join(','));
-    if (locFilter.size > 0) params.set('location', [...locFilter].join(','));
-    if (tagFilter.size > 0) params.set('tags', [...tagFilter].join(','));
-    if (dateWindow.mode === 'custom') {
-      params.set('from', dateWindow.from);
-      params.set('to', dateWindow.to);
-    } else if (dateWindow.days !== 7) {
-      params.set('window', String(dateWindow.days));
-    }
-    if (search !== '') params.set('q', search);
-    const qs = params.toString();
-    router.replace(`${basePath}${qs ? `?${qs}` : ''}`, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    mode, categoryFilter, statusFilter, policyFilter, severityFilter, subFilter, rgFilter, locFilter,
-    tagFilter, JSON.stringify(dateWindow), search, lockedCategory, basePath, JSON.stringify(extraParams),
-  ]);
-
   const suppressedFps = useMemo(() => new Set(
     suppressions.filter(s => !s.expiresAt || new Date(s.expiresAt) > new Date()).map(s => s.fingerprint),
   ), [suppressions]);
   const suppMap = useMemo(() => new Map(suppressions.map(s => [s.fingerprint, s])), [suppressions]);
 
-  // Global filtering (category/severity/status/policy/search/suppressed visibility) — factored
-  // out of the `filtered` memo so the per-column filter option lists (below), and the stats pool,
-  // can reuse the exact same predicate minus whichever dimension(s) should stay unfiltered. The
-  // predicate itself lives in lib/explorer-filters.ts so it's unit-testable outside a React render.
-  const filterState = useMemo<ExplorerFilterState>(() => ({
-    showSuppressed, suppressedFingerprints: suppressedFps, categories: categoryFilter, severities: severityFilter,
-    status: statusFilter, ruleIds: policyFilter, subscriptions: subFilter, resourceGroups: rgFilter,
-    locations: locFilter, tags: tagFilter, search, rangeFrom, rangeTo,
-  }), [showSuppressed, suppressedFps, categoryFilter, severityFilter, statusFilter, rangeFrom, rangeTo, policyFilter, subFilter, rgFilter, locFilter, tagFilter, search]);
-  const passesGlobalFilters = useCallback(
-    (f: ExplorerFinding, exclude?: Set<ExplorerFilterDim>) => matchesExplorerFilters(f, filterState, exclude),
-    [filterState],
+  // The view the engine runs: every control on this page, as one View (lib/finding-view.ts). The
+  // same engine serves the Advisories widget, so a view this page can express is one the widget can.
+  // Counts, the stats pool and each dropdown's options all come from `filterFindings` with the
+  // fields they leave out named in `except`, so they can never disagree with the table.
+  const findingView = useMemo<View>(() => ({
+    ...emptyView(),
+    filters, search, window: dateWindow, columns, sort, groupBy, groupSort, page: page + 1,
+  }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page]);
+  const viewCtx = useMemo<ViewContext>(() => ({
+    showSuppressed, suppressedFingerprints: suppressedFps, range: { from: rangeFrom, to: rangeTo },
+  }), [showSuppressed, suppressedFps, rangeFrom, rangeTo]);
+  const globalPool = useCallback(
+    (except?: ViewField[]) => filterFindings(data.findings, findingView, viewCtx, { except: new Set(except) }),
+    [data.findings, findingView, viewCtx],
   );
 
-  const passesColFilters = useCallback((f: ExplorerFinding, exclude?: SortCol) => {
-    for (const col of Object.keys(colFilters) as SortCol[]) {
-      if (col === exclude) continue;
-      const vals = colFilters[col];
-      if (vals && vals.size > 0 && !vals.has(getColFilterKey(f, col))) return false;
+  const result = useMemo(() => applyView(data.findings, findingView, viewCtx), [data.findings, findingView, viewCtx]);
+  const filtered = useMemo<ExplorerFinding[]>(() => result.matched.map(m => m.finding), [result.matched]);
+  // What a filter value is called on screen: a rule by name, a category by label, a subscription by
+  // its display name, a day as a date. The value itself, which the URL carries, stays the id.
+  const ruleNames = useMemo(() => {
+    const names = new Map(data.findings.map(f => [f.ruleId, f.policyName] as const));
+    for (const p of data.policyOptions) names.set(p.id, p.name);
+    return names;
+  }, [data.findings, data.policyOptions]);
+  const valueLabel = useCallback((field: ViewField, value: string): string => {
+    switch (field) {
+      case 'rule': return ruleNames.get(value) ?? value;
+      case 'category': return data.categories.find(c => c.id === value)?.label ?? value;
+      case 'subscription': return subNames[value] ?? value;
+      case 'kind': return KIND_LABEL[value] ?? value;
+      case 'firstSeen':
+      case 'lastSeen': return dayKeyLabel(value);
+      default: return value;
     }
-    return true;
-  }, [colFilters]);
-
-  const filtered = useMemo<ExplorerFinding[]>(
-    () => data.findings.filter(f => passesGlobalFilters(f) && passesColFilters(f)),
-    [data.findings, passesGlobalFilters, passesColFilters],
+  }, [ruleNames, data.categories, subNames]);
+  // The grouped tree, only when the By resource list is grouped. Counts, tiles and the export stay
+  // on `result`, so grouping never changes one of them. Groups sort by value as `valueLabel` names
+  // them, the same function the headers are drawn with.
+  const grouped = useMemo(
+    () => (layout === 'resource' && groupBy.length > 0
+      ? applyGroupedView(data.findings, findingView, viewCtx, { labelFor: valueLabel })
+      : null),
+    [layout, groupBy, data.findings, findingView, viewCtx, valueLabel],
   );
+  const fieldLabel = useCallback((field: ViewField) => (isRowField(field) ? `${rowPath(field)} (returned)` : FIELD_LABEL[field]), []);
 
-  // Column filter option lists — built from the pool filtered by everything EXCEPT that column's
-  // own selection, so picking a value never makes the other options in the same dropdown vanish.
+  // Option lists for a built-in field, counted from every filter except that field's own, so
+  // picking a value never makes the other options in the same list vanish.
+  const builtinOptions = useCallback((field: BuiltinField): ChecklistOption[] => {
+    const options = fieldOptions(globalPool([field]), field).map(o => ({ ...o, label: valueLabel(field, o.value) }));
+    if (field === 'severity') return options.sort((a, b) => EXPLORER_SEVERITIES.indexOf(a.value as Severity) - EXPLORER_SEVERITIES.indexOf(b.value as Severity));
+    if (field === 'firstSeen' || field === 'lastSeen') return options.sort((a, b) => b.value.localeCompare(a.value));
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [globalPool, valueLabel]);
+
+  // Column filter option lists, one per header funnel.
   const colOptions = useMemo(() => {
-    const result = {} as Record<SortCol, { value: string; label: string; count: number }[]>;
-    for (const col of RESIZABLE_COLS) {
-      const pool = data.findings.filter(f => passesGlobalFilters(f) && passesColFilters(f, col));
-      const counts = new Map<string, number>();
-      for (const f of pool) {
-        const key = getColFilterKey(f, col);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
-      result[col] = [...counts.entries()]
-        .map(([value, count]) => ({
-          value,
-          count,
-          label: col === 'category' ? (data.categories.find(c => c.id === value)?.label ?? value) : value,
-        }))
-        .sort((a, b) => col === 'firstSeen' ? b.value.localeCompare(a.value) : a.label.localeCompare(b.label));
-    }
-    return result;
-  }, [data.findings, data.categories, passesGlobalFilters, passesColFilters]);
+    const options = {} as Record<SortCol, ChecklistOption[]>;
+    for (const col of RESIZABLE_COLS) options[col] = builtinOptions(COL_FIELD[col]);
+    return options;
+  }, [builtinOptions]);
 
-  const sorted = useMemo(() => [...filtered].sort((a, b) => {
-    let cmp = 0;
-    switch (sortCol) {
-      case 'resource':  cmp = (a.resourceName || '').localeCompare(b.resourceName || ''); break;
-      case 'rule':      cmp = a.policyName.localeCompare(b.policyName); break;
-      case 'category':  cmp = a.category.localeCompare(b.category); break;
-      case 'severity':  cmp = SEV_ORDER[a.severity] - SEV_ORDER[b.severity]; break;
-      case 'firstSeen': cmp = a.firstSeenAt.localeCompare(b.firstSeenAt); break;
-    }
-    return sortDir === 'asc' ? cmp : -cmp;
-  }), [filtered, sortCol, sortDir]);
+  // The returned columns on offer, and the values each one holds, come from the findings that pass
+  // every filter except the ones on returned columns, so picking a value never hides the others.
+  const rowPool = useMemo(
+    () => globalPool(rowFilters.map(f => f.field)),
+    [globalPool, rowFilters],
+  );
+  const columnChoices = useMemo(() => {
+    const paths = new Set(rowLeafPaths(rowPool));
+    for (const picked of columns) paths.add(picked);
+    return [...paths].sort((a, b) => a.localeCompare(b)).map(path => ({ value: path, label: path }));
+  }, [rowPool, columns]);
+  const returnedOptions = useCallback(
+    (path: string): ChecklistOption[] => rowFieldOptions(rowPool, filters, path).map(o => ({ value: o.value, label: o.value, count: o.count })),
+    [rowPool, filters],
+  );
+  const returnedSelected = useCallback((path: string) => new Set(filterValues(filters, rowField(path))), [filters]);
+
+  const addFilterFields = useMemo<AddFilterField[]>(() => [
+    ...ADD_FILTER_BUILTINS.map(field => ({ field, label: FIELD_LABEL[field] })),
+    ...columnChoices.map(c => ({ field: rowField(c.value), label: fieldLabel(rowField(c.value)) })),
+  ], [columnChoices, fieldLabel]);
+  const addFilterOptions = useCallback(
+    (field: ViewField): ChecklistOption[] => (isRowField(field) ? returnedOptions(rowPath(field)) : builtinOptions(field)),
+    [builtinOptions, returnedOptions],
+  );
+  const chips = useMemo<FilterChip[]>(() => filters
+    .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
+    .flatMap(f => f.values.map(value => ({ field: f.field, value, fieldLabel: fieldLabel(f.field), valueLabel: isRowField(f.field) ? value : valueLabel(f.field, value) }))),
+  [filters, lockedCategory, fieldLabel, valueLabel]);
 
   // Global stats — respects every active filter (subscription/RG/location/tags/rule/search/
   // category) except severity and status themselves, so the pills stay a meaningful, stable
   // reference point to toggle from rather than one severity/status selection zeroing out the rest.
-  const statsPool = useMemo(
-    () => data.findings.filter(f => passesGlobalFilters(f, new Set(['severity', 'status']))),
-    [data.findings, passesGlobalFilters],
-  );
+  // The Resource and First seen funnels pick single findings out, so they are left out as well.
+  const statsPool = useMemo(() => globalPool(['severity', 'status', 'resourceName', 'firstSeen']), [globalPool]);
 
-  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo), [statsPool, rangeFrom, rangeTo]);
+  const stats = useMemo(() => summarizeFindings(statsPool, rangeFrom, rangeTo, kinds), [statsPool, rangeFrom, rangeTo, kinds]);
 
   const suppressedCount = useMemo(
     () => data.findings.filter(f => (categoryFilter.size === 0 || categoryFilter.has(f.category)) && suppressedFps.has(f.fingerprint)).length,
     [data.findings, categoryFilter, suppressedFps],
   );
 
-  // Each dropdown counts from every filter except its own (facetPool), so its counts match the
-  // table, and picking one Resource Group never removes the other Resource Groups from its list.
+  // Each dropdown counts from every filter except its own, so its counts match the table, and
+  // picking one Resource Group never removes the other Resource Groups from its list.
   const subOptions = useMemo(() => {
-    return buildMetaOptions(facetPool(data.findings, filterState, 'subscription'), f => f.subscriptionId)
+    return buildMetaOptions(globalPool(['subscription']), f => f.subscriptionId)
       .map(o => ({ ...o, label: subNames[o.value] ?? o.value }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [data.findings, filterState, subNames]);
+  }, [globalPool, subNames]);
   const rgOptions = useMemo(
-    () => buildMetaOptions(facetPool(data.findings, filterState, 'resourceGroup'), f => f.resourceGroup),
-    [data.findings, filterState],
+    () => buildMetaOptions(globalPool(['resourceGroup']), f => f.resourceGroup),
+    [globalPool],
   );
   const locOptions = useMemo(
-    () => buildMetaOptions(facetPool(data.findings, filterState, 'location'), f => f.location),
-    [data.findings, filterState],
+    () => buildMetaOptions(globalPool(['location']), f => f.location),
+    [globalPool],
   );
   const tagOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const f of facetPool(data.findings, filterState, 'tags')) for (const t of f.ruleTags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const f of globalPool(['tags'])) for (const t of f.ruleTags) counts.set(t, (counts.get(t) ?? 0) + 1);
     return [...counts.entries()].map(([value, count]) => ({ value, label: value, count })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [data.findings, filterState]);
+  }, [globalPool]);
 
   // By-rule pivot. The status filter decides which rules are listed and which findings expand
   // under each; the Open/New/Fixed numbers are counted with every filter except status, so a
   // rule's Open count is the same whatever window or status is picked.
   const ruleRows = useMemo(() => {
-    const counts = countFindingsByRule(
-      data.findings.filter(f => passesGlobalFilters(f, new Set(['status'])) && passesColFilters(f)),
-      rangeFrom, rangeTo,
-    );
+    const counts = countFindingsByRule(globalPool(['status']), rangeFrom, rangeTo, kinds);
     const map = new Map<string, {
       ruleId: string; name: string; category: string; severity: Severity; disabled: boolean;
       open: number; new: number; fixed: number; findings: ExplorerFinding[];
@@ -535,10 +626,13 @@ export function FindingsExplorerClient({
       e.findings.push(f);
     }
     return [...map.values()].sort((a, b) => b.open - a.open || b.fixed - a.fixed);
-  }, [data.findings, filtered, passesGlobalFilters, passesColFilters, rangeFrom, rangeTo]);
+  }, [filtered, globalPool, rangeFrom, rangeTo, kinds]);
 
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
-  const paginated = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // Grouped, the page is a page of top-level groups; flat, a page of findings.
+  const currentPage = grouped?.page ?? result.page;
+  const totalPages = grouped?.pageCount ?? result.pageCount;
+  const pageIndex = currentPage - 1;
+  const paginated = result.items;
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds(prev => toggleInSet(prev, id));
@@ -546,30 +640,45 @@ export function FindingsExplorerClient({
   const toggleExpandRule = useCallback((id: string) => {
     setExpandedRules(prev => toggleInSet(prev, id));
   }, []);
-  const toggleSeverity = useCallback((sev: Severity) => {
-    setSeverityFilter(prev => toggleInSet(prev, sev));
-    resetPage();
-  }, [resetPage]);
-  const toggleSetFilter = useCallback((setter: Dispatch<SetStateAction<Set<string>>>, value: string) => {
-    setter(prev => toggleInSet(prev, value));
-    resetPage();
-  }, [resetPage]);
-  const handleSort = useCallback((col: SortCol) => {
-    setSortCol(prev => {
-      if (prev === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-      else setSortDir('asc');
-      return col;
+  const handleSort = useCallback((field: ViewField) => {
+    setSort(prev => {
+      const current = prev ?? DEFAULT_SORT;
+      const next: ViewSort = current.field === field
+        ? { field, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+        : { field, dir: 'asc' };
+      return next.field === DEFAULT_SORT.field && next.dir === DEFAULT_SORT.dir ? null : next;
     });
     resetPage();
   }, [resetPage]);
+  // Picking a column adds it at the end, so columns read in the order they were chosen. Dropping one
+  // takes its sort with it; a filter on it stays, as a chip.
+  const toggleColumn = useCallback((path: string) => {
+    if (columns.includes(path)) {
+      setColumns(columns.filter(c => c !== path));
+      setSort(prev => (prev?.field === rowField(path) ? null : prev));
+    } else {
+      setColumns([...columns, path]);
+    }
+    resetPage();
+  }, [columns, resetPage]);
 
-  const colFiltersActive = Object.values(colFilters).some(s => (s?.size ?? 0) > 0);
-  const hasActiveFilter = (!lockedCategory && categoryFilter.size > 0) || severityFilter.size > 0 || statusFilter !== 'open'
-    || policyFilter.size > 0 || subFilter.size > 0 || rgFilter.size > 0 || locFilter.size > 0 || tagFilter.size > 0 || search !== '' || colFiltersActive;
+  // A new grouping starts from the first page with every group closed, since the old groups are gone.
+  const changeGroupBy = useCallback((next: ViewField[]) => {
+    setGroupBy(next);
+    setExpandedGroups(new Set());
+    setGroupPages(new Map());
+    resetPage();
+  }, [resetPage]);
+  const changeGroupSort = useCallback((next: GroupSort) => {
+    setGroupSort(next);
+    resetPage();
+  }, [resetPage]);
+  const toggleGroup = useCallback((key: string) => setExpandedGroups(prev => toggleInSet(prev, key)), []);
+
+  const hasActiveFilter = filters.some(f => f.values.length > 0 && !(lockedCategory && f.field === 'category')) || search !== '';
   const clearFilters = useCallback(() => {
-    setCategoryFilter(lockedCategory ? new Set([lockedCategory]) : new Set()); setSeverityFilter(new Set()); setStatusFilter('open');
-    setPolicyFilter(new Set()); setSubFilter(new Set()); setRgFilter(new Set()); setLocFilter(new Set()); setTagFilter(new Set());
-    setSearch(''); setColFilters({}); resetPage();
+    setFilters(lockedCategory ? [{ field: 'category', values: [lockedCategory] }] : []);
+    setSearch(''); resetPage();
   }, [resetPage, lockedCategory]);
 
   // Scoped to whichever category is actually active — the locked prop (embedded/single-category
@@ -594,8 +703,43 @@ export function FindingsExplorerClient({
     // Pruning a selection made stale by an external category change, not deriving it from props —
     // legitimate effect setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (next.size !== policyFilter.size) setPolicyFilter(next);
-  }, [availablePolicyOptions, policyFilter]);
+    if (next.size !== policyFilter.size) setValues('rule', [...next]);
+  }, [availablePolicyOptions, policyFilter, setValues]);
+
+  // URL sync (page mode only). `viewToSearchParams` is the one writer of every param
+  // `viewFromSearchParams` reads, so a deep link survives the first render instead of being erased
+  // when router.replace rewrites the whole query string from current state. A locked category is
+  // the page's own, not the viewer's, so it is not written.
+  const urlView = useMemo<View>(() => ({
+    ...findingView,
+    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
+    page: currentPage,
+  }), [findingView, lockedCategory, currentPage]);
+  const onUrlWrite = savedViews?.onUrlWrite;
+  const hasSavedViews = !!savedViews;
+  const urlQueryFor = useCallback((viewId: string | null) => (
+    viewToSearchParams(urlView, hasSavedViews && viewId ? { ...extraParams, [OPEN_VIEW_PARAM]: viewId } : extraParams).toString()
+  ), [urlView, extraParams, hasSavedViews]);
+  const writeUrl = useCallback((query: string) => {
+    onUrlWrite?.(query);
+    router.replace(`${basePath}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [router, basePath, onUrlWrite]);
+  const urlQuery = urlQueryFor(openViewId);
+  useEffect(() => {
+    if (mode !== 'page') return;
+    writeUrl(urlQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, urlQuery, basePath]);
+  // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
+  const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
+
+  // What a saved view keeps: the View without the page, which is where the viewer happens to be
+  // rather than part of what they set up.
+  const savedViewQuery = useMemo(() => viewToSearchParams({
+    ...findingView,
+    filters: filtersWithoutLockedCategory(findingView.filters, lockedCategory),
+    page: 1,
+  }).toString(), [findingView, lockedCategory]);
 
   async function handleSuppress(finding: ExplorerFinding, reason: string, expiresAt?: string) {
     setSuppressionErrors(prev => { if (!prev.has(finding.fingerprint)) return prev; const next = new Map(prev); next.delete(finding.fingerprint); return next; });
@@ -615,7 +759,7 @@ export function FindingsExplorerClient({
 
   const resourceFlexible = isFlexible('resource');
   const resourceTrack = resourceFlexible ? `minmax(${colWidths.resource}px, 1fr)` : `${colWidths.resource}px`;
-  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px 28px`;
+  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
   // While the Resource column is still flexing to fill the card (default state), the grid should
   // size to 100% of its container so 1fr has room to expand into — forcing max-content here would
   // shrink it back to content width, leaving the table looking squeezed to the left. Once the user
@@ -635,10 +779,224 @@ export function FindingsExplorerClient({
     return (
       <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
         <Search className="mb-4 size-7 text-ink-faint" />
-        <h3 className="mb-1 font-heading text-base font-semibold text-ink">No findings yet</h3>
+        <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
         <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
       </div>
     );
+  }
+
+  // One finding as a row of the list, and its detail when expanded. The flat list and every expanded
+  // group render through here, so a finding looks the same wherever it is listed. `expandKey` is what
+  // its open or closed state is kept under: the fingerprint in the flat list, and one per group
+  // inside a group, so opening a finding under one group leaves its other groups closed.
+  const renderFinding = ({ finding: f, rows }: ViewItem<ExplorerFinding>, expandKey: string = f.fingerprint) => {
+    const isExpanded = expandedIds.has(expandKey);
+    const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
+    const suppression = suppMap.get(f.fingerprint);
+
+    return (
+      <div key={f.fingerprint} className={cn('border-b border-border last:border-0', isExpanded && 'bg-surface-sunken')}>
+        {/* A div, not a button: a returned column can hold a link, and a link may not sit
+            inside a button. The click is a mouse convenience; the chevron at the end of
+            the row is the real button that keyboards and screen readers use. */}
+        <div
+          onClick={() => toggleExpand(expandKey)}
+          className="group grid w-full cursor-pointer items-center gap-x-4 px-5 py-3 text-left transition-colors hover:bg-surface-hover"
+          style={{ gridTemplateColumns: gridTemplate }}
+        >
+          <span className={cn('mx-auto mt-0.5 size-2 shrink-0', sCfg.dot)} title={sCfg.label} />
+
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-ink">{findingSubject(f)}</p>
+            <p className="truncate text-xs text-ink">{f.kind === 'activity' ? 'Activity pattern' : f.resourceType}</p>
+          </div>
+
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p className="truncate text-xs text-ink" title={f.policyName}>{f.policyName}</p>
+            {f.ruleDisabled && <span className="label-grid shrink-0 border border-border bg-surface px-1 py-0.5">Off</span>}
+          </div>
+
+          <CategoryBadge id={f.category} categories={data.categories} />
+          <SeverityBadge severity={f.severity} />
+          <span className="text-xs tabular-nums text-ink-muted">{shortDate(f.firstSeenAt)}</span>
+
+          {columns.map(path => <ReturnedCell key={path} rows={rows} path={path} />)}
+
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${findingSubject(f)}`}
+            onClick={e => { e.stopPropagation(); toggleExpand(expandKey); }}
+            className="flex size-6 shrink-0 items-center justify-center text-ink-faint outline-none transition-colors hover:text-ink group-hover:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          >
+            {isExpanded ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="space-y-4 border-t border-border px-8 pb-5 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('inline-flex items-center gap-1.5 border px-2 py-1 text-xs font-medium', sCfg.chip)}>
+                <span className={cn('size-1.5', sCfg.dot)} />
+                {sCfg.label}
+              </span>
+              <span className="text-xs text-ink-muted">First seen {shortDate(f.firstSeenAt)} · Last seen {shortDate(f.lastSeenAt)} · Seen {f.timesSeen}×</span>
+            </div>
+
+            {/* The trailing "Learn more" URL on pack rules is split out and linked,
+                never left as raw text in the description. */}
+            {f.description && (() => {
+              const { text, url } = splitLearnMore(f.description);
+              return (
+                <div>
+                  <p className="text-sm text-ink-2">{text}</p>
+                  {url && (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink underline decoration-ink-faint underline-offset-4 hover:decoration-ink"
+                    >
+                      Read the official guidance
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <p className="label-grid mb-2">{f.kind === 'activity' ? 'Activity pattern' : 'Resource properties'}</p>
+              {f.kind === 'activity' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                  <PropertyCard label="Pattern" value={f.dimensionKey} mono copyLabel="pattern" />
+                  <PropertyCard label="Subscription" value={f.subscriptionId} />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    <PropertyCard label="Resource name" value={findingSubject(f)} copyLabel="resource name" />
+                    <PropertyCard label="Type" value={f.resourceType} />
+                    <PropertyCard label="Resource Group" value={f.resourceGroup} />
+                    <PropertyCard label="Subscription" value={f.subscriptionId} />
+                    <PropertyCard label="Location" value={f.location} />
+                  </div>
+                  {/* Full-width row — the resource ID is always long, squeezing it into a
+                      half-width grid cell forces a tall, hard-to-read wrap. */}
+                  <PropertyCard label="Resource ID" value={f.resourceId} mono copyLabel="resource ID" />
+                </>
+              )}
+            </div>
+
+            {/* Resource data: projected columns from the policy query, one block per
+                row. Run History (findings-table.tsx) renders the same component, so a
+                finding shows the same rows whichever tab it's opened from. */}
+            <FindingRowsDetail finding={{ evidence: rows[0] ?? f.evidence, rows }} />
+
+            {/* Remediation is generated per rule, not authored per rule. Until that
+                ships, say why the block is empty rather than hiding it. */}
+            {!f.remediationSteps?.length && (
+              <div>
+                <p className="label-grid mb-2">Remediation</p>
+                <div className="flex items-start gap-2.5 border border-dashed border-border bg-surface-sunken px-4 py-3">
+                  <Sparkles className="mt-px size-4 shrink-0 text-ink-faint" />
+                  <div>
+                    <p className="text-[13px] font-medium text-ink">Guided fix coming soon</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      RuleBeat will generate remediation for this finding from the rule that detected it, so it fits your resource rather than a generic template.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {f.remediationSteps?.length > 0 && (
+              <div>
+                <p className="label-grid mb-2">Remediation</p>
+                {/* Shared code block, not a hand-built dark slate panel. The old one
+                    was the same colour whatever the theme, so in light mode it was a
+                    black card dropped into a white page and in dark mode it was the
+                    only thing on screen darker than the page itself. */}
+                <div className="space-y-2">
+                  {f.remediationSteps.map((step, si) => (
+                    <CodeBlock
+                      key={si}
+                      title={step.type}
+                      actions={<span className="text-xs text-ink-muted">{step.title}</span>}
+                      code={step.content.replace(/["']?<resource-id>["']?/g, `"${f.resourceId}"`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(canSuppress || suppression) && (
+              <div className="border-t border-border pt-3">
+                <SuppressionPanel
+                  finding={f}
+                  suppression={suppression}
+                  canSuppress={canSuppress}
+                  error={suppressionErrors.get(f.fingerprint)}
+                  onSuppress={handleSuppress}
+                  onUnsuppress={handleUnsuppress}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // The groups of a grouped list. A header is a real button that opens its group. An open group that
+  // has child groups lists them one step further in; an open last-level group lists its findings,
+  // 50 to a page with its own pager, so a retirement affecting 2,000 resources never renders 2,000
+  // rows. Nesting indents the header's content only, so the findings underneath keep their cells
+  // under the shared column header. `path` is the fields and values above, so the same value under
+  // two parents is two groups.
+  function renderGroups(groups: ViewGroup<ExplorerFinding>[], depth = 0, path: GroupPath = []): React.ReactNode {
+    return groups.map(group => {
+      const groupPath = [...path, group.field, group.value];
+      const key = groupStateKey(groupPath);
+      const isOpen = expandedGroups.has(key);
+      const label = group.value === null ? NO_VALUE_LABEL : isRowField(group.field) ? group.value : valueLabel(group.field, group.value);
+      const itemsPage = group.items.length > 0 ? pageGroupItems(group.items, groupPages.get(key) ?? 1) : null;
+      return (
+        <div key={key}>
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            onClick={() => toggleGroup(key)}
+            className="flex w-full items-center gap-3 border-b border-border px-5 py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          >
+            <span className="flex min-w-0 flex-1 items-center gap-3" style={{ paddingLeft: `${depth * GROUP_INDENT_REM}rem` }}>
+              {isOpen ? <ChevronDown className="size-4 shrink-0 text-ink-faint" aria-hidden="true" /> : <ChevronRight className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />}
+              <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', group.value === null ? 'text-ink-2' : 'text-ink')} title={label}>{label}</span>
+            </span>
+            <span className="shrink-0 text-xs tabular-nums text-ink-2">
+              {group.resourceCount} {group.resourceCount === 1 ? 'resource' : 'resources'}, {group.rowCount} {group.rowCount === 1 ? 'row' : 'rows'}
+            </span>
+          </button>
+          {isOpen && (
+            <div>
+              {group.groups.length > 0 && renderGroups(group.groups, depth + 1, groupPath)}
+              {itemsPage && (
+                <>
+                  <div>
+                    {itemsPage.items.map(item => renderFinding(item, groupStateKey([...groupPath, item.finding.fingerprint])))}
+                  </div>
+                  <FindingsPager
+                    page={itemsPage.page}
+                    pageCount={itemsPage.pageCount}
+                    onPage={next => setGroupPages(prev => new Map(prev).set(key, next))}
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    });
   }
 
   return (
@@ -697,8 +1055,8 @@ export function FindingsExplorerClient({
               aria-pressed={clickable ? isOn : undefined}
               disabled={!clickable}
               onClick={() => {
-                if (s.key === 'new') setStatusFilter(v => v === 'new' ? 'open' : 'new');
-                else if (s.key === 'fixed') setStatusFilter(v => v === 'fixed' ? 'open' : 'fixed');
+                if (s.key === 'new') setStatus(statusFilter === 'new' ? 'open' : 'new');
+                else if (s.key === 'fixed') setStatus(statusFilter === 'fixed' ? 'open' : 'fixed');
                 resetPage();
               }}
               className={cn(
@@ -726,7 +1084,7 @@ export function FindingsExplorerClient({
           <button
             type="button"
             aria-pressed={categoryFilter.size === 0}
-            onClick={() => { setCategoryFilter(new Set()); resetPage(); }}
+            onClick={() => clearField('category')}
             className={cn(TAB_CLS, categoryFilter.size === 0 ? TAB_ON : TAB_OFF)}
           >
             All categories
@@ -736,7 +1094,7 @@ export function FindingsExplorerClient({
               key={cat.id}
               type="button"
               aria-pressed={categoryFilter.has(cat.id)}
-              onClick={() => { setCategoryFilter(prev => toggleInSet(prev, cat.id)); resetPage(); }}
+              onClick={() => toggleValue('category', cat.id)}
               className={cn(TAB_CLS, categoryFilter.has(cat.id) ? TAB_ON : TAB_OFF)}
             >
               {cat.label}
@@ -765,44 +1123,32 @@ export function FindingsExplorerClient({
         {/* The severity filters sit flush as one segmented control rather than five separate
             buttons, so they read as a single choice. Selected is an ink fill: this is a filter,
             not an alert, and five red buttons would out-shout the findings themselves. */}
-        <div className="flex shrink-0 items-center border border-rule-strong">
-          {EXPLORER_SEVERITIES.map((sev, i) => (
-            <button
-              key={sev}
-              type="button"
-              aria-pressed={severityFilter.has(sev)}
-              onClick={() => toggleSeverity(sev)}
-              className={cn(
-                'h-9 px-3 text-xs font-medium capitalize transition-colors outline-none',
-                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-                i > 0 && 'border-l border-rule-strong',
-                severityFilter.has(sev)
-                  ? 'bg-ink text-surface'
-                  : 'bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink',
-              )}
-            >
-              {sev}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Severity"
+          className="shrink-0"
+          optionClassName="capitalize"
+          options={SEVERITY_OPTIONS}
+          isOn={sev => severityFilter.has(sev)}
+          onSelect={sev => toggleValue('severity', sev)}
+        />
 
         <Select
           className="w-44 shrink-0"
           aria-label="Status"
           value={statusFilter}
-          onValueChange={v => { setStatusFilter(v as StatusFilterValue); resetPage(); }}
+          onValueChange={v => setStatus(v as StatusFilterValue)}
           options={statusOptions}
         />
 
         <div className="h-6 w-px shrink-0 bg-border" />
 
-        {view === 'resource' && (
+        {layout === 'resource' && (
           <ChecklistDropdown
             label="Rule"
             options={availablePolicyOptions.map(p => ({ value: p.id, label: p.name }))}
             selected={policyFilter}
-            onToggle={v => toggleSetFilter(setPolicyFilter, v)}
-            onClear={() => { setPolicyFilter(new Set()); resetPage(); }}
+            onToggle={v => toggleValue('rule', v)}
+            onClear={() => clearField('rule')}
           />
         )}
         {tagOptions.length > 0 && (
@@ -810,8 +1156,8 @@ export function FindingsExplorerClient({
             label="Tags"
             options={tagOptions}
             selected={tagFilter}
-            onToggle={v => toggleSetFilter(setTagFilter, v)}
-            onClear={() => { setTagFilter(new Set()); resetPage(); }}
+            onToggle={v => toggleValue('tags', v)}
+            onClear={() => clearField('tags')}
           />
         )}
 
@@ -821,43 +1167,85 @@ export function FindingsExplorerClient({
           label="Subscription"
           options={subOptions}
           selected={subFilter}
-          onToggle={v => toggleSetFilter(setSubFilter, v)}
-          onClear={() => { setSubFilter(new Set()); resetPage(); }}
+          onToggle={v => toggleValue('subscription', v)}
+          onClear={() => clearField('subscription')}
         />
         <ChecklistDropdown
           label="Resource Group"
           options={rgOptions}
           selected={rgFilter}
-          onToggle={v => toggleSetFilter(setRgFilter, v)}
-          onClear={() => { setRgFilter(new Set()); resetPage(); }}
+          onToggle={v => toggleValue('resourceGroup', v)}
+          onClear={() => clearField('resourceGroup')}
         />
         <ChecklistDropdown
           label="Location"
           options={locOptions}
           selected={locFilter}
-          onToggle={v => toggleSetFilter(setLocFilter, v)}
-          onClear={() => { setLocFilter(new Set()); resetPage(); }}
+          onToggle={v => toggleValue('location', v)}
+          onClear={() => clearField('location')}
         />
 
+        <AddFilter
+          fields={addFilterFields}
+          optionsFor={addFilterOptions}
+          selectedFor={field => new Set(filterValues(filters, field))}
+          onToggle={toggleValue}
+          onClear={clearField}
+        />
+
+        {layout === 'resource' && columnChoices.length > 0 && (
+          <ChecklistDropdown
+            label="Columns"
+            options={columnChoices}
+            selected={new Set(columns)}
+            onToggle={toggleColumn}
+            onClear={() => { setColumns([]); setSort(prev => (prev && isRowField(prev.field) ? null : prev)); resetPage(); }}
+          />
+        )}
+
+        {layout === 'resource' && (
+          <GroupBy
+            fields={addFilterFields}
+            groupBy={groupBy}
+            groupSort={groupSort}
+            fieldLabel={fieldLabel}
+            onGroupBy={changeGroupBy}
+            onGroupSort={changeGroupSort}
+          />
+        )}
+
+        {mode === 'page' && savedViews && (
+          <SavedViewsMenu
+            tab={savedViews.tab}
+            canWrite={savedViews.canWrite}
+            openId={openViewId}
+            onOpenIdChange={setOpenViewId}
+            onOpen={savedViews.onOpen}
+            currentQuery={savedViewQuery}
+          />
+        )}
+
         {/* View toggle */}
+        {!hideRuleView && (
         <div className="ml-auto flex h-9 items-center border border-rule-strong">
           <button
             type="button"
-            aria-pressed={view === 'resource'}
-            onClick={() => setView('resource')}
-            className={cn(VIEW_TAB_CLS, view === 'resource' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
+            aria-pressed={layout === 'resource'}
+            onClick={() => setLayout('resource')}
+            className={cn(VIEW_TAB_CLS, layout === 'resource' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
           >
             <Rows3 className="size-3.5" /> By resource
           </button>
           <button
             type="button"
-            aria-pressed={view === 'rule'}
-            onClick={() => setView('rule')}
-            className={cn(VIEW_TAB_CLS, 'border-l border-rule-strong', view === 'rule' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
+            aria-pressed={layout === 'rule'}
+            onClick={() => setLayout('rule')}
+            className={cn(VIEW_TAB_CLS, 'border-l border-rule-strong', layout === 'rule' ? 'bg-ink text-surface' : VIEW_TAB_OFF)}
           >
             <LayoutList className="size-3.5" /> By rule
           </button>
         </div>
+        )}
 
         {suppressedCount > 0 && (
           <Button variant="outline" size="sm" onClick={() => setShowSuppressed(s => !s)}>
@@ -872,10 +1260,12 @@ export function FindingsExplorerClient({
           </Button>
         )}
 
-        <ExportButton findings={filtered} />
+        <ExportButton findings={result.matched.map(({ finding, rows }) => ({ ...finding, rows, evidence: rows[0] ?? finding.evidence }))} />
       </div>
 
-      {view === 'rule' ? (
+      <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
+
+      {layout === 'rule' ? (
         /* ---- By-rule pivot ---- */
         /* No height cap. This was `max-h-[65vh]`, which put a second scrollbar inside the
            page's own and cut the table off at two thirds of the screen no matter how tall
@@ -924,7 +1314,7 @@ export function FindingsExplorerClient({
                     <div className="flex justify-end pb-2">
                       <Button
                         variant="ghost" size="xs"
-                        onClick={() => { setPolicyFilter(new Set([r.ruleId])); setView('resource'); resetPage(); }}
+                        onClick={() => { setValues('rule', [r.ruleId]); setLayout('resource'); }}
                       >
                         Filter to this rule
                       </Button>
@@ -934,7 +1324,7 @@ export function FindingsExplorerClient({
                       return (
                         <div key={f.fingerprint} className="flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-surface-hover">
                           <span className={cn('size-1.5 shrink-0', sCfg.dot)} title={sCfg.label} />
-                          <span className="min-w-0 flex-1 truncate text-ink">{subjectLabel(f)}</span>
+                          <span className="min-w-0 flex-1 truncate text-ink">{findingSubject(f)}</span>
                           <span className="shrink-0 text-ink-muted">{shortDate(f.lastSeenAt)}</span>
                         </div>
                       );
@@ -951,17 +1341,17 @@ export function FindingsExplorerClient({
         <div className="bg-surface">
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
             <h3 className="title-grid">
-              {sorted.length} {sorted.length === 1 ? 'finding' : 'findings'}
+              {result.total} {result.total === 1 ? 'finding' : 'findings'}
             </h3>
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5">
-                <span className="mr-1 text-xs tabular-nums text-ink-muted">Page {page + 1}/{totalPages}</span>
+                <span className="mr-1 text-xs tabular-nums text-ink-muted">Page {pageIndex + 1}/{totalPages}</span>
                 <Button variant="outline" size="icon-xs" title="Previous page"
-                  onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
+                  onClick={() => setPage(Math.max(0, pageIndex - 1))} disabled={pageIndex === 0}>
                   <ChevronLeft />
                 </Button>
                 <Button variant="outline" size="icon-xs" title="Next page"
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>
+                  onClick={() => setPage(Math.min(totalPages - 1, pageIndex + 1))} disabled={pageIndex >= totalPages - 1}>
                   <ChevronRight />
                 </Button>
               </div>
@@ -977,255 +1367,68 @@ export function FindingsExplorerClient({
               <div key={col} className="relative flex items-center gap-1 min-w-0 pr-2">
                 <button
                   type="button"
-                  onClick={() => handleSort(col)}
+                  onClick={() => handleSort(COL_FIELD[col])}
                   className={cn(
                     'flex min-w-0 items-center gap-1 transition-colors',
                     // Not `label-grid text-ink` — that utility sets its own colour and the two
                     // would tie on specificity. The strong variant is its own utility.
-                    sortCol === col ? 'label-grid-strong' : 'label-grid hover:text-ink',
+                    activeSort.field === COL_FIELD[col] ? 'label-grid-strong' : 'label-grid hover:text-ink',
                   )}
                 >
                   <span className="truncate">{COL_LABEL[col]}</span>
-                  <SortIcon col={col} active={sortCol} dir={sortDir} />
+                  <SortIcon field={COL_FIELD[col]} active={activeSort.field} dir={activeSort.dir} />
                 </button>
                 <ColumnFilterIcon
                   label={COL_LABEL[col]}
                   options={colOptions[col]}
-                  selected={colFilters[col] ?? new Set()}
-                  onToggle={v => toggleColFilter(col, v)}
-                  onClear={() => clearColFilter(col)}
+                  selected={valueSets[COL_FIELD[col]]}
+                  onToggle={v => toggleValue(COL_FIELD[col], v)}
+                  onClear={() => clearField(COL_FIELD[col])}
                 />
                 <ColumnResizeHandle onMouseDown={startResize(col)} />
               </div>
             ))}
+            {columns.map(path => {
+              const field = rowField(path);
+              return (
+                <div key={path} className="relative flex min-w-0 items-center gap-1 pr-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSort(field)}
+                    title={path}
+                    className={cn(
+                      'flex min-w-0 items-center gap-1 transition-colors',
+                      activeSort.field === field ? 'label-grid-strong' : 'label-grid hover:text-ink',
+                    )}
+                  >
+                    <span className="truncate">{path}</span>
+                    <SortIcon field={field} active={activeSort.field} dir={activeSort.dir} />
+                  </button>
+                  <ColumnFilterIcon
+                    label={path}
+                    options={returnedOptions(path)}
+                    selected={returnedSelected(path)}
+                    onToggle={v => toggleValue(field, v)}
+                    onClear={() => clearField(field)}
+                  />
+                </div>
+              );
+            })}
             <span />
           </div>
 
-          {paginated.length === 0 ? (
+          {(grouped ? grouped.groupTotal === 0 : paginated.length === 0) ? (
             <div className="py-16 text-center text-sm text-ink-muted">No findings match your filters</div>
           ) : (
             <div style={{ minWidth: rowMinWidth }}>
-              {paginated.map(f => {
-                const isExpanded = expandedIds.has(f.fingerprint);
-                const sCfg = STATUS_CFG[getRecencyStatus(f, rangeFrom, rangeTo)];
-                const suppression = suppMap.get(f.fingerprint);
-
-                return (
-                  <div key={f.fingerprint} className={cn('border-b border-border last:border-0', isExpanded && 'bg-surface-sunken')}>
-                    <button
-                      type="button"
-                      aria-expanded={isExpanded}
-                      onClick={() => toggleExpand(f.fingerprint)}
-                      className="group grid w-full items-center gap-x-4 px-5 py-3 text-left transition-colors hover:bg-surface-hover"
-                      style={{ gridTemplateColumns: gridTemplate }}
-                    >
-                      <span className={cn('mx-auto mt-0.5 size-2 shrink-0', sCfg.dot)} title={sCfg.label} />
-
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-ink">{subjectLabel(f)}</p>
-                        <p className="truncate text-xs text-ink">{f.kind === 'activity' ? 'Activity pattern' : f.resourceType}</p>
-                      </div>
-
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <p className="truncate text-xs text-ink" title={f.policyName}>{f.policyName}</p>
-                        {f.ruleDisabled && <span className="label-grid shrink-0 border border-border bg-surface px-1 py-0.5">Off</span>}
-                      </div>
-
-                      <CategoryBadge id={f.category} categories={data.categories} />
-                      <SeverityBadge severity={f.severity} />
-                      <span className="text-xs tabular-nums text-ink-muted">{shortDate(f.firstSeenAt)}</span>
-
-                      <span className="shrink-0 text-ink-faint transition-colors group-hover:text-ink-muted">
-                        {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                      </span>
-                    </button>
-
-                    {isExpanded && (
-                      <div className="space-y-4 border-t border-border px-8 pb-5 pt-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={cn('inline-flex items-center gap-1.5 border px-2 py-1 text-xs font-medium', sCfg.chip)}>
-                            <span className={cn('size-1.5', sCfg.dot)} />
-                            {sCfg.label}
-                          </span>
-                          <span className="text-xs text-ink-muted">First seen {shortDate(f.firstSeenAt)} · Last seen {shortDate(f.lastSeenAt)} · Seen {f.timesSeen}×</span>
-                        </div>
-
-                        {/* The trailing "Learn more" URL on pack rules is split out and linked,
-                            never left as raw text in the description. */}
-                        {f.description && (() => {
-                          const { text, url } = splitLearnMore(f.description);
-                          return (
-                            <div>
-                              <p className="text-sm text-ink-2">{text}</p>
-                              {url && (
-                                <a
-                                  href={url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink underline decoration-ink-faint underline-offset-4 hover:decoration-ink"
-                                >
-                                  Read the official guidance
-                                  <ExternalLink className="size-3.5" />
-                                </a>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        <div className="space-y-2">
-                          <p className="label-grid mb-2">{f.kind === 'activity' ? 'Activity pattern' : 'Resource properties'}</p>
-                          {f.kind === 'activity' ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                              <PropertyCard label="Pattern" value={f.dimensionKey} mono copyLabel="pattern" />
-                              <PropertyCard label="Subscription" value={f.subscriptionId} />
-                            </div>
-                          ) : (
-                            <>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                                <PropertyCard label="Resource name" value={subjectLabel(f)} copyLabel="resource name" />
-                                <PropertyCard label="Type" value={f.resourceType} />
-                                <PropertyCard label="Resource Group" value={f.resourceGroup} />
-                                <PropertyCard label="Subscription" value={f.subscriptionId} />
-                                <PropertyCard label="Location" value={f.location} />
-                              </div>
-                              {/* Full-width row — the resource ID is always long, squeezing it into a
-                                  half-width grid cell forces a tall, hard-to-read wrap. */}
-                              <PropertyCard label="Resource ID" value={f.resourceId} mono copyLabel="resource ID" />
-                            </>
-                          )}
-                        </div>
-
-                        {/* Resource data — projected columns from the policy query. Mirrors the
-                            same evidence rendering findings-table.tsx (Run History) uses, so a
-                            finding shows the same detail regardless of which tab it's opened from. */}
-                        {(() => {
-                          const evidence = (f.evidence ?? {}) as Record<string, unknown>;
-                          const isNew = '_rule' in evidence;
-                          const ruleInfo = isNew
-                            ? (evidence._rule as Record<string, unknown> | undefined)
-                            : { field: evidence['field'], operator: evidence['operator'], value: evidence['value'], values: evidence['values'] };
-                          const dataEntries = Object.entries(evidence).filter(([k]) =>
-                            isNew ? k !== '_rule' : !['field', 'operator', 'value', 'values', 'presentTags'].includes(k)
-                          );
-                          if (dataEntries.length === 0 && !(ruleInfo && (ruleInfo['field'] || ruleInfo['operator']))) return null;
-                          return (
-                            <div className="space-y-4">
-                              {dataEntries.length > 0 && (
-                                <div>
-                                  <p className="label-grid mb-2">Resource Data</p>
-                                  <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-1.5">
-                                    {dataEntries.map(([k, v]) => (
-                                      <Fragment key={k}>
-                                        <dt className="shrink-0 pt-0.5 font-mono text-xs text-ink-2">{k}</dt>
-                                        <dd className="break-all font-mono text-xs text-ink">
-                                          {typeof v === 'object' && v !== null
-                                            ? <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(v, null, 2)}</pre>
-                                            : String(v ?? '')}
-                                        </dd>
-                                      </Fragment>
-                                    ))}
-                                  </dl>
-                                </div>
-                              )}
-                              {ruleInfo && Boolean(ruleInfo['field'] || ruleInfo['operator']) && (
-                                <div>
-                                  <p className="label-grid mb-1.5">Violated rule</p>
-                                  <p className="font-mono text-xs text-ink">
-                                    {String(ruleInfo['field'] ?? '')}
-                                    {' '}
-                                    <span className="text-ink">{String(ruleInfo['operator'] ?? '')}</span>
-                                    {ruleInfo['value'] != null && <> <span className="font-medium text-ink">&apos;{String(ruleInfo['value'])}&apos;</span></>}
-                                    {Array.isArray(ruleInfo['values']) && <> [{(ruleInfo['values'] as string[]).map(v => `'${v}'`).join(', ')}]</>}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Remediation is generated per rule, not authored per rule. Until that
-                            ships, say why the block is empty rather than hiding it. */}
-                        {!f.remediationSteps?.length && (
-                          <div>
-                            <p className="label-grid mb-2">Remediation</p>
-                            <div className="flex items-start gap-2.5 border border-dashed border-border bg-surface-sunken px-4 py-3">
-                              <Sparkles className="mt-px size-4 shrink-0 text-ink-faint" />
-                              <div>
-                                <p className="text-[13px] font-medium text-ink">Guided fix coming soon</p>
-                                <p className="mt-0.5 text-xs text-ink-muted">
-                                  RuleBeat will generate remediation for this finding from the rule that detected it, so it fits your resource rather than a generic template.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {f.remediationSteps?.length > 0 && (
-                          <div>
-                            <p className="label-grid mb-2">Remediation</p>
-                            {/* Shared code block, not a hand-built dark slate panel. The old one
-                                was the same colour whatever the theme, so in light mode it was a
-                                black card dropped into a white page and in dark mode it was the
-                                only thing on screen darker than the page itself. */}
-                            <div className="space-y-2">
-                              {f.remediationSteps.map((step, si) => (
-                                <CodeBlock
-                                  key={si}
-                                  title={step.type}
-                                  actions={<span className="text-xs text-ink-muted">{step.title}</span>}
-                                  code={step.content.replace(/["']?<resource-id>["']?/g, `"${f.resourceId}"`)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {(canSuppress || suppression) && (
-                          <div className="border-t border-border pt-3">
-                            <SuppressionPanel
-                              finding={f}
-                              suppression={suppression}
-                              canSuppress={canSuppress}
-                              error={suppressionErrors.get(f.fingerprint)}
-                              onSuppress={handleSuppress}
-                              onUnsuppress={handleUnsuppress}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {grouped ? renderGroups(grouped.groups) : paginated.map(item => renderFinding(item))}
             </div>
           )}
           </div>
         </div>
       )}
 
-      {view === 'resource' && totalPages > 1 && (
-        // The four controls sit flush as one bar rather than as separate floating
-        // buttons, so the group reads as a single control with the page counter in it.
-        <div className="flex items-center justify-center py-2">
-          <div className="flex items-center border border-rule-strong">
-            <Button variant="ghost" size="sm" className="h-8 rounded-none px-3"
-              onClick={() => setPage(0)} disabled={page === 0}>First</Button>
-            <Button variant="ghost" size="icon-sm" className="rounded-none border-l border-rule-strong" title="Previous page"
-              onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
-              <ChevronLeft />
-            </Button>
-            <span className="numeral-grid border-x border-rule-strong px-4 py-1.5 text-xs text-ink-muted">
-              Page {page + 1} of {totalPages}
-            </span>
-            <Button variant="ghost" size="icon-sm" className="rounded-none" title="Next page"
-              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>
-              <ChevronRight />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 rounded-none border-l border-rule-strong px-3"
-              onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}>Last</Button>
-          </div>
-        </div>
-      )}
+      {layout === 'resource' && <FindingsPager page={pageIndex + 1} pageCount={totalPages} onPage={next => setPage(next - 1)} />}
     </div>
   );
 }

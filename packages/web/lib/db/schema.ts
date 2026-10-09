@@ -254,7 +254,8 @@ export const findings = sqliteTable('findings', {
   description: text('description').notNull().default(''),
   recommendation: text('recommendation').notNull().default(''),
   remediationSteps: text('remediation_steps').notNull().default('[]'), // JSON
-  evidence: text('evidence').notNull().default('{}'),                  // JSON, latest sighting
+  evidence: text('evidence').notNull().default('{}'),                  // JSON, latest sighting; the first of the finding's rows
+  evidenceRows: text('evidence_rows'),                                 // JSON array of every row the rule returned for the resource, in query order; null for a finding stored before rows existed
   azurePortalLink: text('azure_portal_link'),
   status: text('status').notNull().default('active'),                  // 'active' | 'fixed' — an 'activity' finding stays 'active' forever; it ages out of a read-time window instead, never transitions to 'fixed'
   firstSeenAt: text('first_seen_at').notNull(),
@@ -270,8 +271,9 @@ export const findingEvents = sqliteTable('finding_events', {
   ruleId: text('rule_id').notNull(),
   category: text('category').notNull(),
   scanId: text('scan_id').notNull(),
-  type: text('type').notNull(),          // 'created' | 'reactivated' | 'resolved' | 'occurred' (spec 034, activity findings)
+  type: text('type').notNull(),          // 'created' | 'reactivated' | 'resolved' | 'occurred' (spec 034, activity findings) | 'row_added' | 'row_removed' (#193, one event per row)
   occurredAt: text('occurred_at').notNull(),
+  rowPayload: text('row_payload'),       // JSON of the row object a 'row_added' / 'row_removed' event is about; null for every other type
 });
 
 export const postureSnapshots = sqliteTable('posture_snapshots', {
@@ -312,6 +314,7 @@ export const notificationChannels = sqliteTable('notification_channels', {
   updatedAt: text('updated_at').notNull(),
   lastNotifiedAt: text('last_notified_at'),
   lastError: text('last_error'),
+  includeAdvisories: integer('include_advisories', { mode: 'boolean' }).notNull().default(false), // Advisory findings are sent only when on
 });
 
 // Per-schedule notification assignments. Each row means "when scheduleId runs, post to channelId
@@ -350,6 +353,7 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
   notifyClaimedAt: text('notify_claimed_at'), // when the current 'sending' claim was taken
   heartbeatAt: text('heartbeat_at'),          // last proof of life from the process running this row
   ownerId: text('owner_id'),                  // lib/instance-id.ts's per-process id
+  changedFindings: text('changed_findings'),  // JSON: { fingerprint, addedRows }[] (#193); null on rows from before the column existed
 });
 
 // One row per delivery attempt sequence (a channel's final outcome for a single run, after retries
@@ -409,4 +413,21 @@ export const queryRuns = sqliteTable('query_runs', {
   savedQueryId: text('saved_query_id'),
   ownerId: text('owner_id').notNull(),
   ranAt: text('ran_at').notNull(),
+});
+
+// A View kept under a name and shared with everyone on the install (ADR 0006). It stores the tab it
+// opens on and the View's own query string exactly as `viewToSearchParams` writes it, so whatever
+// the URL carries is saved without this table knowing the View's shape. The name is unique
+// case-insensitively, checked in the write transaction rather than by an index (as rule and
+// dashboard names are), since an index would turn a clash into a startup failure on an install
+// that already holds two names differing only by case. No SQL-level FK, like every other table here.
+export const savedViews = sqliteTable('saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tab: text('tab').notNull(),                // 'results' | 'advisories'
+  query: text('query').notNull(),            // the View as /scans query params, without `tab`
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: text('updated_at').notNull(),
 });

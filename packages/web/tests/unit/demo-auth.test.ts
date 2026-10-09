@@ -83,7 +83,7 @@ describe('requireRole() in a Demo', () => {
 
     for (const action of [
       'read', 'rules:write', 'rules:delete', 'scans:run', 'schedules:write', 'suppressions:write',
-      'dashboards:write', 'categories:write', 'notifications:manage', 'audit:read',
+      'dashboards:write', 'views:write', 'categories:write', 'notifications:manage', 'audit:read',
     ] as const) {
       expect(await requireRole(action), `expected '${action}' to be allowed`).not.toBeInstanceOf(NextResponse);
     }

@@ -12,7 +12,7 @@ you see them.
 
 ## The widget catalog
 
-<!-- count:widget-types -->Twelve widget types, added from the Add Widget panel:
+<!-- count:widget-types -->Thirteen widget types, added from the Add Widget panel:
 
 | Widget | Shows |
 |---|---|
@@ -28,6 +28,7 @@ you see them.
 | **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against your threshold. |
 | **New vs. Fixed** | Findings first seen against findings fixed, per day. |
 | **Activity Occurrences** | Daily findings from activity rules. Empty until the Log Analytics backend lands. |
+| **Advisories** | Open Advisories with rule, resource, severity and when each was last seen, most severe first and then most recently seen. Advisories are never counted as problems, so this is the one widget that lists them. A row opens the Advisories tab on Scans. |
 
 Widgets showing findings or rules click through to the Scans page with the same filters applied, so
 the list you land on is the list the number counted.

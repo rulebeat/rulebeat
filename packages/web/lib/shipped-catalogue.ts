@@ -80,9 +80,12 @@ export function emptyToNull<T>(value: T[] | null | undefined): T[] | null {
   return value && value.length > 0 ? value : null;
 }
 
-/** What a rule on this backend means: Logs rules report activity, the other two report state. */
-function kindOfBackend(queryBackend: NonNullable<Rule['queryBackend']>): NonNullable<Rule['kind']> {
-  return queryBackend === 'log-analytics' ? 'activity' : 'state';
+/** The kind a definition carries: Logs rules report activity, a rule declared Advisory is an
+ *  Advisory, anything else is a Problem ('state'). A built-in's kind is part of its versioned
+ *  definition (ADR 0005), so a shipped entry, a stored row and a recorded version all read it here. */
+export function definitionKind(queryBackend: NonNullable<Rule['queryBackend']>, declared?: unknown): NonNullable<Rule['kind']> {
+  if (queryBackend === 'log-analytics') return 'activity';
+  return declared === 'advisory' ? 'advisory' : 'state';
 }
 
 function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): ShippedRule {
@@ -100,7 +103,7 @@ function coreToShipped(r: CoreRuleDefinition, versionScheme: VersionScheme): Shi
       category: r.category,
       severity: r.severity,
       queryBackend,
-      kind: r.kind ?? kindOfBackend(queryBackend),
+      kind: definitionKind(queryBackend, r.kind),
       resourceTypes: r.resourceTypes,
       scope: r.scope,
       conditions: r.conditions,
@@ -155,7 +158,7 @@ export function packEntryDefinition(p: Record<string, unknown>): RuleDefinition 
     category: p.category as string,
     severity: p.severity as string,
     queryBackend,
-    kind: kindOfBackend(queryBackend),
+    kind: definitionKind(queryBackend, p.kind),
     resourceTypes: parseMaybeJson<string[]>(p.resourceTypes, []),
     scope: parseMaybeJson<Rule['scope']>(p.scope, { level: 'resource' }),
     conditions,

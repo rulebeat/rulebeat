@@ -23,7 +23,8 @@ import { PACK_LABELS } from '@/lib/pack-labels';
 import { matchesVersionFilter, retiredMessage, versionLabel, type VersionMarker } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
-import type { Category, Rule } from '@/lib/types';
+import type { Category, Rule, RuleKind } from '@/lib/types';
+import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import { isExternalPack, type PackManifestEntry } from './pack-manifest';
 
 // ---- Constants ----
@@ -232,16 +233,17 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [kindFilter, setKindFilter] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set(initialTag ? [initialTag] : []));
   const [versionFilter, setVersionFilter] = useState<Set<string>>(new Set());
 
-  const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'type' | 'tags' | 'category' | 'severity' | 'status'>(
+  const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'type' | 'kind' | 'tags' | 'category' | 'severity' | 'status'>(
     // Rule is the flex column, so every pixel the other five don't take goes to it.
     // With the Rules rail open there are only about 1000px to share, and the name is
     // the one column whose content is genuinely variable — the rest hold a chip or a
     // single word. They were sized well above what they show, which squeezed the names
     // into two lines and left the table looking ragged.
-    { rule: 320, type: 100, tags: 170, category: 120, severity: 100, status: 100 },
+    { rule: 320, type: 100, kind: 100, tags: 170, category: 120, severity: 100, status: 100 },
     { flexCol: 'rule' },
   );
 
@@ -332,14 +334,15 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     return true;
   }, [nav, tagFilter, versionFilter, newerVersions, search, categoryById]);
 
-  type ColKey = 'type' | 'category' | 'severity' | 'status';
+  type ColKey = 'type' | 'kind' | 'category' | 'severity' | 'status';
   const passesColFilters = useCallback((r: Rule, exclude?: ColKey) => {
     if (exclude !== 'type'     && typeFilter.size     > 0 && !typeFilter.has(r.type))                          return false;
+    if (exclude !== 'kind'     && kindFilter.size     > 0 && !kindFilter.has(r.kind ?? 'state'))               return false;
     if (exclude !== 'category' && categoryFilter.size > 0 && !categoryFilter.has(r.category))                  return false;
     if (exclude !== 'severity' && severityFilter.size > 0 && !severityFilter.has(r.severity))                  return false;
     if (exclude !== 'status'   && statusFilter.size   > 0 && !statusFilter.has(r.enabled ? 'enabled' : 'disabled')) return false;
     return true;
-  }, [typeFilter, categoryFilter, severityFilter, statusFilter]);
+  }, [typeFilter, kindFilter, categoryFilter, severityFilter, statusFilter]);
 
   // Visible rows
   const visible = useMemo(
@@ -361,15 +364,16 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     }
     return {
       type: build('type', r => r.type, v => v === 'builtin' ? 'Built-in' : v === 'community' ? 'Community' : 'Custom'),
+      kind: build('kind', r => r.kind ?? 'state', v => KIND_LABEL[v as RuleKind] ?? v),
       category: build('category', r => r.category, v => categoryById.get(v)?.label ?? v),
       severity: build('severity', r => r.severity, v => v.charAt(0).toUpperCase() + v.slice(1)),
       status: build('status', r => r.enabled ? 'enabled' : 'disabled', v => v === 'enabled' ? 'Enabled' : 'Disabled'),
     };
   }, [rules, passesBaseFilters, passesColFilters, categoryById]);
 
-  const hasActiveFilter = search !== '' || tagFilter.size > 0 || versionFilter.size > 0 || typeFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
+  const hasActiveFilter = search !== '' || tagFilter.size > 0 || versionFilter.size > 0 || typeFilter.size > 0 || kindFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
   const clearFilters = useCallback(() => {
-    setSearch(''); setTagFilter(new Set()); setVersionFilter(new Set()); setTypeFilter(new Set());
+    setSearch(''); setTagFilter(new Set()); setVersionFilter(new Set()); setTypeFilter(new Set()); setKindFilter(new Set());
     setCategoryFilter(new Set()); setSeverityFilter(new Set()); setStatusFilter(new Set());
   }, []);
 
@@ -549,7 +553,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
             </Link>
           )}
         </div>
-        <p className="-mt-2 text-xs text-ink-muted">Type, Category, Severity and Status are filterable from the funnel icon in their column header below.</p>
+        <p className="-mt-2 text-xs text-ink-muted">Type, Kind, Category, Severity and Status are filterable from the funnel icon in their column header below.</p>
 
         {/* Gallery stub */}
         {isGallery ? (
@@ -590,6 +594,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                     edge-to-edge by default instead of shrinking to the sum of the other columns. */}
                 <col style={isFlexible('rule') ? undefined : { width: colWidths.rule }} />
                 <col style={{ width: colWidths.type }} />
+                <col style={{ width: colWidths.kind }} />
                 <col style={{ width: colWidths.tags }} />
                 <col style={{ width: colWidths.category }} />
                 <col style={{ width: colWidths.severity }} />
@@ -608,6 +613,13 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       <ColumnFilterIcon label="Type" options={colOptions.type} selected={typeFilter} onToggle={v => toggleSetValue(setTypeFilter, v)} onClear={() => setTypeFilter(new Set())} />
                     </span>
                     <ColumnResizeHandle onMouseDown={startResize('type')} />
+                  </TableHead>
+                  <TableHead className="relative">
+                    <span className="flex items-center gap-1">
+                      Kind
+                      <ColumnFilterIcon label="Kind" options={colOptions.kind} selected={kindFilter} onToggle={v => toggleSetValue(setKindFilter, v)} onClear={() => setKindFilter(new Set())} />
+                    </span>
+                    <ColumnResizeHandle onMouseDown={startResize('kind')} />
                   </TableHead>
                   <TableHead className="relative">
                     Tags
@@ -639,7 +651,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
               </TableHeader>
               <TableBody>
                 {visible.length === 0 ? (
-                  <TableEmpty colSpan={7}>
+                  <TableEmpty colSpan={8}>
                     {hasActiveFilter
                       ? 'No rules match your filters.'
                       : 'No rules in this section yet.'}
@@ -739,6 +751,16 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                           </button>
                         ))}
                       </div>
+                    </TableCell>
+
+                    {/* Kind */}
+                    <TableCell className="py-3">
+                      <span
+                        title={KIND_DESCRIPTION[rule.kind ?? 'state']}
+                        className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
+                      >
+                        {KIND_LABEL[rule.kind ?? 'state']}
+                      </span>
                     </TableCell>
 
                     {/* Category — same component as every other table, so the mark and spacing

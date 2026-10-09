@@ -31,6 +31,20 @@ scheduled run cannot move rules it did not touch. The Rules tab shows each rule'
 chip: "not yet run", "query failed", "result capped", "no resource id"
 ([`how-it-works.md`](how-it-works.md#one-outcome-per-rule)).
 
+## Advisory rules are not counted
+
+A rule's **Kind** is Problem or Advisory (a Log Analytics rule is always Activity). An Advisory rule
+reports something worth knowing that is not a misconfiguration to fix now, for example a VM size
+Azure is retiring. Its findings are kept and tracked like any other, but they are left out of every
+number on this page: the posture ring, the rule states above, the Results tiles and severity
+breakdown, the dashboard widgets and the daily snapshots. They
+are listed on the Advisories tab instead. The Rules tab still shows how many resources an Advisory rule affects. You choose the kind of a custom rule; a built-in rule's kind is
+set by RuleBeat and changes only with a new version of the rule. Switching a rule between Problem
+and Advisory moves its existing findings with it and keeps their age and suppressions. As with Activity findings, the open
+findings line on the trend chart can step once on the day a rule is switched, because earlier days
+were counted the old way and are not rewritten. Advisory findings are sent only to notification channels that turn on Include advisories
+([`notifications.md`](notifications.md)).
+
 ## Why the number moves when your estate did not
 
 Enabling or disabling rules changes Y, and newly enabled rules are unknown until their first

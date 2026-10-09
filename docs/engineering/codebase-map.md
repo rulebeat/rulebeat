@@ -64,7 +64,7 @@
 | `packages/web/components/rules/rule-origin.tsx` | The "Duplicated from <rule> <version>" line on a custom rule's page |
 | `scripts/packs/aprl-v2.ts` | APRL v2 pack transform |
 | `tsconfig.scripts.json` | TS config for `scripts/` (Node types, path alias for web types) |
-| `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 24 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs` |
+| `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 25 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs`, `saved_views` |
 | `packages/web/lib/db/schema.pg.ts` | The Postgres twin of `schema.ts`: same tables, column names and nullability, `pgTable` instead of `sqliteTable`. Timestamps and JSON stay text so ordering and row mappers match byte-for-byte |
 | `packages/web/lib/db/backend.ts` | Reads `RULEBEAT_DATABASE_URL` (and `_FILE`) once and exports `dbKind` ('sqlite' or 'pg'), the one place the backend is decided |
 | `packages/web/lib/db/tables.ts` | Exports the active backend's table objects plus the insertion-order tiebreak column (`rowid` on SQLite, `seq` on pg). Repositories and tests import tables from here, never from a schema twin |
@@ -127,6 +127,13 @@
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page |
+| `packages/web/lib/db/saved-views.ts` | Saved views repository: list, get, create, update, delete. A name is unique case-insensitively, checked in the write's transaction after a Postgres advisory lock, and a clash comes back as `name-taken` (409) |
+| `packages/web/lib/saved-views.ts` | Server-side request validation for the saved-view routes: `parseSavedViewFields` (the one validator both use), `SAVED_VIEW_FIELDS` and the name-taken message |
+| `packages/web/lib/saved-view-query.ts` | Client-safe saved-view types (`SavedViewFields`, `SavedView`), limits, `normalizeViewQuery`, `OPEN_VIEW_PARAM` and `savedViewHref`, the `/scans?tab=&view=&...` link that opens a view |
+| `packages/web/lib/saved-view-actions.ts` | The menu's create, update and delete requests (`requestSavedViewChange`) and `upsertSavedView`; the fetch is injectable for tests |
+| `packages/web/lib/own-url-writes.ts` | Tells the explorer's own `router.replace` writes from an outside navigation, so opening a saved view restarts the explorer and a filter edit does not |
+| `packages/web/app/api/views/` | Saved view routes. Reads need `read`, writes need `views:write`; each write audits field names only |
+| `packages/web/components/findings/saved-views-menu.tsx` | The Views button on the Results and Advisories toolbar: list, open, and for editors save, update, rename, delete |
 | `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |
@@ -134,10 +141,10 @@
 | `packages/web/components/dashboard/widget-config-panel.tsx` | Shared `ScopeSection` config drawer rendered for every widget type |
 | `packages/web/components/dashboard/slide-over-panel.tsx` | `SlideOverPanel`: shared right-drawer shell used by `add-widget-panel.tsx` and `widget-config-panel.tsx` |
 | `packages/web/components/dashboard/widgets/delta.tsx` | Shared `Delta` trend indicator (Up/Down/flat), used by the stat-card and posture-ring widgets |
-| `packages/web/components/dashboard/widgets/` | 12 widget types. Every one self-fetches a `mergeWidgetFilters`-merged `WidgetFilters` via `useWidgetFetch` |
+| `packages/web/components/dashboard/widgets/` | 13 widget types. Every one self-fetches a `mergeWidgetFilters`-merged `WidgetFilters` via `useWidgetFetch` |
 | `packages/web/components/dashboard/widgets/widget-unavailable.tsx` | Shared "Couldn't load this widget" + Retry state, distinct from each widget's own empty-result copy |
 | `packages/web/components/dashboard/widgets/recent-findings-widget.tsx` | Replaces the old findings-table + findings-explorer widgets |
-| `packages/web/app/api/widgets/` | Widget data APIs: `/summary`, `/filter-options`, `/findings`, `/top-rules`, `/top-resources`, `/rules` |
+| `packages/web/app/api/widgets/` | Widget data APIs: `/summary`, `/filter-options`, `/findings`, `/top-rules`, `/top-resources`, `/rules`, `/advisories` |
 | `packages/web/lib/explorer-data.ts` | `buildExplorerData()`. Recency (new/active/fixed) is computed in the client, not here; see `getRecencyStatus()` in `findings-explorer-client.tsx` |
 | `packages/web/components/findings/findings-explorer-client.tsx` | `FindingsExplorerClient`: the Results tab of `/scans`. `getRecencyStatus()` computes new/active/fixed from elapsed time, not "the previous scan"; `initialFilters`' URL-sync effect must stay symmetric with `scans/page.tsx`'s `searchParams` |
 | `packages/web/lib/explorer-filters.ts` | `ExplorerFilterState` + `getRecencyStatus()`/`isWithinRange()`: the Results-tab filter predicate pulled out of the component into a plain, closure-free function so it can be unit-tested and compared against the dashboard's own `queryActiveFindings` instead of trusting two hand-written predicates to stay in sync |
@@ -176,7 +183,9 @@
 | `packages/web/app/api/rules/validate-kql/route.ts` | Validate KQL against ARG, return sample rows |
 | `packages/web/app/api/rules/validate-graph/route.ts` | Validate a Graph query, mirroring `validate-kql`; `GraphTruncatedError` is a capped success, only a `Graph API 400:` message unwraps to something actionable |
 | `packages/web/components/findings/findings-table.tsx` | Expandable findings table with evidence + remediation |
-| `packages/web/components/findings/export-button.tsx` | CSV/JSON export with dynamic evidence columns |
+| `packages/web/components/findings/export-button.tsx` | CSV/JSON export with dynamic evidence columns; one CSV line per row a finding holds |
+| `packages/web/components/findings/finding-rows-detail.tsx` | A finding's rows in its expanded detail, shared by the Results explorer and Run History |
+| `packages/web/lib/finding-rows.ts` | Client-safe: `findingRows()` resolves a finding's rows (an older one reads as its evidence), `mergeFindingsByFingerprint()` folds same-fingerprint findings into one holding every row |
 | `packages/web/components/rules/rule-form.tsx` | Rule form. `readOnly` prop for view mode; KQL pane + Visual Builder, bidirectional sync via `parseKqlToVisualQuery`. Dirty-tracked by diffing a snapshot (scalar fields + generated `kqlFromGui`, never raw `visualQuery`, see the KQL lesson on parser id churn) against a `useRef` baseline; editing an existing rule saves via `router.refresh()`, never navigates away |
 | `packages/web/components/rules/visual-query-builder.tsx` | Visual KQL Builder: 34 operators, `readOnly` wraps in `pointer-events-none` |
 | `packages/web/components/rules/graph-rule-editor.tsx` | Directory rule editor: resource-type picker, `$filter` input, Validate action, "Flag expiring items" expand-config card |
@@ -192,6 +201,7 @@
 | `packages/web/auth.ts` | NextAuth config |
 | `packages/web/proxy.ts` | Route protection (Next.js 16 renamed `middleware.ts` → `proxy.ts`) + `fixCallbackUrlOrigin`, the write-request origin check (`lib/origin-check.ts`) and the security headers (`lib/security-headers.ts`). Its `matcher` is the list of paths that skip the proxy entirely; `/signin` is inside it for the headers and kept off the guard by `isPublicPage()`. Filename exclusions need `[.]` and `$`, since Next drops `\.` while compiling; pinned by `tests/unit/proxy-matcher.test.ts` against Next's own compiler |
 | `packages/web/components/dashboard/widgets/activity-occurrences-widget.tsx` | 12th dashboard widget: single-series bar chart of `getActivityOccurrenceCounts()`, daily counts for `kind:'activity'` findings. Excluded from `dashboard-templates.ts`'s starter dashboard and from Top Resources, since activity findings carry no `resourceId` |
+| `packages/web/components/dashboard/widgets/advisories-widget.tsx` | 13th dashboard widget: open Advisories, by severity then last seen, from `/api/widgets/advisories`. The route reads `queryAdvisoriesWidget()` (`lib/advisories-widget-data.ts`), which orders by severity then `lastSeenAt` and reports `hasAdvisoryRules` so the empty state can say why. `lib/advisories-widget.ts` is the client-safe half (response shape, `advisoriesWidgetView()`, empty copy). Not in the starter dashboard |
 | `packages/core/src/clients/log-analytics.ts` | `queryLogAnalyticsWorkspace()` wrapping `@azure/monitor-query-logs`'s `LogsQueryClient`; `LogAnalyticsTruncatedError` (PartialFailure) / `LogAnalyticsNotConfiguredError` (no workspace set) |
 | `packages/web/lib/log-analytics-workspace.ts` | `resolveLogAnalyticsWorkspaceId()`: env (`RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID`) then the single stored active row, no third ambient-chain fallback (unlike the Azure credential, a workspace id can't be discovered). `LogAnalyticsWorkspaceStatus` feeds the Settings card and diagnostics |
 | `packages/web/lib/db/log-analytics-workspace.ts` | Workspace repository: `getActiveLogAnalyticsWorkspace`/`saveLogAnalyticsWorkspace`/`markLogAnalyticsWorkspaceVerified`, single-active-row invariant |

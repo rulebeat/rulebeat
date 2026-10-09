@@ -145,3 +145,25 @@ describe('the loader reads what the sync writes', () => {
       .toMatchObject({ version: PINNED, upstreamRef: PINNED_COMMIT, releaseNote: 'Synced from upstream commit 9999999.' });
   });
 });
+
+describe('a kind RuleBeat declared on a pack rule (#186)', () => {
+  // Upstream never says whether a rule is an Advisory; RuleBeat adds `kind` to the pack file by hand.
+  const declared = previous.map(r => r.id === ENTERPRISE ? { ...r, kind: 'advisory' } : r);
+
+  it('survives a sync, so the rule is not shipped back as a Problem', () => {
+    const { rules } = sync(declared, next);
+    expect(entry(rules, ENTERPRISE).kind).toBe('advisory');
+  });
+
+  it('is not a change of definition, so the rule keeps its version', () => {
+    const { rules, summary } = sync(declared, next);
+    expect(entry(rules, ENTERPRISE).version).toBe('2026-05-01T10:00:00Z');
+    expect(summary.unchanged).toContain(ENTERPRISE);
+  });
+
+  it('gives way to a kind the fetched entry declares itself', () => {
+    const fresh = next.map(r => r.id === ENTERPRISE ? { ...r, kind: 'state' } : r);
+    const { rules } = sync(declared, fresh);
+    expect(entry(rules, ENTERPRISE).kind).toBe('state');
+  });
+});
