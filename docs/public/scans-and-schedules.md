@@ -1,9 +1,16 @@
 # Scans and schedules
 
-Everything scan-related lives on one Scans page, under four tabs: **Results** (current findings,
-filterable by category, severity, status and more), **Run History** (every past run and its
-coverage), **Rules** (every rule with its enabled state and last outcome), and **Schedules**.
-Category is a filter on each tab, not a separate page.
+Everything scan-related lives on one Scans page, under six tabs: **Results** (current Problems,
+filterable by category, severity, status and more), **Advisories** (findings of Advisory rules),
+**Activity** (findings of Log Analytics rules), **Run History** (every past run and its coverage),
+**Rules** (every rule with its enabled state and last outcome), and **Schedules**. Category is a
+filter on each tab, not a separate page.
+
+Each finding is listed on exactly one of the first three tabs, by its rule's kind, so the Results
+table lists the same findings its tiles count. An Activity finding is something that happened, not
+something still wrong: it is never fixed, so the Activity tab has no Fixed status, tile or column.
+It lists each pattern (the rule's dimension value, for example a user) with when it was last seen
+and how many times it has been seen.
 
 ![The Rules tab, with per-rule enabled toggles, outcome chips and category filters](img/rules-tab.png)
 
@@ -41,9 +48,9 @@ scheduler tick, with the findings it had already recorded kept and its notificat
 due, sent then. A run interrupted that way is not re-run at boot; the schedule waits for its next
 occurrence.
 
-## Filter, columns and sort on the Results and Advisories tabs
+## Filter, columns and sort on the Results, Advisories and Activity tabs
 
-Both tabs filter, sort and page the same way. Besides the built-in filters, in the By resource view
+All three tabs filter, sort and page the same way. Besides the built-in filters, in the By resource view
 the Columns menu lists every field the rules' queries returned. Pick a field to show it as a column,
 then use its header to sort or to filter by its values. The Add filter button in the toolbar
 filters by any built-in field or any returned field: pick the field, then tick values among those

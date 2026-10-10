@@ -35,7 +35,7 @@ import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
 import { OwnUrlWrites } from '@/lib/own-url-writes';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
-import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
+import type { TabEmptyState } from '@/lib/tab-empty-state';
 import {
   ShieldCheck, Library, Search,
 } from 'lucide-react';
@@ -46,7 +46,7 @@ const STATUS_OPTIONS = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const;
-type TabKey = 'results' | 'advisories' | 'history' | 'rules' | 'schedules';
+type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
  *  columns just as much as one that genuinely never ran — both read back as undefined. */
@@ -103,8 +103,8 @@ export interface ScansClientProps {
   /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
    *  Undefined when the tab isn't active — server only computes this for ?tab=rules. */
   ruleFindingCounts?: Record<string, number>;
-  /** Why the Advisories tab is empty. Undefined when the tab isn't active. */
-  advisoriesEmpty?: AdvisoriesEmptyState;
+  /** Why the Advisories or Activity tab is empty. Undefined on every other tab. */
+  tabEmpty?: TabEmptyState;
 }
 
 export function ScansClient({
@@ -126,7 +126,7 @@ export function ScansClient({
   canEditSchedules = false,
   notificationChannels = [],
   ruleFindingCounts = {},
-  advisoriesEmpty,
+  tabEmpty,
 }: ScansClientProps) {
   const router = useRouter();
   const searchString = useSearchParams().toString();
@@ -146,7 +146,8 @@ export function ScansClient({
   const [explorerKey, setExplorerKey] = useState(0);
   // Counts finished scans, so the explorer reads its view again rather than the page being reloaded.
   const [scansFinished, setScansFinished] = useState(0);
-  const showsExplorer = activeTab === 'results' || activeTab === 'advisories';
+  const explorerTab = activeTab === 'results' || activeTab === 'advisories' || activeTab === 'activity' ? activeTab : null;
+  const showsExplorer = explorerTab !== null;
   useEffect(() => {
     if (!ownWrites.isOutside(searchString)) return;
     // Restarting the explorer for a navigation it did not make, not state derived from props.
@@ -302,6 +303,7 @@ export function ScansClient({
       <div className="flex gap-0 border-b border-border overflow-x-auto overflow-y-hidden">
         <TabLink href="/scans?tab=results" active={activeTab === 'results'}>Results</TabLink>
         <TabLink href="/scans?tab=advisories" active={activeTab === 'advisories'}>Advisories</TabLink>
+        <TabLink href="/scans?tab=activity" active={activeTab === 'activity'}>Activity</TabLink>
         <TabLink href="/scans?tab=history" active={activeTab === 'history'}>Run History</TabLink>
         <TabLink href="/scans?tab=rules" active={activeTab === 'rules'}>
           Rules <span className="ml-1 text-xs">({enabledCount}/{policies.length})</span>
@@ -309,38 +311,22 @@ export function ScansClient({
         <TabLink href="/scans?tab=schedules" active={activeTab === 'schedules'}>Schedules</TabLink>
       </div>
 
-      {activeTab === 'results' && (
+      {explorerTab && (
         <FindingsExplorerClient
-          key={explorerKey}
-          tab="results"
+          key={`${explorerTab}-${explorerKey}`}
+          tab={explorerTab}
           categories={explorerCategories}
           scansFinished={scansFinished}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
           initialView={initialView}
           basePath="/scans"
-          extraParams={{ tab: 'results' }}
+          extraParams={{ tab: explorerTab }}
           mode="page"
-          savedViews={savedViewsFor('results')}
-        />
-      )}
-
-      {activeTab === 'advisories' && (
-        <FindingsExplorerClient
-          key={explorerKey}
-          tab="advisories"
-          categories={explorerCategories}
-          scansFinished={scansFinished}
-          suppressions={initialSuppressions}
-          canSuppress={canSuppress}
-          initialView={initialView}
-          basePath="/scans"
-          extraParams={{ tab: 'advisories' }}
-          mode="page"
-          savedViews={savedViewsFor('advisories')}
-          hideRuleView
-          emptyTitle={advisoriesEmpty?.title}
-          emptyHint={advisoriesEmpty?.hint}
+          savedViews={savedViewsFor(explorerTab)}
+          hideRuleView={explorerTab === 'advisories'}
+          emptyTitle={tabEmpty?.title}
+          emptyHint={tabEmpty?.hint}
         />
       )}
 

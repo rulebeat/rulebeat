@@ -37,7 +37,7 @@ export function parseSavedViewFields(body: unknown, mode: 'create' | 'update'): 
     value.name = input.name.trim();
   }
   if (input.tab !== undefined) {
-    if (!isSavedViewTab(input.tab)) return { ok: false, error: 'Tab must be "results" or "advisories".' };
+    if (!isSavedViewTab(input.tab)) return { ok: false, error: 'Tab must be "results", "advisories" or "activity".' };
     value.tab = input.tab;
   }
   if (input.query !== undefined) {

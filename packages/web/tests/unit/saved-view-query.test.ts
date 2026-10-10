@@ -27,9 +27,10 @@ describe('normalizeViewQuery', () => {
 });
 
 describe('saved view helpers', () => {
-  it('knows the two tabs a view can open on', () => {
+  it('knows the three tabs a view can open on', () => {
     expect(isSavedViewTab('results')).toBe(true);
     expect(isSavedViewTab('advisories')).toBe(true);
+    expect(isSavedViewTab('activity')).toBe(true);
     expect(isSavedViewTab('runs')).toBe(false);
   });
 });

@@ -103,12 +103,12 @@ describe('the server view for each tab', () => {
     return await res.json() as { tab: string; kinds: string[]; total: number; items: { finding: { ruleId: string; kind: string } }[] };
   };
 
-  it('holds only the Problem and Activity findings on Results, and only the Advisory ones on Advisories', async () => {
+  it('holds only the Problem findings on Results, and only the Advisory ones on Advisories', async () => {
     const results = await read('results');
     const advisories = await read('advisories');
     expect(results.items.map(i => i.finding.ruleId)).toEqual([RULE]);
     expect(results.items.map(i => i.finding.kind)).toEqual(['state']);
-    expect(results.kinds).toEqual(['state', 'activity']);
+    expect(results.kinds).toEqual(['state']);
     expect(advisories.items.map(i => i.finding.ruleId)).toEqual([ADVISORY]);
     expect(advisories.items.map(i => i.finding.kind)).toEqual(['advisory']);
     expect(advisories.kinds).toEqual(['advisory']);

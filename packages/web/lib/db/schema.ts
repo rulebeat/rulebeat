@@ -449,7 +449,7 @@ export const queryRuns = sqliteTable('query_runs', {
 export const savedViews = sqliteTable('saved_views', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  tab: text('tab').notNull(),                // 'results' | 'advisories'
+  tab: text('tab').notNull(),                // 'results' | 'advisories' | 'activity'
   query: text('query').notNull(),            // the View as /scans query params, without `tab`
   createdBy: text('created_by'),
   createdAt: text('created_at').notNull(),

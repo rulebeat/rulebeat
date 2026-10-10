@@ -4,7 +4,7 @@ import { queryActiveFindings } from '@/lib/dashboard-data';
 import { countsAsAffected } from '@/lib/finding-kinds';
 import { getScanById, getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
-import { advisoriesEmptyState } from '@/lib/advisories-empty-state';
+import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
 import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
 import { listSchedules } from '@/lib/db/schedules';
 import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
@@ -16,7 +16,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
 import type { Rule, ScanSummary, Suppression } from '@/lib/types';
 
-type TabKey = 'results' | 'advisories' | 'history' | 'rules' | 'schedules';
+type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
 export default async function ScansPage({
   searchParams,
@@ -37,7 +37,7 @@ export default async function ScansPage({
   const user = await getCurrentUser();
   const role = user?.role ?? 'viewer';
 
-  const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
+  const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions() as Suppression[];
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
 
@@ -88,10 +88,12 @@ export default async function ScansPage({
     }
   }
 
-  // The Results and Advisories tabs send no findings: the explorer reads them from the server view
-  // as the view changes, starting from `initialView`.
+  // The Results, Advisories and Activity tabs send no findings: the explorer reads them from the
+  // server view as the view changes, starting from `initialView`.
   const policies = await loadRules() as unknown as Rule[];
-  const advisoriesEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies) : undefined;
+  const tabEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies)
+    : activeTab === 'activity' ? activityEmptyState(policies)
+    : undefined;
 
   return (
     <>
@@ -115,7 +117,7 @@ export default async function ScansPage({
         canEditSchedules={can(role, 'schedules:write')}
           notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
-        advisoriesEmpty={advisoriesEmpty}
+        tabEmpty={tabEmpty}
       />
     </>
   );

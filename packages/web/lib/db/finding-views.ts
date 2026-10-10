@@ -48,7 +48,7 @@ import {
   type PageEntry, type ResolvedContext, type RowIndex, type SlimFinding,
 } from '../view-pass';
 import {
-  ITEM_ROWS_PER_PAGE, TAB_KINDS, buildColumnValuesResponse, buildFindingRowsResponse, buildGroupResponse, buildViewResponse,
+  ITEM_ROWS_PER_PAGE, TAB_KINDS, VIEW_TABS, buildColumnValuesResponse, buildFindingRowsResponse, buildGroupResponse, buildViewResponse,
   decorateFinding, ruleDecoration, rulesInPlay,
   type ColumnValuesResponse, type ExplorerCategory, type FindingRowsResponse, type GroupResponse, type RuleDetails, type ViewItemResponse,
   type ViewResponse, type ViewTab,
@@ -303,12 +303,13 @@ export interface FilterOptions {
 }
 
 /** What the dashboard's filter lists offer: every subscription, resource group and rule that has a
- *  finding on either tab, whatever its status. A view's facets cannot answer this, since they count
+ *  finding on any tab, whatever its status. A view's facets cannot answer this, since they count
  *  one tab's findings under that view's filters and window. Reads no rows. */
 export function queryFilterOptions(): Promise<FilterOptions> {
   return inReadTransaction(async (tx) => {
     const rules = await readRuleDetails(tx);
-    const found = [...await readSlim(tx, 'results', rules), ...await readSlim(tx, 'advisories', rules)];
+    const found: Awaited<ReturnType<typeof readSlim>> = [];
+    for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules));
     const named = new Map(found.map(f => [f.ruleId, { id: f.ruleId, name: rules.get(f.ruleId)?.name ?? f.title }]));
     return {
       subscriptions: [...new Set(found.map(f => f.subscriptionId).filter(Boolean))].sort(),

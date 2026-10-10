@@ -10,7 +10,7 @@
  */
 import { viewFromSearchParams, viewToSearchParams } from './finding-view';
 
-export const SAVED_VIEW_TABS = ['results', 'advisories'] as const;
+export const SAVED_VIEW_TABS = ['results', 'advisories', 'activity'] as const;
 export type SavedViewTab = (typeof SAVED_VIEW_TABS)[number];
 
 export const MAX_SAVED_VIEW_QUERY_LENGTH = 4000;

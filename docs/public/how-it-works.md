@@ -61,8 +61,8 @@ assumptions would be wrong for it. See [`directory-rules.md`](directory-rules.md
 
 **`log-analytics`.** The rule is a KQL query against a Log Analytics workspace, and each row is an
 *activity* finding: there is no resource id, so a finding's identity is the rule's optional dimension
-column, and a row where that column is blank makes the rule `invalid`. `runLawRules()` is its own
-engine for the same reason as the second one. Authoring is paused: the new-rule picker shows the
+column, and a row where that column is blank makes the rule `invalid`. Activity findings are listed on
+the Activity tab of Scans. `runLawRules()` is its own engine for the same reason as the second one. Authoring is paused: the new-rule picker shows the
 option as unavailable ([`permissions.md`](permissions.md#4-optional-log-analytics-reader)).
 
 All three run inside the same `runCategoryScan` and feed the same per-rule accounting, so a scan, a

@@ -13,7 +13,7 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 
-/** `tab=results|advisories` (the Results tab when absent), `suppressed=1`, and the view's own params. */
+/** `tab=results|advisories|activity` (the Results tab when absent), `suppressed=1`, and the view's own params. */
 export function parseViewRequest(params: URLSearchParams): Parsed<ViewRequest> {
   const rawTab = params.get('tab');
   const tab = rawTab === null ? 'results' : parseViewTab(rawTab);

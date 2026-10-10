@@ -17,6 +17,7 @@ import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { listFindings } from '@/lib/db/findings';
+import { queryFilterOptions } from '@/lib/db/finding-views';
 import { addSuppression } from '@/lib/suppressions';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { emptyView, viewToSearchParams, type View, type ViewFilter } from '@/lib/finding-view';
@@ -70,8 +71,8 @@ const ARG_RULES: Record<string, RulePlan> = {
     name: 'Critical exposure', category: 'security', severity: 'critical', kind: 'state',
     at: {
       T0: [vm('vm-alpha', [{ zone: '1' }], { rg: 'rg-a', location: 'westeurope' })],
-      T1: [vm('vm-alpha', [{ zone: '1' }], { rg: 'rg-a', location: 'westeurope' }), vm('VM-ECHO', [{ nested: { deep: { deeper: { deepest: 1 } } }, list: [1, 2], flag: true, nul: null }], { sub: TEST_SUB_B, rg: 'rg-a' })],
-      T2: [vm('vm-alpha', [{ zone: '1' }], { rg: 'rg-a', location: 'westeurope' }), vm('VM-ECHO', [{ nested: { deep: { deeper: { deepest: 1 } } }, list: [1, 2], flag: true, nul: null }], { sub: TEST_SUB_B, rg: 'rg-a' })],
+      T1: [vm('vm-alpha', [{ zone: '1' }], { rg: 'rg-a', location: 'westeurope' }), vm('VM-ECHO', [{ nested: { deep: { deeper: { deepest: 1 } } }, list: [1, 2], flag: true, nul: null }], { sub: TEST_SUB_B, rg: '', location: '' })],
+      T2: [vm('vm-alpha', [{ zone: '1' }], { rg: 'rg-a', location: 'westeurope' }), vm('VM-ECHO', [{ nested: { deep: { deeper: { deepest: 1 } } }, list: [1, 2], flag: true, nul: null }], { sub: TEST_SUB_B, rg: '', location: '' })],
     },
   },
   'cost-medium': {
@@ -249,10 +250,11 @@ const RESULTS_VIEWS: Case[] = [
   { name: 'sort by kind', view: make({ sort: { field: 'kind', dir: 'asc' } }) },
   { name: 'sort by status, with every status listed', view: make({ filters: [f('status', 'all')], sort: { field: 'status', dir: 'asc' } }) },
   { name: 'sort by resource group, where some findings have none', view: make({ sort: { field: 'resourceGroup', dir: 'desc' } }) },
-  // The Activity findings have no location and no type: an empty value sorts last, either way.
+  // VM-ECHO has no resource group and no location: an empty value sorts last, either way. The Activity findings,
+  // which have neither and no type either, are on their own tab.
   { name: 'sort by location, empty values last', view: make({ sort: { field: 'location', dir: 'asc' } }) },
   { name: 'sort by location, descending, empty values still last', view: make({ sort: { field: 'location', dir: 'desc' } }) },
-  { name: 'sort by resource type, descending, empty values still last', view: make({ sort: { field: 'resourceType', dir: 'desc' } }) },
+  { name: 'sort by resource type, descending', view: make({ sort: { field: 'resourceType', dir: 'desc' } }) },
   { name: 'sort by a returned number', view: make({ sort: { field: 'row.item', dir: 'asc' } }) },
   { name: 'sort by a returned number, descending', view: make({ sort: { field: 'row.count', dir: 'desc' } }) },
   { name: 'sort by a returned column that most findings lack', view: make({ sort: { field: 'row.link', dir: 'asc' } }) },
@@ -301,7 +303,19 @@ const ADVISORY_VIEWS = [
   { name: 'search', view: make({ search: 'ivy' }) },
 ].map(c => ({ ...c, tab: 'advisories' as const }));
 
-const VIEW_CASES = [...RESULTS_VIEWS.map(c => ({ ...c, tab: 'results' as const })), ...ADVISORY_VIEWS];
+const ACTIVITY_VIEWS = [
+  { name: 'the default view', view: make({}) },
+  { name: 'status New', view: make({ filters: [f('status', 'new')] }) },
+  { name: 'status All', view: make({ filters: [f('status', 'all')] }) },
+  { name: 'a severity', view: make({ filters: [f('severity', 'medium')] }) },
+  { name: 'a category', view: make({ filters: [f('category', 'identity')] }) },
+  { name: 'a returned column', view: make({ filters: [f('row.Result', 'lock')] }) },
+  { name: 'search by pattern', view: make({ search: 'CAROL' }) },
+  { name: 'sort by last seen, descending', view: make({ sort: { field: 'lastSeen', dir: 'desc' } }) },
+  { name: 'grouped by rule', view: make({ groupBy: ['rule'] }) },
+].map(c => ({ ...c, tab: 'activity' as const }));
+
+const VIEW_CASES = [...RESULTS_VIEWS.map(c => ({ ...c, tab: 'results' as const })), ...ADVISORY_VIEWS, ...ACTIVITY_VIEWS];
 
 describe('GET /api/findings/view answers what the explorer computes over every finding', () => {
   it.each(VIEW_CASES)('$tab: $name', async ({ view, tab }) => {
@@ -326,23 +340,41 @@ describe('GET /api/findings/view answers what the explorer computes over every f
 describe('what the fixture holds, so the reference itself is pinned', () => {
   it('lists the open findings of every rule on the Results tab, one page of 50, and hides the suppressed one', async () => {
     const body = await (await getView(make({}), 'results', false)).json() as ViewResponse;
-    // sec-high 2 (alpha, delta) + sec-critical 2 + cost-medium 2 + cost-low 1 + 60 bulk + 3 sign-ins; bravo is suppressed.
-    expect(body.total).toBe(70);
+    // sec-high 2 (alpha, delta) + sec-critical 2 + cost-medium 2 + cost-low 1 + 60 bulk; bravo is suppressed.
+    // The 3 sign-ins are Activity findings, listed on their own tab.
+    expect(body.total).toBe(67);
     expect([body.page, body.pageCount, body.items.length]).toEqual([1, 2, 50]);
     expect(body.suppressedCount).toBe(1);
-    expect(body.kinds).toEqual(['state', 'activity']);
+    expect(body.kinds).toEqual(['state']);
   });
 
   it('shows the suppressed finding when asked', async () => {
     const body = await (await getView(make({}), 'results', true)).json() as ViewResponse;
-    expect(body.total).toBe(71);
+    expect(body.total).toBe(68);
   });
 
   it('lists the one Fixed finding under status Fixed, and every finding under All', async () => {
     const fixed = await (await getView(make({ filters: [f('status', 'fixed')] }), 'results', false)).json() as ViewResponse;
     expect(fixed.items.map(i => i.finding.resourceName)).toEqual(['vm-charlie']);
     const all = await (await getView(make({ filters: [f('status', 'all')] }), 'results', false)).json() as ViewResponse;
-    expect(all.total).toBe(71);
+    expect(all.total).toBe(68);
+  });
+
+  it('lists the three Activity findings on the Activity tab, by pattern, and none on Results', async () => {
+    const body = await (await getView(make({}), 'activity', false)).json() as ViewResponse;
+    expect(body.total).toBe(3);
+    expect(body.kinds).toEqual(['activity']);
+    expect(body.items.map(i => i.finding.dimensionKey).sort()).toEqual(['alice', 'bob', 'carol']);
+    const onResults = await (await getView(make({ filters: [f('rule', LOGS_RULE), f('status', 'all')] }), 'results', true)).json() as ViewResponse;
+    expect(onResults.total).toBe(0);
+  });
+
+  it('counts the Activity findings in the Activity tab tiles, and in none of the Results tiles', async () => {
+    const activity = await (await getView(make({}), 'activity', false)).json() as ViewResponse;
+    expect(activity.tiles.total).toBe(3);
+    expect(activity.tiles.counts.medium).toBe(3);
+    const results = await (await getView(make({}), 'results', false)).json() as ViewResponse;
+    expect(results.tiles.total).toBe(results.total);
   });
 
   it('lists the four Advisory findings on the Advisories tab, and none on Results', async () => {
@@ -376,13 +408,24 @@ describe('what the fixture holds, so the reference itself is pinned', () => {
   it('lists the columns of the Results tab as exactly the ones its findings\' rows hold, Fixed and rule-less findings included', async () => {
     // sec-high: count, empty, item, link, properties.sku.name, properties.tier, retirement, zone. sec-critical:
     // list, flag, nul, zone and nested.deep.deeper (three levels are walked, the fourth is one column).
-    // cost-medium, cost-low and cost-bulk: sku, savings, batch, properties.sku.name. Sign-ins: UserId, Result,
-    // Count and Detail.ip. The sorted order puts a lower-case name before its capitalised twin (count, Count).
+    // cost-medium, cost-low and cost-bulk: sku, savings, batch, properties.sku.name. The sign-ins' columns are
+    // the Activity tab's.
     const body = await (await getView(make({}), 'results', false)).json() as ViewResponse;
     expect(body.columns).toEqual([
-      'batch', 'count', 'Count', 'Detail.ip', 'empty', 'flag', 'item', 'link', 'list', 'nested.deep.deeper', 'nul',
-      'properties.sku.name', 'properties.tier', 'Result', 'retirement', 'savings', 'sku', 'UserId', 'zone',
+      'batch', 'count', 'empty', 'flag', 'item', 'link', 'list', 'nested.deep.deeper', 'nul',
+      'properties.sku.name', 'properties.tier', 'retirement', 'savings', 'sku', 'zone',
     ]);
+  });
+
+  it('still offers a Logs rule in the dashboard filter lists, though its findings are on the Activity tab', async () => {
+    const { rules } = await queryFilterOptions();
+    expect(rules.map(r => r.id)).toContain(LOGS_RULE);
+  });
+
+  it('lists the columns of the Activity tab as exactly the ones the sign-in rows hold', async () => {
+    // The sorted order puts a lower-case name before its capitalised twin, so Count sorts with the c's.
+    const body = await (await getView(make({}), 'activity', false)).json() as ViewResponse;
+    expect(body.columns).toEqual(['Count', 'Detail.ip', 'Result', 'UserId']);
   });
 
   it('lists the columns of the Advisories tab as exactly the ones its two rules\' rows hold', async () => {
@@ -422,7 +465,8 @@ describe('GET /api/findings/rows answers one finding\'s rows as the explorer pag
     { name: 'a finding with nested values', rule: 'sec-critical', resource: 'VM-ECHO' },
     { name: 'the built-in filters, which do not apply to a finding asked for by name', rule: 'sec-high', resource: 'vm-alpha', view: make({ filters: [f('severity', 'low'), f('status', 'fixed')] }) },
     { name: 'a Fixed finding', rule: 'sec-high', resource: 'vm-charlie' },
-    { name: 'an Activity finding, by its dimension key', rule: LOGS_RULE, resource: 'alice' },
+    { name: 'an Activity finding on the Activity tab, by its dimension key', tab: 'activity', rule: LOGS_RULE, resource: 'alice' },
+    { name: 'an Activity finding on the Results tab, which does not list it', rule: LOGS_RULE, resource: 'alice', found: false },
     { name: 'an Advisory finding on the Advisories tab', tab: 'advisories', rule: 'adv-retire', resource: 'vm-alpha' },
     { name: 'an Advisory finding on the Results tab, which does not list it', rule: 'adv-retire', resource: 'vm-alpha', found: false },
   ];
@@ -476,6 +520,7 @@ describe('GET /api/findings/group answers one group as the explorer opens it', (
     { name: 'a sort by a returned column', view: make({ groupBy: ['category'], sort: { field: 'row.zone', dir: 'desc' } }), path: ['security'] },
     { name: 'with suppressed findings shown', view: make({ groupBy: ['rule'] }), path: ['sec-high'], suppressed: true },
     { name: 'on the Advisories tab', view: make({ groupBy: ['row.retirement'] }), path: ['Basic tier'], tab: 'advisories' },
+    { name: 'on the Activity tab', view: make({ groupBy: ['rule'] }), path: [LOGS_RULE], tab: 'activity' },
     { name: 'a path that leads to no group', view: make({ groupBy: ['category'] }), path: ['no-such-category'], empty: true },
     { name: 'a path longer than the grouping', view: make({ groupBy: ['category'] }), path: ['security', 'high'], empty: true },
     { name: 'an empty path', view: make({ groupBy: ['category'] }), path: [], empty: true },
@@ -522,7 +567,8 @@ describe('GET /api/findings/column-values answers a returned column\'s values as
     { name: 'a status of All', column: 'row.zone', view: make({ filters: [f('status', 'all')] }) },
     { name: 'with suppressed findings shown', column: 'row.zone', suppressed: true },
     { name: 'the Advisories tab', column: 'row.retirement', tab: 'advisories' },
-    { name: 'a column of the Activity findings', column: 'row.Result', view: make({ filters: [f('kind', 'activity')] }) },
+    { name: 'the Activity tab', column: 'row.Result', tab: 'activity' },
+    { name: 'a column of the Activity findings, on the Results tab', column: 'row.Result', empty: true },
   ];
 
   it.each(VALUES_CASES)('$name', async ({ view = make({}), column, q, tab = 'results', suppressed = false, empty = false }) => {
