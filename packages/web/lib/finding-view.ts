@@ -149,7 +149,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 /** A value inside a row by dot path (`properties.sku`). A key that itself contains dots wins over
  *  the nested reading, so a column named `a.b` is still reachable. Undefined when the path leads
  *  nowhere, which is how a column no finding has stays empty rather than an error. */
-function readPath(value: unknown, path: string): unknown {
+export function readPath(value: unknown, path: string): unknown {
   if (!isObject(value) || path === '') return undefined;
   if (Object.hasOwn(value, path)) return value[path];
   for (let i = path.indexOf('.'); i >= 0; i = path.indexOf('.', i + 1)) {
@@ -203,7 +203,7 @@ export function classifyValue(value: unknown): CellValue {
 }
 
 /** A value as text, for comparing: the same text `classifyValue` shows. */
-function valueText(value: unknown): string {
+export function valueText(value: unknown): string {
   const cell = classifyValue(value);
   return cell.kind === 'empty' ? '' : cell.text;
 }
@@ -225,13 +225,13 @@ export function columnCell(rows: readonly FindingRow[], path: string): { value: 
 // ---- Filtering ----
 
 /** The rows of a finding that pass every row filter, in order. Every row when there is none. */
-function matchingRows(finding: ViewFinding, rowFilters: readonly RowFilter[]): FindingRow[] {
+export function matchingRows(finding: ViewFinding, rowFilters: readonly RowFilter[]): FindingRow[] {
   const rows = findingRows(finding);
   if (rowFilters.length === 0) return rows;
   return rows.filter(row => rowFilters.every(filter => rowMatches(row, filter)));
 }
 
-function rowMatches(row: FindingRow, filter: RowFilter): boolean {
+export function rowMatches(row: FindingRow, filter: RowFilter): boolean {
   return filter.values.includes(valueText(readPath(row, rowPath(filter.field))));
 }
 
@@ -242,7 +242,7 @@ function isActiveRowFilter(filter: RowFilter): boolean {
   return filter.values.length > 0;
 }
 
-function activeRowFilters(filters: readonly ViewFilter[], except?: ReadonlySet<ViewField>): RowFilter[] {
+export function activeRowFilters(filters: readonly ViewFilter[], except?: ReadonlySet<ViewField>): RowFilter[] {
   return filters.filter(isRowFilter).filter(f => isActiveRowFilter(f) && !except?.has(f.field));
 }
 
@@ -323,7 +323,7 @@ function sortValue(item: ViewItem<ViewFinding>, field: ViewField): string | numb
 
 const isEmptyValue = (v: string | number | undefined) => v === undefined || v === '';
 
-function compareBy(a: ViewItem<ViewFinding>, b: ViewItem<ViewFinding>, sort: ViewSort | undefined): number {
+export function compareBy(a: ViewItem<ViewFinding>, b: ViewItem<ViewFinding>, sort: ViewSort | undefined): number {
   if (!sort) return 0;
   const av = sortValue(a, sort.field);
   const bv = sortValue(b, sort.field);
@@ -383,7 +383,7 @@ export function rowFieldOptions<T extends ViewFinding>(
 }
 
 /** The values a finding holds on a built-in field, as the filter on that field compares them. */
-function builtinFieldValues(f: ViewFinding, field: BuiltinField): string[] {
+export function builtinFieldValues(f: ViewFinding, field: BuiltinField): string[] {
   switch (field) {
     case 'rule': return [f.ruleId];
     case 'kind': return [f.kind ?? 'state'];
@@ -472,7 +472,7 @@ export interface ItemsPage<T> {
   pageCount: number;
 }
 
-function clampPage(total: number, page: number, pageSize: number): { page: number; pageCount: number; pageSize: number } {
+export function clampPage(total: number, page: number, pageSize: number): { page: number; pageCount: number; pageSize: number } {
   const size = Math.max(1, Math.floor(pageSize) || DEFAULT_PAGE_SIZE);
   const pageCount = Math.max(1, Math.ceil(total / size));
   return { page: Math.min(Math.max(1, Math.floor(page) || 1), pageCount), pageCount, pageSize: size };
@@ -481,7 +481,7 @@ function clampPage(total: number, page: number, pageSize: number): { page: numbe
 /** The values one finding falls under for a group field, each with the rows that fall there. A
  *  built-in field holds all of a finding's rows under each value it has (a finding with several
  *  tags is under each tag); a returned column puts each row under its own value. No value is null. */
-function groupParts(item: ViewItem<ViewFinding>, field: ViewField): { value: string | null; rows: FindingRow[] }[] {
+export function groupParts(item: ViewItem<ViewFinding>, field: ViewField): { value: string | null; rows: FindingRow[] }[] {
   if (!isRowField(field)) {
     const values = [...new Set(builtinFieldValues(item.finding, field))].filter(v => v !== '');
     return values.length > 0 ? values.map(value => ({ value, rows: item.rows })) : [{ value: null, rows: item.rows }];
@@ -517,10 +517,13 @@ function compareGroupValues(field: ViewField, a: string, b: string, labelFor: Gr
   return compareText(a, b);
 }
 
+/** What ordering two groups reads: the field, the value and how many findings fall in it. */
+export type GroupKey = Pick<ViewGroup<ViewFinding>, 'field' | 'value' | 'resourceCount'>;
+
 /** Groups order by `groupSort`, the empty-value group last whichever way it runs (and, sorting by
  *  value, a severity off the ramp too). Equal counts keep
  *  value order, so the order never depends on the order findings arrived in. */
-function compareGroups(a: ViewGroup<ViewFinding>, b: ViewGroup<ViewFinding>, sort: GroupSort, labelFor: GroupOptions['labelFor']): number {
+export function compareGroups(a: GroupKey, b: GroupKey, sort: GroupSort, labelFor: GroupOptions['labelFor']): number {
   if (a.value === null || b.value === null) return a.value === b.value ? 0 : a.value === null ? 1 : -1;
   // A severity off the ramp goes last whichever way the ramp runs, like the empty-value group.
   if (sort.by === 'value' && a.field === 'severity') {

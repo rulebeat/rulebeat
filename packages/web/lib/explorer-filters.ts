@@ -98,12 +98,16 @@ export interface ExplorerStats {
   recentlyFixedCount: number;
 }
 
+/** What the tiles and the by-rule counts read off a finding, so a caller holding less than a whole
+ *  explorer finding (the server's slim one) can count too. */
+export type CountedFinding = Pick<ExplorerFinding, 'status' | 'severity' | 'ruleId' | 'kind' | 'firstSeenAt' | 'resolvedAt'>;
+
 /** The header tiles. Pass it a pool with every filter applied except severity and status, so the
  *  tiles stay a stable reference while those two are toggled. `kinds` is the set of kinds the tiles
  *  count; by default only the kind a finding-level total counts (Problems). The Advisories tab
  *  passes its own kind, so its tiles add up to its own Open. */
 export function summarizeFindings(
-  findings: ExplorerFinding[], from: string, to: string, kinds?: readonly RuleKind[],
+  findings: readonly CountedFinding[], from: string, to: string, kinds?: readonly RuleKind[],
 ): ExplorerStats {
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   let newCount = 0, activeCount = 0, recentlyFixedCount = 0;
@@ -131,7 +135,7 @@ export interface RuleCounts {
  *  except status: the status filter picks which rules are listed, not what their counts say.
  *  Same finding-level total as the header tiles, so by-rule Open adds up to the Open tile. */
 export function countFindingsByRule(
-  findings: ExplorerFinding[],
+  findings: readonly CountedFinding[],
   from: string,
   to: string,
   kinds?: readonly RuleKind[],

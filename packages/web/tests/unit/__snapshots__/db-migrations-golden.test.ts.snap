@@ -33,6 +33,9 @@ table categories
   is_builtin INTEGER NOT NULL DEFAULT 0
   is_special INTEGER NOT NULL DEFAULT 0
   created_at TEXT NOT NULL
+table column_catalogue
+  rule_id TEXT NOT NULL PK(1)
+  path TEXT NOT NULL PK(2)
 table dashboards
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -323,13 +326,14 @@ index idx_users_oid on users
 audit_log: 0
 azure_credentials: 0
 categories: 5
+column_catalogue: 0
 dashboards: 1
 finding_events: 0
 finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
-meta: 4
+meta: 5
 notification_channels: 0
 notification_deliveries: 0
 posture_snapshots: 1
@@ -357,6 +361,7 @@ categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","i
 dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"column-catalogue-built-v1","value":"<TS>"}
 meta {"key":"dashboards-seeded-v1","value":"1"}
 meta {"key":"finding-rows-copied-v1","value":"<TS>"}
 meta {"key":"fingerprint-case-v1","value":"<TS>"}
@@ -439,6 +444,9 @@ table categories
   is_builtin INTEGER NOT NULL DEFAULT 0
   is_special INTEGER NOT NULL DEFAULT 0
   created_at TEXT NOT NULL
+table column_catalogue
+  rule_id TEXT NOT NULL PK(1)
+  path TEXT NOT NULL PK(2)
 table dashboards
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -729,13 +737,14 @@ index idx_users_oid on users
 audit_log: 0
 azure_credentials: 0
 categories: 5
+column_catalogue: 0
 dashboards: 1
 finding_events: 0
 finding_rows: 0
 findings: 0
 local_accounts: 1
 log_analytics_workspaces: 0
-meta: 4
+meta: 5
 notification_channels: 0
 notification_deliveries: 0
 posture_snapshots: 0
@@ -761,6 +770,7 @@ categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance"
 categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
 categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
 dashboards {"config":"{\\"autoRefresh\\":0,\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Overall Posture\\",\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"posture-pct\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Open Findings\\",\\"x\\":3,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"total-findings\\"}},{\\"id\\":\\"w3\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Critical Issues\\",\\"x\\":6,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"critical-findings\\"}},{\\"id\\":\\"w4\\",\\"type\\":\\"stat-card\\",\\"title\\":\\"Healthy Categories\\",\\"x\\":9,\\"y\\":0,\\"w\\":3,\\"h\\":3,\\"config\\":{\\"metric\\":\\"modules-healthy\\"}},{\\"id\\":\\"w5\\",\\"type\\":\\"trend\\",\\"title\\":\\"Posture Trend\\",\\"x\\":0,\\"y\\":3,\\"w\\":8,\\"h\\":5,\\"config\\":{\\"category\\":\\"all\\",\\"period\\":\\"30d\\",\\"chartType\\":\\"area\\",\\"showFindings\\":true}},{\\"id\\":\\"w6\\",\\"type\\":\\"posture-ring\\",\\"title\\":\\"Overall Posture\\",\\"x\\":8,\\"y\\":3,\\"w\\":4,\\"h\\":5,\\"config\\":{\\"category\\":\\"all\\",\\"showDelta\\":true,\\"showPolicyCounts\\":true}},{\\"id\\":\\"w7\\",\\"type\\":\\"category-scorecard\\",\\"title\\":\\"Category Overview\\",\\"x\\":0,\\"y\\":8,\\"w\\":12,\\"h\\":5,\\"config\\":{}},{\\"id\\":\\"w8\\",\\"type\\":\\"top-rules\\",\\"title\\":\\"Top Violating Rules\\",\\"x\\":0,\\"y\\":13,\\"w\\":5,\\"h\\":7,\\"config\\":{\\"limit\\":8}},{\\"id\\":\\"w9\\",\\"type\\":\\"recent-findings\\",\\"title\\":\\"Recent Findings\\",\\"x\\":5,\\"y\\":13,\\"w\\":7,\\"h\\":7,\\"config\\":{\\"limit\\":15}},{\\"id\\":\\"w11\\",\\"type\\":\\"severity-breakdown\\",\\"title\\":\\"Severity Breakdown\\",\\"x\\":0,\\"y\\":20,\\"w\\":4,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w12\\",\\"type\\":\\"subscription-scorecard\\",\\"title\\":\\"Subscription Overview\\",\\"x\\":4,\\"y\\":20,\\"w\\":8,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w13\\",\\"type\\":\\"top-resources\\",\\"title\\":\\"Top Offending Resources\\",\\"x\\":0,\\"y\\":26,\\"w\\":6,\\"h\\":6,\\"config\\":{\\"limit\\":8}},{\\"id\\":\\"w14\\",\\"type\\":\\"coverage-freshness\\",\\"title\\":\\"Scan Coverage\\",\\"x\\":6,\\"y\\":26,\\"w\\":6,\\"h\\":6,\\"config\\":{}},{\\"id\\":\\"w15\\",\\"type\\":\\"new-vs-fixed\\",\\"title\\":\\"New vs. Fixed\\",\\"x\\":0,\\"y\\":32,\\"w\\":12,\\"h\\":5,\\"config\\":{\\"period\\":\\"30d\\"}}]}","created_at":"<TS>","description":"Overall governance posture across all categories","id":"default","is_default":1,"name":"Overview"}
+meta {"key":"column-catalogue-built-v1","value":"<TS>"}
 meta {"key":"dashboards-seeded-v1","value":"1"}
 meta {"key":"finding-rows-copied-v1","value":"<TS>"}
 meta {"key":"fingerprint-case-v1","value":"<TS>"}
@@ -833,6 +843,9 @@ table categories
   is_builtin INTEGER NOT NULL DEFAULT 0
   is_special INTEGER NOT NULL DEFAULT 0
   created_at TEXT NOT NULL
+table column_catalogue
+  rule_id TEXT NOT NULL PK(1)
+  path TEXT NOT NULL PK(2)
 table dashboards
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -1123,13 +1136,14 @@ index idx_users_oid on users
 audit_log: 0
 azure_credentials: 0
 categories: 5
+column_catalogue: 0
 dashboards: 1
 finding_events: 1
 finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
-meta: 4
+meta: 5
 notification_channels: 0
 notification_deliveries: 0
 posture_snapshots: 0
@@ -1158,6 +1172,7 @@ dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card
 finding_events {"category":"cost","fingerprint":"<FP>","id":"<UUID>","occurred_at":"<TS>","row_payload":null,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","type":"new"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"column-catalogue-built-v1","value":"<TS>"}
 meta {"key":"dashboards-seeded-v1","value":"1"}
 meta {"key":"finding-rows-copied-v1","value":"<TS>"}
 meta {"key":"fingerprint-case-v1","value":"<TS>"}
@@ -1238,6 +1253,9 @@ table categories
   is_builtin INTEGER NOT NULL DEFAULT 0
   is_special INTEGER NOT NULL DEFAULT 0
   created_at TEXT NOT NULL
+table column_catalogue
+  rule_id TEXT NOT NULL PK(1)
+  path TEXT NOT NULL PK(2)
 table dashboards
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -1528,13 +1546,14 @@ index idx_users_oid on users
 audit_log: 0
 azure_credentials: 0
 categories: 5
+column_catalogue: 0
 dashboards: 1
 finding_events: 0
 finding_rows: 0
 findings: 0
 local_accounts: 1
 log_analytics_workspaces: 0
-meta: 4
+meta: 5
 notification_channels: 0
 notification_deliveries: 0
 posture_snapshots: 0
@@ -1560,6 +1579,7 @@ categories {"color":"#3b82f6","created_at":"<TS>","icon":"Tag","id":"compliance"
 categories {"color":"#8b5cf6","created_at":"<TS>","icon":"KeyRound","id":"identity","is_builtin":1,"is_special":1,"label":"Identity","sort_order":4}
 categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","is_builtin":1,"is_special":0,"label":"Cost","sort_order":2}
 dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
+meta {"key":"column-catalogue-built-v1","value":"<TS>"}
 meta {"key":"dashboards-seeded-v1","value":"1"}
 meta {"key":"finding-rows-copied-v1","value":"<TS>"}
 meta {"key":"fingerprint-case-v1","value":"<TS>"}
@@ -1645,6 +1665,9 @@ table categories
   is_builtin INTEGER NOT NULL DEFAULT 0
   is_special INTEGER NOT NULL DEFAULT 0
   created_at TEXT NOT NULL
+table column_catalogue
+  rule_id TEXT NOT NULL PK(1)
+  path TEXT NOT NULL PK(2)
 table dashboards
   id TEXT PK(1)
   name TEXT NOT NULL
@@ -1935,13 +1958,14 @@ index idx_users_oid on users
 audit_log: 0
 azure_credentials: 0
 categories: 5
+column_catalogue: 0
 dashboards: 1
 finding_events: 0
 finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
-meta: 4
+meta: 5
 notification_channels: 0
 notification_deliveries: 0
 posture_snapshots: 0
@@ -1969,6 +1993,7 @@ categories {"color":"#f97316","created_at":"<TS>","icon":"Trash2","id":"cost","i
 dashboards {"config":"{\\"widgets\\":[{\\"id\\":\\"w1\\",\\"type\\":\\"stat-card\\",\\"metric\\":\\"openFindings\\",\\"layout\\":{\\"x\\":0,\\"y\\":0,\\"w\\":3,\\"h\\":2},\\"filters\\":{\\"category\\":\\"cost\\"}},{\\"id\\":\\"w2\\",\\"type\\":\\"top-policies\\",\\"layout\\":{\\"x\\":3,\\"y\\":0,\\"w\\":6,\\"h\\":4},\\"filters\\":{\\"ruleId\\":\\"<UUID>\\"}}],\\"filters\\":{\\"category\\":\\"cost\\",\\"dateWindow\\":{\\"mode\\":\\"relative\\",\\"days\\":7}}}","created_at":"<TS>","description":"Built before the upgrade","id":"<UUID>","is_default":1,"name":"My dashboard"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for vm-legacy-01"}
 findings {"azure_portal_link":null,"category":"cost","description":"","dimension_key":null,"evidence":"{}","evidence_rows":null,"fingerprint":"<FP>","first_seen_at":"<TS>","kind":"state","last_scan_id":null,"last_seen_at":"<TS>","location":"westeurope","recommendation":"","remediation_steps":"[]","resolved_at":null,"resource_group":"rg-legacy","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","resource_name":"stlegacy001","resource_type":"microsoft.compute/virtualmachines","row_count":0,"rows_scan_id":null,"rule_id":"<UUID>","severity":"high","status":"active","subscription_id":"<UUID>","times_seen":12,"title":"Finding for stlegacy001"}
+meta {"key":"column-catalogue-built-v1","value":"<TS>"}
 meta {"key":"dashboards-seeded-v1","value":"1"}
 meta {"key":"finding-rows-copied-v1","value":"<TS>"}
 meta {"key":"fingerprint-case-v1","value":"<TS>"}

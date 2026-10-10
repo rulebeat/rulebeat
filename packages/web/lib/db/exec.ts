@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { dbKind } from './backend';
-import { db, dbReady, pgDb, rawSqlite } from './client';
+import { db, dbReady, pgDb, rawSqlite, sqliteFilePath } from './client';
+import { openSnapshot } from './snapshot';
 
 /**
  * The terminator seam of the dual-backend design (issue #73).
@@ -70,7 +71,49 @@ export async function run(query: { run(): unknown }): Promise<void> {
  * receives (not the module-level `db`), or on Postgres they would silently execute outside the
  * transaction. Nested calls join the enclosing transaction.
  */
-export async function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+export function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+  return runInTransaction(fn, 'write');
+}
+
+/**
+ * Runs `fn` as one consistent read: every query in it, built on the handle it receives, sees the
+ * database as it was when the first of them ran, whatever commits meanwhile (ADR 0007: a view is
+ * answered from several reads that must agree). On Postgres that is a read-only REPEATABLE READ
+ * transaction. On SQLite it is a deferred transaction on the one shared connection, held under the
+ * same lock a write takes, so a write started meanwhile waits until the read is over. Joins a
+ * transaction that is already open.
+ */
+export function inReadTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+  return runInTransaction(fn, 'read');
+}
+
+/**
+ * Like `inReadTransaction`, for a read that stays open for as long as a download is being read (an
+ * export). On Postgres it is the same read-only REPEATABLE READ transaction, which holds one pool
+ * connection and takes no lock anyone else waits on. On SQLite it is a read-only connection of its own
+ * (lib/db/snapshot.ts) with a snapshot of the WAL, so it never takes the lock above: a scan save or a
+ * view read does not wait for the download, and what the export reads does not change under it. The
+ * connection is closed when `fn` settles, however it does.
+ *
+ * A database that is not a file (`:memory:`, which only tests use) cannot be opened a second time, so
+ * there it is `inReadTransaction`. Joins a transaction that is already open.
+ */
+export async function inSnapshotRead<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+  const enclosing = txStore.getStore();
+  if (enclosing) return fn(enclosing);
+
+  await dbReady;
+  if (dbKind === 'pg' || !sqliteFilePath || sqliteFilePath === ':memory:') return runInTransaction(fn, 'read');
+
+  const snapshot = openSnapshot(sqliteFilePath);
+  try {
+    return await txStore.run(snapshot.handle, () => fn(snapshot.handle));
+  } finally {
+    snapshot.end();
+  }
+}
+
+async function runInTransaction<T>(fn: (tx: DbHandle) => Promise<T>, mode: 'write' | 'read'): Promise<T> {
   const enclosing = txStore.getStore();
   if (enclosing) return fn(enclosing);
 
@@ -80,14 +123,14 @@ export async function inTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promis
     return pgDb!.transaction((tx) => {
       const handle = tx as unknown as DbHandle;
       return txStore.run(handle, () => fn(handle));
-    });
+    }, mode === 'read' ? { isolationLevel: 'repeatable read', accessMode: 'read only' } : undefined);
   }
 
   while (txLock.held) await txLock.held;
   let release!: () => void;
   txLock.held = new Promise<void>((resolve) => { release = resolve; });
   try {
-    rawSqlite!.exec('BEGIN IMMEDIATE');
+    rawSqlite!.exec(mode === 'read' ? 'BEGIN' : 'BEGIN IMMEDIATE');
     try {
       const result = await txStore.run(db, () => fn(db));
       rawSqlite!.exec('COMMIT');

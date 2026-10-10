@@ -1,8 +1,9 @@
 /**
- * ADR 0007, first step: nothing sends a finding's rows where no screen reads them. The /scans tabs
- * that do not show the explorer build no explorer data, the explorer receives each row once (rows,
- * not rows plus a copy of the first as evidence), and the dashboard feeds and filter lists never
- * read the stored row columns at all. Driven through a real scan over the fake Azure context.
+ * ADR 0007: nothing sends a finding's rows where no screen reads them. No /scans tab carries
+ * finding data (the explorer reads its findings from the server view), the explorer data built for
+ * the remaining callers carries each row once (rows, not rows plus a copy of the first as evidence),
+ * and the dashboard feeds and filter lists never read the stored row columns at all. Driven through a
+ * real scan over the fake Azure context.
  */
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,8 @@ import { createUser } from '@/lib/db/users';
 import { listFindings, listFindingSummaries } from '@/lib/db/findings';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { buildExplorerData } from '@/lib/explorer-data';
+import { viewUrl } from '@/lib/explorer-session';
+import { emptyView } from '@/lib/finding-view';
 import { clearRules, resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 
@@ -22,6 +25,7 @@ const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 const recentFindings = await import('@/app/api/widgets/findings/route');
 const filterOptions = await import('@/app/api/widgets/filter-options/route');
+const viewRoute = await import('@/app/api/findings/view/route');
 const { default: ScansPage } = await import('@/app/(app)/scans/page');
 
 const RULE = 'payload-rule';
@@ -92,6 +96,25 @@ describe('reads that never look at a row', () => {
   });
 });
 
+describe('the server view for each tab', () => {
+  const read = async (tab: 'results' | 'advisories') => {
+    const res = await viewRoute.GET(new Request(`http://localhost${viewUrl({ view: emptyView(), tab, showSuppressed: false })}`));
+    expect(res.status).toBe(200);
+    return await res.json() as { tab: string; kinds: string[]; total: number; items: { finding: { ruleId: string; kind: string } }[] };
+  };
+
+  it('holds only the Problem and Activity findings on Results, and only the Advisory ones on Advisories', async () => {
+    const results = await read('results');
+    const advisories = await read('advisories');
+    expect(results.items.map(i => i.finding.ruleId)).toEqual([RULE]);
+    expect(results.items.map(i => i.finding.kind)).toEqual(['state']);
+    expect(results.kinds).toEqual(['state', 'activity']);
+    expect(advisories.items.map(i => i.finding.ruleId)).toEqual([ADVISORY]);
+    expect(advisories.items.map(i => i.finding.kind)).toEqual(['advisory']);
+    expect(advisories.kinds).toEqual(['advisory']);
+  });
+});
+
 /** The ScansClient element the page renders, found by the props only it takes. */
 function scansClientProps(node: ReactNode): Record<string, unknown> {
   const queue: ReactNode[] = [node];
@@ -109,14 +132,19 @@ function scansClientProps(node: ReactNode): Record<string, unknown> {
 describe('the /scans page', () => {
   const render = async (tab?: string) => scansClientProps(await ScansPage({ searchParams: Promise.resolve(tab ? { tab } : {}) }));
 
-  it.each(['history', 'rules', 'schedules'])('builds no explorer data on the %s tab', async (tab) => {
-    expect((await render(tab)).explorerData).toBeUndefined();
+  it.each([undefined, 'advisories', 'history', 'rules', 'schedules'])('sends no explorer data and no finding on the %s tab', async (tab) => {
+    const props = await render(tab);
+    expect(props.explorerData).toBeUndefined();
+    // Nothing the page sends names a finding: not its fingerprint, not its resource.
+    const sent = JSON.stringify(props);
+    expect(sent).not.toContain(computeFingerprint(RULE, VM_ID));
+    expect(sent).not.toContain(computeFingerprint(ADVISORY, VM_ID));
+    expect(sent).not.toContain('vm-one');
   });
 
-  it('builds it for Results and Advisories, each with its own kinds', async () => {
-    const results = (await render()).explorerData as { findings: { ruleId: string }[] };
-    const advisories = (await render('advisories')).explorerData as { findings: { ruleId: string }[] };
-    expect(results.findings.map(f => f.ruleId)).toEqual([RULE]);
-    expect(advisories.findings.map(f => f.ruleId)).toEqual([ADVISORY]);
+  it.each([undefined, 'advisories'])('sends the explorer tab %s only the parsed view and the static data', async (tab) => {
+    const props = await render(tab);
+    expect(props.initialView).toMatchObject({ page: 1, search: '', groupBy: [] });
+    expect((props.categories as { id: string }[]).map(c => c.id)).toContain('security');
   });
 });

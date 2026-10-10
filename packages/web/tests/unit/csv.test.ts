@@ -75,7 +75,7 @@ describe('csvCell', () => {
 });
 
 describe.each([
-  ['findings export button', 'findings/export-button.tsx'],
+  ['findings export', '../lib/findings-export.ts'],
   ['query export button', 'query/query-export-button.tsx'],
 ])('%s', (_name, file) => {
   const source = readFileSync(path.resolve(__dirname, '../../components', file), 'utf8');

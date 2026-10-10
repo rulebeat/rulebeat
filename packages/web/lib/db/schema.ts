@@ -279,6 +279,17 @@ export const findingRows = sqliteTable('finding_rows', {
   pk: primaryKey({ columns: [table.fingerprint, table.position] }),
 }));
 
+/** The columns a rule's findings returned: one record per (rule, dot path), the paths of every row
+ *  stored for any of the rule's findings, Fixed included. It lets a view list its returnable
+ *  columns without reading a row. Rebuilt for a rule inside every scan save that saves its findings;
+ *  removed with the rule's findings and moved with the rule's id. No foreign key, like finding_rows. */
+export const columnCatalogue = sqliteTable('column_catalogue', {
+  ruleId: text('rule_id').notNull(),
+  path: text('path').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ruleId, table.path] }),
+}));
+
 export const findingEvents = sqliteTable('finding_events', {
   id: text('id').primaryKey(),
   fingerprint: text('fingerprint').notNull(),

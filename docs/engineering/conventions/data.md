@@ -112,3 +112,7 @@ Two tests hold the twins together. `tests/unit/schema-twins.test.ts` compares th
 **Dialect drift is handled at the column, never the call site.** Timestamps and JSON stay `text` in the pg twin so lexicographic ordering and the row mappers are byte-identical across backends; booleans are real columns in both twins (`integer({ mode: 'boolean' })` on SQLite, `boolean` on pg); insertion-order tiebreaks resolve through the order column `tables.ts` exports (`rowid` on SQLite, a `bigserial seq` on pg), never a literal `rowid` in a repository.
 
 **The pg bootstrap is async behind `client.ts`'s exported `dbReady` promise.** Anything touching the database outside the exec seam (test helpers, raw assertions) must `await dbReady` first or it races schema creation and fails with "relation does not exist".
+
+## Measuring the findings views
+
+**A change to how findings views are read is measured with `npm run bench:views`, not guessed.** A read that got slower or heavier shows up there before a user feels it; the codebase map says how to run it.

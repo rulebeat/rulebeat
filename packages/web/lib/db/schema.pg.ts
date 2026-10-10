@@ -253,6 +253,13 @@ export const findingRows = pgTable('finding_rows', {
   pk: primaryKey({ columns: [table.fingerprint, table.position] }),
 }));
 
+export const columnCatalogue = pgTable('column_catalogue', {
+  ruleId: text('rule_id').notNull(),
+  path: text('path').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ruleId, table.path] }),
+}));
+
 export const findingEvents = pgTable('finding_events', {
   id: text('id').primaryKey(),
   fingerprint: text('fingerprint').notNull(),

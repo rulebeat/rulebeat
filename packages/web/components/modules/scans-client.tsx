@@ -30,12 +30,11 @@ import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } fr
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, Severity } from '@/lib/types';
-import type { ExplorerData } from '@/lib/explorer-data';
 import type { View } from '@/lib/finding-view';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
 import { OwnUrlWrites } from '@/lib/own-url-writes';
-import { ADVISORY_KINDS, KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
+import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import type { AdvisoriesEmptyState } from '@/lib/advisories-empty-state';
 import {
   ShieldCheck, Library, Search,
@@ -80,14 +79,12 @@ export interface ScansClientProps {
   categories: Category[];
   role: Role;
   activeTab: TabKey;
-  /** Undefined when the tab isn't Results or Advisories, the only two that show the explorer. */
-  explorerData?: ExplorerData;
   initialSuppressions?: ScanHistoryTabProps['initialSuppressions'];
   initialCategoryFilter?: string[];
   /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
    *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
    *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
-   *  FindingsExplorerClient's `initialView`. */
+   *  FindingsExplorerClient's `initialView`. The page sends no findings: the explorer reads them. */
   initialView?: View;
   /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
   initialSavedViewId?: string;
@@ -115,7 +112,6 @@ export function ScansClient({
   categories,
   role,
   activeTab,
-  explorerData,
   initialSuppressions,
   initialCategoryFilter,
   initialView,
@@ -148,6 +144,9 @@ export function ScansClient({
   // only counts those restarts; what the explorer shows always comes from the URL.
   const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
   const [explorerKey, setExplorerKey] = useState(0);
+  // Counts finished scans, so the explorer reads its view again rather than the page being reloaded.
+  const [scansFinished, setScansFinished] = useState(0);
+  const showsExplorer = activeTab === 'results' || activeTab === 'advisories';
   useEffect(() => {
     if (!ownWrites.isOutside(searchString)) return;
     // Restarting the explorer for a navigation it did not make, not state derived from props.
@@ -176,6 +175,7 @@ export function ScansClient({
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set(initialCategoryFilter ?? []));
 
+  const explorerCategories = useMemo(() => categories.map(c => ({ id: c.id, label: c.label, color: c.color })), [categories]);
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
 
   const tagOptions = useMemo(() => {
@@ -293,6 +293,7 @@ export function ScansClient({
             rules={policies}
             defaultTargetType={runDefaults.targetType}
             defaultTargetValues={runDefaults.targetValues}
+            onScanFinished={showsExplorer ? () => setScansFinished(n => n + 1) : undefined}
           />
         </div>
       )}
@@ -308,10 +309,12 @@ export function ScansClient({
         <TabLink href="/scans?tab=schedules" active={activeTab === 'schedules'}>Schedules</TabLink>
       </div>
 
-      {activeTab === 'results' && explorerData && (
+      {activeTab === 'results' && (
         <FindingsExplorerClient
           key={explorerKey}
-          data={explorerData}
+          tab="results"
+          categories={explorerCategories}
+          scansFinished={scansFinished}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
           initialView={initialView}
@@ -322,10 +325,12 @@ export function ScansClient({
         />
       )}
 
-      {activeTab === 'advisories' && explorerData && (
+      {activeTab === 'advisories' && (
         <FindingsExplorerClient
           key={explorerKey}
-          data={explorerData}
+          tab="advisories"
+          categories={explorerCategories}
+          scansFinished={scansFinished}
           suppressions={initialSuppressions}
           canSuppress={canSuppress}
           initialView={initialView}
@@ -333,7 +338,6 @@ export function ScansClient({
           extraParams={{ tab: 'advisories' }}
           mode="page"
           savedViews={savedViewsFor('advisories')}
-          kinds={ADVISORY_KINDS}
           hideRuleView
           emptyTitle={advisoriesEmpty?.title}
           emptyHint={advisoriesEmpty?.hint}

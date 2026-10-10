@@ -33,7 +33,7 @@ export async function saveSuppressions(sups: Suppression[]): Promise<void> {
   });
 }
 
-export function isActiveSuppression(s: Suppression): boolean {
+export function isActiveSuppression(s: Pick<Suppression, 'expiresAt'>): boolean {
   return !s.expiresAt || new Date(s.expiresAt) > new Date();
 }
 

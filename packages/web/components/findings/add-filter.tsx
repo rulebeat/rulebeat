@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { ChecklistPanel, type ChecklistOption } from '@/components/ui/checklist-dropdown';
+import type { RemoteValues } from '@/lib/explorer-session';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { ViewField } from '@/lib/finding-view';
@@ -17,10 +18,13 @@ export interface AddFilterField {
 /** The one generic filter control: pick a field (a built-in one or anything the rules returned),
  *  then tick values among those the current findings hold. Each tick is applied at once. */
 export function AddFilter({
-  fields, optionsFor, selectedFor, onToggle, onClear,
+  fields, optionsFor, remoteFor, selectedFor, onToggle, onClear,
 }: {
   fields: AddFilterField[];
   optionsFor: (field: ViewField) => ChecklistOption[];
+  /** A field whose values are read from the server when its list opens, rather than held: the
+   *  columns the rules returned. Built-in fields answer from `optionsFor`. */
+  remoteFor?: (field: ViewField) => RemoteValues | undefined;
   selectedFor: (field: ViewField) => Set<string>;
   onToggle: (field: ViewField, value: string) => void;
   onClear: (field: ViewField) => void;
@@ -65,6 +69,7 @@ export function AddFilter({
             <ChecklistPanel
               label={picked.label}
               options={optionsFor(picked.field)}
+              remote={remoteFor?.(picked.field)}
               selected={selectedFor(picked.field)}
               onToggle={value => onToggle(picked.field, value)}
               onClear={() => onClear(picked.field)}
