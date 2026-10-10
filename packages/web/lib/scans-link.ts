@@ -5,7 +5,7 @@ import type { ExplorerStatusFilter } from './explorer-filters';
  *  building a click-through link to the Scans Results tab — see `buildScansHref`. */
 export interface ScansLinkOverrides {
   /** Which tab to open; Results when absent. The Advisories tab reads the same filter params. */
-  tab?: 'results' | 'advisories';
+  tab?: 'results' | 'advisories' | 'activity';
   status?: ExplorerStatusFilter;
   /** Single severity to link to (e.g. a "Critical findings" stat card) — takes precedence over
    *  any inherited `filters.severities`. */

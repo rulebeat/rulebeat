@@ -14,7 +14,7 @@ import type { RuleKind } from './types';
 import { resolveDateWindow } from './date-window';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRecord } from './db/findings';
-import { ADVISORY_KINDS, KIND_LABEL, RESULTS_KINDS } from './finding-kinds';
+import { ACTIVITY_KINDS, ADVISORY_KINDS, KIND_LABEL, RESOLVABLE_KINDS, RESULTS_KINDS } from './finding-kinds';
 import { ROWS_PER_PAGE, findingRows, pageFindingRows, type FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings, EXPLORER_SEVERITIES, type ExplorerStats, type RuleCounts } from './explorer-filters';
 import {
@@ -25,21 +25,46 @@ import {
 
 // ---- Tabs ----
 
-/** The two listings that read the one findings table. */
-export type ViewTab = 'results' | 'advisories';
+/** The three listings that read the one findings table. */
+export const VIEW_TABS = ['results', 'advisories', 'activity'] as const;
+export type ViewTab = (typeof VIEW_TABS)[number];
 
-/** Which kinds each tab lists: the Results tab everything but Advisories, the Advisories tab only those. */
-export const TAB_KINDS: Record<ViewTab, readonly RuleKind[]> = { results: RESULTS_KINDS, advisories: ADVISORY_KINDS };
+/** Which kinds each tab lists: one kind each, so a finding is listed on exactly one tab. */
+export const TAB_KINDS: Record<ViewTab, readonly RuleKind[]> = {
+  results: RESULTS_KINDS, advisories: ADVISORY_KINDS, activity: ACTIVITY_KINDS,
+};
 
-/** A `tab` param read back, or null when it is neither tab. */
+/** A `tab` param read back, or null when it is none of the tabs. */
 export function parseViewTab(value: string | null | undefined): ViewTab | null {
-  return value === 'results' || value === 'advisories' ? value : null;
+  return VIEW_TABS.find(tab => tab === value) ?? null;
 }
 
-/** What the header tiles count: the Advisories tab its own kind, the Results tab what finding-level
- *  totals count (Problems), as the explorer passes them. */
+/** The tab that lists a finding of this kind (an absent kind is 'state'). */
+export function tabForKind(kind: RuleKind | undefined): ViewTab {
+  return VIEW_TABS.find(tab => TAB_KINDS[tab].includes(kind ?? 'state')) ?? 'results';
+}
+
+/** What the header tiles count: the Advisories and Activity tabs their own kind, the Results tab
+ *  what finding-level totals count (Problems), as the explorer passes them. */
 export function tileKinds(tab: ViewTab): readonly RuleKind[] | undefined {
-  return tab === 'advisories' ? ADVISORY_KINDS : undefined;
+  return tab === 'results' ? undefined : TAB_KINDS[tab];
+}
+
+/** Whether a tab's findings can be Fixed. An Activity finding never resolves, so its tab offers no
+ *  Fixed tile or status. */
+export function tabResolves(tab: ViewTab): boolean {
+  return TAB_KINDS[tab].some(kind => RESOLVABLE_KINDS.includes(kind));
+}
+
+/** The status choices a tab's explorer offers. New and Fixed carry the window in their label, like
+ *  the header tiles they match; a tab whose findings never resolve offers no Fixed. */
+export function tabStatusOptions(tab: ViewTab, windowLabel: string): { value: 'open' | 'new' | 'fixed' | 'all'; label: string }[] {
+  return [
+    { value: 'open', label: 'Open' },
+    { value: 'new', label: `New (${windowLabel})` },
+    ...(tabResolves(tab) ? [{ value: 'fixed' as const, label: `Fixed (${windowLabel})` }] : []),
+    { value: 'all', label: 'All' },
+  ];
 }
 
 // ---- Shapes ----

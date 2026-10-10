@@ -51,7 +51,8 @@ describe('buildViewResponse', () => {
     const res = buildViewResponse(FINDINGS, view(), CTX, OPTS);
 
     expect(res.tab).toBe('results');
-    expect(res.kinds).toEqual(['state', 'activity']);
+    // The tab's kinds. The reference lists whatever findings it is given; the caller picks them by kind.
+    expect(res.kinds).toEqual(['state']);
     expect(res.total).toBe(5);
     expect([res.page, res.pageCount, res.pageSize]).toEqual([1, 1, 50]);
     // Most severe first, severity ties in the order the findings arrived in.

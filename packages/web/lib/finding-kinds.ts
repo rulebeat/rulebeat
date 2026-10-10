@@ -65,11 +65,14 @@ export function countsAsAffected(obj: { kind?: RuleKind }): boolean {
   return RESOLVABLE_KINDS.includes(obj.kind ?? 'state');
 }
 
-/** What the Results tab lists: everything but Advisories, as before they existed. */
-export const RESULTS_KINDS: readonly RuleKind[] = ['state', 'activity'];
+/** What the Results tab lists: Problems only, the findings its tiles count. */
+export const RESULTS_KINDS: readonly RuleKind[] = ['state'];
 
 /** What the Advisories tab lists. */
 export const ADVISORY_KINDS: readonly RuleKind[] = ['advisory'];
+
+/** What the Activity tab lists. */
+export const ACTIVITY_KINDS: readonly RuleKind[] = ['activity'];
 
 /** Whether an object's kind is one of `kinds` (an absent kind is 'state'). */
 export function isOfKind(obj: { kind?: RuleKind }, kinds: readonly RuleKind[]): boolean {

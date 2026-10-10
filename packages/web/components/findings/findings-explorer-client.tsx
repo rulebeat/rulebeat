@@ -47,7 +47,7 @@ import {
 import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
-  NO_VALUE_LABEL,
+  NO_VALUE_LABEL, tabResolves, tabStatusOptions,
   type ExplorerCategory, type GroupHeader, type GroupResponse, type ResponseFinding, type ViewItemResponse, type ViewTab,
 } from '@/lib/view-response';
 import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
@@ -58,7 +58,7 @@ import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
-type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen';
+type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
 type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
 
@@ -118,7 +118,7 @@ interface FindingsExplorerClientProps {
 const RETURNED_COL_WIDTH = 180;
 /** The built-in field each column header filters and sorts by. */
 const COL_FIELD: Record<SortCol, BuiltinField> = {
-  resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', firstSeen: 'firstSeen',
+  resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', firstSeen: 'firstSeen', lastSeen: 'lastSeen',
 };
 /** How a built-in field is named in the Add filter list and on a filter chip. */
 const FIELD_LABEL: Record<BuiltinField, string> = {
@@ -253,19 +253,13 @@ function shortDate(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+/** A date cell in the By resource table: First seen, and Last seen on the Activity tab. */
+function DateCell({ iso }: { iso?: string }) {
+  return <span className="text-xs tabular-nums text-ink-muted">{shortDate(iso)}</span>;
+}
 // A day key (YYYY-MM-DD) as a date, read at noon so a time zone cannot move it to the next day.
 function dayKeyLabel(key: string) {
   return shortDate(`${key}T12:00:00`);
-}
-
-// New and Fixed carry the window in their label, like the header tiles they match.
-function statusFilterOptions(windowLabel: string) {
-  return [
-    { value: 'open',  label: 'Open' },
-    { value: 'new',   label: `New (${windowLabel})` },
-    { value: 'fixed', label: `Fixed (${windowLabel})` },
-    { value: 'all',   label: 'All' },
-  ];
 }
 
 // Tab styling, named once because the strip renders "All categories" separately from the
@@ -278,9 +272,13 @@ const VIEW_TAB_CLS = 'flex h-full items-center gap-1.5 px-3 text-xs font-medium 
 const VIEW_TAB_OFF = 'bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink';
 
 const COL_LABEL: Record<SortCol, string> = {
-  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', firstSeen: 'First seen',
+  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', firstSeen: 'First seen', lastSeen: 'Last seen',
 };
 const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
+/** An Activity finding is an event, so its tab also shows when it was last seen and how often. */
+const ACTIVITY_COLS: SortCol[] = [...RESIZABLE_COLS, 'lastSeen'];
+/** The width of the Activity tab's occurrence count. */
+const SEEN_COL_WIDTH = 64;
 
 /** What the header tiles read before the first answer, so they show zeros rather than nothing. */
 const NO_TILES: ExplorerStats = {
@@ -473,7 +471,14 @@ export function FindingsExplorerClient({
   const [dateWindow, setDateWindow] = useState<DateWindow>(initial.window);
   const { from: rangeFrom, to: rangeTo } = useMemo(() => resolveDateWindow(dateWindow), [dateWindow]);
   const windowLabel = dateWindowLabel(dateWindow);
-  const statusOptions = useMemo(() => statusFilterOptions(windowLabel), [windowLabel]);
+  const statusOptions = useMemo(() => tabStatusOptions(tab, windowLabel), [tab, windowLabel]);
+  // The Activity tab lists events: a pattern rather than a resource, with when and how often it was
+  // seen, and no Fixed, since an Activity finding never resolves.
+  const isActivity = tab === 'activity';
+  const resolves = tabResolves(tab);
+  const sortCols = isActivity ? ACTIVITY_COLS : RESIZABLE_COLS;
+  const colLabel = (col: SortCol) => (isActivity && col === 'resource' ? 'Pattern' : COL_LABEL[col]);
+  const ruleGrid = `20px 1fr 110px 90px 70px 70px${resolves ? ' 70px' : ''}`;
 
   const valueSets = useMemo(
     () => Object.fromEntries(BUILTIN_FIELDS.map(field => [field, new Set(filterValues(filters, field))])) as Record<BuiltinField, Set<string>>,
@@ -527,7 +532,7 @@ export function FindingsExplorerClient({
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<SortCol>(
     // Each header holds a label, a sort arrow, a filter funnel and a resize handle, so a column
     // sized to its widest *value* truncates its own name. These are sized to the header.
-    { resource: 260, rule: 200, category: 110, severity: 120, firstSeen: 134 },
+    { resource: 260, rule: 200, category: 110, severity: 120, firstSeen: 134, lastSeen: 134 },
     { flexCol: 'resource' },
   );
 
@@ -623,7 +628,7 @@ export function FindingsExplorerClient({
   // Column filter option lists, one per header funnel.
   const colOptions = useMemo(() => {
     const options = {} as Record<SortCol, ChecklistOption[]>;
-    for (const col of RESIZABLE_COLS) options[col] = builtinOptions(COL_FIELD[col]);
+    for (const col of ACTIVITY_COLS) options[col] = builtinOptions(COL_FIELD[col]);
     return options;
   }, [builtinOptions]);
 
@@ -792,7 +797,8 @@ export function FindingsExplorerClient({
 
   const resourceFlexible = isFlexible('resource');
   const resourceTrack = resourceFlexible ? `minmax(${colWidths.resource}px, 1fr)` : `${colWidths.resource}px`;
-  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
+  const eventTrack = isActivity ? ` ${colWidths.lastSeen}px ${SEEN_COL_WIDTH}px` : '';
+  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px${eventTrack}${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
   // While the Resource column is still flexing to fill the card (default state), the grid should
   // size to 100% of its container so 1fr has room to expand into — forcing max-content here would
   // shrink it back to content width, leaving the table looking squeezed to the left. Once the user
@@ -864,7 +870,13 @@ export function FindingsExplorerClient({
 
           <CategoryBadge id={f.category} categories={categories} />
           <SeverityBadge severity={f.severity} />
-          <span className="text-xs tabular-nums text-ink-muted">{shortDate(f.firstSeenAt)}</span>
+          <DateCell iso={f.firstSeenAt} />
+          {isActivity && (
+            <>
+              <DateCell iso={f.lastSeenAt} />
+              <span className="text-right text-xs tabular-nums text-ink">{f.timesSeen}</span>
+            </>
+          )}
 
           {columns.map(path => <ReturnedCell key={path} rows={rows} path={path} />)}
 
@@ -1067,7 +1079,7 @@ export function FindingsExplorerClient({
           and the rest step down in ink weight, which is how Grid encodes severity
           everywhere else. Eight equally loud pastel boxes told you nothing about which
           number to look at first. The five severity tiles always add up to Open. */}
-      <div className="grid grid-cols-4 bg-surface lg:grid-cols-8">
+      <div className={cn('grid grid-cols-4 bg-surface', resolves ? 'lg:grid-cols-8' : 'lg:grid-cols-7')}>
         {([
           { key: 'open',     label: 'Open',                   value: stats.total,              valueCls: 'text-ink' },
           { key: 'critical', label: 'Critical',               value: stats.counts.critical,    valueCls: 'text-sev-critical' },
@@ -1079,7 +1091,7 @@ export function FindingsExplorerClient({
             title: `First seen within ${windowLabel} and not yet fixed` },
           { key: 'fixed',    label: `Fixed (${windowLabel})`, value: stats.recentlyFixedCount, valueCls: 'text-status-ok',
             title: `Resolved within ${windowLabel}` },
-        ]).map(s => {
+        ]).filter(s => resolves || s.key !== 'fixed').map(s => {
           // Only two of the eight actually filter anything. The rest are readouts, so they
           // do not get a pointer or a hover state that promises a click will do something.
           const clickable = s.key === 'new' || s.key === 'fixed';
@@ -1316,14 +1328,14 @@ export function FindingsExplorerClient({
         <div className="bg-surface">
         <div className="scroll-x">
           <div className="grid gap-x-4 border-b border-rule-anchor px-5 py-2"
-            style={{ gridTemplateColumns: '20px 1fr 110px 90px 70px 70px 70px' }}>
+            style={{ gridTemplateColumns: ruleGrid }}>
             <span />
             <span className="label-grid">Rule</span>
             <span className="label-grid">Category</span>
             <span className="label-grid">Severity</span>
             <span className="label-grid text-right">Open</span>
             <span className="label-grid text-right">New</span>
-            <span className="label-grid text-right">Fixed</span>
+            {resolves && <span className="label-grid text-right">Fixed</span>}
           </div>
           {listBody === 'empty' ? (
             <div className="py-16 text-center text-sm text-ink-muted">No rules match your filters</div>
@@ -1336,7 +1348,7 @@ export function FindingsExplorerClient({
                   aria-expanded={isOpen}
                   onClick={() => toggleExpandRule(r.ruleId)}
                   className="grid w-full items-center gap-x-4 px-5 py-3 text-left transition-colors hover:bg-surface-hover"
-                  style={{ gridTemplateColumns: '20px 1fr 110px 90px 70px 70px 70px' }}
+                  style={{ gridTemplateColumns: ruleGrid }}
                 >
                   <span className="text-ink-faint">{isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</span>
                   <span className="flex min-w-0 items-center gap-2">
@@ -1347,7 +1359,7 @@ export function FindingsExplorerClient({
                   <SeverityBadge severity={r.severity} />
                   <span className="text-right text-sm font-semibold tabular-nums text-ink">{r.open}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-sev-critical">{r.new || ''}</span>
-                  <span className="text-right text-sm font-semibold tabular-nums text-status-ok">{r.fixed || ''}</span>
+                  {resolves && <span className="text-right text-sm font-semibold tabular-nums text-status-ok">{r.fixed || ''}</span>}
                 </button>
                 {isOpen && (
                   <div className="space-y-px px-8 pb-3">
@@ -1394,7 +1406,7 @@ export function FindingsExplorerClient({
           <div className="scroll-x">
           <div className="grid gap-x-4 border-b border-rule-anchor px-5 py-2" style={{ gridTemplateColumns: gridTemplate, minWidth: rowMinWidth }}>
             <span />
-            {(['resource', 'rule', 'category', 'severity', 'firstSeen'] as SortCol[]).map(col => (
+            {sortCols.map(col => (
               <div key={col} className="relative flex items-center gap-1 min-w-0 pr-2">
                 <button
                   type="button"
@@ -1406,11 +1418,11 @@ export function FindingsExplorerClient({
                     activeSort.field === COL_FIELD[col] ? 'label-grid-strong' : 'label-grid hover:text-ink',
                   )}
                 >
-                  <span className="truncate">{COL_LABEL[col]}</span>
+                  <span className="truncate">{colLabel(col)}</span>
                   <SortIcon field={COL_FIELD[col]} active={activeSort.field} dir={activeSort.dir} />
                 </button>
                 <ColumnFilterIcon
-                  label={COL_LABEL[col]}
+                  label={colLabel(col)}
                   options={colOptions[col]}
                   selected={valueSets[COL_FIELD[col]]}
                   onToggle={v => toggleValue(COL_FIELD[col], v)}
@@ -1419,6 +1431,7 @@ export function FindingsExplorerClient({
                 <ColumnResizeHandle onMouseDown={startResize(col)} />
               </div>
             ))}
+            {isActivity && <span className="label-grid text-right" title="How many times this pattern has been seen">Seen</span>}
             {columns.map(path => {
               const field = rowField(path);
               return (

@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import { ExportButton } from '@/components/findings/export-button';
 import { cn } from '@/lib/utils';
+import { tabForKind } from '@/lib/view-response';
 import type { ScanSummary, Finding } from '@/lib/types';
 import { ArrowLeft } from 'lucide-react';
 
@@ -95,7 +96,7 @@ export function ScanCompare({ scanA, scanB, categorySlug, backHref }: ScanCompar
                     </p>
                   </div>
                 </div>
-                <Link href={`/scans?category=all&tab=results&ruleId=${encodeURIComponent(f.ruleId)}`} className="shrink-0 text-xs font-medium text-ink hover:underline">
+                <Link href={`/scans?category=all&tab=${tabForKind(f.kind)}&ruleId=${encodeURIComponent(f.ruleId)}`} className="shrink-0 text-xs font-medium text-ink hover:underline">
                   View in Findings →
                 </Link>
               </div>
