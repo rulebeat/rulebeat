@@ -14,6 +14,10 @@
  * caller's to answer. After it the status is sent and cannot change, so the body is cut off with an
  * error (the browser sees a failed download, not a short file that looks whole) and the cause is only
  * logged. No error text is ever written into the file.
+ *
+ * What is streamed is not this module's business: `streamBody` takes a `BodyWriter` that says what the
+ * head, each batch and the tail of the body are. The findings export is one writer (`streamExport`), and
+ * the snapshot export (lib/snapshot-export.ts) is another, on the same stall, cancel and failure rules.
  */
 import { CsvWriter, JsonWriter, type ExportFormat, type ExportPiece } from './findings-export';
 
@@ -29,6 +33,19 @@ export interface ExportSource {
 /** Opens the source in a snapshot and keeps it open until `use` settles. */
 export type OpenExport = <T>(use: (source: ExportSource) => Promise<T>) => Promise<T>;
 
+/** Opens a source in a snapshot and keeps it open until `use` settles. */
+export type OpenBody<S> = <T>(use: (source: S) => Promise<T>) => Promise<T>;
+
+/** What a body is made of, read from a source. */
+export interface BodyWriter<S> {
+  /** The text before the first batch. May read from the source (a CSV header needs every column). */
+  head(source: S): Promise<string>;
+  /** The source's batches, each as the text it is written as. */
+  batches(source: S): AsyncIterable<string>;
+  /** The text that closes the body. */
+  tail(): string;
+}
+
 /** How long a download may go without reading before the export is dropped. */
 export const STALL_MS = 60_000;
 
@@ -40,8 +57,32 @@ class Stalled extends Error {
   }
 }
 
-export async function streamExport(
+/** The findings export's body: a CSV or a JSON array, a piece of a finding at a time. */
+function exportWriter(format: ExportFormat): BodyWriter<ExportSource> {
+  let csv: CsvWriter | null = null;
+  const json = format === 'json' ? new JsonWriter() : null;
+  return {
+    async head(source) {
+      if (format !== 'csv') return '';
+      const columns = await source.columns();
+      csv = new CsvWriter(columns.evidenceKeys, columns.lifecycle);
+      return csv.header();
+    },
+    async *batches(source) {
+      for await (const batch of source.batches()) yield batch.map(piece => (csv ?? json!).piece(piece)).join('');
+    },
+    tail: () => json?.close() ?? '',
+  };
+}
+
+export function streamExport(
   open: OpenExport, format: ExportFormat, opts: { stallMs?: number } = {},
+): Promise<ReadableStream<Uint8Array>> {
+  return streamBody(open, exportWriter(format), opts);
+}
+
+export async function streamBody<S>(
+  open: OpenBody<S>, writer: BodyWriter<S>, opts: { stallMs?: number } = {},
 ): Promise<ReadableStream<Uint8Array>> {
   const stallMs = opts.stallMs ?? STALL_MS;
   const encoder = new TextEncoder();
@@ -76,19 +117,15 @@ export async function streamExport(
     return !cancelled;
   }
 
-  async function produce(source: ExportSource): Promise<void> {
-    const csv = format === 'csv' ? await source.columns().then(c => new CsvWriter(c.evidenceKeys, c.lifecycle)) : null;
-    const json = format === 'json' ? new JsonWriter() : null;
-    const write = (piece: ExportPiece) => (csv ?? json!).piece(piece);
-
-    let pending = csv?.header() ?? '';
-    for await (const batch of source.batches()) {
-      const text = pending + batch.map(write).join('');
+  async function produce(source: S): Promise<void> {
+    let pending = await writer.head(source);
+    for await (const batch of writer.batches(source)) {
+      const text = pending + batch;
       pending = '';
       if (text !== '' && !(await push(text))) return;
     }
     // The last chunk is the one that closes the file, so there is nothing left to wait for after it.
-    const last = pending + (json?.close() ?? '');
+    const last = pending + writer.tail();
     if (cancelled) return;
     controller.enqueue(encoder.encode(last));
     if (!firstByte) {

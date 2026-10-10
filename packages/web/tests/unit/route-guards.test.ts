@@ -163,6 +163,9 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['findings/group/route.ts', 'read'],
     ['findings/column-values/route.ts', 'read'],
     ['findings/export/route.ts', 'read'],
+    // A run's findings are read from its records, so a removed user must lose them at once (ADR 0008).
+    ['scans/[id]/snapshot/route.ts', 'read'],
+    ['scans/[id]/snapshot/export/route.ts', 'read'],
   ];
 
   for (const [route, action] of PINNED) {

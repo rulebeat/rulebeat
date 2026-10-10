@@ -29,7 +29,7 @@ import {
 import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } from '@/lib/rule-bulk-toggle';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
-import type { Category, Rule, Severity } from '@/lib/types';
+import type { Category, Rule, Severity, Suppression } from '@/lib/types';
 import type { View } from '@/lib/finding-view';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
@@ -79,7 +79,7 @@ export interface ScansClientProps {
   categories: Category[];
   role: Role;
   activeTab: TabKey;
-  initialSuppressions?: ScanHistoryTabProps['initialSuppressions'];
+  initialSuppressions?: Suppression[];
   initialCategoryFilter?: string[];
   /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
    *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
@@ -90,7 +90,10 @@ export interface ScansClientProps {
   initialSavedViewId?: string;
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];
-  snapshotScan?: ScanHistoryTabProps['snapshotScan'];
+  /** The scan a `?scan=` link names, with what the address asks of it. The page sends no findings: the
+   *  snapshot screen reads them from the server. */
+  snapshotScanId?: ScanHistoryTabProps['snapshotScanId'];
+  snapshotQuery?: ScanHistoryTabProps['snapshotQuery'];
   compareCategorySlug?: string;
   compareCategoryScans?: ScanHistoryTabProps['compareCategoryScans'];
   compareScans?: ScanHistoryTabProps['compareScans'];
@@ -118,7 +121,8 @@ export function ScansClient({
   initialSavedViewId,
   runs,
   runDetail,
-  snapshotScan,
+  snapshotScanId,
+  snapshotQuery,
   compareCategorySlug,
   compareCategoryScans,
   compareScans,
@@ -336,11 +340,13 @@ export function ScansClient({
           rules={policies}
           runs={runs ?? []}
           runDetail={runDetail}
-          snapshotScan={snapshotScan}
+          snapshotScanId={snapshotScanId}
+          snapshotQuery={snapshotQuery}
+          snapshotRestarts={explorerKey}
+          onSnapshotUrlWrite={query => ownWrites.record(query)}
           compareCategorySlug={compareCategorySlug}
           compareCategoryScans={compareCategoryScans}
           compareScans={compareScans}
-          initialSuppressions={initialSuppressions}
         />
       )}
 

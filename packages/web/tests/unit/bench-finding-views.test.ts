@@ -5,16 +5,21 @@
  * question.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { dbKind } from '@/lib/db/backend';
-import { pgDb } from '@/lib/db/client';
+import { db, pgDb } from '@/lib/db/client';
+import { many, one } from '@/lib/db/exec';
+import { scanFindings } from '@/lib/db/tables';
 import { listFindings } from '@/lib/db/findings';
 import { openExport, queryView } from '@/lib/db/finding-views';
+import { openSnapshotExport, querySnapshot } from '@/lib/db/scan-snapshots';
+import { streamSnapshotExport } from '@/lib/snapshot-export';
+import { emptySnapshotQuery } from '@/lib/snapshot-query';
 import { streamExport } from '@/lib/export-stream';
 import { RESULTS_KINDS } from '@/lib/finding-kinds';
 import { applyView, emptyView } from '@/lib/finding-view';
 import {
-  BENCH_RULES, ROW_TARGET_BYTES, formatTable, generateDataset, generateRow, median, runBench, runMeasurements,
+  BENCH_RULES, BENCH_SNAPSHOT_FILTERS, ROW_TARGET_BYTES, formatTable, generateDataset, generateRow, largestSnapshotScanId, median, runBench, runMeasurements,
   type BenchResult,
 } from '../../scripts/bench/finding-views';
 import { isActiveSuppression, loadSuppressions } from '@/lib/suppressions';
@@ -108,12 +113,13 @@ describe('a run over a tiny database', () => {
       'scan save: first scan', 'scan save: second scan',
       'today: payload, Results tab', 'today: payload, Advisories tab', 'today: default view', 'today: row-filtered view', 'today: column dropdown',
       'new: default view', 'new: row-filtered view', 'new: default view, Advisories tab', 'new: column dropdown',
+      'snapshot: first page', 'snapshot: later page', 'snapshot: page filtered with search',
     ]);
     for (const m of result.measurements) {
       expect(m.coldMs, m.name).toBeGreaterThan(0);
       expect(m.medianMs, m.name).toBeGreaterThan(0);
     }
-    for (const name of names.filter(n => n.includes('payload') || n.startsWith('new:'))) {
+    for (const name of names.filter(n => n.includes('payload') || n.startsWith('new:') || n.startsWith('snapshot:'))) {
       expect(result.measurements.find(m => m.name === name)!.bytes, name).toBeGreaterThan(0);
     }
   });
@@ -137,7 +143,10 @@ describe('a run over a tiny database', () => {
   });
 
   it('measures the export as a file the size of the one the route sends, with the first byte before the end', async () => {
-    expect(result.exports.map(e => e.name)).toEqual(['export: CSV, default view', 'export: CSV, row-filtered view', 'export: JSON, default view']);
+    expect(result.exports.map(e => e.name)).toEqual([
+      'export: CSV, default view', 'export: CSV, row-filtered view', 'export: JSON, default view',
+      'export: snapshot CSV, whole run', 'export: snapshot CSV, filtered with search', 'export: snapshot JSON, whole run',
+    ]);
     for (const e of result.exports) {
       expect(e.bytes, e.name).toBeGreaterThan(0);
       expect(e.ttfbColdMs, e.name).toBeGreaterThan(0);
@@ -153,6 +162,50 @@ describe('a run over a tiny database', () => {
     expect(Buffer.byteLength(file)).toBe(byName('export: CSV, default view').bytes);
   });
 
+  it('measures the snapshot of the biggest scan: the page, a later page and a filtered one, which answer what the route answers', async () => {
+    const scanId = await largestSnapshotScanId();
+    const first = await querySnapshot(scanId, emptySnapshotQuery());
+    expect(first.status).toBe('ok');
+    if (first.status !== 'ok') return;
+    // The biggest scan holds at least as many records as any other, and the page is the run's first.
+    expect(first.response.total).toBeGreaterThan(0);
+    expect(first.response.items.length).toBe(Math.min(50, first.response.total));
+    const mostRecords = Math.max(...(await many(db.select({ n: sql<number | string>`count(*)` }).from(scanFindings).groupBy(scanFindings.scanId))).map(r => Number(r.n)));
+    expect(first.response.total).toBe(mostRecords);
+
+    const filtered = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search });
+    expect(filtered.status === 'ok' && filtered.response.total).toBeGreaterThan(0);
+    expect(filtered.status === 'ok' && filtered.response.total).toBeLessThan(first.response.total);
+    expect(filtered.status === 'ok' && filtered.response.items.every(i => i.severity === 'high' && i.title.includes('disks'))).toBe(true);
+    // Search alone narrows the run too, so the filter measured is not the severity doing all the work.
+    const severityOnly = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity] });
+    expect(severityOnly.status === 'ok' && filtered.status === 'ok' && filtered.response.total < severityOnly.response.total).toBe(true);
+
+    const bytes = (name: string) => result.measurements.find(m => m.name === name)!.bytes!;
+    expect(bytes('snapshot: page filtered with search')).toBeLessThan(bytes('snapshot: first page'));
+    expect(bytes('snapshot: first page')).toBe(Buffer.byteLength(JSON.stringify(first.response)));
+  });
+
+  it('says how many records the snapshot measurements ran over: the count the biggest scan stored', async () => {
+    const scanId = await largestSnapshotScanId();
+    const stored = Number((await one(db.select({ n: sql<number | string>`count(*)` }).from(scanFindings).where(eq(scanFindings.scanId, scanId))))!.n);
+    expect(stored).toBeGreaterThan(0);
+    expect(typeof result.snapshotRecords).toBe('number');
+    expect(result.snapshotRecords).toBe(stored);
+    expect(formatTable(result)).toContain(`snapshot measurements: the largest scan, ${stored.toLocaleString('en-US')} records`);
+  });
+  it('measures the snapshot export as the file the route streams for the same query, filtered one smaller', async () => {
+    const scanId = await largestSnapshotScanId();
+    const byName = (name: string) => result.exports.find(e => e.name === name)!;
+    const query = { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search };
+    const csv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery()), 'csv')).text();
+    const filteredCsv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, query), 'csv')).text();
+    const json = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery()), 'json')).text();
+    expect(Buffer.byteLength(csv)).toBe(byName('export: snapshot CSV, whole run').bytes);
+    expect(Buffer.byteLength(filteredCsv)).toBe(byName('export: snapshot CSV, filtered with search').bytes);
+    expect(Buffer.byteLength(json)).toBe(byName('export: snapshot JSON, whole run').bytes);
+    expect(byName('export: snapshot CSV, filtered with search').bytes).toBeLessThan(byName('export: snapshot CSV, whole run').bytes);
+  });
   it('measures the records the two scans stored: one per finding per scan, with their size and the pages they take', async () => {
     const { records } = result;
     expect(records.count).toBe(await countRows('scan_findings'));

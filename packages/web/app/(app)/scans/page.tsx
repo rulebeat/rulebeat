@@ -11,6 +11,7 @@ import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
+import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { listCategories } from '@/lib/db/categories';
 import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
@@ -42,7 +43,7 @@ export default async function ScansPage({
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
 
   let runDetail: { run: NonNullable<Awaited<ReturnType<typeof getRun>>>; scans: Awaited<ReturnType<typeof getScansForRun>> } | null = null;
-  let snapshotScan: ScanSummary | null = null;
+  let snapshotScanId: string | undefined;
   let compareScans: [ScanSummary, ScanSummary] | null = null;
   let compareCategoryScans: Awaited<ReturnType<typeof listScanMetas>> | undefined;
 
@@ -83,7 +84,9 @@ export default async function ScansPage({
       const run = await getRun(runId);
       if (run) {
         runDetail = { run, scans: await getScansForRun(runId) };
-        if (scanId) snapshotScan = await getScanById(scanId);
+        // The snapshot reads its own findings from the server a page at a time (ADR 0008), so the page
+        // passes the id through and never loads the scan.
+        if (scanId) snapshotScanId = scanId;
       }
     }
   }
@@ -109,7 +112,8 @@ export default async function ScansPage({
         initialSavedViewId={initialSavedViewId}
         runs={activeTab === 'history' ? await listAllRuns(50) : undefined}
         runDetail={runDetail}
-        snapshotScan={snapshotScan}
+        snapshotScanId={snapshotScanId}
+        snapshotQuery={snapshotScanId ? snapshotQueryFromParams(params) : undefined}
         compareCategorySlug={compareCategory}
         compareCategoryScans={compareCategoryScans}
         compareScans={compareScans}
