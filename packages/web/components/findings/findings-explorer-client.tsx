@@ -1089,9 +1089,10 @@ export function FindingsExplorerClient({
           { key: 'info',     label: 'Info',                   value: stats.counts.info,        valueCls: 'text-ink-faint' },
           { key: 'new',     label: `New (${windowLabel})`,   value: stats.newCount,           valueCls: 'text-sev-critical',
             title: `First seen within ${windowLabel} and not yet fixed` },
-          { key: 'fixed',    label: `Fixed (${windowLabel})`, value: stats.recentlyFixedCount, valueCls: 'text-status-ok',
-            title: `Resolved within ${windowLabel}` },
-        ]).filter(s => resolves || s.key !== 'fixed').map(s => {
+          // An Activity finding never resolves, so its tab has no Fixed tile.
+          ...(resolves ? [{ key: 'fixed', label: `Fixed (${windowLabel})`, value: stats.recentlyFixedCount, valueCls: 'text-status-ok',
+            title: `Resolved within ${windowLabel}` }] : []),
+        ]).map(s => {
           // Only two of the eight actually filter anything. The rest are readouts, so they
           // do not get a pointer or a hover state that promises a click will do something.
           const clickable = s.key === 'new' || s.key === 'fixed';
