@@ -15,6 +15,7 @@ export interface EstateResource {
 
 export interface Estate {
   resources: EstateResource[];
+  /** Keyed by the lower-cased id, since Resource Graph compares ids without case. */
   byId: Map<string, EstateResource>;
 }
 
@@ -106,5 +107,5 @@ export function buildEstate(): Estate {
     }
   }
 
-  return { resources, byId: new Map(resources.map(r => [r.id, r])) };
+  return { resources, byId: new Map(resources.map(r => [r.id.toLowerCase(), r])) };
 }

@@ -104,10 +104,12 @@ export async function* runRules(
       try {
         const idList = missingIds.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
         const rows = await ctx.queryARG<Record<string, unknown>>(
-          `resources\n| where id in (${idList})\n| project id, type, location, resourceGroup, subscriptionId`,
+          `resources\n| where id in~ (${idList})\n| project id, type, location, resourceGroup, subscriptionId`,
           scope,
         );
-        enrichment = new Map(rows.map(r => [String(r['id'] ?? ''), r]));
+        // Keyed lower-case: `in~` matches an id whatever its casing, so the row can come back
+        // cased differently from the rule's own id.
+        enrichment = new Map(rows.map(r => [String(r['id'] ?? '').toLowerCase(), r]));
       } catch (err) {
         ctx.log(`Identity enrichment query failed for rule ${rule.id}: ${extractAzureErrorMessage(err)}`, {
           operation: 'enrichment-failed', ruleId: rule.id, category: rule.category, level: 'warn',
@@ -130,7 +132,7 @@ export async function* runRules(
       const evidence = Object.fromEntries(
         Object.entries(resource).filter(([k]) => !IDENTITY_FIELDS.has(k)),
       );
-      const enriched = enrichment.get(resourceId);
+      const enriched = enrichment.get(resourceId.toLowerCase());
       const fallback = parseResourceId(resourceId);
       const pick = (argKey: string, fallbackVal: string | undefined) =>
         resource[argKey] ?? enriched?.[argKey] ?? fallbackVal;

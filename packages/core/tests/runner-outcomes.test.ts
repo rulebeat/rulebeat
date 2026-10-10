@@ -288,6 +288,30 @@ describe('runRules() structured logging (spec 006)', () => {
     expect(outcomeLog?.fields).toMatchObject({ status: 'success', level: 'info' });
   });
 
+  it('recovers location for a row whose id casing differs from the resources table', async () => {
+    const rule = baseRule({ rawKql: 'resources | project id = tolower(id), name' });
+    const stored = argRow('/subscriptions/sub-1/resourceGroups/RG1/providers/Microsoft.Compute/virtualMachines/VM1');
+    const ruleRow = { id: String(stored['id']).toLowerCase(), name: 'vm1' };
+    // Answers the follow-up query with Resource Graph's semantics: `in` compares ids exactly,
+    // `in~` ignores case.
+    const ctx = fakeCtx(async kql => {
+      if (kql === rule.rawKql) return [ruleRow];
+      const match = /\| where id (in~?) \(([^)]*)\)/.exec(kql);
+      if (!match) throw new Error(`unexpected query: ${kql}`);
+      const ids = match[2]!.split(', ').map(s => s.slice(1, -1));
+      const same = match[1] === 'in~'
+        ? (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+        : (a: string, b: string) => a === b;
+      return [stored].filter(r => ids.some(id => same(id, String(r['id']))));
+    });
+
+    const findings = (await drain(rule, ctx)).flatMap(e => (e.kind === 'finding' ? [e.finding] : []));
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.location).toBe('eastus');
+    expect(findings[0]!.resourceId).toBe('/subscriptions/sub-1/resourcegroups/rg1/providers/microsoft.compute/virtualmachines/vm1');
+  });
+
   it('fires rule-start before running each rule, across multiple rules in one scan', async () => {
     const ruleA = baseRule({ id: 'rule-a', name: 'Rule A' });
     const ruleB = baseRule({ id: 'rule-b', name: 'Rule B' });
