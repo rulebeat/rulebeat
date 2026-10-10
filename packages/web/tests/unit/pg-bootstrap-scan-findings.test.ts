@@ -52,6 +52,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     vi.restoreAllMocks();
     // A test that failed after dropping the table or the column must not leave the next suite without them.
     await raw(`DROP TRIGGER IF EXISTS refuse_poison ON scan_findings`).catch(() => {});
+    await raw(`DROP FUNCTION IF EXISTS refuse_poison()`);
     await bootstrapPg(pgDb!);
     await resetDb();
   });
@@ -96,7 +97,9 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     await bootstrapPg(pgDb!);
 
     expect(await recordsOf('pg-scan-new')).toHaveLength(2);
-    expect(await raw(`SELECT DISTINCT scan_id FROM scan_findings ORDER BY scan_id COLLATE "C"`)).toEqual([{ scan_id: 'pg-scan-kept' }, { scan_id: 'pg-scan-new' }]);
+    // DISTINCT sits in a subquery: Postgres wants an ORDER BY expression of a DISTINCT select to be in its list,
+    // and `scan_id COLLATE "C"` is not the `scan_id` that is.
+    expect(await raw(`SELECT scan_id FROM (SELECT DISTINCT scan_id FROM scan_findings) AS stored ORDER BY scan_id COLLATE "C"`)).toEqual([{ scan_id: 'pg-scan-kept' }, { scan_id: 'pg-scan-new' }]);
     expect(await raw(`SELECT DISTINCT title FROM scan_findings WHERE scan_id = 'pg-scan-kept'`)).toEqual([{ title: 'kept' }]);
     expect(await markers()).toEqual([{ id: 'pg-scan-kept', has_records: 1 }, { id: 'pg-scan-new', has_records: 1 }]);
   });
@@ -107,10 +110,9 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     await insertScan('pg-scan-good', [blobFinding('vm-1')], '2026-01-01T00:00:00.000Z');
     await insertScan('pg-scan-broken', '{not json', '2026-01-02T00:00:00.000Z');
     await insertScan('pg-scan-poisoned', [blobFinding('vm-2'), blobFinding('vm-3', { title: 'poison' })], '2026-01-03T00:00:00.000Z');
-    await raw(`
-      CREATE OR REPLACE FUNCTION refuse_poison() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'refused'; END; $$ LANGUAGE plpgsql;
-      CREATE TRIGGER refuse_poison BEFORE INSERT ON scan_findings FOR EACH ROW WHEN (NEW.title = 'poison') EXECUTE FUNCTION refuse_poison();
-    `);
+    // One statement a call: the driver runs a parameterless call as a simple query, but nothing here depends on that.
+    await raw(`CREATE OR REPLACE FUNCTION refuse_poison() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'refused'; END; $$ LANGUAGE plpgsql`);
+    await raw(`CREATE TRIGGER refuse_poison BEFORE INSERT ON scan_findings FOR EACH ROW WHEN (NEW.title = 'poison') EXECUTE FUNCTION refuse_poison()`);
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await bootstrapPg(pgDb!);
