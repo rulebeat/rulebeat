@@ -218,6 +218,20 @@ table saved_views
   created_at TEXT NOT NULL
   updated_by TEXT
   updated_at TEXT NOT NULL
+table scan_findings
+  scan_id TEXT NOT NULL PK(1)
+  fingerprint TEXT NOT NULL PK(2)
+  rule_id TEXT NOT NULL
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  kind TEXT NOT NULL
+  category TEXT NOT NULL
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  resource_group TEXT
+  subscription_id TEXT NOT NULL
+  row_count INTEGER NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -234,6 +248,7 @@ table scans
   run_id TEXT
   coverage TEXT NOT NULL DEFAULT 'complete'
   incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  has_records INTEGER NOT NULL DEFAULT 0
 table schedule_notification_channels
   schedule_id TEXT NOT NULL PK(1)
   channel_id TEXT NOT NULL PK(2)
@@ -317,6 +332,7 @@ index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
+index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
@@ -343,6 +359,7 @@ rule_versions: 16
 rules: 20
 saved_queries: 0
 saved_views: 0
+scan_findings: 1
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 1
@@ -403,7 +420,8 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
-scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+scan_findings {"category":"cost","fingerprint":"<FP>","kind":"state","resource_group":null,"resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":null,"row_count":0,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","severity":"high","subscription_id":"","title":"A pre-upgrade finding"}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","has_records":1,"id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
 schedule_runs {"categories":"[\\"cost\\"]","changed_findings":null,"duration_ms":null,"error":null,"finished_at":"<TS>","heartbeat_at":null,"id":"r0000000-0000-4000-8000-000000000001","new_finding_fingerprints":null,"new_findings":1,"notify_claimed_at":null,"notify_status":"none","owner_id":null,"schedule_id":"sch00000-0000-4000-8000-000000000001","started_at":"<TS>","status":"success","target_type":null,"target_values":null,"total_findings":4,"triggered_by":"schedule"}
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000001","interval":1,"last_run_at":"<TS>","name":"Nightly cost sweep","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"categories","target_values":"[\\"cost\\",\\"security\\"]","updated_at":"<TS>"}
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000002","interval":1,"last_run_at":null,"name":"Everything, weekly","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"all","target_values":"[]","updated_at":"<TS>"}
@@ -629,6 +647,20 @@ table saved_views
   created_at TEXT NOT NULL
   updated_by TEXT
   updated_at TEXT NOT NULL
+table scan_findings
+  scan_id TEXT NOT NULL PK(1)
+  fingerprint TEXT NOT NULL PK(2)
+  rule_id TEXT NOT NULL
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  kind TEXT NOT NULL
+  category TEXT NOT NULL
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  resource_group TEXT
+  subscription_id TEXT NOT NULL
+  row_count INTEGER NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -645,6 +677,7 @@ table scans
   total_rules INTEGER NOT NULL DEFAULT 0
   total_policies INTEGER NOT NULL DEFAULT 0
   run_id TEXT
+  has_records INTEGER NOT NULL DEFAULT 0
 table schedule_notification_channels
   schedule_id TEXT NOT NULL PK(1)
   channel_id TEXT NOT NULL PK(2)
@@ -728,6 +761,7 @@ index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
+index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
@@ -754,6 +788,7 @@ rule_versions: 16
 rules: 16
 saved_queries: 0
 saved_views: 0
+scan_findings: 0
 scans: 0
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -1028,6 +1063,20 @@ table saved_views
   created_at TEXT NOT NULL
   updated_by TEXT
   updated_at TEXT NOT NULL
+table scan_findings
+  scan_id TEXT NOT NULL PK(1)
+  fingerprint TEXT NOT NULL PK(2)
+  rule_id TEXT NOT NULL
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  kind TEXT NOT NULL
+  category TEXT NOT NULL
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  resource_group TEXT
+  subscription_id TEXT NOT NULL
+  row_count INTEGER NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1044,6 +1093,7 @@ table scans
   run_id TEXT
   coverage TEXT NOT NULL DEFAULT 'complete'
   incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  has_records INTEGER NOT NULL DEFAULT 0
 table schedule_notification_channels
   schedule_id TEXT NOT NULL PK(1)
   channel_id TEXT NOT NULL PK(2)
@@ -1127,6 +1177,7 @@ index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
+index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
@@ -1153,6 +1204,7 @@ rule_versions: 19
 rules: 19
 saved_queries: 0
 saved_views: 0
+scan_findings: 1
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -1215,7 +1267,8 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
-scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+scan_findings {"category":"cost","fingerprint":"<FP>","kind":"state","resource_group":null,"resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":null,"row_count":0,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","severity":"high","subscription_id":"","title":"A pre-upgrade finding"}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","has_records":1,"id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
 users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
@@ -1438,6 +1491,20 @@ table saved_views
   created_at TEXT NOT NULL
   updated_by TEXT
   updated_at TEXT NOT NULL
+table scan_findings
+  scan_id TEXT NOT NULL PK(1)
+  fingerprint TEXT NOT NULL PK(2)
+  rule_id TEXT NOT NULL
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  kind TEXT NOT NULL
+  category TEXT NOT NULL
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  resource_group TEXT
+  subscription_id TEXT NOT NULL
+  row_count INTEGER NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1454,6 +1521,7 @@ table scans
   run_id TEXT
   coverage TEXT NOT NULL DEFAULT 'complete'
   incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  has_records INTEGER NOT NULL DEFAULT 0
 table schedule_notification_channels
   schedule_id TEXT NOT NULL PK(1)
   channel_id TEXT NOT NULL PK(2)
@@ -1537,6 +1605,7 @@ index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
+index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
@@ -1563,6 +1632,7 @@ rule_versions: 20
 rules: 23
 saved_queries: 0
 saved_views: 0
+scan_findings: 1
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -1627,7 +1697,8 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
-scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"compliance","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
+scan_findings {"category":"compliance","fingerprint":"<FP>","kind":"state","resource_group":null,"resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":null,"row_count":0,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","severity":"high","subscription_id":"","title":"A pre-upgrade finding"}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","has_records":1,"id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"compliance","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
 users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
@@ -1850,6 +1921,20 @@ table saved_views
   created_at TEXT NOT NULL
   updated_by TEXT
   updated_at TEXT NOT NULL
+table scan_findings
+  scan_id TEXT NOT NULL PK(1)
+  fingerprint TEXT NOT NULL PK(2)
+  rule_id TEXT NOT NULL
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  kind TEXT NOT NULL
+  category TEXT NOT NULL
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  resource_group TEXT
+  subscription_id TEXT NOT NULL
+  row_count INTEGER NOT NULL
 table scans
   id TEXT PK(1)
   module TEXT NOT NULL
@@ -1866,6 +1951,7 @@ table scans
   total_policies INTEGER NOT NULL DEFAULT 0
   coverage TEXT NOT NULL DEFAULT 'complete'
   incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  has_records INTEGER NOT NULL DEFAULT 0
 table schedule_notification_channels
   schedule_id TEXT NOT NULL PK(1)
   channel_id TEXT NOT NULL PK(2)
@@ -1949,6 +2035,7 @@ index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
+index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
@@ -1975,6 +2062,7 @@ rule_versions: 16
 rules: 19
 saved_queries: 0
 saved_views: 0
+scan_findings: 0
 scans: 1
 schedule_notification_channels: 0
 schedule_runs: 0
@@ -2033,7 +2121,7 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
-scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\"}]","finished_at":"<TS>","id":"s0000000-0000-4000-8000-000000000009","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":12,"triggered_by":"manual"}
+scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\"}]","finished_at":"<TS>","has_records":0,"id":"s0000000-0000-4000-8000-000000000009","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":12,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
 users {"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;

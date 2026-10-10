@@ -59,6 +59,7 @@ export const scans = sqliteTable('scans', {
   runId: text('run_id'), // links back to schedule_runs.id (the execution that produced this category's scan)
   coverage: text('coverage').notNull().default('complete'), // 'complete' | 'partial'
   incompleteRules: text('incomplete_rules').notNull().default('[]'), // JSON: IncompleteRule[]
+  hasRecords: integer('has_records').notNull().default(0), // 1 once scan_findings holds this scan's records (ADR 0008); a release that does not know the column saves 0, so its scans convert on the next start
 });
 
 export const suppressions = sqliteTable('suppressions', {
@@ -277,6 +278,29 @@ export const findingRows = sqliteTable('finding_rows', {
   data: text('data').notNull(),             // JSON object, one row
 }, (table) => ({
   pk: primaryKey({ columns: [table.fingerprint, table.position] }),
+}));
+
+/** What each scan kept of each finding (ADR 0008): one slim record per finding per scan, as that scan
+ *  saw it, so a rule renamed or re-graded later does not rewrite a past run. No rows, no description.
+ *  No foreign key, like finding_rows: pruning a scan deletes its records explicitly, and a deleted
+ *  rule's records stay. A rule id change rewrites `rule_id` and `fingerprint`. The index that serves a
+ *  scan's records in display order is an expression index and lives in migrate.ts and pg/bootstrap.ts. */
+export const scanFindings = sqliteTable('scan_findings', {
+  scanId: text('scan_id').notNull(),
+  fingerprint: text('fingerprint').notNull(),
+  ruleId: text('rule_id').notNull(),
+  severity: text('severity').notNull(),
+  title: text('title').notNull(),
+  kind: text('kind').notNull(),                 // 'state' | 'activity' | 'advisory'
+  category: text('category').notNull(),         // the scan's category, as findings.category keeps it
+  resourceId: text('resource_id'),              // null for an Activity finding
+  resourceName: text('resource_name'),
+  resourceType: text('resource_type'),
+  resourceGroup: text('resource_group'),
+  subscriptionId: text('subscription_id').notNull(),
+  rowCount: integer('row_count').notNull(),     // how many rows the finding held in this scan
+}, (table) => ({
+  pk: primaryKey({ columns: [table.scanId, table.fingerprint] }),
 }));
 
 /** The columns a rule's findings returned: one record per (rule, dot path), the paths of every row

@@ -26,6 +26,10 @@ import {
   CATALOGUE_READ_BACK, CATALOGUE_READ_RULES, COLUMN_CATALOGUE_MARKER, PathCollector, catalogueMismatch,
   type CatalogueRecord,
 } from './column-catalogue-build';
+import {
+  SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
+  planScanBlob, recordValues,
+} from './scan-findings-copy';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -77,6 +81,9 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
   // A database from before ADR 0007 has no finding_rows yet; there is nothing of it to rewrite.
   let updateRows: Database.Statement | undefined;
   try { updateRows = sqlite.prepare(`UPDATE finding_rows SET fingerprint = ? WHERE fingerprint = ?`); } catch { /* no table yet */ }
+  // ADR 0008: a scan's records carry the fingerprint the scan stored. Same for a database that predates them.
+  let updateRecord: Database.Statement | undefined;
+  try { updateRecord = sqlite.prepare(`UPDATE scan_findings SET fingerprint = ? WHERE scan_id = ? AND fingerprint = ?`); } catch { /* no table yet */ }
 
   const remap = (resourceId: string, storedFingerprint: string): void => {
     // A database from before computeFingerprint() ignored casing still holds the legacy value; it
@@ -110,6 +117,23 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
       .all() as { fingerprint: string; resource_id: string }[];
     for (const s of suppressions) remap(s.resource_id, s.fingerprint);
   } catch { /* table may not exist */ }
+
+  // Records of past scans move with the rule. An Activity record has no resource id to recompute its
+  // fingerprint from, so it is left, as the findings of a rule with no resource always have been.
+  if (updateRecord) {
+    try {
+      const records = sqlite
+        .prepare(`SELECT scan_id, fingerprint, resource_id FROM scan_findings WHERE rule_id = ? AND resource_id IS NOT NULL`)
+        .all(oldId) as { scan_id: string; fingerprint: string; resource_id: string }[];
+      for (const r of records) {
+        if (computeFingerprint(oldId, r.resource_id) !== r.fingerprint
+          && computeLegacyFingerprint(oldId, r.resource_id) !== r.fingerprint) continue;
+        const next = computeFingerprint(newId, r.resource_id);
+        if (next === r.fingerprint) continue;
+        try { updateRecord.run(next, r.scan_id, r.fingerprint); } catch { /* collision, leave it */ }
+      }
+    } catch { /* table may not exist */ }
+  }
 }
 
 /** Opens a database with the pragmas the product runs with. Tests must use this, not `new Database`. */
@@ -865,6 +889,30 @@ export function runMigrations(sqlite: Database.Database): void {
     );
   `);
 
+  // ADR 0008: what each scan kept of each finding, one slim record per finding per scan. Empty here;
+  // convertScanBlobs() at the end of this function fills it from the findings blobs, once per scan,
+  // and a scan saved by this release writes its own. The index serves a scan's records in display order.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS scan_findings (
+      scan_id TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      category TEXT NOT NULL,
+      resource_id TEXT,
+      resource_name TEXT,
+      resource_type TEXT,
+      resource_group TEXT,
+      subscription_id TEXT NOT NULL,
+      row_count INTEGER NOT NULL,
+      PRIMARY KEY (scan_id, fingerprint)
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_findings_order
+      ON scan_findings (scan_id, (${SCAN_FINDING_SEVERITY_RANK}), title, fingerprint);
+  `);
+
   // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
   try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
 
@@ -972,6 +1020,11 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN coverage TEXT NOT NULL DEFAULT 'complete'`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN incomplete_rules TEXT NOT NULL DEFAULT '[]'`); } catch { /* already exists */ }
 
+  // ADR 0008: 1 once scan_findings holds this scan's records. Existing scans read 0 and convert at the
+  // end of this function; a release that predates the column saves 0 too, so a database that returns
+  // from it converts on its next start.
+  try { sqlite.exec(`ALTER TABLE scans ADD COLUMN has_records INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+
   // schedule_runs: broaden from schedule-only to a general run record covering manual runs too.
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'schedule'`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN target_type TEXT`); } catch { /* already exists */ }
@@ -1066,6 +1119,7 @@ export function runMigrations(sqlite: Database.Database): void {
     );
     const renameInFindingsTable = sqlite.prepare(`UPDATE findings SET rule_id = ? WHERE rule_id = ?`);
     const renameInFindingEvents = sqlite.prepare(`UPDATE finding_events SET rule_id = ? WHERE rule_id = ?`);
+    const renameInScanFindings = sqlite.prepare(`UPDATE scan_findings SET rule_id = ? WHERE rule_id = ?`);
     // A database from before the catalogue has no catalogue to move. A path the new id already holds stays one
     // entry, so the move cannot trip the key.
     let copyCatalogue: Database.Statement | undefined;
@@ -1100,6 +1154,7 @@ export function runMigrations(sqlite: Database.Database): void {
         renameInDashboards.run(oldQuoted, newQuoted, `%${oldQuoted}%`);
         renameInFindingsTable.run(newId, oldId);
         renameInFindingEvents.run(newId, oldId);
+        renameInScanFindings.run(newId, oldId);
         copyCatalogue?.run(newId, oldId);
         dropCatalogue?.run(oldId);
       } catch { /* ignore this pair, continue with the rest */ }
@@ -1161,6 +1216,54 @@ export function runMigrations(sqlite: Database.Database): void {
   copyFindingRows(sqlite);
   // After the copy, whose rows it reads, and only once the copy has proved out.
   buildColumnCatalogue(sqlite);
+  // After every rule rename and the fingerprint rekey, so a blob carries the ids its records are made of.
+  convertScanBlobs(sqlite);
+}
+
+/**
+ * Writes the records (ADR 0008) of every scan that has none yet, from the findings blob it stored
+ * through lib/db/scan-findings-copy.ts's plan. Every stored scan the first time; afterwards only a scan
+ * a release without the table saved, which reads `has_records = 0` like the rest.
+ *
+ * One transaction per scan: its records and its marker land together or not at all, so a restart part
+ * way resumes at the next scan and a second start finds nothing to do. A scan whose blob cannot be
+ * read, or whose records cannot be written, is logged with its id and left unconverted: it keeps its
+ * blob, reads as it did before this release and is tried again on the next start. Nothing here throws.
+ */
+function convertScanBlobs(sqlite: Database.Database): void {
+  try {
+    const pending = sqlite.prepare(SCAN_COPY_READ_PENDING).all() as { id: string; module: string }[];
+    if (pending.length === 0) return;
+    // Records of scans that are gone: a release without this table pruned scans and left them behind.
+    try { sqlite.exec(SCAN_COPY_DELETE_ORPHANS); } catch (err) {
+      console.error('[migrate] could not remove the records of scans that no longer exist:', err);
+    }
+    const readBlob = sqlite.prepare(`SELECT findings FROM scans WHERE id = ?`);
+    const clear = sqlite.prepare(`DELETE FROM scan_findings WHERE scan_id = ?`);
+    const insert = sqlite.prepare(
+      `INSERT INTO scan_findings (${SCAN_FINDING_COLUMNS.join(', ')}) VALUES (${SCAN_FINDING_COLUMNS.map(() => '?').join(', ')})`,
+    );
+    const mark = sqlite.prepare(`UPDATE scans SET has_records = 1 WHERE id = ?`);
+    for (const scan of pending) {
+      try {
+        const blob = (readBlob.get(scan.id) as { findings: string } | undefined)?.findings ?? '[]';
+        const plan = planScanBlob(scan.id, scan.module, blob);
+        if (!plan.ok) {
+          console.error(`[migrate] scan ${scan.id} keeps no records, ${plan.reason}; it will be tried again on the next start`);
+          continue;
+        }
+        sqlite.transaction(() => {
+          clear.run(scan.id);
+          for (const record of plan.records) insert.run(...recordValues(record));
+          mark.run(scan.id);
+        })();
+      } catch (err) {
+        console.error(`[migrate] could not store the records of scan ${scan.id}; it will be tried again on the next start:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('[migrate] could not convert stored scans into records:', err);
+  }
 }
 
 /**
