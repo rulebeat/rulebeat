@@ -13,7 +13,7 @@
  * Runs against the ambient test database tests/setup.ts already points at a throwaway file —
  * nothing here touches demo.db or rulebeat.db.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import type { Rule } from '@rulebeat/core';
@@ -22,11 +22,15 @@ import { loadRules, setRulesEnabled } from '@/lib/rules';
 import { db, rawSqlite } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
 import { scheduleRuns, findings } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { buildEstate, TYPE_META } from '@/lib/demo/estate';
 import { buildIdentityApps, graphAppsForDay } from '@/lib/demo/identity-fixtures';
-import { CORE_FIXTURES, CORE_RULE_IDS, unfixturedCoreRuleIds } from '@/lib/demo/core-fixtures';
+import { CORE_FIXTURES, CORE_RULE_IDS } from '@/lib/demo/core-fixtures';
 import { buildAprlFixtures } from '@/lib/demo/aprl-fixtures';
+import { curateRules, HELD_BACK_RULE_IDS } from '@/lib/demo/curation';
+import { createLiveDemoContext, resetLiveDemoContextForTests } from '@/lib/demo/live-context';
+import { executeTarget } from '@/lib/run-executor';
+import { resetDb } from '../helpers/db';
 import { extractProjectColumns } from '@/lib/demo/kql-columns';
 import { isViolatingOnDay, rowsForRuleOnDay } from '@/lib/demo/violation-engine';
 import { createFakeContext, assertNoQueryFailures } from '@/lib/demo/fake-context';
@@ -369,8 +373,8 @@ describe('createFakeContext() query/graph mismatches are caught, not silently em
 });
 
 // ── replay(): the real integration, at a small scale ───────────────────────────────────────────
-// Reproduces run.ts's own rule-curation steps (loadRules → filter aprl-v2 → buildAprlFixtures →
-// setRulesEnabled) against the ambient test database, then replays a handful of simulated days
+// Applies run.ts's own rule curation (curateRules → setRulesEnabled, held-back rules switched off)
+// against the ambient test database, then replays a handful of simulated days
 // through the real await executeTarget()/await runCategoryScan()/runRules() pipeline — the same path the full
 // 60-day `npm run generate-demo` run already proved works by hand. A small totalDays keeps this
 // fast while still exercising every category, including identity.
@@ -380,16 +384,11 @@ describe('replay() — small-scale integration against the real scan pipeline', 
     const estate = buildEstate();
     const identityApps = buildIdentityApps();
 
-    const allRules = await loadRules();
-    const aprlRuleIds = allRules.filter(r => r.pack === 'aprl-v2').map(r => r.id);
-    const aprlFixtures = buildAprlFixtures(allRules);
-    await setRulesEnabled(aprlRuleIds, false);
-    await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
-    await setRulesEnabled(CORE_RULE_IDS, true);
-    await setRulesEnabled(unfixturedCoreRuleIds(allRules), false);
+    const curation = curateRules(await loadRules());
+    await setRulesEnabled(curation.disabledIds, false);
+    await setRulesEnabled(curation.enabledIds, true);
 
-    const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];
-    const fixturesByRuleId = new Map(fixtures.map(f => [f.ruleId, f]));
+    const fixturesByRuleId = new Map(curation.fixtures.map(f => [f.ruleId, f]));
     const curatedRules = await loadRules();
 
     const totalDays = 5;
@@ -423,5 +422,159 @@ describe('replay() — small-scale integration against the real scan pipeline', 
       expect(f.resourceGroup).not.toBeNull();
       expect(f.location).not.toBeNull();
     }
+  }, 30_000);
+});
+
+// ── The held-back rule: a switched-off rule a Visitor can prove ─────────────────────────────────
+// A freshly generated Demo ships at least one rule switched off that the Demo can answer, so a
+// Visitor can watch it go from "not yet proven" to passing or failing after its first scan
+// (docs/public/posture.md). Every other rule that starts switched off has no data behind it and
+// fails when run, so the held-back rule is the only one a walkthrough of that moment can use. Checked
+// three ways: the curation the generator applies, the live Demo context a Run now scans, and the
+// whole path from generation to a Visitor's first scan of the rule. Here, with the other generator
+// suites, because the generator is SQLite-only by design (vitest.config.mts).
+
+describe('curateRules() — the held-back rule', () => {
+  afterEach(() => {
+    resetLiveDemoContextForTests();
+  });
+
+  it('holds back at least one rule: switched off, and not among the rules switched on', async () => {
+    const curation = curateRules(await loadRules());
+
+    expect(curation.heldBackIds.length).toBeGreaterThanOrEqual(1);
+    for (const id of curation.heldBackIds) {
+      expect(curation.disabledIds).toContain(id);
+      expect(curation.enabledIds).not.toContain(id);
+    }
+  });
+
+  it('holds back a rule the live Demo answers once it is switched on, with nothing left unanswered', async () => {
+    const rules = await loadRules();
+    const curation = curateRules(rules);
+    expect(curation.heldBackIds.length).toBeGreaterThanOrEqual(1);
+
+    for (const id of curation.heldBackIds) {
+      const shipped = rules.find(r => r.id === id)!;
+      const ctx = createLiveDemoContext({ packsDir: join(REAL_DATA_DIR, 'packs') });
+      const outcomes: string[] = [];
+      for await (const event of runRules([{ ...shipped, enabled: true }], ctx)) {
+        if (event.kind === 'outcome') outcomes.push(event.outcome.status);
+      }
+      expect(outcomes).toEqual(['success']);
+      expect(ctx.unansweredQueries()).toBe(0);
+    }
+  });
+
+  it('holds back the same rules whatever order the rules load in', async () => {
+    const rules = await loadRules();
+    const forward = curateRules(rules);
+    const backward = curateRules([...rules].reverse());
+
+    expect(backward.heldBackIds).toEqual(forward.heldBackIds);
+    expect([...backward.enabledIds].sort()).toEqual([...forward.enabledIds].sort());
+    expect([...backward.disabledIds].sort()).toEqual([...forward.disabledIds].sort());
+  });
+
+  it('keeps every other rule with a fixture switched on', async () => {
+    const curation = curateRules(await loadRules());
+    const heldBack = new Set(curation.heldBackIds);
+
+    for (const fixture of curation.fixtures) {
+      expect(curation.enabledIds.includes(fixture.ruleId)).toBe(!heldBack.has(fixture.ruleId));
+    }
+    expect(CORE_RULE_IDS.filter(id => !heldBack.has(id)).every(id => curation.enabledIds.includes(id))).toBe(true);
+  });
+
+  describe('refuses to generate when a held-back rule can no longer be proven', () => {
+    // An APRL rule whose resource types the estate has, standing in for a held-back choice so the
+    // ways a pack update can break it can be made one at a time.
+    async function anAprlChoice() {
+      const rules = await loadRules();
+      const timesShipped = (kql?: string) => rules.filter(r => r.rawKql?.trim() === kql?.trim()).length;
+      const id = curateRules(rules).enabledIds.find(i => {
+        const rule = rules.find(r => r.id === i)!;
+        return rule.pack === 'aprl-v2' && timesShipped(rule.rawKql) === 1;
+      })!;
+      return { rules, id };
+    }
+
+    it('accepts the stand-in while it is answerable', async () => {
+      const { rules, id } = await anAprlChoice();
+      expect(curateRules(rules, [id]).heldBackIds).toEqual([id]);
+    });
+
+    it('the rule is no longer shipped', async () => {
+      const { rules, id } = await anAprlChoice();
+      expect(() => curateRules(rules.filter(r => r.id !== id), [id])).toThrow(/held back/i);
+    });
+
+    it('the rule no longer targets resource types the estate has', async () => {
+      const { rules, id } = await anAprlChoice();
+      const moved: Rule[] = rules.map(r => r.id === id ? { ...r, resourceTypes: ['microsoft.example/not-in-the-estate'] } : r);
+      expect(() => curateRules(moved, [id])).toThrow(/held back/i);
+    });
+
+    it('another rule with a fixture runs the same query, so either could be the one that answers', async () => {
+      const { rules, id } = await anAprlChoice();
+      const chosen = rules.find(r => r.id === id)!;
+      const other = rules.find(r => r.id !== id && curateRules(rules).enabledIds.includes(r.id))!;
+      const clash: Rule[] = rules.map(r => r.id === other.id ? { ...r, rawKql: chosen.rawKql } : r);
+      expect(() => curateRules(clash, [id])).toThrow(/held back/i);
+    });
+
+    it('the choice this release ships is dropped from the shipped rules', async () => {
+      const rules = await loadRules();
+      expect(() => curateRules(rules.filter(r => !HELD_BACK_RULE_IDS.includes(r.id)))).toThrow(/held back/i);
+    });
+  });
+});
+
+describe('a Visitor switching on the held-back rule in a freshly generated Demo', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+  afterEach(() => {
+    resetLiveDemoContextForTests();
+  });
+
+  it('moves it from not yet proven to proven with one scan, and nothing fails to run', async () => {
+    const allRules = await loadRules();
+    const curation = curateRules(allRules);
+    await setRulesEnabled(curation.disabledIds, false);
+    await setRulesEnabled(curation.enabledIds, true);
+    const heldBackId = curation.heldBackIds[0];
+
+    // Generation: the replay never runs a switched-off rule.
+    await replay({
+      estate: buildEstate(),
+      rules: await loadRules(),
+      fixturesByRuleId: new Map(curation.fixtures.map(f => [f.ruleId, f])),
+      identityApps: buildIdentityApps(),
+      scheduleId: 'demo-held-back-test-schedule',
+      totalDays: 3,
+    });
+    const afterGeneration = (await loadRules()).find(r => r.id === heldBackId)!;
+    expect(afterGeneration.enabled).toBe(false);
+    expect(afterGeneration.lastRunStatus).toBeUndefined();
+    expect(db.select().from(findings).where(eq(findings.ruleId, heldBackId)).all()).toHaveLength(0);
+
+    // The Visitor switches it on and runs a scan of its category.
+    await setRulesEnabled([heldBackId], true);
+    const ctx = createLiveDemoContext({ packsDir: join(REAL_DATA_DIR, 'packs') });
+    const run = await executeTarget(
+      { targetType: 'categories', targetValues: [afterGeneration.category] },
+      { triggeredBy: 'manual', ctx },
+    );
+
+    expect(run.status).toBe('success');
+    expect(run.error).toBeNull();
+    expect(ctx.unansweredQueries()).toBe(0);
+    // Proven: its last run finished success. Under the default Seed it finds nothing, so it passes
+    // (docs/public/posture.md); a rule with active findings would be failing instead.
+    const proven = (await loadRules()).find(r => r.id === heldBackId)!;
+    expect(proven.lastRunStatus).toBe('success');
+    expect(db.select().from(findings)
+      .where(and(eq(findings.ruleId, heldBackId), eq(findings.status, 'active'))).all()).toHaveLength(0);
   }, 30_000);
 });
