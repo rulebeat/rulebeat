@@ -2,6 +2,8 @@ import type { ChangedFindingDetail, Finding } from '@/lib/types';
 import type { FindingRow } from '@/lib/finding-rows';
 import type { NotificationChannelType } from '@/lib/db/notification-channels';
 import type { ScheduleRun } from '@/lib/schedule-runs';
+import { isActivityRule } from '@/lib/finding-kinds';
+import { tabForKind, type ViewTab } from '@/lib/view-response';
 
 export type NotificationPayload =
   | { kind: 'webhook'; body: object; contentType: 'application/json' }
@@ -31,28 +33,42 @@ function summaryLine(findings: Finding[]): string {
     .join(', ');
 }
 
+/** One "View changed ..." link: the open findings of one tab, since a changed finding is not new. */
+interface ChangedLink {
+  tab: ViewTab;
+  label: string;
+  href: string;
+}
+
 /**
- * What a message carries. `problems` is everything that goes to every channel (Problems and
- * Activity); `advisories` is only present for a channel that opted in, and is a separate section in
- * every format. With no advisories a message is exactly what it was before the setting existed.
+ * What a message carries. `problems` and `activity` go to every channel, each in its own section
+ * (#212); `advisories` is only present for a channel that opted in, and is a separate section in
+ * every format. With no Activity and no advisories a message is exactly what it was before.
  */
 interface MessageContent {
+  /** Problems and Activity together, in the order they arrived: what the webhook's top-level
+   *  fields hold. */
+  everyChannel: Finding[];
   problems: Finding[];
+  /** Activity findings, in their own "Activity" section with a link to the Activity tab. */
+  activity: Finding[];
   advisories: Finding[];
   href: string;
+  /** Where "View activity" goes: the Activity tab, filtered to new. */
+  activityHref: string;
   /** Where "View advisories" goes: the Advisories tab, filtered to new. */
   advisoriesHref: string;
   /** Findings that gained rows (#193), in their own "Changed" section; Problems, Activity and, for a
    *  channel that includes them, Advisories alike. Empty for a message with none. */
   changed: ChangedFindingDetail[];
-  /** Where "View changed findings" goes: the open findings, since a changed finding is not new. */
-  changedHref: string;
+  /** One link per tab the changed findings are listed on, in tab order. */
+  changedLinks: ChangedLink[];
 }
 
-/** A message holding only advisories or only changed findings has no problem section; one holding
- *  nothing keeps the old shape. */
+/** A message holding only Activity, advisories or changed findings has no problem section; one
+ *  holding nothing keeps the old shape. */
 function hasProblemSection(c: MessageContent): boolean {
-  return c.problems.length > 0 || (c.advisories.length === 0 && c.changed.length === 0);
+  return c.problems.length > 0 || (c.activity.length === 0 && c.advisories.length === 0 && c.changed.length === 0);
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -64,6 +80,7 @@ function plural(n: number, one: string, many: string): string {
 function headline(c: MessageContent): string {
   const parts = [
     ...(hasProblemSection(c) ? [plural(c.problems.length, 'new finding', 'new findings')] : []),
+    ...(c.activity.length > 0 ? [plural(c.activity.length, 'new activity finding', 'new activity findings')] : []),
     ...(c.advisories.length > 0 ? [plural(c.advisories.length, 'new advisory', 'new advisories')] : []),
     ...(c.changed.length > 0 ? [plural(c.changed.length, 'changed finding', 'changed findings')] : []),
   ];
@@ -100,6 +117,7 @@ function addedRowLines(rows: FindingRow[], prefix: string): string[] {
 }
 
 const ADVISORIES_LABEL = (findings: Finding[]) => `Advisories (${findings.length})`;
+const ACTIVITY_LABEL = (findings: Finding[]) => `Activity (${findings.length})`;
 
 /** Teams Adaptive Card table of the first five findings, headed by `firstColumn`. */
 function teamsTable(findings: Finding[], firstColumn: string): object[] {
@@ -190,6 +208,21 @@ function buildTeamsPayload(c: MessageContent, _run: ScheduleRun): object {
         isSubtle: true,
       }] : []),
       ...teamsTable(c.problems, 'Finding'),
+      ...(c.activity.length > 0 ? [
+        {
+          type: 'TextBlock',
+          text: ACTIVITY_LABEL(c.activity),
+          weight: 'Bolder',
+          spacing: 'Large',
+        },
+        {
+          type: 'TextBlock',
+          text: summaryLine(c.activity),
+          spacing: 'None',
+          isSubtle: true,
+        },
+        ...teamsTable(c.activity, 'Activity'),
+      ] : []),
       ...(c.advisories.length > 0 ? [
         {
           type: 'TextBlock',
@@ -213,16 +246,21 @@ function buildTeamsPayload(c: MessageContent, _run: ScheduleRun): object {
         title: 'Open in RuleBeat',
         url: c.href,
       }] : []),
+      ...(c.activity.length > 0 ? [{
+        type: 'Action.OpenUrl',
+        title: 'View activity',
+        url: c.activityHref,
+      }] : []),
       ...(c.advisories.length > 0 ? [{
         type: 'Action.OpenUrl',
         title: 'View advisories',
         url: c.advisoriesHref,
       }] : []),
-      ...(c.changed.length > 0 ? [{
+      ...c.changedLinks.map(link => ({
         type: 'Action.OpenUrl',
-        title: 'View changed findings',
-        url: c.changedHref,
-      }] : []),
+        title: link.label,
+        url: link.href,
+      })),
     ],
   };
 
@@ -278,6 +316,15 @@ function buildSlackPayload(c: MessageContent, _run: ScheduleRun): object {
     ...slackFindingBlocks(c.problems),
   ];
 
+  if (c.activity.length > 0) {
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${ACTIVITY_LABEL(c.activity)}*\n${summaryLine(c.activity)}` },
+    });
+    blocks.push(...slackFindingBlocks(c.activity));
+  }
+
   if (c.advisories.length > 0) {
     blocks.push({ type: 'divider' });
     blocks.push({
@@ -320,16 +367,21 @@ function buildSlackPayload(c: MessageContent, _run: ScheduleRun): object {
         url: c.href,
         style: 'primary',
       }] : []),
+      ...(c.activity.length > 0 ? [{
+        type: 'button',
+        text: { type: 'plain_text', text: 'View activity', emoji: true },
+        url: c.activityHref,
+      }] : []),
       ...(c.advisories.length > 0 ? [{
         type: 'button',
         text: { type: 'plain_text', text: 'View advisories', emoji: true },
         url: c.advisoriesHref,
       }] : []),
-      ...(c.changed.length > 0 ? [{
+      ...c.changedLinks.map(link => ({
         type: 'button',
-        text: { type: 'plain_text', text: 'View changed findings', emoji: true },
-        url: c.changedHref,
-      }] : []),
+        text: { type: 'plain_text', text: link.label, emoji: true },
+        url: link.href,
+      })),
     ],
   });
 
@@ -348,17 +400,28 @@ function webhookFinding(f: Finding) {
   };
 }
 
-/** Generic stable JSON webhook payload. The problem fields never change shape; advisories, when
- *  the channel includes them and there are any, arrive in their own `advisories` field. */
+/** Generic stable JSON webhook payload. The top-level fields never change shape, so they still hold
+ *  Problems and Activity together; Activity is repeated in its own `activity` field with its own
+ *  link (#212), and advisories, when the channel includes them and there are any, arrive in their
+ *  own `advisories` field. */
 function buildWebhookPayload(c: MessageContent, run: ScheduleRun): object {
+  const everyChannel = c.everyChannel;
   return {
     event: 'scan.new_findings',
     runId: run.id,
     triggeredBy: run.triggeredBy,
-    counts: countsBySeverity(c.problems),
-    totalNewFindings: c.problems.length,
-    findings: c.problems.slice(0, MAX_WEBHOOK_FINDINGS).map(webhookFinding),
+    counts: countsBySeverity(everyChannel),
+    totalNewFindings: everyChannel.length,
+    findings: everyChannel.slice(0, MAX_WEBHOOK_FINDINGS).map(webhookFinding),
     scansUrl: c.href,
+    ...(c.activity.length > 0 ? {
+      activity: {
+        totalNewActivity: c.activity.length,
+        counts: countsBySeverity(c.activity),
+        findings: c.activity.slice(0, MAX_WEBHOOK_FINDINGS).map(webhookFinding),
+        activityUrl: c.activityHref,
+      },
+    } : {}),
     ...(c.advisories.length > 0 ? {
       advisories: {
         totalNewAdvisories: c.advisories.length,
@@ -371,7 +434,9 @@ function buildWebhookPayload(c: MessageContent, run: ScheduleRun): object {
       changed: {
         totalChangedFindings: c.changed.length,
         findings: c.changed.slice(0, MAX_WEBHOOK_FINDINGS).map(f => ({ ...webhookFinding(f), addedRows: f.addedRows })),
-        changedUrl: c.changedHref,
+        // The first tab's link, so a body holding one kind of change links straight to its tab.
+        changedUrl: c.changedLinks[0].href,
+        changedUrls: Object.fromEntries(c.changedLinks.map(link => [link.tab, link.href])),
       },
     } : {}),
   };
@@ -415,6 +480,13 @@ function buildEmailPayload(c: MessageContent, _run: ScheduleRun): { subject: str
       ...emailItems(c.problems),
       '',
     ] : []),
+    ...(c.activity.length > 0 ? [
+      `Activity: ${c.activity.length} new`,
+      `Summary: ${summaryLine(c.activity)}`,
+      '',
+      ...emailItems(c.activity),
+      '',
+    ] : []),
     ...(c.advisories.length > 0 ? [
       `Advisories: ${c.advisories.length} new`,
       `Summary: ${summaryLine(c.advisories)}`,
@@ -429,8 +501,9 @@ function buildEmailPayload(c: MessageContent, _run: ScheduleRun): { subject: str
       '',
     ] : []),
     ...(problemSection ? [`View in RuleBeat: ${c.href}`] : []),
+    ...(c.activity.length > 0 ? [`View activity: ${c.activityHref}`] : []),
     ...(c.advisories.length > 0 ? [`View advisories: ${c.advisoriesHref}`] : []),
-    ...(c.changed.length > 0 ? [`View changed findings: ${c.changedHref}`] : []),
+    ...c.changedLinks.map(link => `${link.label}: ${link.href}`),
   ];
 
   return {
@@ -439,10 +512,40 @@ function buildEmailPayload(c: MessageContent, _run: ScheduleRun): { subject: str
   };
 }
 
+/** The order a message's sections and links come in: Problems, Activity, then Advisories. */
+const SECTION_ORDER: readonly ViewTab[] = ['results', 'activity', 'advisories'];
+
+const CHANGED_LINK_LABEL: Record<ViewTab, string> = {
+  results: 'View changed findings',
+  activity: 'View changed activity',
+  advisories: 'View changed advisories',
+};
+
+/** Where the changed findings of each tab are looked at. A tab without its own link falls back to
+ *  the Results one. */
+export interface ChangedHrefs {
+  href: string;
+  activityHref?: string;
+  advisoriesHref?: string;
+}
+
+/** One link per tab the changed findings are listed on, so a changed Activity finding links to the
+ *  Activity tab rather than to Results (#212). */
+function changedLinks(changed: ChangedFindingDetail[], hrefs: ChangedHrefs): ChangedLink[] {
+  const byTab: Record<ViewTab, string> = {
+    results: hrefs.href,
+    activity: hrefs.activityHref ?? hrefs.href,
+    advisories: hrefs.advisoriesHref ?? hrefs.href,
+  };
+  const tabs = new Set(changed.map(f => tabForKind(f.kind)));
+  return SECTION_ORDER.filter(tab => tabs.has(tab)).map(tab => ({ tab, label: CHANGED_LINK_LABEL[tab], href: byTab[tab] }));
+}
+
 /**
- * Builds the message for one channel. `findings` is what goes to every channel; `advisories` is the
- * Advisories the channel opted in to (empty for a channel that did not), so a channel without the
- * setting gets exactly the message it always got.
+ * Builds the message for one channel. `findings` is what goes to every channel, Problems and
+ * Activity, and the message gives each its own section; `advisories` is the Advisories the channel
+ * opted in to (empty for a channel that did not), so a channel without the setting gets exactly the
+ * message it always got.
  */
 export function buildPayload(
   type: NotificationChannelType,
@@ -451,11 +554,16 @@ export function buildPayload(
   run: ScheduleRun,
   advisories: Finding[] = [],
   advisoriesHref: string = href,
-  changes?: { findings: ChangedFindingDetail[]; href: string },
+  changes?: { findings: ChangedFindingDetail[] } & ChangedHrefs,
+  activityHref: string = href,
 ): NotificationPayload {
+  const changed = changes?.findings ?? [];
   const content: MessageContent = {
-    problems: findings, advisories, href, advisoriesHref,
-    changed: changes?.findings ?? [], changedHref: changes?.href ?? href,
+    everyChannel: findings,
+    problems: findings.filter(f => !isActivityRule(f)),
+    activity: findings.filter(isActivityRule),
+    advisories, href, activityHref, advisoriesHref,
+    changed, changedLinks: changes ? changedLinks(changed, changes) : [],
   };
   if (type === 'email') {
     return { kind: 'email', ...buildEmailPayload(content, run) };

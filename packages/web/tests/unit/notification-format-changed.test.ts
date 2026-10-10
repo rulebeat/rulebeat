@@ -113,6 +113,7 @@ describe('webhook', () => {
         addedRows: [{ retirement: 'TLS 1.0', retiresOn: '2026-11-01' }],
       }],
       changedUrl: CHANGED_HREF,
+      changedUrls: { results: CHANGED_HREF },
     });
   });
 

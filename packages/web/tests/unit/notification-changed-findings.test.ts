@@ -321,6 +321,14 @@ describe('changed findings in a scheduled scan', () => {
       expect(await listDeliveriesForChannel(offId)).toEqual([]);
     });
 
+    it('links to the open findings on the Advisories tab, not to Results', async () => {
+      await seed({ [ADVISORY_RULE]: [BASIC] });
+
+      await runScheduledAndWait({ [ADVISORY_RULE]: [BASIC, TLS] });
+
+      expect(sentTo('on')[0]!.changed!.changedUrl).toContain('tab=advisories&status=open');
+    });
+
     it('opens no outbox entry when no linked channel includes advisories', async () => {
       await seed({ [ADVISORY_RULE]: [BASIC] });
       await link('low', [offId]);
