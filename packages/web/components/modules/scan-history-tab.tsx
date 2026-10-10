@@ -11,10 +11,11 @@ import { Select } from '@/components/ui/select';
 import { RunStatusDot } from '@/components/scans/run-status-dot';
 import { SnapshotScreen } from '@/components/scans/snapshot-screen';
 import { CategoryBadge } from '@/components/findings/category-badge';
-import { ScanCompare } from '@/components/findings/scan-compare';
+import { CompareScreen } from '@/components/scans/compare-screen';
 import { describeTarget } from '@/lib/target-describe';
+import { emptyCompareQuery, type CompareQuery } from '@/lib/compare-query';
 import { emptySnapshotQuery, type SnapshotQuery } from '@/lib/snapshot-query';
-import type { Category, Rule, ScanMeta, ScanSummary, Severity } from '@/lib/types';
+import type { Category, Rule, ScanMeta, Severity } from '@/lib/types';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import { Activity, ArrowLeft } from 'lucide-react';
 
@@ -39,12 +40,19 @@ export interface ScanHistoryTabProps {
   onSnapshotUrlWrite?: (query: string) => void;
   compareCategorySlug?: string;
   compareCategoryScans?: ScanMeta[];
-  compareScans?: [ScanSummary, ScanSummary] | null;
+  /** The two scans a `?compare=` link names, in the order it wrote them. The screen reads the compare from the server. */
+  compareIds?: [string, string];
+  /** What the address asks of that compare: the side and the page. */
+  compareQuery?: CompareQuery;
+  /** Counts the navigations the compare did not make itself, each of which starts it again from the address. */
+  compareRestarts?: number;
+  /** Reports the query the compare is about to write to the address. */
+  onCompareUrlWrite?: (query: string) => void;
 }
 
 export function ScanHistoryTab({
   categories, rules, runs, runDetail, snapshotScanId, snapshotQuery, snapshotRestarts = 0, onSnapshotUrlWrite,
-  compareCategorySlug, compareCategoryScans, compareScans,
+  compareCategorySlug, compareCategoryScans, compareIds, compareQuery, compareRestarts = 0, onCompareUrlWrite,
 }: ScanHistoryTabProps) {
   const router = useRouter();
   // Driven entirely by the `compareCategory` URL param (like the Library `?section=` pattern) —
@@ -62,8 +70,16 @@ export function ScanHistoryTab({
   const ruleById = useMemo(() => new Map(rules.map(r => [r.id, r])), [rules]);
 
   // ---- Compare result ----
-  if (compareScans) {
-    return <ScanCompare scanA={compareScans[0]} scanB={compareScans[1]} categorySlug="all" backHref="/scans?tab=history" />;
+  if (compareIds) {
+    return (
+      <CompareScreen
+        key={`${compareIds.join('..')}-${compareRestarts}`}
+        ids={compareIds}
+        initialQuery={compareQuery ?? emptyCompareQuery()}
+        backHref="/scans?tab=history"
+        onUrlWrite={onCompareUrlWrite}
+      />
+    );
   }
 
   // ---- Snapshot (one category's scan within a run), read from the server a page at a time ----

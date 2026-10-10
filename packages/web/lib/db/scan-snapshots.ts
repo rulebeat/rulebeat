@@ -46,7 +46,7 @@ function matching(scanId: string, query: SnapshotQuery, lift?: 'severity' | 'rul
   return and(...conditions)!;
 }
 
-async function readHeader(tx: DbHandle, scanId: string): Promise<{ scan: SnapshotScan; hasRecords: boolean } | null> {
+export async function readHeader(tx: DbHandle, scanId: string): Promise<{ scan: SnapshotScan; hasRecords: boolean } | null> {
   const row = await one(tx.select({ id: scansTable.id, module: scansTable.module, startedAt: scansTable.startedAt, hasRecords: scansTable.hasRecords })
     .from(scansTable).where(eq(scansTable.id, scanId)));
   return row ? { scan: { id: row.id, category: row.module, startedAt: row.startedAt }, hasRecords: row.hasRecords === 1 } : null;
@@ -63,7 +63,7 @@ async function readPage(tx: DbHandle, scanId: string, query: SnapshotQuery, offs
 }
 
 /** Which of these fingerprints a finding still exists for, whatever its status. */
-async function readExisting(tx: DbHandle, fingerprints: readonly string[]): Promise<Set<string>> {
+export async function readExisting(tx: DbHandle, fingerprints: readonly string[]): Promise<Set<string>> {
   if (fingerprints.length === 0) return new Set();
   const rows = await many(tx.select({ fingerprint: findingsTable.fingerprint }).from(findingsTable)
     .where(inArray(findingsTable.fingerprint, [...fingerprints])));
@@ -101,7 +101,7 @@ export class SnapshotUnavailable extends Error {
   }
 }
 
-const toRecord = (r: typeof t.$inferSelect): SnapshotRecord => ({
+export const toRecord = (r: typeof t.$inferSelect): SnapshotRecord => ({
   fingerprint: r.fingerprint, ruleId: r.ruleId, severity: r.severity, title: r.title, kind: r.kind,
   resourceId: r.resourceId, resourceName: r.resourceName, resourceType: r.resourceType, resourceGroup: r.resourceGroup,
   subscriptionId: r.subscriptionId, rowCount: r.rowCount,

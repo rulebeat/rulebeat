@@ -96,7 +96,10 @@ export interface ScansClientProps {
   snapshotQuery?: ScanHistoryTabProps['snapshotQuery'];
   compareCategorySlug?: string;
   compareCategoryScans?: ScanHistoryTabProps['compareCategoryScans'];
-  compareScans?: ScanHistoryTabProps['compareScans'];
+  /** The two scans a `?compare=` link names, with what the address asks of them. The page sends no
+   *  findings: the compare screen reads them from the server. */
+  compareIds?: ScanHistoryTabProps['compareIds'];
+  compareQuery?: ScanHistoryTabProps['compareQuery'];
   /** Undefined when the tab isn't active — server only loads this for ?tab=schedules. */
   initialSchedules?: ScheduleWithLastRun[];
   canEditSchedules?: boolean;
@@ -125,7 +128,8 @@ export function ScansClient({
   snapshotQuery,
   compareCategorySlug,
   compareCategoryScans,
-  compareScans,
+  compareIds,
+  compareQuery,
   initialSchedules,
   canEditSchedules = false,
   notificationChannels = [],
@@ -346,7 +350,10 @@ export function ScansClient({
           onSnapshotUrlWrite={query => ownWrites.record(query)}
           compareCategorySlug={compareCategorySlug}
           compareCategoryScans={compareCategoryScans}
-          compareScans={compareScans}
+          compareIds={compareIds}
+          compareQuery={compareQuery}
+          compareRestarts={explorerKey}
+          onCompareUrlWrite={query => ownWrites.record(query)}
         />
       )}
 
