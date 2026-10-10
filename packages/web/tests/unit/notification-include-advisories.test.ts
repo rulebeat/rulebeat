@@ -78,6 +78,9 @@ function fakeResponse(status: number): Response {
 interface SentBody {
   findings: { fingerprint: string; resourceName: string }[];
   advisories?: { totalNewAdvisories: number; findings: { fingerprint: string; resourceName: string }[]; advisoriesUrl: string };
+  scansUrl: string;
+  activity?: { totalNewActivity: number; findings: { resourceName: string }[]; activityUrl: string };
+  changed?: { changedUrl: string; changedUrls: Record<string, string> };
 }
 
 describe('notification channels and Advisories', () => {
@@ -307,6 +310,48 @@ describe('notification channels and Advisories', () => {
   });
 
   describe('Activity findings', () => {
+    const activityFinding = (resourceName: string) => ({
+      module: 'test', ruleId: 'law-rule', fingerprint: `fp-${resourceName}`, severity: 'medium', category: CATEGORY, kind: 'activity',
+      resourceId: `law:${resourceName}`, resourceType: 'activity', resourceName, subscriptionId: TEST_SUB_A,
+      resourceGroup: '', location: '', title: 'Sign-in burst', description: '', recommendation: '',
+      remediationSteps: [], evidence: {}, detectedAt: new Date().toISOString(),
+    }) as unknown as Finding;
+
+    async function pendingRun() {
+      const pending = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
+      await finishRun(pending.id, {
+        status: 'success', totalFindings: 1, newFindings: 1,
+        newFindingFingerprints: ['fp-burst'], durationMs: 100, notifyStatus: 'pending',
+      });
+      return (await getRun(pending.id))!;
+    }
+
+    it('arrive in their own section on every channel, linked to the new findings on the Activity tab', async () => {
+      expect(await dispatchAndMarkSent(await pendingRun(), [activityFinding('burst')])).toBe(true);
+
+      for (const path of ['on', 'off'] as const) {
+        const [body] = sentTo(path);
+        expect(body!.activity!.findings.map(f => f.resourceName)).toEqual(['burst']);
+        expect(body!.activity!.activityUrl).toBe(body!.scansUrl.replace('tab=results', 'tab=activity'));
+        expect(body!.activity!.activityUrl).toContain('tab=activity&status=new');
+      }
+    });
+
+    it('link a changed Activity finding to the open findings on the Activity tab, and a changed Problem to Results', async () => {
+      const problem = { ...activityFinding('vm-p'), kind: 'state', resourceId: '/subscriptions/s/vm-p' } as Finding;
+      const changed = [
+        { ...activityFinding('burst'), addedRows: [{ user: 'a' }] },
+        { ...problem, addedRows: [{ retirement: 'TLS 1.0' }] },
+      ];
+
+      expect(await dispatchAndMarkSent(await pendingRun(), [], { changed })).toBe(true);
+
+      const [body] = sentTo('off');
+      expect(body!.changed!.changedUrl).toContain('tab=results&status=open');
+      expect(Object.keys(body!.changed!.changedUrls)).toEqual(['results', 'activity']);
+      expect(body!.changed!.changedUrls.activity).toContain('tab=activity&status=open');
+    });
+
     it('go to every channel whatever the setting', async () => {
       const activity = {
         module: 'test', ruleId: 'law-rule', fingerprint: 'fp-activity', severity: 'medium', category: CATEGORY, kind: 'activity',

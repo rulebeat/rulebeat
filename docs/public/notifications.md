@@ -22,12 +22,18 @@ minimum severity apply to Advisories the same way they do to findings. A channel
 exactly the message it always got, and a run whose only news is Advisories sends to the channels that
 include them and to no one else.
 
+**Activity** findings, from Logs rules, go to every channel like Problems, in their own "Activity"
+section after the Problems, with a link to the new findings on the Activity tab. The Problems section,
+its severity summary and its link cover Problems only, and a run whose only news is Activity sends a
+message holding just the Activity section.
+
 **Changed findings** are findings that were already open and gained a row. A rule that returns several
 rows for one resource keeps them all on one finding, so when a later scan returns a row the finding
 did not have, such as a second retirement on the same VM, the finding is *changed*. Each message gets
 a separate "Changed" section after the others, listing every changed finding and the rows it gained as
 `key: value` pairs, up to five rows per finding, with long values shortened. A link opens the open
-findings. The same rules apply as for a new finding: the assignment's scope and minimum severity, a
+findings on the tab that lists them: a changed Problem links to Results, a changed Activity finding to
+Activity and a changed Advisory to Advisories, one link for each of those the section holds. The same rules apply as for a new finding: the assignment's scope and minimum severity, a
 suppressed finding is left out, and a changed Advisory goes only to channels that include advisories.
 A run whose only news is a changed finding sends a message holding just that section. A channel's
 delivery count is the new findings plus the changed ones.
@@ -84,6 +90,19 @@ text only, with the top ten findings.
 a key only for severities that occurred. Point a Logic App, a ticketing webhook or your own function
 at it.
 
+`findings`, `counts` and `totalNewFindings` hold Problems and Activity together. When the run has new
+Activity the body also has an `activity` field, after `scansUrl`, repeating just the Activity findings
+with a link to the Activity tab. Nothing above changes shape:
+
+```json
+"activity": {
+  "totalNewActivity": 1,
+  "counts": { "medium": 1 },
+  "findings": [ { "fingerprint": "…", "title": "…", "severity": "medium", "category": "security", "resourceId": "…", "resourceName": "…", "subscriptionId": "…" } ],
+  "activityUrl": "https://rulebeat.example.com/scans?tab=activity&…"
+}
+```
+
 On a channel that includes advisories, and only when the run has new ones, the body also has an
 `advisories` field. Nothing above changes shape, and `findings` is empty when the run has only
 Advisories:
@@ -106,9 +125,14 @@ Each entry is a finding as above plus the rows it gained, at most the first 20 e
 "changed": {
   "totalChangedFindings": 1,
   "findings": [ { "fingerprint": "…", "title": "…", "severity": "medium", "category": "reliability", "resourceId": "…", "resourceName": "…", "subscriptionId": "…", "addedRows": [ { "retirement": "TLS 1.0" } ] } ],
-  "changedUrl": "https://rulebeat.example.com/scans?…"
+  "changedUrl": "https://rulebeat.example.com/scans?…",
+  "changedUrls": { "results": "https://rulebeat.example.com/scans?tab=results&…" }
 }
 ```
+
+`changedUrls` has one link for each tab the changed findings are listed on (`results`, `activity`,
+`advisories`), each opening that tab's open findings. `changedUrl` is the first of them, so a body whose
+changed findings are all on one tab links straight to it.
 
 The Teams, Slack and email messages all carry the same header, a severity summary and a link back at
 `<public URL>/scans`, filtered to new findings over the last seven days. That public URL is the one

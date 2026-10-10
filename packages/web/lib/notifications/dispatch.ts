@@ -131,8 +131,14 @@ export async function dispatchNotifications(
   const scansFilters: WidgetFilters = { categories: [], severities: [], subscriptions: [], resourceGroups: [], tags: [], ruleIds: [], dateWindow: { mode: 'relative', days: 7 } };
   const href = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'new' }));
   const advisoriesHref = await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'advisories', status: 'new' }));
-  // A changed finding is not new, so its link shows what is open; the section names which ones changed.
-  const changedHref = await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'open' }));
+  const activityHref = await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'activity', status: 'new' }));
+  // A changed finding is not new, so its link shows what is open on its own tab; the section names
+  // which ones changed.
+  const changedHrefs = {
+    href: await buildAbsoluteHref(buildScansHref(scansFilters, { status: 'open' })),
+    activityHref: await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'activity', status: 'open' })),
+    advisoriesHref: await buildAbsoluteHref(buildScansHref(scansFilters, { tab: 'advisories', status: 'open' })),
+  };
   const demo = await isDemoMode();
 
   await Promise.allSettled(
@@ -170,7 +176,9 @@ export async function dispatchNotifications(
         return;
       }
 
-      const payload = buildPayload(channel.type, filtered, href, run, advisories, advisoriesHref, { findings: changed, href: changedHref });
+      const payload = buildPayload(
+        channel.type, filtered, href, run, advisories, advisoriesHref, { findings: changed, ...changedHrefs }, activityHref,
+      );
 
       let result: SendResult;
       if (payload.kind === 'email') {
