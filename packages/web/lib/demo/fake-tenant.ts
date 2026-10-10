@@ -38,7 +38,7 @@ export interface FakeOptions {
   /**
    * Rows to return. Either one fixed array for every query, or a function that decides based on
    * the KQL — use the function form when a test needs the identity-enrichment follow-up query
-   * (`| where id in (...)`) to answer differently from the rule's own query.
+   * (`| where id in~ (...)`) to answer differently from the rule's own query.
    */
   rows?: Record<string, unknown>[] | ((kql: string, scope?: QueryScope) => Record<string, unknown>[]);
   /** When set, every query rejects with this error — for testing the failure paths. */

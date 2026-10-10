@@ -32,10 +32,10 @@ function candidatesFor(fixture: RuleFixture, estate: Estate): EstateResource[] {
 }
 
 // Matches the one identity-enrichment query shape runner.ts ever issues (packages/core/src/engine
-// /runner.ts) — a fixed `resources | where id in (...) | project id, type, location,
+// /runner.ts) — a fixed `resources | where id in~ (...) | project id, type, location,
 // resourceGroup, subscriptionId` follow-up for rows missing any of those four columns.
 const ENRICHMENT_RE =
-  /^resources\s*\n\|\s*where id in \(([\s\S]*?)\)\s*\n\|\s*project id, type, location, resourceGroup, subscriptionId$/i;
+  /^resources\s*\n\|\s*where id in~ \(([\s\S]*?)\)\s*\n\|\s*project id, type, location, resourceGroup, subscriptionId$/i;
 
 function handleEnrichmentQuery(kql: string, estate: Estate): Record<string, unknown>[] | null {
   const match = kql.match(ENRICHMENT_RE);
@@ -44,7 +44,7 @@ function handleEnrichmentQuery(kql: string, estate: Estate): Record<string, unkn
   return match[1]
     .split(',')
     .map(part => part.trim().replace(/^'/, '').replace(/'$/, '').replace(/''/g, "'"))
-    .map(id => estate.byId.get(id))
+    .map(id => estate.byId.get(id.toLowerCase()))
     .filter((r): r is EstateResource => !!r)
     .map(r => ({ id: r.id, type: r.type, location: r.location, resourceGroup: r.resourceGroup, subscriptionId: r.subscriptionId }));
 }
