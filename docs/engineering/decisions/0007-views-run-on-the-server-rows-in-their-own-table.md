@@ -99,7 +99,7 @@ times in the benchmark), so the integrity rule and the speed point the same way.
 - The migration touches every finding. It follows the rule that an upgrade never disturbs data: it
   is proven by a content test, and the old columns remain for one release.
 - Run History's snapshot and compare views read stored scan results, not the findings table, and
-  are not covered here. They are a separate change.
+  are not covered here. ADR 0008 decides them.
 
 ## Decisions made while building it
 

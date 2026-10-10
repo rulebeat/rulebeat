@@ -115,3 +115,17 @@ _Avoid_: report, perspective, group column
 **Saved view**:
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
+
+## Run History
+
+**Snapshot**:
+The findings one past scan returned, as that scan saw them: which findings, with the rule,
+severity, title, resource and row count each had then. A snapshot never changes after its scan.
+It keeps no rows and has no status; a finding's rows and status belong to the finding as it is
+now. A snapshot is not a trend point on the dashboard.
+_Avoid_: scan result, history entry, posture snapshot (that is the dashboard's daily trend record)
+
+**Compare**:
+Two snapshots of one category set side by side. A finding in only the newer one is added, in only
+the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
+_Avoid_: diff, delta
