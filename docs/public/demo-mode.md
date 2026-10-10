@@ -30,10 +30,12 @@ gone.
 
 The generator builds a fictional four-subscription estate and replays sixty days of daily scans over
 it, so history, trends and finding lifecycles look like a tenant scanned for two months: roughly 50
-enabled rules (13 built-ins plus the APRL pack rules whose resource types exist in the estate, out of
+enabled rules (14 built-ins, including the two that check app registration credentials for expiry,
+plus the APRL pack rules whose resource types exist in the estate, out of
 <!-- count:pack-rules:aprl-v2 -->143), 28 fictional app registrations at various distances from
-credential expiry, and several hundred findings, some fixed along the way. It is deterministic, so
-two people generating the demo get the same estate, and every id is an obvious placeholder.
+credential expiry, and several hundred findings, some fixed along the way. One built-in rule,
+Missing Environment Tag, ships switched off. The generator is deterministic, so two people
+generating the demo get the same estate, and every id is an obvious placeholder.
 
 ## How to run it
 
@@ -103,7 +105,7 @@ every Visitor could call.
 | Variable | Default | Meaning |
 |---|---|---|
 | `RULEBEAT_DEMO_RESET_MINUTES` | `60` | Minutes between timed Resets. `0` turns the timer off; a restart and `rulebeat-demo reset` still work. |
-| `RULEBEAT_DEMO_RECORDING` | unset | `1` hides the Demo bar and turns the timer off, for recording a walkthrough. `rulebeat-demo reset` still works, so reset before each take. |
+| `RULEBEAT_DEMO_RECORDING` | unset | `1` is the Recording presentation: it hides the Demo bar, turns the timer off, and keeps the Demo out of the message a partial run shows. `rulebeat-demo reset` still works, so reset before each take. |
 
 A Reset refuses a database that does not carry the Demo stamp, and a snapshot that does not, and
 changes nothing in either case.
@@ -115,7 +117,17 @@ stands on the last generated day, so a shipped rule finds what it found in the h
 
 A rule a Visitor writes, or a shipped rule whose query a Visitor edits, has no data behind it. That
 rule fails with the reason "A Demo only has data for the rules it ships with, so a new or edited rule
-has nothing to run against." The rest of the scan runs, and the run shows as partial.
+has nothing to run against." The rest of the scan runs, and the run shows as partial. In the
+Recording presentation (`RULEBEAT_DEMO_RECORDING=1`) the run's message does not name the Demo. It
+reads the same as a partial run on a real install and says one or more rules did not complete.
+
+### A rule to switch on
+
+A Demo ships with Missing Environment Tag switched off, and the Demo has data for it. While it is
+off it has no findings and no history, and it is outside the posture count. A Visitor can switch it
+on, and it then counts as not yet proven. Run a scan of its category and the run finishes
+successfully: the rule is proven, as passing, or as failing if it finds something. See
+[`posture.md`](posture.md) for what each state means.
 
 ## How it stays apart from a real install
 

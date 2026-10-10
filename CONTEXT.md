@@ -17,7 +17,7 @@ changes other Visitors make.
 _Avoid_: guest, demo user
 
 **Recording presentation**:
-A Demo shown for screen recordings and screenshots: the banner is hidden and the Reset timer is off. It changes
+A Demo shown for screen recordings and screenshots: the banner is hidden, the Reset timer is off, and a partial run's message does not name the Demo. It changes
 how the Demo looks and when it resets, never what it can do.
 _Avoid_: recording profile, recording mode
 

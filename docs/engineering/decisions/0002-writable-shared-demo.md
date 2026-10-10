@@ -11,8 +11,8 @@ Demo to the state it was generated in, on a timer (hourly by default) and on res
 read-only anonymous demo mode is removed, not kept beside it as a second profile.
 
 Three things are fixed in every Demo and no setting changes them: no Azure access, no scheduler,
-no outbound notification. The Recording presentation used for screen recordings only hides the banner and
-stops the Reset timer. It never changes what the Demo can do.
+no outbound notification. The Recording presentation used for screen recordings only hides the banner,
+stops the Reset timer and keeps the Demo out of a partial run's message. It never changes what the Demo can do.
 
 The Demo generator ships in the published image, so any Demo runs from a pinned release, and the
 same Data set, Seed and release always produce the same Demo.

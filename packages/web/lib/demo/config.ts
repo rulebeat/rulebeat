@@ -50,16 +50,22 @@ export function resolveDemoConfig(env: Record<string, string | undefined> = proc
 export interface DemoResetSettings {
   /** Minutes between timed Resets. 0 means the timer is off. */
   resetMinutes: number;
-  /** The Recording presentation: no banner, and the timer forced off. */
+  /** The Recording presentation: no banner, the timer forced off, and a partial run's message does not name the Demo. */
   recording: boolean;
 }
 
 export const DEFAULT_RESET_MINUTES = 60;
 const MAX_RESET_MINUTES = 7 * 24 * 60;
 
+/** Whether the Recording presentation is on. Its own function so a caller that only needs this does
+ *  not also parse (and possibly reject) the Reset timer. */
+export function isRecordingPresentation(env: Record<string, string | undefined> = process.env): boolean {
+  return env.RULEBEAT_DEMO_RECORDING?.trim() === '1';
+}
+
 /** Reads the Reset timer and the Recording presentation from the environment. */
 export function resolveDemoResetSettings(env: Record<string, string | undefined> = process.env): DemoResetSettings {
-  const recording = env.RULEBEAT_DEMO_RECORDING?.trim() === '1';
+  const recording = isRecordingPresentation(env);
   const raw = env.RULEBEAT_DEMO_RESET_MINUTES?.trim();
   let minutes = DEFAULT_RESET_MINUTES;
   if (raw !== undefined && raw !== '') {

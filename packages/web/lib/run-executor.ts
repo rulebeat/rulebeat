@@ -1,6 +1,7 @@
 import type { TenantContext } from '@rulebeat/core';
 import { createScanContext } from './scan-context';
 import { DEMO_UNANSWERED_RULE_REASON, unansweredDemoQueries } from './demo/unanswered';
+import { isRecordingPresentation } from './demo/config';
 import { listCategories } from './db/categories';
 import { startRun, finishRun, recordCategoryProgress, heartbeatRun, getRun, type RunTriggeredBy, type ScheduleRun } from './schedule-runs';
 import { runCategoryScan } from './scan-runner';
@@ -132,8 +133,9 @@ export async function executeTarget(
     const messages = [...errors];
     if (partialCategories.length > 0) {
       // In a Demo, the likely cause is a rule the Demo has no data for; say that rather than
-      // sending the Visitor to server logs they cannot read.
-      messages.push(unansweredDemoQueries(ctx) > 0
+      // sending the Visitor to server logs they cannot read. A recording must not name the Demo, so
+      // it gets the message a real install shows.
+      messages.push(unansweredDemoQueries(ctx) > 0 && !isRecordingPresentation()
         ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
         : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
     }

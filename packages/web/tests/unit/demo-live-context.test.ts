@@ -19,6 +19,7 @@ import { DEMO_UNANSWERED_RULE_REASON, unansweredDemoQueries } from '@/lib/demo/u
 import { executeTarget } from '@/lib/run-executor';
 import { createScanContext } from '@/lib/scan-context';
 import { clearRules, resetDb } from '../helpers/db';
+import { fakeTenantContext } from '../helpers/fake-azure';
 
 const PACKS_DIR = join(resolve(__dirname, '..', '..'), 'data', 'packs');
 
@@ -67,22 +68,17 @@ describe('Run now in a Demo', () => {
     await clearRules();
   });
 
+  const priorRecording = process.env.RULEBEAT_DEMO_RECORDING;
+
   afterEach(async () => {
     delete process.env.RULEBEAT_DEMO;
+    if (priorRecording === undefined) delete process.env.RULEBEAT_DEMO_RECORDING;
+    else process.env.RULEBEAT_DEMO_RECORDING = priorRecording;
     await deleteMeta('demo-mode-v2');
     resetDemoModeCacheForTests();
   });
 
-  it('scans the synthetic tenant rather than Azure', async () => {
-    process.env.RULEBEAT_DEMO = '1';
-    await stampDemoDatabase();
-    resetDemoModeCacheForTests();
-
-    const ctx = await createScanContext();
-    expect(typeof (ctx as { unansweredQueries?: unknown }).unansweredQueries).toBe('function');
-  });
-
-  it('tells the Visitor why a new rule did not run', async () => {
+  async function insertVisitorRule(): Promise<void> {
     await execRun(db.insert(rulesTable).values({
       id: 'visitor-rule',
       name: 'visitor rule',
@@ -96,6 +92,19 @@ describe('Run now in a Demo', () => {
       rawKql: `resources | where type == "microsoft.compute/virtualmachines" | where name == 'mine'`,
       type: 'custom',
     }));
+  }
+
+  it('scans the synthetic tenant rather than Azure', async () => {
+    process.env.RULEBEAT_DEMO = '1';
+    await stampDemoDatabase();
+    resetDemoModeCacheForTests();
+
+    const ctx = await createScanContext();
+    expect(typeof (ctx as { unansweredQueries?: unknown }).unansweredQueries).toBe('function');
+  });
+
+  it('tells the Visitor why a new rule did not run', async () => {
+    await insertVisitorRule();
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
@@ -104,5 +113,29 @@ describe('Run now in a Demo', () => {
 
     expect(run.status).toBe('partial');
     expect(run.error).toBe(`security: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`);
+  });
+
+  it('shows a recording what a real install shows for the same partial run, without naming the Demo', async () => {
+    process.env.RULEBEAT_DEMO_RECORDING = '1';
+    await insertVisitorRule();
+
+    const run = await executeTarget(
+      { targetType: 'categories', targetValues: ['security'] },
+      { triggeredBy: 'manual', ctx: createLiveDemoContext({ packsDir: PACKS_DIR }) },
+    );
+
+    // A real install whose rules all fail to run produces the same partial run, so the expected
+    // message is whatever the product says there, not a copy of its wording.
+    const realInstall = await executeTarget(
+      { targetType: 'categories', targetValues: ['security'] },
+      { triggeredBy: 'manual', ctx: fakeTenantContext({ failWith: new Error('boom') }) },
+    );
+
+    expect(run.status).toBe('partial');
+    // Both are a message, so the equality below cannot pass on two nulls or two empty strings.
+    expect(run.error).toEqual(expect.any(String));
+    expect(run.error).not.toBe('');
+    expect(run.error).toBe(realInstall.error);
+    expect(run.error).not.toContain('Demo');
   });
 });

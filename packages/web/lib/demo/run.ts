@@ -4,9 +4,7 @@ import { stampDemoDatabase } from './index';
 import { seedDemoVisitor } from './visitor';
 import { buildEstate } from './estate';
 import { buildIdentityApps } from './identity-fixtures';
-import { CORE_FIXTURES, CORE_RULE_IDS, unfixturedCoreRuleIds } from './core-fixtures';
-import { buildAprlFixtures } from './aprl-fixtures';
-import type { RuleFixture } from './rule-fixture';
+import { curateRules } from './curation';
 import { replay, TOTAL_DAYS } from './replay';
 import { setGeneratorSeed } from './prng';
 import { DEMO_HISTORY_ENDS_KEY } from './reset';
@@ -45,20 +43,13 @@ async function generateContoso(): Promise<void> {
 
   console.log('Curating rules...');
   const allRules = await loadRules();
-  const aprlRuleIds = allRules.filter(r => r.pack === 'aprl-v2').map(r => r.id);
-  const aprlFixtures = buildAprlFixtures(allRules);
+  const curation = curateRules(allRules);
 
-  // Reset every APRL rule to disabled, then enable exactly the curated, fixture-backed subset —
-  // never trust whatever subset shipped enabled-by-default, since it wasn't chosen with this
-  // estate's resource types in mind.
-  await setRulesEnabled(aprlRuleIds, false);
-  await setRulesEnabled(aprlFixtures.map(f => f.ruleId), true);
-  await setRulesEnabled(CORE_RULE_IDS, true);
-  await setRulesEnabled(unfixturedCoreRuleIds(allRules), false);
-  console.log(`  ${CORE_RULE_IDS.length} core rules + ${aprlFixtures.length} APRL rules enabled`);
+  await setRulesEnabled(curation.disabledIds, false);
+  await setRulesEnabled(curation.enabledIds, true);
+  console.log(`  ${curation.enabledIds.length} rules enabled, ${curation.heldBackIds.length} held back switched off`);
 
-  const fixtures: RuleFixture[] = [...CORE_FIXTURES, ...aprlFixtures];
-  const fixturesByRuleId = new Map(fixtures.map(f => [f.ruleId, f]));
+  const fixturesByRuleId = new Map(curation.fixtures.map(f => [f.ruleId, f]));
 
   console.log('Seeding demo visitor account and schedule...');
   await seedDemoVisitor();
