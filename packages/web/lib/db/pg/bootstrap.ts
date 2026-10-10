@@ -14,6 +14,10 @@ import {
   CATALOGUE_READ_BACK, CATALOGUE_READ_RULES, COLUMN_CATALOGUE_MARKER, PathCollector, catalogueMismatch,
   type CatalogueRecord,
 } from '../column-catalogue-build';
+import {
+  SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
+  planScanBlob, recordValues,
+} from '../scan-findings-copy';
 
 /**
  * Brings a Postgres database up to the current schema. The Postgres analog of `migrate.ts`'s
@@ -94,9 +98,13 @@ CREATE TABLE IF NOT EXISTS scans (
   schedule_id TEXT,
   run_id TEXT,
   coverage TEXT NOT NULL DEFAULT 'complete',
-  incomplete_rules TEXT NOT NULL DEFAULT '[]'
+  incomplete_rules TEXT NOT NULL DEFAULT '[]',
+  has_records INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_scans_module_started ON scans(module, started_at DESC);
+-- ADR 0008: 1 once scan_findings holds this scan's records. A release that predates the column saves 0,
+-- so a database that returns from it converts those scans on its next boot.
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS has_records INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS suppressions (
   id TEXT PRIMARY KEY,
@@ -280,6 +288,28 @@ CREATE TABLE IF NOT EXISTS finding_rows (
 );
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS row_count INTEGER;
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS rows_scan_id TEXT;
+
+-- ADR 0008: what each scan kept of each finding, one slim record per finding per scan. Filled by
+-- convertScanBlobs() for scans stored before it, and by every scan save after. The index serves a
+-- scan's records in display order.
+CREATE TABLE IF NOT EXISTS scan_findings (
+  scan_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  rule_id TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  category TEXT NOT NULL,
+  resource_id TEXT,
+  resource_name TEXT,
+  resource_type TEXT,
+  resource_group TEXT,
+  subscription_id TEXT NOT NULL,
+  row_count INTEGER NOT NULL,
+  PRIMARY KEY (scan_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_scan_findings_order
+  ON scan_findings (scan_id, (${SCAN_FINDING_SEVERITY_RANK}), title, fingerprint);
 
 -- The columns each rule's findings returned. Filled once by buildColumnCatalogue(), then kept
 -- in step by every scan save.
@@ -473,6 +503,12 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not build the column catalogue:', err);
     }
+    // Last, after the rekey, and never throws: each scan converts in a savepoint of its own.
+    try {
+      await convertScanBlobs(tx);
+    } catch (err) {
+      console.error('[bootstrap] could not convert stored scans into records:', err);
+    }
   });
 }
 
@@ -533,6 +569,42 @@ async function copyFindingRows(tx: PgTx): Promise<void> {
   await tx.execute(sql.raw(ROW_COPY_DELETE_ORPHANS));
   if (!copied) {
     await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINDING_ROWS_COPY_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
+  }
+}
+
+/**
+ * The Postgres half of migrate.ts's convertScanBlobs(): the same plan, one savepoint per scan so a scan
+ * whose blob cannot be read or whose records cannot be written costs only itself. It is logged with its
+ * id and left unconverted, and the rest convert.
+ */
+async function convertScanBlobs(tx: PgTx): Promise<void> {
+  const pending = (await tx.execute(sql.raw(SCAN_COPY_READ_PENDING))).rows as unknown as { id: string; module: string }[];
+  if (pending.length === 0) return;
+  try {
+    await tx.transaction(async (sp) => { await sp.execute(sql.raw(SCAN_COPY_DELETE_ORPHANS)); });
+  } catch (err) {
+    console.error('[bootstrap] could not remove the records of scans that no longer exist:', err);
+  }
+  const columns = sql.raw(SCAN_FINDING_COLUMNS.join(', '));
+  for (const scan of pending) {
+    try {
+      const blob = (await tx.execute(sql`SELECT findings FROM scans WHERE id = ${scan.id}`)).rows[0]?.findings as string | undefined;
+      const plan = planScanBlob(scan.id, scan.module, blob ?? '[]');
+      if (!plan.ok) {
+        console.error(`[bootstrap] scan ${scan.id} keeps no records, ${plan.reason}; it will be tried again on the next boot`);
+        continue;
+      }
+      await tx.transaction(async (sp) => {
+        await sp.execute(sql`DELETE FROM scan_findings WHERE scan_id = ${scan.id}`);
+        for (const batch of batches(plan.records)) {
+          const values = batch.map(r => sql`(${sql.join(recordValues(r).map(v => sql`${v}`), sql`, `)})`);
+          await sp.execute(sql`INSERT INTO scan_findings (${columns}) VALUES ${sql.join(values, sql`, `)}`);
+        }
+        await sp.execute(sql`UPDATE scans SET has_records = 1 WHERE id = ${scan.id}`);
+      });
+    } catch (err) {
+      console.error(`[bootstrap] could not store the records of scan ${scan.id}; it will be tried again on the next boot:`, err);
+    }
   }
 }
 

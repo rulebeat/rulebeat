@@ -5,6 +5,9 @@
  * question.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { dbKind } from '@/lib/db/backend';
+import { pgDb } from '@/lib/db/client';
 import { listFindings } from '@/lib/db/findings';
 import { openExport, queryView } from '@/lib/db/finding-views';
 import { streamExport } from '@/lib/export-stream';
@@ -150,6 +153,31 @@ describe('a run over a tiny database', () => {
     expect(Buffer.byteLength(file)).toBe(byName('export: CSV, default view').bytes);
   });
 
+  it('measures the records the two scans stored: one per finding per scan, with their size and the pages they take', async () => {
+    const { records } = result;
+    expect(records.count).toBe(await countRows('scan_findings'));
+    // 60 findings in the first scan, and the second leaves out the ones it fixes.
+    expect(records.count).toBe(60 + 60 - result.dataset.fixed);
+    expect(records.averageRecordBytes).toBeGreaterThan(100);
+    expect(records.averageRecordBytes).toBeLessThan(ROW_TARGET_BYTES);
+    expect(records.tableBytes).toBeGreaterThanOrEqual(4096);
+    if (dbKind === 'pg') {
+      // What the server itself says the table and its indexes weigh.
+      const res = await pgDb!.execute(sql.raw(`SELECT pg_relation_size('scan_findings') AS "table", pg_indexes_size('scan_findings') AS "indexes"`));
+      const server = res.rows[0] as { table: unknown; indexes: unknown };
+      expect(records.tableBytes).toBe(Number(server.table));
+      expect(records.indexBytes).toBe(Number(server.indexes));
+      expect(records.indexBytes).toBeGreaterThan(0);
+      return;
+    }
+    // Every index the table has, as the database lists them: none may be left out of the figure.
+    const { rawSqlite } = await import('@/lib/db/client');
+    const indexes = (rawSqlite!.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'scan_findings'`).all() as { name: string }[]).map(i => i.name);
+    expect(indexes).toContain('idx_scan_findings_order');
+    const pages = (rawSqlite!.prepare(`SELECT SUM(pgsize) AS bytes FROM dbstat WHERE name IN (${indexes.map(() => '?').join(', ')})`).get(...indexes) as { bytes: number }).bytes;
+    expect(records.indexBytes).toBe(pages);
+  });
+
   it('prints a table naming every measurement and the dataset behind it, and a second for the export', () => {
     const table = formatTable(result);
     expect(table).toContain('60 findings');
@@ -157,6 +185,8 @@ describe('a run over a tiny database', () => {
     for (const m of result.measurements) expect(table).toContain(m.name);
     for (const e of result.exports) expect(table).toContain(e.name);
     expect(table.split('\n')[2]).toMatch(/^measurement\s+cold ms\s+median ms\s+bytes sent$/);
+    expect(table).toMatch(/^scan records\s+count\s+bytes a record\s+table\s+indexes$/m);
+    expect(table).toMatch(/^scan_findings\s+\d+\s+\d+\s+[\d.]+ KB\s+[\d.]+ KB$/m);
     expect(table).toMatch(/^export\s+first byte cold ms\s+first byte median ms\s+total cold ms\s+total median ms\s+file\s+peak heap growth\s+peak RSS growth$/m);
   });
 });

@@ -195,7 +195,8 @@
 | `packages/core/src/engine/graph-runner.ts` | `runGraphRules()`: standalone Microsoft Graph engine, per-rule `try/catch` isolation, `'capped'` on `GraphTruncatedError` |
 | `packages/web/lib/graph-rule-validation.ts` | `validateGraphQueryShape()`/`isAllowedGraphPath()`: server-side enforcement of the 7-path Graph resource allowlist, the real security boundary |
 | `packages/web/lib/schedule-runs.ts` | Unified runs repository (manual + scheduled), powers Run History |
-| `packages/web/lib/scan-history.ts` | `saveScanResult`/`getScanById`/`getScansForRun`/`listScanMetas` |
+| `packages/web/lib/scan-history.ts` | `saveScanResult`/`getScanById`/`getScansForRun`/`listScanMetas`. A save writes the scan row and its `scan_findings` records in one transaction, and pruning deletes a scan with its records |
+| `packages/web/lib/db/scan-findings-copy.ts` | The slim record a scan keeps for each finding (ADR 0008): `recordsFromFindings()` builds them for the scan path, `planScanBlob()` reads a stored scan's blob into the same records for the upgrade, with the same fingerprint. Also the display order the `scan_findings` index serves. `convertScanBlobs()` in `migrate.ts` and `pg/bootstrap.ts` runs it once per scan, marked by `scans.has_records` |
 | `packages/web/app/api/schedules/` | CRUD + `[id]/run` (manual trigger) + `[id]/runs` (history) |
 | `packages/web/app/api/rules/validate-kql/route.ts` | Validate KQL against ARG, return sample rows |
 | `packages/web/app/api/rules/validate-graph/route.ts` | Validate a Graph query, mirroring `validate-kql`; `GraphTruncatedError` is a capped success, only a `Graph API 400:` message unwraps to something actionable |

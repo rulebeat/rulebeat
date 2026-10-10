@@ -18,6 +18,7 @@
 
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
+import type { SQL } from 'drizzle-orm';
 import type { OpenExport } from '../../lib/export-stream';
 import type { View } from '../../lib/finding-view';
 
@@ -180,11 +181,23 @@ export interface BenchOptions extends DatasetOptions {
   warmRuns: number;
 }
 
+/** What the scans' records (ADR 0008) weigh once the dataset is stored. */
+export interface RecordSizes {
+  /** How many records the table holds: one per finding per scan. */
+  count: number;
+  /** The mean bytes of the values in one record, before any page overhead. */
+  averageRecordBytes: number;
+  /** The space the table takes, and the space of its indexes (the key and the display order). */
+  tableBytes: number;
+  indexBytes: number;
+}
+
 export interface BenchResult {
   options: BenchOptions;
   dataset: { findings: number; rows: number; averageRowBytes: number; fixed: number; suppressed: number };
   measurements: MeasurementResult[];
   exports: ExportMeasurement[];
+  records: RecordSizes;
 }
 
 export function median(values: readonly number[]): number {
@@ -407,10 +420,54 @@ export async function measureExports(warmRuns: number, log: (line: string) => vo
   return results;
 }
 
+/** The size of what `scan_findings` holds in the database the process has open: how many records, the
+ *  mean bytes of their values (plain SQL through the shared helpers, so both backends answer it), and the
+ *  space the table and its indexes take. That last part is the backend's own accounting: the `dbstat`
+ *  pages on SQLite, `pg_relation_size` and `pg_indexes_size` on Postgres. */
+export async function measureRecords(): Promise<RecordSizes> {
+  const { db, rawSqlite } = await import('../../lib/db/client');
+  const { dbKind } = await import('../../lib/db/backend');
+  const { one } = await import('../../lib/db/exec');
+  const { scanFindings: t } = await import('../../lib/db/tables');
+  const { sql } = await import('drizzle-orm');
+
+  // The server's own size functions name no column, so Postgres takes them in the same one-row aggregate.
+  const serverSizes: Record<string, SQL<number | string>> = dbKind === 'pg'
+    ? { table: sql<number | string>`pg_relation_size('scan_findings')`, indexes: sql<number | string>`pg_indexes_size('scan_findings')` }
+    : {};
+  // Postgres returns count(), sum() and the sizes as bigint, which the driver hands over as a string.
+  const sum = (await one(db.select({
+    ...serverSizes,
+    count: sql<number | string>`count(*)`,
+    bytes: sql<number | string | null>`sum(length(${t.scanId}) + length(${t.fingerprint}) + length(${t.ruleId}) + length(${t.severity})
+      + length(${t.title}) + length(${t.kind}) + length(${t.category}) + coalesce(length(${t.resourceId}), 0)
+      + coalesce(length(${t.resourceName}), 0) + coalesce(length(${t.resourceType}), 0) + coalesce(length(${t.resourceGroup}), 0)
+      + length(${t.subscriptionId}) + 8)`,
+  }).from(t)))!;
+  const count = Number(sum.count);
+  const averageRecordBytes = count ? Math.round(Number(sum.bytes ?? 0) / count) : 0;
+
+  if ('table' in sum && 'indexes' in sum) {
+    return { count, averageRecordBytes, tableBytes: Number(sum.table), indexBytes: Number(sum.indexes) };
+  }
+
+  if (!rawSqlite) throw new Error('measureRecords() reads the SQLite file the process opened, and none is open.');
+  const pages = (names: string[]) => (rawSqlite.prepare(
+    `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat WHERE name IN (${names.map(() => '?').join(', ')})`,
+  ).get(...names) as { bytes: number }).bytes;
+  return {
+    count,
+    averageRecordBytes,
+    tableBytes: pages(['scan_findings']),
+    indexBytes: pages(['sqlite_autoindex_scan_findings_1', 'idx_scan_findings_order']),
+  };
+}
+
 export async function runBench(opts: BenchOptions, log: (line: string) => void = () => {}): Promise<BenchResult> {
   const dataset = generateDataset(opts);
   log(`seeding ${dataset.resources.length} findings`);
   const scans = await seedDatabase(dataset, opts.seed, log);
+  const records = await measureRecords();
 
   const sample = dataset.resources.slice(0, 200).flatMap(r => Array.from({ length: r.rowCount }, (_, n) => Buffer.byteLength(JSON.stringify(generateRow(opts.seed, r, n)))));
   const exports = await measureExports(opts.warmRuns, log);
@@ -431,6 +488,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
       ...measurements,
     ],
     exports,
+    records,
   };
 }
 
@@ -462,5 +520,10 @@ export function formatTable(result: BenchResult): string {
     ...layout(['measurement', 'cold ms', 'median ms', 'bytes sent'], body),
     '',
     ...layout(['export', 'first byte cold ms', 'first byte median ms', 'total cold ms', 'total median ms', 'file', 'peak heap growth', 'peak RSS growth'], exported),
+    '',
+    ...layout(['scan records', 'count', 'bytes a record', 'table', 'indexes'], [[
+      'scan_findings', result.records.count.toLocaleString('en-US'), String(result.records.averageRecordBytes),
+      size(result.records.tableBytes), size(result.records.indexBytes),
+    ]]),
   ].join('\n');
 }

@@ -76,6 +76,7 @@ export const scans = pgTable('scans', {
   runId: text('run_id'),
   coverage: text('coverage').notNull().default('complete'),
   incompleteRules: text('incomplete_rules').notNull().default('[]'),
+  hasRecords: integer('has_records').notNull().default(0),
 });
 
 export const suppressions = pgTable('suppressions', {
@@ -251,6 +252,24 @@ export const findingRows = pgTable('finding_rows', {
   data: text('data').notNull(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.fingerprint, table.position] }),
+}));
+
+export const scanFindings = pgTable('scan_findings', {
+  scanId: text('scan_id').notNull(),
+  fingerprint: text('fingerprint').notNull(),
+  ruleId: text('rule_id').notNull(),
+  severity: text('severity').notNull(),
+  title: text('title').notNull(),
+  kind: text('kind').notNull(),
+  category: text('category').notNull(),
+  resourceId: text('resource_id'),
+  resourceName: text('resource_name'),
+  resourceType: text('resource_type'),
+  resourceGroup: text('resource_group'),
+  subscriptionId: text('subscription_id').notNull(),
+  rowCount: integer('row_count').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.scanId, table.fingerprint] }),
 }));
 
 export const columnCatalogue = pgTable('column_catalogue', {
