@@ -172,7 +172,7 @@ export type Loaded<T> =
   | { status: 'ready'; data: T }
   | { status: 'failed'; message: string };
 
-class Store<S> {
+export class Store<S> {
   private snapshot: S;
   private readonly listeners = new Set<() => void>();
   constructor(initial: S) { this.snapshot = initial; }

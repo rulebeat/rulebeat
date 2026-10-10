@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { Select } from '@/components/ui/select';
 import { RunStatusDot } from '@/components/scans/run-status-dot';
-import { FindingsTable } from '@/components/findings/findings-table';
+import { SnapshotScreen } from '@/components/scans/snapshot-screen';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { ScanCompare } from '@/components/findings/scan-compare';
 import { describeTarget } from '@/lib/target-describe';
-import type { Category, Finding, Rule, ScanMeta, ScanSummary, Severity, Suppression } from '@/lib/types';
+import { emptySnapshotQuery, type SnapshotQuery } from '@/lib/snapshot-query';
+import type { Category, Rule, ScanMeta, ScanSummary, Severity } from '@/lib/types';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import { Activity, ArrowLeft } from 'lucide-react';
 
@@ -28,18 +29,24 @@ export interface ScanHistoryTabProps {
   rules: Rule[];
   runs: ScheduleRun[];
   runDetail?: { run: ScheduleRun; scans: ScanMeta[] } | null;
-  snapshotScan?: ScanSummary | null;
+  /** The scan a `?scan=` link names. The screen reads its findings from the server a page at a time. */
+  snapshotScanId?: string;
+  /** What the address asks of that scan: filters, search and page. */
+  snapshotQuery?: SnapshotQuery;
+  /** Counts the navigations the snapshot did not make itself, each of which starts it again from the address. */
+  snapshotRestarts?: number;
+  /** Reports the query the snapshot is about to write to the address. */
+  onSnapshotUrlWrite?: (query: string) => void;
   compareCategorySlug?: string;
   compareCategoryScans?: ScanMeta[];
   compareScans?: [ScanSummary, ScanSummary] | null;
-  initialSuppressions?: Suppression[];
 }
 
 export function ScanHistoryTab({
-  categories, rules, runs, runDetail, snapshotScan, compareCategorySlug, compareCategoryScans, compareScans, initialSuppressions,
+  categories, rules, runs, runDetail, snapshotScanId, snapshotQuery, snapshotRestarts = 0, onSnapshotUrlWrite,
+  compareCategorySlug, compareCategoryScans, compareScans,
 }: ScanHistoryTabProps) {
   const router = useRouter();
-  const [suppressions, setSuppressions] = useState<Suppression[]>(initialSuppressions ?? []);
   // Driven entirely by the `compareCategory` URL param (like the Library `?section=` pattern) —
   // not local state — so navigating away (Cancel) or picking a different category always
   // reflects what the server actually fetched, instead of an independent client value that can
@@ -54,57 +61,22 @@ export function ScanHistoryTab({
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
   const ruleById = useMemo(() => new Map(rules.map(r => [r.id, r])), [rules]);
 
-  async function handleSuppress(finding: Finding, reason: string, expiresAt?: string) {
-    const res = await fetch('/api/suppressions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fingerprint: finding.fingerprint, resourceId: finding.resourceId, reason, expiresAt }),
-    });
-    if (res.ok) {
-      const s = await res.json() as Suppression;
-      setSuppressions(prev => [...prev, s]);
-    }
-  }
-  async function handleUnsuppress(id: string) {
-    await fetch(`/api/suppressions/${id}`, { method: 'DELETE' });
-    setSuppressions(prev => prev.filter(s => s.id !== id));
-  }
-
   // ---- Compare result ----
   if (compareScans) {
     return <ScanCompare scanA={compareScans[0]} scanB={compareScans[1]} categorySlug="all" backHref="/scans?tab=history" />;
   }
 
-  // ---- Snapshot (one category's scan within a run) ----
-  if (snapshotScan) {
-    const backHref = runDetail ? `/scans?tab=history&run=${runDetail.run.id}` : '/scans?tab=history';
+  // ---- Snapshot (one category's scan within a run), read from the server a page at a time ----
+  if (snapshotScanId) {
     return (
-      <div className="space-y-4">
-        {/* You are looking at a past scan, not the current state. That is worth
-            saying, but it is not a problem, so it reads as info rather than a warning. */}
-        <Callout tone="info" className="items-center justify-between">
-          <span className="flex flex-wrap items-center justify-between gap-2">
-            <span>{categoryById.get(snapshotScan.module)?.label ?? snapshotScan.module} · {formatDate(snapshotScan.startedAt)} · {snapshotScan.findings.length} findings</span>
-            <Link href={backHref} className="flex items-center gap-1 font-medium text-ink underline hover:no-underline">
-              <ArrowLeft className="size-3" /> Back
-            </Link>
-          </span>
-        </Callout>
-        {snapshotScan.findings.length > 0 ? (
-          <Card>
-            <div className="p-0">
-              <FindingsTable
-                findings={snapshotScan.findings}
-                suppressions={suppressions}
-                onSuppress={(f, reason, expiresAt) => { void handleSuppress(f, reason, expiresAt); }}
-                onUnsuppress={id => { void handleUnsuppress(id); }}
-              />
-            </div>
-          </Card>
-        ) : (
-          <p className="py-10 text-center text-sm text-ink-muted">No findings in this scan.</p>
-        )}
-      </div>
+      <SnapshotScreen
+        key={`${snapshotScanId}-${snapshotRestarts}`}
+        scanId={snapshotScanId}
+        initialQuery={snapshotQuery ?? emptySnapshotQuery()}
+        categories={categories}
+        backHref={runDetail ? `/scans?tab=history&run=${runDetail.run.id}` : '/scans?tab=history'}
+        onUrlWrite={onSnapshotUrlWrite}
+      />
     );
   }
 

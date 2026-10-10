@@ -21,6 +21,8 @@ import { runInNewContext } from 'node:vm';
 import type { SQL } from 'drizzle-orm';
 import type { OpenExport } from '../../lib/export-stream';
 import type { View } from '../../lib/finding-view';
+import type { SnapshotQuery } from '../../lib/snapshot-query';
+import type { OpenSnapshotExport } from '../../lib/snapshot-export';
 
 // ---- The dataset ----
 
@@ -198,6 +200,8 @@ export interface BenchResult {
   measurements: MeasurementResult[];
   exports: ExportMeasurement[];
   records: RecordSizes;
+  /** How many records the scan the snapshot measurements ran on holds: the biggest scan the dataset stored. */
+  snapshotRecords: number;
 }
 
 export function median(values: readonly number[]): number {
@@ -296,6 +300,32 @@ export async function seedDatabase(
   return { firstScanMs, secondScanMs };
 }
 
+/** The scan a snapshot is measured on: the one that stored the most records, the first of them by id on
+ *  a tie. One scan is one category's findings, so this is the biggest snapshot the dataset has. */
+export async function largestSnapshotScanId(): Promise<string> {
+  const { db } = await import('../../lib/db/client');
+  const { one } = await import('../../lib/db/exec');
+  const { scanFindings: t } = await import('../../lib/db/tables');
+  const { sql } = await import('drizzle-orm');
+  const biggest = await one(db.select({ scanId: t.scanId }).from(t).groupBy(t.scanId).orderBy(sql`count(*) desc`, t.scanId).limit(1));
+  if (!biggest) throw new Error('No scan stored any records, so there is no snapshot to measure.');
+  return biggest.scanId;
+}
+
+/** How many records a scan stored. Postgres hands count() over as a string, so it is converted. */
+export async function countScanRecords(scanId: string): Promise<number> {
+  const { db } = await import('../../lib/db/client');
+  const { one } = await import('../../lib/db/exec');
+  const { scanFindings: t } = await import('../../lib/db/tables');
+  const { eq, sql } = await import('drizzle-orm');
+  const row = await one(db.select({ n: sql<number | string>`count(*)` }).from(t).where(eq(t.scanId, scanId)));
+  return Number(row?.n ?? 0);
+}
+
+/** The filters the filtered snapshot page and the snapshot export are measured with: a severity, and
+ *  search text that a rule's name contains, so the search narrows the run and has real work to do. */
+export const BENCH_SNAPSHOT_FILTERS = { severity: ['high'], rule: [] as string[], search: 'disks' } as const;
+
 /** The measurements over a seeded database, today's path first and the new one after it. */
 export async function buildMeasurements(): Promise<Measurement[]> {
   const { listFindings } = await import('../../lib/db/findings');
@@ -303,6 +333,18 @@ export async function buildMeasurements(): Promise<Measurement[]> {
   const { RESULTS_KINDS } = await import('../../lib/finding-kinds');
   const { applyView, emptyView, rowField, rowFieldOptions } = await import('../../lib/finding-view');
   const { queryColumnValues, queryView } = await import('../../lib/db/finding-views');
+  const { querySnapshot } = await import('../../lib/db/scan-snapshots');
+  const { emptySnapshotQuery } = await import('../../lib/snapshot-query');
+
+  const snapshotScanId = await largestSnapshotScanId();
+  const snapshotPage = async (over: Partial<SnapshotQuery>): Promise<number> => {
+    const answer = await querySnapshot(snapshotScanId, { ...emptySnapshotQuery(), ...over });
+    if (answer.status !== 'ok') throw new Error(`The snapshot of ${snapshotScanId} answered ${answer.status}.`);
+    return Buffer.byteLength(JSON.stringify(answer.response));
+  };
+  // The later page is the middle of the run, which a first read of the run says the place of.
+  const firstAnswer = await querySnapshot(snapshotScanId, emptySnapshotQuery());
+  const laterPage = firstAnswer.status === 'ok' ? Math.max(1, Math.ceil(firstAnswer.response.pageCount / 2)) : 1;
 
   const kindsOf = { results: RESULTS_KINDS, advisories: ['advisory'] as const };
   const rowFilterView = { ...emptyView(), filters: [{ field: rowField(BENCH_ROW_PATH), values: ['S1'] }] };
@@ -321,6 +363,10 @@ export async function buildMeasurements(): Promise<Measurement[]> {
     { name: 'new: row-filtered view', run: async () => sizeOf(await queryView(rowFilterView, { tab: 'results', showSuppressed: false })) },
     { name: 'new: default view, Advisories tab', run: async () => sizeOf(await queryView(defaultView, { tab: 'advisories', showSuppressed: false })) },
     { name: 'new: column dropdown', run: async () => sizeOf(await queryColumnValues(defaultView, { tab: 'results', showSuppressed: false, column: rowField(BENCH_ROW_PATH) })) },
+    // A past run's snapshot (ADR 0008): the page of 50, the total and the facets, from the scan's records.
+    { name: 'snapshot: first page', run: () => snapshotPage({}) },
+    { name: 'snapshot: later page', run: () => snapshotPage({ page: laterPage }) },
+    { name: 'snapshot: page filtered with search', run: () => snapshotPage({ severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search }) },
   ];
 }
 
@@ -358,26 +404,47 @@ function collectGarbage(): boolean {
  *  the other measurements, since a process's resident size seldom shrinks and would carry theirs. */
 export async function measureExports(warmRuns: number, log: (line: string) => void = () => {}): Promise<ExportMeasurement[]> {
   const { openExport } = await import('../../lib/db/finding-views');
+  const { openSnapshotExport } = await import('../../lib/db/scan-snapshots');
   const { streamExport } = await import('../../lib/export-stream');
+  const { streamSnapshotExport } = await import('../../lib/snapshot-export');
   const { emptyView, rowField } = await import('../../lib/finding-view');
+  const { emptySnapshotQuery } = await import('../../lib/snapshot-query');
 
   const query = { tab: 'results', showSuppressed: false } as const;
   const defaultView = emptyView();
   const rowFilterView = { ...emptyView(), filters: [{ field: rowField(BENCH_ROW_PATH), values: ['S1'] }] };
-  const cases = [
-    { name: 'export: CSV, default view', format: 'csv', view: defaultView },
-    { name: 'export: CSV, row-filtered view', format: 'csv', view: rowFilterView },
-    { name: 'export: JSON, default view', format: 'json', view: defaultView },
-  ] as const;
+  const snapshotScanId = await largestSnapshotScanId();
+  const snapshotQuery: SnapshotQuery = { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search };
 
-  /** One whole export. `sample`, when given, is called after every read the server and the client make. */
-  const readOnce = async (view: View, format: 'csv' | 'json', sample?: () => void) => {
+  /** Every export is a function from the sampler (called after each read the server and the client make)
+   *  to the stream of its file, so findings and snapshots go through one set of measurements. */
+  type Source = (sample?: () => void) => Promise<ReadableStream<Uint8Array>>;
+  const findings = (view: View, format: 'csv' | 'json'): Source => async sample => {
     const open: OpenExport = use => openExport(view, query)(source => use({
       columns: async () => { const columns = await source.columns(); sample?.(); return columns; },
       batches: () => (async function* () { for await (const batch of source.batches()) { sample?.(); yield batch; } })(),
     }));
+    return streamExport(open, format);
+  };
+  const snapshot = (scanQuery: SnapshotQuery, format: 'csv' | 'json'): Source => async sample => {
+    const open: OpenSnapshotExport = use => openSnapshotExport(snapshotScanId, scanQuery)(source => use({
+      batches: () => (async function* () { for await (const batch of source.batches()) { sample?.(); yield batch; } })(),
+    }));
+    return streamSnapshotExport(open, format);
+  };
+  const cases: { name: string; format: 'csv' | 'json'; source: Source }[] = [
+    { name: 'export: CSV, default view', format: 'csv', source: findings(defaultView, 'csv') },
+    { name: 'export: CSV, row-filtered view', format: 'csv', source: findings(rowFilterView, 'csv') },
+    { name: 'export: JSON, default view', format: 'json', source: findings(defaultView, 'json') },
+    { name: 'export: snapshot CSV, whole run', format: 'csv', source: snapshot(emptySnapshotQuery(), 'csv') },
+    { name: 'export: snapshot CSV, filtered with search', format: 'csv', source: snapshot(snapshotQuery, 'csv') },
+    { name: 'export: snapshot JSON, whole run', format: 'json', source: snapshot(emptySnapshotQuery(), 'json') },
+  ];
+
+  /** One whole export. `sample`, when given, is called after every read the server and the client make. */
+  const readOnce = async (source: Source, sample?: () => void) => {
     const start = performance.now();
-    const reader = (await streamExport(open, format)).getReader();
+    const reader = (await source(sample)).getReader();
     let bytes = 0;
     let first: number | undefined;
     for (;;) {
@@ -392,16 +459,16 @@ export async function measureExports(warmRuns: number, log: (line: string) => vo
   };
 
   const results: ExportMeasurement[] = [];
-  for (const { name, format, view } of cases) {
+  for (const { name, format, source } of cases) {
     log(`measuring ${name}`);
     const runs: Awaited<ReturnType<typeof readOnce>>[] = [];
-    for (let run = 0; run <= warmRuns; run += 1) runs.push(await readOnce(view, format));
+    for (let run = 0; run <= warmRuns; run += 1) runs.push(await readOnce(source));
 
     collectGarbage();
     const baseline = process.memoryUsage();
     let peakHeap = 0;
     let peakRss = 0;
-    await readOnce(view, format, () => {
+    await readOnce(source, () => {
       collectGarbage();
       const now = process.memoryUsage();
       peakHeap = Math.max(peakHeap, now.heapUsed - baseline.heapUsed);
@@ -468,6 +535,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
   log(`seeding ${dataset.resources.length} findings`);
   const scans = await seedDatabase(dataset, opts.seed, log);
   const records = await measureRecords();
+  const snapshotRecords = await countScanRecords(await largestSnapshotScanId());
 
   const sample = dataset.resources.slice(0, 200).flatMap(r => Array.from({ length: r.rowCount }, (_, n) => Buffer.byteLength(JSON.stringify(generateRow(opts.seed, r, n)))));
   const exports = await measureExports(opts.warmRuns, log);
@@ -489,6 +557,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
     ],
     exports,
     records,
+    snapshotRecords,
   };
 }
 
@@ -518,6 +587,8 @@ export function formatTable(result: BenchResult): string {
       + `seed ${options.seed}, ${options.warmRuns} warm runs`,
     '',
     ...layout(['measurement', 'cold ms', 'median ms', 'bytes sent'], body),
+    '',
+    `snapshot measurements: the largest scan, ${result.snapshotRecords.toLocaleString('en-US')} records`,
     '',
     ...layout(['export', 'first byte cold ms', 'first byte median ms', 'total cold ms', 'total median ms', 'file', 'peak heap growth', 'peak RSS growth'], exported),
     '',

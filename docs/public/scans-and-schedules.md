@@ -143,3 +143,31 @@ successful rule may mark its old findings fixed, and a run with any non-success 
 **partial** coverage rather than folded into the posture number. The outcome model is in
 [`how-it-works.md`](how-it-works.md#one-outcome-per-rule), and what "X of Y passing" counts is in
 [`posture.md`](posture.md).
+
+### A past run's findings
+
+Open a run, then one of its category scans, to see the findings that scan returned, as they were
+found. The list is read from the server 50 at a time, so a run with tens of thousands of findings
+opens as fast as a small one. Every finding the scan returned is listed, including ones you have
+suppressed since: the list is a record of the run, not a view of what is open now. It carries each
+finding's severity, rule, resource name, type, resource group and row count, and it has no
+suppress or script actions and no status.
+
+Filter by severity or by rule, or search the resource name, rule name, type and resource id (a
+match anywhere in the text, whatever the case). The severity and rule menus show how many findings
+each value has under the other filters. The export button downloads every matching finding, not just
+the page on screen, as CSV or JSON, with the same column headers as the table. A large export is
+streamed, so it starts at once and never builds the whole file in memory.
+
+A past run keeps each finding as it was found, not its rows or its status. A finding that still
+exists links to the live finding on its own tab (Results, Advisories or Activity), where its rows
+and status are. A finding that has since been cleared is listed with "No longer
+exists" and no link. The page says why when there is nothing to show: the run returned no findings,
+nothing matches the search and filters, the run was not found or has aged out of Run History, a
+run from an earlier version whose stored findings could not be read when RuleBeat upgraded is not
+available (the server log names the reason at startup, and RuleBeat tries again at each start), or
+the request failed.
+
+The filters, the search and the page are in the address (`snapSeverity`, `snapRule`, `snapQ` and
+`snapPage`), after `scan=`, so a link reproduces what you see. A `scan=` link made before these
+existed opens the same run, unfiltered, on its first page.

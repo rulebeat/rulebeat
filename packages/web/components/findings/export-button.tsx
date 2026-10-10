@@ -11,8 +11,9 @@ import { Download, ChevronDown } from 'lucide-react';
  *  list that does not (the explorer) names the server's export route for a format, and the browser
  *  streams that response to disk without reading it. */
 type ExportButtonProps =
-  | { findings: HeldFinding[]; exportUrl?: undefined }
-  | { exportUrl: (format: ExportFormat) => string; findings?: undefined };
+  | { findings: HeldFinding[]; exportUrl?: undefined; fileName?: undefined }
+  /** `fileName` is what the file is called without its extension; the server's own name wins where it sends one. */
+  | { exportUrl: (format: ExportFormat) => string; fileName?: string; findings?: undefined };
 
 function triggerDownload(href: string, filename: string) {
   const a = document.createElement('a');
@@ -27,10 +28,10 @@ function downloadHeld(filename: string, mimeType: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ExportButton({ findings, exportUrl }: ExportButtonProps) {
+export function ExportButton({ findings, exportUrl, fileName = 'findings' }: ExportButtonProps) {
   function exportAs(format: ExportFormat) {
     if (exportUrl) {
-      triggerDownload(exportUrl(format), `findings.${format}`);
+      triggerDownload(exportUrl(format), `${fileName}.${format}`);
     } else if (format === 'csv') {
       downloadHeld('findings.csv', 'text/csv', buildFindingsCsv(findings ?? []));
     } else {
