@@ -13,6 +13,8 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Fixed
 
 - On PostgreSQL, a database read that failed while past scans were being converted into records at startup undid every other upgrade step of that start. Now a failed read costs only what it was reading: the whole conversion if it was the list of scans to convert, or one scan if it was that scan's stored findings. The failure is logged, the other steps are kept, the app starts, and the next start tries the conversion again.
+- When rebuilding the finding history at startup fails for one category, that category keeps its stored findings and is tried again on every start, instead of the rebuild being marked done. Categories already rebuilt are not replayed, and the stored findings are emptied only once every category is rebuilt or had nothing to rebuild. A category that was scanned since the failed start is not rebuilt, so its newer findings stay as that scan left them.
+
 ## [0.9.0] - 2026-10-11
 
 ### Added

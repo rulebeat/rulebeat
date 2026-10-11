@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from './client';
 import { scans as scansTable } from './tables';
-import { many } from './exec';
+import { many, one } from './exec';
 import { EMPTY_SCAN_BLOB } from './scan-findings-copy';
 import { SCAN_HISTORY_LIMIT } from '../scan-history';
 import type { Finding } from '../types';
@@ -11,6 +11,24 @@ export interface StoredScanBlob {
   finishedAt: string;
   totalRules: number;
   findings: Finding[];
+}
+
+const EMPTY_BLOB_WITH_RECORDS =
+  sql`${scansTable.findings} = ${EMPTY_SCAN_BLOB} AND EXISTS (SELECT 1 FROM scan_findings WHERE scan_findings.scan_id = ${scansTable.id})`;
+
+/**
+ * Whether a category has a scan that `loadStoredScanBlobs()` leaves out. While the findings backfill
+ * has not finished, such a scan was saved by this release, after the start that could not rebuild the
+ * category, so its findings already describe the category more recently than any blob does. A scan
+ * that found nothing has no records and is not seen here.
+ */
+export async function hasScanLeftOutOfHistory(category: string): Promise<boolean> {
+  const row = await one(db
+    .select({ id: scansTable.id })
+    .from(scansTable)
+    .where(and(eq(scansTable.module, category), EMPTY_BLOB_WITH_RECORDS))
+    .limit(1));
+  return row !== undefined;
 }
 
 /**
@@ -29,10 +47,7 @@ export async function loadStoredScanBlobs(category: string): Promise<StoredScanB
   return (await many(db
     .select({ finishedAt: scansTable.finishedAt, totalRules: scansTable.totalRules, findings: scansTable.findings })
     .from(scansTable)
-    .where(and(
-      eq(scansTable.module, category),
-      sql`NOT (${scansTable.findings} = ${EMPTY_SCAN_BLOB} AND EXISTS (SELECT 1 FROM scan_findings WHERE scan_findings.scan_id = ${scansTable.id}))`,
-    ))
+    .where(and(eq(scansTable.module, category), sql`NOT (${EMPTY_BLOB_WITH_RECORDS})`))
     .orderBy(desc(scansTable.startedAt))
     .limit(SCAN_HISTORY_LIMIT)))
     .map(row => ({

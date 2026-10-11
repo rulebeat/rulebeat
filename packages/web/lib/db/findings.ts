@@ -5,8 +5,8 @@ import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
 import { rebuildColumnCatalogue, removeColumnCatalogueForRule, type WrittenFinding } from './column-catalogue';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { CHUNK_SIZE, chunk } from './chunk';
-import { loadStoredScanBlobs } from './scan-blob-history';
-import { FINDINGS_BACKFILL_MARKER } from './scan-findings-copy';
+import { hasScanLeftOutOfHistory, loadStoredScanBlobs } from './scan-blob-history';
+import { FINDINGS_BACKFILL_MARKER, findingsBackfillCategoryKey } from './scan-findings-copy';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
@@ -653,53 +653,80 @@ export async function backfillFindings(): Promise<void> {
     if (list) list.push(r.id); else enabledIdsByCategory.set(r.category, [r.id]);
   }
 
+  // Rebuilt per category and recorded per category, so a category that failed is tried again on the
+  // next start without replaying the ones that worked. The done marker is set only when none failed.
+  let tryAgain = 0;
+
   for (const category of categories) {
     // Per category, so one unreadable slice of history cannot cost the user every other category's.
     try {
+      const recordKey = findingsBackfillCategoryKey(category.id);
+      if (await getMeta(recordKey)) continue;
+
+      // A read that throws is a failure (caught below), not "nothing to rebuild".
       const history = await loadStoredScanBlobs(category.id); // newest-first
       if (history.length === 0) continue;
+
+      // A scan saved since the start that could not rebuild this category already holds its current
+      // findings. Replaying older scans over them would mark open findings Fixed with a past date and
+      // move last seen backwards, so the category is left as that scan left it.
+      if (await hasScanLeftOutOfHistory(category.id)) {
+        tryAgain++;
+        console.error(`[backfill] did not rebuild finding history for '${category.id}': a scan of it was saved since an earlier start, and replaying older scans would overwrite its findings. Its stored findings are kept.`);
+        continue;
+      }
+
       const oldestFirst = [...history].reverse();
       const restore = (scan: { findings: Finding[] }) => scan.findings
         .map(f => restoreHistoricFinding(f, category.id))
         .filter((f): f is Finding => f !== null);
 
-      for (let i = 0; i < oldestFirst.length; i++) {
-        const scan = oldestFirst[i];
-        const isLast = i === oldestFirst.length - 1;
-        const findings = restore(scan);
-        const ranRuleIds = Array.from(new Set(findings.map(f => f.ruleId)));
+      // One transaction for the whole category: a replay that stops part way leaves nothing behind, so
+      // the next start's replay does not count a scan twice.
+      await inTransaction(async (tx) => {
+        for (let i = 0; i < oldestFirst.length; i++) {
+          const scan = oldestFirst[i];
+          const isLast = i === oldestFirst.length - 1;
+          const findings = restore(scan);
+          const ranRuleIds = Array.from(new Set(findings.map(f => f.ruleId)));
+          await syncScanFindings({
+            scanId: crypto.randomUUID(),
+            category: category.id,
+            ranRuleIds,
+            findings,
+            finishedAt: scan.finishedAt,
+            // Mid-history transitions are fabricated (never actually observed live) and stay
+            // silent; only the most recent scan's transition reflects real current state, so it
+            // gets a real event trail to seed alerting/audit history going forward.
+            silent: !isLast,
+          });
+        }
+
+        // Final reconciliation: resolve against the currently-enabled rule set (not just what
+        // last appeared in the blob) so rules disabled/removed since don't linger as false-active.
+        const latest = oldestFirst[oldestFirst.length - 1];
+        const currentRuleIds = enabledIdsByCategory.get(category.id) ?? [];
         await syncScanFindings({
           scanId: crypto.randomUUID(),
           category: category.id,
-          ranRuleIds,
-          findings,
-          finishedAt: scan.finishedAt,
-          // Mid-history transitions are fabricated (never actually observed live) and stay
-          // silent; only the most recent scan's transition reflects real current state, so it
-          // gets a real event trail to seed alerting/audit history going forward.
-          silent: !isLast,
+          ranRuleIds: currentRuleIds,
+          findings: restore(latest),
+          finishedAt: latest.finishedAt,
+          silent: true,
         });
-      }
 
-      // Final reconciliation: resolve against the currently-enabled rule set (not just what
-      // last appeared in the blob) so rules disabled/removed since don't linger as false-active.
-      const latest = oldestFirst[oldestFirst.length - 1];
-      const currentRuleIds = enabledIdsByCategory.get(category.id) ?? [];
-      await syncScanFindings({
-        scanId: crypto.randomUUID(),
-        category: category.id,
-        ranRuleIds: currentRuleIds,
-        findings: restore(latest),
-        finishedAt: latest.finishedAt,
-        silent: true,
+        // On the transaction's handle: setMeta() would write outside it on Postgres.
+        await run(tx.insert(metaTable).values({ key: recordKey, value: '1' })
+          .onConflictDoUpdate({ target: metaTable.key, set: { value: '1' } }));
       });
     } catch (err) {
       // Reported rather than swallowed: this is history reconstruction, so degrading is acceptable,
       // but it must be visible in the server log rather than looking like the category simply had
       // nothing in it.
-      console.error(`[backfill] could not rebuild finding history for '${category.id}':`, err);
+      tryAgain++;
+      console.error(`[backfill] could not rebuild finding history for '${category.id}'. It is tried again on the next start, and its stored findings are kept until then:`, err);
     }
   }
 
-  await setMeta(FINDINGS_BACKFILL_MARKER, '1');
+  if (tryAgain === 0) await setMeta(FINDINGS_BACKFILL_MARKER, '1');
 }
