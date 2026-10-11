@@ -22,6 +22,7 @@ import type { SQL } from 'drizzle-orm';
 import type { OpenExport } from '../../lib/export-stream';
 import type { View } from '../../lib/finding-view';
 import type { SnapshotQuery } from '../../lib/snapshot-query';
+import type { CompareQuery } from '../../lib/compare-query';
 import type { OpenSnapshotExport } from '../../lib/snapshot-export';
 
 // ---- The dataset ----
@@ -202,6 +203,8 @@ export interface BenchResult {
   records: RecordSizes;
   /** How many records the scan the snapshot measurements ran on holds: the biggest scan the dataset stored. */
   snapshotRecords: number;
+  /** How many records each of the two scans the compare measurements ran between holds. */
+  compareRecords: { older: number; newer: number };
 }
 
 export function median(values: readonly number[]): number {
@@ -322,6 +325,21 @@ export async function countScanRecords(scanId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** The two scans a compare is measured between: the two most recent of the category that holds the biggest
+ *  scan, which are the two the seed stored for it. Returned older first, with how many records each holds. */
+export async function comparedScans(): Promise<{ ids: [string, string]; records: [number, number] }> {
+  const { db } = await import('../../lib/db/client');
+  const { many, one } = await import('../../lib/db/exec');
+  const { scans } = await import('../../lib/db/tables');
+  const { desc, eq } = await import('drizzle-orm');
+  const largest = await one(db.select({ category: scans.module }).from(scans).where(eq(scans.id, await largestSnapshotScanId())));
+  if (!largest) throw new Error('The biggest scan is not in the scans table, so there is no compare to measure.');
+  const latest = await many(db.select({ id: scans.id }).from(scans).where(eq(scans.module, largest.category)).orderBy(desc(scans.startedAt), scans.id).limit(2));
+  if (latest.length < 2) throw new Error(`Category ${largest.category} stored fewer than two scans, so there is no compare to measure.`);
+  const [newer, older] = [latest[0]!.id, latest[1]!.id];
+  return { ids: [older, newer], records: [await countScanRecords(older), await countScanRecords(newer)] };
+}
+
 /** The filters the filtered snapshot page and the snapshot export are measured with: a severity, and
  *  search text that a rule's name contains, so the search narrows the run and has real work to do. */
 export const BENCH_SNAPSHOT_FILTERS = { severity: ['high'], rule: [] as string[], search: 'disks' } as const;
@@ -335,6 +353,9 @@ export async function buildMeasurements(): Promise<Measurement[]> {
   const { queryColumnValues, queryView } = await import('../../lib/db/finding-views');
   const { querySnapshot } = await import('../../lib/db/scan-snapshots');
   const { emptySnapshotQuery } = await import('../../lib/snapshot-query');
+  const { queryCompare } = await import('../../lib/db/scan-compare');
+  const { COMPARE_PAGE_SIZE, emptyCompareQuery } = await import('../../lib/compare-query');
+  const { COMPARE_SIDES } = await import('../../lib/compare-response');
 
   const snapshotScanId = await largestSnapshotScanId();
   const snapshotPage = async (over: Partial<SnapshotQuery>): Promise<number> => {
@@ -345,6 +366,22 @@ export async function buildMeasurements(): Promise<Measurement[]> {
   // The later page is the middle of the run, which a first read of the run says the place of.
   const firstAnswer = await querySnapshot(snapshotScanId, emptySnapshotQuery());
   const laterPage = firstAnswer.status === 'ok' ? Math.max(1, Math.ceil(firstAnswer.response.pageCount / 2)) : 1;
+
+  // A compare of the largest category's two scans (ADR 0008): one side's page of 50 and all three totals.
+  const { ids: compareIds } = await comparedScans();
+  const comparePage = async (over: Partial<CompareQuery>): Promise<number> => {
+    const answer = await queryCompare(compareIds[0], compareIds[1], { ...emptyCompareQuery(), ...over });
+    if (answer.status !== 'ok') throw new Error(`The compare of ${compareIds.join(' and ')} answered ${answer.status}.`);
+    return Buffer.byteLength(JSON.stringify(answer.response));
+  };
+  // The later page is the middle of the biggest side, which a first read of the compare says the place of.
+  const firstCompare = await queryCompare(compareIds[0], compareIds[1], emptyCompareQuery());
+  const biggest = firstCompare.status === 'ok'
+    ? COMPARE_SIDES.reduce((a, b) => (firstCompare.response.totals[b] > firstCompare.response.totals[a] ? b : a))
+    : 'added';
+  const compareLaterPage = firstCompare.status === 'ok'
+    ? Math.max(1, Math.ceil(Math.ceil(firstCompare.response.totals[biggest] / COMPARE_PAGE_SIZE) / 2))
+    : 1;
 
   const kindsOf = { results: RESULTS_KINDS, advisories: ['advisory'] as const };
   const rowFilterView = { ...emptyView(), filters: [{ field: rowField(BENCH_ROW_PATH), values: ['S1'] }] };
@@ -367,6 +404,11 @@ export async function buildMeasurements(): Promise<Measurement[]> {
     { name: 'snapshot: first page', run: () => snapshotPage({}) },
     { name: 'snapshot: later page', run: () => snapshotPage({ page: laterPage }) },
     { name: 'snapshot: page filtered with search', run: () => snapshotPage({ severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search }) },
+    // A compare of two past scans (ADR 0008), matched in the database: a page of each side, and a later page of the biggest.
+    { name: 'compare: added page', run: () => comparePage({ side: 'added' }) },
+    { name: 'compare: fixed page', run: () => comparePage({ side: 'fixed' }) },
+    { name: 'compare: persisted page', run: () => comparePage({ side: 'persisted' }) },
+    { name: 'compare: later page of the biggest side', run: () => comparePage({ side: biggest, page: compareLaterPage }) },
   ];
 }
 
@@ -536,6 +578,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
   const scans = await seedDatabase(dataset, opts.seed, log);
   const records = await measureRecords();
   const snapshotRecords = await countScanRecords(await largestSnapshotScanId());
+  const { records: [olderRecords, newerRecords] } = await comparedScans();
 
   const sample = dataset.resources.slice(0, 200).flatMap(r => Array.from({ length: r.rowCount }, (_, n) => Buffer.byteLength(JSON.stringify(generateRow(opts.seed, r, n)))));
   const exports = await measureExports(opts.warmRuns, log);
@@ -558,6 +601,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
     exports,
     records,
     snapshotRecords,
+    compareRecords: { older: olderRecords, newer: newerRecords },
   };
 }
 
@@ -589,6 +633,7 @@ export function formatTable(result: BenchResult): string {
     ...layout(['measurement', 'cold ms', 'median ms', 'bytes sent'], body),
     '',
     `snapshot measurements: the largest scan, ${result.snapshotRecords.toLocaleString('en-US')} records`,
+    `compare measurements: the two scans of the largest category, ${result.compareRecords.older.toLocaleString('en-US')} records (older) and ${result.compareRecords.newer.toLocaleString('en-US')} records (newer)`,
     '',
     ...layout(['export', 'first byte cold ms', 'first byte median ms', 'total cold ms', 'total median ms', 'file', 'peak heap growth', 'peak RSS growth'], exported),
     '',

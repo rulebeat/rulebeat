@@ -107,7 +107,7 @@ describe('the server page', () => {
   it('passes the scan id through and reads the snapshot\'s query with the one reader, without loading the scan', () => {
     expect(page).toContain('snapshotQueryFromParams(params)');
     expect(page).toMatch(/snapshotScanId\s*=\s*scanId/);
-    // `getScanById` stays for the compare screen, which still loads both scans; the one `?scan=` names is not.
+    // Neither the snapshot nor the compare (compare-address.test.ts) loads a scan on the page.
     expect(page).not.toMatch(/getScanById\(\s*scanId\s*\)/);
   });
 });

@@ -2,7 +2,7 @@ import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { countsAsAffected } from '@/lib/finding-kinds';
-import { getScanById, getScansForRun, listScanMetas } from '@/lib/scan-history';
+import { getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
 import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
@@ -12,10 +12,11 @@ import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
+import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
 import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
-import type { Rule, ScanSummary, Suppression } from '@/lib/types';
+import type { Rule, Suppression } from '@/lib/types';
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
@@ -44,7 +45,7 @@ export default async function ScansPage({
 
   let runDetail: { run: NonNullable<Awaited<ReturnType<typeof getRun>>>; scans: Awaited<ReturnType<typeof getScansForRun>> } | null = null;
   let snapshotScanId: string | undefined;
-  let compareScans: [ScanSummary, ScanSummary] | null = null;
+  let compareIds: [string, string] | undefined;
   let compareCategoryScans: Awaited<ReturnType<typeof listScanMetas>> | undefined;
 
   const initialSchedules = activeTab === 'schedules'
@@ -74,10 +75,9 @@ export default async function ScansPage({
 
   if (activeTab === 'history') {
     if (compare) {
-      const [idA, idB] = compare.split('..');
-      const scanA = idA ? await getScanById(idA) : null;
-      const scanB = idB ? await getScanById(idB) : null;
-      if (scanA && scanB) compareScans = [scanA, scanB];
+      // The compare reads its own findings from the server a page at a time (ADR 0008), so the page passes
+      // the ids through and never loads either scan. An id that is gone is the screen's to say.
+      compareIds = parseCompareIds(compare) ?? undefined;
     } else if (compareCategory) {
       compareCategoryScans = await listScanMetas(compareCategory, 20);
     } else if (runId) {
@@ -116,7 +116,8 @@ export default async function ScansPage({
         snapshotQuery={snapshotScanId ? snapshotQueryFromParams(params) : undefined}
         compareCategorySlug={compareCategory}
         compareCategoryScans={compareCategoryScans}
-        compareScans={compareScans}
+        compareIds={compareIds}
+        compareQuery={compareIds ? compareQueryFromParams(params) : undefined}
         initialSchedules={initialSchedules}
         canEditSchedules={can(role, 'schedules:write')}
           notificationChannels={initialNotificationChannels}

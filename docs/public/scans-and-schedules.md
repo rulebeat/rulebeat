@@ -171,3 +171,33 @@ the request failed.
 The filters, the search and the page are in the address (`snapSeverity`, `snapRule`, `snapQ` and
 `snapPage`), after `scan=`, so a link reproduces what you see. A `scan=` link made before these
 existed opens the same run, unfiltered, on its first page.
+
+### Comparing two runs
+
+Pick two runs of the same category in Run History to see what changed between them. The older of
+the two is the one that started first, whichever order you picked them in. The screen has three
+tiles: **Added** (in the newer run only), **Fixed** (in the older run only) and **Persisted** (in
+both). Each tile shows its count and is also the control that picks which side the table lists.
+Findings are matched by their identity, the same fingerprint a finding keeps across runs, so a
+finding whose rows changed still counts as persisted. The side you pick is read from the server 50
+at a time. Each row shows the finding's severity, the rule's name, the resource and its resource
+group, and a link to the live finding on its own tab. A finding that has since been cleared shows
+"No longer exists" instead of the link. The table does not have the Type or Rows columns that a
+single run's table has.
+
+The export button downloads every finding on the side you are looking at, not just the page on
+screen, as CSV or JSON, with the same columns as a single run's export. It is streamed, so a large
+side starts at once and is never built in memory.
+
+The page says why when there is nothing to show: the side is empty, one of the runs was not found or
+has aged out of Run History, the two runs are of different categories, or a run from an earlier
+version has no stored findings to compare. A run with no stored findings is never reported as
+everything added or fixed. A failed request says so and keeps the tiles, so you can pick another
+side or try again.
+
+The side and the page are in the address (`compareSide` and `comparePage`), after
+`compare=<older>..<newer>`, so a link reproduces what you see. The Added side and the first page are
+left out. A `compare=` link made before these existed opens the same comparison on the Added side.
+Run History keeps the most recent runs of each category (90 by default, see
+[Scan history retention](configure.md#scan-history-retention)), and a comparison cannot be opened
+once either run has aged out.

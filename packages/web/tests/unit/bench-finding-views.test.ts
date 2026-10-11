@@ -9,8 +9,10 @@ import { eq, sql } from 'drizzle-orm';
 import { dbKind } from '@/lib/db/backend';
 import { db, pgDb } from '@/lib/db/client';
 import { many, one } from '@/lib/db/exec';
-import { scanFindings } from '@/lib/db/tables';
+import { scanFindings, scans } from '@/lib/db/tables';
 import { listFindings } from '@/lib/db/findings';
+import { queryCompare } from '@/lib/db/scan-compare';
+import { emptyCompareQuery } from '@/lib/compare-query';
 import { openExport, queryView } from '@/lib/db/finding-views';
 import { openSnapshotExport, querySnapshot } from '@/lib/db/scan-snapshots';
 import { streamSnapshotExport } from '@/lib/snapshot-export';
@@ -19,7 +21,7 @@ import { streamExport } from '@/lib/export-stream';
 import { RESULTS_KINDS } from '@/lib/finding-kinds';
 import { applyView, emptyView } from '@/lib/finding-view';
 import {
-  BENCH_RULES, BENCH_SNAPSHOT_FILTERS, ROW_TARGET_BYTES, formatTable, generateDataset, generateRow, largestSnapshotScanId, median, runBench, runMeasurements,
+  BENCH_RULES, BENCH_SNAPSHOT_FILTERS, ROW_TARGET_BYTES, comparedScans, formatTable, generateDataset, generateRow, largestSnapshotScanId, median, runBench, runMeasurements,
   type BenchResult,
 } from '../../scripts/bench/finding-views';
 import { isActiveSuppression, loadSuppressions } from '@/lib/suppressions';
@@ -114,12 +116,13 @@ describe('a run over a tiny database', () => {
       'today: payload, Results tab', 'today: payload, Advisories tab', 'today: default view', 'today: row-filtered view', 'today: column dropdown',
       'new: default view', 'new: row-filtered view', 'new: default view, Advisories tab', 'new: column dropdown',
       'snapshot: first page', 'snapshot: later page', 'snapshot: page filtered with search',
+      'compare: added page', 'compare: fixed page', 'compare: persisted page', 'compare: later page of the biggest side',
     ]);
     for (const m of result.measurements) {
       expect(m.coldMs, m.name).toBeGreaterThan(0);
       expect(m.medianMs, m.name).toBeGreaterThan(0);
     }
-    for (const name of names.filter(n => n.includes('payload') || n.startsWith('new:') || n.startsWith('snapshot:'))) {
+    for (const name of names.filter(n => n.includes('payload') || n.startsWith('new:') || n.startsWith('snapshot:') || n.startsWith('compare:'))) {
       expect(result.measurements.find(m => m.name === name)!.bytes, name).toBeGreaterThan(0);
     }
   });
@@ -194,6 +197,42 @@ describe('a run over a tiny database', () => {
     expect(result.snapshotRecords).toBe(stored);
     expect(formatTable(result)).toContain(`snapshot measurements: the largest scan, ${stored.toLocaleString('en-US')} records`);
   });
+
+  it('measures a compare of the largest category\'s two scans, each page answering what the route answers', async () => {
+    const { ids, records } = await comparedScans();
+    const [older, newer] = await Promise.all(ids.map(id => one(db.select({ category: scans.module, startedAt: scans.startedAt }).from(scans).where(eq(scans.id, id)))));
+    // Two scans of the category that holds the biggest scan, the older one first.
+    expect(older!.category).toBe(newer!.category);
+    expect(older!.category).toBe((await one(db.select({ category: scans.module }).from(scans).where(eq(scans.id, await largestSnapshotScanId()))))!.category);
+    expect(Date.parse(older!.startedAt)).toBeLessThan(Date.parse(newer!.startedAt));
+    expect(records[0]).toBe(Number((await one(db.select({ n: sql<number | string>`count(*)` }).from(scanFindings).where(eq(scanFindings.scanId, ids[0]))))!.n));
+
+    const answer = await queryCompare(ids[0], ids[1], emptyCompareQuery());
+    expect(answer.status).toBe('ok');
+    if (answer.status !== 'ok') return;
+    const { totals } = answer.response;
+    // The sides add up to the scans: what the newer scan holds is the added and the persisted, and what the older held is the fixed and the persisted.
+    expect(totals.added + totals.persisted).toBe(records[1]);
+    expect(totals.fixed + totals.persisted).toBe(records[0]);
+    // The second scan leaves out the findings the dataset marks as fixed, so nothing in it is new.
+    expect(totals.added).toBe(0);
+    expect(totals.persisted).toBe(records[1]);
+
+    const bytes = (name: string) => result.measurements.find(m => m.name === name)!.bytes!;
+    expect(bytes('compare: added page')).toBe(Buffer.byteLength(JSON.stringify(answer.response)));
+    const fixed = await queryCompare(ids[0], ids[1], { side: 'fixed', page: 1 });
+    expect(fixed.status === 'ok' && bytes('compare: fixed page')).toBe(fixed.status === 'ok' ? Buffer.byteLength(JSON.stringify(fixed.response)) : -1);
+  });
+
+  it('says how many records each compared scan holds, beside the compare measurements', async () => {
+    const { records } = await comparedScans();
+    expect(result.compareRecords).toEqual({ older: records[0], newer: records[1] });
+    expect(result.compareRecords.older).toBeGreaterThanOrEqual(result.compareRecords.newer);
+    expect(formatTable(result)).toContain(
+      `compare measurements: the two scans of the largest category, ${records[0].toLocaleString('en-US')} records (older) and ${records[1].toLocaleString('en-US')} records (newer)`,
+    );
+  });
+
   it('measures the snapshot export as the file the route streams for the same query, filtered one smaller', async () => {
     const scanId = await largestSnapshotScanId();
     const byName = (name: string) => result.exports.find(e => e.name === name)!;
