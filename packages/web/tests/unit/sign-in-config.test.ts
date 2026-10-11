@@ -184,6 +184,9 @@ describe('getSignInStatus', () => {
       const status = await getSignInStatus();
       expect(status.configured).toBe(false);
       expect(status.stored?.secretUnreadable).toBe(true);
+      expect(status.message).toBe(
+        'The stored client secret can no longer be read. The encryption key changed or the data volume was replaced. Enter the secret again to restore Microsoft sign-in.',
+      );
     } finally {
       process.env.RULEBEAT_ENCRYPTION_KEY = original;
       resetSecretBoxForTests();

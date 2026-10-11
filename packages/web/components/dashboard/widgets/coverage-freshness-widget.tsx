@@ -73,12 +73,12 @@ export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) 
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-xs text-ink-muted">
-                  {cat.lastScanAt ? timeAgo(cat.lastScanAt) : '—'}
+                  {cat.lastScanAt ? timeAgo(cat.lastScanAt) : '-'}
                 </span>
                 {cat.lastScanCoverage === 'partial' && (
                   <span
                     className="inline-flex items-center gap-1 border border-status-warn/40 px-1.5 py-0.5 text-xs font-medium text-status-warn"
-                    title={`Not fully scanned — ${cat.lastScanIncompleteRules.map(r => r.ruleName).join(', ')}`}
+                    title={`Not fully scanned: ${cat.lastScanIncompleteRules.map(r => r.ruleName).join(', ')}`}
                   >
                     <AlertTriangle className="size-3" />Partial
                   </span>

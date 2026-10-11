@@ -128,7 +128,7 @@ export async function POST(req: Request) {
             action: 'notification_channel.test',
             entityType: 'notification_channel',
             entityId: channelId,
-            summary: `Tested notification channel — failed: ${err.message.slice(0, 80)}`,
+            summary: `Tested notification channel. Failed: ${err.message.slice(0, 80)}`,
             details: { ok: false },
           });
           return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
@@ -147,7 +147,7 @@ export async function POST(req: Request) {
             action: 'notification_channel.test',
             entityType: 'notification_channel',
             entityId: channelId,
-            summary: `Tested notification channel — failed: ${err.message.slice(0, 80)}`,
+            summary: `Tested notification channel. Failed: ${err.message.slice(0, 80)}`,
             details: { ok: false },
           });
           return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
@@ -167,8 +167,8 @@ export async function POST(req: Request) {
       entityType: 'notification_channel',
       entityId: channelId,
       summary: ok
-        ? 'Tested notification channel — delivered successfully'
-        : `Tested notification channel — failed${errorMsg ? ': ' + errorMsg.slice(0, 80) : ''}`,
+        ? 'Tested notification channel. Delivered successfully'
+        : `Tested notification channel. Failed${errorMsg ? ': ' + errorMsg.slice(0, 80) : ''}`,
       details: { ok },
     });
 
@@ -180,7 +180,7 @@ export async function POST(req: Request) {
       action: 'notification_channel.test',
       entityType: 'notification_channel',
       entityId: channelId,
-      summary: 'Tested notification channel — failed (network error)',
+      summary: 'Tested notification channel. Failed (network error)',
       details: { ok: false },
     });
     if (String(err).includes('TimeoutError') || String(err).includes('AbortError')) {

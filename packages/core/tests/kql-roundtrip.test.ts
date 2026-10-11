@@ -837,7 +837,7 @@ describe('TS-09 · a bare "| where ..." with no table line is not lost [spec 043
   it('warns that a table name was assumed', () => {
     const kql = "| where name startswith 'vm-'";
     const parsed = parseKqlToVisualQuery(kql);
-    expect(parsed.warnings.some(w => /table name/i.test(w))).toBe(true);
+    expect(parsed.warnings).toContain('No table name found before the first "|". Assumed "Resources".');
   });
 
   it('still recovers later stages, not just the first clause', () => {

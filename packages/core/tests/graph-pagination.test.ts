@@ -114,6 +114,9 @@ describe('TenantContext.graphGet — graphGetAll() pagination (packages/core/src
 
     expect(err).toBeInstanceOf(GraphTruncatedError);
     expect((err as InstanceType<typeof GraphTruncatedError>).rowsSeen).toBe(GRAPH_MAX_ROWS + 1);
+    expect((err as Error).message).toBe(
+      `Microsoft Graph result set exceeded ${GRAPH_MAX_ROWS + 1} row(s). RuleBeat stopped paginating before reaching the end of the result set.`,
+    );
     // The cap check fires as soon as the running total crosses it — no second page is ever fetched.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

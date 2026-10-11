@@ -241,7 +241,7 @@ function parseWebhookUrl(url: string): URL {
     throw new SsrfGuardError('URL is not valid.');
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new SsrfGuardError(`URL scheme ${parsed.protocol} is not allowed — must be http or https.`);
+    throw new SsrfGuardError(`URL scheme ${parsed.protocol} is not allowed. It must be http or https.`);
   }
   return parsed;
 }

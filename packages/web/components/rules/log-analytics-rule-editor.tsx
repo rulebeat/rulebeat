@@ -55,7 +55,7 @@ export function LogAnalyticsRuleEditor({ value, onChange, readOnly }: LogAnalyti
       <CardContent className="space-y-3">
         {!readOnly && (
           <p className="text-[13px] text-ink-2">
-            Runs against your configured Log Analytics workspace. Write your own <span className="font-mono text-xs">TimeGenerated</span> filter — the time window below is display metadata only, never spliced into the query.
+            Runs against your configured Log Analytics workspace. Write your own <span className="font-mono text-xs">TimeGenerated</span> filter. The time window below is display metadata only, never spliced into the query.
           </p>
         )}
         <div>
@@ -77,7 +77,7 @@ export function LogAnalyticsRuleEditor({ value, onChange, readOnly }: LogAnalyti
           <div>
             <Label className="mb-1 flex items-center gap-1">
               Time window (days)
-              <span title="How many days of occurrences this rule represents, e.g. &quot;in the last 30 days&quot;. Doesn't change the query — write your own TimeGenerated filter to match.">
+              <span title="How many days of occurrences this rule represents, e.g. &quot;in the last 30 days&quot;. Doesn't change the query. Write your own TimeGenerated filter to match.">
                 <HelpCircle className="size-3.5 text-ink-faint" />
               </span>
             </Label>

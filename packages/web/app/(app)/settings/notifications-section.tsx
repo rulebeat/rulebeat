@@ -493,7 +493,7 @@ export function NotificationsSection({
                                   {new Date(d.occurredAt).toLocaleString()}
                                 </span>
                                 <span className="text-ink">
-                                  {' — '}{d.suppressed ? 'suppressed (Demo)' : d.ok ? 'delivered' : 'failed'}
+                                  {' · '}{d.suppressed ? 'suppressed (Demo)' : d.ok ? 'delivered' : 'failed'}
                                   {d.attempts > 1 ? ` after ${d.attempts} attempts` : ''}
                                   {typeof d.findingsCount === 'number' ? `, ${d.findingsCount} finding${d.findingsCount === 1 ? '' : 's'}` : ''}
                                 </span>

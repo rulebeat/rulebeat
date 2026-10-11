@@ -16,7 +16,7 @@ export function validateLogAnalyticsQueryShape(lq: LogAnalyticsQuery): string | 
     return `Time window must be a whole number of days between 1 and ${MAX_TIME_WINDOW_DAYS}.`;
   }
   if (lq.dimensionKeyField !== undefined && !lq.dimensionKeyField.trim()) {
-    return 'Dimension key field cannot be blank — leave it unset to collapse every occurrence onto one finding.';
+    return 'Dimension key field cannot be blank. Leave it unset to collapse every occurrence onto one finding.';
   }
   return null;
 }

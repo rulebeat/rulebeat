@@ -221,7 +221,7 @@ export async function getSignInStatus(): Promise<SignInStatus> {
       clientId: stored.clientId,
       stored,
       isActive: false,
-      message: 'The stored client secret can no longer be read — the encryption key changed or the '
+      message: 'The stored client secret can no longer be read. The encryption key changed or the '
         + 'data volume was replaced. Enter the secret again to restore Microsoft sign-in.',
       localSignInPolicy,
       publicUrl,

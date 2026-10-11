@@ -117,7 +117,7 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
     })));
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toMatch(/Dimension key field/);
+    expect(json.error).toBe('Dimension key field cannot be blank. Leave it unset to collapse every occurrence onto one finding.');
   });
 
   it('saves a valid log-analytics rule, persisting queryBackend, logsQuery and kind:activity', async () => {

@@ -80,7 +80,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
     );
 
     expect(run.status).toBe('partial');
-    expect(run.error).toMatch(/security/);
+    expect(run.error).toBe("security: one or more rules did not complete. See the category's scan for details");
   });
 
   it('never leaks a raw thrown error to run.error — only a client-safe summary reaches the UI', async () => {
@@ -113,7 +113,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
     expect(run.error).not.toBeNull();
     expect(run.error).not.toMatch(/JSON/i);
     expect(run.error).not.toMatch(/SyntaxError/i);
-    expect(run.error).toMatch(/check the RuleBeat server logs/i);
+    expect(run.error).toBe('security: scan failed. Check the RuleBeat server logs for details');
   });
 
   it('regression guard: a fully clean run across all rules still reports success', async () => {

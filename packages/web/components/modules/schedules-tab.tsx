@@ -58,7 +58,7 @@ function defaultStartAt(): string {
 }
 
 function relativeTime(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   const diffMs = new Date(iso).getTime() - Date.now();
   const future = diffMs >= 0;
   const mins = Math.round(Math.abs(diffMs) / 60000);
@@ -690,7 +690,7 @@ export function SchedulesTab({ initialSchedules, categories, rules, channels, ca
                       <TableCell className="font-medium text-ink">{s.name}</TableCell>
                       <TableCell className="max-w-56 truncate">{describeTarget(s, categoryById, ruleById)}</TableCell>
                       <TableCell>{describeRecurrence(s)}</TableCell>
-                      <TableCell>{s.enabled ? relativeTime(s.nextRunAt) : '—'}</TableCell>
+                      <TableCell>{s.enabled ? relativeTime(s.nextRunAt) : '-'}</TableCell>
                       <TableCell>
                         {s.lastRun ? (
                           <span className="inline-flex items-center gap-1.5">

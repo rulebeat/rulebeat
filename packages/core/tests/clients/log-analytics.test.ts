@@ -77,7 +77,9 @@ describe('LogAnalyticsTruncatedError', () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.name).toBe('LogAnalyticsTruncatedError');
     expect(err.rowsSeen).toBe(42);
-    expect(err.message).toContain('42');
+    expect(err.message).toBe(
+      'Log Analytics reported this query as a partial failure after 42 row(s). Azure could not evaluate the full query.',
+    );
   });
 });
 

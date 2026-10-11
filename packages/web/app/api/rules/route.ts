@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   // actually compiles" bar, or a filterless query (matches every resource in scope) saves directly.
   if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
     return NextResponse.json({
-      error: 'The rule has no condition that compiles to a filter — it would match every resource in scope. Add at least one real condition.',
+      error: 'The rule has no condition that compiles to a filter. It would match every resource in scope. Add at least one real condition.',
     }, { status: 400 });
   }
 
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
       const probe = await probeRuleIdentitySample(body.rawKql, ctx);
       if (probe.blocked) {
         return NextResponse.json({
-          error: `${probe.invalidCount} of ${probe.sampleSize} sampled row(s) have no resource id — project id explicitly in the query`,
+          error: `${probe.invalidCount} of ${probe.sampleSize} sampled row(s) have no resource id. Project id explicitly in the query`,
         }, { status: 400 });
       }
     } catch (err) {
