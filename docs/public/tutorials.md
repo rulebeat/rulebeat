@@ -20,3 +20,11 @@ Find orphaned Azure resources with built-in cost rules: run a scan, read the fin
 Turn a KQL query you run by hand into a RuleBeat rule: paste it on the Query page, check the visual builder, and save it to the Library.
 
 ▶ [Watch on YouTube](https://youtu.be/pW1JhFLIjKI), 2 min. Read more: [Authoring rules](authoring-rules.md).
+
+## The check you keep running by hand
+
+[![Watch: The check you keep running by hand](img/tutorials/scheduled-checks.png)](https://youtu.be/5jAe6CuMO1M)
+
+Put your Azure governance checks on a RuleBeat schedule: findings saved and tracked on the dashboard, new ones sent to Teams.
+
+▶ [Watch on YouTube](https://youtu.be/5jAe6CuMO1M), 2 min. Read more: [Scans and schedules](scans-and-schedules.md), [Notifications](notifications.md).
