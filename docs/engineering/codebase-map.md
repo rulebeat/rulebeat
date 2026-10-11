@@ -62,7 +62,8 @@
 | `packages/web/lib/rule-version-markers.ts` | Pure, client-safe: the Library's "New version" and "Retired" markers and filter, the retired copy, and `describeOrigin()` for a custom rule's "Duplicated from" line |
 | `packages/web/lib/db/recorded-versions.ts` | `loadRecordedVersions()`: every recorded `(ruleId, version, sortKey)` in one query, no definitions |
 | `packages/web/components/rules/rule-origin.tsx` | The "Duplicated from <rule> <version>" line on a custom rule's page |
-| `scripts/packs/aprl-v2.ts` | APRL v2 pack transform |
+| `scripts/packs/aprl-v2.ts` | APRL v2 pack transform; fetches the tree and files, then pairs through `lib/aprl-pairing.ts` |
+| `packages/web/lib/aprl-pairing.ts` | `pairRecommendations()`: pure pairing of an APRL recommendation with the `.kql` file named after its guid (no network, no file access) |
 | `tsconfig.scripts.json` | TS config for `scripts/` (Node types, path alias for web types) |
 | `packages/web/lib/db/schema.ts` | Drizzle schema, the SQLite twin, 25 tables: `rules`, `scans`, `suppressions`, `schema_cache`, `resource_types_cache`, `dashboards`, `categories`, `schedules`, `meta`, `users`, `azure_credentials`, `log_analytics_workspaces`, `local_accounts`, `sso_providers`, `audit_log`, `findings`, `finding_events`, `posture_snapshots`, `notification_channels`, `schedule_notification_channels`, `schedule_runs`, `notification_deliveries`, `saved_queries`, `query_runs`, `saved_views` |
 | `packages/web/lib/db/schema.pg.ts` | The Postgres twin of `schema.ts`: same tables, column names and nullability, `pgTable` instead of `sqliteTable`. Timestamps and JSON stay text so ordering and row mappers match byte-for-byte |

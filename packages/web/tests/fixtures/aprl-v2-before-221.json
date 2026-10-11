@@ -1,0 +1,146 @@
+[
+  {
+    "id": "bb6deb9d-24fa-4ee8-bc23-ac3ebc7fdf8e",
+    "name": "Use at least the Enterprise SKU",
+    "description": "You need to use a minimum of Enterprise SKU for your managed domain to support replica sets.\nLearn more: https://learn.microsoft.com/entra/identity/domain-services/tutorial-create-replica-set",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AAD/domainServices"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Gets Entry Domain Services that are using only one replicaSet\nresources\n| where type == \"microsoft.aad/domainservices\"\n| extend replicaSets = properties.replicaSets\n| where array_length(replicaSets) < 2\n| project recommendationId='a3058909-fcf8-4450-88b5-499f57449178', name=name, id=id, tags=tags, param1=strcat('replicaSetLocation:', replicaSets[0].location)"
+  },
+  {
+    "id": "a3058909-fcf8-4450-88b5-499f57449178",
+    "name": "Use replica sets for resiliency or geolocation in Microsoft Entra Domain Services",
+    "description": "To improve the resiliency of a Microsoft Entra Domain Services managed domain, or deploy to additional geographic locations close to your applications, you can use replica sets.\nYou can add a replica set to any peered virtual network in any Azure region that supports Domain Services.\nLearn more: https://learn.microsoft.com/entra/identity/domain-services/tutorial-create-replica-set",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AAD/domainServices"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Gets Entry Domain Services that are using the Standard SKU\nresources\n| where type == \"microsoft.aad/domainservices\"\n| extend sku = properties.sku\n| where sku =~ 'Standard'\n| project recommendationId='bb6deb9d-24fa-4ee8-bc23-ac3ebc7fdf8e', name=name, id=id, tags=tags, param1=strcat('SKU:', sku)"
+  },
+  {
+    "id": "9ec5b4c8-3dd8-473a-86ee-3273290331b9",
+    "name": "Enable Stretched Clusters for Multi-AZ Availability of the vSAN Datastore",
+    "description": "For Azure VMware Solution, enabling Stretched Clusters offers 99.99% SLA, synchronous storage replication (RPO=0), and spreads vSAN datastore across two AZs. Must be done at initial setup, needing double quota due to extension across AZs.\nLearn more: https://learn.microsoft.com/azure/azure-vmware/deploy-vsan-stretched-clusters",
+    "category": "reliability",
+    "severity": "low",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure VMware Solution resources that don't have a cluster host memory critical alert with a threshold of 95%.\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"UsageAverage\"\n| where threshold == 95\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"029208c8-5186-4a76-8ee8-6e3445fef4dd\", name, id, tags, param1 = \"hostMemoryCriticalAlert: isNull or threshold != 95\""
+  },
+  {
+    "id": "4232eb32-3241-4049-9e14-9b8005817b56",
+    "name": "Configure Azure Monitor Alert warning thresholds for vSAN datastore utilization",
+    "description": "Ensure VMware vSAN datastore slack space is maintained for SLA by monitoring storage utilization and setting alerts at 70% and 75% utilization to allow for capacity planning. To expand, add hosts or external storage like Azure Elastic SAN, Azure NetApp Files, if CPU and RAM requirements are met.\nLearn more: https://learn.microsoft.com/azure/azure-vmware/configure-alerts-for-azure-vmware-solution#supported-metrics-and-activities",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// cannot-be-validated-with-arg"
+  },
+  {
+    "id": "4ee5d535-c47b-470a-9557-4a3dd297d62f",
+    "name": "Monitor CPU Utilization to ensure sufficient resources for workloads",
+    "description": "Ensure sufficient compute resources to avoid host resource exhaustion in Azure VMware Solution, which utilizes vSphere DRS and HA for dynamic workload resource management. However, sustained CPU utilization over 95% may increase CPU Ready times, impacting workloads.\nLearn more: https://learn.microsoft.com/azure/well-architected/azure-vmware/monitoring#configure-and-streamline-alerts",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.AVS/privateClouds"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Provides a list of Azure VMware Solution resources that don't have a vSAN capacity critical alert with a threshold of 75% or a warning capacity of 70%.\n(\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"DiskUsedPercentage\"\n| where threshold == 75\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"4232eb32-3241-4049-9e14-9b8005817b56\", name, id, tags, param1 = \"vsanCapacityCriticalAlert: isNull or threshold != 75\"\n)\n| union (\nresources\n| where ['type'] == \"microsoft.avs/privateclouds\"\n| extend scopeId = tolower(tostring(id))\n| project ['scopeId'], name, id, tags\n| join kind=leftouter (\nresources\n| where type == \"microsoft.insights/metricalerts\"\n| extend alertProperties = todynamic(properties)\n| mv-expand alertProperties.scopes\n| mv-expand alertProperties.criteria.allOf\n| extend scopeId = tolower(tostring(alertProperties_scopes))\n| extend metric = alertProperties_criteria_allOf.metricName\n| extend threshold = alertProperties_criteria_allOf.threshold\n| project scopeId, tostring(metric), toint(['threshold'])\n| where metric == \"DiskUsedPercentage\"\n| where threshold == 70\n) on scopeId\n| where isnull(['threshold'])\n| project recommendationId = \"4232eb32-3241-4049-9e14-9b8005817b56\", name, id, tags, param1 = \"vsanCapacityWarningAlert: isNull or threshold != 70\"\n)"
+  },
+  {
+    "id": "f4201965-a88d-449d-b3b4-021394719eb2",
+    "name": "Deploy zone redundant Container app environments",
+    "description": "To take advantage of availability zones, you must enable zone redundancy when you create a Container Apps environment. The environment must include a virtual network with an available subnet. To ensure proper distribution of replicas, set your app's minimum replica count to three.\nLearn more: https://learn.microsoft.com/azure/reliability/reliability-azure-container-apps",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.App/managedenvironments"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// The query filters the qualified Container app environments that do not have Zone Redundancy enabled.\nresources\n| where type =~ \"microsoft.app/managedenvironments\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where tobool(properties.zoneRedundant) == false\n| project recommendationId = \"f4201965-a88d-449d-b3b4-021394719eb2\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "5a44bd30-ae6a-4b81-9b68-dc3a8ffca4d8",
+    "name": "Enable zone redundancy for Azure Cache for Redis",
+    "description": "Azure Cache for Redis offers zone redundancy in Premium and Enterprise tiers, using VMs across multiple Availability Zones to ensure greater resilience and availability.\nLearn more: https://learn.microsoft.com/azure/azure-cache-for-redis/cache-how-to-zone-redundancy",
+    "category": "reliability",
+    "severity": "high",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Cache/Redis"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find Cache for Redis instances with one or no Zones selected\nresources\n| where type =~ \"microsoft.cache/redis\"\n| where location in~ (\"australiaeast\", \"brazilsouth\", \"canadacentral\", \"centralindia\", \"centralus\", \"eastasia\", \"eastus\", \"eastus2\", \"francecentral\", \"germanywestcentral\", \"israelcentral\", \"italynorth\", \"japaneast\", \"japanwest\", \"koreacentral\", \"mexicocentral\", \"newzealandnorth\", \"northeurope\", \"norwayeast\", \"polandcentral\", \"qatarcentral\", \"southafricanorth\", \"southcentralus\", \"southeastasia\", \"spaincentral\", \"swedencentral\", \"switzerlandnorth\", \"uaenorth\", \"uksouth\", \"westeurope\", \"westus2\", \"westus3\", \"usgovvirginia\", \"chinanorth3\")\n| where array_length(zones) <= 1 or isnull(zones)\n| project recommendationId = \"5a44bd30-ae6a-4b81-9b68-dc3a8ffca4d8\", name, id, tags, param1 = \"AvailabilityZones: Single Zone\"\n| order by id asc"
+  },
+  {
+    "id": "3263a64a-c256-de48-9818-afd3cbc55c2a",
+    "name": "Shared disks should only be enabled in clustered servers",
+    "description": "Azure shared disks let you attach a disk to multiple VMs at once for deploying or migrating clustered applications, suitable only when a disk is shared among VM cluster members.\nLearn more: https://learn.microsoft.com/azure/virtual-machines/disks-shared",
+    "category": "reliability",
+    "severity": "medium",
+    "enabled": false,
+    "type": "builtin",
+    "pack": "aprl-v2",
+    "scope": {
+      "level": "resource"
+    },
+    "resourceTypes": [
+      "Microsoft.Compute/disks"
+    ],
+    "rules": [],
+    "rawKql": "// Azure Resource Graph Query\n// Find all Disks configured to be Shared. This is not an indication of an issue, but if a disk with this configuration is assigned to two or more VMs without a proper disk control mechanism (like a WSFC) it can lead to data loss\nresources\n| where type =~ 'Microsoft.Compute/disks'\n| where isnotnull(properties.maxShares) and properties.maxShares >= 2\n| project id, name, tags, lowerCaseDiskId = tolower(id), diskState = tostring(properties.diskState)\n| join kind = leftouter (\n    resources\n    | where type =~ 'Microsoft.Compute/virtualMachines'\n    | project osDiskVmName = name, lowerCaseOsDiskId = tolower(properties.storageProfile.osDisk.managedDisk.id)\n    | join kind = fullouter (\n        resources\n        | where type =~ 'Microsoft.Compute/virtualMachines'\n        | mv-expand dataDisks = properties.storageProfile.dataDisks\n        | project dataDiskVmName = name, lowerCaseDataDiskId = tolower(dataDisks.managedDisk.id)\n        )\n        on $left.lowerCaseOsDiskId == $right.lowerCaseDataDiskId\n    | project lowerCaseDiskId = coalesce(lowerCaseOsDiskId, lowerCaseDataDiskId), vmName = coalesce(osDiskVmName, dataDiskVmName)\n    )\n    on lowerCaseDiskId\n| summarize vmNames = make_set(vmName) by name, id, tostring(tags), diskState\n| extend param1 = strcat(\"DiskState: \", diskState), param2 = iif(isempty(vmNames[0]), \"VMName: n/a\", strcat(\"VMName: \", strcat_array(vmNames, \", \")))\n| project recommendationId = \"3263a64a-c256-de48-9818-afd3cbc55c2a\", name, id, tags, param1, param2\n| order by id asc"
+  }
+]

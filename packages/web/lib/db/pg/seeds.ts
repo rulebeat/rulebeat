@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as pgSchema from '../schema.pg';
 import {
@@ -52,7 +52,7 @@ export async function seedPg(
  * enabled rule runs (ADR 0004).
  */
 async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined): Promise<void> {
-  const { rules, ruleVersions } = pgSchema;
+  const { rules, ruleVersions, findings, findingRows, findingEvents, columnCatalogue } = pgSchema;
   const shipped = catalogue ?? loadShippedCatalogue(dataDir);
   const now = new Date().toISOString();
 
@@ -106,6 +106,22 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
         case 'apply':
           await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })
             .where(eq(rules.id, a.rule.id));
+          break;
+        case 'correct':
+          // The #221 correction (APRL_QUERY_CORRECTION). `version` is written back unchanged. The findings
+          // go from the same tables as removeFindingRowsForRule() (db/findings.ts), suppressions left alone.
+          await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })
+            .where(eq(rules.id, a.rule.id));
+          await t.update(ruleVersions).set({
+            definition: JSON.stringify(a.rule.definition), releaseNote: a.rule.releaseNote, upstreamRef: a.rule.upstreamRef ?? null,
+          }).where(and(eq(ruleVersions.ruleId, a.rule.id), eq(ruleVersions.version, a.rule.version)));
+          await t.delete(findingEvents).where(eq(findingEvents.ruleId, a.rule.id));
+          await t.delete(findingRows).where(inArray(
+            findingRows.fingerprint,
+            t.select({ fingerprint: findings.fingerprint }).from(findings).where(eq(findings.ruleId, a.rule.id)),
+          ));
+          await t.delete(findings).where(eq(findings.ruleId, a.rule.id));
+          await t.delete(columnCatalogue).where(eq(columnCatalogue.ruleId, a.rule.id));
           break;
         case 'retire':
           await t.update(rules).set({ retiredAt: now }).where(eq(rules.id, a.ruleId));

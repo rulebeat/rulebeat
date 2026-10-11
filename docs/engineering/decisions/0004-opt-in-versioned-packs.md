@@ -58,3 +58,14 @@ pack rules were never refreshed at all, so neither source was right.
 - The two Identity built-ins can no longer have their Graph query tuned in place; tuning means
   duplicating, as for every other shipped rule. On upgrade an install that already tuned one has
   that rule converted in place to a custom rule, so it keeps its id, findings and query.
+
+## Exception, 2026-10-11 (issue #221)
+
+Most APRL rules were shipped with another recommendation's query, because the pack transform paired
+query files to recommendations by position. Nobody relied on those rules yet, and a version cannot
+mark them: the pack's version is the upstream commit date and the corrected pack is the same pinned
+commit. So once, for the APRL pack at version `2026-06-08T13:06:47Z`, an upgrade corrects an
+installed rule whose stored definition differs from the shipped one, enabled or not, and removes
+the findings the wrong query produced. The rule keeps its id, enabled state, tags, version and
+suppressions, and the correction writes no audit entry. The scope is one named constant in
+`lib/rule-versions.ts`, and the rule above stands for everything else.

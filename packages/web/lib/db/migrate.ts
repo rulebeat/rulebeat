@@ -1564,6 +1564,16 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       WHERE id = @id
     `);
     const setRetired = sqlite.prepare(`UPDATE rules SET retired_at = ? WHERE id = ?`);
+    // The #221 correction (APRL_QUERY_CORRECTION): the recorded definition of the version the rule runs,
+    // and the findings its wrong query produced. The same set of tables as removeFindingRowsForRule()
+    // (db/findings.ts, async, so not callable here), suppressions left alone.
+    const correctRecorded = sqlite.prepare(`UPDATE rule_versions SET definition = ?, release_note = ?, upstream_ref = ? WHERE rule_id = ? AND version = ?`);
+    const clearFindings = [
+      sqlite.prepare(`DELETE FROM finding_events WHERE rule_id = ?`),
+      sqlite.prepare(`DELETE FROM finding_rows WHERE fingerprint IN (SELECT fingerprint FROM findings WHERE rule_id = ?)`),
+      sqlite.prepare(`DELETE FROM findings WHERE rule_id = ?`),
+      sqlite.prepare(`DELETE FROM column_catalogue WHERE rule_id = ?`),
+    ];
 
     const execute = (a: SeedAction) => {
       switch (a.action) {
@@ -1583,6 +1593,12 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
           break;
         case 'set-running': setRunning.run(a.version, a.ruleId); break;
         case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
+        case 'correct':
+          // `version` is written back unchanged: the rule keeps the version it already runs.
+          applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version });
+          correctRecorded.run(JSON.stringify(a.rule.definition), a.rule.releaseNote, a.rule.upstreamRef ?? null, a.rule.id, a.rule.version);
+          for (const stmt of clearFindings) stmt.run(a.rule.id);
+          break;
         case 'retire': setRetired.run(now, a.ruleId); break;
         case 'unretire': setRetired.run(null, a.ruleId); break;
       }
