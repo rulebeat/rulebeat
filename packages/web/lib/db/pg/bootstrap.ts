@@ -504,7 +504,8 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not build the column catalogue:', err);
     }
-    // Last, after the rekey, and never throws: each scan converts in a savepoint of its own.
+    // Last, after the rekey. Each read and each scan's write has a savepoint of its own, so a failure
+    // costs the conversion (the pending list) or one scan; a throw here is only the pending list's.
     try {
       await convertScanBlobs(tx);
     } catch (err) {
@@ -582,10 +583,14 @@ async function copyFindingRows(tx: PgTx): Promise<void> {
 /**
  * The Postgres half of migrate.ts's convertScanBlobs(): the same plan, one savepoint per scan so a scan
  * whose blob cannot be read or whose records cannot be written costs only itself. It is logged with its
- * id and left unconverted, and the rest convert.
+ * id and left unconverted, and the rest convert. Every statement runs in a savepoint, reads included: a
+ * failed statement on the outer transaction would abort it and undo every other step of the bootstrap. A
+ * failed read of the pending list throws, which costs the whole conversion until the next boot; the
+ * caller logs it.
  */
 async function convertScanBlobs(tx: PgTx): Promise<void> {
-  const pending = (await tx.execute(sql.raw(SCAN_COPY_READ_PENDING))).rows as unknown as { id: string; module: string }[];
+  const pending = await tx.transaction(async (sp) =>
+    (await sp.execute(sql.raw(SCAN_COPY_READ_PENDING))).rows as unknown as { id: string; module: string }[]);
   if (pending.length === 0) return;
   try {
     await tx.transaction(async (sp) => { await sp.execute(sql.raw(SCAN_COPY_DELETE_ORPHANS)); });
@@ -595,7 +600,8 @@ async function convertScanBlobs(tx: PgTx): Promise<void> {
   const columns = sql.raw(SCAN_FINDING_COLUMNS.join(', '));
   for (const scan of pending) {
     try {
-      const blob = (await tx.execute(sql`SELECT findings FROM scans WHERE id = ${scan.id}`)).rows[0]?.findings as string | undefined;
+      const blob = await tx.transaction(async (sp) =>
+        (await sp.execute(sql`SELECT findings FROM scans WHERE id = ${scan.id}`)).rows[0]?.findings as string | undefined);
       const plan = planScanBlob(scan.id, scan.module, blob ?? '[]');
       if (!plan.ok) {
         console.error(`[bootstrap] scan ${scan.id} keeps no records, ${plan.reason}; it will be tried again on the next boot`);
@@ -610,7 +616,7 @@ async function convertScanBlobs(tx: PgTx): Promise<void> {
         await sp.execute(sql`UPDATE scans SET has_records = 1 WHERE id = ${scan.id}`);
       });
     } catch (err) {
-      console.error(`[bootstrap] could not store the records of scan ${scan.id}; it will be tried again on the next boot:`, err);
+      console.error(`[bootstrap] could not read or store the records of scan ${scan.id}; it will be tried again on the next boot:`, err);
     }
   }
 }

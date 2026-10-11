@@ -6,11 +6,13 @@
  * skipped on the default SQLite run.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { computeActivityFingerprint, computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { dbKind } from '@/lib/db/backend';
 import { dbReady, pgDb } from '@/lib/db/client';
 import { bootstrapPg } from '@/lib/db/pg/bootstrap';
+import { SCAN_COPY_READ_PENDING } from '@/lib/db/scan-findings-copy';
 import { resetDb } from '../helpers/db';
 
 const RULE = 'pg-scan-findings-rule';
@@ -57,6 +59,38 @@ async function previousReleaseDatabase(): Promise<void> {
   await raw(`ALTER TABLE scans DROP COLUMN has_records`);
   await setBackfilled([]);
 }
+
+/**
+ * A stand-in for the database whose matching statement fails the way Postgres fails one: `SELECT 1/0` runs
+ * on the very connection (outer transaction or savepoint) the bootstrap meant to read on, so that
+ * transaction is aborted unless the read had a savepoint. A JavaScript throw would not abort anything.
+ * `hits` counts how often the match fired, so a test cannot pass because it never did.
+ */
+function failingRead(matches: (text: string, params: unknown[]) => boolean) {
+  const dialect = new PgDialect();
+  const counter = { hits: 0 };
+  const wrap = <T extends object>(target: T): T => new Proxy(target, {
+    get(obj, prop) {
+      const value = Reflect.get(obj, prop, obj);
+      if (prop === 'execute') {
+        return (query: SQL) => {
+          const { sql: text, params } = dialect.sqlToQuery(query);
+          if (!matches(text, params)) return (obj as any).execute(query);
+          counter.hits += 1;
+          return (obj as any).execute(sql.raw('SELECT 1/0'));
+        };
+      }
+      if (prop === 'transaction') {
+        return (fn: (inner: object) => Promise<unknown>, ...rest: unknown[]) =>
+          (obj as any).transaction((inner: object) => fn(wrap(inner)), ...rest);
+      }
+      return typeof value === 'function' ? value.bind(obj) : value;
+    },
+  });
+  return { db: wrap(pgDb!) as NonNullable<typeof pgDb>, counter };
+}
+
+const tableExists = async (name: string) => (await raw(`SELECT to_regclass('public.${name}') AS t`))[0].t !== null;
 
 describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings records (issue #216)', () => {
   afterEach(async () => {
@@ -172,5 +206,57 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     await bootstrapPg(pgDb!);
     expect(await raw(`SELECT * FROM scans ORDER BY id COLLATE "C"`)).toEqual(scansAfter);
     expect(await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`)).toEqual(records);
+  });
+
+  it('keeps every other upgrade step when the list of pending scans cannot be read, and converts the scans on the next boot', async () => {
+    await previousReleaseDatabase();
+    await insertScan('pg-scan-1', [blobFinding('vm-1')], '2026-01-01T00:00:00.000Z');
+    await insertScan('pg-scan-2', [blobFinding('vm-2'), blobFinding('vm-3')], '2026-01-02T00:00:00.000Z');
+    const before = await blobs();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, counter } = failingRead(text => text === SCAN_COPY_READ_PENDING);
+
+    await expect(bootstrapPg(db)).resolves.toBeUndefined();
+
+    expect(counter.hits).toBe(1);
+    expect(error.mock.calls.map(call => String(call[0]))).toContain('[bootstrap] could not convert stored scans into records:');
+    // The DDL of this boot recreated the table and the column, so they exist only if the boot committed.
+    expect(await tableExists('scan_findings')).toBe(true);
+    expect(await markers()).toEqual([{ id: 'pg-scan-1', has_records: 0 }, { id: 'pg-scan-2', has_records: 0 }]);
+    expect(await blobs()).toEqual(before);
+    expect(await recordsOf('pg-scan-1')).toEqual([]);
+    expect(await recordsOf('pg-scan-2')).toEqual([]);
+
+    await bootstrapPg(pgDb!);
+
+    expect(await recordsOf('pg-scan-1')).toHaveLength(1);
+    expect(await recordsOf('pg-scan-2')).toHaveLength(2);
+    expect(await markers()).toEqual([{ id: 'pg-scan-1', has_records: 1 }, { id: 'pg-scan-2', has_records: 1 }]);
+  });
+
+  it('costs only one scan when its stored findings cannot be read, and converts it on the next boot', async () => {
+    await previousReleaseDatabase();
+    await insertScan('pg-scan-a', [blobFinding('vm-1')], '2026-01-01T00:00:00.000Z');
+    await insertScan('pg-scan-b', [blobFinding('vm-2'), blobFinding('vm-3')], '2026-01-02T00:00:00.000Z');
+    await insertScan('pg-scan-c', [blobFinding('vm-4')], '2026-01-03T00:00:00.000Z');
+    const before = await blobs();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, counter } = failingRead((text, params) => text === 'SELECT findings FROM scans WHERE id = $1' && params[0] === 'pg-scan-b');
+
+    await expect(bootstrapPg(db)).resolves.toBeUndefined();
+
+    expect(counter.hits).toBe(1);
+    expect(error.mock.calls.map(call => call.map(String).join(' ')).join('\n')).toContain('pg-scan-b');
+    expect(await tableExists('scan_findings')).toBe(true);
+    expect(await recordsOf('pg-scan-a')).toHaveLength(1);
+    expect(await recordsOf('pg-scan-c')).toHaveLength(1);
+    expect(await recordsOf('pg-scan-b')).toEqual([]);
+    expect(await markers()).toEqual([{ id: 'pg-scan-a', has_records: 1 }, { id: 'pg-scan-b', has_records: 0 }, { id: 'pg-scan-c', has_records: 1 }]);
+    expect(await blobs()).toEqual(before);
+
+    await bootstrapPg(pgDb!);
+
+    expect(await recordsOf('pg-scan-b')).toHaveLength(2);
+    expect(await markers()).toEqual([{ id: 'pg-scan-a', has_records: 1 }, { id: 'pg-scan-b', has_records: 1 }, { id: 'pg-scan-c', has_records: 1 }]);
   });
 });
