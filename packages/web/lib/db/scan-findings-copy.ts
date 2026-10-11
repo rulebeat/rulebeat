@@ -59,6 +59,27 @@ export const SCAN_COPY_READ_PENDING = `SELECT id, module FROM scans WHERE has_re
 /** Records of scans that are gone, left by a release that pruned scans without knowing the table. */
 export const SCAN_COPY_DELETE_ORPHANS = `DELETE FROM scan_findings WHERE scan_id NOT IN (SELECT id FROM scans)`;
 
+/**
+ * What an emptied findings blob holds (#219). A scan save writes it, and the upgrade sets every
+ * converted scan's blob to it. The column stays, NOT NULL, so the previous release still reads every
+ * scan, as a scan with no findings in its blob.
+ */
+export const EMPTY_SCAN_BLOB = '[]';
+
+/** The meta keys the two one-time backfills set once they have run (lib/db/findings.ts and
+ *  lib/db/snapshots.ts). Both rebuild history from the blobs, so no blob is emptied before both are set. */
+export const FINDINGS_BACKFILL_MARKER = 'findings-backfilled-v1';
+export const SNAPSHOTS_BACKFILL_MARKER = 'snapshots-backfilled-v1';
+
+/** 1 when both backfills have run on this database. Plain SQL valid on both backends. */
+export const SCAN_BLOBS_READ_BACKFILLED =
+  `SELECT COUNT(*) AS n FROM meta WHERE key IN ('${FINDINGS_BACKFILL_MARKER}', '${SNAPSHOTS_BACKFILL_MARKER}')`;
+
+/** Scans whose blob still holds findings although their records are stored. A scan that is not
+ *  converted keeps its blob: until it converts, the blob is all it has. */
+export const SCAN_BLOBS_READ_FULL =
+  `SELECT id FROM scans WHERE has_records = 1 AND findings <> '${EMPTY_SCAN_BLOB}' ORDER BY started_at, id`;
+
 export interface ScanFindingRecord {
   scan_id: string;
   fingerprint: string;

@@ -5,7 +5,8 @@ import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
 import { rebuildColumnCatalogue, removeColumnCatalogueForRule, type WrittenFinding } from './column-catalogue';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { CHUNK_SIZE, chunk } from './chunk';
-import { loadScanHistory } from '../scan-history';
+import { loadStoredScanBlobs } from './scan-blob-history';
+import { FINDINGS_BACKFILL_MARKER } from './scan-findings-copy';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
@@ -58,7 +59,6 @@ export interface SyncScanFindingsOptions {
 }
 
 const EVENT_RETENTION_DAYS = 180;
-const BACKFILL_MARKER = 'findings-backfilled-v1';
 
 type Row = typeof findingsTable.$inferSelect;
 
@@ -642,7 +642,7 @@ function restoreHistoricFinding(raw: Partial<Finding>, category: string): Findin
 }
 
 export async function backfillFindings(): Promise<void> {
-  if (await getMeta(BACKFILL_MARKER)) return;
+  if (await getMeta(FINDINGS_BACKFILL_MARKER)) return;
 
   const categories = await listCategories();
   const allRules = await loadRules();
@@ -656,7 +656,7 @@ export async function backfillFindings(): Promise<void> {
   for (const category of categories) {
     // Per category, so one unreadable slice of history cannot cost the user every other category's.
     try {
-      const history = await loadScanHistory(category.id); // newest-first
+      const history = await loadStoredScanBlobs(category.id); // newest-first
       if (history.length === 0) continue;
       const oldestFirst = [...history].reverse();
       const restore = (scan: { findings: Finding[] }) => scan.findings
@@ -701,5 +701,5 @@ export async function backfillFindings(): Promise<void> {
     }
   }
 
-  await setMeta(BACKFILL_MARKER, '1');
+  await setMeta(FINDINGS_BACKFILL_MARKER, '1');
 }

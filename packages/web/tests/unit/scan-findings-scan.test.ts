@@ -1,20 +1,26 @@
 /**
  * Issue #216 (ADR 0008): a scan save stores one slim record per finding in `scan_findings`, in the same
- * transaction as the scan row, and keeps writing the findings blob. Driven through the highest seam:
+ * transaction as the scan row, and since #219 stores no findings blob beside them. Driven through the highest seam:
  * runCategoryScan() over the fake Azure context, then reading the table back. Pruning, a deleted rule
  * and a rule id change are covered here too, since each is a rule about what happens to the records.
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core';
 import { dbKind } from '@/lib/db/backend';
 import { db } from '@/lib/db/client';
 import { many, run as execRun } from '@/lib/db/exec';
-import { rules as rulesTable, scanFindings, scans as scansTable } from '@/lib/db/tables';
+import { meta, postureSnapshots, rules as rulesTable, scanFindings, scans as scansTable } from '@/lib/db/tables';
+import { backfillFindings, listFindings } from '@/lib/db/findings';
+import { backfillSnapshots } from '@/lib/db/snapshots';
+import { FINDINGS_BACKFILL_MARKER, SNAPSHOTS_BACKFILL_MARKER } from '@/lib/db/scan-findings-copy';
 import { getCategory } from '@/lib/db/categories';
 import { deleteRule } from '@/lib/rules';
 import { runCategoryScan } from '@/lib/scan-runner';
-import { getScanById, saveScanResult } from '@/lib/scan-history';
+import { saveScanResult } from '@/lib/scan-history';
+import { querySnapshot } from '@/lib/db/scan-snapshots';
+import { queryCompare } from '@/lib/db/scan-compare';
+import { emptySnapshotQuery } from '@/lib/snapshot-query';
 import type { ScanSummary } from '@/lib/types';
 import { countRows, resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
@@ -127,12 +133,42 @@ describe('a scan save', () => {
     })]);
   });
 
-  it('is born converted, and still writes the findings blob exactly as before', async () => {
-    const { summary } = await scan([ARG_RULE], { rows: [{ ...VM_ONE, n: 1 }] });
-    const [row] = await many(db.select().from(scansTable).where(eq(scansTable.id, summary.id)));
-    expect(row!.hasRecords).toBe(1);
-    expect(JSON.parse(row!.findings)).toEqual(JSON.parse(JSON.stringify(summary.findings)));
-    expect((await getScanById(summary.id))!.findings).toHaveLength(1);
+  it('is born converted and stores no findings blob, and its snapshot and compare still list what it found', async () => {
+    const older = (await scan([ARG_RULE], { rows: [{ ...VM_ONE, n: 1 }] })).summary;
+    const { summary } = await scan([ARG_RULE], { rows: [{ ...VM_ONE, n: 1 }, { ...VM_TWO, n: 2 }] }, 1);
+    for (const saved of [older, summary]) {
+      const [row] = await many(db.select().from(scansTable).where(eq(scansTable.id, saved.id)));
+      expect(row!.hasRecords).toBe(1);
+      expect(row!.findings).toBe('[]');
+    }
+
+    const snapshot = await querySnapshot(summary.id, emptySnapshotQuery());
+    if (snapshot.status !== 'ok') throw new Error(`the snapshot answered ${snapshot.status}`);
+    expect(snapshot.response.total).toBe(2);
+    expect(snapshot.response.items.map(i => i.fingerprint).sort()).toEqual(summary.findings.map(f => f.fingerprint).sort());
+
+    const compare = await queryCompare(older.id, summary.id, { side: 'added', page: 1 });
+    if (compare.status !== 'ok') throw new Error(`the compare answered ${compare.status}`);
+    expect(compare.response.totals).toEqual({ added: 1, fixed: 0, persisted: 1 });
+    expect(compare.response.items.map(i => i.resourceName)).toEqual(['vm-two']);
+  });
+
+  // A Demo's first boot saves its scans before the one-time backfills run, and the backfills set their
+  // markers only once they have. Whatever reaches them later must not read a scan saved since as one
+  // that found nothing: replaying it would mark every open finding Fixed and draw a trend at 100%.
+  it('is not replayed as a scan that found nothing by a backfill that runs after it', async () => {
+    await scan([ARG_RULE], { rows: [VM_ONE, VM_TWO] });
+    await execRun(db.delete(meta).where(inArray(meta.key, [FINDINGS_BACKFILL_MARKER, SNAPSHOTS_BACKFILL_MARKER])));
+    const active = async () => (await listFindings()).filter(f => f.status === 'active').map(f => f.resourceName).sort();
+    expect(await active()).toEqual(['vm-one', 'vm-two']);
+    // Without that day's trend row, a replay of the scan would draw it at 100% with nothing active.
+    await execRun(db.delete(postureSnapshots));
+
+    await backfillFindings();
+    await backfillSnapshots();
+
+    expect(await active()).toEqual(['vm-one', 'vm-two']);
+    expect(await many(db.select().from(postureSnapshots).where(eq(postureSnapshots.date, '2026-06-01')))).toEqual([]);
   });
 
   it('stores a scan with no findings as a scan with no records', async () => {
