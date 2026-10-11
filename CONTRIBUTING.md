@@ -2,7 +2,7 @@
 
 RuleBeat's whole platform (the engine, UI, scheduler, RBAC, dashboards, rules, packs) is open
 source and open to contribution. Contributions land under the project's Apache-2.0 license (see
-[`LICENSE`](LICENSE)). Fork the repo, branch, and open a pull request against `main`. For a rule idea, a check you'd like to see, a correction to an existing rule's
+[`LICENSE`](LICENSE)). Fork the repo, branch, and open a pull request against `main`. For a rule idea or a check you'd like to see, start with [Proposing a rule](#proposing-a-rule). For a correction to an existing rule's
 recommendation text, or a change to the product itself, [open an issue](https://github.com/rulebeat/rulebeat/issues)
 first if you want to talk it through before writing code.
 
@@ -61,11 +61,25 @@ reaches the running container, not whether it changed in the repo.
 The reason the check exists at all: only a pushed `vX.Y.Z` tag moves the `:latest` image, so a
 change with no entry has nothing to carry it into a release.
 
+## Proposing a rule
+
+Open a [Rule idea issue](https://github.com/rulebeat/rulebeat/issues/new?template=rule_idea.yml)
+first, before you write any rule. A good one has four things:
+
+- One clear thing the rule flags, so a finding means one thing.
+- A reason it matters: the risk or cost of leaving it alone.
+- A recommendation a reader can act on. A finding shows this text, and RuleBeat does not run fixes.
+- A sensible category and severity.
+
+A Resource Graph query that finds the resources is welcome but not required.
+
 ## Bug reports
 
-Also via [GitHub issues](https://github.com/rulebeat/rulebeat/issues). Useful things to include:
-what you expected, what happened instead, and (if it's a self-hosted deployment issue) the relevant
-lines from `docker compose logs`.
+Open a [Bug report](https://github.com/rulebeat/rulebeat/issues/new?template=bug_report.yml). The
+form asks for your RuleBeat version (Diagnostics page, System section), what you expected and what
+happened instead. If you can, add the steps to reproduce, how it is deployed, and the relevant
+lines from `docker compose logs`. The repository is public, so redact tenant ids, subscription ids,
+resource names and anything else that identifies an environment.
 
 ## Security issues
 

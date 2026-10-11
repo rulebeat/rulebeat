@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest a change or a new capability for RuleBeat.
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public, and so is everything you post here. Redact tenant ids, subscription ids, resource names and anything else that identifies an environment or a person before you submit.
+
+        If your idea is a check RuleBeat should run, use the Rule idea form instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem it solves
+      description: What you are trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: What you would like to happen
+      description: How you would want the tool to behave once this exists.
+    validations:
+      required: true
