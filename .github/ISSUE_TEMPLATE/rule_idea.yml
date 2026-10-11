@@ -1,0 +1,64 @@
+name: Rule idea
+description: Propose a check RuleBeat should run, or a correction to an existing rule.
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public, and so is everything you post here. Redact tenant ids, subscription ids, resource names and anything else that identifies an environment or a person before you submit.
+
+        A good rule idea names one clear thing the rule flags, says why it matters, and gives a recommendation a reader can act on.
+  - type: textarea
+    id: flags
+    attributes:
+      label: What the rule should flag
+      description: The one thing a finding from this rule means.
+      placeholder: Storage accounts that allow public blob access.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: The risk or cost of leaving it as it is.
+    validations:
+      required: true
+  - type: input
+    id: resource-type
+    attributes:
+      label: Resource type
+      description: The Azure resource type the rule looks at, if it is about one.
+      placeholder: microsoft.storage/storageaccounts
+  - type: dropdown
+    id: category
+    attributes:
+      label: Suggested category
+      options:
+        - security
+        - cost
+        - compliance
+        - identity
+        - networking
+        - operations
+        - reliability
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Suggested severity
+      options:
+        - critical
+        - high
+        - medium
+        - low
+        - info
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: The recommendation a finding should show
+      description: What someone should do to fix a finding. RuleBeat shows this text and does not run fixes.
+  - type: textarea
+    id: query
+    attributes:
+      label: Resource Graph query
+      description: A query that returns the resources the rule should flag, if you have one.
+      render: kql
