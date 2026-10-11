@@ -66,28 +66,33 @@ async function previousReleaseDatabase(): Promise<void> {
  * transaction is aborted unless the read had a savepoint. A JavaScript throw would not abort anything.
  * `hits` counts how often the match fired, so a test cannot pass because it never did.
  */
+type Connection = {
+  execute(query: SQL): Promise<unknown>;
+  transaction(fn: (inner: Connection) => Promise<unknown>, ...rest: unknown[]): Promise<unknown>;
+};
+
 function failingRead(matches: (text: string, params: unknown[]) => boolean) {
   const dialect = new PgDialect();
   const counter = { hits: 0 };
-  const wrap = <T extends object>(target: T): T => new Proxy(target, {
+  const wrap = (target: Connection): Connection => new Proxy(target, {
     get(obj, prop) {
       const value = Reflect.get(obj, prop, obj);
       if (prop === 'execute') {
         return (query: SQL) => {
           const { sql: text, params } = dialect.sqlToQuery(query);
-          if (!matches(text, params)) return (obj as any).execute(query);
+          if (!matches(text, params)) return obj.execute(query);
           counter.hits += 1;
-          return (obj as any).execute(sql.raw('SELECT 1/0'));
+          return obj.execute(sql.raw('SELECT 1/0'));
         };
       }
       if (prop === 'transaction') {
-        return (fn: (inner: object) => Promise<unknown>, ...rest: unknown[]) =>
-          (obj as any).transaction((inner: object) => fn(wrap(inner)), ...rest);
+        return (fn: (inner: Connection) => Promise<unknown>, ...rest: unknown[]) =>
+          obj.transaction((inner) => fn(wrap(inner)), ...rest);
       }
       return typeof value === 'function' ? value.bind(obj) : value;
     },
   });
-  return { db: wrap(pgDb!) as NonNullable<typeof pgDb>, counter };
+  return { db: wrap(pgDb as unknown as Connection) as unknown as NonNullable<typeof pgDb>, counter };
 }
 
 const tableExists = async (name: string) => (await raw(`SELECT to_regclass('public.${name}') AS t`))[0].t !== null;
