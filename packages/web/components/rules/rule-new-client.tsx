@@ -51,5 +51,6 @@ export function RuleNewClient({ initial, copyFrom, allTags, categories }: Props)
     );
   }
 
-  return <RuleForm initial={prefill} copyFrom={copyFrom} initialQueryBackend={queryBackend} allTags={allTags} categories={categories} />;
+  // canAuthor is always true here: the page answers 404 to anyone without rules:write.
+  return <RuleForm initial={prefill} copyFrom={copyFrom} initialQueryBackend={queryBackend} allTags={allTags} categories={categories} canAuthor />;
 }

@@ -2,6 +2,34 @@ import { test, expect } from '@playwright/test';
 import { ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD } from './fixtures';
 import { signIn } from './helpers';
 
+test('an admin writing a new rule can choose its kind and add tags', async ({ page }) => {
+  await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
+
+  await page.goto(`${ADMIN_URL}/rules/new`);
+  await page.getByRole('button', { name: 'Resource configuration' }).click();
+
+  await expect(page.getByRole('combobox', { name: 'Kind' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Tag', exact: true })).toBeVisible();
+});
+
+test('the library shows a rule\'s kind under Kind and its pack under Tags', async ({ page }) => {
+  await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
+  await page.goto(`${ADMIN_URL}/library`);
+
+  const row = page.locator('tr', { hasText: 'Key Vault Soft Delete Disabled' });
+  await expect(row).toBeVisible();
+  // textContent, not innerText: the headers are uppercased by CSS.
+  const headers = await page.locator('thead th').allTextContents();
+  const cellUnder = (header: string) => {
+    const i = headers.findIndex(h => h.trim() === header);
+    expect(i, `a "${header}" column`).toBeGreaterThanOrEqual(0);
+    return row.locator('td').nth(i);
+  };
+
+  await expect(cellUnder('Kind')).toHaveText('Problem');
+  await expect(cellUnder('Tags')).toContainText('RuleBeat Core');
+});
+
 test('admin creates a custom rule via the KQL editor, then deletes it', async ({ page }) => {
   await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
 

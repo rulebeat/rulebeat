@@ -716,6 +716,16 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       })()}
                     </TableCell>
 
+                    {/* Kind */}
+                    <TableCell className="py-3">
+                      <span
+                        title={KIND_DESCRIPTION[rule.kind ?? 'state']}
+                        className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
+                      >
+                        {KIND_LABEL[rule.kind ?? 'state']}
+                      </span>
+                    </TableCell>
+
                     {/* Tags — read-only here; edit from the rule's own page to prevent accidental
                         add/remove from the list. Clicking a tag chip filters the list to it. */}
                     <TableCell className="max-w-[240px] py-3">
@@ -751,16 +761,6 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                           </button>
                         ))}
                       </div>
-                    </TableCell>
-
-                    {/* Kind */}
-                    <TableCell className="py-3">
-                      <span
-                        title={KIND_DESCRIPTION[rule.kind ?? 'state']}
-                        className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
-                      >
-                        {KIND_LABEL[rule.kind ?? 'state']}
-                      </span>
                     </TableCell>
 
                     {/* Category — same component as every other table, so the mark and spacing
