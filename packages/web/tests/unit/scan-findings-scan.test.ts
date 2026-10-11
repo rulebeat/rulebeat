@@ -409,6 +409,21 @@ describe('the findings rebuild when a category fails', () => {
     ]);
   });
 
+  it('sets the marker for a category whose only scans were saved by this release, some empty and some not', async () => {
+    await scan([ARG_RULE], { rows: [] }, 0, new Date(at(4)));
+    await scan([ARG_RULE], { rows: [VM_ONE, VM_TWO] }, 0, new Date(at(5)));
+    const scanned = await storedFindings();
+    const scannedEvents = await events();
+    expect(scanned.map(f => [f.resourceName, f.status, f.timesSeen]).sort()).toEqual([['vm-one', 'active', 1], ['vm-two', 'active', 1]]);
+
+    await backfillFindings();
+
+    // Nothing from before this release to rebuild, so nothing holds the marker back or is touched.
+    expect(await metaKeys()).toEqual([FINDINGS_BACKFILL_MARKER]);
+    expect(await storedFindings()).toEqual(scanned);
+    expect(await events()).toEqual(scannedEvents);
+  });
+
   it('sets the marker when nothing is stored, and when the only category with history is rebuilt', async () => {
     await backfillFindings();
     expect(await metaKeys()).toEqual([FINDINGS_BACKFILL_MARKER]);

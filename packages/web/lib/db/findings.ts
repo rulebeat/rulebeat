@@ -667,6 +667,11 @@ export async function backfillFindings(): Promise<void> {
       const history = await loadStoredScanBlobs(category.id); // newest-first
       if (history.length === 0) continue;
 
+      // Scans that found nothing have no findings to rebuild. This also covers a category whose only
+      // scans were saved by this release: they are not an earlier start's history, so they must not
+      // hold the marker back or trip the guard below.
+      if (history.every(scan => scan.findings.length === 0)) continue;
+
       // A scan saved since the start that could not rebuild this category already holds its current
       // findings. Replaying older scans over them would mark open findings Fixed with a past date and
       // move last seen backwards, so the category is left as that scan left it.
