@@ -404,7 +404,7 @@ export function QueryPageClient({ defaultCategoryId }: { defaultCategoryId: stri
                   heading="Filter"
                 />
                 <div className="space-y-1.5">
-                  <Label>Output columns (optional — defaults to a standard set)</Label>
+                  <Label>Output columns (optional: defaults to a standard set)</Label>
                   <div className="flex gap-2">
                     <Input
                       value={projectColumnsText}
@@ -483,7 +483,7 @@ export function QueryPageClient({ defaultCategoryId }: { defaultCategoryId: stri
         {runError && <Callout tone="error">{runError}</Callout>}
         {result && result.truncated && (
           <Callout tone="warn">
-            Azure truncated this result before it finished — {result.count.toLocaleString()} rows were seen.
+            Azure truncated this result before it finished. {result.count.toLocaleString()} rows were seen.
             Narrow the query to see everything.
           </Callout>
         )}

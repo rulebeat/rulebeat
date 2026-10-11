@@ -46,7 +46,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   const dateWindowKey = JSON.stringify(merged.dateWindow);
 
   const { value, label, delta, deltaSuffix, deltaTitle, subtext, color } = useMemo(() => {
-    const fallback = { value: '—', label: '', delta: null as number | null, deltaSuffix: '%', deltaTitle: undefined as string | undefined, subtext: 'No data', color: 'var(--color-ink-faint)' };
+    const fallback = { value: '-', label: '', delta: null as number | null, deltaSuffix: '%', deltaTitle: undefined as string | undefined, subtext: 'No data', color: 'var(--color-ink-faint)' };
     if (!summary) return fallback;
     const { current, deltaPct, baseline, perCategory } = summary;
     const windowLabel = dateWindowLabel(merged.dateWindow);
@@ -55,7 +55,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
     switch (config.metric) {
       case 'posture-pct':
         return {
-          value: current.pct !== null ? `${current.passingRules} of ${current.totalRules}` : '—',
+          value: current.pct !== null ? `${current.passingRules} of ${current.totalRules}` : '-',
           label: 'checks passing',
           delta: deltaPct,
           deltaSuffix: '%',

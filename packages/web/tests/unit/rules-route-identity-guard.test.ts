@@ -79,7 +79,7 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
     const res = await POST(postRequest(body));
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toMatch(/no resource id/);
+    expect(json.error).toBe('1 of 1 sampled row(s) have no resource id. Project id explicitly in the query');
     expect((await loadRules()).length).toBe(before);
   });
 

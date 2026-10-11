@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Changed
 
 - Scans no longer store a full copy of their findings, which was most of the database on a large history. Run History already reads each run's short per-finding records, so nothing on screen changes. On its first start this upgrade empties the copy each past scan stored, one scan at a time, keeping every record. A database that still needs the one-time findings or posture trend history rebuilt gets it from those copies first, and has them emptied on the start after. A past scan whose records could not be made at an earlier upgrade keeps its copy. On SQLite the file does not shrink without a `VACUUM`, but the space is reused by new data. Going back to 0.9.0 loses nothing, but rolling back further, to 0.8.x or earlier, shows every run in Run History with no findings, including runs made after this upgrade.
+- The messages RuleBeat shows no longer use em dashes. Error messages, audit log entries, server log lines and on-screen help and warning text are now plain sentences with the same meaning, an empty value now shows a hyphen, and a dashboard's browser tab title reads the dashboard name, then a dot, then RuleBeat.
 
 ### Fixed
 

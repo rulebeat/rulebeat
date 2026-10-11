@@ -123,8 +123,8 @@ export async function executeTarget(
       } catch (err) {
         // Never put String(err) in a message that reaches the browser — an Azure SDK error carries
         // the full request URL (tenant and subscription ids). Run History renders run.error directly.
-        console.error(`[RuleBeat] scan run ${run.id} — category ${categoryId} failed:`, err);
-        errors.push(`${categoryId}: scan failed — check the RuleBeat server logs for details`);
+        console.error(`[RuleBeat] category ${categoryId} failed in scan run ${run.id}:`, err);
+        errors.push(`${categoryId}: scan failed. Check the RuleBeat server logs for details`);
       }
     }
 
@@ -137,7 +137,7 @@ export async function executeTarget(
       // it gets the message a real install shows.
       messages.push(unansweredDemoQueries(ctx) > 0 && !isRecordingPresentation()
         ? `${partialCategories.join(', ')}: one or more rules did not run. ${DEMO_UNANSWERED_RULE_REASON}`
-        : `${partialCategories.join(', ')}: one or more rules did not complete — see the category's scan for details`);
+        : `${partialCategories.join(', ')}: one or more rules did not complete. See the category's scan for details`);
     }
     // A Problem or Activity finding is announced to every linked channel. An Advisory is announced
     // only to a channel that includes advisories, so a run whose only news is Advisories opens an
@@ -170,7 +170,7 @@ export async function executeTarget(
       totalFindings: 0,
       newFindings: 0,
       newFindingFingerprints: [],
-      error: 'Scan run failed — check the RuleBeat server logs for details',
+      error: 'Scan run failed. Check the RuleBeat server logs for details',
       durationMs: (opts.now?.getTime() ?? Date.now()) - started,
       now: opts.now,
     });

@@ -140,7 +140,7 @@ function envCredentialSource(): AzureCredentialSource | null {
 }
 
 const DEMO_MODE_MESSAGE =
-  'This is a demo instance. It never connects to a real Azure tenant — every scan runs against '
+  'This is a demo instance. It never connects to a real Azure tenant. Every scan runs against '
   + 'synthetic data baked in ahead of time.';
 
 export async function resolveAzureCredential(): Promise<ResolvedAzureCredential> {
@@ -284,7 +284,7 @@ export async function getAzureConnectionStatus(): Promise<AzureConnectionStatus>
       // it's actionable. Saying it on every card would train people to ignore it.
       message: envSource === 'env-secret'
         ? 'Azure credentials come from this deployment’s environment variables. A secret held in a '
-          + 'variable is the weakest supported option — a managed identity, a federated token or a '
+          + 'variable is the weakest supported option. A managed identity, a federated token or a '
           + 'mounted secret file all avoid storing one.'
         : 'Azure credentials come from this deployment’s environment variables.',
     };
@@ -313,7 +313,7 @@ export async function getAzureConnectionStatus(): Promise<AzureConnectionStatus>
       managedByEnv: false,
       stored,
       message:
-        'The stored client secret can no longer be read — the encryption key changed or the data '
+        'The stored client secret can no longer be read. The encryption key changed or the data '
         + 'volume was replaced. Enter the secret again to restore scanning.',
     };
   }

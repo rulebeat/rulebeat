@@ -12,7 +12,7 @@ import { extractAzureErrorMessage } from '../errors.js';
 export class LogAnalyticsTruncatedError extends Error {
   constructor(public readonly rowsSeen: number) {
     super(
-      `Log Analytics reported this query as a partial failure after ${rowsSeen} row(s) — ` +
+      `Log Analytics reported this query as a partial failure after ${rowsSeen} row(s). ` +
       'Azure could not evaluate the full query.',
     );
     this.name = 'LogAnalyticsTruncatedError';

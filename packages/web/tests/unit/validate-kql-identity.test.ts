@@ -49,7 +49,7 @@ describe('POST /api/rules/validate-kql — identity guard (spec 005)', () => {
     const res = await POST(postRequest('resources | summarize count() by type'));
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toMatch(/no resource id/);
+    expect(body.error).toBe('1 of 1 sampled row(s) have no resource id. Project id explicitly in the query');
   });
 
   it('returns 200 with samples when the sampled rows carry an id', async () => {

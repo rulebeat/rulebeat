@@ -72,6 +72,15 @@ describe('ResourceGraphClient — resultTruncated', () => {
     await expect(client.queryAll('resources')).rejects.toBeInstanceOf(ResourceGraphTruncatedError);
   });
 
+  it('words the truncation error as plain sentences', async () => {
+    resourcesMock.mockResolvedValueOnce({ data: [{ id: 'r1' }, { id: 'r2' }], resultTruncated: 'true' });
+
+    const client = new ResourceGraphClient({ credential: FAKE_CREDENTIAL, subscriptionIds: ['sub-1'] });
+    await expect(client.queryAll('resources')).rejects.toThrow(
+      "Resource Graph reported this query's results as truncated after 2 row(s). Azure could not enumerate the full match set for this query.",
+    );
+  });
+
   it('still yields every row seen before the truncation was reported, not just an empty result', async () => {
     resourcesMock.mockResolvedValueOnce({ data: [{ id: 'r1' }, { id: 'r2' }], resultTruncated: 'true' });
 

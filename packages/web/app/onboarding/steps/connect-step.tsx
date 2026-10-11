@@ -32,7 +32,7 @@ const SETUP_COMMANDS = `# 1. Create the service principal
 az ad sp create-for-rbac --name "RuleBeat" --role Reader \\
   --scopes /subscriptions/<subscription-id>
 
-# 2. Note the appId, password and tenant it prints — those are the
+# 2. Note the appId, password and tenant it prints. Those are the
 #    client ID, client secret and tenant ID below. The password is
 #    shown only once.
 

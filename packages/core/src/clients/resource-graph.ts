@@ -19,7 +19,7 @@ const SUBSCRIPTION_BATCH_SIZE = 1000;
 export class ResourceGraphTruncatedError extends Error {
   constructor(public readonly rowsSeen: number) {
     super(
-      `Resource Graph reported this query's results as truncated after ${rowsSeen} row(s) — ` +
+      `Resource Graph reported this query's results as truncated after ${rowsSeen} row(s). ` +
       'Azure could not enumerate the full match set for this query.',
     );
     this.name = 'ResourceGraphTruncatedError';

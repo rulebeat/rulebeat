@@ -379,7 +379,9 @@ describe('connection status', () => {
       expect(status.configured).toBe(false);
       expect(status.stored?.secretUnreadable).toBe(true);
       // "No data yet" and "this is broken for a specific reason" must not look the same.
-      expect(status.message).toMatch(/encryption key/i);
+      expect(status.message).toBe(
+        'The stored client secret can no longer be read. The encryption key changed or the data volume was replaced. Enter the secret again to restore scanning.',
+      );
     } finally {
       process.env.RULEBEAT_ENCRYPTION_KEY = original;
       resetSecretBoxForTests();

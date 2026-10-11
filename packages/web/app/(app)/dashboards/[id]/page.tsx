@@ -32,5 +32,5 @@ export default async function DashboardPage({ params }: Props) {
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
   const dashboard = await getDashboard(id);
-  return { title: dashboard ? `${dashboard.name} — RuleBeat` : 'Dashboard — RuleBeat' };
+  return { title: dashboard ? `${dashboard.name} · RuleBeat` : 'Dashboard · RuleBeat' };
 }

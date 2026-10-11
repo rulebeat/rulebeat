@@ -174,6 +174,8 @@ describe('assertSafeWebhookUrl', () => {
     const lookup = vi.fn();
     setDnsLookupForTests(lookup);
     await expect(assertSafeWebhookUrl('ftp://example.com/x')).rejects.toThrow(SsrfGuardError);
+    await expect(assertSafeWebhookUrl('ftp://example.com/x'))
+      .rejects.toThrow('URL scheme ftp: is not allowed. It must be http or https.');
     expect(lookup).not.toHaveBeenCalled();
   });
 

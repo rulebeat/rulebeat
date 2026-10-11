@@ -139,7 +139,7 @@ export function UsersSection({
   async function remove(user: AppUser) {
     const self = user.id === currentUserId;
     const message = self
-      ? 'Remove your own access? You will be signed out on your next request, and denied if you try to sign in again — an admin would need to add you back first.'
+      ? 'Remove your own access? You will be signed out on your next request, and denied if you try to sign in again. An admin would need to add you back first.'
       : `Remove ${user.email}? They lose access immediately, and are denied if they try to sign in again until an admin adds them back.`;
     if (!confirm(message)) return;
 
@@ -256,7 +256,7 @@ export function UsersSection({
                       />
                     </TableCell>
                     <TableCell className="text-xs text-ink-muted">
-                      {user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString() : '—'}
+                      {user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString() : '-'}
                     </TableCell>
                     <TableCell>
                       {usersWithPassword.has(user.id) ? (

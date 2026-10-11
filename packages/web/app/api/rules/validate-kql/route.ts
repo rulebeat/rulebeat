@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     const identity = checkRowsHaveIdentity(rows);
     if (!identity.valid) {
       return NextResponse.json({
-        error: `${identity.invalidCount} of ${rows.length} sampled row(s) have no resource id — project id explicitly in the query`,
+        error: `${identity.invalidCount} of ${rows.length} sampled row(s) have no resource id. Project id explicitly in the query`,
       }, { status: 400 });
     }
     return NextResponse.json({

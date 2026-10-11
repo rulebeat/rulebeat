@@ -56,7 +56,7 @@ export async function provisionUser(identity: SignInIdentity): Promise<AppUser |
       // Unbounded and reachable by anyone who can complete an Entra sign-in against the tenant,
       // provisioned or not — logged, not persisted, same reasoning as the local-sign-in flood
       // vectors (spec 022).
-      logAuthEvent(`Denied Entra sign-in for ${email} — not provisioned`, {
+      logAuthEvent(`Denied Entra sign-in for ${email}: not provisioned`, {
         reason: 'not-provisioned', oid: identity.oid,
       });
       return null;

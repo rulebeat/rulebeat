@@ -86,7 +86,7 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
                   <CategoryBadge id={f.category} categories={categories} />
                 </TableCell>
                 <TableCell shrink className="hidden md:table-cell">
-                  {f.detectedAt ? timeAgo(f.detectedAt) : '—'}
+                  {f.detectedAt ? timeAgo(f.detectedAt) : '-'}
                 </TableCell>
               </TableRow>
             );
