@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  BEFORE_VERSIONING, canonicalDefinition, compareVersions, planRuleSeeding, sameDefinition, versionKey, versionSortKey,
+  APRL_QUERY_CORRECTION, BEFORE_VERSIONING, canonicalDefinition, compareVersions, planRuleSeeding, sameDefinition, versionKey, versionSortKey,
   type StoredRuleRow,
 } from '@/lib/rule-versions';
 import { catalogueOf, shippedRule } from '../helpers/catalogue';
@@ -155,6 +155,58 @@ describe('planRuleSeeding', () => {
       recorded: new Set<string>(),
     });
     expect(plan.map(a => a.action)).toEqual(['record', 'record', 'set-running']);
+  });
+
+  describe('the APRL query correction (#221)', () => {
+    const APRL = { pack: 'aprl-v2', versionScheme: 'upstream-commit-date', version: APRL_QUERY_CORRECTION.version, enabled: false } as const;
+    const correctedRule = (over: Parameters<typeof shippedRule>[0] = {}) =>
+      shippedRule({ ...APRL, releaseNote: 'Changed: query.', definition: { rawKql: 'resources | where corrected == true' }, ...over });
+    const input = (rule = correctedRule()) => ({ catalogue: catalogueOf(rule), recorded: new Set([versionKey(rule.id, rule.version)]) });
+    const wrongRow = (over: Partial<StoredRuleRow> = {}) =>
+      stored({ pack: 'aprl-v2', version: APRL_QUERY_CORRECTION.version, rawKql: 'resources | where wrong == true', ...over });
+
+    it('corrects an enabled and a disabled row that run a different definition at the corrected version', () => {
+      for (const enabled of [true, false]) {
+        const plan = planRuleSeeding({ ...input(), rows: [wrongRow({ enabled })] });
+        expect(plan, `enabled=${enabled}`).toEqual([{ action: 'correct', rule: correctedRule() }]);
+      }
+    });
+
+    it('plans nothing for a row that already runs the shipped definition', () => {
+      const rule = correctedRule();
+      const row = wrongRow({ rawKql: rule.definition.rawKql });
+      expect(planRuleSeeding({ ...input(rule), rows: [row] })).toEqual([]);
+    });
+
+    it('never corrects a RuleBeat Core rule, whatever its version', () => {
+      const core = shippedRule({ version: '1.0.0', definition: { rawKql: 'resources | where corrected == true' } });
+      const row = stored({ enabled: true, rawKql: 'resources | where wrong == true' });
+      expect(planRuleSeeding({ catalogue: catalogueOf(core), rows: [row], recorded: new Set([versionKey(core.id, '1.0.0')]) })).toEqual([]);
+      // Even one carrying the corrected version string: the scope is the pack and the version together.
+      const coreAtVersion = shippedRule({ version: APRL_QUERY_CORRECTION.version, definition: { rawKql: 'resources | where corrected == true' } });
+      expect(planRuleSeeding({
+        catalogue: catalogueOf(coreAtVersion), rows: [{ ...row, version: APRL_QUERY_CORRECTION.version }],
+        recorded: new Set([versionKey(coreAtVersion.id, APRL_QUERY_CORRECTION.version)]),
+      })).toEqual([]);
+    });
+
+    it('never corrects a rule of another pack, or APRL at another version', () => {
+      const other = correctedRule({ pack: 'other-pack' });
+      expect(planRuleSeeding({ ...input(other), rows: [wrongRow({ pack: 'other-pack' })] })).toEqual([]);
+
+      const later = correctedRule({ version: '2026-07-01T00:00:00Z' });
+      expect(planRuleSeeding({ ...input(later), rows: [wrongRow({ version: '2026-07-01T00:00:00Z' })] })).toEqual([]);
+    });
+
+    it('does not reach a row with no version, which the first-versioning path handles', () => {
+      const plan = planRuleSeeding({ catalogue: catalogueOf(correctedRule()), rows: [wrongRow({ version: null, enabled: true })], recorded: new Set() });
+      expect(plan.map(a => a.action)).not.toContain('correct');
+    });
+
+    it('does not correct a rule an admin converted to a custom rule', () => {
+      const row = wrongRow({ originRuleId: 'aaaaaaaa-0000-4000-8000-000000000001' });
+      expect(planRuleSeeding({ ...input(), rows: [row] })).toEqual([]);
+    });
   });
 
   it('moves a disabled rule that runs an older shipped version, and only then', () => {

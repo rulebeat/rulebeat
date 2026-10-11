@@ -12,6 +12,11 @@ import {
  *
  * The one rule everything here serves: an upgrade never changes what an enabled shipped rule runs.
  * A new version is recorded beside the running one; only a disabled rule moves to it.
+ *
+ * The one exception is `APRL_QUERY_CORRECTION` (#221): most APRL rules shipped another
+ * recommendation's query, so at that one pack and version a stored definition that differs from
+ * the shipped one is corrected in place, enabled or not, and the findings the wrong query produced
+ * are removed. Nothing else is ever overwritten at an unchanged version.
  */
 
 /** The version recorded for a definition that was stored before versions existed and differs from
@@ -48,6 +53,17 @@ export interface StoredRuleRow {
   originRuleId: string | null;
 }
 
+/**
+ * The scope of the one sanctioned exception to "an upgrade never changes what an enabled shipped
+ * rule runs" (#221, ADR 0004): the APRL pack's definitions at this version were paired with the
+ * wrong queries and are corrected in place. A rule of any other pack or version is never touched.
+ */
+export const APRL_QUERY_CORRECTION = {
+  issue: 221,
+  pack: 'aprl-v2',
+  version: '2026-06-08T13:06:47Z',
+} as const;
+
 export type SeedAction =
   /** A shipped rule this database has never had: insert it and record its version. */
   | { action: 'insert'; rule: ShippedRule }
@@ -64,6 +80,10 @@ export type SeedAction =
   /** Move a disabled rule to a shipped version: writes the definition fields and the version. `kind`
    *  is the install's own kind, carried over so the move never turns an Advisory back into a Problem. */
   | { action: 'apply'; rule: ShippedRule }
+  /** `APRL_QUERY_CORRECTION` only: overwrite a rule's definition and its recorded one for the version
+   *  it already runs, and delete the findings its old query produced. Keeps the id, `enabled`, tags,
+   *  version, `retired_at` and suppressions. */
+  | { action: 'correct'; rule: ShippedRule }
   | { action: 'retire'; ruleId: string }
   | { action: 'unretire'; ruleId: string };
 
@@ -201,6 +221,15 @@ function runAsBeforeVersioning(ruleId: string, definition: RuleDefinition): Seed
   return [recordBeforeVersioning(ruleId, definition), { action: 'set-running', ruleId, version: BEFORE_VERSIONING }];
 }
 
+/** True for a row of the corrected pack, running the corrected version, whose stored definition is not
+ *  the shipped one. Once corrected the definitions match, so a second start plans nothing. */
+function needsQueryCorrection(row: StoredRuleRow, rule: ShippedRule): boolean {
+  const { pack, version } = APRL_QUERY_CORRECTION;
+  return rule.pack === pack && rule.version === version
+    && row.type === 'builtin' && row.pack === pack && row.version === version
+    && !sameDefinition(definitionOfRow(row), rule.definition);
+}
+
 export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
   const { catalogue, rows, recorded } = input;
   const actions: SeedAction[] = [];
@@ -271,6 +300,8 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
       // A disabled rule always moves to the newest shipped version, "Before versioning" included
       // (its key sorts before every other).
       actions.push({ action: 'apply', rule });
+    } else if (needsQueryCorrection(row, rule)) {
+      actions.push({ action: 'correct', rule });
     }
 
     if (row.retiredAt !== null) actions.push({ action: 'unretire', ruleId: row.id });

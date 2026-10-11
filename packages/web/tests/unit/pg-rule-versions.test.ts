@@ -15,6 +15,10 @@ import { seedPg } from '@/lib/db/pg/seeds';
 import { BEFORE_VERSIONING, BEFORE_VERSIONING_SORT_KEY, versionSortKey } from '@/lib/rule-versions';
 import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
 import { catalogueOf, shippedRule } from '../helpers/catalogue';
+import {
+  CHANGED, DUMP_SQL, UNCHANGED, adminChoicesSql, committedCatalogue, committedPackEntries, coreRuleId,
+  oldCatalogue, populationSql, type DumpTable,
+} from '../helpers/aprl-correction';
 
 const REAL_DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
 const APRL_VERSION = '2026-06-08T13:06:47Z';
@@ -341,6 +345,81 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule versions', () =>
       await seed(catalogueOf(broken, shippedRule({ id: 'fine', definition: { name: 'Fine' } })));
       expect((await row('fine')).version).toBe('1.0.0');
       expect(await row('broken')).toBeUndefined();
+    });
+  });
+
+  // #221: the same upgrade as rule-versions-aprl-correction.test.ts, through the Postgres seeder.
+  describe('the APRL query correction', () => {
+    const dump = async (table: DumpTable) => q(sql.raw(DUMP_SQL[table]));
+    const dumpAll = async () => Object.fromEntries(
+      await Promise.all((Object.keys(DUMP_SQL) as DumpTable[]).map(async t => [t, await dump(t)])),
+    ) as Record<DumpTable, Row[]>;
+    const shipped = (id: string) => committedPackEntries().find(r => r.id === id)!;
+    const isCorrected = (r: Row) => (CHANGED as readonly string[]).includes(r.rule_id as string);
+
+    beforeEach(async () => {
+      for (const table of ['finding_rows', 'finding_events', 'column_catalogue', 'scan_findings', 'posture_snapshots']) {
+        await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
+      }
+    });
+
+    /** Seeds the pack as it shipped before the fix, adds the admin's choices and findings, then seeds the committed pack. */
+    async function upgrade() {
+      const old = oldCatalogue();
+      const core = coreRuleId(old);
+      await seed(old);
+      for (const statement of [...adminChoicesSql(), ...populationSql(core)]) await pgDb!.execute(sql.raw(statement));
+      const before = await dumpAll();
+      await seed(committedCatalogue());
+      return { before, after: await dumpAll(), core };
+    }
+
+    it('rewrites a wrong query on an enabled and a disabled rule, keeping what the admin set and the recorded version', async () => {
+      const { before, after } = await upgrade();
+      const ruleOf = (dumped: typeof before, id: string) => dumped.rules.find(r => r.id === id)!;
+      for (const id of CHANGED) {
+        expect(ruleOf(before, id).raw_kql, id).not.toBe(shipped(id).rawKql);
+        expect(ruleOf(after, id).raw_kql, id).toBe(shipped(id).rawKql);
+        const versions = after.rule_versions.filter(v => v.rule_id === id);
+        expect(versions.map(v => v.version), id).toEqual([APRL_VERSION]);
+        expect(JSON.parse(versions[0]!.definition as string).rawKql, id).toBe(shipped(id).rawKql);
+        expect(versions[0]!.release_note, id).toBe(shipped(id).releaseNote);
+      }
+      expect(CHANGED.map(id => ruleOf(after, id).enabled)).toEqual([true, false, true, false, false]);
+      expect(CHANGED.map(id => ruleOf(after, id).tags)).toEqual(['["mine"]', '["mine"]', null, null, null]);
+      const kept = (r: Row) => [r.id, r.enabled, r.tags, r.version, r.retired_at, r.type, r.pack];
+      const beforeIds = new Set(before.rules.map(r => r.id));
+      expect(after.rules.filter(r => beforeIds.has(r.id)).map(kept)).toEqual(before.rules.map(kept));
+      for (const id of UNCHANGED) expect(ruleOf(after, id), id).toEqual(ruleOf(before, id));
+    });
+
+    it('removes the findings of the corrected rules from every table and leaves every other table and rule alone', async () => {
+      const { before, after } = await upgrade();
+      const others = (rows: Row[]) => rows.filter(r => !isCorrected(r));
+      for (const table of ['findings', 'finding_events', 'column_catalogue'] as const) {
+        expect(after[table].filter(isCorrected), table).toEqual([]);
+        expect(others(after[table]), table).toEqual(others(before[table]));
+      }
+      const gone = new Set(before.findings.filter(isCorrected).map(f => f.fingerprint));
+      expect(gone.size).toBe(4);
+      expect(after.finding_rows.filter(r => gone.has(r.fingerprint))).toEqual([]);
+      expect(after.finding_rows.length).toBe(before.finding_rows.length - gone.size);
+      expect(after.suppressions).toEqual(before.suppressions);
+      expect(after.suppressions.length).toBe(2);
+      expect(after.posture_snapshots).toEqual(before.posture_snapshots);
+      expect(after.scan_findings).toEqual(before.scan_findings);
+    });
+
+    it('changes nothing on the second start, and keeps what a scan found on a corrected rule in between', async () => {
+      await upgrade();
+      await pgDb!.execute(sql`
+        INSERT INTO findings (fingerprint, rule_id, category, severity, subscription_id, title, status, first_seen_at, last_seen_at, times_seen)
+        VALUES ('fp-new-scan', ${CHANGED[0]}, 'reliability', 'high', 'sub-1', 'A real finding', 'active', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 1)
+      `);
+      const first = await dumpAll();
+      await seed(committedCatalogue());
+      expect(await dumpAll()).toEqual(first);
+      expect(first.findings.map(f => f.fingerprint)).toContain('fp-new-scan');
     });
   });
 });

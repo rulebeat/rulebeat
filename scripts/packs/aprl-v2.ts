@@ -11,19 +11,19 @@
  *   azure-resources/<provider>/<resource-type>/
  *     recommendations.yaml   ← metadata (guid, description, severity, control, ...)
  *     code/
- *       *.kql                ← one KQL file per recommendation that has automation
+ *       <aprlGuid>.kql       ← the query of the recommendation with that guid
  *
- * The YAML links to KQL via aprlGuid. The .kql files are named with a short prefix
- * (e.g. cm-1.kql, st-2.kql) but contain the guid in a comment on the first line:
- *   // Azure Resource Graph Query
- *   // Checks if VMs are in an availability zone
- *   resources | where ...
- * We match by scanning all .kql files under the same resource-type directory.
+ * Each .kql file is named after the aprlGuid of its recommendation, and that name is the only link
+ * between the two (lib/aprl-pairing.ts). A file whose name is not a guid is reported and paired
+ * with nothing; a recommendation with no file named after it has no query and is not shipped.
+ * Files are never handed out by position: a skipped recommendation uses no file, so a positional
+ * pairing would move every later recommendation onto another one's query (#221).
  */
 
 import yaml from 'js-yaml';
 import type { PackDefinition } from '../sync-pack';
 import type { Policy } from '../../packages/web/lib/types';
+import { pairRecommendations, type AprlRecommendation } from '../../packages/web/lib/aprl-pairing';
 
 const REPO = 'Azure/Azure-Proactive-Resiliency-Library-v2';
 const RAW  = `https://raw.githubusercontent.com/${REPO}`;
@@ -52,19 +52,6 @@ const SEVERITY_MAP: Record<string, Policy['severity']> = {
   'Low':      'low',
 };
 
-interface AprlRec {
-  aprlGuid?: string;
-  description?: string;
-  recommendationControl?: string;
-  recommendationImpact?: string;
-  recommendationResourceType?: string;
-  recommendationMetadataState?: string;
-  longDescription?: string;
-  automationAvailable?: boolean | string;
-  query?: string;
-  learnMoreLink?: Array<{ name: string; url: string }> | null;
-}
-
 async function getText(url: string): Promise<string> {
   const res = await fetch(url, { headers: { 'User-Agent': 'RuleBeat-sync/1.0' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
@@ -91,7 +78,8 @@ export const aprlV2Pack: PackDefinition = {
     const tree = await getJson<{ tree: Array<{ path: string; type: string }>; truncated?: boolean }>(
       `${API}/git/trees/${commit}?recursive=1`,
     );
-    if (tree.truncated) console.warn('  Warning: tree was truncated — some files may be missing.');
+    // A truncated tree lists only part of the repo; syncing from it would silently drop recommendations.
+    if (tree.truncated) throw new Error('the repo tree was truncated, so its file list is incomplete');
 
     const allPaths = tree.tree.filter(f => f.type === 'blob').map(f => f.path);
 
@@ -101,71 +89,50 @@ export const aprlV2Pack: PackDefinition = {
 
     console.log(`  Found ${yamlPaths.length} YAML files, ${kqlPaths.length} KQL files`);
 
-    // ── 3. Build GUID → KQL map by fetching all .kql files ───────────────────
-    // KQL files don't have the GUID in their filename, so we group them by their
-    // parent code/ directory (which corresponds to a resource type).
-    // We'll match them to recommendations by directory later.
-    // Key: parent dir of code/ (e.g. "azure-resources/microsoft.compute/virtualmachines")
-    // Value: array of KQL strings in that directory
-
+    // ── 3. Fetch every .kql file, grouped by resource-type directory ─────────
+    // A file that cannot be fetched fails the sync: it must never pass for "no file upstream".
     console.log(`  Fetching KQL files…`);
-    // dir path → list of KQL strings
-    const kqlByDir = new Map<string, string[]>();
+    // resource-type dir → (file path → text)
+    const kqlByDir = new Map<string, Record<string, string>>();
 
     for (const kqlPath of kqlPaths) {
-      // path is like: azure-resources/microsoft.compute/virtualmachines/code/cm-1.kql
-      const codeDir  = kqlPath.substring(0, kqlPath.lastIndexOf('/'));  // .../code
+      // path is like: azure-resources/microsoft.compute/virtualmachines/code/<aprlGuid>.kql
+      const codeDir   = kqlPath.substring(0, kqlPath.lastIndexOf('/'));  // .../code
       const parentDir = codeDir.substring(0, codeDir.lastIndexOf('/'));  // .../<resource-type>
 
+      let text: string;
       try {
-        const kql = await getText(`${RAW}/${commit}/${kqlPath}`);
-        const trimmed = kql.trim();
-        if (trimmed) {
-          const list = kqlByDir.get(parentDir) ?? [];
-          list.push(trimmed);
-          kqlByDir.set(parentDir, list);
-        }
-        await sleep(50);
-      } catch {
-        // skip unreadable files
+        text = await getText(`${RAW}/${commit}/${kqlPath}`);
+      } catch (err) {
+        throw new Error(`could not fetch ${kqlPath}: ${err instanceof Error ? err.message : String(err)}`);
       }
+      const files = kqlByDir.get(parentDir) ?? {};
+      files[kqlPath] = text;
+      kqlByDir.set(parentDir, files);
+      await sleep(50);
     }
 
     console.log(`  Loaded KQL from ${kqlByDir.size} resource type directories`);
 
-    // ── 4. Parse YAML files and match KQL ────────────────────────────────────
+    // ── 4. Parse YAML files and pair each recommendation with its own .kql ──
     const policies: Policy[] = [];
     let skipped = 0;
+    const unpairedFiles: string[] = [];
 
     for (const yamlPath of yamlPaths) {
       // yamlPath: azure-resources/microsoft.compute/virtualmachines/recommendations.yaml
       const parentDir = yamlPath.substring(0, yamlPath.lastIndexOf('/'));
-      const kqlList   = kqlByDir.get(parentDir) ?? [];
 
       try {
         const text = await getText(`${RAW}/${commit}/${yamlPath}`);
-        const recs = yaml.load(text) as AprlRec[] | null;
+        const recs = yaml.load(text) as AprlRecommendation[] | null;
         if (!Array.isArray(recs)) continue;
 
-        let kqlIndex = 0; // assign KQL files to recommendations in order
+        const pairing = pairRecommendations(recs, kqlByDir.get(parentDir) ?? {});
+        skipped += pairing.skipped;
+        unpairedFiles.push(...pairing.unpairedFiles);
 
-        for (const rec of recs) {
-          const guid    = rec.aprlGuid?.trim();
-          const name    = rec.description?.trim();
-          const state   = rec.recommendationMetadataState?.toLowerCase();
-          const hasAuto = rec.automationAvailable === true || rec.automationAvailable === 'true';
-
-          if (!guid || !name) { skipped++; continue; }
-          if (state === 'retired' || state === 'preview' || state === 'disabled') { skipped++; continue; }
-          if (!hasAuto) { skipped++; continue; }
-
-          // Try inline query first, then fall back to the next KQL file in the directory
-          const rawKql = (rec.query?.trim()) || (kqlList[kqlIndex] ?? '');
-          if (!rawKql) { skipped++; continue; }
-
-          // Advance KQL index only when we consumed one (for inline queries, don't advance)
-          if (!rec.query?.trim()) kqlIndex++;
-
+        for (const { rec, guid, name, rawKql } of pairing.selected) {
           const category = CATEGORY_MAP[rec.recommendationControl ?? ''] ?? 'reliability';
           const severity  = SEVERITY_MAP[rec.recommendationImpact  ?? ''] ?? 'medium';
           const resType   = rec.recommendationResourceType?.trim() ?? '';
@@ -199,7 +166,10 @@ export const aprlV2Pack: PackDefinition = {
       }
     }
 
-    console.log(`  Result: ${policies.length} policies added, ${skipped} skipped`);
+    for (const path of unpairedFiles) {
+      console.warn(`  Warning: ${path} is not named after a recommendation guid, so it is paired with nothing`);
+    }
+    console.log(`  Result: ${policies.length} policies added, ${skipped} skipped, ${unpairedFiles.length} .kql files not named by guid`);
     return policies;
   },
 };
