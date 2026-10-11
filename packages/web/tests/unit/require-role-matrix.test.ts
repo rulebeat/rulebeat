@@ -4,9 +4,9 @@
  *
  * What's new here that the existing suites don't cover:
  *  - No session at all (api-auth.test.ts and demo-auth.test.ts both only ever mock a session).
- *  - A session whose uid points at a deleted user — spec 009's durable-revocation guarantee,
+ *  - A session whose uid points at a deleted user: spec 009's durable-revocation guarantee,
  *    unasserted anywhere: nothing proves a stale session can't still authorize after the row is gone.
- *  - Every role's allow/deny outcome flowing through await requireRole() itself, not just can() — the
+ *  - Every role's allow/deny outcome flowing through await requireRole() itself, not just can(). The
  *    existing forced-password-change tests (api-auth.test.ts) only ever construct an admin fixture,
  *    so viewer/editor never actually exercised await requireRole()'s demo/password-gate wiring, only the
  *    role table.

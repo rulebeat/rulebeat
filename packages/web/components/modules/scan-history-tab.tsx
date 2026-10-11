@@ -55,8 +55,8 @@ export function ScanHistoryTab({
   compareCategorySlug, compareCategoryScans, compareIds, compareQuery, compareRestarts = 0, onCompareUrlWrite,
 }: ScanHistoryTabProps) {
   const router = useRouter();
-  // Driven entirely by the `compareCategory` URL param (like the Library `?section=` pattern) —
-  // not local state — so navigating away (Cancel) or picking a different category always
+  // Driven entirely by the `compareCategory` URL param (like the Library `?section=` pattern),
+  // not local state, so navigating away (Cancel) or picking a different category always
   // reflects what the server actually fetched, instead of an independent client value that can
   // drift from the props once they change.
   const pickedCategory = compareCategorySlug ?? '';

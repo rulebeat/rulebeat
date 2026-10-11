@@ -1,6 +1,6 @@
 /**
  * Azure SDK errors nest their actionable message under `err.details[0].message` or
- * `err.response.parsedBody.error.message` — the outer `err.message` is often a generic wrapper
+ * `err.response.parsedBody.error.message`. The outer `err.message` is often a generic wrapper
  * ("Please provide below info...") that says nothing about what actually went wrong. This is the
  * same unwrapping `packages/web/app/api/rules/validate-kql/route.ts` already did locally for the one
  * case it cared about (a 400, safe to show a user); this version has no status-code gate, since it

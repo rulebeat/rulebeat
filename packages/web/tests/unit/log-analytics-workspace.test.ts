@@ -1,7 +1,7 @@
 /**
  * Spec 035 · the default Log Analytics workspace `queryBackend: 'log-analytics'` rules run against.
  *
- * Mirrors tests/unit/azure-credential.test.ts's shape, minus everything about secrets — there is
+ * Mirrors tests/unit/azure-credential.test.ts's shape, minus everything about secrets. There is
  * none here, since a workspace query is authorized by the Azure credential configured elsewhere.
  * Two promises to hold, same as the credential suite: the single-active-row invariant on the stored
  * table, and environment always winning over anything stored.
@@ -125,7 +125,7 @@ describe('resolveLogAnalyticsWorkspaceId · resolution order', () => {
     expect((await resolveLogAnalyticsWorkspaceId())?.source).toBe('stored');
   });
 
-  it('has no ambient chain fallback — unconfigured stays unconfigured', async () => {
+  it('has no ambient chain fallback: unconfigured stays unconfigured', async () => {
     // Unlike await resolveAzureCredential(), there is no DefaultAzureCredential-style discovery for a
     // workspace id: either one is named, or the caller gets null, never a guess.
     expect(await resolveLogAnalyticsWorkspaceId()).toBeNull();
@@ -161,7 +161,7 @@ describe('getLogAnalyticsWorkspaceStatus', () => {
   });
 
   it('still surfaces the stored row even when the environment is what is actually active', async () => {
-    // managedByEnv means "env wins at resolution time", not "nothing is stored" — the settings
+    // managedByEnv means "env wins at resolution time", not "nothing is stored". The settings
     // screen still needs to show what would take over if the env var were removed.
     await saveLogAnalyticsWorkspace({ workspaceId: WORKSPACE_A });
     process.env[ENV_KEY] = ENV_WORKSPACE;

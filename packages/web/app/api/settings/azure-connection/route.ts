@@ -21,7 +21,7 @@ import {
  * RuleBeat scans with, which is deployment configuration rather than findings data.
  *
  * The client secret travels in exactly one direction. It is accepted here, encrypted before it
- * touches the database, and never returned by any handler — `AzureCredentialSummary` has no field
+ * touches the database, and never returned by any handler: `AzureCredentialSummary` has no field
  * for it, so there is nothing to forget to strip.
  */
 
@@ -89,7 +89,7 @@ export async function PUT(req: Request) {
       entityType: 'azure_connection',
       entityId: saved.id,
       summary: `Connected Azure tenant ${tenantId} (${verification.subscriptionCount} subscriptions visible)`,
-      // Field names and counts only — the secret and its length are both absent by design.
+      // Field names and counts only: the secret and its length are both absent by design.
       details: { fields: ['tenantId', 'clientId', 'clientSecret'], subscriptionCount: verification.subscriptionCount },
     });
 

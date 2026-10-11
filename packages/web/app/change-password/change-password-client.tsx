@@ -42,7 +42,7 @@ export function ChangePasswordClient({
         return;
       }
       // Not /dashboard: this mutation just bumped the account's sessionEpoch (spec 020), which
-      // makes the token this page is running under stale immediately — the layout redirect would
+      // makes the token this page is running under stale immediately. The layout redirect would
       // just bounce back to /signin anyway. Send the user through a real sign-in with the new
       // password instead of pretending the old session can continue.
       router.replace('/signin?passwordChanged=1');

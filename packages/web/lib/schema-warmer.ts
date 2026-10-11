@@ -37,13 +37,13 @@ export async function warmSchemaCache(): Promise<void> {
           warmed++;
         }
       } catch {
-        // skip types that fail — don't abort the whole warm
+        // skip types that fail: don't abort the whole warm
       }
     }
 
     console.log(`[RuleBeat] Field schemas: ${warmed} refreshed, ${skipped} already fresh`);
   } catch (err) {
-    // Credentials unavailable (e.g. az login not run) — silently skip
+    // Credentials unavailable (e.g. az login not run): silently skip
     console.log('[RuleBeat] Schema cache warm skipped:', err instanceof Error ? err.message : String(err));
   }
 }

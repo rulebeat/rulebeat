@@ -8,7 +8,7 @@ import type { Rule, RuleExecutionStatus, RuleRunEvent } from './types.js';
 const IDENTITY_FIELDS = new Set(['id', 'name', 'type', 'location', 'resourceGroup', 'subscriptionId']);
 
 // rawKql rules (e.g. every APRL rule) write their own `| project` clause and often only include
-// the columns their query actually needs (id, name, tags, ...) — type/resourceGroup/subscriptionId
+// the columns their query actually needs (id, name, tags, ...): type/resourceGroup/subscriptionId
 // are silently dropped since ARG only returns projected columns. Those three (unlike location) are
 // always encoded in the ARM resource id itself, so parse them back out as a fallback rather than
 // leaving the finding with blank identity fields.
@@ -37,7 +37,7 @@ export async function* runRules(
     ctx.log(`Running rule: ${rule.name}`, { operation: 'rule-start', ruleId: rule.id, category: rule.category });
 
     // rawKql is used as-is; otherwise build the query from the rule definition.
-    // Conditions are emitted as violation | where clauses — ARG returns only violating resources.
+    // Conditions are emitted as violation | where clauses: ARG returns only violating resources.
     const kql = rule.rawKql ?? buildRuleQuery(rule);
     const capped = queryHasTopLevelLimit(kql);
 
@@ -48,7 +48,7 @@ export async function* runRules(
     };
 
     // One consistent log line right before every outcome is yielded, for every status including
-    // 'success' — a full scan's log is then a complete per-rule audit trail, not just the failures.
+    // 'success': a full scan's log is then a complete per-rule audit trail, not just the failures.
     const logOutcome = (status: RuleExecutionStatus, findingCount: number, durationMs: number, message: string) => {
       ctx.log(message, {
         operation: 'rule-outcome',
@@ -63,7 +63,7 @@ export async function* runRules(
 
     let resources: Record<string, unknown>[];
     // Measured around ctx.queryARG() specifically, captured before the enrichment/finding-yield
-    // loop runs — not at the point the outcome is finally yielded, since the async generator pauses
+    // loop runs, not at the point the outcome is finally yielded, since the async generator pauses
     // at every `yield` waiting on its consumer, and that pause time is not query time.
     const queryStartedAt = Date.now();
     try {
@@ -71,7 +71,7 @@ export async function* runRules(
     } catch (err) {
       const durationMs = Date.now() - queryStartedAt;
       // A truncated Resource Graph result set is real data that Azure itself flagged as
-      // incomplete — 'capped', not 'failed', so the UI can say why rather than just "errored".
+      // incomplete: 'capped', not 'failed', so the UI can say why rather than just "errored".
       // Either way it must never resolve this rule's prior findings, which is why both land in
       // the same try/catch: neither path yielded a trustworthy, exhaustive result.
       if (err instanceof ResourceGraphTruncatedError) {
@@ -88,10 +88,10 @@ export async function* runRules(
     // Identity enrichment: some resources came back missing type/location/resourceGroup/
     // subscriptionId because the rule's own `| project` clause never selected them (true for
     // every APRL rule, which only projects the columns its specific check needs). Rather than
-    // rewriting the rule's KQL (risky — a query with joins/summarize may have genuinely dropped
+    // rewriting the rule's KQL (risky: a query with joins/summarize may have genuinely dropped
     // those columns upstream, and forcing them back in could break the query outright), run one
     // small follow-up query against the base `resources` table for just the affected ids. This is
-    // the only path that can recover `location`, which — unlike the other three — isn't encoded
+    // the only path that can recover `location`, which (unlike the other three) isn't encoded
     // anywhere in the ARM resource id string and so can't be parsed back out for free.
     const missingIds = [...new Set(
       resources
@@ -117,7 +117,7 @@ export async function* runRules(
       }
     }
 
-    // A row with no usable id can't produce a real finding — no portal link, no stable
+    // A row with no usable id can't produce a real finding. No portal link, no stable
     // fingerprint (computeFingerprint hashes ruleId::resourceId, so a blank id collapses every
     // such row onto one record that then gets silently overwritten scan after scan). Skip
     // yielding those rows rather than pretending they're findings, and downgrade the outcome so
@@ -160,7 +160,7 @@ export async function* runRules(
       };
     }
 
-    // 'invalid' takes precedence over 'capped' when both apply — a bad identity is the more
+    // 'invalid' takes precedence over 'capped' when both apply. A bad identity is the more
     // actionable problem to surface, and both already exclude resolving prior findings.
     const status: RuleExecutionStatus = invalidRowCount > 0 ? 'invalid' : capped ? 'capped' : 'success';
     const findingCount = resources.length - invalidRowCount;

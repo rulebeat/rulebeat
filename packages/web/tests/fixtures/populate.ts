@@ -1,8 +1,8 @@
 /**
  * The content every sample database is filled with, and the writers that put it there.
  *
- * One logical set of content — three custom rules, a month of scan history, a dashboard, an admin,
- * a suppression that really matches a finding — written into whichever era's column layout the
+ * One logical set of content (three custom rules, a month of scan history, a dashboard, an admin,
+ * a suppression that really matches a finding) written into whichever era's column layout the
  * fixture uses. Keeping the *content* shared is what lets one assertion ("the three custom rules
  * survived with their KQL intact") be run against every shape without rewriting it per era.
  *
@@ -137,7 +137,7 @@ export function insertRules(
   for (const legacyId of legacyIds) {
     stmt.run(
       legacyId, `Legacy rule ${legacyId}`, 'Seeded under an older id scheme.',
-      'cost', 'medium', 0, // disabled — a user edit that must survive the rename
+      'cost', 'medium', 0, // disabled: a user edit that must survive the rename
       JSON.stringify({ level: 'resource' }), JSON.stringify(['*']),
       JSON.stringify([]), JSON.stringify([]), 'builtin',
       ...(cols.hasGroupName ? ['Legacy'] : []),

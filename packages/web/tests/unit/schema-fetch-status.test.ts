@@ -1,5 +1,5 @@
 /**
- * Spec 008 — pure classification of a schema-route HTTP outcome into 'ok' | 'not-found' |
+ * Spec 008: pure classification of a schema-route HTTP outcome into 'ok' | 'not-found' |
  * 'unavailable', so the taxonomy the client relies on to tell "Azure is down" apart from "this type
  * genuinely has no schema" lives in one tested function rather than inline in a Promise.all.
  */

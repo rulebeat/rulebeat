@@ -1,6 +1,6 @@
 // Single source of truth for KQL generation and parsing.
 // ALL logic lives in packages/core/src/engine/kql.ts.
-// DO NOT add any KQL logic here — update core and rebuild.
+// DO NOT add any KQL logic here: update core and rebuild.
 export {
   buildQueryFromVisual,
   conditionToKql,

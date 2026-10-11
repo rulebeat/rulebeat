@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /* Code and commands, in the app's own colours.
  *
- * These blocks used to be hardcoded slate-950 panels — a dark card dropped into
+ * These blocks used to be hardcoded slate-950 panels. A dark card dropped into
  * a light page, which is exactly the "one component brought its own theme" look
  * the rework is removing. They are a sunken surface with a strong rule now, and
  * they follow light and dark like everything else.

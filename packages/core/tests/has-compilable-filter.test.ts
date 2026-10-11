@@ -1,14 +1,14 @@
 /**
- * RB-RM-004 — a rule can look filled in (a field selected, an operator picked, values typed) and
+ * RB-RM-004: a rule can look filled in (a field selected, an operator picked, values typed) and
  * still compile to no `| where` clause at all, silently matching every resource in scope. This
  * suite locks the specific compile-time gaps `hasCompilableFilter()` closes, since the guard it
- * replaced (`isRealCondition()`) only checked that a field string was non-empty — never that the
+ * replaced (`isRealCondition()`) only checked that a field string was non-empty, never that the
  * condition actually produced KQL.
  *
  * RB-RM-005 was the specific case of `managedBy`/`tenantId`: the container-field picker offered
  * them but `fieldToKqlExpr()`'s allowlist didn't, so a condition on either silently compiled to
  * null. Spec 031 closed it by widening the allowlist rather than removing the fields from the
- * picker, so both now compile — see the two "RB-RM-005" cases below, which assert that resolution
+ * picker, so both now compile: see the two "RB-RM-005" cases below, which assert that resolution
  * rather than the bug it replaced.
  */
 import { describe, expect, it } from 'vitest';
@@ -50,7 +50,7 @@ describe('hasCompilableFilter (RB-RM-004)', () => {
     expect(hasCompilableFilter(vq)).toBe(true);
   });
 
-  it('is false for hasAny with an empty values array — the exact shape that used to save a filterless rule', () => {
+  it('is false for hasAny with an empty values array: the exact shape that used to save a filterless rule', () => {
     const vq = queryWithConditions({ field: 'tags.env', operator: 'hasAny', values: [] });
     expect(hasCompilableFilter(vq)).toBe(false);
   });

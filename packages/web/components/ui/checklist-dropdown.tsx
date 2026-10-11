@@ -9,7 +9,7 @@ import { SEARCH_DEBOUNCE_MS, type RemoteValues } from '@/lib/explorer-session';
 import { valuesPanelOf, type ValueOption } from '@/lib/explorer-screen';
 import { cn } from '@/lib/utils';
 
-/* "Pick one or more of these values" — the filter used for Tags, Category,
+/* "Pick one or more of these values". The filter used for Tags, Category,
  * Severity, Policy and so on.
  *
  * It used to position itself with a manual getBoundingClientRect and a fixed

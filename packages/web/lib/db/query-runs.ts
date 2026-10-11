@@ -5,8 +5,8 @@ import { many, run } from './exec';
 import type { QueryRun, QueryBackend, RuleScope, GraphQuery, LogAnalyticsQuery } from '@/lib/types';
 
 /**
- * Recent run history for the live query page (spec 037 follow-up). Always fully personal — no
- * visibility split like saved-queries.ts — so deleteUser() removes every row outright. Modeled on
+ * Recent run history for the live query page (spec 037 follow-up). Always fully personal: no
+ * visibility split like saved-queries.ts, so deleteUser() removes every row outright. Modeled on
  * notification-deliveries.ts's prune-after-insert pattern: ranAt is millisecond-resolution, so two
  * runs in the same tick can share a timestamp; every ordered query breaks that tie with the
  * insertion-order column (SQLite's implicit rowid, Postgres's seq), which is monotonic on insert.
@@ -51,7 +51,7 @@ export interface RecordQueryRunInput {
 }
 
 /**
- * Best-effort, like writeAudit() — a history-table hiccup must never turn an otherwise-successful
+ * Best-effort, like writeAudit(). A history-table hiccup must never turn an otherwise-successful
  * query response into a 500, so failures are logged and swallowed rather than thrown.
  */
 export async function recordQueryRun(input: RecordQueryRunInput): Promise<void> {
@@ -82,7 +82,7 @@ export async function recordQueryRun(input: RecordQueryRunInput): Promise<void> 
   }
 }
 
-/** Newest first, capped at `limit` — the caller's own runs only, there is no shared history. */
+/** Newest first, capped at `limit`. The caller's own runs only, there is no shared history. */
 export async function listQueryRuns(ownerId: string, limit = MAX_RUNS_PER_OWNER): Promise<QueryRun[]> {
   const rows = await many(
     db.select().from(queryRuns)

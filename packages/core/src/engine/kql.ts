@@ -110,7 +110,7 @@ function splitTopLevelPipes(line: string): string[] {
 
 /**
  * True when the compiled query has a top-level `| take`, `| top` or `| limit` (an alias of take)
- * stage — i.e. its result set is capped by construction and can never be relied on to enumerate
+ * stage, i.e. its result set is capped by construction and can never be relied on to enumerate
  * every violation. Scans a multi-line query, tracking paren/bracket depth across lines so a
  * `take`/`top`/`limit` inside a join's subquery (wrapped in `(...)`) is not mistaken for a top-level
  * cap on the outer query.
@@ -140,7 +140,7 @@ export function queryHasTopLevelLimit(kql: string): boolean {
   return false;
 }
 
-// Splits a KQL expression by top-level 'and'/'or' operators. String-literal-aware — an 'and'/'or'
+// Splits a KQL expression by top-level 'and'/'or' operators. String-literal-aware. An 'and'/'or'
 // substring (or a paren) inside a quoted value is inert, and a backslash-escaped quote (esc()'s own
 // escaping model) does not end the string.
 function splitTopLevelOps(expr: string): Array<{ part: string; join: 'and' | 'or' | null }> {
@@ -174,13 +174,13 @@ function splitTopLevelOps(expr: string): Array<{ part: string; join: 'and' | 'or
 }
 
 /**
- * Removes parentheses that wrap an entire expression — `(A and B)` → `A and B` — repeatedly, so
+ * Removes parentheses that wrap an entire expression (`(A and B)` → `A and B`) repeatedly, so
  * `((A and B))` unwraps too.
  *
  * Only strips when the opening paren's match is the final character: `(A or B) and C` must be left
  * alone, since its parens group a part rather than the whole. Without this, a `| where` clause that
  * the generator emitted as one parenthesised group parses to zero conditions, and regenerating then
- * drops the clause entirely — turning a rule that matched a few resources into one that matches
+ * drops the clause entirely: turning a rule that matched a few resources into one that matches
  * every resource. Cheap function, expensive bug.
  */
 function stripOuterParens(expr: string): string {
@@ -225,7 +225,7 @@ function stripOuterQuotes(s: string): string {
   return t;
 }
 
-// Splits a value list on top-level commas — string-literal-aware, so a quoted value containing a
+// Splits a value list on top-level commas: string-literal-aware, so a quoted value containing a
 // comma (or a bracket/paren) is not split apart. A backslash-escaped quote does not end the string.
 function splitQ(csv: string): string[] {
   const parts: string[] = [];
@@ -261,7 +261,7 @@ const FLIP_OP: Record<ConditionOperator, ConditionOperator> = {
 
 // De Morgan's law: negating a joined pair of conditions also flips the join between them
 // ("not (A and B)" == "not A or not B", never "not A and not B"). Each condition below is
-// already individually negated (conditionToViolationKql) — this is the join that connects
+// already individually negated (conditionToViolationKql): this is the join that connects
 // those negated parts, not the join stored on the (still compliant-state) source condition.
 const FLIP_JOIN: Record<'and' | 'or', 'and' | 'or'> = { and: 'or', or: 'and' };
 
@@ -292,7 +292,7 @@ export function buildRuleQuery(rule: Rule): string {
   const typeLine = typeFilterLine(rule.resourceTypes);
   if (typeLine) lines.push(typeLine);
 
-  // A flat rule.conditions list (no conditionGroups) is just a single-group shorthand — route it
+  // A flat rule.conditions list (no conditionGroups) is just a single-group shorthand: route it
   // through the same compiler so it gets the same De Morgan join-flip instead of a second,
   // separately-maintained (and previously buggy: always plain 'and') join implementation.
   const groups = rule.conditionGroups?.length ? rule.conditionGroups : [{ id: '', conditions: rule.conditions }];
@@ -336,7 +336,7 @@ export function conditionToKql(condition: Condition): string | null {
   }
 }
 
-// ── Visual Query Builder — KQL generation ────────────────────────────────────
+// ── Visual Query Builder: KQL generation ────────────────────────────────────
 
 function computeColExpr(c: ComputedColumn): string {
   if (c.exprType === 'raw')      return c.rawExpr?.trim() ?? '';
@@ -348,7 +348,7 @@ function computeColExpr(c: ComputedColumn): string {
 }
 
 function visualConditionToKql(c: VisualFilterCondition): string | null {
-  // A passthrough condition has no field or operator of its own — it is the user's own KQL, and goes
+  // A passthrough condition has no field or operator of its own. It is the user's own KQL, and goes
   // back out exactly as it came in.
   if (c.operator === 'raw') return c.rawExpr?.trim() || null;
 
@@ -421,7 +421,7 @@ function buildFilterStageKql(stage: FilterStage): string | null {
 }
 
 // RB-RM-004: a condition can look filled in (a field selected, values typed) and still compile to
-// null — an unwritable field, or hasAny/in/notIn with an empty value list. Checking real compilation
+// null: an unwritable field, or hasAny/in/notIn with an empty value list. Checking real compilation
 // here, the same path buildQueryFromVisual uses, is what catches that; checking field non-emptiness
 // (the old isRealCondition) does not.
 export function hasCompilableFilter(vq: VisualQuery): boolean {
@@ -534,7 +534,7 @@ export function buildQueryFromVisual(
   return lines.join('\n');
 }
 
-// ── Visual Query Builder — KQL parser ────────────────────────────────────────
+// ── Visual Query Builder: KQL parser ────────────────────────────────────────
 
 export interface ParsedVisualResult {
   visualQuery: VisualQuery;
@@ -573,7 +573,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   // A leading bare '(' wraps the entire first branch of a top-level `| union (...)` in a pure
   // grouping paren (e.g. `( resources | where ... | project ... ) | union ( ... )`, RB-QA-008b /
   // spec 027). KQL's pipe already scopes "everything piped before it" as the union's left branch,
-  // parenthesized or not, so `(A) | union (B)` and `A | union (B)` are semantically identical —
+  // parenthesized or not, so `(A) | union (B)` and `A | union (B)` are semantically identical:
   // dropping the wrap is lossless. Without this, the wrap's own line is mistaken for the table line
   // (scope detection silently falls back to the default) and its matching close gets glued onto the
   // last real clause as corrupted text.
@@ -589,7 +589,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   // table name) has no table line at all. Without this, splitTopLevelPipes' `.filter(Boolean)`
   // drops the resulting leading empty segment and the where-clause text itself gets mistaken for
   // the table name below, silently losing the whole clause to defaultFilterStage() (spec 043).
-  // Prepending 'Resources' — the same default RuleScope.level:'resource' already assumes — makes
+  // Prepending 'Resources' (the same default RuleScope.level:'resource' already assumes) makes
   // this take the exact same path a real `Resources\n| where ...` input would, so scope/clause
   // handling can't diverge from the working case. The user is told, since this is a repair, not a
   // literal read of what they typed.
@@ -606,7 +606,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
 
   // First line: table, plus any clauses written inline after it. The generator itself emits the
   // three container scopes that way (`ResourceContainers | where type =~ '...'`), and pasted Portal
-  // queries often put the first filter on the table line too — so a parser that only reads clauses
+  // queries often put the first filter on the table line too, so a parser that only reads clauses
   // from line two down cannot see the clause that *defines the scope*, and regenerating then reverts
   // the rule to `Resources`, silently changing what it scans.
   const firstLine = bodyLines[0] as string;
@@ -621,7 +621,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   // top-level clauses.
   const clauseStrings: string[] = inlineParts.slice(1);
   // Seed depth from whatever was already opened *inline* on the first line (e.g. the `(` in
-  // `Resources | union (`) — the loop below only scans bodyLines[1..], so without this seed a
+  // `Resources | union (`): the loop below only scans bodyLines[1..], so without this seed a
   // first-line-inline opener is invisible to it and every line inside that subquery gets walked one
   // paren short of reality (RB-QA-008c / spec 028). Uses the exact same quote-aware `(`/`)`-only
   // counting rule the loop applies per line, so the seed can't diverge from what the loop counts.
@@ -641,7 +641,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   }
   // Set only when the leading wrap was sliced off above; consumed (and never rechecked) the first
   // time we see that wrap's own matching close, so this never generalizes into a rule about bare
-  // `)` lines from any other cause — a first-line-inline `Resources | union (` (leadingWrapped
+  // `)` lines from any other cause. A first-line-inline `Resources | union (` (leadingWrapped
   // false) is completely unaffected.
   let wrapPendingClose = leadingWrapped;
   for (let i = 1; i < bodyLines.length; i++) {
@@ -669,10 +669,10 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
     }
   }
 
-  // Find the last | project clause — that's output columns, not a ShapeStage. Only the clause that
+  // Find the last | project clause: that's output columns, not a ShapeStage. Only the clause that
   // is truly the final one in the pipeline qualifies: a `project` that appears earlier (e.g.
   // immediately before a `union`) is real mid-pipeline shaping, not output metadata, and the
-  // generator always re-emits "the" output project last — extracting a non-trailing one would
+  // generator always re-emits "the" output project last: extracting a non-trailing one would
   // silently move it past whatever comes after it, changing what that later clause receives.
   let lastProjectIdx = -1;
   if (clauseStrings.length > 0) {
@@ -780,7 +780,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
       continue;
     }
 
-    // | limit N — a documented ARG/Kusto alias of | take N, same semantics. Parsed into the same
+    // | limit N: a documented ARG/Kusto alias of | take N, same semantics. Parsed into the same
     // LimitStage rather than dropped, so a rule authored with `limit` keeps its cap; regenerating
     // canonicalizes it to `take` (the form the builder always emits), which is the accepted aliasing
     // behavior for two operators that compile to byte-identical output, not a round-trip loss.
@@ -790,7 +790,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
       continue;
     }
 
-    // | union (...) — carried through verbatim as a read-only block rather than dropped. Scoped to
+    // | union (...): carried through verbatim as a read-only block rather than dropped. Scoped to
     // this one keyword deliberately: a general unrecognized-clause fallback has real interactions
     // with the project-as-output-metadata extraction above that are only verified for this shape.
     if (/^union\b/i.test(clause)) {
@@ -915,10 +915,10 @@ function findClosingQuote(expr: string, from: number, quoteChar: string): number
 
 // Normalize hand-written KQL forms so the condition regexes (which expect
 // single-quoted strings and != ) can match: "..." → '...', <> → !=.
-// String-aware single pass — content inside existing '...' literals is untouched. Escape-aware
+// String-aware single pass: content inside existing '...' literals is untouched. Escape-aware
 // (RB-RM-006/spec 040): a backslash-escaped quote inside the literal does not end it early, which
 // matters because that early end would otherwise make a later real quote in the expression look like
-// a fresh string open, swallowing whatever comes between them — including a real top-level and/or.
+// a fresh string open, swallowing whatever comes between them, including a real top-level and/or.
 function normalizeKqlExpr(expr: string): string {
   let out = '';
   let i = 0;
@@ -948,7 +948,7 @@ const TYPE_IN_RE  = new RegExp(String.raw`^${TYPE_FIELD}\s+in~?\s*\(([\s\S]+?)\)
 /**
  * `arrayEmpty` and `arrayNotEmpty` are the only operators whose generated KQL is itself a
  * parenthesised compound expression, so a rule using one of them reads like two conditions joined by
- * `or`/`and`. Matched as one unit — and only when both halves name the same field, since otherwise it
+ * `or`/`and`. Matched as one unit, and only when both halves name the same field, since otherwise it
  * genuinely is two conditions. Splitting it instead regenerates a *narrower* rule than the author
  * wrote ("missing" rather than "missing or empty"), and the violations it stops reporting are
  * invisible.
@@ -993,7 +993,7 @@ function absorbFilterPart(
   const single = parseWritableCondition(part);
   if (single) return appendTo(single);
 
-  // Not a single condition, so it may be a parenthesised group — `(A or B) and C`. Recursing into it
+  // Not a single condition, so it may be a parenthesised group: `(A or B) and C`. Recursing into it
   // as its own group is what keeps the grouping; handing it to the single-condition matcher instead
   // silently dropped half the filter (RB-QA-004).
   const inner = parenthesisedInner(part);
@@ -1006,7 +1006,7 @@ function absorbFilterPart(
     return current;
   }
 
-  // Neither a condition the builder knows nor a group — keep it verbatim as a passthrough.
+  // Neither a condition the builder knows nor a group: keep it verbatim as a passthrough.
   return appendTo(passthroughCondition(part, undefined));
 }
 
@@ -1079,8 +1079,8 @@ function passthroughCondition(expr: string, join: 'and' | 'or' | undefined): Vis
 /**
  * Parses one condition, and accepts it only if the generator can write it back out again.
  *
- * Several regexes will happily match an expression whose *field* is itself an expression —
- * `array_length(replicaSets) < 2`, `isnull(['threshold'])` — but `fieldToKqlExpr` has no output for
+ * Several regexes will happily match an expression whose *field* is itself an expression
+ * (`array_length(replicaSets) < 2`, `isnull(['threshold'])`), but `fieldToKqlExpr` has no output for
  * those, so the condition parsed cleanly and then vanished at generation time. Parsing something the
  * generator cannot re-emit is indistinguishable from not parsing it, so it's treated the same way:
  * rejected here, and kept verbatim as a passthrough by the caller.
@@ -1108,7 +1108,7 @@ function parseVisualConditionList(
   return conditions;
 }
 
-// A plain field path (dots, optional tags['x'] brackets) — no operators, functions, or literals.
+// A plain field path (dots, optional tags['x'] brackets). No operators, functions, or literals.
 const KQL_KEYWORDS = new Set(['true', 'false', 'and', 'or', 'not', 'null']);
 function isBareFieldPath(s: string): boolean {
   return /^[A-Za-z_][\w.]*(?:\['[^']+'\])?$/.test(s) && !KQL_KEYWORDS.has(s.toLowerCase());
@@ -1117,7 +1117,7 @@ function isBareFieldPath(s: string): boolean {
 function parseVisualConditionExpr(expr: string): VisualFilterCondition | null {
   expr = expr.trim();
 
-  // arrayEmpty / arrayNotEmpty — each generates one parenthesised compound expression.
+  // arrayEmpty / arrayNotEmpty: each generates one parenthesised compound expression.
   const arrayComposite = parseArrayCompositeExpr(expr);
   if (arrayComposite) return arrayComposite;
   // exists: isnotempty(tostring(f))
@@ -1194,7 +1194,7 @@ function parseVisualConditionExpr(expr: string): VisualFilterCondition | null {
     if (swM) return { id: uid(), field: kqlToField(swM[1] ?? ''), operator: 'notStartsWith', value: swM[2] };
     const ewM = inner.match(/^(.+?)\s+endswith\s+'([^']*)'$/i);
     if (ewM) return { id: uid(), field: kqlToField(ewM[1] ?? ''), operator: 'notEndsWith', value: ewM[2] };
-    // not(field) — bare boolean field negation
+    // not(field): bare boolean field negation
     if (isBareFieldPath(inner)) return { id: uid(), field: kqlToField(inner), operator: 'isFalse' };
   }
   // boolean literals (unquoted): field == true / field != false → isTrue; field == false / field != true → isFalse

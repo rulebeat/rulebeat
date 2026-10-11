@@ -11,7 +11,7 @@ import {
 } from '@/lib/azure-credential';
 
 /**
- * "Test connection" — proves a credential reaches Azure and can see subscriptions.
+ * "Test connection": proves a credential reaches Azure and can see subscriptions.
  *
  * Two modes, deliberately:
  *  - with credentials in the body, it tests what the admin has typed but not yet saved;

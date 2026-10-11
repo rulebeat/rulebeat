@@ -2,7 +2,7 @@ import { buildGraphPath, isValidGraphFieldName, GRAPH_RESOURCE_PATHS } from '@ru
 import type { GraphQuery, TenantContext } from '@rulebeat/core';
 
 /**
- * Hard block, not a UX nicety — this allowlist IS the security boundary for a Directory rule (see
+ * Hard block, not a UX nicety. This allowlist IS the security boundary for a Directory rule (see
  * its doc comment on GraphResourcePath in packages/core/src/engine/types.ts), so it is checked here
  * unconditionally, before anything touches Azure.
  */
@@ -36,14 +36,14 @@ export function validateGraphQueryShape(gq: GraphQuery): string | null {
 }
 
 /**
- * Save-time probe for a Graph rule — same fail-open contract as probeRuleIdentitySample
+ * Save-time probe for a Graph rule, same fail-open contract as probeRuleIdentitySample
  * (rule-identity-check.ts): a transient Graph/connectivity failure must never newly block a save.
  * Unlike ARG's `| take N`, Graph has no request-level row cap reachable through
- * `TenantContext.graphGet` — a `$top` hint only sets page size, it does not stop `graphGetAll()`
+ * `TenantContext.graphGet`. A `$top` hint only sets page size, it does not stop `graphGetAll()`
  * from following `@odata.nextLink` to the end of the real result set (and a small `$top` on a large
  * match set makes this *more* expensive, one extra round trip per page). So this probe costs the
  * same as one real scan run of this rule, bounded by the same GRAPH_MAX_ROWS ceiling a scan would
- * hit. It exists to confirm the path/filter combination actually resolves — a bad $filter is
+ * hit. It exists to confirm the path/filter combination actually resolves. A bad $filter is
  * otherwise silent until the first real scan. The interactive Validate action (validate-graph route)
  * is where a filter-syntax error is meant to surface to the user; this is a best-effort server log,
  * not a blocking check.

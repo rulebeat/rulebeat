@@ -11,9 +11,9 @@ type Row = { id: string; name: string; type: string; resourceGroup: string; subs
 /**
  * Only a 400 from Resource Graph is a malformed-query error the user can act on. A 403 or 429
  * carries the same details[]/parsedBody.error shape but its message names the subscription or
- * tenant that was denied or throttled — safe for the server log, not for the browser. Anything
+ * tenant that was denied or throttled: safe for the server log, not for the browser. Anything
  * that isn't a plain 400 goes through `azureError`/`safeErrorMessage` instead of being extracted.
- * The nested-shape unwrapping itself is the shared core helper — this only adds the 400-only gate
+ * The nested-shape unwrapping itself is the shared core helper. This only adds the 400-only gate
  * that decides what's safe to show the browser.
  */
 function extractAzureError(err: unknown): string | null {
@@ -39,12 +39,12 @@ export async function POST(req: Request) {
   } catch (err) {
     // Deliberately not `extractAzureError`: a credential failure describes which identity sources
     // were tried and against which tenant, which the person validating a query cannot act on anyway.
-    // `azureError` still lets the one actionable case through — Azure isn't connected yet.
+    // `azureError` still lets the one actionable case through: Azure isn't connected yet.
     return azureError('Could not connect to Azure to validate this query', err);
   }
 
   // Append | take 5 unless the query already limits rows.
-  // KQL `top` requires a `by` clause — use `take` (alias: limit) for unconditional row cap.
+  // KQL `top` requires a `by` clause: use `take` (alias: limit) for unconditional row cap.
   const limitedKql = /\|\s*(take|limit|top)\s+\d+/i.test(kql)
     ? kql
     : `${kql.trim()}\n| take 5`;

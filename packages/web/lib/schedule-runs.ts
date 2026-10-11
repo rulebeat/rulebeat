@@ -172,7 +172,7 @@ export async function finishRun(id: string, patch: {
   }).where(eq(scheduleRuns.id, id)));
 }
 
-/** Marks a run's notification outbox entry closed — the attempt was made, whatever its per-channel
+/** Marks a run's notification outbox entry closed. The attempt was made, whatever its per-channel
  * outcome (tracked separately in notification_deliveries). Called by both the live dispatch path and
  * the startup recovery pass, so there is exactly one place that decides "this entry is done." */
 export async function markNotifySent(id: string): Promise<void> {
@@ -221,7 +221,7 @@ export async function heartbeatRun(id: string, now: Date = new Date()): Promise<
 }
 
 /** Durably appends one category's new-finding fingerprints and totals to a still-running run's row,
- * immediately after that category's findings were synced into the durable `findings` table — not just
+ * immediately after that category's findings were synced into the durable `findings` table, not just
  * once at the end in finishRun(). Closes the gap where a crash between categories left findings that
  * were already durable in `findings` with no fingerprint ever recorded against the run, so recovery
  * had nothing to notify from (spec 025). */
@@ -256,7 +256,7 @@ export async function listRuns(scheduleId: string, limit = 20): Promise<Schedule
     .map(rowToRun);
 }
 
-/** Every run across every schedule AND manual "Run Scan" executions — the unified Run History. */
+/** Every run across every schedule AND manual "Run Scan" executions. The unified Run History. */
 export async function listAllRuns(limit = 50): Promise<ScheduleRun[]> {
   return (await many(db.select().from(scheduleRuns)
     .orderBy(desc(scheduleRuns.startedAt))

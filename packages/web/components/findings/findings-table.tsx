@@ -173,7 +173,7 @@ function FindingRow({
               {/* Resource data: projected columns from the policy query, one block per row */}
               <FindingRowsDetail finding={finding} />
 
-              {/* Recommendation — the trailing "Learn more" URL is split out and linked, never shown as raw text */}
+              {/* Recommendation: the trailing "Learn more" URL is split out and linked, never shown as raw text */}
               {(() => {
                 const { text, url } = splitLearnMore(finding.recommendation);
                 return (
@@ -196,7 +196,7 @@ function FindingRow({
                 );
               })()}
 
-              {/* Remediation — generated per rule, not authored per rule. Until that
+              {/* Remediation: generated per rule, not authored per rule. Until that
                   generation ships, show why the fix block is empty rather than hiding it. */}
               {finding.remediationSteps.length === 0 && (
                 <div>
@@ -474,7 +474,7 @@ export function FindingsTable({ findings, suppressions = [], onSuppress, onUnsup
                 <X className="size-3" />Clear filters
               </Button>
             )}
-            {/* Only offer a bulk script when some visible finding actually carries steps —
+            {/* Only offer a bulk script when some visible finding actually carries steps,
                 otherwise the panel renders an empty script. Reappears on its own once
                 generated remediation lands. */}
             {visible.some(f => f.remediationSteps.length > 0) && (

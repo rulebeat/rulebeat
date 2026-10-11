@@ -31,7 +31,7 @@ export function Switch({ checked, onCheckedChange, disabled, title, className }:
         'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring',
         /* Only lightly faded when disabled. A switch is read far more often than it is
            pressed, and in read-only mode (a viewer, the demo) every switch on the page is
-           disabled — fading a solid black track to 50% turned "on" into a grey pill that
+           disabled: fading a solid black track to 50% turned "on" into a grey pill that
            was hard to tell from "off". Someone who cannot press it still has to be able to
            tell what it says. */
         'disabled:cursor-not-allowed disabled:opacity-75',

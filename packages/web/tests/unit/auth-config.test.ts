@@ -2,7 +2,7 @@
  * The proxy runs on every request against `auth.config.ts` alone (no database); `auth.ts` builds
  * the full config the actual sign-in routes use. This suite exists because the two silently
  * drifting apart has a specific, nasty failure mode: a secret mismatch between them doesn't throw
- * anywhere — it just makes every session the full config issues look invalid to the proxy, so
+ * anywhere: it just makes every session the full config issues look invalid to the proxy, so
  * every request loops back to /signin while sign-in itself appears to work fine.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -21,10 +21,10 @@ import { hashPassword } from '@/lib/password';
  * secret.ts` read `process.env[SECRET_ENV]` (a variable-indexed lookup) instead of the literal
  * `process.env.AUTH_SECRET`. Next's bundler only inlines env vars it can see referenced statically
  * for the edge/proxy build, so the *proxy's* copy of `getAuthSecret()` silently saw `undefined`
- * and generated (and cached) its own random key file — completely different from the one the
+ * and generated (and cached) its own random key file: completely different from the one the
  * Node-runtime route handlers use. Nothing threw; every session the app minted just failed to
  * authorize at the proxy, redirecting every request back to /signin. Vitest runs both configs in
- * the same plain Node process, so it can't reproduce the split bundling that caused this — the
+ * the same plain Node process, so it can't reproduce the split bundling that caused this. The
  * only thing it CAN do is ban the pattern that caused it, statically, the same way the credential
  * and password chokepoint tests do.
  */
@@ -36,8 +36,8 @@ describe('auth-secret.ts reads AUTH_SECRET the way the edge/proxy bundler can se
     expect(source).not.toMatch(/process\.env\[\s*(['"`]AUTH_SECRET['"`]|SECRET_ENV)\s*\]/);
   });
 
-  // spec 023: AUTH_SECRET_FILE is read by the same module, so it needs the identical guarantee —
-  // a dynamic lookup here would silently resolve to `undefined` in the edge bundle exactly like
+  // spec 023: AUTH_SECRET_FILE is read by the same module, so it needs the identical guarantee.
+  // A dynamic lookup here would silently resolve to `undefined` in the edge bundle exactly like
   // the original AUTH_SECRET bug, just for the file variant instead.
   it('uses a static `process.env.AUTH_SECRET_FILE`, never a dynamic `process.env[...]` lookup', async () => {
     const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'lib', 'auth-secret.ts');
@@ -123,7 +123,7 @@ describe('auth.config.ts (the DB-free half used by the proxy)', () => {
 });
 
 describe('auth.ts (the full config auth routes use)', () => {
-  // This describe block wants "SSO is fully configured" — set explicitly, not inherited from
+  // This describe block wants "SSO is fully configured": set explicitly, not inherited from
   // tests/setup.ts, so the sign-in-config resolution-order tests elsewhere mean something.
   beforeAll(async () => {
     process.env.AUTH_MICROSOFT_ENTRA_ID_ID = 'test-client-id';
@@ -161,7 +161,7 @@ describe('auth.ts (the full config auth routes use)', () => {
     expect(full.callbacks!.authorized).toBe(authConfig.callbacks!.authorized);
   });
 
-  describe('callbacks.jwt (spec 020 — stamps the session-epoch claim)', () => {
+  describe('callbacks.jwt (spec 020: stamps the session-epoch claim)', () => {
     async function makeUser(email: string): Promise<AppUser> {
       const result = await createUser({ email, role: 'viewer' });
       if ('error' in result) throw new Error(result.error);

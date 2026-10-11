@@ -3,13 +3,13 @@ import { describeCredentialFailure, NO_SUBSCRIPTIONS_MESSAGE } from './azure-cre
 import { safeErrorMessage } from './api-error';
 
 /**
- * "What can this credential see" — the shared diagnostic core behind onboarding step 2 and (later)
+ * "What can this credential see": the shared diagnostic core behind onboarding step 2 and (later)
  * the B4 diagnostics page. Takes an injected `TenantContext` rather than resolving one itself, so it
  * stays green under `tests/unit/azure-credential-chokepoint.test.ts` and testable with
  * `fakeTenantContext()`, whose credential deliberately throws if anything tries to use it for real.
  *
  * Every branch below returns a hand-written, client-safe sentence. The real error always goes to
- * `console.error` first — mirroring `serverError()` in `lib/api-error.ts` — because an ARG or Graph
+ * `console.error` first (mirroring `serverError()` in `lib/api-error.ts`) because an ARG or Graph
  * error carries the tenant id, subscription ids and correlation ids, none of which belong in a
  * response an admin might screenshot into a support thread.
  */
@@ -45,7 +45,7 @@ export interface PreflightOptions {
   fetchImpl?: typeof fetch;
   /** Named in the Graph remediation text, so an admin knows which app registration to grant consent to. */
   clientId?: string;
-  /** Default true. Set false to skip the Graph probe entirely — `fetchImpl` is then never called. */
+  /** Default true. Set false to skip the Graph probe entirely: `fetchImpl` is then never called. */
   includeGraph?: boolean;
 }
 
@@ -86,7 +86,7 @@ async function checkCredential(getToken: (scope: string) => Promise<string | nul
  * Reads `ctx.subscriptionIds` rather than calling `listAccessibleSubscriptions()` again.
  *
  * The route builds `ctx` via `createTenantContext()` moments before calling `runPreflight()`, and
- * that construction already resolved this exact list — a second live call would be redundant in
+ * that construction already resolved this exact list. A second live call would be redundant in
  * production and, worse, untestable: `fakeTenantContext()`'s credential deliberately throws if
  * anything tries to use it for a real Azure SDK call, and this codebase's rule is no live Azure
  * calls in tests. Reading the already-resolved list keeps this check fast and fully exercisable
@@ -145,7 +145,7 @@ async function checkResourceGraph(
     }
 
     // A count mismatch against the subscriptions check means Reader is assigned somewhere Resource
-    // Graph doesn't yet index — invisible today, so surface it rather than silently under-reporting.
+    // Graph doesn't yet index: invisible today, so surface it rather than silently under-reporting.
     const status: PreflightStatus = expectedCount > 0 && subscriptions.length !== expectedCount ? 'warn' : 'ok';
     return {
       subscriptions,
@@ -192,7 +192,7 @@ async function checkGraphApplications(
     }, { fetchImpl });
     const durationMs = Date.now() - start;
 
-    // Directory rules are 1 backend among several, and the product works without this one — a red
+    // Directory rules are 1 backend among several, and the product works without this one. A red
     // FAILED here reads as "RuleBeat is broken" when really it just means directory rules are
     // unavailable, so this is warn, not fail.
     if (res.status === 403) {
@@ -226,8 +226,8 @@ async function checkGraphApplications(
 }
 
 /**
- * Log Analytics is one query backend among several (spec 035) — a rule-authoring feature the
- * product works without, same framing as `checkGraphApplications` above — so an unreachable or
+ * Log Analytics is one query backend among several (spec 035), a rule-authoring feature the
+ * product works without, same framing as `checkGraphApplications` above, so an unreachable or
  * misconfigured workspace only ever warns, never fails the overall result. "Not configured" is its
  * own `skipped` status rather than a warn, since a fresh install with no workspace connected yet is
  * the expected default state, not a problem to flag.
@@ -280,7 +280,7 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
         id: 'graph-applications', label: 'Microsoft Graph (directory rules)', status: 'skipped',
         summary: 'Directory rules were not run.', durationMs: 0,
       };
-  // _checkLogAnalytics() stays defined but unused (spec 038) — Log Analytics rule/query authoring
+  // _checkLogAnalytics() stays defined but unused (spec 038): Log Analytics rule/query authoring
   // is paused in the GUI pending multi-workspace targeting, so its preflight row is paused too.
   const checks = [credentialCheck, subscriptionsCheck, resourceGraphCheck, graphCheck];
   const overall: PreflightStatus = checks.some(c => c.status === 'fail')
@@ -293,13 +293,13 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
 /**
  * The result for a preflight that never got a context to probe with. `createTenantContext()`
  * resolves the credential and lists its subscriptions, so a bad secret or an unreachable Azure
- * throws there, before `runPreflight()` runs a single check — exactly the failure this page exists
+ * throws there, before `runPreflight()` runs a single check: exactly the failure this page exists
  * to explain. Folding it into the normal result shape keeps the onboarding step on its per-check
  * rendering: the credential row fails with the same curated wording the in-run check uses, and the
  * checks that never ran say why they were skipped instead of disappearing.
  */
 export function credentialFailedPreflight(err: unknown, durationMs: number): PreflightResult {
-  // Raw error to the server log only, mirroring checkCredential() — it can carry tenant and
+  // Raw error to the server log only, mirroring checkCredential(). It can carry tenant and
   // correlation ids.
   console.error('[RuleBeat] preflight: building the tenant context failed:', err);
   const notRun = 'Not run because the Azure credential check failed.';

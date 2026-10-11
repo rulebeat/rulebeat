@@ -1,8 +1,8 @@
 /**
- * Spec 037 — POST /api/query/run-microsoft-graph, the live-query page's Microsoft Graph runner.
+ * Spec 037: POST /api/query/run-microsoft-graph, the live-query page's Microsoft Graph runner.
  * Same coverage shape as query-run-resource-graph.test.ts, plus the one thing unique to this route:
  * validateGraphQueryShape()'s 7-path resource allowlist is re-checked here (it already gates rule
- * authoring's /api/rules/validate-graph — see validate-graph.test.ts), confirming the live query page
+ * authoring's /api/rules/validate-graph: see validate-graph.test.ts), confirming the live query page
  * cannot reach a Graph resource type that rule authoring itself would refuse.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,7 +65,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rejects a shape-invalid graphQuery (non-allowlisted path), before any Azure call — same allowlist as rule authoring', async () => {
+  it('rejects a shape-invalid graphQuery (non-allowlisted path), before any Azure call, same allowlist as rule authoring', async () => {
     const res = await POST(postRequest({ graphQuery: { path: 'directoryObjects' } }));
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -132,7 +132,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
     expect(body.error).toMatch(/Invalid filter clause/);
   });
 
-  it('does not unwrap a non-400 Graph error — falls through to a generic 502', async () => {
+  it('does not unwrap a non-400 Graph error: falls through to a generic 502', async () => {
     fakeCtx = fakeTenantContext({ graphFailWith: new Error('Graph API 429: Too many requests') });
     const res = await POST(postRequest({ graphQuery: VALID_GQ }));
     expect(res.status).toBe(502);
@@ -156,7 +156,7 @@ describe('POST /api/query/run-microsoft-graph (spec 037)', () => {
     expect(entries[0].summary).toBe('Ran a microsoft-graph query (truncated after 250 rows)');
   });
 
-  describe('query run history (spec 037 follow-up — persisted, not sessionStorage)', () => {
+  describe('query run history (spec 037 follow-up: persisted, not sessionStorage)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ graphRows: [{ id: 'u1' }] });
       await POST(postRequest({ graphQuery: VALID_GQ }));

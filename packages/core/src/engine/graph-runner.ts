@@ -4,14 +4,14 @@ import { extractAzureErrorMessage } from '../errors.js';
 import type { Finding, TenantContext } from '../types.js';
 import type { GraphExpandConfig, GraphQuery, Rule, RuleExecutionStatus, RuleRunEvent } from './types.js';
 
-// Mirrors identity-scan.ts's daysUntil() exactly — ceil so "expires in the next few hours" still
+// Mirrors identity-scan.ts's daysUntil() exactly: ceil so "expires in the next few hours" still
 // reads as 1 day remaining, not 0.
 function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 }
 
 // First band (array order, tightest-first by convention) whose maxDays the item's remaining days
-// falls under. undefined means the item sits outside every band's window — not yet worth a
+// falls under. undefined means the item sits outside every band's window, not yet worth a
 // finding, mirroring identity-scan.ts's `if (days > WARN_DAYS) continue`.
 function severityForBands(days: number, bands: GraphExpandConfig['bands']) {
   for (const band of bands) {
@@ -20,7 +20,7 @@ function severityForBands(days: number, bands: GraphExpandConfig['bands']) {
   return undefined;
 }
 
-// A Graph property name is a simple identifier (passwordCredentials, keyCredentials) — never a
+// A Graph property name is a simple identifier (passwordCredentials, keyCredentials), never a
 // value with its own query syntax. This is the one shared check between a rule's save-time
 // validation (web's graph-rule-validation.ts) and buildGraphPath's own defence in depth below, so
 // the two can never drift apart.
@@ -34,12 +34,12 @@ export function isValidGraphFieldName(name: string): boolean {
 // Builds the Graph request path for a rule's query: the allowlisted resource path, an explicit
 // $select when expand is set (so the array field this rule expands is guaranteed present rather
 // than relying on Graph's default per-resource-type property set), and the rule's own $filter if
-// any. Literal commas in $select, not %2C — matches how every hand-written Graph query already
+// any. Literal commas in $select, not %2C: matches how every hand-written Graph query already
 // reads elsewhere in this codebase (see the identity-scan.ts query this engine replaces).
 export function buildGraphPath(gq: GraphQuery): string {
   const parts: string[] = [];
   if (gq.expand) {
-    // arrayField is inserted into $select raw, with no further encoding — it must already be a
+    // arrayField is inserted into $select raw, with no further encoding. It must already be a
     // bare identifier, or a value like "x&$top=1" would add query options this rule never
     // authored. Save-time validation (graph-rule-validation.ts) is meant to catch this first; this
     // is defence in depth for a rule whose stored data somehow predates that check.
@@ -48,7 +48,7 @@ export function buildGraphPath(gq: GraphQuery): string {
     }
     const select = ['id', 'displayName', gq.expand.arrayField];
     // appId is Applications-specific (the app registration's client id, distinct from its Graph
-    // object id) — only requested for that one path, since Graph rejects a $select naming a
+    // object id), only requested for that one path, since Graph rejects a $select naming a
     // property that doesn't exist on the requested resource type.
     if (gq.path === 'applications') select.push('appId');
     parts.push(`$select=${select.join(',')}`);
@@ -58,7 +58,7 @@ export function buildGraphPath(gq: GraphQuery): string {
 }
 
 // Reproduces identity-scan.ts's one verified real portal deep link (the AAD app registration
-// credentials blade, keyed on appId — not the Graph object id). The other 6 allowlisted paths have
+// credentials blade, keyed on appId, not the Graph object id). The other 6 allowlisted paths have
 // no equivalent verified link, so a generic Graph finding gets no azurePortalLink rather than a
 // guessed URL that might not resolve.
 function graphPortalLink(gq: GraphQuery, parent: Record<string, unknown>): string | undefined {
@@ -68,7 +68,7 @@ function graphPortalLink(gq: GraphQuery, parent: Record<string, unknown>): strin
   return undefined;
 }
 
-// Graph-backend counterpart to runRules() (spec 032) — same RuleRunEvent/RuleExecutionStatus
+// Graph-backend counterpart to runRules() (spec 032), same RuleRunEvent/RuleExecutionStatus
 // contract, but Graph-shaped internals: no parseResourceId() (there is no ARM id to parse), no ARG
 // enrichment follow-up query, ctx.graphGet() instead of ctx.queryARG(). A per-rule try/catch keeps
 // one bad rule's failure from aborting every other Graph rule in the same scan (closes RB-RM-011).
@@ -82,7 +82,7 @@ export async function* runGraphRules(
     ctx.log(`Running rule: ${rule.name}`, { operation: 'rule-start', ruleId: rule.id, category: rule.category });
 
     // One consistent log line right before every outcome is yielded, for every status including
-    // 'success' — mirrors runner.ts's logOutcome exactly, same operation names, so a scan's log is
+    // 'success': mirrors runner.ts's logOutcome exactly, same operation names, so a scan's log is
     // one coherent per-rule audit trail regardless of which backend a rule runs on.
     const logOutcome = (status: RuleExecutionStatus, findingCount: number, durationMs: number, message: string) => {
       ctx.log(message, {
@@ -98,7 +98,7 @@ export async function* runGraphRules(
 
     const gq = rule.graphQuery;
     if (!gq) {
-      // Defensive only — POST/PUT require graphQuery for a microsoft-graph rule, so a null one
+      // Defensive only: POST/PUT require graphQuery for a microsoft-graph rule, so a null one
       // here means stored data drifted from that invariant, not a normal runtime path.
       logOutcome('failed', 0, 0, `Rule ${rule.id} has no Graph query configured.`);
       yield { kind: 'outcome', outcome: { ruleId: rule.id, status: 'failed', findingCount: 0 } };
@@ -113,7 +113,7 @@ export async function* runGraphRules(
         // fixture deliberately violates that at runtime (via a cast) to exercise this exact path.
         throw new Error('This tenant context has no Graph access configured.');
       }
-      // Inside the try, not before it: buildGraphPath can throw (an invalid expand.arrayField —
+      // Inside the try, not before it: buildGraphPath can throw (an invalid expand.arrayField:
       // see its own doc comment), and that throw must land this one rule's outcome as 'failed'
       // rather than escaping the generator and aborting every other rule in the same scan.
       const path = buildGraphPath(gq);
@@ -121,7 +121,7 @@ export async function* runGraphRules(
     } catch (err) {
       const durationMs = Date.now() - queryStartedAt;
       // A truncated Graph result set is real data RuleBeat itself flagged as incomplete (Graph has
-      // no self-reported truncation signal the way ARG does) — 'capped', not 'failed', mirroring
+      // no self-reported truncation signal the way ARG does): 'capped', not 'failed', mirroring
       // runner.ts's ResourceGraphTruncatedError handling. Either way it must never resolve this
       // rule's prior findings, which is why both land in the same catch.
       if (err instanceof GraphTruncatedError) {
@@ -135,7 +135,7 @@ export async function* runGraphRules(
     }
     const queryDurationMs = Date.now() - queryStartedAt;
 
-    // A row with no usable id can't produce a real finding — no portal link, no stable fingerprint
+    // A row with no usable id can't produce a real finding. No portal link, no stable fingerprint
     // (computeFingerprint hashes ruleId::resourceId, so a blank id collapses every such row onto
     // one record). Skip yielding those rows and downgrade the outcome, mirroring runner.ts's
     // identity-less-row handling (spec 005) exactly.

@@ -164,21 +164,21 @@ the Docker smoke test against either way. But nobody pulls an image by commit SH
 any version tag (`:0.1.1`) only move when `publish-image.yml` runs, and that workflow only fires
 on a pushed `vX.Y.Z` tag, i.e. only after `npm run release` and a deliberate `git push origin
 vX.Y.Z`. So a docs-only merge leaves an unreferenced `sha-<commit>` image sitting in the registry,
-doesn't move `:latest`, and doesn't change what `getAppVersion()` reports — it just waits in
+doesn't move `:latest`, and doesn't change what `getAppVersion()` reports. It just waits in
 `[Unreleased]` until the next real release bundles it in.
 
 ## Cutting a release
 
 Two GitHub Actions stages, run from the Actions tab, so tagging a release is never a step someone
-has to remember to do correctly from a local checkout — and so the actual diff gets reviewed
+has to remember to do correctly from a local checkout, and so the actual diff gets reviewed
 before anything is published, not just the decision to release.
 
 1. **Prepare release** (`workflow_dispatch`, pick `patch`/`minor`/`major`). Runs
-   `scripts/release.mjs` on a throwaway branch — the same script described below — then drops the
+   `scripts/release.mjs` on a throwaway branch (the same script described below) then drops the
    local tag it creates and opens a PR titled `release: vX.Y.Z` instead of pushing anything
    further. Nothing is tagged or published at this point.
 2. Review that PR like any other: the whole diff is the version bump plus the `CHANGELOG.md`
-   reshuffle, nothing else. **Merging it is the approval** — ordinary PR review, gated by whatever
+   reshuffle, nothing else. **Merging it is the approval**: ordinary PR review, gated by whatever
    branch protection `main` already has.
 3. **Tag release** picks up the merge automatically and runs, in this order: validate the release
    candidate, wait for CI to pass on the exact merge commit, create and push the `vX.Y.Z` tag, then
@@ -208,11 +208,11 @@ when it refuses: every mutating step runs inside a snapshot restored on any fail
 leaves the tree byte-identical. (That was not true until it was fixed and covered by
 `release-smoke-test.sh`; the manifests and lockfile were rewritten before the changelog was ever
 read.) It can still be run
-locally the same way if the two-stage workflow is ever unavailable — review the commit
+locally the same way if the two-stage workflow is ever unavailable: review the commit
 (`git show HEAD`), then `git push && git push origin vX.Y.Z` yourself, same as stage 3 above does.
 
 Either way, pushing the tag is what starts `publish-image.yml`, which itself refuses to promote a
-release whose tag disagrees with what `package.json`/`CHANGELOG.md` say — a check that runs
+release whose tag disagrees with what `package.json`/`CHANGELOG.md` say. A check that runs
 independently of both paths, so it still catches a tag pushed by hand with no script or workflow
 involved.
 

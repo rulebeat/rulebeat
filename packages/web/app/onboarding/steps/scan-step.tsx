@@ -9,11 +9,11 @@ import { useRunProgress } from '@/lib/hooks/use-run-progress';
 import { Loader2, PlayCircle } from 'lucide-react';
 
 /**
- * Onboarding step 4 — run the first scan and land on a real result.
+ * Onboarding step 4: run the first scan and land on a real result.
  *
  * `run.error` is never rendered: it's `errors.join('; ')` built from raw Azure/Graph error strings
  * (see `run-executor.ts`), including the `Graph API 403: <body>` case. Nothing in the product renders
- * it today and this must not become the first place — partial/error states show a count instead and
+ * it today and this must not become the first place: partial/error states show a count instead and
  * point at Run History.
  */
 export function ScanStep({ onBack, onFinish, busy }: { onBack: () => void; onFinish: () => Promise<void>; busy: boolean }) {

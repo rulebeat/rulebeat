@@ -33,8 +33,8 @@ function groupRuleIdsByCategory(rules: { id: string; category: string }[]): Map<
 
 /** The shared execution core for both scheduled and manual ("Run Scan") runs. Resolves the
  *  target into concrete categories + (for tag/rule targeting) scoped rule ids, runs each touched
- *  category via runCategoryScan, and records the whole execution as one schedule_runs row —
- *  the single source of truth Run History reads from, regardless of what triggered it. */
+ *  category via runCategoryScan, and records the whole execution as one schedule_runs row.
+ *  The single source of truth Run History reads from, regardless of what triggered it. */
 export async function executeTarget(
   target: RunTarget,
   opts: {
@@ -45,7 +45,7 @@ export async function executeTarget(
      *  running Demo's synthetic one. */
     ctx?: TenantContext;
     /** Injected by the demo generator so a replayed run is stamped at its simulated date instead
-     *  of the real current time — threaded through to startRun/finishRun and runCategoryScan. */
+     *  of the real current time: threaded through to startRun/finishRun and runCategoryScan. */
     now?: Date;
     /** Tests only: a shorter beat so a run lasting milliseconds still records one. */
     heartbeatIntervalMs?: number;
@@ -85,8 +85,8 @@ export async function executeTarget(
     const allNewFindings: import('./types').Finding[] = [];
     const allChangedFindings: ChangedFindingDetail[] = [];
     const errors: string[] = [];
-    // A category can come back with coverage: 'partial' — one or more rules failed or returned a
-    // capped/truncated result — without throwing at all, since runCategoryScan() completes
+    // A category can come back with coverage: 'partial' (one or more rules failed or returned a
+    // capped/truncated result) without throwing at all, since runCategoryScan() completes
     // normally in that case. That must still surface as a partial run, not a silent 'success'.
     const partialCategories: string[] = [];
 
@@ -110,7 +110,7 @@ export async function executeTarget(
         allChangedFindings.push(...outcome.changedFindings);
         if (outcome.summary.coverage === 'partial') partialCategories.push(categoryId);
         // Durable the moment this category's findings are durable (scan-runner.ts's
-        // syncScanFindings already wrote them) — not just once at the very end in finishRun(). A
+        // syncScanFindings already wrote them), not just once at the very end in finishRun(). A
         // crash before the next category starts would otherwise leave these findings with no
         // fingerprint ever recorded against the run, so recovery would have nothing to notify
         // from (spec 025).
@@ -121,7 +121,7 @@ export async function executeTarget(
           changedFindings: categoryChanged,
         });
       } catch (err) {
-        // Never put String(err) in a message that reaches the browser — an Azure SDK error carries
+        // Never put String(err) in a message that reaches the browser. An Azure SDK error carries
         // the full request URL (tenant and subscription ids). Run History renders run.error directly.
         console.error(`[RuleBeat] category ${categoryId} failed in scan run ${run.id}:`, err);
         errors.push(`${categoryId}: scan failed. Check the RuleBeat server logs for details`);

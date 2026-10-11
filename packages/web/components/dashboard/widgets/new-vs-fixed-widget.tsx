@@ -13,11 +13,11 @@ interface Config { category?: string; period?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
 /** Remediation velocity: findings created (incl. reactivated) vs. resolved per day, from
- *  finding_events — a platform team closing more than it opens is the story this chart tells.
+ *  finding_events: a platform team closing more than it opens is the story this chart tells.
  *  Works under every filter dimension (see getFindingEventCounts). */
 export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days — anything longer is empty air
+  const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days. Anything longer is empty air
   const params = useMemo(() => {
     const p = buildSummaryParams(merged);
     p.set('trendDays', String(trendDays));

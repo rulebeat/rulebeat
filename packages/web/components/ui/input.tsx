@@ -51,7 +51,7 @@ function Input({
   )
 }
 
-/** Multi-line. No `size` — a textarea is sized by `rows` or by its container. */
+/** Multi-line. No `size`. A textarea is sized by `rows` or by its container. */
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea

@@ -1,5 +1,5 @@
 /**
- * Spec 025 — two-pass startup crash recovery: interrupted `schedule_runs` rows left `status:
+ * Spec 025: two-pass startup crash recovery: interrupted `schedule_runs` rows left `status:
  * 'running'` by a crashed process (pass 1, recoverInterruptedRuns), and the durable notification
  * outbox for a run whose findings were persisted but never confirmed dispatched (pass 2,
  * recoverPendingNotifications). Also covers the live post-scan path in run-executor.ts that writes
@@ -119,7 +119,7 @@ describe('recoverInterruptedRuns (pass 1)', () => {
     expect(after.status).toBe('error');
     expect(after.finishedAt).not.toBeNull();
     expect(after.error).toBe('Run did not complete. The server restarted or crashed while this scan was in progress.');
-    expect(after.error).not.toMatch(/—/); // no em dash in product-facing copy
+    expect(after.error).not.toMatch(/\u2014/); // no em dash in product-facing copy
   });
 });
 
@@ -161,7 +161,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
     expect((await getRun(run.id))!.notifyStatus).toBe('sent');
   });
 
-  it('leaves an already-sent run untouched — no re-dispatch', async () => {
+  it('leaves an already-sent run untouched: no re-dispatch', async () => {
     const run = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
     await finishRun(run.id, {
       status: 'success', totalFindings: 0, newFindings: 0,
@@ -231,7 +231,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
       { triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
     );
 
-    // await executeTarget() fires dispatch without awaiting it — give the microtask queue a chance to
+    // await executeTarget() fires dispatch without awaiting it: give the microtask queue a chance to
     // reach the (deliberately unresolved) fetch call before asserting the durable outbox state.
     // While the webhook is in flight the row holds this process's claim ('sending', issue #88):
     // durable, so a crash here is recovered after the stale window, and exclusive, so a second

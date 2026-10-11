@@ -14,7 +14,7 @@ jobs:
   claude:
     # Gated on author_association, not just the @claude mention: this workflow runs Claude Code
     # Action against the repository, which costs real API usage per invocation. Once the repo is
-    # public, anyone who can comment on an issue or PR can type "@claude" — without this check
+    # public, anyone who can comment on an issue or PR can type "@claude". Without this check
     # that's an open door for any outside account to trigger paid runs. OWNER/MEMBER/COLLABORATOR
     # covers the maintainer and anyone explicitly given repo access; a first-time or outside
     # contributor's mention is silently ignored rather than run.

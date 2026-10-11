@@ -1,6 +1,6 @@
 /**
  * A cross-site "simple request" (no CORS preflight) can only ever carry a Content-Type of
- * text/plain, application/x-www-form-urlencoded or multipart/form-data — a browser always sets one
+ * text/plain, application/x-www-form-urlencoded or multipart/form-data. A browser always sets one
  * of those three automatically whenever a body is present, and never omits it. So a route that
  * parses whatever body it is handed as JSON regardless of Content-Type will also happily parse one
  * of those three, defeating the point of requiring an explicit JSON body for a state-changing

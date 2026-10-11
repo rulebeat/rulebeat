@@ -23,7 +23,7 @@ beforeEach(async () => {
 });
 
 // RB-QA-017: the forced-password-change flag only stopped page navigation
-// (app/(app)/layout.tsx), never the API — a still-temporary password kept working forever there.
+// (app/(app)/layout.tsx), never the API. A still-temporary password kept working forever there.
 describe('requireRole and a forced password change', () => {
   it('blocks a normal action while mustChangePassword is set', async () => {
     const user = await makeUser('owner@example.com');

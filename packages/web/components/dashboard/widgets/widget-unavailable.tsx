@@ -7,7 +7,7 @@ interface Props {
   onRetry: () => void;
 }
 
-/** Shared "the fetch failed" state for dashboard widgets — distinct from each widget's own
+/** Shared "the fetch failed" state for dashboard widgets: distinct from each widget's own
  *  empty-state branch, which only runs once a fetch has actually succeeded. See spec 010. */
 export function WidgetUnavailable({ onRetry }: Props) {
   return (

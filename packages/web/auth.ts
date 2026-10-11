@@ -12,7 +12,7 @@ interface EntraProfile {
 
 /**
  * Named and exported (rather than an inline arrow passed straight to `NextAuth()`) purely so
- * `tests/unit/auth-config.test.ts` can call it directly — the function-form config this needs (to
+ * `tests/unit/auth-config.test.ts` can call it directly. The function-form config this needs (to
  * `await` a DB-backed provider list) can't otherwise be inspected without booting the whole
  * Auth.js request pipeline.
  */
@@ -24,7 +24,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
       ...authConfig.callbacks,
       async signIn({ user, account, profile }) {
         // Other providers (the local Credentials provider) handle their own validation inside
-        // authorize() and normalize user.id there — this branch only concerns Entra.
+        // authorize() and normalize user.id there. This branch only concerns Entra.
         if (account?.provider !== 'microsoft-entra-id') return true;
 
         // Resolved fresh rather than read off a module-scope constant: the tenant this install
@@ -39,7 +39,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
         if (!p?.oid) return false;
 
         // Dynamic import keeps the SQLite-backed modules out of any code path that doesn't need
-        // them — proxy.ts no longer imports this file at all, but there's no reason for the
+        // them: proxy.ts no longer imports this file at all, but there's no reason for the
         // database to load any earlier than the moment a sign-in actually needs it.
         const { provisionUser } = await import('@/lib/provision-user');
         const email = user.email ?? p.email ?? p.preferred_username ?? '';
@@ -61,7 +61,7 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
         }
 
         // Normalize to our own users.id. The Entra provider otherwise leaves user.id as
-        // profile.sub, which is not a row in our users table — jwt() below reads this off `user`
+        // profile.sub, which is not a row in our users table: jwt() below reads this off `user`
         // unconditionally, so this is the one place that has to know which provider is which.
         user.id = provisioned.id;
         return true;
@@ -69,11 +69,11 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
       async jwt({ token, user, account }) {
         // `user` is only present on the initial sign-in; afterwards the value rides the token.
         // Every provider is responsible for setting user.id to our own users.id before this runs
-        // (Entra via the signIn callback above, Credentials via its own authorize()) — that's
+        // (Entra via the signIn callback above, Credentials via its own authorize()): that's
         // what makes this one line work for both without this callback knowing which provider ran.
         if (account && user?.id) {
           token.uid = user.id;
-          // Read fresh rather than trusting anything on `user`/`account` — neither provider object
+          // Read fresh rather than trusting anything on `user`/`account`: neither provider object
           // carries our own sessionEpoch column, and a stale value here would defeat the whole
           // point of spec 020's invalidation mechanism.
           const { getUser } = await import('@/lib/db/users');

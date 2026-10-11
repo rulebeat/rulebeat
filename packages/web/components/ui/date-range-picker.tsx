@@ -19,7 +19,7 @@ interface Props {
   onChange: (w: DateWindow) => void;
 }
 
-/** Shared window control — 24h/7d/30d presets (rolling, always relative to "now" whenever
+/** Shared window control: 24h/7d/30d presets (rolling, always relative to "now" whenever
  *  resolved) plus a "Custom" option opening a small popover with two native date inputs for a
  *  fixed calendar range. Used by both the dashboard filter bar and the Scans page. Follows the
  *  same portal + click-outside pattern as ChecklistDropdown (components/ui/checklist-dropdown.tsx). */

@@ -5,7 +5,7 @@
  * `useWidgetFetch` hook and `WidgetUnavailable` component, so a failed fetch renders "Couldn't load
  * this widget" instead of being indistinguishable from a genuinely empty result. This reads the
  * widget source files off disk (same style as qa-plan-doc-drift.test.ts) and fails the build the
- * moment a widget stops importing either piece — including a brand-new widget added later that
+ * moment a widget stops importing either piece, including a brand-new widget added later that
  * never adopted the pattern in the first place.
  */
 import { describe, expect, it } from 'vitest';

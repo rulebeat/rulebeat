@@ -27,7 +27,7 @@ export { describeAadstsError } from '@/lib/entra-errors';
 /**
  * The single place RuleBeat decides which identity it reads Azure with.
  *
- * Everything that touches Azure goes through here — `tests/unit/azure-credential-chokepoint.test.ts`
+ * Everything that touches Azure goes through here: `tests/unit/azure-credential-chokepoint.test.ts`
  * fails the build if any other file constructs a credential directly. That matters because the
  * credential can now come from three different places: a credential resolved in one code path but
  * not another is the kind of bug that looks like "scans work but the schema cache is empty".
@@ -36,12 +36,12 @@ export { describeAadstsError } from '@/lib/entra-errors';
  *
  *  1. **Environment variables.** An IaC, Docker or Marketplace deployment must be able to arrive
  *     fully configured and never show a setup screen, so env always wins over anything an admin
- *     typed into the UI. Within the env path the order follows Microsoft's own current guidance —
+ *     typed into the UI. Within the env path the order follows Microsoft's own current guidance:
  *     federated token (keyless) first, then certificate, then client secret last.
  *  2. **The credential stored via the UI**, for the human running `docker compose up` who has no
  *     way to set env vars after the fact.
  *  3. **`DefaultAzureCredential`**, which covers Managed Identity in Azure and `az login` locally.
- *     This is the best posture of the three and needs no configuration at all — it is last only
+ *     This is the best posture of the three and needs no configuration at all. It is last only
  *     because it is the one that can't be chosen explicitly.
  *
  * Note that step 1 constructs a *specific* credential rather than letting `DefaultAzureCredential`
@@ -109,12 +109,12 @@ function env(name: string): string | undefined {
  * group, is inherited by every child process, and lands in crash dumps and error reporters. A
  * mounted file is readable only by the process and never appears in container metadata.
  *
- * It also rotates without a rebuild — resolution reads the file on each call, so replacing the
+ * It also rotates without a rebuild: resolution reads the file on each call, so replacing the
  * mounted secret is picked up by the next scan.
  */
 export function readSecretFile(path: string): string {
   // `.trim()` is load-bearing. `echo "secret" > file` appends a newline, Entra rejects the value,
-  // and the resulting error says only "invalid client secret" — which sends people looking at the
+  // and the resulting error says only "invalid client secret", which sends people looking at the
   // app registration rather than at the trailing byte.
   const contents = readFileSync(path, 'utf8').trim();
   if (!contents) throw new AzureNotConfiguredError(`AZURE_CLIENT_SECRET_FILE points at ${path}, which is empty.`);
@@ -147,7 +147,7 @@ export async function resolveAzureCredential(): Promise<ResolvedAzureCredential>
   // The runtime half of the kill switch: every live Azure/Graph path in the app funnels through
   // this one function (tests/unit/azure-credential-chokepoint.test.ts proves no other file builds
   // a credential directly), so one branch here is provably total. It runs ahead of every other
-  // source, including env — a demo deployment that also happens to carry a real service principal
+  // source, including env. A demo deployment that also happens to carry a real service principal
   // in its environment must still never use it. AzureNotConfiguredError is deliberately reused
   // rather than a new error type: it is already the one type the API layer is allowed to surface
   // verbatim to the browser instead of routing through serverError().
@@ -182,7 +182,7 @@ export async function resolveAzureCredential(): Promise<ResolvedAzureCredential>
     }
 
     // EnvironmentCredential reads AZURE_CLIENT_SECRET / AZURE_CLIENT_CERTIFICATE_PATH itself, and
-    // handles the certificate password variant too — no reason to re-implement that here.
+    // handles the certificate password variant too. No reason to re-implement that here.
     return { source: envSource, tenantId, credential: new EnvironmentCredential() };
   }
 
@@ -196,7 +196,7 @@ export async function resolveAzureCredential(): Promise<ResolvedAzureCredential>
     };
   }
 
-  // Nothing explicit. Fall back to the ambient identity — but a tenant id is still required, since
+  // Nothing explicit. Fall back to the ambient identity, but a tenant id is still required, since
   // every ARG query and the sign-in configuration are both scoped to one.
   const tenantId = env('AZURE_TENANT_ID') ?? (await getActiveAzureCredentialSummary())?.tenantId;
   if (!tenantId) throw new AzureNotConfiguredError(NOT_CONFIGURED_MESSAGE);
@@ -205,7 +205,7 @@ export async function resolveAzureCredential(): Promise<ResolvedAzureCredential>
 }
 
 /**
- * A credential built from values that have not been stored yet — the "test this before I save it"
+ * A credential built from values that have not been stored yet. The "test this before I save it"
  * path in Settings → Azure connection.
  *
  * It lives here rather than in the route so that constructing an Azure credential anywhere outside
@@ -240,7 +240,7 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * would build its own `DefaultAzureCredential` and ignore both the env and stored paths.
  *
  * `logContext` (e.g. `{ runId }`) wires a real stdout logger in instead of `buildTenantContext()`'s
- * silent no-op default — every caller gets real logging, callers with no run to attach (onboarding,
+ * silent no-op default: every caller gets real logging, callers with no run to attach (onboarding,
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
  */
 export async function createTenantContext(logContext?: ScanLogContext): Promise<TenantContext> {
@@ -258,7 +258,7 @@ export interface AzureConnectionStatus {
   clientId: string | null;
   /**
    * True when environment variables are supplying the credential, which means the stored one is
-   * inert. The UI disables the form and says so — an admin editing a field that has no effect is
+   * inert. The UI disables the form and says so. An admin editing a field that has no effect is
    * worse than not offering the field.
    */
   managedByEnv: boolean;
@@ -351,7 +351,7 @@ export type VerifyResult =
   | { ok: false; error: string };
 
 /**
- * The zero-subscriptions message, shared verbatim with `lib/preflight.ts`'s `subscriptions` check —
+ * The zero-subscriptions message, shared verbatim with `lib/preflight.ts`'s `subscriptions` check,
  * both describe the exact same failure (authenticated, no Reader assignment anywhere) and must never
  * drift into two different phrasings of it.
  */
@@ -364,7 +364,7 @@ export const NO_SUBSCRIPTIONS_MESSAGE =
  *
  * Run before persisting anything: a saved credential that has never worked is the worst state to
  * leave an install in, because nothing surfaces the problem until the first scheduled scan returns
- * nothing at 3am. Zero visible subscriptions is treated as a failure for the same reason — the
+ * nothing at 3am. Zero visible subscriptions is treated as a failure for the same reason. The
  * credential authenticated but has no Reader assignment, so it cannot do the product's only job.
  */
 export async function verifyAzureCredential(credential: TokenCredential): Promise<VerifyResult> {
@@ -384,7 +384,7 @@ export async function verifyAzureCredential(credential: TokenCredential): Promis
  * Turns an Azure authentication failure into something an admin can act on.
  *
  * The raw error is never returned (it carries tenant ids, correlation ids and the list of identity
- * sources tried — see lib/api-error.ts), but "check the server logs" is a poor answer for a form the
+ * sources tried: see lib/api-error.ts), but "check the server logs" is a poor answer for a form the
  * admin is filling in right now, so the common causes get named explicitly.
  */
 export function describeCredentialFailure(err: unknown): string {

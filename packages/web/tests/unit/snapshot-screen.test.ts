@@ -164,6 +164,6 @@ describe('the line on a snapshot', () => {
     expect(LIVE_FINDING_NOTE).toMatch(/rows/i);
     expect(LIVE_FINDING_NOTE).toMatch(/status/i);
     expect(LIVE_FINDING_NOTE).toMatch(/live finding/i);
-    expect(LIVE_FINDING_NOTE).not.toContain('—');
+    expect(LIVE_FINDING_NOTE).not.toContain('\u2014');
   });
 });

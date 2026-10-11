@@ -7,7 +7,7 @@ test('the four Scans tabs navigate and keep the URL in sync', async ({ page }) =
 
   await page.goto(`${ADMIN_URL}/scans`);
   await expect(page).toHaveURL(/tab=results/);
-  // The finding's own `title` field ('E2E seeded finding') is never rendered in the Results view —
+  // The finding's own `title` field ('E2E seeded finding') is never rendered in the Results view,
   // only the seeded resource name ('e2estorage', set in scripts/seed-e2e.ts) and the rule that
   // detected it are.
   await expect(page.getByText('e2estorage')).toBeVisible({ timeout: 15_000 });
@@ -18,7 +18,7 @@ test('the four Scans tabs navigate and keep the URL in sync', async ({ page }) =
   await page.getByRole('link', { name: /^Rules/ }).click();
   await expect(page).toHaveURL(/tab=rules/);
 
-  // exact: true — the Rules tab lists rules whose own names can contain "Schedules" as a substring.
+  // exact: true. The Rules tab lists rules whose own names can contain "Schedules" as a substring.
   await page.getByRole('link', { name: 'Schedules', exact: true }).click();
   await expect(page).toHaveURL(/tab=schedules/);
 

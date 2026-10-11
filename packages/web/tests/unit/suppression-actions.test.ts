@@ -3,7 +3,7 @@
  * update the screen on the strength of the request alone: `handleUnsuppress` removed the
  * suppression without checking the DELETE's response, and the widget-mode suppressions load
  * collapsed a failed GET into the same `[]` as a genuinely empty one. This codebase has no React
- * component-rendering test layer (Vitest runs `environment: 'node'`, no @testing-library/react —
+ * component-rendering test layer (Vitest runs `environment: 'node'`, no @testing-library/react:
  * see rule-toggle.test.ts), so the contract, that the screen only changes when the server accepted
  * the change and a failed load never looks like empty data, is verified here against the
  * extracted request/apply functions with an injected fetch, the same approach rule-toggle.test.ts

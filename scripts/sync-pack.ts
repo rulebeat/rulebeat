@@ -16,7 +16,7 @@
  * (lib/pack-versioning.ts).
  *
  * The output file is committed to the repo. Self-hosters receive pack updates
- * as part of normal RuleBeat version upgrades — they never run this script.
+ * as part of normal RuleBeat version upgrades. They never run this script.
  */
 
 import { writeFileSync, readFileSync, existsSync } from 'fs';
@@ -92,10 +92,10 @@ function validatePolicies(policies: Policy[]): { valid: Policy[]; errors: string
     if (!p.name)        { errors.push(`Missing name on policy: ${p.id}`); continue; }
     if (!p.category)    { errors.push(`Missing category on policy: ${p.id}`); continue; }
     if (!p.severity)    { errors.push(`Missing severity on policy: ${p.id}`); continue; }
-    if (!p.rawKql)      { errors.push(`No rawKql on policy: ${p.id} — skipping`); continue; }
+    if (!p.rawKql)      { errors.push(`No rawKql on policy: ${p.id}: skipping`); continue; }
     if (seenIds.has(p.id)) { errors.push(`Duplicate id: ${p.id}`); continue; }
     if (seenNames.has(p.name.toLowerCase())) {
-      errors.push(`Duplicate name: "${p.name}" — appending guid suffix`);
+      errors.push(`Duplicate name: "${p.name}": appending guid suffix`);
       // Make name unique by appending id suffix
       p.name = `${p.name} (${p.id.split('-').pop()})`;
     }

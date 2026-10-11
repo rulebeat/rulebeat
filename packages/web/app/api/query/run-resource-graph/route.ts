@@ -9,14 +9,14 @@ import { extractAzureErrorMessage, ResourceGraphTruncatedError, type TenantConte
 import { createTenantContext } from '@/lib/azure-credential';
 import type { RuleScope } from '@/lib/types';
 
-// This route's own display cap on the JSON payload — distinct from Azure's own `resultTruncated`
+// This route's own display cap on the JSON payload: distinct from Azure's own `resultTruncated`
 // signal (see ResourceGraphTruncatedError below). The underlying client call is unchanged and pages
 // to Azure's own limit before ever throwing; this route slices the full returned array down to this
 // number itself and reports that as `capped`, independent of `truncated`.
 const RESPONSE_ROW_CAP = 500;
 
 /**
- * Only a 400 from Resource Graph is a malformed-query error the user can act on — same 400-only gate
+ * Only a 400 from Resource Graph is a malformed-query error the user can act on, same 400-only gate
  * as validate-kql/route.ts's twin helper. Anything else goes through azureError/safeErrorMessage.
  */
 function extractAzureError(err: unknown): string | null {

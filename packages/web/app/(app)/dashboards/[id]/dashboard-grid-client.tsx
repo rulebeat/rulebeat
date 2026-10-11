@@ -139,7 +139,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
   useEffect(() => { widgetsRef.current = widgets; }, [widgets]);
   const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 });
 
-  // Filter-bar persistence — deliberately independent of the widget-layout `dirty`/edit-mode Save
+  // Filter-bar persistence: deliberately independent of the widget-layout `dirty`/edit-mode Save
   // flow above: changing a filter bumps refreshKey immediately (all widgets refetch) and persists
   // to the server debounced, with no explicit "Save" required and regardless of `editMode`. Built
   // from `dashboard.config` (last-synced state), never the possibly-dirty `widgets` local state,
@@ -162,7 +162,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
   }, [dashFilters, dateWindow]);
 
   // Every widget below self-fetches from /api/widgets/summary (or its own route) keyed off
-  // `refreshKey` — bumping it is the shared "refetch everything" signal for manual refresh and
+  // `refreshKey`: bumping it is the shared "refetch everything" signal for manual refresh and
   // auto-refresh alike, no dashboard-level fetch needed here anymore.
   const fetchData = useCallback(() => {
     setRefreshKey(k => k + 1);
@@ -171,7 +171,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
   // Auto-refresh
   useEffect(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
-    // Synchronizing the countdown to an external timer (setInterval), not deriving render state —
+    // Synchronizing the countdown to an external timer (setInterval), not deriving render state:
     // legitimate effect setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!autoRefresh) { setCountdown(0); return; }
@@ -193,8 +193,8 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
      Only ever shrinks: anything taller than its box keeps its own scrollbar.
      Watches the DOM rather than running once, because every widget fetches its own
      data: at first paint they are all spinners and there is nothing to measure. The
-     MutationObserver is the one that matters — it catches a widget swapping its
-     spinner for content — and the ResizeObserver handles the window being resized. */
+     MutationObserver is the one that matters: it catches a widget swapping its
+     spinner for content, and the ResizeObserver handles the window being resized. */
   useEffect(() => {
     const container = gridContainerRef.current as HTMLElement | null;
     if (!container || editMode) return; // in edit mode the heights are the user's to set
@@ -207,7 +207,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
       let changed = false;
 
       // Blocks appear as each widget's fetch resolves, so pick up any that are new
-      // since the last pass — a content block that grows later still gets measured.
+      // since the last pass: a content block that grows later still gets measured.
       container.querySelectorAll('[data-widget-content]').forEach(el => ro.observe(el));
 
       const next = current.map(w => {
@@ -234,7 +234,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
 
       if (!changed) return;
       /* Shrinking a widget makes the grid compact everything below it upward, and
-         RGL reports that back through onLayoutChange with new positions — which is
+         RGL reports that back through onLayoutChange with new positions, which is
          fine: this pass only ever runs outside edit mode, and a layout change
          outside edit mode never marks the dashboard dirty (see onLayoutChange). */
       widgetsRef.current = next;
@@ -257,7 +257,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
 
   // Layout change from drag/resize, and from RGL's own compaction passes.
   // RGL v2 fires onLayoutChange on mount (and after each state update) with the compacted layout.
-  // We compare against the current widget positions — only sync when something actually moved.
+  // We compare against the current widget positions. Only sync when something actually moved.
   function onLayoutChange(layout: RGLLayoutArray) {
     const items = layout as RGLLayout[];
     const current = widgetsRef.current;
@@ -267,7 +267,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
       return w && (w.x !== item.x || w.y !== item.y || w.w !== item.w || w.h !== item.h);
     });
 
-    if (!changed) return; // positions identical — RGL internal re-fire, ignore
+    if (!changed) return; // positions identical: RGL internal re-fire, ignore
 
     const merged = current.map(w => {
       const l = items.find(i => i.i === w.id);
@@ -278,8 +278,8 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
     /* Machine-made moves arrive through this same callback: the mount-time compaction
        of the stored layout, and the grid re-packing after the fit-to-content shrink
        above. A timing flag used to tell those apart from a person's drag, and lost
-       the race whenever two widgets' fits overlapped its 300ms window — exactly what
-       a fresh load with a dozen self-fetching widgets does — so the dashboard
+       the race whenever two widgets' fits overlapped its 300ms window (exactly what
+       a fresh load with a dozen self-fetching widgets does), so the dashboard
        offered "Save changes" to someone who had only opened it. Edit mode is the
        reliable distinction: dragging and resizing exist only there, and the
        fit-to-content pass never runs there. */
@@ -319,8 +319,8 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: updatedName,
-          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys —
-          // that persistence is independent (see the debounced effect above).
+          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
+          // That persistence is independent (see the debounced effect above).
           config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
         }),
       });
@@ -407,7 +407,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
     /* No height cap and no scroll container of its own. The app has exactly one
        scroll region (app/(app)/layout.tsx) and this page used to add a second one
        around the grid, which meant the wheel scrolled whichever of the two the
-       pointer happened to be over — so scrolling stopped dead partway down and
+       pointer happened to be over, so scrolling stopped dead partway down and
        only resumed after moving the cursor off a widget. */
     <div className="flex flex-col">
       {/* Toolbar and filters pin together as one block. Separately, the filter bar
@@ -532,7 +532,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
         </DropdownMenu>
       </div>
 
-      {/* Dashboard-level filter bar — persists independently of edit mode / layout Save */}
+      {/* Dashboard-level filter bar: persists independently of edit mode / layout Save */}
       <DashboardFilterBar
         filters={dashFilters}
         dateWindow={dateWindow}

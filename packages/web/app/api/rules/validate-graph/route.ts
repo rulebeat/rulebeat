@@ -11,7 +11,7 @@ type GraphRow = { id?: string; displayName?: string };
 /**
  * Same 400-only gate as validate-kql's extractAzureError, adapted to how a Graph failure actually
  * surfaces here: graphGetAll() (packages/core/src/auth/index.ts) throws a plain Error whose message
- * is `Graph API {status}: {body}` — there is no nested SDK error object to unwrap for this backend,
+ * is `Graph API {status}: {body}`. There is no nested SDK error object to unwrap for this backend,
  * so the status is read back out of the message instead. Only a 400 (a malformed $filter) is
  * something the person validating a query can act on; anything else risks naming the tenant/identity
  * and goes through `azureError`/`safeErrorMessage` instead.
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   } catch (err) {
     // Deliberately not `extractGraphQueryError`: a credential failure describes which identity
     // sources were tried and against which tenant, which the person validating a query cannot act
-    // on anyway. `azureError` still lets the one actionable case through — Azure isn't connected yet.
+    // on anyway. `azureError` still lets the one actionable case through: Azure isn't connected yet.
     return azureError('Could not connect to Azure to validate this query', err);
   }
 
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       })),
     });
   } catch (err) {
-    // A capped result is real data, not a failure — same "capped, not failed" distinction
+    // A capped result is real data, not a failure, same "capped, not failed" distinction
     // runGraphRules() draws for a scan, just with no partial rows to preview here.
     if (err instanceof GraphTruncatedError) {
       return NextResponse.json({ count: err.rowsSeen, truncated: true, samples: [] });

@@ -8,7 +8,7 @@ import { Callout } from '@/components/ui/callout';
 import { Input, Label } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 
-/** `?error=` values Auth.js redirects with — read from source, not observed, since there is no
+/** `?error=` values Auth.js redirects with: read from source, not observed, since there is no
  * live tenant here to trigger them against. Anything else falls back to a generic message. */
 const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied: 'That Microsoft account can\'t sign in here. It may not be in the right tenant, or an admin hasn\'t added it yet. Ask an admin to add you.',

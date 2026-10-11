@@ -8,7 +8,7 @@ import { isScheduleTargetType } from '@/lib/db/schedules';
 
 /**
  * Reports the most recent run, for `use-run-progress.ts` to poll. `since` filters out a run that
- * predates the caller's own POST — without it, a scan that finished moments before this page loaded
+ * predates the caller's own POST. Without it, a scan that finished moments before this page loaded
  * would look like the one this caller just triggered.
  */
 export async function GET(req: Request) {
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     details: { targetType: body.targetType, targetValues },
   });
 
-  // Scans can take a while — fire and let the client poll GET above, same pattern as the
+  // Scans can take a while: fire and let the client poll GET above, same pattern as the
   // schedule "run now" trigger, rather than holding the HTTP request open for the full run.
   // requestedAt is the server clock deliberately: use-run-progress.ts compares it against
   // ScheduleRun.startedAt (also server time), so deriving it in the browser would let clock skew

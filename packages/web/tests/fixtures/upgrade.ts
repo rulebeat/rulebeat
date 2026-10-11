@@ -1,8 +1,8 @@
 /**
  * Two ways to put a sample database through the product's upgrade, plus the scaffolding both need.
  *
- * `upgradeInProcess` calls the migration functions directly and is what the suite uses throughout —
- * it is fast, and it can be pointed at a database left in a half-migrated state.
+ * `upgradeInProcess` calls the migration functions directly and is what the suite uses throughout.
+ * It is fast, and it can be pointed at a database left in a half-migrated state.
  *
  * `upgradeViaStartup` spawns a process and imports `lib/db/client.ts` for real. It is slow and
  * clumsy, and it exists for exactly one purpose: proving that the direct calls do the same thing the
@@ -50,7 +50,7 @@ export function open(file: string): Database.Database {
 }
 
 /**
- * Upgrades a sample by calling the migration functions directly — the same two calls, in the same
+ * Upgrades a sample by calling the migration functions directly. The same two calls, in the same
  * order, that `lib/db/client.ts` makes on startup.
  *
  * Fast enough to use everywhere, and unlike the child-process route it can be pointed at a database
@@ -78,7 +78,7 @@ export function upgradeViaStartup(sample: Sample, env: Record<string, string> = 
   if (!('RULEBEAT_INITIAL_ADMIN' in env)) delete childEnv.RULEBEAT_INITIAL_ADMIN;
   // Also deleted: Vitest sets this in its own process, and `...process.env` above would otherwise
   // carry it into the child. `lib/db/client.ts` reads it to skip the owner-bootstrap file write
-  // (unsafe from an ordinary test importing client.ts, whose dataDir it can't control) — but this
+  // (unsafe from an ordinary test importing client.ts, whose dataDir it can't control), but this
   // child's cwd is the sample's own throwaway directory, so the write is safe here and skipping it
   // would make this path diverge from `upgradeInProcess`, which never skips it.
   delete childEnv.VITEST;

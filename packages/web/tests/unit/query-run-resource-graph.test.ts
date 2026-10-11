@@ -1,5 +1,5 @@
 /**
- * Spec 037 — POST /api/query/run-resource-graph, the live-query page's Resource Graph runner.
+ * Spec 037: POST /api/query/run-resource-graph, the live-query page's Resource Graph runner.
  * Mirrors validate-graph.test.ts's coverage pattern for its sibling route (rule authoring's
  * validate-graph), plus what's unique to this route: its own response-level row cap distinct from
  * Azure's truncation signal (RESPONSE_ROW_CAP = 500, not validate-graph's 5-sample cap), the
@@ -131,7 +131,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     expect(body.error).toBe('Bad request syntax near "whree"');
   });
 
-  it('does not unwrap a non-400 error — falls through to a generic 502', async () => {
+  it('does not unwrap a non-400 error: falls through to a generic 502', async () => {
     const err = new Error('Internal Server Error') as Error & { statusCode: number };
     err.statusCode = 500;
     fakeCtx = fakeTenantContext({ failWith: err });
@@ -183,7 +183,7 @@ describe('POST /api/query/run-resource-graph (spec 037)', () => {
     expect(entries[0].entityId).toBe(saved.id);
   });
 
-  describe('query run history (spec 037 follow-up — persisted, not sessionStorage)', () => {
+  describe('query run history (spec 037 follow-up: persisted, not sessionStorage)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ rows: [{ id: 'r1' }, { id: 'r2' }] });
       await POST(postRequest({ kql: 'resources' }));

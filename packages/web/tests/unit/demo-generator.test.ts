@@ -4,14 +4,14 @@
  * These modules ship in the image and run at a Demo's boot (lib/demo/boot.ts). They were first
  * proven to work once, end to end, by hand: `npm run generate-demo` produced 510 resources, 886
  * findings across all 5 categories and 60 successful schedule_runs with zero query failures. This
- * suite pins that behaviour so it stays true — the risk isn't the generator's own logic (it's pure
+ * suite pins that behaviour so it stays true. The risk isn't the generator's own logic (it's pure
  * functions and one already-tested fake context), it's *drift*: a future edit to builtin-rules.ts
  * or a re-sync of the aprl-v2 pack changing a rule's rawKql out from under a hand-authored or
  * generic fixture, which fake-context.ts's own comment notes would otherwise render as "this rule
  * found nothing" instead of a build error.
  *
- * Runs against the ambient test database tests/setup.ts already points at a throwaway file —
- * nothing here touches demo.db or rulebeat.db.
+ * Runs against the ambient test database tests/setup.ts already points at a throwaway file.
+ * Nothing here touches demo.db or rulebeat.db.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -45,7 +45,7 @@ async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
 }
 
 // lib/db/client.ts's own pack-seeding call resolves its data directory from process.cwd(), which
-// this repo's own `npm test`/`npm run test:web` invoke from the repo root — a directory with no
+// this repo's own `npm test`/`npm run test:web` invoke from the repo root. A directory with no
 // data/packs/ of its own (see pack-defaults.test.ts, which hits the same thing and works around it
 // the same way). Re-run runSeeds against the *real*, __dirname-anchored data dir on top of the
 // ambient test db so await loadRules() below actually returns the committed aprl-v2 pack regardless of
@@ -56,7 +56,7 @@ runSeeds(rawSqlite!, REAL_DATA_DIR, { skipOwnerBootstrap: true });
 
 // ── Determinism ─────────────────────────────────────────────────────────────────────────────────
 // Every downstream assertion in this file relies on the generator being a pure function of its
-// hardcoded seeds — if it weren't, "run it once, assert fixed counts" (the plan's own stated design)
+// hardcoded seeds: if it weren't, "run it once, assert fixed counts" (the plan's own stated design)
 // would be impossible.
 
 describe('determinism', () => {
@@ -125,7 +125,7 @@ describe('Seed', () => {
 });
 
 // ── extractProjectColumns() ─────────────────────────────────────────────────────────────────────
-// A standalone parser (deliberately not @rulebeat/core's own, see kql-columns.ts's doc comment) —
+// A standalone parser (deliberately not @rulebeat/core's own, see kql-columns.ts's doc comment):
 // worth testing directly since a wrong split here silently mis-shapes a fixture's fake ARG rows.
 
 describe('extractProjectColumns()', () => {
@@ -170,7 +170,7 @@ describe('extractProjectColumns()', () => {
 // ── violation-engine.ts ─────────────────────────────────────────────────────────────────────────
 
 describe('isViolatingOnDay()', () => {
-  it('is a pure function of (rule, resource, day) — repeated calls agree', async () => {
+  it('is a pure function of (rule, resource, day): repeated calls agree', async () => {
     const calls = Array.from({ length: 5 }, () =>
       isViolatingOnDay('rule-a', 'high', 'resource-1', 10, 60),
     );
@@ -197,7 +197,7 @@ describe('isViolatingOnDay()', () => {
     expect(critical).toBeLessThan(high);
     expect(high).toBeLessThan(medium);
     expect(medium).toBeLessThan(low);
-    // Loose bounds around the documented rates (0.08/0.14/0.22/0.3) — this guards against someone
+    // Loose bounds around the documented rates (0.08/0.14/0.22/0.3). This guards against someone
     // accidentally flattening or inverting the table, not against every possible tuning tweak.
     expect(critical).toBeGreaterThan(0.03);
     expect(critical).toBeLessThan(0.15);
@@ -207,7 +207,7 @@ describe('isViolatingOnDay()', () => {
 
   it('produces at least one resource whose answer changes between day 0 and the final day', async () => {
     // Proves the lifecycle patterns (resolved-partway / new-partway / resolved-reactivated) actually
-    // fire, not just the static "steady" case — a demo where nothing ever changes would make the
+    // fire, not just the static "steady" case. A demo where nothing ever changes would make the
     // trend/new-vs-fixed dashboard widgets show a flat line.
     const totalDays = 60;
     const resourceIds = Array.from({ length: 500 }, (_, i) => `lifecycle-${i}`);
@@ -240,7 +240,7 @@ describe('rowsForRuleOnDay()', () => {
 });
 
 // ── Fixture curation against the real, live rule set ───────────────────────────────────────────
-// These import lib/rules, which reads the ambient (throwaway) test database — the same one
+// These import lib/rules, which reads the ambient (throwaway) test database. The same one
 // tests/setup.ts already isolates per file.
 
 describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
@@ -274,7 +274,7 @@ describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
     expect(exercised).toBeGreaterThan(0);
   });
 
-  it('no APRL fixture reuses a core rule id — the fixturesByRuleId Map must not silently drop one', async () => {
+  it('no APRL fixture reuses a core rule id: the fixturesByRuleId Map must not silently drop one', async () => {
     const rules = await loadRules();
     const aprlFixtures = buildAprlFixtures(rules);
     const aprlIds = new Set(aprlFixtures.map(f => f.ruleId));
@@ -284,7 +284,7 @@ describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
 
 // ── fake-context.ts: the "never fail silently" safety net ─────────────────────────────────────
 // runner.ts swallows a per-rule query failure into a log line rather than throwing (so one bad rule
-// doesn't abort a real scan) — assertNoQueryFailures exists specifically to turn that back into a
+// doesn't abort a real scan): assertNoQueryFailures exists specifically to turn that back into a
 // hard failure for the generator. Prove both halves: the swallow, and the net that catches it.
 
 describe('createFakeContext() query/graph mismatches are caught, not silently empty', () => {
@@ -318,17 +318,17 @@ describe('createFakeContext() query/graph mismatches are caught, not silently em
     await expect(ctx.queryARG(baseRule().rawKql!)).rejects.toThrow(/no fixture matched/);
   });
 
-  it('runRules() turns that into a failed outcome event instead of throwing — and assertNoQueryFailures catches it', async () => {
+  it('runRules() turns that into a failed outcome event instead of throwing, and assertNoQueryFailures catches it', async () => {
     const ctx = createFakeContext({
       estate, identityApps, day: 0, totalDays: 5,
       rules: [baseRule()],
       fixturesByRuleId: new Map(),
     });
 
-    // runRules is an async generator (AsyncIterable<RuleRunEvent<Finding>>), not a Promise —
-    // draining it is what exercises the try/catch around ctx.queryARG(); a failed rule yields no
+    // runRules is an async generator (AsyncIterable<RuleRunEvent<Finding>>), not a Promise.
+    // Draining it is what exercises the try/catch around ctx.queryARG(); a failed rule yields no
     // 'finding' events and a single 'outcome' event with status 'failed' rather than rejecting the
-    // whole run (spec 004 — a 'failed' outcome must never resolve the rule's prior findings).
+    // whole run (spec 004: a 'failed' outcome must never resolve the rule's prior findings).
     const events = await drain(runRules([baseRule()], ctx));
     expect(events).toEqual([
       { kind: 'outcome', outcome: { ruleId: 'unmatched-rule', status: 'failed', findingCount: 0 } },
@@ -375,11 +375,11 @@ describe('createFakeContext() query/graph mismatches are caught, not silently em
 // ── replay(): the real integration, at a small scale ───────────────────────────────────────────
 // Applies run.ts's own rule curation (curateRules → setRulesEnabled, held-back rules switched off)
 // against the ambient test database, then replays a handful of simulated days
-// through the real await executeTarget()/await runCategoryScan()/runRules() pipeline — the same path the full
+// through the real await executeTarget()/await runCategoryScan()/runRules() pipeline. The same path the full
 // 60-day `npm run generate-demo` run already proved works by hand. A small totalDays keeps this
 // fast while still exercising every category, including identity.
 
-describe('replay() — small-scale integration against the real scan pipeline', () => {
+describe('replay(): small-scale integration against the real scan pipeline', () => {
   it('replays N days with zero query failures and populates findings across every category', async () => {
     const estate = buildEstate();
     const identityApps = buildIdentityApps();
@@ -410,7 +410,7 @@ describe('replay() — small-scale integration against the real scan pipeline', 
     const identityFindings = allFindings.filter(f => f.category === 'identity');
     expect(identityFindings.length).toBeGreaterThan(0);
     for (const f of identityFindings) {
-      // App registrations are a Graph concept, not an ARM resource — they have no resource group or
+      // App registrations are a Graph concept, not an ARM resource. They have no resource group or
       // region, unlike every ARM-backed finding from the other four categories.
       expect(f.resourceGroup).toBeNull();
       expect(f.location).toBeNull();
@@ -434,7 +434,7 @@ describe('replay() — small-scale integration against the real scan pipeline', 
 // whole path from generation to a Visitor's first scan of the rule. Here, with the other generator
 // suites, because the generator is SQLite-only by design (vitest.config.mts).
 
-describe('curateRules() — the held-back rule', () => {
+describe('curateRules(): the held-back rule', () => {
   afterEach(() => {
     resetLiveDemoContextForTests();
   });

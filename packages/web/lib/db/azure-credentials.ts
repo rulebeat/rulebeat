@@ -6,7 +6,7 @@ import { decryptSecret, encryptSecret } from '@/lib/secret-box';
 
 /**
  * The Azure service principal entered through the UI. See `lib/azure-credential.ts` for how this
- * fits into credential resolution — environment variables always win over anything stored here.
+ * fits into credential resolution: environment variables always win over anything stored here.
  *
  * The table allows several rows so that scanning a second tenant later is a new record rather than a
  * migration, but exactly one is active at a time and the UI only ever manages that one.
@@ -35,7 +35,7 @@ export interface AzureCredentialSummary {
   clientId: string;
   /** Whether a secret is on file. The secret itself never leaves the server. */
   secretSet: boolean;
-  /** True when the stored secret can no longer be decrypted — the key was rotated or lost. */
+  /** True when the stored secret can no longer be decrypted. The key was rotated or lost. */
   secretUnreadable: boolean;
   isActive: boolean;
   lastVerifiedAt: string | null;
@@ -80,7 +80,7 @@ export async function getActiveAzureCredentialSummary(): Promise<AzureCredential
  * The active credential with its secret decrypted, for actually calling Azure.
  *
  * Returns null when the secret can't be opened (rotated or lost key) rather than handing back
- * ciphertext that would fail authentication with a baffling error — the caller falls through to the
+ * ciphertext that would fail authentication with a baffling error. The caller falls through to the
  * next credential source, and the UI reports the credential as needing re-entry.
  */
 export async function getActiveAzureCredential(): Promise<StoredAzureCredential | null> {

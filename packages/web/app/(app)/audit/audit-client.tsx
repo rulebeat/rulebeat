@@ -38,7 +38,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
   saved_view: Bookmark,
 };
 
-// Destructive and access-changing actions are tinted so they stand out when scanning the list —
+// Destructive and access-changing actions are tinted so they stand out when scanning the list,
 // which is exactly what someone opens this page to look for.
 const NOTABLE_ACTIONS = new Set([
   'rule.delete', 'rule.clear_findings', 'suppression.create', 'schedule.delete', 'category.delete',

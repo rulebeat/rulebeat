@@ -35,17 +35,17 @@ export async function POST(req: Request) {
       samples: rows.slice(0, 5),
     });
   } catch (err) {
-    // A capped result is real data, not a failure — same "capped, not failed" distinction
+    // A capped result is real data, not a failure, same "capped, not failed" distinction
     // runLawRules() draws for a scan, just with no partial rows to preview here.
     if (err instanceof LogAnalyticsTruncatedError) {
       return NextResponse.json({ count: err.rowsSeen, truncated: true, samples: [] });
     }
-    // Distinct, actionable, and reliably detectable (its own error class, not a string match) —
+    // Distinct, actionable, and reliably detectable (its own error class, not a string match),
     // unlike the fallback below, telling the person "go configure a workspace" is safe to do here.
     if (err instanceof LogAnalyticsNotConfiguredError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    // A bad KQL string has no purpose-built error class the way truncation/not-configured do —
+    // A bad KQL string has no purpose-built error class the way truncation/not-configured do:
     // queryLogAnalyticsWorkspace() wraps it (and any real connectivity failure) through the same
     // generic extractAzureErrorMessage() unwrap, so the two aren't reliably distinguishable here
     // (spec 036 risk #1). Falls back to the same safe generic path validate-graph's own catch-all

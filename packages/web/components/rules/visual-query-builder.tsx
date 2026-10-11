@@ -240,12 +240,12 @@ function ConditionRow({ cond, fields, onChange, onRemove, canRemove }: {
   const meta = OP_MAP.get(cond.operator);
   const vt   = meta?.valueType ?? 'text';
 
-  // A condition the builder has no operator for — the same passthrough deal the advanced stages get.
+  // A condition the builder has no operator for. The same passthrough deal the advanced stages get.
   // Shown as its own KQL so it is readable, and written back out untouched; edit it in the KQL pane.
   if (cond.operator === 'raw') {
     return (
       <div className="flex items-start gap-2 border border-border bg-surface-sunken p-2.5">
-        {/* Not `label-grid` — that utility sets its own colour, and this badge needs to
+        {/* Not `label-grid`: that utility sets its own colour, and this badge needs to
             invert on an ink fill. Overriding a utility's colour from outside it is a
             specificity race nobody wins. */}
         <span className="mt-1 shrink-0 bg-ink px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-surface">
@@ -562,7 +562,7 @@ export function VisualQueryBuilder({ query, onChange, fields, readOnly, heading 
   onChange: (q: VisualQuery) => void;
   fields: string[];
   readOnly?: boolean;
-  // Not rendered as visible text — the call site's own CardTitle already shows this. Exposed as
+  // Not rendered as visible text: the call site's own CardTitle already shows this. Exposed as
   // an accessible name so the builder can be found by screen readers and by test selectors
   // querying accessible role/name.
   heading: string;
@@ -640,7 +640,7 @@ function makeDefaultStage(type: QueryStage['type']): QueryStage {
     case 'sort':      return { id: uid(), type: 'sort', columns: [{ field: '', direction: 'asc' }] };
     case 'limit':     return { id: uid(), type: 'limit', mode: 'take', count: 100 };
     case 'shape':     return { id: uid(), type: 'shape', mode: 'project', columns: [] };
-    // Never reachable from the UI — 'raw' is parser-only and deliberately excluded from
+    // Never reachable from the UI: 'raw' is parser-only and deliberately excluded from
     // STAGE_MENU_GROUPS, so this branch only exists to keep the switch exhaustive.
     case 'raw':       return { id: uid(), type: 'raw', clause: '' };
   }

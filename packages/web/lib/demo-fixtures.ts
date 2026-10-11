@@ -1,12 +1,12 @@
 /**
  * Fixed subscription identities shared between the demo API surface (this file, read by
  * `/api/azure/subscriptions`) and the future synthetic data generator
- * (`lib/demo/`) — both must agree on the same ids and names, or a demo
+ * (`lib/demo/`): both must agree on the same ids and names, or a demo
  * visitor's subscription picker and the scan data behind it disagree.
  *
  * IDs are fixed placeholder GUIDs, not randomly generated: the same demo looks the same every
  * time it's built, which is also what makes `demo-generator.test.ts` able to assert on it.
- * Names matter, not just ids — the subscription scorecard widget falls back to the raw GUID when
+ * Names matter, not just ids. The subscription scorecard widget falls back to the raw GUID when
  * a subscription has no display name, and that's the worst possible look for a demo.
  */
 export interface DemoSubscription {

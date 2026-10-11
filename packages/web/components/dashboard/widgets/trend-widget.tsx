@@ -73,11 +73,11 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   const { chartData, series } = useMemo(() => {
     if (!summary) return { chartData: [] as Array<Record<string, unknown>>, series: [] as Series[] };
     // RG/tag/severity/rule filters, or 2+ subscriptions, have no history in posture_snapshots
-    // (see dashboard-data.ts) — chartData stays empty but this is NOT "no data yet", so the
+    // (see dashboard-data.ts): chartData stays empty but this is NOT "no data yet", so the
     // render below must tell those two cases apart instead of showing one generic message.
     if (summary.trendIsCategoryScopedOnly) return { chartData: [] as Array<Record<string, unknown>>, series: [] as Series[] };
 
-    // `summary.perCategory` carries each category's live DB label/color — prefer it, falling back
+    // `summary.perCategory` carries each category's live DB label/color: prefer it, falling back
     // to the hardcoded constants only when a category isn't present there (e.g. no scan data yet).
     const catInfo = new Map(summary.perCategory.map(m => [m.category, m]));
     const labelFor = (id: string) => catInfo.get(id)?.label ?? CATEGORY_LABELS[id] ?? id;
@@ -85,7 +85,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     // names each line, and a user-picked hue is not guaranteed to read on both grounds.
     const colorFor = (_id: string, index: number) => chartSeriesColor(index);
     // The legend swatch and tooltip text, unlike the drawn line itself, show the category's real
-    // identity colour — the same one every other widget uses for this category — so a user can
+    // identity colour (the same one every other widget uses for this category) so a user can
     // match "this colour = this category" consistently even though the line uses a
     // guaranteed-legible position colour instead.
     const legendColorFor = (id: string, fallback: string) => catInfo.get(id)?.color ?? CATEGORY_COLORS[id] ?? fallback;

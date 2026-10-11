@@ -106,8 +106,8 @@ export function periodToDays(period: string, allDays: number): number {
   return 30;
 }
 
-/** Trend chart tooltip label (spec 033): "passing/total" reads a posture trend correctly —
- *  a bare percentage doesn't say whether it moved because rules changed or resources did. Falls
+/** Trend chart tooltip label (spec 033): "passing/total" reads a posture trend correctly.
+ *  A bare percentage doesn't say whether it moved because rules changed or resources did. Falls
  *  back to the bare percentage when a data point carries no passing/total (older snapshot rows,
  *  or the single-category chart shape, which stores them unprefixed on the row). */
 export function formatTrendTooltipLabel(dataKey: string, value: number, payload: Record<string, unknown>): string {

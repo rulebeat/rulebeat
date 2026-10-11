@@ -1,8 +1,8 @@
 /**
- * Spec 036 — POST /api/rules and PUT /api/rules/[id] apply the same shape/probe guard to a
+ * Spec 036: POST /api/rules and PUT /api/rules/[id] apply the same shape/probe guard to a
  * log-analytics rule's logsQuery that spec 032 already applies to a microsoft-graph rule's
  * graphQuery (see rules-route-graph-guard.test.ts and log-analytics-rule-validation.ts). There is
- * no allowlist here — Log Analytics has no Graph-style fixed resource-type set — so the guard is
+ * no allowlist here (Log Analytics has no Graph-style fixed resource-type set) so the guard is
  * purely shape validation (non-empty KQL, a sane time window, a non-blank optional dimension key)
  * plus a fail-open save-time probe, mirrored one-for-one from the Graph guard's own probe tests.
  */
@@ -66,7 +66,7 @@ async function signInAsEditor(): Promise<void> {
 
 const VALID_LQ: LogAnalyticsQuery = { kql: 'SigninLogs | where ResultType != 0', timeWindowDays: 30 };
 
-describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
+describe('POST /api/rules: Log Analytics backend guard (spec 036)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
@@ -128,7 +128,7 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
     const saved = (await loadRules()).find(r => r.id === json.id);
     expect(saved?.queryBackend).toBe('log-analytics');
     expect(saved?.logsQuery).toEqual(VALID_LQ);
-    // deriveKind() maps log-analytics to 'activity' and both other backends to 'state' — unlike
+    // deriveKind() maps log-analytics to 'activity' and both other backends to 'state', unlike
     // resource-graph/microsoft-graph rules, a log-analytics rule's findings never carry a resourceId
     // (see law-runner.ts's createActivityFinding() call), so kind:'activity' here is the rule
     // correctly declaring in advance the same shape its own findings will have at scan time.
@@ -164,7 +164,7 @@ describe('POST /api/rules — Log Analytics backend guard (spec 036)', () => {
   });
 });
 
-describe('PUT /api/rules/[id] — Log Analytics backend guard (spec 036)', () => {
+describe('PUT /api/rules/[id]: Log Analytics backend guard (spec 036)', () => {
   let customRuleId: string;
 
   beforeEach(async () => {

@@ -4,7 +4,7 @@
  * that rode along on a cross-site request is never even evaluated.
  *
  * `next-auth` is mocked so `authHandler` (built once, at module import time, from
- * `NextAuth(authConfig).auth`) is a spy — proving the auth handler is skipped entirely on a
+ * `NextAuth(authConfig).auth`) is a spy: proving the auth handler is skipped entirely on a
  * refusal, not merely that its result is overridden afterwards.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -32,7 +32,7 @@ function request(url: string, init: { method: string; headers?: Record<string, s
   return new NextRequest(url, { method: init.method, headers: init.headers });
 }
 
-describe('proxy default export — origin refusal', () => {
+describe('proxy default export: origin refusal', () => {
   it('refuses a cross-origin POST with 403 before the auth handler ever runs', async () => {
     const res = await proxy(
       request('https://rulebeat.example.com/api/rules', {

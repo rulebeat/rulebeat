@@ -2,7 +2,7 @@
  * B3 phase 3 · setRulesEnabled / PATCH /api/rules/bulk
  *
  * The bulk toggle exists specifically so onboarding step 3 can flip many rules without round-tripping
- * every row through `await saveRules()` (delete + full reinsert) — that path is how a field eventually gets
+ * every row through `await saveRules()` (delete + full reinsert). That path is how a field eventually gets
  * silently dropped when 156 rows get rebuilt to flip 143 booleans. This suite asserts the promise
  * directly: every field except `enabled` survives byte-identical.
  */
@@ -13,7 +13,7 @@ describe('B3 · setRulesEnabled', () => {
   it('flips only enabled, leaving every other field byte-identical', async () => {
     const before = await loadRules();
     // Prefer an aprl-v2 rule (real committed KQL, closest to what onboarding step 3 actually
-    // flips) but fall back to any seeded rule — whether the pack is seeded into the live test db
+    // flips) but fall back to any seeded rule: whether the pack is seeded into the live test db
     // depends on the working directory `lib/db/client.ts` was imported under (see its DATA_DIR
     // comment), which this suite doesn't control.
     const target = before.find(r => r.pack === 'aprl-v2') ?? before[0];
@@ -38,7 +38,7 @@ describe('B3 · setRulesEnabled', () => {
       expect(after.scope).toEqual(target!.scope);
       expect(after.resourceTypes).toEqual(target!.resourceTypes);
     } finally {
-      await setRulesEnabled([target!.id], wasEnabled); // restore — this suite shares the live test db
+      await setRulesEnabled([target!.id], wasEnabled); // restore. This suite shares the live test db
     }
   });
 

@@ -27,7 +27,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
-    // isDefault-only request — return the (now-updated) dashboard without touching other fields.
+    // isDefault-only request: return the (now-updated) dashboard without touching other fields.
     return Response.json(await getDashboard(id));
   }
 

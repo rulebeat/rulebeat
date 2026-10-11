@@ -1,7 +1,7 @@
 /** Shared window/date-range concept for both Dashboards and Scans. A window is either a rolling
- *  "last N days" (always relative to whenever it's resolved — a saved dashboard's "7d" preset
+ *  "last N days" (always relative to whenever it's resolved: a saved dashboard's "7d" preset
  *  still means "the last 7 days" when reopened next month) or a fixed calendar range with
- *  explicit dates. Client-safe (no Node deps) — used server-side to resolve concrete dates before
+ *  explicit dates. Client-safe (no Node deps): used server-side to resolve concrete dates before
  *  querying, and client-side for default state and display labels. */
 export type DateWindow =
   | { mode: 'relative'; days: number }
@@ -36,7 +36,7 @@ function formatDateKey(dateKey: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-/** Human label for display — relative windows use the familiar "24h"/"7d"/"30d" short form
+/** Human label for display: relative windows use the familiar "24h"/"7d"/"30d" short form
  *  (falling back to "{N}d" for any other day count); custom ranges always show the real picked
  *  dates, never a vague placeholder. */
 export function dateWindowLabel(w: DateWindow): string {
@@ -45,7 +45,7 @@ export function dateWindowLabel(w: DateWindow): string {
 }
 
 /** Grammatical phrase for embedding a window in a sentence ("43 fixed in the last 7d" /
- *  "43 fixed during Jul 1 – Jul 11") — a bare "last {label}" reads wrong for custom ranges,
+ *  "43 fixed during Jul 1 – Jul 11"). A bare "last {label}" reads wrong for custom ranges,
  *  where the label already IS the dates. */
 export function dateWindowPhrase(w: DateWindow): string {
   const label = dateWindowLabel(w);

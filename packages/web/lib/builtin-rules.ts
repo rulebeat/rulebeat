@@ -212,7 +212,7 @@ const SECURITY_RULES: CoreRuleDefinition[] = [
 ];
 
 // ── Compliance / Tag Checks ───────────────────────────────────────────────────
-// Disabled by default — tag names are org-specific. Edit the KQL to match your tag names.
+// Disabled by default: tag names are org-specific. Edit the KQL to match your tag names.
 
 const COMPLIANCE_RULES: CoreRuleDefinition[] = [
   {
@@ -277,10 +277,10 @@ const COMPLIANCE_RULES: CoreRuleDefinition[] = [
 // ── Identity / App Credentials ───────────────────────────────────────────────
 // Microsoft Graph-backed, not Resource Graph: runGraphRules() (packages/core/src/engine/graph-runner.ts)
 // evaluates these through the generic per-item expand mechanism (spec 032), not via KQL and not
-// through any rule-specific code path. No resourceTypes — an app registration's credentials
+// through any rule-specific code path. No resourceTypes. An app registration's credentials
 // aren't ARM resources at all. `description` doubles as both the finding's description and its
 // recommendation (graph-runner.ts reuses the one field for both, matching how the ARG-backed
-// runner.ts already treats a rule's description as its own recommendation) — keep it written as
+// runner.ts already treats a rule's description as its own recommendation): keep it written as
 // actionable guidance, not just a problem statement.
 
 const IDENTITY_RULES: CoreRuleDefinition[] = [

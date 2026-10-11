@@ -1,5 +1,5 @@
 /**
- * Spec 008 — GET /api/resources/properties must distinguish "Azure is unreachable" (500/503) from
+ * Spec 008: GET /api/resources/properties must distinguish "Azure is unreachable" (500/503) from
  * "this type genuinely has no schema" (404), which previously both collapsed to the same 404.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

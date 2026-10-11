@@ -10,7 +10,7 @@ interface FieldComboboxProps {
   placeholder?: string;
   className?: string;
   /** Called when user explicitly selects an option (click or Enter). If provided,
-   *  the input value is NOT set to the selected option — the parent controls it. */
+   *  the input value is NOT set to the selected option. The parent controls it. */
   onSelect?: (value: string) => void;
 }
 

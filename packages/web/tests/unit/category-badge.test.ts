@@ -1,8 +1,8 @@
 /**
- * Spec 033(d) — Recent Findings must render a finding's category through CategoryBadge (real
+ * Spec 033(d): Recent Findings must render a finding's category through CategoryBadge (real
  * label, colored swatch), not the raw category id string. No React component-rendering test layer
  * exists in this codebase (see tests/unit/toggle-set.test.ts), so CategoryBadge is called directly
- * as a plain function — it has zero hooks, so nothing here needs React's renderer — and the
+ * as a plain function (it has zero hooks, so nothing here needs React's renderer) and the
  * returned element tree is inspected directly.
  */
 import { describe, expect, it } from 'vitest';

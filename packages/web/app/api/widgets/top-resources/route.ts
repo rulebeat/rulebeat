@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();
   for (const f of findings) {
-    // 'activity' findings (spec 034) have no resource — this widget is resource-scoped by
+    // 'activity' findings (spec 034) have no resource. This widget is resource-scoped by
     // definition, so they're counted by the dedicated activity-occurrences widget instead.
     if (!f.resourceId) continue;
     const existing = resourceMap.get(f.resourceId);

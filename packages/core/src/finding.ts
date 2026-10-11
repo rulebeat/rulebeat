@@ -53,7 +53,7 @@ export interface CreateActivityFindingInput {
   ruleId: string;
   severity: Severity;
   category: ModuleCategory;
-  /** What makes this occurrence distinct (e.g. a principal, an IP) — the caller derives this from
+  /** What makes this occurrence distinct (e.g. a principal, an IP). The caller derives this from
    *  its own query result; see computeActivityFingerprint(). Pass '' when the rule has no natural
    *  grouping dimension, which deliberately collapses every occurrence onto one finding. */
   dimensionKey: string;
@@ -66,14 +66,14 @@ export interface CreateActivityFindingInput {
   azurePortalLink?: string;
 }
 
-/** sha256(ruleId::activity::dimensionKey), same 16-hex-char truncation as computeFingerprint() —
+/** sha256(ruleId::activity::dimensionKey), same 16-hex-char truncation as computeFingerprint():
  *  namespaced with a literal 'activity' segment so a resource finding and an activity finding for
  *  the same rule can never collide even if a resourceId happened to equal some dimensionKey. */
 export function computeActivityFingerprint(ruleId: string, dimensionKey: string): string {
   return createHash('sha256').update(`${ruleId}::activity::${dimensionKey}`).digest('hex').slice(0, 16);
 }
 
-/** Sibling to createFinding() for kind: 'activity' occurrences (spec 034) — no resourceId/Type/Name,
+/** Sibling to createFinding() for kind: 'activity' occurrences (spec 034). No resourceId/Type/Name,
  *  because there is no resource. See Finding.kind's doc comment in types.ts. */
 export function createActivityFinding(input: CreateActivityFindingInput): Finding {
   const fingerprint = computeActivityFingerprint(input.ruleId, input.dimensionKey);

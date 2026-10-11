@@ -8,14 +8,14 @@
  *  - created / repeat / resolved / reactivated, and what happens to firstSeenAt/lastSeenAt/
  *    resolvedAt/timesSeen at each transition
  *  - event type and occurredAt for each transition (occurredAt uses the scan's own finishedAt,
- *    never wall-clock "now" — see the comment in findings.ts explaining why that matters for replay)
+ *    never wall-clock "now": see the comment in findings.ts explaining why that matters for replay)
  *  - the 500-row CHUNK_SIZE boundary, on both the findings side and the ranRuleIds side
  *  - a rule's findings and events both disappearing when the rule is deleted
  *  - event-retention pruning (findings.ts prunes finding_events older than 180 days on every sync)
  *  - expired vs. permanent suppressions, read through await queryActiveFindings()
  *
  * Duplicate ARG rows sharing one fingerprint within a single scan are covered below (RB-QA-019,
- * fixed via mergeFindingsByFingerprint()) — one sighting per fingerprint regardless of how many
+ * fixed via mergeFindingsByFingerprint()): one sighting per fingerprint regardless of how many
  * times it appeared in the scan's own findings array.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -36,7 +36,7 @@ const CATEGORY = 'security';
 const FILTERS: WidgetFilters = { dateWindow: { mode: 'relative', days: 7 } };
 const DAY_MS = 86_400_000;
 
-/** Days before "now" — must stay well inside the 180-day event-retention window (findings.ts
+/** Days before "now": must stay well inside the 180-day event-retention window (findings.ts
  *  prunes finding_events older than that on every non-silent sync), or a fixture date that reads
  *  as "recent" in the source only by coincidence of when this file was written silently loses its
  *  own events the moment enough real time has passed. */
@@ -82,7 +82,7 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('syncScanFindings — created / repeat / resolved / reactivated', () => {
+describe('syncScanFindings: created / repeat / resolved / reactivated', () => {
   it('creates a new finding as active, firstSeenAt = lastSeenAt = the scan\'s finishedAt, timesSeen 1, one created event', async () => {
     const f = finding('vm-1');
     const d1 = daysAgo(3);
@@ -155,14 +155,14 @@ describe('syncScanFindings — created / repeat / resolved / reactivated', () =>
   });
 });
 
-describe('syncScanFindings — 500-row CHUNK_SIZE boundary', () => {
+describe('syncScanFindings: 500-row CHUNK_SIZE boundary', () => {
   it('classifies and resolves correctly across a findings list spanning two chunks (>500)', async () => {
     const many = Array.from({ length: 501 }, (_, i) => finding(`vm-${i}`));
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: many, finishedAt: daysAgo(2) });
     expect(result.created).toHaveLength(501);
     expect(await listFindings({ status: 'active' })).toHaveLength(501);
 
-    // Only the first row survives — the other 500 must resolve, exercising the same chunk
+    // Only the first row survives: the other 500 must resolve, exercising the same chunk
     // boundary on the resolve side (both the seen-set lookup and the resolve UPDATE are chunked).
     const result2 = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [many[0]!], finishedAt: daysAgo(1) });
     expect(result2.resolved).toHaveLength(500);
@@ -171,7 +171,7 @@ describe('syncScanFindings — 500-row CHUNK_SIZE boundary', () => {
   });
 
   it('resolves stale findings correctly when ranRuleIds itself spans more than 500 ids', async () => {
-    // 501 distinct rules, one finding each, seeded and reported as ran in a single call — this
+    // 501 distinct rules, one finding each, seeded and reported as ran in a single call. This
     // exercises the ranRuleIds chunking loop (a second, independent chunk boundary from the one
     // above), not just the findings-list chunking loop.
     const manyFindings = Array.from({ length: 501 }, (_, i) => finding(`vm-${i}`, { ruleId: `rule-${i}` }));
@@ -220,7 +220,7 @@ describe('event-retention pruning', () => {
     await syncScanFindings({ scanId: 's0', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     expect(await eventsFor(f.fingerprint)).toHaveLength(1);
 
-    // Seeding a 200-day-old event via syncScanFindings itself is impossible — its own prune step
+    // Seeding a 200-day-old event via syncScanFindings itself is impossible. Its own prune step
     // would delete anything that old inside the very same call that inserted it. Insert directly
     // to simulate history that predates the 180-day retention window.
     const oldDate = daysAgo(200);
@@ -230,7 +230,7 @@ describe('event-retention pruning', () => {
     }));
     expect(await eventsFor(f.fingerprint)).toHaveLength(2);
 
-    // Any later non-silent sync's prune step runs unconditionally at the end of its transaction —
+    // Any later non-silent sync's prune step runs unconditionally at the end of its transaction:
     // resolving f's own finding here also proves the just-written 'resolved' event survives while
     // the 200-day-old synthetic event for the same fingerprint gets pruned.
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: new Date().toISOString() });

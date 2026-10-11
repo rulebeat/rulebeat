@@ -1,5 +1,5 @@
 /**
- * TS-04 · Permission enforcement — the `can(role, action)` half.
+ * TS-04 · Permission enforcement: the `can(role, action)` half.
  *
  * This is written as an exhaustive table rather than a handful of spot checks on purpose. A spot
  * check proves a permission was granted; only the full grid proves nothing *extra* was granted.
@@ -13,7 +13,7 @@ import {
 
 /** The authorization model, restated independently of the implementation. */
 const EXPECTED: Record<Role, Action[]> = {
-  // account:self (manage your own password) sits outside the read/write ladder — every real role
+  // account:self (manage your own password) sits outside the read/write ladder. Every real role
   // gets it, so it's listed on all three rather than folded into 'read'.
   viewer: ['read', 'account:self'],
   editor: [
@@ -66,7 +66,7 @@ describe('TS-04 · the role → action grid', () => {
     expect([...ROLES].sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
-  // One test per role/action pair — 36 assertions, each individually named, so a failure says
+  // One test per role/action pair: 36 assertions, each individually named, so a failure says
   // exactly which permission moved rather than "the matrix changed".
   for (const role of Object.keys(EXPECTED) as Role[]) {
     describe(role, () => {

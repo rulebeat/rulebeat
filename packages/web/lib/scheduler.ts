@@ -17,7 +17,7 @@ function schedulerGlobals(): SchedulerGlobals {
   return globalThis as typeof globalThis & SchedulerGlobals;
 }
 
-// A simple busy flag (not a promise chain) — ticks that fire while a run is in progress
+// A simple busy flag (not a promise chain): ticks that fire while a run is in progress
 // are dropped rather than queued, so a long-running scan can never stack up a backlog of
 // pending ticks. Due schedules simply get picked up on the next tick after the busy flag clears.
 // Held on globalThis because instrumentation.ts (the scheduler, a Demo's Reset timer) and the
@@ -127,7 +127,7 @@ export async function whileNoScanRuns<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Ad-hoc "Run Scan" trigger from the Scans page — shares the same scanLock.busy-flag serialization as
+/** Ad-hoc "Run Scan" trigger from the Scans page: shares the same scanLock.busy-flag serialization as
  *  scheduled runs so a manual run can never overlap with an automatic one, and goes through the
  *  exact same executeTarget() core so it shows up in Run History identically to a schedule fire. */
 export async function runManualTarget(target: RunTarget): Promise<ScheduleRun> {

@@ -8,7 +8,7 @@ export { DEMO_STAMP_KEY, LEGACY_DEMO_STAMP_KEYS } from './stamp';
 
 /**
  * The fixed `users.id` of the seeded admin row every Visitor acts as in a Demo.
- * A real row, not a synthetic in-memory user — `lib/api-auth.ts`'s `getCurrentUser()` looks it up
+ * A real row, not a synthetic in-memory user: `lib/api-auth.ts`'s `getCurrentUser()` looks it up
  * with the same `getUser()` every signed-in request uses, so nothing downstream needs to know the
  * difference. Only the Demo generator (`./run.ts`) creates this row; the running app only ever reads it.
  */
@@ -37,7 +37,7 @@ export async function isDemoMode(): Promise<boolean> {
   return (cachedStamped = (await getMeta(DEMO_STAMP_KEY)) !== null);
 }
 
-/** Called by the generator once the synthetic estate is fully written — never by the running app. */
+/** Called by the generator once the synthetic estate is fully written, never by the running app. */
 export async function stampDemoDatabase(): Promise<void> {
   await setMeta(DEMO_STAMP_KEY, '1');
   cachedStamped = null;

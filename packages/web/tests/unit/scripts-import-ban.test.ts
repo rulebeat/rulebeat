@@ -52,7 +52,7 @@ describe('product code never imports from scripts/', () => {
       .map(f => f.rel.split(sep).join('/'));
 
     expect(offenders, [
-      'These files import from scripts/ — one-off tooling (pack sync, e2e seeding) that',
+      'These files import from scripts/: one-off tooling (pack sync, e2e seeding) that',
       'runs via tsx outside the app, deliberately never bundled into it. Move shared logic into lib/',
       'and have both the script and the app import that instead.',
     ].join(' ')).toEqual([]);

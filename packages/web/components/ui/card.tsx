@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /* A card is defined by GROUND, not by an outline. It is lighter than the page it sits on,
- * and that is the whole of it — no border, no shadow, no rounded corner.
+ * and that is the whole of it. No border, no shadow, no rounded corner.
  *
  * It used to carry a black hairline. One card looked precise; a settings page with four of
  * them, plus chips and a table that each drew their own, looked like a page of boxes with no

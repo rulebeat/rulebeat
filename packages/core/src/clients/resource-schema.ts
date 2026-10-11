@@ -6,7 +6,7 @@ const TOP_LEVEL = new Set(['id', 'name', 'type', 'kind', 'location', 'resourceGr
 
 /**
  * Returns every property path available for a resource type using the ARM provider
- * aliases API — the same schema source Azure Policy itself uses.
+ * aliases API: the same schema source Azure Policy itself uses.
  * Paths are in ARG dot-notation (e.g. "properties.hardwareProfile.vmSize").
  */
 export async function getResourceTypeFields(
@@ -37,7 +37,7 @@ export async function getResourceTypeFields(
   const fields = new Set<string>(TOP_LEVEL);
 
   for (const alias of rt.aliases) {
-    // Collect all versioned paths — they may differ slightly across API versions
+    // Collect all versioned paths: they may differ slightly across API versions
     for (const p of alias.paths ?? []) {
       if (p.path) fields.add(p.path);
     }

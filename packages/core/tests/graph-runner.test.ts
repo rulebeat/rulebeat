@@ -1,5 +1,5 @@
 /**
- * Spec 032 — Directory rule authoring (Microsoft Graph).
+ * Spec 032: Directory rule authoring (Microsoft Graph).
  *
  * runGraphRules() is the Graph-backend counterpart to runner.ts's runRules(): same
  * RuleRunEvent/RuleExecutionStatus contract (success/failed/capped/invalid), but Graph-shaped
@@ -179,7 +179,7 @@ describe('runGraphRules() outcomes', () => {
     expect(finding?.kind === 'finding' ? finding.finding.resourceName : undefined).toBe('obj-1');
   });
 
-  it('skips a disabled rule entirely — no query, no events', async () => {
+  it('skips a disabled rule entirely: no query, no events', async () => {
     const rule = baseRule({ enabled: false });
     const ctx = fakeCtx(async () => { throw new Error('graphGet must not be called for a disabled rule'); });
 
@@ -211,7 +211,7 @@ describe('runGraphRules() outcomes', () => {
     expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'failed', findingCount: 0 } }]);
   });
 
-  it('yields capped, not success, when the Graph result set is truncated ("Fails today" — spec 032 Tests #2)', async () => {
+  it('yields capped, not success, when the Graph result set is truncated ("Fails today": spec 032 Tests #2)', async () => {
     const rule = baseRule();
     const ctx = fakeCtx(async () => { throw new GraphTruncatedError(10_001); });
 
@@ -219,7 +219,7 @@ describe('runGraphRules() outcomes', () => {
     expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'capped', findingCount: 0 } }]);
   });
 
-  it("isolates one rule's query failure from another rule's success in the same run (\"Fails today\" — spec 032 Tests #1 / RB-RM-011)", async () => {
+  it("isolates one rule's query failure from another rule's success in the same run (\"Fails today\": spec 032 Tests #1 / RB-RM-011)", async () => {
     const failing = baseRule({ id: 'rule-a', graphQuery: { path: 'applications' } });
     const succeeding = baseRule({ id: 'rule-b', graphQuery: { path: 'users' } });
     const ctx = fakeCtx(async (path: string) => {
@@ -234,7 +234,7 @@ describe('runGraphRules() outcomes', () => {
       { ruleId: 'rule-a', status: 'failed', findingCount: 0 },
       { ruleId: 'rule-b', status: 'success', findingCount: 1 },
     ]);
-    // rule-b's finding must still have been yielded — one bad rule must not swallow another's results.
+    // rule-b's finding must still have been yielded. One bad rule must not swallow another's results.
     expect(events.filter(e => e.kind === 'finding')).toHaveLength(1);
   });
 

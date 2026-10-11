@@ -13,7 +13,7 @@ interface ValidateResult { count: number; truncated: boolean; samples: Record<st
 interface LogAnalyticsRuleEditorProps {
   value: LogAnalyticsQuery;
   onChange: (value: LogAnalyticsQuery) => void;
-  /** Gates the fields themselves. Validate stays available either way — testing a saved
+  /** Gates the fields themselves. Validate stays available either way: testing a saved
    *  query live is not an editing action, same precedent as GraphRuleEditor's Validate button. */
   readOnly?: boolean;
 }

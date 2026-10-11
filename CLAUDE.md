@@ -301,8 +301,9 @@ and usually `auth-security.md`.
   release. See [`docs/engineering/conventions/releases.md`](docs/engineering/conventions/releases.md).
 
 ### User-facing copy
-- **No em dashes anywhere in product UI strings or docs.** Plain sentences instead. This applies to
-  labels, empty states, error messages, tooltips and every page under `docs/public/`.
+- **No em dash anywhere in the repo, including comments, tests and logs.** Use a full stop, colon,
+  comma or parentheses instead. `packages/web/tests/unit/no-em-dash.test.ts` fails on any tracked file
+  that holds one.
 - No hedging filler, no rule-of-three adjective lists. Copy must not read as AI-written.
 - An empty or unavailable state must say **why**, not render the same "no data yet" message that
   genuinely-empty data would.

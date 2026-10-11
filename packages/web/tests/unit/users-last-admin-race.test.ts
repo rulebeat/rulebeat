@@ -24,7 +24,7 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('updateUserRole — concurrent last-admin demotions', () => {
+describe('updateUserRole: concurrent last-admin demotions', () => {
   it('two concurrent demotions of the only two admins leave exactly one admin, and exactly one call reports the error', async () => {
     const a = await makeUser('race-admin-a@example.com', 'admin');
     const b = await makeUser('race-admin-b@example.com', 'admin');
@@ -65,7 +65,7 @@ describe('updateUserRole — concurrent last-admin demotions', () => {
   });
 });
 
-describe('deleteUser — concurrent last-admin deletions', () => {
+describe('deleteUser: concurrent last-admin deletions', () => {
   it('two concurrent deletions of the only two admins leave exactly one admin, and exactly one call reports last-admin', async () => {
     const a = await makeUser('race-delete-a@example.com', 'admin');
     const b = await makeUser('race-delete-b@example.com', 'admin');
@@ -79,7 +79,7 @@ describe('deleteUser — concurrent last-admin deletions', () => {
   });
 });
 
-describe('deleteUser — atomicity of its three deletes', () => {
+describe('deleteUser: atomicity of its three deletes', () => {
   // SQLite only: a BEFORE DELETE trigger is a real database-level fault, not a mock of our own
   // code, and it lets the final DELETE FROM users genuinely fail mid-transaction. Postgres runs
   // through the exact same inTransaction()/rollback path in lib/db/exec.ts, so this still covers

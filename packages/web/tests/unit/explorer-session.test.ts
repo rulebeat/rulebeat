@@ -190,7 +190,7 @@ describe('reading one answer', () => {
     ];
     for (const { fetchFn } of reads) {
       const result = await readJson(fetchFn, '/x', 'the findings');
-      expect(result.ok ? '' : result.message).not.toContain('—');
+      expect(result.ok ? '' : result.message).not.toContain('\u2014');
     }
   });
 });

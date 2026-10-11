@@ -50,7 +50,7 @@ export interface ExplorerFilterState {
   rangeTo: string;
 }
 
-// "New"/"Fixed" are defined purely by elapsed real time — never by comparing to "the previous
+// "New"/"Fixed" are defined purely by elapsed real time, never by comparing to "the previous
 // scan" (see findings-explorer-client.tsx for the full rationale). `from`/`to` are date keys
 // (YYYY-MM-DD), inclusive.
 export function isWithinRange(iso: string | undefined, from: string, to: string): boolean {

@@ -112,7 +112,7 @@ describe('claimFailedAttempt (the lockout race fix)', () => {
     for (let i = 0; i < 4; i++) expect(await claimFailedAttempt(user.id)).toBe('claimed');
     expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(false);
 
-    // The 5th claim is the one that crosses MAX_FAILED_ATTEMPTS — it still succeeds (this is the
+    // The 5th claim is the one that crosses MAX_FAILED_ATTEMPTS. It still succeeds (this is the
     // attempt whose password might still turn out to be correct), but locks the account.
     expect(await claimFailedAttempt(user.id)).toBe('claimed');
     expect(isLockedOut((await getLocalAccount(user.id))!)).toBe(true);

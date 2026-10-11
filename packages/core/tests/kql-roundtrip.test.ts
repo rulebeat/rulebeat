@@ -1,9 +1,9 @@
 /**
- * TS-09 · The rule builder and its translator — round-trip coverage.
+ * TS-09 · The rule builder and its translator: round-trip coverage.
  *
  * The contract this suite enforces: **whatever the builder can generate, the parser must parse
  * back.** That single property is what stops a rule silently changing meaning when someone opens
- * it for editing — the failure mode that produces no error, no warning, and a customer trusting a
+ * it for editing: the failure mode that produces no error, no warning, and a customer trusting a
  * check that is no longer checking what they wrote.
  *
  * Every operator gets its own named test, so a failure says which one broke rather than "KQL is
@@ -61,7 +61,7 @@ function parsedConditions(kql: string): VisualFilterCondition[] {
 
 /**
  * Parses the KQL and regenerates it from the parsed result. When this returns the input unchanged,
- * the round trip preserved the *query* — which is the property that actually matters, and a
+ * the round trip preserved the *query*, which is the property that actually matters, and a
  * stronger claim than "the operator label came back the same".
  */
 function regenerate(kql: string): string {
@@ -88,7 +88,7 @@ interface Case {
    * Set when this operator deliberately compiles to KQL that is byte-identical to another
    * operator's, so the parser cannot tell them apart and reads it back as the alias.
    *
-   * This is **not** a corruption case and the test does not skip it — it is held to a *stricter*
+   * This is **not** a corruption case and the test does not skip it. It is held to a *stricter*
    * standard instead: the regenerated KQL must be identical to the original, proving the rule
    * still checks exactly the same thing. Only the label shown in the builder changes. See the
    * `aliasing` describe block below, which pins each alias so a genuine parser regression here
@@ -98,7 +98,7 @@ interface Case {
   /** Set when the operator compiles to a compound expression that parses back as N conditions. */
   splitsInto?: number;
   /**
-   * A **known, unfixed bug**. The test is marked `it.fails`, which asserts that it currently fails —
+   * A **known, unfixed bug**. The test is marked `it.fails`, which asserts that it currently fails,
    * so the bug stays visible in the test output, the suite stays honest, and the moment someone
    * fixes the parser this very test errors ("expected to fail but passed") and forces the marker to
    * be removed. It is deliberately *not* a skip and the assertions are not weakened.
@@ -109,7 +109,7 @@ interface Case {
 }
 
 const CASES: Case[] = [
-  // Presence / emptiness — no value
+  // Presence / emptiness: no value
   { operator: 'exists', field: 'properties.osProfile' },
   { operator: 'notExists', field: 'properties.osProfile' },
   { operator: 'isNull', field: 'properties.encryption' },
@@ -140,7 +140,7 @@ const CASES: Case[] = [
   { operator: 'gte', field: 'properties.diskSizeGB', value: '512' },
   { operator: 'lt', field: 'properties.diskSizeGB', value: '32' },
   { operator: 'lte', field: 'properties.diskSizeGB', value: '32' },
-  // `between` has no single KQL operator — it compiles to `>= a and <= b`, which is genuinely
+  // `between` has no single KQL operator. It compiles to `>= a and <= b`, which is genuinely
   // two conditions once parsed back.
   { operator: 'between', field: 'properties.diskSizeGB', value: '32', value2: '512', splitsInto: 2 },
 
@@ -149,7 +149,7 @@ const CASES: Case[] = [
   { operator: 'withinLastDays', field: 'properties.timeCreated', value: '7' },
 
   // Arrays
-  // Both compile to a parenthesised two-part expression and must come back as one condition — see
+  // Both compile to a parenthesised two-part expression and must come back as one condition: see
   // the compound-expression block below.
   { operator: 'arrayEmpty', field: 'properties.ipRules' },
   { operator: 'arrayNotEmpty', field: 'properties.ipRules' },
@@ -166,7 +166,7 @@ const CASES: Case[] = [
 
 describe('TS-09 · the operator table is complete', () => {
   it('09-04 · covers every operator the visual builder can produce', () => {
-    // Kept in sync with VisualFilterOperator by hand, and cross-checked against the table — if a
+    // Kept in sync with VisualFilterOperator by hand, and cross-checked against the table. If a
     // new operator is added to the type without a case here, this list has to change too, which is
     // the prompt to add the round-trip test.
     //
@@ -198,7 +198,7 @@ describe('TS-09 · generate → parse → compare, per operator', () => {
     test(`09-04 · ${operator} survives the round trip${label}`, () => {
       const kql = buildQueryFromVisual(oneCondition(testCase), RESOURCE_TARGET);
 
-      // The generator must actually emit a filter — an operator that silently produced nothing
+      // The generator must actually emit a filter. An operator that silently produced nothing
       // would otherwise "round-trip" through an empty query and look fine.
       expect(kql, `${operator} generated no | where clause`).toMatch(/\|\s*where/);
 
@@ -245,11 +245,11 @@ describe('TS-09 · generate → parse → compare, per operator', () => {
   }
 });
 
-describe('TS-09 · aliased operators — same query, different label', () => {
+describe('TS-09 · aliased operators, same query, different label', () => {
   /**
    * Each pair below compiles to identical KQL, which is why the parser reads the second back as the
-   * first. Pinned individually so that if the generator ever *changes* one of them, this fails —
-   * the aliasing is documented behaviour, not an excuse for the parser to be loose.
+   * first. Pinned individually so that if the generator ever *changes* one of them, this fails.
+   * The aliasing is documented behaviour, not an excuse for the parser to be loose.
    */
   const ALIASES: Array<[Case, Case]> = [
     [{ operator: 'notExists', field: 'name' }, { operator: 'isEmpty', field: 'name' }],
@@ -298,7 +298,7 @@ describe('TS-09 · a fully parenthesised where clause is not lost', () => {
    *
    * The generator emits a single condition group as `| where (A and B)`. The parser only unwrapped
    * those outer parentheses when the clause also contained a top-level `or`, so this form parsed to
-   * zero conditions — and regenerating from that dropped the `| where` line completely. A `between`
+   * zero conditions, and regenerating from that dropped the `| where` line completely. A `between`
    * rule opened in the editor twice therefore stopped filtering and reported every resource in the
    * tenant as a finding, with no error anywhere.
    */
@@ -328,7 +328,7 @@ describe('TS-09 · a fully parenthesised where clause is not lost', () => {
     expect(conditions[0]!.value).toBe('vm-');
   });
 
-  it('leaves load-bearing parentheses alone — (A or B) and C keeps its grouping', () => {
+  it('leaves load-bearing parentheses alone: (A or B) and C keeps its grouping', () => {
     const kql = [
       'Resources',
       "| where (location =~ 'westeurope' or location =~ 'northeurope') and name startswith 'vm-'",
@@ -338,7 +338,7 @@ describe('TS-09 · a fully parenthesised where clause is not lost', () => {
     const parsed = parseKqlToVisualQuery(kql);
     const stage = parsed.visualQuery.stages.find(s => s.type === 'filter');
     expect(stage).toBeDefined();
-    // Two OR'd locations must not collapse into the same group as the name filter — that would
+    // Two OR'd locations must not collapse into the same group as the name filter. That would
     // change the query's meaning from (A or B) and C into A or B or C.
     const allConditions = stage!.groups.flatMap(g => g.conditions);
     expect(allConditions.length).toBeGreaterThanOrEqual(3);
@@ -370,7 +370,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
 
     const conditions = allConditions(kql);
     expect(conditions.map(c => c.operator)).toEqual(['arrayEmpty', 'startsWith']);
-    // The "or empty" half must survive regeneration — dropping it narrows the rule to "is missing"
+    // The "or empty" half must survive regeneration: dropping it narrows the rule to "is missing"
     // and the violations it stops reporting are invisible.
     expect(regenerate(kql)).toContain('array_length(properties.ipRules) == 0');
   });
@@ -389,8 +389,8 @@ describe('TS-09 · compound expressions inside one where clause', () => {
   });
 
   /**
-   * A condition the builder has no operator for — here numeric equality against a computed column,
-   * which 12 of the 143 APRL pack rules use — is carried through verbatim as `operator: 'raw'`, the
+   * A condition the builder has no operator for (here numeric equality against a computed column,
+   * which 12 of the 143 APRL pack rules use) is carried through verbatim as `operator: 'raw'`, the
    * same passthrough the advanced *stages* already get. The builder deliberately reads more KQL than
    * it can author; what it cannot express it must keep, not drop and warn about.
    */
@@ -423,7 +423,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
   ] as const;
 
   for (const [label, clause, expected] of UNWRITABLE) {
-    it(`keeps a condition the generator cannot write back — ${label}`, () => {
+    it(`keeps a condition the generator cannot write back: ${label}`, () => {
       const kql = ['Resources', '| extend replicaSets = properties.replicaSets', clause, '| project id'].join('\n');
       const once = regenerate(kql);
       expect(once, 'the clause vanished from the regenerated query').toContain(expected);
@@ -432,7 +432,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
   }
 
   /**
-   * RB-QA-008, fixed by spec 016. A whole unsupported *pipe* — `| union (...)` — used to be warned
+   * RB-QA-008, fixed by spec 016. A whole unsupported *pipe* (`| union (...)`) used to be warned
    * about and dropped, taking its entire sub-query with it. It is now carried through verbatim as a
    * RawStage, the same passthrough idea `operator: 'raw'`/`exprType: 'raw'` already use one level down.
    */
@@ -448,7 +448,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
     const rawStages = parsed.visualQuery.stages.filter(s => s.type === 'raw');
     expect(rawStages).toHaveLength(1);
     expect((rawStages[0] as { clause: string }).clause).toContain('union');
-    // A passthrough is normal, supported behaviour — same rule as the condition-level passthrough above.
+    // A passthrough is normal, supported behaviour, same rule as the condition-level passthrough above.
     expect(parsed.warnings).toEqual([]);
 
     const once = regenerate(kql);
@@ -461,7 +461,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
    * Pool contains at least two instances" rule puts a mid-pipeline `| project name, feConfigName, id`
    * immediately before its `| union (...)`, with the true output `| project recommendationId = ...`
    * genuinely last. Before this spec, `lastProjectIdx` found *any* last `project` clause and treated
-   * it as output metadata — on this exact shape that would have grabbed the mid-pipeline one and
+   * it as output metadata, on this exact shape that would have grabbed the mid-pipeline one and
    * silently moved it after the union, changing what the union's own pipeline receives.
    */
   it('real APRL rule: a project immediately before a union stays before it, not after [RB-QA-008]', () => {
@@ -518,11 +518,11 @@ describe('TS-09 · compound expressions inside one where clause', () => {
 
   /**
    * RB-QA-008b / spec 027. `data/packs/aprl-v2.json`'s "Monitor CPU Utilization" rule wraps its
-   * first union branch in a leading outer paren before the table line —
+   * first union branch in a leading outer paren before the table line:
    * `(\nresources\n| where ...\n)\n| union (...)`. Before the fix, the table-line detector only
    * looked at `rawLines[0]` (the bare `(`), so it never recognized `resources` as the table, scope
    * detection silently fell back to the default, and the wrap's own closing `)` got glued onto the
-   * last real clause of the first branch — producing regenerated KQL with a stray, unbalanced paren.
+   * last real clause of the first branch: producing regenerated KQL with a stray, unbalanced paren.
    */
   it('drops a purely cosmetic leading-paren union wrap without corrupting output (RB-QA-008b)', () => {
     const kql = [
@@ -549,7 +549,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
     const closes = (once.match(/\)/g) ?? []).length;
     expect(opens, 'regenerated query must have balanced parens').toBe(closes);
 
-    // The first branch's own trailing project clause must survive uncorrupted — not have the
+    // The first branch's own trailing project clause must survive uncorrupted, not have the
     // wrap's closing paren glued onto it as literal text.
     expect(once).toContain('project recommendationId = "x", name, id, tags');
     expect(once).not.toMatch(/project recommendationId = "x", name, id, tags\s*\)/);
@@ -559,7 +559,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
 
   /**
    * Same shape, but the wrapped first branch is container-scoped. This can only pass if the fix
-   * genuinely re-points table-line detection at the line after the leading `(` — `resourceTypes`
+   * genuinely re-points table-line detection at the line after the leading `(`: `resourceTypes`
    * parses independently from a later `where type ==` clause and cannot prove that on its own.
    */
   it('detects container scope through a leading-paren union wrap (RB-QA-008b)', () => {
@@ -587,7 +587,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
 
   /**
    * A first-line-inline union (`Resources | union (`) must be completely unaffected by the
-   * leading-wrap fix above — `rawLines[0]` here is `'Resources | union ('`, not a bare `(`, so
+   * leading-wrap fix above: `rawLines[0]` here is `'Resources | union ('`, not a bare `(`, so
    * `leadingWrapped` is false and the union's own legitimate closing paren must not be discarded.
    */
   it('does not disturb a first-line-inline union clause (RB-QA-008b regression guard)', () => {
@@ -608,13 +608,13 @@ describe('TS-09 · compound expressions inside one where clause', () => {
   });
 
   /**
-   * A first-line-inline union that is also the pipeline's OWN LAST CLAUSE — nothing after its
-   * closing `)` — corrupts output-column detection (RB-QA-008c / spec 028). `leadingWrapped` is
+   * A first-line-inline union that is also the pipeline's OWN LAST CLAUSE (nothing after its
+   * closing `)`) corrupts output-column detection (RB-QA-008c / spec 028). `leadingWrapped` is
    * false here (`rawLines[0]` is `'Resources | union ('`, not a bare `(`), so RB-QA-008b's wrap fix
    * does not engage; the bug is `parenDepth` starting at 0 even though a `(` was already opened
    * inline on the first line, so the loop walks every line inside the subquery one paren short of
-   * reality and glues the union's real closing `)` onto whatever it thinks is the last clause —
-   * here, the subquery's own `| project` line, which is then misread as the pipeline's trailing
+   * reality and glues the union's real closing `)` onto whatever it thinks is the last clause.
+   * Here, the subquery's own `| project` line, which is then misread as the pipeline's trailing
    * output project.
    */
   it('does not corrupt output columns for a trailing first-line-inline union with no clause after it (RB-QA-008c)', () => {
@@ -625,7 +625,7 @@ describe('TS-09 · compound expressions inside one where clause', () => {
       ')',
     ].join('\n');
 
-    // No entry in projectColumns may carry the union's stray closing paren or a newline — asserted
+    // No entry in projectColumns may carry the union's stray closing paren or a newline: asserted
     // directly on the parsed array (Codex challenge §3 AMBIGUOUS), not a broad regex over the whole
     // regenerated string, since the union branch's own legitimate inner `project` clause is expected
     // to have its own `)` right after it in the source.
@@ -662,10 +662,10 @@ describe('TS-09 · compound expressions inside one where clause', () => {
   });
 });
 
-describe('TS-09 · quote-aware splitting — and/or, comma-list, escaped quotes [RB-RM-006]', () => {
+describe('TS-09 · quote-aware splitting: and/or, comma-list, escaped quotes [RB-RM-006]', () => {
   /**
    * Before spec 040, `splitTopLevelOps()` split a where clause on every top-level ` and `/` or `
-   * substring with no awareness of string literals — a condition value that itself contained one of
+   * substring with no awareness of string literals. A condition value that itself contained one of
    * those substrings (a resource name, a tag value) split the clause in the wrong place.
    */
   const allConditions = (kql: string): VisualFilterCondition[] => {
@@ -706,12 +706,12 @@ describe('TS-09 · quote-aware splitting — and/or, comma-list, escaped quotes 
 
   /**
    * esc() escapes an embedded apostrophe as `\'`. A backslash-escaped quote must not be mistaken
-   * for the string's real closing quote while scanning for the next top-level `and`/`or` — getting
+   * for the string's real closing quote while scanning for the next top-level `and`/`or`: getting
    * this wrong would make the scanner think the string ended early, then read the real `'westeurope'`
    * literal a few characters later as a fresh string open, swallowing the real ` and ` between the
    * second and third conditions and losing a condition outright. (The single-condition value regexes
-   * elsewhere in this file are not themselves escape-aware — that is a separate, pre-existing gap,
-   * not this spec's scope — so the first condition here is expected to fall back to a `raw`
+   * elsewhere in this file are not themselves escape-aware: that is a separate, pre-existing gap,
+   * not this spec's scope, so the first condition here is expected to fall back to a `raw`
    * passthrough. What this test guards is that the *split* stays correct regardless.)
    */
   it('does not treat a backslash-escaped quote inside a value as the string terminator', () => {
@@ -765,7 +765,7 @@ describe('TS-09 · | limit is a documented alias of | take, not silently dropped
     expect(limitStage).toMatchObject({ mode: 'take', count: 50 });
   });
 
-  it('regenerates | limit as | take — the documented alias, not a round-trip loss', () => {
+  it('regenerates | limit as | take: the documented alias, not a round-trip loss', () => {
     const kql = ['Resources', "| where name startswith 'vm-'", '| limit 50'].join('\n');
     const once = regenerate(kql);
     expect(once).toContain('| take 50');
@@ -782,8 +782,8 @@ describe('TS-09 · | limit is a documented alias of | take, not silently dropped
 
 describe('TS-09 · clauses written on the table line', () => {
   /**
-   * The generator emits the three container scopes as a single line — `ResourceContainers | where
-   * type =~ 'microsoft.resources/subscriptions'` — so the clause that *defines the scope* lives on
+   * The generator emits the three container scopes as a single line (`ResourceContainers | where
+   * type =~ 'microsoft.resources/subscriptions'`), so the clause that *defines the scope* lives on
    * the table line. Pasted Portal queries do the same thing with ordinary filters. Anything the
    * parser only looks for from line two onward is therefore invisible in exactly the case the
    * generator itself produces.
@@ -804,7 +804,7 @@ describe('TS-09 · clauses written on the table line', () => {
 
       const parsed = parseKqlToVisualQuery(kql);
       expect(parsed.scope.level, `${level} scope was lost on parse`).toBe(level);
-      // The scope marker must not survive as a *condition* either — it belongs to the scope, and
+      // The scope marker must not survive as a *condition* either. It belongs to the scope, and
       // showing it in the builder would invite the user to delete it.
       expect(regenerate(kql)).toBe(kql);
     });
@@ -824,7 +824,7 @@ describe('TS-09 · a bare "| where ..." with no table line is not lost [spec 043
   /**
    * splitTopLevelPipes() filters out empty segments, so a body that opens directly with `|`
    * used to have its leading empty segment dropped and the where-clause text itself mistaken
-   * for the table name — silently losing the whole filter to defaultFilterStage(). A user pasting
+   * for the table name: silently losing the whole filter to defaultFilterStage(). A user pasting
    * a filter snippet with no table name (common when copying from elsewhere) hit this.
    */
   it('recovers the real condition instead of an empty placeholder', () => {
@@ -845,7 +845,7 @@ describe('TS-09 · a bare "| where ..." with no table line is not lost [spec 043
     const parsed = parseKqlToVisualQuery(kql);
     const filterStage = parsed.visualQuery.stages.find(s => s.type === 'filter');
     expect(filterStage, 'the where clause was lost').toBeDefined();
-    // A trailing | project is output-column metadata, not a mid-pipeline ShapeStage — same
+    // A trailing | project is output-column metadata, not a mid-pipeline ShapeStage, same
     // treatment any other query's trailing project gets.
     expect(parsed.projectColumns).toEqual(['id', 'name']);
   });

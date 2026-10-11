@@ -93,10 +93,10 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
         </div>
       )}
 
-      {/* Form — readOnly whenever not in edit mode (custom rules only; a built-in never enters
+      {/* Form: readOnly whenever not in edit mode (custom rules only; a built-in never enters
           edit mode, so this stays permanently true for one and locks the detection query). Tags
           and enabled on a built-in are gated by canAuthor instead, independent of editing. Save
-          itself lives in the status bar above, beside Edit — RuleForm exposes it through
+          itself lives in the status bar above, beside Edit: RuleForm exposes it through
           saveHandleRef (always the latest field values) and reports dirty/saving up so the
           button is only active when there's something unsaved. */}
       <RuleForm

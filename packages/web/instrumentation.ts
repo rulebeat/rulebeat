@@ -43,7 +43,7 @@ export async function register() {
   }
 
   // `trustHost: true` (auth.config.ts) means Auth.js will infer the public URL from request
-  // headers if nothing else is set — fine for a single-tenant self-hosted app, but a public URL
+  // headers if nothing else is set: fine for a single-tenant self-hosted app, but a public URL
   // configured in Settings → Sign-in is a stronger source of truth, and Auth.js reads it from
   // `AUTH_URL`. Mirror it once here, at boot, never inside the per-request auth config factory.
   // `syncAuthUrlMirror` is the same call the save handler makes, and is a no-op if the operator
@@ -66,15 +66,15 @@ export async function register() {
 
   const { warmSchemaCache } = await import('./lib/schema-warmer');
 
-  // Warm on startup — non-blocking
+  // Warm on startup (non-blocking)
   void warmSchemaCache();
 
-  // Refresh daily (24h) — keeps the 7-day TTL cache always fresh
+  // Refresh daily (24h): keeps the 7-day TTL cache always fresh
   setInterval(() => { void warmSchemaCache(); }, 24 * 60 * 60 * 1000);
 
   // Both reconstruct history for an install upgrading from a version that predated these tables.
   // Guarded because they are best-effort approximations of the past: worth attempting, never worth
-  // preventing the app from starting. Logged rather than swallowed — silently empty history looks
+  // preventing the app from starting. Logged rather than swallowed: silently empty history looks
   // identical to a customer who genuinely had none.
   try {
     const { backfillFindings } = await import('./lib/db/findings');

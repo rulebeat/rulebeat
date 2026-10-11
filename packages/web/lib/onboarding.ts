@@ -5,7 +5,7 @@ import { getMeta, setMeta } from './db/meta';
  * restarts without a dedicated table.
  *
  * `pending` is set once, at seed time, based on whether any users existed before this install's
- * first startup — never derived from "is the marker absent", which would put every *existing*
+ * first startup, never derived from "is the marker absent", which would put every *existing*
  * customer's admin into the wizard on their next page load. See `seedOnboardingState()` in
  * `lib/db/migrate.ts`.
  */
@@ -16,7 +16,7 @@ export type OnboardingStatus = 'pending' | 'skipped' | 'done';
 
 export interface OnboardingState {
   status: OnboardingStatus;
-  /** 1..4 — where a returning admin resumes. */
+  /** 1..4, where a returning admin resumes. */
   lastStep: number;
   completedAt: string | null;
   /** Email, for the audit trail. */
@@ -30,7 +30,7 @@ function isOnboardingStatus(value: unknown): value is OnboardingStatus {
 }
 
 /**
- * Tolerant parse. A malformed or missing row degrades to `skipped` rather than throwing — a corrupt
+ * Tolerant parse. A malformed or missing row degrades to `skipped` rather than throwing. A corrupt
  * meta value must never be able to trap every admin in the wizard or 500 the whole app shell.
  */
 export async function getOnboardingState(): Promise<OnboardingState> {

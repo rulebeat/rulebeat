@@ -8,7 +8,7 @@ interface Props { params: Promise<{ id: string }> }
 
 export default async function DashboardPage({ params }: Props) {
   const { id } = await params;
-  // Sentinel id for spec 015's error.tsx e2e coverage — a real dashboard id is a UUID and can
+  // Sentinel id for spec 015's error.tsx e2e coverage. A real dashboard id is a UUID and can
   // never collide with this string, so it's a safe, deterministic way to exercise the route's
   // error boundary without a dedicated test-only route.
   if (id === '__e2e-throw__') throw new Error('e2e-triggered render error');

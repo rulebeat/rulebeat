@@ -9,7 +9,7 @@ interface Props {
   widget: WidgetDef;
   editMode: boolean;
   /** True when the dashboard filter bar has an active filter OR this widget carries its own
-   *  Scope override — shows a subtle indicator next to the title so users know this widget's
+   *  Scope override: shows a subtle indicator next to the title so users know this widget's
    *  numbers are scoped, not tenant-wide. */
   filtered?: boolean;
   children: React.ReactNode;
@@ -45,7 +45,7 @@ export function WidgetWrapper({ widget, editMode, filtered, children, onRemove, 
             </span>
           )}
         </span>
-        {/* Actions — shown on hover (view mode) or always (edit mode) */}
+        {/* Actions: shown on hover (view mode) or always (edit mode) */}
         <div className={cn(
           'flex shrink-0 items-center gap-1 transition-opacity',
           editMode ? 'opacity-100' : (hovered ? 'opacity-100' : 'opacity-0'),

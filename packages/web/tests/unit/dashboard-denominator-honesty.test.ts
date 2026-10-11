@@ -1,9 +1,9 @@
 /**
- * Spec 039 — dashboard denominator and suppression honesty (RB-RM-015/RB-RM-016).
+ * Spec 039: dashboard denominator and suppression honesty (RB-RM-015/RB-RM-016).
  *
  * RB-RM-015: a widget filtered by severity or tag already narrows which findings count as
  * violations (the numerator, via matchesFilters) but historically did NOT narrow which rules
- * count as "in scope" (the denominator, via enabledRuleIdsForCategory) — a rule whose only
+ * count as "in scope" (the denominator, via enabledRuleIdsForCategory). A rule whose only
  * violation got filtered out read as passing, when it was never evaluated at that scope at all.
  * See enabledRuleIdsForCategory() in lib/dashboard-data.ts.
  *

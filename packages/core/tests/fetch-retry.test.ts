@@ -1,10 +1,10 @@
 /**
- * Spec 007 — fetchWithRetry: shared timeout/retry wrapper for the codebase's raw fetch call sites.
+ * Spec 007: fetchWithRetry: shared timeout/retry wrapper for the codebase's raw fetch call sites.
  *
  * Fake-timer tests follow the same pattern as
  * packages/web/tests/unit/notification-dispatch-retry.test.ts (vi.useFakeTimers() +
  * vi.stubGlobal('fetch', ...) + vi.advanceTimersByTimeAsync()). The hanging-response timeout test
- * deliberately runs under REAL timers instead — AbortSignal.timeout()'s internal scheduling is not
+ * deliberately runs under REAL timers instead: AbortSignal.timeout()'s internal scheduling is not
  * guaranteed to be intercepted by vi.useFakeTimers(), so faking time there would make the test's
  * pass/fail depend on an implementation detail of the timer-faking library rather than of the code
  * under test.
@@ -52,7 +52,7 @@ describe('fetchWithRetry (spec 007)', () => {
 
     const promise = fetchWithRetry('https://example.test/x');
 
-    // The default backoff (2s) alone must not be enough — the header asked for 5s.
+    // The default backoff (2s) alone must not be enough. The header asked for 5s.
     await vi.advanceTimersByTimeAsync(2_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 

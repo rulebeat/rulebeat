@@ -3,9 +3,9 @@ import { ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD } from './fixtures';
 import { signIn } from './helpers';
 
 // The seeded finding's resourceName ('e2estorage', set in scripts/seed-e2e.ts) is what actually
-// renders in the Results view — the finding's own `title` field is never displayed there, only the
+// renders in the Results view: the finding's own `title` field is never displayed there, only the
 // detecting rule's name and the resource. Rows in both the Results explorer and the Suppressions
-// list are plain divs/buttons (aria-expanded), not <tr> elements — there is no HTML <table> here.
+// list are plain divs/buttons (aria-expanded), not <tr> elements. There is no HTML <table> here.
 const RESOURCE_NAME = 'e2estorage';
 
 test('admin suppresses the seeded finding, then removes the suppression', async ({ page }) => {

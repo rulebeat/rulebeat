@@ -1,9 +1,9 @@
 /**
- * Spec 017 (RB-QA-019) — a rule whose ARG query returns the same resource twice in one page must
+ * Spec 017 (RB-QA-019): a rule whose ARG query returns the same resource twice in one page must
  * count as one finding everywhere, not just in the findings lifecycle table. await syncScanFindings()
  * already dedupes for the lifecycle table on its own (see finding-lifecycle-matrix.test.ts); this
  * suite proves await runCategoryScan() also dedupes the saved scan blob / counts / newFindings before
- * that point is ever reached — the gap Codex's challenge of the spec 017 plan identified.
+ * that point is ever reached: the gap Codex's challenge of the spec 017 plan identified.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';

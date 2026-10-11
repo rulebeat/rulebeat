@@ -1,5 +1,5 @@
 /**
- * TS-25 · upgrade path — does a customer's data survive?
+ * TS-25 · upgrade path: does a customer's data survive?
  *
  * The failure this suite exists to prevent is specific and unrecoverable: someone runs RuleBeat for
  * a month, upgrades, and their custom rules, their finding history or their own admin access are
@@ -7,7 +7,7 @@
  *
  * So the assertions are all of the form "the content that went in is still there", never "the
  * upgrade didn't throw". The latter is close to worthless here, because nearly every migration step
- * is wrapped in `try { … } catch {}` — a step that fails for a real reason is indistinguishable from
+ * is wrapped in `try { … } catch {}`. A step that fails for a real reason is indistinguishable from
  * one correctly skipped, and nothing is logged either way.
  *
  * Rules are matched by **name** rather than id, because several migrations legitimately rewrite ids.
@@ -110,7 +110,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     // and only includes raw_kql in the INSERT at all for shapes where cols.hasRawKql is true (see
     // RuleColumns there). For a shape that predates raw_kql (policies-era), spec 031's migration
     // (migrate.ts's legacyConditionRows block) compiles that seeded legacy data into raw_kql exactly
-    // once and clears the legacy columns — the logic isn't lost, it's relocated. Branch on what the
+    // once and clears the legacy columns. The logic isn't lost, it's relocated. Branch on what the
     // row actually shows rather than the shape's name, so this stays correct for any future shape
     // regardless of which side of that line it falls on.
     const seededConditions = [{ field: 'name', operator: 'startsWith', value: 'x' }];
@@ -120,7 +120,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
       const rule = ruleByName(up.sqlite, expected.name);
       expect(rule, `custom rule "${expected.name}" is gone`).toBeDefined();
 
-      // Still the user's own rule — a seed UPDATE must never reclassify it as built-in, which would
+      // Still the user's own rule: a seed UPDATE must never reclassify it as built-in, which would
       // make it read-only in the UI and overwritable on the next upgrade.
       expect(rule!.type, `"${expected.name}" changed provenance`).toBe('custom');
       expect(rule!.category).toBe(expected.category);
@@ -132,7 +132,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
 
       if (legacyConditionsStillInPlace) {
         // This shape already carried its own raw_kql before the upgrade, so the collapse step never
-        // touched this row. The query it asks Azure is the whole point of the rule — byte-identical
+        // touched this row. The query it asks Azure is the whole point of the rule: byte-identical
         // or it is a different check than the one the user wrote.
         expect(rule!.rawKql, `"${expected.name}" KQL changed`).toBe(expected.rawKql);
         expect(conditions, `"${expected.name}" lost its conditions`).toEqual(seededConditions);
@@ -181,7 +181,7 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
   });
 
   it('25-11 · pre-existing scan rows default to complete coverage (spec 004)', async () => {
-    // These scans predate the coverage column entirely — every one of them ran through the old
+    // These scans predate the coverage column entirely. Every one of them ran through the old
     // all-or-nothing lifecycle, so 'complete' with no incomplete rules is the only correct default.
     // A NULL or empty string here would make every pre-upgrade scan row unreadable as a ScanSummary.
     const scans = rowsIfPresent(up.sqlite, 'scans');
@@ -232,12 +232,12 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
     if (findingFingerprints.size === 0) return;
     expect(
       findingFingerprints.has(String(suppressions[0]!.fingerprint)),
-      'the suppression no longer matches any finding — an accepted risk would start alerting again',
+      'the suppression no longer matches any finding: an accepted risk would start alerting again',
     ).toBe(true);
   });
 
   it('25-14 · every pre-029 ARG rule defaults to resource-graph / state', async () => {
-    // The two identity checks are the one deliberate exception — see the dedicated case below —
+    // The two identity checks are the one deliberate exception (see the dedicated case below),
     // so they're excluded here rather than asserted against the ARG default.
     // The Service retirements rule is the other exception: it is new in this release (issue #181), so
     // it was never a pre-029 rule, and it ships as an Advisory.
@@ -252,13 +252,13 @@ describe.each(POPULATED)('TS-25 · %s · the data survives', shape => {
 
   it('25-15 · every pre-036 rule has a null logs_query, undisturbed by the new column (spec 036)', async () => {
     // Mirrors 25-14's shape: no fixture predates spec 036, so every rule in every upgraded shape
-    // must land with an untouched, empty logs_query — proving the migration that adds the column
+    // must land with an untouched, empty logs_query: proving the migration that adds the column
     // does not somehow backfill or corrupt it for rows that never had one.
     const IDENTITY_IDS = new Set(['cred:app-secret-expiring', 'cred:app-cert-expiring']);
     const rows = rowsIfPresent(up.sqlite, 'rules').filter(r => !IDENTITY_IDS.has(String(r.id)));
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.logs_query, `"${String(row.name)}" should have no logs_query — it predates spec 036`).toBeNull();
+      expect(row.logs_query, `"${String(row.name)}" should have no logs_query: it predates spec 036`).toBeNull();
     }
   });
 
@@ -379,7 +379,7 @@ describe('TS-25 · users and access', () => {
 
   // Superseded by B1b (2026-08-01): a zero-user install used to stay empty until someone signed
   // in via Entra, which only ever helped an install that already had Entra configured. It now
-  // gets a bootstrapped local owner account instead — see the console-first-config plan — so
+  // gets a bootstrapped local owner account instead (see the console-first-config plan) so
   // there is a way in even with no environment configured at all. Kept in place (not deleted) so
   // the reason for the assertion flip stays visible in the same file it was made in.
   it('25-08 · a pre-RBAC install with no bootstrap variable gets a local owner account, not a silent Entra grant', async () => {
@@ -391,7 +391,7 @@ describe('TS-25 · users and access', () => {
       expect(users.length).toBe(1);
       expect(users[0]!.email).toBe('admin@rulebeat.local');
       expect(users[0]!.role).toBe('admin');
-      expect(users[0]!.oid).toBe(null); // no Entra identity is linked — only a local password
+      expect(users[0]!.oid).toBe(null); // no Entra identity is linked, only a local password
 
       const accounts = rowsIfPresent(up.sqlite, 'local_accounts');
       expect(accounts.length).toBe(1);
@@ -427,7 +427,7 @@ describe('TS-25 · users and access', () => {
     } finally { sqlite.close(); }
   });
 
-  // Spec 020: addUsers() builds a `users` table with no session_epoch column at all — the shape
+  // Spec 020: addUsers() builds a `users` table with no session_epoch column at all. The shape
   // every pre-spec-020 install is really in. If the idempotent ALTER didn't apply its DEFAULT to
   // existing rows (only to future inserts), every current session in the world would start
   // mismatching on the very next await getCurrentUser() call and everyone would be logged out at once.

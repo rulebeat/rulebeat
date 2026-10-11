@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
  *
  * Before this, RuleBeat had six separate portal-and-click-outside dropdown
  * implementations plus ten native <select> elements. The native ones cannot be
- * themed — a browser paints its own popup, so they stayed light in dark mode and
+ * themed: a browser paints its own popup, so they stayed light in dark mode and
  * looked different on every operating system. The hand-rolled ones each
  * re-solved positioning, flipping, click-outside and keyboard handling, and each
  * solved them slightly differently.
@@ -61,7 +61,7 @@ function SelectTrigger({
 
 /** The trigger's label.
  *
- *  base-ui's Value takes a render FUNCTION, not a `placeholder` prop — passing
+ *  base-ui's Value takes a render FUNCTION, not a `placeholder` prop: passing
  *  `placeholder` typechecks (it is a valid HTML attribute on a span) but lands on
  *  the DOM node and renders nothing, leaving an empty trigger. The caller supplies
  *  children that resolve the current value to a label. */
