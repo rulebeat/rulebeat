@@ -3,7 +3,7 @@ import { ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD } from './fixtures';
 import { signIn } from './helpers';
 
 /**
- * Spec 014 — a mutation that fails, whether the server returns a bad response or the request
+ * Spec 014: a mutation that fails, whether the server returns a bad response or the request
  * never reaches it at all, must surface an inline Callout. Never a silent no-op, never a raw
  * alert(). Covers every offender named in the spec: schedules-tab's toggle and run-now, and
  * dashboards-gallery's set-default/duplicate/delete/restore-starter, plus dashboard-grid-client's
@@ -225,7 +225,7 @@ test.describe('mutation feedback contract (spec 014)', async () => {
     await page.getByRole('button', { name: 'Resource configuration' }).click();
     await page.getByPlaceholder('e.g. Required tag: Environment').fill(ruleName);
     await page.locator('textarea.font-mono').fill('Resources\n| where tolower(name) startswith "e2e"');
-    // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait — Create
+    // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait: Create
     // Rule now re-parses kqlText fresh for the submitted payload, not just the client-side gate, so
     // clicking immediately after typing is a real regression guard rather than a race to avoid.
     await page.getByRole('button', { name: 'Create Rule' }).click();
@@ -262,7 +262,7 @@ test.describe('mutation feedback contract (spec 014)', async () => {
     await page.getByRole('button', { name: 'Resource configuration' }).click();
     await page.getByPlaceholder('e.g. Required tag: Environment').fill(ruleName);
     await page.locator('textarea.font-mono').fill('Resources\n| where tolower(name) startswith "e2e"');
-    // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait — Create
+    // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait: Create
     // Rule now re-parses kqlText fresh for the submitted payload, not just the client-side gate, so
     // clicking immediately after typing is a real regression guard rather than a race to avoid.
     await page.getByRole('button', { name: 'Create Rule' }).click();

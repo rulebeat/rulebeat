@@ -40,7 +40,7 @@ const queryNavItem = { href: '/query', label: 'Query', icon: Terminal };
 const RAIL_WIDTH = 64;
 const EXPANDED_WIDTH = 256;
 
-// Defined at module scope (not inside Sidebar's render) — a component defined inside a render
+// Defined at module scope (not inside Sidebar's render). A component defined inside a render
 // function gets a new function identity every render, which React treats as a new component
 // type and remounts, losing state/focus. See docs/engineering/conventions/ui.md.
 function NavItem({ item, active, expanded }: {
@@ -89,7 +89,7 @@ export function Sidebar({ initialPinned, role, version }: { initialPinned: boole
   // via the wrapper below instead, so visually nothing overlaps.
   const overlay = expanded && !pinned;
   const asideWidth = expanded ? EXPANDED_WIDTH : RAIL_WIDTH;
-  // The wrapper reserves real layout space equal to the aside's width — except in overlay mode,
+  // The wrapper reserves real layout space equal to the aside's width, except in overlay mode,
   // where the aside flies out over content and the wrapper stays at the rail width instead.
   const wrapperWidth = overlay ? RAIL_WIDTH : asideWidth;
 
@@ -152,7 +152,7 @@ export function Sidebar({ initialPinned, role, version }: { initialPinned: boole
           <div className="space-y-px">
             {topNav.map((item) => {
               // '/dashboard' covers the redirector itself plus '/dashboards' (gallery) and
-              // '/dashboards/[id]' — a plain prefix match on item.href would miss the extra 's'.
+              // '/dashboards/[id]': a plain prefix match on item.href would miss the extra 's'.
               const active = item.href === '/dashboard'
                 ? pathname.startsWith('/dashboard')
                 : pathname === item.href || pathname.startsWith(item.href + '/');
@@ -170,7 +170,7 @@ export function Sidebar({ initialPinned, role, version }: { initialPinned: boole
           </div>
         </nav>
 
-        {/* Footer — both variants stay mounted and cross-fade via opacity instead of a hard
+        {/* Footer: both variants stay mounted and cross-fade via opacity instead of a hard
             conditional swap, so the content doesn't pop instantly while the aside's own width
             is still animating (a discrete mount/unmount has no transition to ride along with). */}
         <div className="relative h-[52px] shrink-0 overflow-hidden border-t border-sidebar-border">

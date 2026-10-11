@@ -1,7 +1,7 @@
 /**
  * B4 · getSchedulerStatus + getSchemaCacheStatus
  *
- * Both are pure local reads — no network calls, no Azure SDK. `getSchedulerStatus` reads
+ * Both are pure local reads: no network calls, no Azure SDK. `getSchedulerStatus` reads
  * `globalThis` flags set by the scheduler; `getSchemaCacheStatus` reads the schema-cache DB tables.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

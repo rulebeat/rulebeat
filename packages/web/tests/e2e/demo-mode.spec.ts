@@ -20,7 +20,7 @@ test('a Demo signs the Visitor in as an admin, is writable, and is pre-populated
 
   await page.goto(`${DEMO_URL}/scans?tab=results`);
   // The generated demo estate has real findings. Results rows are plain aria-expanded buttons, not
-  // <tr> elements — there is no HTML <table> on this view (see rules.spec.ts / suppressions.spec.ts
+  // <tr> elements: there is no HTML <table> on this view (see rules.spec.ts / suppressions.spec.ts
   // for the same finding).
   await expect(page.getByText(/\d+ findings?/)).toBeVisible({ timeout: 15_000 });
 });

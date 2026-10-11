@@ -1,5 +1,5 @@
 /**
- * Issue #176 — an editor can mark a rule Advisory when creating or editing it. The kind is
+ * Issue #176: an editor can mark a rule Advisory when creating or editing it. The kind is
  * resolved on the server (`resolveKind()` in lib/rules.ts) from the backend plus the kind asked
  * for, so a forged or impossible value never reaches the `rules.kind` column: a Logs rule is always
  * 'activity', anything else is 'state' unless it asked for 'advisory'.

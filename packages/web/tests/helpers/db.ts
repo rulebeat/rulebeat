@@ -3,7 +3,7 @@
  *
  * `lib/db/client.ts` opens one connection at import time and every repository imports that
  * singleton, so tests share a single database per file (pointed at a temp path by tests/setup.ts).
- * That's fine — and much closer to production than a mocked repository would be — provided each
+ * That's fine (and much closer to production than a mocked repository would be) provided each
  * test starts from a known state. `resetDb()` is how.
  */
 import { sql } from 'drizzle-orm';
@@ -13,7 +13,7 @@ import { dbKind } from '@/lib/db/backend';
 /**
  * Tables `resetDb()` empties, child-before-parent so foreign keys never block a delete.
  *
- * Deliberately excludes the seeded baseline — `rules`, `categories`, `dashboards`, `meta` — because
+ * Deliberately excludes the seeded baseline (`rules`, `categories`, `dashboards`, `meta`) because
  * that baseline *is* the state of every real install: `lib/db/client.ts` seeds built-in rules,
  * categories and the starter dashboard at import time, and those seed functions are private, so
  * clearing them would leave the database in a state no install is ever in. Suites that genuinely
@@ -43,7 +43,7 @@ const CLEARABLE = [
  *
  *  Async for the Postgres backend (issue #73); on SQLite the body has no await, so it still
  *  completes synchronously and legacy un-awaited `resetDb()` calls stay correct there. On Postgres
- *  the helper waits for `dbReady` first — the bootstrap creates the schema asynchronously, and a
+ *  the helper waits for `dbReady` first. The bootstrap creates the schema asynchronously, and a
  *  DELETE racing it would fail on a table that does not exist yet. */
 export async function resetDb(): Promise<void> {
   if (dbKind === 'pg') {
@@ -80,7 +80,7 @@ export async function clearDashboards(): Promise<void> {
   db.run(sql`DELETE FROM dashboards`);
 }
 
-/** Row count for a table — handy for "did this actually write anything" assertions. */
+/** Row count for a table: handy for "did this actually write anything" assertions. */
 export async function countRows(table: string): Promise<number> {
   if (dbKind === 'pg') {
     await dbReady;

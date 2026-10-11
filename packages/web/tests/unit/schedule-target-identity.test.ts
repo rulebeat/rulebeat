@@ -1,5 +1,5 @@
 /**
- * Spec 029 — identity rules are ordinary `rules` table rows now, so a schedule must be able to
+ * Spec 029: identity rules are ordinary `rules` table rows now, so a schedule must be able to
  * target them through every targeting mode (direct rule id, tags), not just 'all'/'categories'.
  * Before 029, identity had no rule-engine rows to match tags or ids against at all; the doc comment
  * on await resolveRulesForSchedule() in lib/schedule-target.ts now states the wider guarantee this suite

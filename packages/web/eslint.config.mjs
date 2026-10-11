@@ -12,7 +12,7 @@ const eslintConfig = defineConfig([
     rules: {
       // A leading underscore is the house convention for "kept for a uniform call
       // signature, intentionally unused" (see lib/notifications/format.ts's per-channel
-      // payload builders) — never a mistake worth flagging.
+      // payload builders), never a mistake worth flagging.
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },

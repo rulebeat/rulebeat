@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: nameError }, { status: 400 });
   }
 
-  // spec 036: all three backends now have a real editor/engine — resource-graph and
+  // spec 036: all three backends now have a real editor/engine: resource-graph and
   // microsoft-graph (spec 032), and log-analytics as of this spec.
   const queryBackend: QueryBackend = body.queryBackend ?? 'resource-graph';
   if (queryBackend !== 'resource-graph' && queryBackend !== 'microsoft-graph' && queryBackend !== 'log-analytics') {
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: ADVISORY_ON_LOGS_ERROR }, { status: 400 });
   }
 
-  // RB-RM-004: the UI guard (rule-form.tsx's save()) is client-side only — an API caller submitting
+  // RB-RM-004: the UI guard (rule-form.tsx's save()) is client-side only. An API caller submitting
   // the same visualQuery shape the form does must be held to the same "at least one condition
   // actually compiles" bar, or a filterless query (matches every resource in scope) saves directly.
   if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       const ctx = await createTenantContext();
       await probeGraphQuerySample(body.graphQuery, ctx);
     } catch (err) {
-      // No Azure credential configured yet, or connecting failed outright — fail open, same as the
+      // No Azure credential configured yet, or connecting failed outright: fail open, same as the
       // KQL identity probe below (see probeGraphQuerySample).
       console.error('[RuleBeat] rule-save Graph probe could not connect to Azure, allowing save:', err);
     }
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
       const ctx = await createTenantContext();
       await probeLogAnalyticsQuerySample(body.logsQuery, ctx);
     } catch (err) {
-      // No Azure credential/workspace configured yet, or connecting failed outright — fail open,
+      // No Azure credential/workspace configured yet, or connecting failed outright: fail open,
       // same as the Graph probe above.
       console.error('[RuleBeat] rule-save Log Analytics probe could not connect to Azure, allowing save:', err);
     }
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
         }, { status: 400 });
       }
     } catch (err) {
-      // No Azure credential configured yet, or connecting failed outright — fail open, same as a
+      // No Azure credential configured yet, or connecting failed outright: fail open, same as a
       // probe query error (see probeRuleIdentitySample).
       console.error('[RuleBeat] rule-save identity probe could not connect to Azure, allowing save:', err);
     }

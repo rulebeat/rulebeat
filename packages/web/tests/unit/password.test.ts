@@ -69,7 +69,7 @@ describe('verifyDummyPassword', () => {
     await expect(verifyDummyPassword('anything')).resolves.toBeUndefined();
   });
 
-  it('counts each call — proof a code path really burned the dummy verification, not by timing', async () => {
+  it('counts each call: proof a code path really burned the dummy verification, not by timing', async () => {
     const before = getDummyVerificationCallCountForTests();
     await verifyDummyPassword('anything');
     await verifyDummyPassword('anything-else');
@@ -88,7 +88,7 @@ describe('verification call counters (test-only seams)', () => {
     expect(getDummyVerificationCallCountForTests()).toBe(0);
 
     await verifyDummyPassword('irrelevant');
-    // verifyDummyPassword calls verifyPassword internally, so the real counter also moves —
+    // verifyDummyPassword calls verifyPassword internally, so the real counter also moves,
     // only the dummy counter distinguishes "this was a dummy call".
     expect(getRealVerificationCallCountForTests()).toBe(2);
     expect(getDummyVerificationCallCountForTests()).toBe(1);

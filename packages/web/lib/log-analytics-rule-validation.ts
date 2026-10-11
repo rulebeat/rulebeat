@@ -1,6 +1,6 @@
 import type { LogAnalyticsQuery, TenantContext } from '@rulebeat/core';
 
-// Two years — a reasonable outer bound on LAW retention rather than an arbitrary guess (spec 036).
+// Two years: a reasonable outer bound on LAW retention rather than an arbitrary guess (spec 036).
 const MAX_TIME_WINDOW_DAYS = 730;
 
 /**
@@ -22,7 +22,7 @@ export function validateLogAnalyticsQueryShape(lq: LogAnalyticsQuery): string | 
 }
 
 /**
- * Save-time probe for a Log Analytics rule — same fail-open contract as probeGraphQuerySample: a
+ * Save-time probe for a Log Analytics rule, same fail-open contract as probeGraphQuerySample: a
  * transient Log Analytics failure, or no workspace configured yet, must never newly block a save.
  * The interactive Validate action (validate-logs route) is where a real query error is meant to
  * surface to the user; this is a best-effort server log, not a blocking check.

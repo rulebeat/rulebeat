@@ -2,11 +2,11 @@ import { rand01 } from './prng';
 import { identityColumns, type RuleFixture } from './rule-fixture';
 
 /**
- * Hand-authored fixtures for the 13 `rulebeat-core` rules (`lib/builtin-rules.ts`) — one entry per
+ * Hand-authored fixtures for the 13 `rulebeat-core` rules (`lib/builtin-rules.ts`). One entry per
  * rule id, matching exactly the columns its own `rawKql` projects. These are worth hand-writing
  * (unlike the generic APRL fixtures) because they're the rules a first-time visitor is most likely
  * to click into, and evidence that looks obviously fake undermines the whole demo. The TLS rule in
- * particular must show `TLS1_0`, never a placeholder — a screenshot of "evidence: unknown" is worse
+ * particular must show `TLS1_0`, never a placeholder. A screenshot of "evidence: unknown" is worse
  * than not having the rule enabled at all.
  */
 export const CORE_FIXTURES: RuleFixture[] = [

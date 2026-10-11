@@ -1,6 +1,6 @@
 /**
- * Deterministic randomness for the demo generator. Everything the generator produces — resource
- * names, tags, which resources violate which rule, on which simulated day — must come out
+ * Deterministic randomness for the demo generator. Everything the generator produces (resource
+ * names, tags, which resources violate which rule, on which simulated day) must come out
  * byte-identical on every run, so `demo-generator.test.ts` can assert on fixed counts instead of
  * "roughly N".
  */
@@ -24,7 +24,7 @@ export function seedFor(base: number): number {
   return (base ^ activeSeed ^ DEFAULT_SEED) >>> 0;
 }
 
-/** A seeded PRNG for sequential draws (estate construction — resource counts, names, regions). */
+/** A seeded PRNG for sequential draws (estate construction: resource counts, names, regions). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return function random() {
@@ -37,7 +37,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 /**
- * A pure hash of an arbitrary string key to [0, 1) — order-independent, unlike a sequential PRNG.
+ * A pure hash of an arbitrary string key to [0, 1): order-independent, unlike a sequential PRNG.
  * The violation engine needs "is resource R violating rule Q on day D" to be a pure function of
  * (R, Q, D) alone, not of what order the generator happened to visit them in.
  */

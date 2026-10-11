@@ -125,7 +125,7 @@ export function SuppressionsClient({ initialSuppressions, canEdit }: Props) {
                     <p className="text-sm font-medium text-ink">{s.reason}</p>
                     <div className="flex items-center gap-1.5 font-mono text-xs text-ink">
                       {/* Absent resourceId means this suppresses an 'activity' finding pattern
-                          (spec 034), which has no resource — the fingerprint is the only stored
+                          (spec 034), which has no resource. The fingerprint is the only stored
                           identifier for it. */}
                       <span className="truncate max-w-[400px]">{s.resourceId ?? s.fingerprint}</span>
                       <CopyButton text={s.resourceId ?? s.fingerprint} />

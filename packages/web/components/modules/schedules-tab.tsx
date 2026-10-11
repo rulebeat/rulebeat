@@ -218,7 +218,7 @@ function EditRow({
             />
           </div>
 
-          {/* Recurrence pattern — Outlook-style */}
+          {/* Recurrence pattern: Outlook-style */}
           <div>
             <Label className="label-grid-strong mb-1.5 block">Repeat</Label>
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -481,7 +481,7 @@ export function SchedulesTab({ initialSchedules, categories, rules, channels, ca
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
   const ruleById = useMemo(() => new Map(rules.map(r => [r.id, r])), [rules]);
 
-  // The scheduler runs server-side on its own 30s tick — as a scheduled time passes, the row's
+  // The scheduler runs server-side on its own 30s tick. As a scheduled time passes, the row's
   // nextRunAt/lastRun only reflect reality once the client re-fetches. Without this, a page left
   // open would show a schedule's next run stuck "X ago" forever after it fires, even though the
   // server already ran it and computed the following occurrence. Skipped while a row is being

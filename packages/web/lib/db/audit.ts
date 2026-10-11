@@ -71,7 +71,7 @@ export interface WriteAuditInput {
   entityId?: string;
   summary: string;
   /**
-   * Changed field *names* and other small facts — never the field values. A rule's before/after
+   * Changed field *names* and other small facts, never the field values. A rule's before/after
    * JSON is several KB of mostly noise; the field list answers "who changed what" without turning
    * the audit log into a second copy of the database.
    */
@@ -79,7 +79,7 @@ export interface WriteAuditInput {
 }
 
 /**
- * Records one action. Best-effort and never throws — a failed audit write must not turn a
+ * Records one action. Best-effort and never throws. A failed audit write must not turn a
  * successful operation into an error response for the user. A failure is no longer silent: it
  * goes to stdout in the same structured shape lib/server-logger.ts's createScanLogger() uses, so
  * an operator watching logs (or piping them to their own aggregator) still sees it even though
@@ -114,7 +114,7 @@ export async function writeAudit(input: WriteAuditInput): Promise<void> {
  * resolved to a bounded, real account (unknown email, an account with no local password, a
  * repeated request against an already-locked-out account, or a denied SSO sign-in). Persisting
  * these lets anyone who can reach the sign-in endpoint grow audit_log without limit just by
- * retrying — see spec 022. Goes to stdout only, same structured shape as writeAudit()'s failure
+ * retrying: see spec 022. Goes to stdout only, same structured shape as writeAudit()'s failure
  * log, so the signal (enumeration, brute-force, lockout probing) is still visible to an operator.
  */
 export function logAuthEvent(message: string, fields?: Record<string, unknown>): void {
@@ -137,7 +137,7 @@ export async function listAuditEntries(opts: { limit?: number; offset?: number }
   return rows.map(rowToEntry);
 }
 
-/** Every row, unpaginated — for CSV export. listAuditEntries() stays capped at 200 for the UI. */
+/** Every row, unpaginated, for CSV export. listAuditEntries() stays capped at 200 for the UI. */
 export async function listAllAuditEntries(): Promise<AuditEntry[]> {
   const rows = await many(
     db.select().from(auditLog).orderBy(desc(auditLog.occurredAt)),

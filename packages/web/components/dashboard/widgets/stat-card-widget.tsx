@@ -71,7 +71,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
         return {
           value: String(current.activeFindings),
           label: 'open findings',
-          // Plain new/fixed counts instead of a signed net delta — a single +/-N number forces
+          // Plain new/fixed counts instead of a signed net delta. A single +/-N number forces
           // the reader to reverse-engineer two hidden numbers (and doesn't explain moves from
           // suppression/rule changes either); showing both counts directly needs no decoding and
           // matches Scans' own new-findings/fixed-findings numbers exactly.

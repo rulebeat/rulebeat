@@ -4,8 +4,8 @@
  * `graphGetAll()` (packages/core/src/auth/index.ts) is `TenantContext.graphGet`'s real
  * implementation for a live Azure connection. `identity-graph-seam.test.ts` proves
  * `collectIdentityFindings()` against a *fake* `graphGet` and never runs this function at all, so
- * the actual pagination loop — following `@odata.nextLink` until it's absent, merging every page's
- * `value` array — had no test at any boundary. This suite mocks global `fetch` directly (the same
+ * the actual pagination loop (following `@odata.nextLink` until it's absent, merging every page's
+ * `value` array) had no test at any boundary. This suite mocks global `fetch` directly (the same
  * pattern `fetch-retry.test.ts` uses) and proves that loop, with no network involved.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,12 +32,12 @@ afterEach(() => {
 });
 
 // subscriptionIds is passed explicitly so buildTenantContext() never reaches
-// listAccessibleSubscriptions()'s real SubscriptionClient call — this suite is only about graphGet.
+// listAccessibleSubscriptions()'s real SubscriptionClient call: this suite is only about graphGet.
 function graphCtx(credential: TokenCredential = fakeCredential()) {
   return buildTenantContext({ tenantId: 'tenant-1', subscriptionIds: ['sub-1'], credential });
 }
 
-describe('TenantContext.graphGet — graphGetAll() pagination (packages/core/src/auth/index.ts)', () => {
+describe('TenantContext.graphGet: graphGetAll() pagination (packages/core/src/auth/index.ts)', () => {
   it('returns a single page verbatim when there is no @odata.nextLink', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { value: [{ id: 'a' }, { id: 'b' }] }));
     vi.stubGlobal('fetch', fetchMock);
@@ -117,13 +117,13 @@ describe('TenantContext.graphGet — graphGetAll() pagination (packages/core/src
     expect((err as Error).message).toBe(
       `Microsoft Graph result set exceeded ${GRAPH_MAX_ROWS + 1} row(s). RuleBeat stopped paginating before reaching the end of the result set.`,
     );
-    // The cap check fires as soon as the running total crosses it — no second page is ever fetched.
+    // The cap check fires as soon as the running total crosses it. No second page is ever fetched.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not throw when the page that crosses GRAPH_MAX_ROWS is genuinely the last one', async () => {
     const overCap = Array.from({ length: GRAPH_MAX_ROWS + 1 }, (_, i) => ({ id: String(i) }));
-    // No @odata.nextLink on this page — the result set is complete, just large.
+    // No @odata.nextLink on this page. The result set is complete, just large.
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { value: overCap }));
     vi.stubGlobal('fetch', fetchMock);
 

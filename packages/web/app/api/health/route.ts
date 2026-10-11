@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isDemoEnv } from '@/lib/demo-env';
 import { isDemoReady } from '@/lib/demo/readiness';
 
-// Unauthenticated on purpose (excluded in proxy.ts's matcher) — this answers "is the Next.js
+// Unauthenticated on purpose (excluded in proxy.ts's matcher). This answers "is the Next.js
 // process alive and serving HTTP," nothing more. It must not open the database or call Azure: a
 // container orchestrator's liveness probe should never restart-loop over a transient Azure hiccup
 // or a slow disk. The deeper "can this instance actually reach Azure/the DB" question is what the

@@ -1,7 +1,7 @@
 /**
- * Spec 030 — the posture formula's tri-state contract: a rule counts as passing only when it
+ * Spec 030: the posture formula's tri-state contract: a rule counts as passing only when it
  * has zero active findings AND its last real scan proved it (lastRunStatus === 'success'). Zero
- * findings alone is not proof — a rule that has never run, or whose last run errored, goes into
+ * findings alone is not proof: a rule that has never run, or whose last run errored, goes into
  * unknownRules instead. Activity-kind rules (log-analytics, spec 029) have no "zero findings means
  * passing" state at all and are counted separately. See splitRuleOutcomes() and
  * enabledRuleIdsForCategory() in lib/dashboard-data.ts.
@@ -71,7 +71,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
     await insertRule(RULE_UNKNOWN_FAILED, { lastRunStatus: 'failed' });
     await insertRule(RULE_UNKNOWN_NEVER_RUN, { lastRunStatus: null });
-    // Last run also errored, but an active finding makes it implicitly failing regardless —
+    // Last run also errored, but an active finding makes it implicitly failing regardless:
     // proves unknownRules is specifically "zero findings, not proven", not "everything imperfect".
     await insertRule(RULE_WITH_FINDING, { lastRunStatus: 'failed' });
     await insertRule(RULE_ACTIVITY, { lastRunStatus: 'success', kind: 'activity', queryBackend: 'log-analytics' });
@@ -95,7 +95,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   it('an activity-kind rule is excluded from totalRules/passingRules and counted in activityRuleCount', async () => {
     const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
 
-    // 4 state rules (passing, unknown-failed, unknown-never-run, with-finding) — the activity
+    // 4 state rules (passing, unknown-failed, unknown-never-run, with-finding). The activity
     // rule is not one of them, no matter how healthy its own status looks.
     expect(summary.current.totalRules).toBe(4);
     expect(summary.current.activityRuleCount).toBe(1);
@@ -122,7 +122,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 });
 
-describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not blend into the trend comparison', () => {
+describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not blend into the trend comparison', () => {
   // Comfortably before any `dateWindow: { mode: 'relative', days: 7 }` cutoff, whatever "today" is.
   const BASELINE_DATE = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
 
@@ -148,8 +148,8 @@ describe('spec 033 — baseline honesty: a pre-honest-formula snapshot must not 
     await clearRules();
   });
 
-  it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in — this is the actual "-75%" bug', async () => {
-    // security's only baseline row is old-formula and generous (10/10) — if it leaked into the
+  it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in: this is the actual "-75%" bug', async () => {
+    // security's only baseline row is old-formula and generous (10/10). If it leaked into the
     // blend it would pull basePct from cost's honest 25% up toward ~79%, a wrong comparison point.
     await baselineRow('security', 10, 10, 1);
     await baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);

@@ -1,6 +1,6 @@
 /**
  * Spec 016 (RB-QA-008): a rule whose visualQuery contains a RawStage (the passthrough produced for
- * `| union (...)`) must survive the round trip through SQLite exactly — `ruleToRow`/`rowToRule`
+ * `| union (...)`) must survive the round trip through SQLite exactly: `ruleToRow`/`rowToRule`
  * (lib/rules.ts) JSON.stringify/parse the visualQuery blob as one column, so a stage type the DB
  * layer has never heard of is exactly the kind of thing that silently drops if the JSON shape isn't
  * preserved end to end.

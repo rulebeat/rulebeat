@@ -12,7 +12,7 @@ import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavail
 interface Config { category?: string; period?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
-/** Daily occurrence count for kind:'activity' findings (spec 034) — rules like sign-in risk or
+/** Daily occurrence count for kind:'activity' findings (spec 034): rules like sign-in risk or
  *  Graph audit patterns that describe recurring behaviour rather than a resource's fixable state,
  *  so there is no pass/fail posture to show, only how often the pattern keeps occurring. Backed by
  *  getActivityOccurrenceCounts() via the shared /api/widgets/summary endpoint. */
@@ -57,7 +57,7 @@ export function ActivityOccurrencesWidget({ config, filters, refreshKey }: Props
               );
             }}
           />
-          {/* One measurement, one colour — same token top-rules gives its single bar series. */}
+          {/* One measurement, one colour, same token top-rules gives its single bar series. */}
           <Bar dataKey="count" name="Occurrences" fill="var(--color-fill)" />
         </BarChart>
       </ResponsiveContainer>

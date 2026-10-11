@@ -2,7 +2,7 @@
  * WS2g · demo mode's runtime kill switch.
  *
  * `await resolveAzureCredential()` (lib/azure-credential.ts) checks `await isDemoMode()` before anything else,
- * including before its own "environment always wins" resolution order — a demo deployment that
+ * including before its own "environment always wins" resolution order. A demo deployment that
  * also happens to carry a real, fully-specified service principal in its environment must still
  * never be able to use it. This suite proves that ordering directly, rather than trusting the
  * comment: every test below hands the resolver a credential that would work if reached, and asserts
@@ -99,7 +99,7 @@ describe('an incomplete demo configuration does not accidentally trip the switch
     process.env.RULEBEAT_DEMO = '1';
     resetDemoModeCacheForTests();
     // Deliberately no await stampDemoDatabase() call: await isDemoMode() is false here, same as WS2g's
-    // demo-mode.test.ts truth table — this just re-confirms the credential resolver reads the same
+    // demo-mode.test.ts truth table. This just re-confirms the credential resolver reads the same
     // gate rather than its own, weaker check of RULEBEAT_DEMO alone.
     const resolved = await resolveAzureCredential();
     expect(resolved.source).toBe('env-secret');

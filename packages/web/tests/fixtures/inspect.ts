@@ -4,7 +4,7 @@
  * The whole point of the upgrade suite is comparing a database before and after, and "before" might
  * keep a rule's conditions in a column called `rules`, its provenance in `source`, and the rows
  * themselves in a table called `policies`. Normalising that here means an assertion can be written
- * once — "the three custom rules are still there with their logic intact" — and run against every
+ * once ("the three custom rules are still there with their logic intact") and run against every
  * shape.
  */
 import type { Database } from 'better-sqlite3';
@@ -30,7 +30,7 @@ export interface NormalisedRule {
   kind: string | null;
 }
 
-/** Where rules live in this database — the table was called `policies` in the oldest lineage. */
+/** Where rules live in this database. The table was called `policies` in the oldest lineage. */
 export function ruleTableName(sqlite: Database): 'rules' | 'policies' | null {
   if (tableExists(sqlite, 'rules')) return 'rules';
   if (tableExists(sqlite, 'policies')) return 'policies';
@@ -78,7 +78,7 @@ export function ruleByName(sqlite: Database, name: string): NormalisedRule | und
   return readRules(sqlite).find(r => r.name === name);
 }
 
-/** Reads a table if it exists, else an empty list — old shapes are missing whole tables. */
+/** Reads a table if it exists, else an empty list: old shapes are missing whole tables. */
 export function rowsIfPresent(sqlite: Database, table: string): Record<string, unknown>[] {
   if (!tableExists(sqlite, table)) return [];
   return sqlite.prepare(`SELECT * FROM "${table}"`).all() as Record<string, unknown>[];

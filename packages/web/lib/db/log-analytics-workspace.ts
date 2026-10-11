@@ -5,7 +5,7 @@ import { many, one, run, inTransaction } from './exec';
 
 /**
  * The default Log Analytics workspace entered through the UI. See `lib/log-analytics-workspace.ts`
- * for how this fits into resolution — an environment variable always wins over anything stored here.
+ * for how this fits into resolution. An environment variable always wins over anything stored here.
  *
  * Unlike azureCredentials, there is no secret on this row: a workspace query is authorized by the
  * existing Azure credential (Log Analytics Reader on the workspace), not a separate identity. The

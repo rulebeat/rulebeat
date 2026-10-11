@@ -1,6 +1,6 @@
 // Seeds the isolated, temp-path SQLite database the Playwright admin-fixture server points at
 // (RULEBEAT_DB_PATH set by the caller before this process starts). Deliberately no static imports
-// of anything under lib/ — same reasoning as scripts/generate-demo.ts: RULEBEAT_DB_PATH,
+// of anything under lib/, same reasoning as scripts/generate-demo.ts: RULEBEAT_DB_PATH,
 // RULEBEAT_INITIAL_ADMIN and RULEBEAT_INITIAL_PASSWORD must already be set in the environment
 // before lib/db/client.ts's module-load-time DB_PATH resolution ever runs, and importing it here
 // would be hoisted above any assignment this file made itself.
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
 
   // A genuinely fresh install (zero users before seedOwnerAccount() ran, exactly the case here)
   // seeds onboarding as 'pending' and (app)/layout.tsx redirects every admin into the /onboarding
-  // wizard. That wizard is its own untested surface, not this suite's concern — skip it so the
+  // wizard. That wizard is its own untested surface, not this suite's concern: skip it so the
   // rest of the suite can sign in straight to a dashboard, the same as any already-onboarded install.
   await setOnboardingState({ status: 'skipped' });
 
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   if ('error' in viewerResult) throw new Error(`seed-e2e: could not create viewer user: ${viewerResult.error}`);
   await setPassword(viewerResult.user.id, hashPasswordSync(viewerPassword), { mustChangePassword: false });
 
-  // seedOwnerAccount() (lib/db/migrate.ts) always forces a password change on first sign-in — real
+  // seedOwnerAccount() (lib/db/migrate.ts) always forces a password change on first sign-in: real
   // and correct product behavior, already covered end-to-end by the Docker smoke test. Re-setting
   // it here so the rest of this suite can sign in as admin directly, since re-testing that specific
   // gate again isn't this suite's job.

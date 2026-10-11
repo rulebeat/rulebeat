@@ -8,7 +8,7 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('provisionUser — deny by default', () => {
+describe('provisionUser: deny by default', () => {
   it('denies an unknown oid/email when an admin exists, and logs (not persists) the attempt (spec 022)', async () => {
     const admin = await createUser({ email: 'admin@example.com', role: 'admin' });
     if ('error' in admin) throw new Error(admin.error);
@@ -20,8 +20,8 @@ describe('provisionUser — deny by default', () => {
       expect(result).toBeNull();
       expect(await getUserByEmail('stranger@example.com')).toBeNull();
 
-      // Denied Entra sign-ins are unbounded — reachable by anyone who can complete a sign-in
-      // against the tenant, provisioned or not — so this is logged to stdout, never persisted
+      // Denied Entra sign-ins are unbounded: reachable by anyone who can complete a sign-in
+      // against the tenant, provisioned or not, so this is logged to stdout, never persisted
       // to audit_log (spec 022). Persisting it would let an attacker grow the table without limit.
       expect(logSpy).toHaveBeenCalled();
       const payload = JSON.parse(logSpy.mock.calls[0]![0] as string);
@@ -36,7 +36,7 @@ describe('provisionUser — deny by default', () => {
     }
   });
 
-  it('still denies an unknown oid/email when zero admins exist — no bootstrap exception', async () => {
+  it('still denies an unknown oid/email when zero admins exist: no bootstrap exception', async () => {
     expect(await getUserByEmail('nobody-yet@example.com')).toBeNull();
 
     const result = await provisionUser({ oid: 'oid-first-ever', email: 'nobody-yet@example.com' });
@@ -57,7 +57,7 @@ describe('provisionUser — deny by default', () => {
     expect((await getUserByEmail('invited@example.com'))?.oid).toBe('oid-invited');
   });
 
-  it('denies a deleted user on their next sign-in — deletion is durable revocation', async () => {
+  it('denies a deleted user on their next sign-in: deletion is durable revocation', async () => {
     const admin = await createUser({ email: 'admin2@example.com', role: 'admin' });
     if ('error' in admin) throw new Error(admin.error);
     const removed = await createUser({ email: 'removed@example.com', role: 'viewer', oid: 'oid-removed' });
@@ -83,7 +83,7 @@ describe('provisionUser — deny by default', () => {
   });
 });
 
-describe('provisionUser — invite-claim audit visibility (spec 019)', () => {
+describe('provisionUser: invite-claim audit visibility (spec 019)', () => {
   it('writes exactly one user.invite_claimed entry, plus the usual auth.sign_in, when a pre-invited row is claimed', async () => {
     const invited = await createUser({ email: 'claimant@example.com', role: 'editor' });
     if ('error' in invited) throw new Error(invited.error);

@@ -1,5 +1,5 @@
 /**
- * Spec 022 — lib/db/audit.ts's non-persisting logging path, and await writeAudit()'s own failure path.
+ * Spec 022: lib/db/audit.ts's non-persisting logging path, and await writeAudit()'s own failure path.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
@@ -42,7 +42,7 @@ describe('writeAudit failure logging', () => {
   it('logs to stderr and does not throw when the insert itself fails', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      // actorId is NOT NULL — passing undefined bypasses TypeScript (via the cast) but still
+      // actorId is NOT NULL: passing undefined bypasses TypeScript (via the cast) but still
       // fails at the real better-sqlite3 bind step, which is what this test needs to reach the
       // catch branch for real rather than simulating it.
       await expect(writeAudit({

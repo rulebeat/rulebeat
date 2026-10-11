@@ -18,7 +18,7 @@ import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavail
 interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 
-/** Compact, filter-aware findings feed — the single replacement for the old findings-table and
+/** Compact, filter-aware findings feed. The single replacement for the old findings-table and
  *  findings-explorer dashboard widgets. Anything bigger belongs on the Scans page; this is a
  *  "what's new" glance with a row click that navigates there, filtered. */
 export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
@@ -37,7 +37,7 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
 
   const [categories, setCategories] = useState<FilterOptionsResponse['categories']>([]);
   useEffect(() => {
-    // Same endpoint/pattern the dashboard filter bar and widget config panel use — categories
+    // Same endpoint/pattern the dashboard filter bar and widget config panel use: categories
     // are DB-backed and user-extensible, so the raw id alone isn't a stable enough label.
     fetch('/api/widgets/filter-options')
       .then(r => r.ok ? r.json() : null)

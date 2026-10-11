@@ -1,8 +1,8 @@
 /**
- * Spec 004 — scan lifecycle correctness, end to end through (await runCategoryScan()).
+ * Spec 004: scan lifecycle correctness, end to end through (await runCategoryScan()).
  *
  * The bug this spec fixes: a rule whose ARG query throws (or is capped/truncated) used to be
- * indistinguishable from a rule that legitimately found nothing — await syncScanFindings() would resolve
+ * indistinguishable from a rule that legitimately found nothing: await syncScanFindings() would resolve
  * ("fix") every one of that rule's previously-active findings. The actual fix lives in scan-runner.ts
  * narrowing `ranRuleIds` to only rules whose outcome was 'success' (see runner-outcomes.test.ts for
  * the outcome-classification unit tests); this suite proves that narrowing reaches all the way
@@ -44,7 +44,7 @@ async function insertRule(id: string, marker: string): Promise<void> {
 
 type QueryBehavior = Record<string, { rows?: Record<string, unknown>[]; failWith?: Error }>;
 
-/** A minimal TenantContext whose queryARG branches on which rule's marker appears in the KQL —
+/** A minimal TenantContext whose queryARG branches on which rule's marker appears in the KQL:
  *  fakeTenantContext's `failWith` is all-or-nothing, but this suite needs one rule in the same
  *  scan to fail while another succeeds. */
 function makeCtx(behavior: QueryBehavior): TenantContext {
@@ -78,7 +78,7 @@ async function securityCategory() {
 describe('scan lifecycle coverage (spec 004)', () => {
   beforeEach(async () => {
     await resetDb();
-    // The built-in APRL pack seeds enabled rules into 'security' too — clear the table so this
+    // The built-in APRL pack seeds enabled rules into 'security' too: clear the table so this
     // suite's fake ctx only ever has to answer for the two rules it explicitly wires up.
     await clearRules();
     await insertRule(RULE_OK, MARKER_OK);
@@ -117,15 +117,15 @@ describe('scan lifecycle coverage (spec 004)', () => {
     ]);
 
     findings = await listFindings();
-    // rule-ok genuinely found nothing this time — resolving it is correct, not a regression.
+    // rule-ok genuinely found nothing this time: resolving it is correct, not a regression.
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('fixed');
-    // rule-fail's query threw — its prior finding must survive, not be silently marked fixed.
+    // rule-fail's query threw: its prior finding must survive, not be silently marked fixed.
     expect(findings.find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
   });
 
   it('a capped rule (top-level take) also leaves its prior active finding untouched', async () => {
     const category = await securityCategory();
-    // Overwrite rule-fail with a query that has a top-level `take` — capped, not failed.
+    // Overwrite rule-fail with a query that has a top-level `take`: capped, not failed.
     await execRun(db.delete(rulesTable));
     await insertRule(RULE_OK, MARKER_OK);
     await execRun(db.insert(rulesTable).values({
@@ -151,7 +151,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
     });
     expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
-    // Scan 2: the capped rule returns no rows this time — a real result set could easily still
+    // Scan 2: the capped rule returns no rows this time. A real result set could easily still
     // contain the same resource, just past the take-5 cutoff, so this must not resolve it either.
     const outcome = await runCategoryScan(category, {
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [] } }),
@@ -180,7 +180,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
     expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: rule-fail's query still runs fine but now returns a mix of a real row and one with no
-    // usable id — a bad projection, not an ARG failure. Its result can't be trusted as exhaustive
+    // usable id: a bad projection, not an ARG failure. Its result can't be trusted as exhaustive
     // (the identity-less row could just as easily have been the one resource that matched before),
     // so the prior finding must survive exactly like the failed/capped cases above.
     const outcome = await runCategoryScan(category, {

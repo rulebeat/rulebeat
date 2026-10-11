@@ -54,7 +54,7 @@ describe('the shipped Service retirements rule', () => {
     expect(description).toMatch(/incomplete/i);
     expect(description).toMatch(/public cloud/i);
     expect(description).toContain('azure.microsoft.com/updates');
-    expect(description).not.toContain('—');
+    expect(description).not.toContain('\u2014');
   });
 
   it('cannot be switched to a Problem, and the refusal points at Duplicate', async () => {

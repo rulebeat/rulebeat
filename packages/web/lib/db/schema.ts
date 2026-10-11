@@ -13,17 +13,17 @@ export const rules = sqliteTable('rules', {
   conditions: text('conditions').notNull(),   // JSON: Condition[]
   projectColumns: text('project_columns'),    // JSON: string[] | null → use DEFAULT_PROJECT_COLUMNS when absent
   rawKql: text('raw_kql'),                    // optional raw KQL override; when set + conditions empty → every row is a finding
-  conditionGroups: text('condition_groups'),  // JSON: ConditionGroup[] | null — when set, takes precedence over conditions
-  type: text('type').notNull().default('custom'), // 'builtin' | 'community' | 'custom' — same concept as Azure Policy's policyType
+  conditionGroups: text('condition_groups'),  // JSON: ConditionGroup[] | null. When set, takes precedence over conditions
+  type: text('type').notNull().default('custom'), // 'builtin' | 'community' | 'custom', same concept as Azure Policy's policyType
   pack: text('pack'),                         // named pack for built-ins (e.g. 'rulebeat-core')
   queryBackend: text('query_backend').notNull().default('resource-graph'), // 'resource-graph' | 'microsoft-graph' | 'log-analytics'
-  graphQuery: text('graph_query'),            // JSON: GraphQuery | null — set only when queryBackend = 'microsoft-graph'
-  logsQuery: text('logs_query'),              // JSON: LogAnalyticsQuery | null — set only when queryBackend = 'log-analytics'
-  kind: text('kind').notNull().default('state'),          // 'state' | 'activity' — always derived from queryBackend, never authored
+  graphQuery: text('graph_query'),            // JSON: GraphQuery | null: set only when queryBackend = 'microsoft-graph'
+  logsQuery: text('logs_query'),              // JSON: LogAnalyticsQuery | null: set only when queryBackend = 'log-analytics'
+  kind: text('kind').notNull().default('state'),          // 'state' | 'activity', always derived from queryBackend, never authored
   group: text('group_name'),                  // optional user-defined group name (column: group_name avoids SQL reserved word)
-  tags: text('tags'),                         // JSON: string[] | null — multi-dimensional labels
-  visualQuery: text('visual_query'),          // JSON: VisualQuery | null — visual builder state; rawKql stores the generated KQL
-  lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null — this rule's outcome the last time a scan actually ran it
+  tags: text('tags'),                         // JSON: string[] | null: multi-dimensional labels
+  visualQuery: text('visual_query'),          // JSON: VisualQuery | null: visual builder state; rawKql stores the generated KQL
+  lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null. This rule's outcome the last time a scan actually ran it
   lastRunAt: text('last_run_at'),             // ISO timestamp of that outcome; null = never run
   version: text('version'),                   // the rule version this row currently runs; null for a custom rule
   retiredAt: text('retired_at'),              // ISO timestamp; set when no pack ships this built-in any more (it keeps running)
@@ -100,7 +100,7 @@ export const categories = sqliteTable('categories', {
   icon: text('icon'),
   sortOrder: integer('sort_order').notNull().default(0),
   isBuiltin: integer('is_builtin', { mode: 'boolean' }).notNull().default(false),
-  // is_special stays physically in SQLite (spec 029, Codex's accepted CHEAPER PATH) — this
+  // is_special stays physically in SQLite (spec 029, Codex's accepted CHEAPER PATH). This
   // Drizzle definition just stops declaring it. Nothing reads or writes the orphaned column.
   createdAt: text('created_at').notNull(),
 });
@@ -111,14 +111,14 @@ export const schedules = sqliteTable('schedules', {
 
   // Target: what gets scanned
   targetType: text('target_type').notNull().default('all'),   // 'all' | 'categories' | 'tags' | 'rules'
-  targetValues: text('target_values').notNull().default('[]'), // JSON: string[] — category slugs, tag names, or rule ids
+  targetValues: text('target_values').notNull().default('[]'), // JSON: string[]: category slugs, tag names, or rule ids
 
   // Recurrence (Outlook-style structured pattern, not raw cron):
   recurrenceType: text('recurrence_type').notNull().default('once'), // 'once' | 'hourly' | 'daily' | 'weekly' | 'monthly'
   interval: integer('interval').notNull().default(1),          // every N hours/days/weeks/months (unused for 'once')
   daysOfWeek: text('days_of_week'),                            // JSON: number[] (0=Sun..6=Sat), weekly only
   dayOfMonth: integer('day_of_month'),                          // 1-31, monthly only (clamped to month length)
-  startAt: text('start_at').notNull(),                          // ISO datetime — anchors date, time-of-day, and interval alignment
+  startAt: text('start_at').notNull(),                          // ISO datetime: anchors date, time-of-day, and interval alignment
 
   endType: text('end_type').notNull().default('never'),        // 'never' | 'on_date'
   endDate: text('end_date'),                                    // ISO date, when endType = 'on_date'
@@ -141,12 +141,12 @@ export const meta = sqliteTable('meta', {
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull(),                  // lowercased; UNIQUE enforced in the raw DDL
-  oid: text('oid'),                                // Entra object id — null until first sign-in
+  oid: text('oid'),                                // Entra object id: null until first sign-in
   name: text('name'),                              // display name, filled in on first sign-in
   role: text('role').notNull().default('viewer'),  // 'admin' | 'editor' | 'viewer'
-  scope: text('scope'),                            // JSON: reserved for scoped roles — always null today
+  scope: text('scope'),                            // JSON: reserved for scoped roles, always null today
   // Bumped by any local-password mutation (self-service change, admin set/reset/remove) to
-  // invalidate every outstanding JWT for this account — see spec 020. A token's `epoch` claim must
+  // invalidate every outstanding JWT for this account: see spec 020. A token's `epoch` claim must
   // match this value or getCurrentUser() treats the session as signed out.
   sessionEpoch: integer('session_epoch').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -155,7 +155,7 @@ export const users = sqliteTable('users', {
 
 // The Azure service principal RuleBeat scans with, when it was entered in the UI rather than
 // supplied as an environment variable. Modelled as a table rather than a handful of `meta` keys so
-// that scanning more than one tenant later is a new row, not a migration — the same shape Prowler
+// that scanning more than one tenant later is a new row, not a migration. The same shape Prowler
 // and CloudQuery use for a "provider" record.
 //
 // `clientSecret` holds ciphertext, never the secret itself (see lib/secret-box.ts). Environment
@@ -166,7 +166,7 @@ export const azureCredentials = sqliteTable('azure_credentials', {
   name: text('name').notNull(),                        // display label, e.g. "Contoso production"
   tenantId: text('tenant_id').notNull(),
   clientId: text('client_id').notNull(),
-  clientSecret: text('client_secret').notNull(),       // AES-256-GCM ciphertext — never plaintext
+  clientSecret: text('client_secret').notNull(),       // AES-256-GCM ciphertext, never plaintext
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   lastVerifiedAt: text('last_verified_at'),            // UTC ISO of the last successful live check
   lastVerifiedSubscriptions: integer('last_verified_subscriptions'),
@@ -176,7 +176,7 @@ export const azureCredentials = sqliteTable('azure_credentials', {
 });
 
 // The default Log Analytics workspace RuleBeat queries for `queryBackend: 'log-analytics'` rules
-// (spec 035). Same shape as azureCredentials above but with no secret of its own — a workspace query
+// (spec 035). Same shape as azureCredentials above but with no secret of its own. A workspace query
 // is authorized by the existing Azure credential (Log Analytics Reader on the workspace), not a
 // separate identity. `isActive` mirrors azureCredentials: at most one row active, environment always
 // wins over it.
@@ -205,7 +205,7 @@ export const localAccounts = sqliteTable('local_accounts', {
 });
 
 // A single-sign-on provider configured through Settings → Sign-in, the console-configurable
-// counterpart to azureCredentials above — same shape, same reasoning (a table rather than a
+// counterpart to azureCredentials above, same shape, same reasoning (a table rather than a
 // handful of meta keys, so a second provider or a second tenant later is a new row). Only one is
 // ever active. `isActive` defaults false: a saved row is unverified until a real sign-in succeeds
 // through it, so a typo'd tenant or a wrong redirect URI never silently becomes "the" way in.
@@ -214,7 +214,7 @@ export const ssoProviders = sqliteTable('sso_providers', {
   provider: text('provider').notNull(),                 // 'microsoft-entra-id' today; extensible
   tenantId: text('tenant_id').notNull(),
   clientId: text('client_id').notNull(),
-  clientSecret: text('client_secret').notNull(),         // AES-256-GCM ciphertext — never plaintext
+  clientSecret: text('client_secret').notNull(),         // AES-256-GCM ciphertext, never plaintext
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
   lastVerifiedAt: text('last_verified_at'),              // set on the first real sign-in through it
   createdAt: text('created_at').notNull(),
@@ -225,12 +225,12 @@ export const ssoProviders = sqliteTable('sso_providers', {
 export const auditLog = sqliteTable('audit_log', {
   id: text('id').primaryKey(),
   actorId: text('actor_id').notNull(),
-  actorEmail: text('actor_email').notNull(), // denormalized — the log stays readable after the user row is removed
+  actorEmail: text('actor_email').notNull(), // denormalized. The log stays readable after the user row is removed
   action: text('action').notNull(),          // AuditAction, e.g. 'rule.update'
   entityType: text('entity_type'),           // 'rule' | 'suppression' | 'schedule' | 'category' | 'dashboard' | 'user' | 'scan' | 'auth'
   entityId: text('entity_id'),
   summary: text('summary').notNull(),        // human-readable one-liner
-  details: text('details'),                  // JSON: Record<string, unknown> — changed field NAMES, never their values
+  details: text('details'),                  // JSON: Record<string, unknown>: changed field NAMES, never their values
   occurredAt: text('occurred_at').notNull(),
 });
 
@@ -242,7 +242,7 @@ export const findings = sqliteTable('findings', {
   // 'state' (default) = a resource currently misconfigured, has resourceId/Type/Name below.
   // 'activity' (spec 034) = a recurring occurrence with no resource to point at; resourceId/Type/Name
   // are null and dimensionKey carries what makes the occurrence distinct instead. Never derived from
-  // anything but the source Finding.kind — see Rule.kind's deriveKind() for the rule-level analog.
+  // anything but the source Finding.kind: see Rule.kind's deriveKind() for the rule-level analog.
   kind: text('kind').notNull().default('state'),   // 'state' | 'activity'
   dimensionKey: text('dimension_key'),             // set only for kind:'activity'
   resourceId: text('resource_id'),
@@ -258,7 +258,7 @@ export const findings = sqliteTable('findings', {
   evidence: text('evidence').notNull().default('{}'),                  // JSON, latest sighting; the first of the finding's rows
   evidenceRows: text('evidence_rows'),                                 // JSON array of every row the rule returned for the resource, in query order; null for a finding stored before rows existed
   azurePortalLink: text('azure_portal_link'),
-  status: text('status').notNull().default('active'),                  // 'active' | 'fixed' — an 'activity' finding stays 'active' forever; it ages out of a read-time window instead, never transitions to 'fixed'
+  status: text('status').notNull().default('active'),                  // 'active' | 'fixed'. An 'activity' finding stays 'active' forever; it ages out of a read-time window instead, never transitions to 'fixed'
   firstSeenAt: text('first_seen_at').notNull(),
   lastSeenAt: text('last_seen_at').notNull(),
   resolvedAt: text('resolved_at'),
@@ -332,9 +332,9 @@ export const postureSnapshots = sqliteTable('posture_snapshots', {
   posturePct: integer('posture_pct'),                         // null when total_rules = 0
   passingRules: integer('passing_rules').notNull().default(0),
   totalRules: integer('total_rules').notNull().default(0),
-  unknownRules: integer('unknown_rules').notNull().default(0),       // zero findings but lastRunStatus wasn't a proven 'success' (or never run) — neither passing nor failing
+  unknownRules: integer('unknown_rules').notNull().default(0),       // zero findings but lastRunStatus wasn't a proven 'success' (or never run), neither passing nor failing
   activityRuleCount: integer('activity_rule_count').notNull().default(0), // 'activity'-kind rules enabled for this category, excluded from totalRules entirely
-  // 1 = pre-spec-030 (possibly backfilled) posture formula, 2 = honest spec-030 formula — lets a
+  // 1 = pre-spec-030 (possibly backfilled) posture formula, 2 = honest spec-030 formula: lets a
   // baseline comparison exclude rows it can't honestly compare against (spec 033).
   formulaVersion: integer('formula_version').notNull().default(1),
   activeFindings: integer('active_findings').notNull().default(0),
@@ -345,20 +345,20 @@ export const postureSnapshots = sqliteTable('posture_snapshots', {
 }));
 
 // Despite the name (kept for migration simplicity), this table is now the general "runs" record
-// for BOTH scheduled and manual (ad-hoc "Run Scan") executions — scheduleId is '' for manual runs
+// for BOTH scheduled and manual (ad-hoc "Run Scan") executions: scheduleId is '' for manual runs
 // rather than a nullable column, avoiding a NOT NULL relaxation that would need a table rebuild.
-// Outbound notification channels — one row per destination (Teams Workflows URL, Slack incoming
+// Outbound notification channels: one row per destination (Teams Workflows URL, Slack incoming
 // webhook, generic webhook, or SMTP email). The URL/secret is AES-256-GCM ciphertext.
 // For webhook types: `url` = the webhook URL. For email: `url` = the SMTP password (may be empty
 // for anonymous relays). Non-secret email config (host, port, etc.) lives in `config` as JSON.
-// Severity threshold and scope live on the per-schedule junction table — this table is an address
+// Severity threshold and scope live on the per-schedule junction table. This table is an address
 // book. `lastError` surfaces delivery failures in the UI.
 export const notificationChannels = sqliteTable('notification_channels', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   type: text('type').notNull(),            // 'teams' | 'slack' | 'webhook' | 'email'
-  url: text('url').notNull(),              // AES-256-GCM ciphertext — never plaintext
-  config: text('config'),                  // JSON: EmailChannelConfig — null for non-email channels
+  url: text('url').notNull(),              // AES-256-GCM ciphertext, never plaintext
+  config: text('config'),                  // JSON: EmailChannelConfig: null for non-email channels
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   lastNotifiedAt: text('last_notified_at'),
@@ -374,8 +374,8 @@ export const scheduleNotificationChannels = sqliteTable('schedule_notification_c
   scheduleId: text('schedule_id').notNull(),
   channelId: text('channel_id').notNull(),
   minSeverity: text('min_severity').notNull().default('high'),
-  categoryIds: text('category_ids'),       // JSON: string[] | null — null = all categories
-  subscriptionIds: text('subscription_ids'), // JSON: string[] | null — null = all subscriptions
+  categoryIds: text('category_ids'),       // JSON: string[] | null: null = all categories
+  subscriptionIds: text('subscription_ids'), // JSON: string[] | null: null = all subscriptions
 }, (table) => ({
   pk: primaryKey({ columns: [table.scheduleId, table.channelId] }),
 }));
@@ -384,8 +384,8 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
   id: text('id').primaryKey(),
   scheduleId: text('schedule_id').notNull(), // '' for manual (non-scheduled) runs
   triggeredBy: text('triggered_by').notNull().default('schedule'), // 'manual' | 'schedule'
-  targetType: text('target_type'),   // ScheduleTargetType — null for pre-migration rows
-  targetValues: text('target_values'), // JSON: string[] — null for pre-migration rows
+  targetType: text('target_type'),   // ScheduleTargetType: null for pre-migration rows
+  targetValues: text('target_values'), // JSON: string[]: null for pre-migration rows
   startedAt: text('started_at').notNull(),
   finishedAt: text('finished_at'),
   status: text('status').notNull(),           // 'running' | 'success' | 'partial' | 'error'
@@ -406,7 +406,7 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
 });
 
 // One row per delivery attempt sequence (a channel's final outcome for a single run, after retries
-// are exhausted) — the history behind the single-value lastNotifiedAt/lastError columns on
+// are exhausted): the history behind the single-value lastNotifiedAt/lastError columns on
 // notificationChannels, which get overwritten on every dispatch. No SQL-level FK (matches every
 // other table in this schema); deleteChannel() cascades here by hand.
 export const notificationDeliveries = sqliteTable('notification_deliveries', {
@@ -425,13 +425,13 @@ export const notificationDeliveries = sqliteTable('notification_deliveries', {
 // A query composed on the /query page (spec 037) that a user chose to keep. First per-user-owned
 // data in this schema: 'private' visibility is visible only to owner_id and is hand-cascade-deleted
 // alongside them (see deleteUser()); 'shared' is visible to every editor/admin and survives its
-// owner's deletion — owner_email stays denormalized for display once that happens, same reasoning
+// owner's deletion: owner_email stays denormalized for display once that happens, same reasoning
 // as actor_email on auditLog. No SQL-level FK, matching every other table in this schema.
 export const savedQueries = sqliteTable('saved_queries', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   queryBackend: text('query_backend').notNull(), // 'resource-graph' | 'microsoft-graph' | 'log-analytics'
-  scope: text('scope'),                // JSON: RuleScope | null — resource-graph only
+  scope: text('scope'),                // JSON: RuleScope | null: resource-graph only
   visualQuery: text('visual_query'),   // JSON: VisualQuery | null
   rawKql: text('raw_kql'),
   graphQuery: text('graph_query'),     // JSON: GraphQuery | null
@@ -444,16 +444,16 @@ export const savedQueries = sqliteTable('saved_queries', {
   lastRunAt: text('last_run_at'),
 });
 
-// Recent run history for the live query page (spec 037 follow-up — descoped to sessionStorage at
+// Recent run history for the live query page (spec 037 follow-up: descoped to sessionStorage at
 // ship time, moved server-side once real use showed people wanted it to survive a refresh/device).
-// Always fully personal, unlike savedQueries — there is no 'shared' visibility, so deleteUser()
+// Always fully personal, unlike savedQueries. There is no 'shared' visibility, so deleteUser()
 // removes every row outright rather than only a 'private' subset. No SQL-level FK, matching every
 // other table in this schema.
 export const queryRuns = sqliteTable('query_runs', {
   id: text('id').primaryKey(),
   queryBackend: text('query_backend').notNull(), // 'resource-graph' | 'microsoft-graph' | 'log-analytics'
-  scope: text('scope'),                // JSON: RuleScope | null — resource-graph only
-  rawKql: text('raw_kql'),             // resource-graph only — the run routes never receive visualQuery
+  scope: text('scope'),                // JSON: RuleScope | null: resource-graph only
+  rawKql: text('raw_kql'),             // resource-graph only. The run routes never receive visualQuery
   graphQuery: text('graph_query'),     // JSON: GraphQuery | null
   logsQuery: text('logs_query'),       // JSON: LogAnalyticsQuery | null
   count: integer('count').notNull(),

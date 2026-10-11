@@ -14,7 +14,7 @@ export interface AppUser {
   role: Role;
   /** Reserved for scoped roles ("this team only sees these subscriptions"). Always null today. */
   scope: string | null;
-  /** Bumped by bumpSessionEpoch() on any local-password mutation — see spec 020. */
+  /** Bumped by bumpSessionEpoch() on any local-password mutation: see spec 020. */
   sessionEpoch: number;
   createdAt: string;
   lastSeenAt: string | null;
@@ -150,10 +150,10 @@ export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'la
       if (await countAdminsOn(tx) === 1) return 'last-admin';
     }
 
-    // Private saved queries (spec 037) are personal scratch state — delete them with their owner.
+    // Private saved queries (spec 037) are personal scratch state: delete them with their owner.
     // Shared ones stay (ownerEmail is denormalized precisely so they keep reading correctly afterward).
     await run(tx.delete(savedQueries).where(and(eq(savedQueries.ownerId, id), eq(savedQueries.visibility, 'private'))));
-    // Run history (spec 037 follow-up) has no shared visibility at all — it's always fully personal,
+    // Run history (spec 037 follow-up) has no shared visibility at all: it's always fully personal,
     // so every row goes, not just a 'private' subset.
     await run(tx.delete(queryRuns).where(eq(queryRuns.ownerId, id)));
     await run(tx.delete(users).where(eq(users.id, id)));
@@ -177,7 +177,7 @@ export async function touchLastSeen(id: string, name?: string | null): Promise<v
   }).where(eq(users.id, id)));
 }
 
-/** Invalidates every outstanding JWT for this account — see spec 020. */
+/** Invalidates every outstanding JWT for this account: see spec 020. */
 export async function bumpSessionEpoch(id: string): Promise<void> {
   await run(db.update(users).set({ sessionEpoch: sql`session_epoch + 1` }).where(eq(users.id, id)));
 }

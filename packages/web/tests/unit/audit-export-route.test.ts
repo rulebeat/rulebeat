@@ -1,5 +1,5 @@
 /**
- * Spec 022 — GET /api/audit/export: admin-only, unpaginated CSV, with formula-injection and
+ * Spec 022: GET /api/audit/export: admin-only, unpaginated CSV, with formula-injection and
  * quote/comma escaping since summary/details are attacker-influenced (rule/resource names).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

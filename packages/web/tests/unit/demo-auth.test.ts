@@ -34,7 +34,7 @@ async function enableDemoMode(): Promise<void> {
 beforeEach(async () => {
   await resetDb();
   mockAuth.mockReset();
-  mockAuth.mockResolvedValue(null); // anonymous by default — every test opts into a session
+  mockAuth.mockResolvedValue(null); // anonymous by default. Every test opts into a session
 });
 
 afterEach(async () => {
@@ -60,7 +60,7 @@ describe('await getCurrentUser() and anonymous requests', () => {
   });
 
   it('stays unauthenticated when demo mode is on but the visitor row was never seeded', async () => {
-    // No await seedDemoVisitor() — this is what an incomplete/failed generator run looks like.
+    // No await seedDemoVisitor(): this is what an incomplete/failed generator run looks like.
     await enableDemoMode();
     expect(await getCurrentUser()).toBeNull();
   });

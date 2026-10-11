@@ -78,7 +78,7 @@ async function sendWebhook(channel: StoredNotificationChannel, body: unknown): P
       lastError = err instanceof SsrfGuardError && !(err instanceof RedirectRefusedError)
         ? err.message
         : String(err).slice(0, 200);
-      // A refused address or redirect is a property of the endpoint, not a transient hiccup —
+      // A refused address or redirect is a property of the endpoint, not a transient hiccup:
       // retrying would just hit the same answer again (spec 021).
       if (err instanceof SsrfGuardError || attempt === MAX_ATTEMPTS) {
         return { ok: false, attempts: attempt, httpStatus: null, error: lastError };
@@ -91,7 +91,7 @@ async function sendWebhook(channel: StoredNotificationChannel, body: unknown): P
   return { ok: false, attempts: MAX_ATTEMPTS, httpStatus: lastStatus, error: lastError };
 }
 
-/** Sends a single email via SMTP using nodemailer. One attempt only — SMTP errors are final. */
+/** Sends a single email via SMTP using nodemailer. One attempt only: SMTP errors are final. */
 async function sendEmail(channel: StoredNotificationChannel, subject: string, text: string): Promise<SendResult> {
   const cfg = channel.emailConfig;
   if (!cfg) {
@@ -221,8 +221,8 @@ async function withoutSuppressed<T extends Finding>(findings: T[]): Promise<T[]>
  * returns `false` without sending. A 'sending' claim whose owner died is taken over only after
  * STALE_AFTER_MS (schedule-runs.ts).
  *
- * `dispatchNotifications()` never throws under any current code path — every channel's send is
- * caught internally and the whole dispatch is `Promise.allSettled`-wrapped — so `notifyStatus` is
+ * `dispatchNotifications()` never throws under any current code path: every channel's send is
+ * caught internally and the whole dispatch is `Promise.allSettled`-wrapped, so `notifyStatus` is
  * marked `'sent'` unconditionally once dispatch returns; per-channel success/failure is tracked
  * separately in notification_deliveries.
  *

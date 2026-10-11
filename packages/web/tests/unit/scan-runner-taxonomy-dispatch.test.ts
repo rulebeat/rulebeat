@@ -1,5 +1,5 @@
 /**
- * Spec 029 — await runCategoryScan() dispatches purely on each enabled rule's queryBackend
+ * Spec 029: await runCategoryScan() dispatches purely on each enabled rule's queryBackend
  * (microsoft-graph -> runGraphRules, everything else -> runRules/ARG), never on
  * category.isSpecial. Before 029 the 'identity' category bypassed runRules() entirely for every
  * rule filed under it; this proves an ordinary resource-graph rule filed under 'identity' now runs
@@ -18,7 +18,7 @@ import { fakeTenantContext, argRow } from '../helpers/fake-azure';
 const ARG_RULE_ID = 'test-arg-rule-under-identity';
 
 // await resetDb() deliberately leaves the seeded `rules` table (including the two real identity rules
-// this suite depends on) intact — see tests/helpers/db.ts. await clearRules() would wipe those along with
+// this suite depends on) intact: see tests/helpers/db.ts. await clearRules() would wipe those along with
 // this test's own rule, so instead delete just this rule by id before each insert, making the insert
 // idempotent across the two `it` blocks that share this file's database connection.
 async function insertArgRuleUnderIdentity(): Promise<void> {

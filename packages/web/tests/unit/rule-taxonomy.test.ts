@@ -1,9 +1,9 @@
 /**
- * Spec 029 — canDuplicateRule() is the single shared predicate behind both halves of the
+ * Spec 029: canDuplicateRule() is the single shared predicate behind both halves of the
  * Duplicate/copyFrom guard: rule-detail-client.tsx (hides the Duplicate button) and
  * rules/new/page.tsx (falls back to a blank new-rule form for a `?copyFrom=` of an
  * un-authorable rule). Spec 032 made Directory configuration (queryBackend:
- * 'microsoft-graph') authorable too, and spec 036 did the same for Log Analytics — every
+ * 'microsoft-graph') authorable too, and spec 036 did the same for Log Analytics. Every
  * backend now has a real editor, so every backend is duplicable.
  */
 import { describe, expect, it } from 'vitest';

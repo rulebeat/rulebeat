@@ -1,5 +1,5 @@
 /**
- * B3 · onboarding marker — the phase-4 gate.
+ * B3 · onboarding marker: the phase-4 gate.
  *
  * The whole feature hinges on one distinction: a genuinely brand-new install (no users yet) must
  * see the setup wizard, and every existing install (upgrading from a version that predates it) must
@@ -8,7 +8,7 @@
  * must never disturb a user's configuration or settings.
  *
  * `await getOnboardingState()`'s tolerant parse is tested against the *live* db (via `setMeta` directly),
- * not a sample file — `await resetDb()` deliberately never clears `meta`, so this is the one state a test
+ * not a sample file: `await resetDb()` deliberately never clears `meta`, so this is the one state a test
  * has to set up explicitly rather than inherit from a clean slate.
  */
 import { describe, expect, it } from 'vitest';
@@ -67,7 +67,7 @@ describe('B3 · onboarding-v1 seeding', () => {
   });
 
   it('a malformed stored value degrades to skipped rather than throwing', async () => {
-    // Tests the tolerant parse in lib/onboarding.ts directly, against the live test db — await resetDb()
+    // Tests the tolerant parse in lib/onboarding.ts directly, against the live test db: await resetDb()
     // never clears meta, so this state has to be set up explicitly rather than inherited.
     await setOnboardingState({ status: 'pending' }); // sanity: writes valid JSON via the normal path first
     expect(await getMeta('onboarding-v1')).not.toBeNull();

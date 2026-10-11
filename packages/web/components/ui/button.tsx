@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 
 /* Grid buttons: hard corners, no gradient, no drop shadow. The previous default
  * carried an inset highlight and a blue-tinted shadow baked in as a literal
- * rgba() — invisible to the theme and wrong on a dark ground.
+ * rgba(): invisible to the theme and wrong on a dark ground.
  *
  * `default` is a solid ink fill, the highest contrast the page has, so it is
  * reserved for the one primary action per view. It is deliberately not the
@@ -46,7 +46,7 @@ const buttonVariants = cva(
         "icon-lg": "size-10",
       },
       /** Grid's uppercase mono treatment. For primary calls to action, not for
-       *  every button — used everywhere it stops meaning anything. */
+       *  every button: used everywhere it stops meaning anything. */
       emphasis: {
         none: "",
         grid: "font-mono text-[11px] font-semibold uppercase tracking-[0.08em]",

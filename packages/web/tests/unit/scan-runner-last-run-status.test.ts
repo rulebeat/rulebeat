@@ -1,5 +1,5 @@
 /**
- * Spec 030 — await runCategoryScan() must persist each rule's own last-run outcome, so a later "zero
+ * Spec 030: await runCategoryScan() must persist each rule's own last-run outcome, so a later "zero
  * findings" can be told apart from "this rule has never successfully run" (an always-erroring rule
  * would otherwise read identically to an always-passing one). See await setRulesLastRunStatus() in
  * lib/rules.ts and its call site in lib/scan-runner.ts.
@@ -83,7 +83,7 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
       .where(eq(rulesTable.id, RULE_OUT_OF_SCOPE)));
   });
 
-  it('a rule whose query throws is stamped "failed"; one that returns cleanly is stamped "success" — both at this scan\'s finish time', async () => {
+  it('a rule whose query throws is stamped "failed"; one that returns cleanly is stamped "success", both at this scan\'s finish time', async () => {
     const category = (await getCategory('security'))!;
     const outcome = await runCategoryScan(category, {
       ctx: makeCtx({

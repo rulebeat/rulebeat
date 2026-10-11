@@ -6,7 +6,7 @@ import { createTenantContext, getAzureConnectionStatus } from '@/lib/azure-crede
 import { credentialFailedPreflight, runPreflight } from '@/lib/preflight';
 
 /**
- * "What can this credential see" — consumed by onboarding step 2 today and the B4 diagnostics page
+ * "What can this credential see": consumed by onboarding step 2 today and the B4 diagnostics page
  * later. Namespaced under diagnostics/ rather than the API root so B4's other checks (schema-cache
  * age, scheduler liveness) get a home too.
  *
@@ -17,7 +17,7 @@ export async function GET() {
   const actor = await requireRole('azure:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
 
-  // Building the context is where a bad credential actually surfaces — await createTenantContext()
+  // Building the context is where a bad credential actually surfaces: await createTenantContext()
   // resolves the credential and its subscription list, and await runPreflight() below only ever probes
   // with a context that already exists. So this failure gets the per-check treatment too: a 200
   // whose credential check failed, not a wholesale 500 that hides the one answer the person on the

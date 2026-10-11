@@ -1,7 +1,7 @@
 /**
  * GET /api/azure/subscriptions feeds a background name lookup (`useSubscriptionNames`) that every
  * page with a subscription filter fires on load, whether or not Azure has been connected yet. It
- * must not turn "not configured" into a page-load error — see the route's own comment.
+ * must not turn "not configured" into a page-load error: see the route's own comment.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';

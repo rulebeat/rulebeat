@@ -9,7 +9,7 @@ interface MinimalCtx {
 }
 
 const PAGE_SIZE = 1000;
-// Azure Resource Graph's documented per-request subscription limit — an explicit or tenant-default
+// Azure Resource Graph's documented per-request subscription limit. An explicit or tenant-default
 // list longer than this must be split into multiple requests, not sent as one oversized call.
 const SUBSCRIPTION_BATCH_SIZE = 1000;
 
@@ -86,8 +86,8 @@ export class ResourceGraphClient {
     const explicitSubs = scope?.subscriptions?.length ? scope.subscriptions : undefined;
     const managementGroups = scope?.managementGroups?.length ? scope.managementGroups : undefined;
     // Azure Resource Graph rejects a request that sets both `subscriptions` and `managementGroups`.
-    // A rule scoped to management groups only must never fall back to the tenant subscription list —
-    // that would silently widen (and change the meaning of) a management-group-scoped query.
+    // A rule scoped to management groups only must never fall back to the tenant subscription list.
+    // That would silently widen (and change the meaning of) a management-group-scoped query.
     const subscriptions = explicitSubs ?? (managementGroups ? undefined : this.subscriptionIds);
 
     if (subscriptions && managementGroups) {

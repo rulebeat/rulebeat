@@ -1,7 +1,7 @@
 /**
- * Spec 005 — shared identity contract between validate-kql and the rule-save routes.
+ * Spec 005: shared identity contract between validate-kql and the rule-save routes.
  * `checkRowsHaveIdentity` is the pure predicate; `probeRuleIdentitySample` wraps it with the
- * save-time fail-open behavior (only a *confirmed bad result* blocks a save — any other failure,
+ * save-time fail-open behavior (only a *confirmed bad result* blocks a save: any other failure,
  * e.g. Azure unreachable or no credential yet, must let the save through).
  */
 import { describe, expect, it } from 'vitest';
@@ -47,7 +47,7 @@ describe('await probeRuleIdentitySample()', () => {
     expect(result).toEqual({ blocked: false });
   });
 
-  it('fails open when the probe query itself throws — a transient Azure error must not block saving', async () => {
+  it('fails open when the probe query itself throws: a transient Azure error must not block saving', async () => {
     const ctx = fakeTenantContext({ failWith: new Error('429 Too Many Requests') });
     const result = await probeRuleIdentitySample('resources | where type == "microsoft.compute/virtualmachines"', ctx);
     expect(result).toEqual({ blocked: false });

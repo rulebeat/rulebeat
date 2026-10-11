@@ -6,10 +6,10 @@ import type { ScheduleRun } from '@/lib/schedule-runs';
 /**
  * Polls `GET /api/scans/run?since=...` until the run this caller triggered finishes.
  *
- * `run: null` genuinely means "no run matching `since` yet" — the busy flag a scan holds can belong
+ * `run: null` genuinely means "no run matching `since` yet". The busy flag a scan holds can belong
  * to a scheduled run that started moments earlier, so 'waiting' is a real, visible state rather than
  * an instant flash. A 10-minute ceiling exists because scans on a large tenant can run long; past it
- * this reports 'timeout' rather than pretending the scan failed — it's still running in the background.
+ * this reports 'timeout' rather than pretending the scan failed: it's still running in the background.
  */
 
 export type RunProgressPhase = 'idle' | 'waiting' | 'running' | 'done' | 'timeout';
@@ -65,7 +65,7 @@ export function useRunProgress(): UseRunProgressResult {
         stopTimers();
       }
     } catch {
-      // A transient fetch failure shouldn't stop the wait — the next tick tries again.
+      // A transient fetch failure shouldn't stop the wait. The next tick tries again.
     }
   }, [stopTimers]);
 

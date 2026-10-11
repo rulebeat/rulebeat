@@ -3,7 +3,7 @@
  *
  * `lib/db/client.ts` opens its connection and applies every migration and seed as a side effect of
  * being imported, keyed off `RULEBEAT_DB_PATH` and `process.cwd()`. So the only faithful way to drive
- * it is to set those and import it — which can only be done once per process, hence a fresh one per
+ * it is to set those and import it, which can only be done once per process, hence a fresh one per
  * sample database.
  *
  * `DATA_DIR` is `process.cwd() + '/data'` and is deliberately not overridable, so the caller spawns

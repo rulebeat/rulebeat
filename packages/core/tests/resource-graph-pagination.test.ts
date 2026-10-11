@@ -3,7 +3,7 @@
  *
  * `resource-graph-scope.test.ts` covers spec 004's request-shape rules (batching, the
  * subscriptions/managementGroups conflict, the timeout argument) but every one of its mocked
- * responses is a single untruncated page — `ResourceGraphClient.queryBatch()`'s own skipToken loop
+ * responses is a single untruncated page: `ResourceGraphClient.queryBatch()`'s own skipToken loop
  * and its `resultTruncated: 'true'` → `ResourceGraphTruncatedError` path had no test at all. Same
  * mock-at-the-SDK-boundary pattern as that file.
  */
@@ -26,7 +26,7 @@ beforeEach(() => {
   resourcesMock.mockReset();
 });
 
-describe('ResourceGraphClient — skipToken pagination', () => {
+describe('ResourceGraphClient: skipToken pagination', () => {
   it('follows skipToken across multiple pages and yields every row from all of them', async () => {
     resourcesMock
       .mockResolvedValueOnce({ data: [{ id: 'r1' }, { id: 'r2' }], skipToken: 'page-2', resultTruncated: 'false' })
@@ -62,7 +62,7 @@ describe('ResourceGraphClient — skipToken pagination', () => {
   });
 });
 
-describe('ResourceGraphClient — resultTruncated', () => {
+describe('ResourceGraphClient: resultTruncated', () => {
   it('throws ResourceGraphTruncatedError after full pagination when any page was truncated', async () => {
     resourcesMock
       .mockResolvedValueOnce({ data: [{ id: 'r1' }], skipToken: 'page-2', resultTruncated: 'false' })

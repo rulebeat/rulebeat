@@ -15,7 +15,7 @@ interface SyntheticCredential {
   /** Days-remaining this credential will show on the *final* simulated day (today). Negative means
    *  already expired by then. Values above 30 never surface as a finding (the widest band on the
    *  real `cred:app-secret-expiring`/`cred:app-cert-expiring` rules' `graphQuery.expand.bands` in
-   *  lib/builtin-rules.ts) — kept in the pool anyway so not every app has an alert, which would
+   *  lib/builtin-rules.ts): kept in the pool anyway so not every app has an alert, which would
    *  look fake. */
   offsetFromEnd: number;
 }
@@ -33,7 +33,7 @@ const OFFSET_WEIGHTS: Array<{ value: number; weight: number }> = [
   { value: 3, weight: 4 }, // critical, about to expire
   { value: 10, weight: 5 }, // high
   { value: 22, weight: 6 }, // medium
-  { value: 60, weight: 10 }, // healthy — never crosses the 30-day window
+  { value: 60, weight: 10 }, // healthy, never crosses the 30-day window
   { value: 120, weight: 12 }, // healthy, plenty of runway
 ];
 
@@ -45,7 +45,7 @@ function buildCredential(seedKey: string, index: number, kind: 'secret' | 'cert'
   };
 }
 
-/** Built once, deterministically, independent of the simulated day — mirrors `buildEstate()`. */
+/** Built once, deterministically, independent of the simulated day: mirrors `buildEstate()`. */
 export function buildIdentityApps(): SyntheticApp[] {
   const rng = mulberry32(seedFor(IDENTITY_SEED));
   const apps: SyntheticApp[] = [];
@@ -70,7 +70,7 @@ export function buildIdentityApps(): SyntheticApp[] {
 }
 
 /** A credential eligible for rotation (`offsetFromEnd <= 22`, i.e. it would show as a finding by
- *  the end of the window) rotates around the midpoint of the replay — resolved for the second half.
+ *  the end of the window) rotates around the midpoint of the replay: resolved for the second half.
  *  Computed lazily here (not at buildIdentityApps() time) because it needs `totalDays`, which isn't
  *  known until the replay orchestrator decides how many days to simulate. */
 function rotationDay(cred: SyntheticCredential, totalDays: number): number | undefined {
@@ -92,7 +92,7 @@ function endDateTimeFor(cred: SyntheticCredential, day: number, totalDays: numbe
 /** Shapes the synthetic apps into exactly what `runGraphRules()` (packages/core/src/engine/
  *  graph-runner.ts) expects back from `graphGet('/applications?...')`, with every credential's
  *  `endDateTime` computed relative to the real wall-clock "now" (constant across the whole,
- *  short-lived generator run) so that `daysUntil()` — which measures against real `Date.now()` —
+ *  short-lived generator run) so that `daysUntil()` (which measures against real `Date.now()`)
  *  comes out to exactly the days-remaining this simulated day should show, with zero changes to
  *  the engine itself. */
 export function graphAppsForDay(apps: SyntheticApp[], day: number, totalDays: number) {

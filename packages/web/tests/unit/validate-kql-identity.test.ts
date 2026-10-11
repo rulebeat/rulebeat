@@ -1,5 +1,5 @@
 /**
- * Spec 005 — POST /api/rules/validate-kql must reject a query whose sampled rows carry no usable
+ * Spec 005: POST /api/rules/validate-kql must reject a query whose sampled rows carry no usable
  * resource id, the same contract runner.ts enforces at scan time (see runner-outcomes.test.ts).
  * Without this, a rule could be saved and pass "Test query" while silently producing findings that
  * collapse onto one fingerprint at scan time (computeFingerprint hashes ruleId::resourceId).
@@ -36,7 +36,7 @@ async function signInAsEditor(): Promise<void> {
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
-describe('POST /api/rules/validate-kql — identity guard (spec 005)', () => {
+describe('POST /api/rules/validate-kql: identity guard (spec 005)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
@@ -63,7 +63,7 @@ describe('POST /api/rules/validate-kql — identity guard (spec 005)', () => {
   });
 });
 
-describe('POST /api/rules/validate-kql — 400 error unwrapping (spec 006)', () => {
+describe('POST /api/rules/validate-kql: 400 error unwrapping (spec 006)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
@@ -83,7 +83,7 @@ describe('POST /api/rules/validate-kql — 400 error unwrapping (spec 006)', () 
     expect(body.error).toBe('malformed KQL: unexpected token');
   });
 
-  it('does not unwrap a non-400 Azure error — the 400-only gate still holds', async () => {
+  it('does not unwrap a non-400 Azure error: the 400-only gate still holds', async () => {
     const azureErr = Object.assign(new Error('generic wrapper'), {
       statusCode: 403,
       details: [{ message: 'insufficient privileges' }],

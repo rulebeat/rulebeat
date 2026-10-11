@@ -44,7 +44,7 @@ test('admin creates a custom rule via the KQL editor, then deletes it', async ({
 
   // The KQL textarea is the only one on the page styled font-mono (Description is a plain Textarea).
   await page.locator('textarea.font-mono').fill('Resources\n| where tolower(name) startswith "e2e"');
-  // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait — Create
+  // spec 044 fixed the save-payload staleness this used to work around with a 500ms wait: Create
   // Rule now re-parses kqlText fresh for the submitted payload, not just the client-side gate, so
   // clicking immediately after typing is a real regression guard rather than a race to avoid.
   await page.getByRole('button', { name: 'Create Rule' }).click();

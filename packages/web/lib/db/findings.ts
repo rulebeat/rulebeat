@@ -47,13 +47,13 @@ export interface DetailedSyncResult extends SyncResult {
 export interface SyncScanFindingsOptions {
   scanId: string;
   category: string;
-  /** Enabled/targeted rule ids that actually ran this scan — used to scope the resolve step
+  /** Enabled/targeted rule ids that actually ran this scan: used to scope the resolve step
    *  so disabled rules or tag/rule-scoped schedules never falsely resolve findings outside
    *  what they actually checked. */
   ranRuleIds: string[];
   findings: Finding[];
   finishedAt: string;
-  /** Skips finding_events rows — used by the history backfill so replaying old scans doesn't
+  /** Skips finding_events rows: used by the history backfill so replaying old scans doesn't
    *  fabricate a created→resolved audit trail for transitions nobody actually observed live. */
   silent?: boolean;
 }
@@ -185,8 +185,8 @@ export function rowToSummary(row: Omit<Row, 'evidence' | 'evidenceRows'>): Findi
   };
 }
 
-/** Resolves fingerprints back to their finding rows regardless of current status (active or fixed) —
- *  a since-fixed finding was still real and new when a run first detected it, and notifying about it
+/** Resolves fingerprints back to their finding rows regardless of current status (active or fixed).
+ *  A since-fixed finding was still real and new when a run first detected it, and notifying about it
  *  after the fact remains correct (spec 025). Fingerprints with no row (the rule was hard-deleted via
  *  deleteFindingsForRule()) are silently omitted, not errored. */
 export async function getFindingsByFingerprints(fingerprints: string[]): Promise<FindingRecord[]> {
@@ -238,7 +238,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
   const resolved: string[] = [];
   const affectedCategories = new Set<string>();
   // An 'activity' finding never resolves (step 3 below excludes kind:'state'), so a repeat
-  // occurrence is neither 'created' nor 'reactivated' — it needs its own event type (step 4) so
+  // occurrence is neither 'created' nor 'reactivated'. It needs its own event type (step 4) so
   // the activity-occurrences widget still gets one data point per scan that reported it.
   const occurred: string[] = [];
   // Rows an already-open finding gained and lost this scan (#193), by fingerprint.
@@ -298,7 +298,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         category,
         severity: f.severity,
         // dimensionKey is baked into the fingerprint's own hash (computeFingerprint vs.
-        // computeActivityFingerprint), so — like resourceId below — it is set once at insert and
+        // computeActivityFingerprint), so (like resourceId below) it is set once at insert and
         // deliberately excluded from the conflict-update set. `kind` is the exception between
         // 'state' and 'advisory': both hash the same way, so a rule's kind switch moves its
         // existing findings (same fingerprint, same age, same suppressions) via the update set.
@@ -368,7 +368,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
     // falsely resolve findings outside what they checked. Deliberately not scoped to the finding's
     // stored category: a rule moved to another category keeps its old findings under the old one,
     // and neither category's scan would ever resolve them otherwise. kind:'state' excludes
-    // 'activity' findings — those never resolve, they age out of a read-time window instead
+    // 'activity' findings: those never resolve, they age out of a read-time window instead
     // (spec 034): a rule not re-reporting an occurrence this scan says nothing about whether it's
     // still relevant, unlike a resource genuinely no longer matching a state rule's query.
     for (const ruleChunk of chunk(ranRuleIds, CHUNK_SIZE)) {
@@ -398,12 +398,12 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
       }
     }
 
-    // 4. Events (skipped for silent/backfill syncs — no live transition was actually observed).
+    // 4. Events (skipped for silent/backfill syncs: no live transition was actually observed).
     if (!silent) {
       // `finishedAt`, not `new Date()`: an event records when the scan *observed* the transition,
       // which is the scan's own finish time, not whatever instant this line of code happens to
       // execute. They differ by milliseconds live, but a demo/backfill replay can pass a
-      // `finishedAt` from days in the past — stamping "now" there would put every event at the
+      // `finishedAt` from days in the past: stamping "now" there would put every event at the
       // instant the generator ran instead of its simulated date, collapsing the whole trend.
       const findingByFp = new Map(findings.map(f => [f.fingerprint, f]));
       const events: (typeof findingEventsTable.$inferInsert)[] = [];
@@ -500,7 +500,7 @@ export async function getFindingEventCounts(opts: {
   }
   if (byDate.size === 0) return [];
 
-  // Zero-fill from the first event day through today — a categorical bar axis otherwise packs
+  // Zero-fill from the first event day through today. A categorical bar axis otherwise packs
   // sparse days next to each other, making activity look denser than it was.
   const firstDate = Array.from(byDate.keys()).sort()[0];
   const today = new Date().toISOString().slice(0, 10);
@@ -515,11 +515,11 @@ export async function getFindingEventCounts(opts: {
 
 export interface ActivityOccurrenceCount { date: string; count: number; }
 
-/** Daily occurrence counts for kind:'activity' findings, from finding_events — data source for
+/** Daily occurrence counts for kind:'activity' findings, from finding_events: data source for
  *  the Activity Occurrences widget (spec 034). Unlike getFindingEventCounts(), the join to
  *  findings is unconditional rather than opt-in: 'created' events are shared with kind:'state'
  *  findings (both kinds get one on first sighting), so kind must always be checked to keep the
- *  two apart — 'occurred' events are activity-only by construction (syncScanFindings() step 4),
+ *  two apart: 'occurred' events are activity-only by construction (syncScanFindings() step 4),
  *  but 'created' events are not. Same zero-fill-from-first-event-to-today convention. */
 export async function getActivityOccurrenceCounts(opts: {
   categories?: string[];
@@ -614,7 +614,7 @@ export async function refreshSnapshotsFor(categories: string[], now?: Date): Pro
  * Fills in anything a historical scan record is missing before it becomes a findings row.
  *
  * Scan history is a JSON blob written by whichever version was running at the time, so an old one can
- * predate fields that are now NOT NULL. Handing it straight to the insert throws — and this runs from
+ * predate fields that are now NOT NULL. Handing it straight to the insert throws, and this runs from
  * `instrumentation.ts` at startup, so an upgrade could fail to boot over a single old record.
  *
  * Identity is the one thing that cannot be invented: without a rule and a resource there is no

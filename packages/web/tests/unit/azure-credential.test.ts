@@ -9,7 +9,7 @@
  *   2. a client secret entered in the UI is never written in plain text and never sent back to a
  *      browser.
  *
- * Both are asserted here against the real database and the real encryption, not against mocks — the
+ * Both are asserted here against the real database and the real encryption, not against mocks. The
  * plaintext check in particular reads the raw SQLite column, because a repository that *said* it
  * encrypted and didn't would pass any test written against its own return value.
  */
@@ -53,7 +53,7 @@ const ENV_KEYS = [
   'AZURE_FEDERATED_TOKEN_FILE',
 ] as const;
 
-/** Writes `contents` to a throwaway file and returns its path — stands in for a mounted secret. */
+/** Writes `contents` to a throwaway file and returns its path: stands in for a mounted secret. */
 function secretFile(contents: string): string {
   const path = join(mkdtempSync(join(tmpdir(), 'rulebeat-secret-')), 'azure_client_secret');
   writeFileSync(path, contents);
@@ -99,7 +99,7 @@ describe('secret-box · encryption at rest', () => {
     expect(decryptSecret([prefix, iv, tag, flipped.toString('base64')].join(':'))).toBeNull();
   });
 
-  it('returns null — not a throw — when the key has changed', async () => {
+  it('returns null (not a throw) when the key has changed', async () => {
     const sealed = encryptSecret(SECRET);
     const original = process.env.RULEBEAT_ENCRYPTION_KEY;
     try {
@@ -121,7 +121,7 @@ describe('secret-box · encryption at rest', () => {
     expect(decryptSecret('v2:a:b:c')).toBeNull();
   });
 
-  // spec 023: RULEBEAT_ENCRYPTION_KEY_FILE — a mounted-secret path, same precedence as
+  // spec 023: RULEBEAT_ENCRYPTION_KEY_FILE. A mounted-secret path, same precedence as
   // AZURE_CLIENT_SECRET_FILE / AUTH_SECRET_FILE.
   describe('RULEBEAT_ENCRYPTION_KEY_FILE', () => {
     const originalKey = process.env.RULEBEAT_ENCRYPTION_KEY;
@@ -195,7 +195,7 @@ describe('stored credentials · the secret never lands in plain text', () => {
 
   it('has no secret field at all on the shape the API returns', async () => {
     const summary = await saveAzureCredential({ tenantId: TENANT, clientId: CLIENT, clientSecret: SECRET });
-    // Not "the field is empty" — the field does not exist, so no handler can leak it by forgetting
+    // Not "the field is empty": the field does not exist, so no handler can leak it by forgetting
     // to strip it.
     expect(Object.keys(summary)).not.toContain('clientSecret');
     expect(JSON.stringify(summary)).not.toContain(SECRET);
@@ -244,7 +244,7 @@ describe('credential resolution order', () => {
 
   it('prefers a mounted secret file over the same secret in a variable', async () => {
     // The variable is visible in `docker inspect`; the mounted file is not. When a deployment
-    // supplies both — which happens mid-migration from one to the other — the safer one must win.
+    // supplies both (which happens mid-migration from one to the other) the safer one must win.
     process.env.AZURE_TENANT_ID = TENANT;
     process.env.AZURE_CLIENT_ID = CLIENT;
     process.env.AZURE_CLIENT_SECRET = SECRET;

@@ -33,7 +33,7 @@ export function RunScanButton({ categories, rules, defaultTargetType = 'all', de
   // fresh always reflects "run what I'm currently looking at" rather than a stale prior pick.
   useEffect(() => {
     if (open) return;
-    // Reset-on-close, re-syncing to the caller's current filters — not derivable render state.
+    // Reset-on-close, re-syncing to the caller's current filters, not derivable render state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTargetType(defaultTargetType);
     setTargetValues(new Set(defaultTargetValues));

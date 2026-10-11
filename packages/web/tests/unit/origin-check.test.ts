@@ -1,8 +1,8 @@
 /**
  * `checkRequestOrigin` (lib/origin-check.ts) is the header-based cross-site defence: the only
  * thing that stood between a signed-in session cookie and a state-changing request forged by
- * another site was the cookie's SameSite=Lax attribute. This is the second, independent layer —
- * a state-changing request whose Origin header does not match where the browser actually sent it,
+ * another site was the cookie's SameSite=Lax attribute. This is the second, independent layer.
+ * A state-changing request whose Origin header does not match where the browser actually sent it,
  * and does not match the configured public URL either, is refused before it reaches the auth
  * guard or any route handler.
  */

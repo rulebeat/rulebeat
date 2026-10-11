@@ -32,8 +32,8 @@ export async function POST(req: Request) {
 
   await addSuppression(suppression);
 
-  // Suppression is the most consequential action in the product — it makes a real risk disappear
-  // from the dashboard — so the reason and expiry are recorded alongside the actor.
+  // Suppression is the most consequential action in the product: it makes a real risk disappear
+  // from the dashboard, so the reason and expiry are recorded alongside the actor.
   await writeAudit({
     actor,
     action: 'suppression.create',

@@ -102,7 +102,7 @@ jobs:
             fi
             CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
             if [[ "$CONCLUSION" == "success" ]]; then
-              echo "CI verified for $SHA — safe to tag."
+              echo "CI verified for $SHA: safe to tag."
               exit 0
             fi
             echo "::error::CI on $SHA concluded '$CONCLUSION'. No tag has been created. If this is a flake, re-run CI on that same commit and re-run this workflow. If it is a real failure, revert the release transformation against the merge commit's first parent, merge the fix, and prepare v${{ steps.candidate.outputs.version }} again -- fixing forward creates a new commit, so $SHA can never turn green."

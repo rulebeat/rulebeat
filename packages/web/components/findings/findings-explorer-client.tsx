@@ -77,18 +77,18 @@ interface FindingsExplorerClientProps {
    *  widget mode it is just a one-shot initial value. */
   initialView?: View;
   /** Whether the viewer may create or remove suppressions. An existing suppression's reason is
-   *  shown either way — only the create/remove controls are gated. */
+   *  shown either way. Only the create/remove controls are gated. */
   canSuppress: boolean;
   mode?: 'page' | 'widget';
-  /** When set, hides the internal category tab strip and pins filtering to this category —
+  /** When set, hides the internal category tab strip and pins filtering to this category,
    *  for embedding this table scoped to one category (e.g. a future single-category widget). */
   lockedCategory?: string;
   /** URL to sync filter state onto in page mode. Defaults to '/findings'. */
   basePath?: string;
-  /** Extra query params to always preserve when syncing the URL (e.g. `{ tab: 'results' }`) —
+  /** Extra query params to always preserve when syncing the URL (e.g. `{ tab: 'results' }`):
    *  params owned by the parent page, not by this component. */
   extraParams?: Record<string, string>;
-  /** Overrides the "no findings yet" empty-state copy — useful when embedded under a specific
+  /** Overrides the "no findings yet" empty-state copy: useful when embedded under a specific
    *  category so the hint can name that category instead of a generic message. */
   emptyHint?: string;
   /** Overrides the "No findings yet" empty-state title, for a tab that has its own reason to be empty. */
@@ -229,14 +229,14 @@ const STATUS_CFG: Record<FindingDisplayStatus, { dot: string; chip: string; labe
   fixed:  { dot: 'bg-status-ok',    chip: 'border-status-ok/35 bg-status-ok-soft text-status-ok',          label: 'Fixed'   },
 };
 
-// "New"/"Fixed" are defined purely by elapsed real time — never by comparing to "the previous
+// "New"/"Fixed" are defined purely by elapsed real time, never by comparing to "the previous
 // scan," which breaks down the moment a run only targets one rule/tag instead of a whole category
 // (there's no single well-defined "previous scan" to compare against in that case). A finding is
 // "new" if it first appeared within the window and hasn't been fixed since, and "fixed" (for the
 // tile, the by-rule column and the status option alike) if it was resolved within the window.
 // "Open" in the by-rule view is every open finding and ignores the window altogether. The
 // window itself is a pure [from, to] timestamp-range check (see `isWithinRange`), so an arbitrary
-// past custom range works identically to a rolling preset — neither this classification nor the
+// past custom range works identically to a rolling preset: neither this classification nor the
 // "Fixed (Nd)" count needs the findings list itself to be anything other than current state.
 // (isWithinRange/getRecencyStatus live in lib/explorer-filters.ts, alongside passesGlobalFilters'
 // extracted predicate, so both are unit-testable without a React render.)
@@ -309,8 +309,8 @@ function SortIcon({ field, active, dir }: { field: ViewField; active: ViewField;
     : <ArrowDown className="size-3 shrink-0 text-ink" />;
 }
 
-// Copy-to-clipboard button used on the Resource properties grid (resource name / resource ID) —
-// the rule's own title + description already explain *why* a finding exists, so the expanded
+// Copy-to-clipboard button used on the Resource properties grid (resource name / resource ID).
+// The rule's own title + description already explain *why* a finding exists, so the expanded
 // panel's job is just to surface consistent, actionable identity fields, not re-derive the
 // rule's own per-query output.
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -382,7 +382,7 @@ function SuppressionPanel({
   finding: ResponseFinding;
   suppression?: Suppression;
   canSuppress: boolean;
-  /** Set only when this finding's own last suppress/unsuppress request was refused — the server's
+  /** Set only when this finding's own last suppress/unsuppress request was refused. The server's
    *  own message when the route returns one, a stable fallback otherwise. Never a raw error. */
   error?: string;
   onSuppress: (finding: ResponseFinding, reason: string, expiresAt?: string) => void;
@@ -392,7 +392,7 @@ function SuppressionPanel({
   const [expiry, setExpiry] = useState('');
 
   if (suppression) {
-    // The reason and expiry stay visible to everyone — that a finding is suppressed, and why, is
+    // The reason and expiry stay visible to everyone. That a finding is suppressed, and why, is
     // information a viewer needs. Only removing it is gated.
     return (
       <div>
@@ -536,7 +536,7 @@ export function FindingsExplorerClient({
     { flexCol: 'resource' },
   );
 
-  // Suppressions — self-managed so the widget (no prop) and the page (prop provided) both work.
+  // Suppressions: self-managed so the widget (no prop) and the page (prop provided) both work.
   // A failed load sets `suppressionsFailed` rather than falling back to `[]`, so widget mode can
   // tell "couldn't load" apart from "no suppressions exist" (see applySuppressionsLoad).
   const [suppressions, setSuppressions] = useState<Suppression[]>(suppressionsProp ?? []);
@@ -720,11 +720,11 @@ export function FindingsExplorerClient({
     setSearch(''); resetPage();
   }, [resetPage, lockedCategory]);
 
-  // Scoped to whichever category is actually active — the locked prop (embedded/single-category
+  // Scoped to whichever category is actually active. The locked prop (embedded/single-category
   // pages) or the interactive category tab (the "All Categories" strip). Previously only checked
   // lockedCategory, so clicking a category tab left the Rule dropdown listing every rule tenant-
   // wide instead of just the ones in view. With multi-select, the dropdown only narrows when
-  // exactly one category is picked — two or more selected categories fall back to showing every
+  // exactly one category is picked: two or more selected categories fall back to showing every
   // rule, since there's no single category left to scope the list to.
   const activeCategory = lockedCategory ?? (categoryFilter.size === 1 ? [...categoryFilter][0] : undefined);
   const policyOptions = data?.policyOptions;
@@ -741,7 +741,7 @@ export function FindingsExplorerClient({
     if (policyFilter.size === 0 || !policyOptions) return;
     const validIds = new Set(availablePolicyOptions.map(p => p.id));
     const next = new Set([...policyFilter].filter(id => validIds.has(id)));
-    // Pruning a selection made stale by an external category change, not deriving it from props —
+    // Pruning a selection made stale by an external category change, not deriving it from props:
     // legitimate effect setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (next.size !== policyFilter.size) setValues('rule', [...next]);
@@ -800,7 +800,7 @@ export function FindingsExplorerClient({
   const eventTrack = isActivity ? ` ${colWidths.lastSeen}px ${SEEN_COL_WIDTH}px` : '';
   const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px${eventTrack}${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
   // While the Resource column is still flexing to fill the card (default state), the grid should
-  // size to 100% of its container so 1fr has room to expand into — forcing max-content here would
+  // size to 100% of its container so 1fr has room to expand into: forcing max-content here would
   // shrink it back to content width, leaving the table looking squeezed to the left. Once the user
   // manually resizes Resource, every column is a fixed px and the row needs max-content again so
   // the existing horizontal scroll wrapper knows the true (possibly wider-than-viewport) content width.
@@ -939,7 +939,7 @@ export function FindingsExplorerClient({
                     <PropertyCard label="Subscription" value={f.subscriptionId} />
                     <PropertyCard label="Location" value={f.location} />
                   </div>
-                  {/* Full-width row — the resource ID is always long, squeezing it into a
+                  {/* Full-width row: the resource ID is always long, squeezing it into a
                       half-width grid cell forces a tall, hard-to-read wrap. */}
                   <PropertyCard label="Resource ID" value={f.resourceId} mono copyLabel="resource ID" />
                 </>
@@ -1069,7 +1069,7 @@ export function FindingsExplorerClient({
         </div>
       </div>
 
-      {/* Stats pills — New/Fixed are pure elapsed-time windows (firstSeenAt/resolvedAt vs. now),
+      {/* Stats pills: New/Fixed are pure elapsed-time windows (firstSeenAt/resolvedAt vs. now),
           never "compared to the previous scan": that reference point breaks down the moment a run
           only targets a rule or tag instead of a whole category, since there's no single "previous
           scan" to diff against. A rolling window works identically no matter how the scan was
@@ -1126,7 +1126,7 @@ export function FindingsExplorerClient({
         })}
       </div>
 
-      {/* Category tabs — hidden when embedded under a category-scoped page that already picks the category */}
+      {/* Category tabs: hidden when embedded under a category-scoped page that already picks the category */}
       {!lockedCategory && (
         // The selected tab is marked in ink with a solid rule under it. It was the accent
         // red before, which put an alarm colour on the tab you were simply reading.
@@ -1153,8 +1153,8 @@ export function FindingsExplorerClient({
         </div>
       )}
 
-      {/* Global filter bar — grouped by what the filter narrows: triage (severity/status),
-          what-check (rule/tags), where (subscription/RG/location) — divided by thin separators
+      {/* Global filter bar, grouped by what the filter narrows: triage (severity/status),
+          what-check (rule/tags), where (subscription/RG/location), divided by thin separators
           so the growing filter count stays scannable instead of one undifferentiated row. */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative w-64 shrink-0">
@@ -1403,7 +1403,7 @@ export function FindingsExplorerClient({
           </div>
 
           {/* Sideways only. The rows grow to their full height and the page scrolls, which is
-              why the header row is no longer sticky — see the note on the by-rule table above. */}
+              why the header row is no longer sticky: see the note on the by-rule table above. */}
           <div className="scroll-x">
           <div className="grid gap-x-4 border-b border-rule-anchor px-5 py-2" style={{ gridTemplateColumns: gridTemplate, minWidth: rowMinWidth }}>
             <span />
@@ -1414,7 +1414,7 @@ export function FindingsExplorerClient({
                   onClick={() => handleSort(COL_FIELD[col])}
                   className={cn(
                     'flex min-w-0 items-center gap-1 transition-colors',
-                    // Not `label-grid text-ink` — that utility sets its own colour and the two
+                    // Not `label-grid text-ink`: that utility sets its own colour and the two
                     // would tie on specificity. The strong variant is its own utility.
                     activeSort.field === COL_FIELD[col] ? 'label-grid-strong' : 'label-grid hover:text-ink',
                   )}

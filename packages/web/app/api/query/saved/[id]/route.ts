@@ -14,7 +14,7 @@ export async function GET(
   const id = decodeURIComponent(rawId);
 
   // await getSavedQuery() returns null identically for "doesn't exist" and "exists but is a private query
-  // owned by someone else" — never a 403, so existence can't be probed either way.
+  // owned by someone else", never a 403, so existence can't be probed either way.
   const saved = await getSavedQuery(id, actor.id);
   if (!saved) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
@@ -31,7 +31,7 @@ export async function DELETE(
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
 
-  // Same 404-not-403 reasoning as GET — await deleteSavedQuery() itself only allows the owner to delete
+  // Same 404-not-403 reasoning as GET: await deleteSavedQuery() itself only allows the owner to delete
   // (visibility controls read access, not write access), and reports failure uniformly.
   const existing = await getSavedQuery(id, actor.id);
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });

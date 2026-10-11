@@ -1,5 +1,5 @@
 /**
- * Spec 008 — GET /api/resources/types must distinguish "Azure is unreachable" from "genuinely no
+ * Spec 008: GET /api/resources/types must distinguish "Azure is unreachable" from "genuinely no
  * types" instead of collapsing every failure into 200 { types: [] }, which made a transient Azure
  * outage indistinguishable from a real empty result on both the server and client.
  */

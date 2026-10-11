@@ -1,4 +1,4 @@
-// Shared constants for the Playwright suite. No product code imports here — these are just the
+// Shared constants for the Playwright suite. No product code imports here. These are just the
 // URLs/credentials both global-setup.ts and the spec files need to agree on.
 
 export const DEMO_URL = 'http://localhost:3801';

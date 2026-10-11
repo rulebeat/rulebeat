@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils"
  * status tokens, which are defined for both grounds.
  *
  * Two distinct jobs, kept separate on purpose:
- *   · STATUS  — an outcome. Did the scan succeed, is the credential verified.
- *   · SEVERITY — how bad a finding is. Lives in its own component
+ *   · STATUS: an outcome. Did the scan succeed, is the credential verified.
+ *   · SEVERITY, how bad a finding is. Lives in its own component
  *     (components/findings/severity-badge.tsx) because Grid encodes severity by
  *     visual weight rather than by hue, and mixing the two ramps is what makes a
  *     dashboard look like a bag of sweets. */

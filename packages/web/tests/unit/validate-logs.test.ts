@@ -1,10 +1,10 @@
 /**
- * Spec 036 — POST /api/rules/validate-logs, mirroring validate-graph.test.ts's coverage of its
+ * Spec 036: POST /api/rules/validate-logs, mirroring validate-graph.test.ts's coverage of its
  * Graph sibling (see app/api/rules/validate-graph route and its test for the pattern this follows).
  * Two error sources are distinct here and must not be conflated: await createTenantContext() throwing
  * AzureNotConfiguredError means no Azure credential at all (503, azure_not_configured) versus
  * ctx.queryLogs() throwing LogAnalyticsNotConfiguredError means a working credential but no
- * workspace ID set (400, since that's something the person validating a query can fix themselves —
+ * workspace ID set (400, since that's something the person validating a query can fix themselves:
  * see app/api/rules/validate-logs/route.ts's own comment on that distinction). There is no
  * Graph-style "400 unwrap" here: a bad KQL string has no purpose-built error class the way
  * truncation/not-configured do, so it falls through to the same generic 502 safeErrorMessage() path

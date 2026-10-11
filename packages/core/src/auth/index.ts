@@ -14,11 +14,11 @@ export interface BuildTenantContextOptions {
   subscriptionIds?: string[];
   credential?: TokenCredential;
   /** Matches TenantContext.log's shape (message, optional structured fields). A caller that only
-   *  ever passes a bare message — as this option's declared type still allows — keeps working: JS
+   *  ever passes a bare message (as this option's declared type still allows) keeps working: JS
    *  ignores an argument a function doesn't declare, and TypeScript's structural typing accepts a
    *  fewer-parameter function wherever the wider signature is expected. */
   log?: (msg: string) => void;
-  /** The single default Log Analytics workspace (spec 035) — undefined means "not configured," which
+  /** The single default Log Analytics workspace (spec 035): undefined means "not configured," which
    *  produces a `queryLogs` that rejects immediately rather than attempting a call. Resolved by the
    *  caller (web app's `createTenantContext()`) before this function is invoked; this function has no
    *  opinion on env-vs-stored precedence, same division of responsibility as `credential` above. */
@@ -67,7 +67,7 @@ export async function buildTenantContext(
 /**
  * Row cap for `graphGetAll()` (spec 032). Unlike Resource Graph, which self-reports truncation via
  * `resultTruncated` after a page comes back, Graph's `@odata.nextLink` paging has no equivalent
- * signal — left unbounded, a rule against a tenant with an unusually large object set would page
+ * signal: left unbounded, a rule against a tenant with an unusually large object set would page
  * forever. Set high enough that a normal tenant's directory never trips it; a tenant that does is
  * exactly the case `GraphTruncatedError` exists to surface instead of silently paging for minutes.
  */
@@ -94,7 +94,7 @@ export class GraphTruncatedError extends Error {
  * Default `TenantContext.graphGet` for a real Azure connection: a bearer token from the same
  * credential every other call uses, GET against Graph, and follow `@odata.nextLink` until
  * exhausted or `GRAPH_MAX_ROWS` is crossed. Lives here rather than in the web app so every real
- * `TenantContext` — not just the one `createTenantContext()` builds — gets it for free.
+ * `TenantContext` (not just the one `createTenantContext()` builds) gets it for free.
  */
 async function graphGetAll<TValue>(credential: TokenCredential, path: string): Promise<TValue[]> {
   const token = await credential.getToken('https://graph.microsoft.com/.default', {
@@ -117,7 +117,7 @@ async function graphGetAll<TValue>(credential: TokenCredential, path: string): P
     values.push(...page.value);
     url = page['@odata.nextLink'] ?? null;
 
-    // Only a genuine early-stop counts as truncation — a result that happens to cross the cap on
+    // Only a genuine early-stop counts as truncation. A result that happens to cross the cap on
     // its actual last page is complete, not capped, so this never fires once url is already null.
     if (url && values.length > GRAPH_MAX_ROWS) {
       throw new GraphTruncatedError(values.length);

@@ -55,7 +55,7 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
     if (!summary || summary.current.pct === null) return null;
     const ruleIds = merged.ruleIds ?? [];
     const categories = merged.categories ?? [];
-    // Prefer the live DB label from perCategory (categories are user-extensible rows) — the
+    // Prefer the live DB label from perCategory (categories are user-extensible rows). The
     // hardcoded constant is only a fallback for categories with no scan data in the summary.
     const liveLabel = new Map(summary.perCategory.map(m => [m.category, m.label]));
     const label = ruleIds.length > 0

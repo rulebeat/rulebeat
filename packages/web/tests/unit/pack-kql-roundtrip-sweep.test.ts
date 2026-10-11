@@ -2,21 +2,21 @@
  * Full-pack two-cycle round-trip sweep.
  *
  * docs/engineering/conventions/kql.md requires sweeping `data/packs/aprl-v2.json` for drift across two cycles
- * before trusting a parser change — a change verified only against hand-picked cases can still corrupt
+ * before trusting a parser change: a change verified only against hand-picked cases can still corrupt
  * a shape none of those cases happened to cover. This sweeps every rule in the real, committed pack:
  * parse -> regenerate -> reparse -> regenerate, asserting the second regeneration matches the first
  * (a parse/regenerate cycle that keeps rewriting its own output on every pass is corrupting the rule a
  * little more each time it's opened for editing, even if no single cycle looks wrong).
  *
- * A handful of pack entries carry `rawKql: "// cannot-be-validated-with-arg"` — a placeholder, not
- * real KQL — which parses to an empty query with no assertion of interest; those are only checked for
+ * A handful of pack entries carry `rawKql: "// cannot-be-validated-with-arg"`, a placeholder, not
+ * real KQL, which parses to an empty query with no assertion of interest; those are only checked for
  * not throwing, not for stability, since there is no real pipeline to keep stable.
  *
  * Spec 027: the placeholder predicate used to be `startsWith('//')`, which misclassified every real
- * rule as a placeholder too — virtually all of them open with a `// Azure Resource Graph Query`
+ * rule as a placeholder too: virtually all of them open with a `// Azure Resource Graph Query`
  * header comment. That silently skipped stability checking for 120 of 143 real rules. The predicate
  * now matches only the literal placeholder string, and a paren-balance assertion was added alongside
- * the stability check — a regenerated query with an unmatched paren is not valid Kusto even when it
+ * the stability check: a regenerated query with an unmatched paren is not valid Kusto even when it
  * happens to be a fixed point under repeated regeneration (RB-QA-008b was exactly this shape).
  */
 import { describe, expect, it } from 'vitest';
@@ -60,7 +60,7 @@ describe('spec 016 · aprl-v2.json survives two parse/regenerate cycles unchange
   });
 
   it.each(real.map(r => [r.id, r.name, r.rawKql!] as const))(
-    'regenerating twice produces identical, paren-balanced KQL — %s %s',
+    'regenerating twice produces identical, paren-balanced KQL: %s %s',
     (_id, _name, rawKql) => {
       const first = regenerateOnce(rawKql);
       const opens = (first.match(/\(/g) ?? []).length;
@@ -73,7 +73,7 @@ describe('spec 016 · aprl-v2.json survives two parse/regenerate cycles unchange
   );
 
   it.each(placeholders.map(r => [r.id, r.name, r.rawKql!] as const))(
-    'placeholder rawKql does not throw — %s %s',
+    'placeholder rawKql does not throw: %s %s',
     (_id, _name, rawKql) => {
       expect(() => regenerateOnce(rawKql)).not.toThrow();
     },

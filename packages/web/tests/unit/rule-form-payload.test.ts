@@ -1,5 +1,5 @@
 /**
- * Spec 036 — the "rule-form.tsx save-gate test" named in the spec's Plan §2. This codebase has no
+ * Spec 036: the "rule-form.tsx save-gate test" named in the spec's Plan §2. This codebase has no
  * React component-rendering test layer (see toggle-set.test.ts), so rule-form.tsx's save() delegates
  * its query-shape derivation to deriveDedicatedEditorFields() and this tests that function directly,
  * the same shared-primitive pattern toggle-set.test.ts uses for the category tab strip. The behavior
@@ -41,7 +41,7 @@ describe('deriveDedicatedEditorFields · rule-form.tsx save-gate payload shape (
     expect(result.logsQuery).toBeUndefined();
   });
 
-  it('log-analytics: nulls the ARG fields, sends logsQuery, still nulls graphQuery — the case the pre-fix code missed', async () => {
+  it('log-analytics: nulls the ARG fields, sends logsQuery, still nulls graphQuery: the case the pre-fix code missed', async () => {
     const result = deriveDedicatedEditorFields('log-analytics', FIELDS);
     expect(result.usesDedicatedEditor).toBe(true);
     expect(result.visualQuery).toBeUndefined();

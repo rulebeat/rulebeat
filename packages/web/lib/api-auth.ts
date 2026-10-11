@@ -28,9 +28,9 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   const dbUser = await getUser(uid);
   if (!dbUser) return null;
   // A token minted before this claim existed carries no epoch at all (`undefined`), which must
-  // match a fresh row's default of 0 — otherwise every session in the world goes stale the moment
+  // match a fresh row's default of 0, otherwise every session in the world goes stale the moment
   // this ships. A real mismatch (some *other* number) means a local-password mutation happened
-  // since this token was issued — see spec 020.
+  // since this token was issued: see spec 020.
   if ((session.user?.epoch ?? 0) !== dbUser.sessionEpoch) return null;
   return dbUser;
 }
@@ -64,7 +64,7 @@ export async function requireRole(
   }
   // Mirrors app/(app)/layout.tsx's page-level redirect: a temporary password (first-boot owner,
   // or an admin reset) must be replaced before anything else is reachable. Without this, the API
-  // never enforced it at all — a script using the printed password got permanent full access
+  // never enforced it at all: a script using the printed password got permanent full access
   // without ever being forced to rotate off it (RB-QA-017).
   if (action !== 'account:self' && (await getLocalAccount(user.id))?.mustChangePassword) {
     return NextResponse.json({ error: 'You must set a new password before doing anything else.' }, { status: 403 });

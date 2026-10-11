@@ -1,8 +1,8 @@
 /**
- * Spec 032 — POST /api/rules and PUT /api/rules/[id] must apply the same allowlist/shape/probe
+ * Spec 032: POST /api/rules and PUT /api/rules/[id] must apply the same allowlist/shape/probe
  * guard to a microsoft-graph rule's graphQuery that spec 005's identity guard already applies to a
  * resource-graph rule's rawKql (see rules-route-identity-guard.test.ts and graph-rule-validation.ts).
- * The allowlist check in particular is the real security boundary (Frame §11 Q3 — Graph .default
+ * The allowlist check in particular is the real security boundary (Frame §11 Q3: Graph .default
  * permissions aren't Reader-scoped the way ARG is), so it must hold at the API layer even for a
  * request built by hand rather than through the picker UI.
  */
@@ -67,7 +67,7 @@ async function signInAsEditor(): Promise<void> {
 const VALID_GQ: GraphQuery = { path: 'users', filter: 'accountEnabled eq false' };
 const NON_ALLOWLISTED_GQ = { path: 'directoryObjects' } as unknown as GraphQuery;
 
-describe('POST /api/rules — Graph backend guard (spec 032)', () => {
+describe('POST /api/rules: Graph backend guard (spec 032)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
@@ -77,7 +77,7 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
   });
 
   it('no longer blanket-rejects log-analytics as an unauthorable backend (spec 036)', async () => {
-    // Log Analytics gained a real editor/engine in spec 036 — this used to 400 because the backend
+    // Log Analytics gained a real editor/engine in spec 036. This used to 400 because the backend
     // itself was rejected outright. It still 400s here, but now for an ordinary validation reason
     // (no logsQuery on the request), not because the backend can't be authored. The full logsQuery
     // validation surface has its own dedicated coverage in rules-route-logs-guard.test.ts.
@@ -160,7 +160,7 @@ describe('POST /api/rules — Graph backend guard (spec 032)', () => {
   });
 });
 
-describe('PUT /api/rules/[id] — Graph backend guard (spec 032)', () => {
+describe('PUT /api/rules/[id]: Graph backend guard (spec 032)', () => {
   let customRuleId: string;
   let builtinGraphRuleId: string;
 

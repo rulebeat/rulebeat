@@ -14,7 +14,7 @@ interface TagPickerProps {
   allTags: string[];
   onChange: (tags: string[]) => void;
   disabled?: boolean;
-  /** System-provided tags (source/pack) — displayed as regular tag chips, but locked: no remove, not searchable/creatable. Rendered first. */
+  /** System-provided tags (source/pack): displayed as regular tag chips, but locked: no remove, not searchable/creatable. Rendered first. */
   lockedTags?: LockedTag[];
 }
 

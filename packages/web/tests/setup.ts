@@ -4,7 +4,7 @@
  * Two jobs, both about making sure a test can never touch anything real:
  *  1. Point the SQLite singleton at a throwaway file *before* any repository module is imported.
  *     `lib/db/client.ts` opens its connection at import time, so this has to happen in a setup
- *     file — doing it inside a test would already be too late.
+ *     file: doing it inside a test would already be too late.
  *  2. Fill in the environment variables the app reads at module scope, so importing `auth.ts` or a
  *     route handler doesn't blow up on a missing value.
  */
@@ -58,13 +58,13 @@ delete process.env.RULEBEAT_FORCE_LOCAL_SIGNIN;
 
 // Nor their own Azure service principal. `lib/azure-credential.ts` resolves from the environment
 // first, so leaving these set would make credential-resolution tests pass or fail depending on
-// whose machine they run on — and, worse, would let a test reach real Azure.
+// whose machine they run on, and, worse, would let a test reach real Azure.
 delete process.env.AZURE_CLIENT_ID;
 delete process.env.AZURE_CLIENT_SECRET;
 delete process.env.AZURE_CLIENT_CERTIFICATE_PATH;
 delete process.env.AZURE_FEDERATED_TOKEN_FILE;
 
-// Nor their own default Log Analytics workspace (spec 035) — same reasoning as the Azure
+// Nor their own default Log Analytics workspace (spec 035), same reasoning as the Azure
 // credential vars above.
 delete process.env.RULEBEAT_LOG_ANALYTICS_WORKSPACE_ID;
 

@@ -6,7 +6,7 @@
  * origin (the part proven correct) and corrects the inner one to match, without touching
  * next-auth's internals. These tests exercise that function directly against the exact shape
  * curled from the container, since reproducing the real header-trust mismatch needs a request that
- * physically arrives on a different external port than the process listens on internally — not
+ * physically arrives on a different external port than the process listens on internally, not
  * reproducible against a local dev server bound to a single port.
  */
 import { describe, expect, it } from 'vitest';

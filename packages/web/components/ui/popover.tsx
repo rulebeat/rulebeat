@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
  * picker, anything that is neither a value list (Select) nor a list of actions
  * (DropdownMenu).
  *
- * Same reason as the other two — RuleBeat had several of these hand-rolled with
+ * Same reason as the other two: RuleBeat had several of these hand-rolled with
  * `position: fixed` and a manual getBoundingClientRect. Those never flipped when
  * the trigger sat near the bottom of the window, never followed the trigger on
  * scroll, and each one re-implemented click-outside. This does all of it.

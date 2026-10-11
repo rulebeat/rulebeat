@@ -12,8 +12,8 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
 
-  // Demo mode never touches Azure — await resolveAzureCredential() would throw anyway (the chokepoint's
-  // own kill switch, lib/azure-credential.ts) — but short-circuiting here means the subscription
+  // Demo mode never touches Azure: await resolveAzureCredential() would throw anyway (the chokepoint's
+  // own kill switch, lib/azure-credential.ts), but short-circuiting here means the subscription
   // picker degrades gracefully to the fixed demo list instead of surfacing an error where a
   // working picker belongs.
   if (await isDemoMode()) return NextResponse.json(DEMO_SUBSCRIPTIONS);
@@ -33,7 +33,7 @@ export async function GET() {
     subs.sort((a, b) => a.name.localeCompare(b.name));
     return NextResponse.json(subs);
   } catch (err) {
-    // Every page that labels a subscription filter calls this in the background on load — including
+    // Every page that labels a subscription filter calls this in the background on load, including
     // before Azure has ever been connected (a fresh install, or mid-onboarding). Unlike an
     // interactive picker, there's no user action to surface an error against here, so "not
     // configured yet" degrades to the same empty list a genuinely subscription-less tenant would

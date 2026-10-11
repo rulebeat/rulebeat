@@ -1,6 +1,6 @@
 """Vector master for the "RuleBeat." wordmark.
 
-This is a SOURCE file, on the same footing as rtile.png / rwm.png — read by
+This is a SOURCE file, on the same footing as rtile.png / rwm.png: read by
 build.py, never hand-edited as an output. It exists because the PNG masters
 have no vector original: the artwork was rebuilt from a ~470px source, and
 above roughly 500px the raster wordmark starts to look soft.
@@ -9,10 +9,10 @@ Where this came from: rwm.png's WM_CROP region was decomposed with this
 package's own pngkit.decompose() (the same call build.py makes) into a
 letters layer and a full-stop-dot layer, each isolated as a clean black-on-
 white bitmap. Those two bitmaps were then traced with potrace (the standard
-bitmap-to-vector algorithm — the same technique behind Illustrator's Image
+bitmap-to-vector algorithm. The same technique behind Illustrator's Image
 Trace) into the SVG path data below. Nothing was redrawn or re-typeset: the
 paths are the actual pixels of the existing artwork, converted to outlines.
-That matters for two reasons — it reproduces the real drawn shapes rather
+That matters for two reasons. It reproduces the real drawn shapes rather
 than inventing new letterform geometry (see the project's standing rule
 against code-drawn logos), and because the wordmark's typeface has never
 been identified, tracing the artwork's own pixels sidesteps needing to set
@@ -20,7 +20,7 @@ new type in that font at all: there is no re-creation event a font EULA
 could apply to.
 
 Coordinate space: both paths sit in the same 806x132 box as WM_CROP in
-build.py. WM_LETTERS_PATH covers local x in roughly [0, 750] — matching
+build.py. WM_LETTERS_PATH covers local x in roughly [0, 750]: matching
 WMP_CROP's 750 width, which is exactly why cropping to 750 wide already
 drops the dot with no redrawing (see build.py's WMP_CROP comment). The dot,
 WM_DOT_PATH, sits in local x roughly [766, 805].

@@ -13,14 +13,14 @@ import { cn } from '@/lib/utils';
 
 interface PolicyOption { id: string; name: string; category: string; enabled?: boolean }
 
-// Module-level component — must NOT be defined inside another component or React will
+// Module-level component: must NOT be defined inside another component or React will
 // unmount/remount it on every parent re-render, causing the search input to lose focus.
 interface PolicyPickerProps {
   policies: PolicyOption[];
   selectedIds: string[];
   onToggle: (id: string) => void;
   onClear: () => void;
-  /** Show the "trend/delta unavailable" caveat once rules are selected — only true for widget
+  /** Show the "trend/delta unavailable" caveat once rules are selected, only true for widget
    *  types that actually render a trend chart or a vs-previous delta (stat-card, posture-ring,
    *  trend, new-vs-fixed); mirrors `trendIsCategoryScopedOnly` in dashboard-data.ts. */
   trendCaveat?: boolean;
@@ -139,7 +139,7 @@ const PERIODS = [
   { value: 'all', label: 'All time' },
 ];
 
-// finding_events retention is 180 days — an "All time" label would overpromise here.
+// finding_events retention is 180 days: an "All time" label would overpromise here.
 const EVENT_PERIODS = [
   { value: '7d',  label: 'Last 7 days' },
   { value: '30d', label: 'Last 30 days' },
@@ -196,7 +196,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-// ── Shared "Scope" section — every widget type reads the dashboard filter bar via
+// ── Shared "Scope" section: every widget type reads the dashboard filter bar via
 // mergeWidgetFilters (see lib/dashboard-filters.ts); this is the one place that lets a widget
 // override any of its seven dimensions instead of inheriting. Type-specific options (metric,
 // chart type, limit…) render separately, below this. ──────────────────────────────────────────
@@ -300,7 +300,7 @@ export function WidgetConfigPanel({ widget, onClose, onSave }: Props) {
       .then(r => r.ok ? r.json() : [])
       .then(d => setPolicies(d as PolicyOption[]))
       .catch(() => {});
-    // Categories/tags/subscriptions/resourceGroups fetched live (DB-backed, user-extensible) —
+    // Categories/tags/subscriptions/resourceGroups fetched live (DB-backed, user-extensible),
     // same endpoint the dashboard filter bar uses.
     fetch('/api/widgets/filter-options')
       .then(r => r.ok ? r.json() : null)
@@ -317,7 +317,7 @@ export function WidgetConfigPanel({ widget, onClose, onSave }: Props) {
     setLocal(w => w ? { ...w, config: { ...w.config, [key]: value } } : w);
   }
 
-  // new-vs-fixed and activity-occurrences are NOT here — finding_events supports rule scoping,
+  // new-vs-fixed and activity-occurrences are NOT here: finding_events supports rule scoping,
   // so neither has a rule caveat.
   const trendCaveatTypes: WidgetType[] = ['stat-card', 'posture-ring', 'trend'];
 

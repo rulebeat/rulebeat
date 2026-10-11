@@ -18,14 +18,14 @@ export interface Finding {
   fingerprint: string;
   severity: Severity;
   category: ModuleCategory;
-  /** 'state' (default, absent means 'state') is a resource in a wrong configuration — has
+  /** 'state' (default, absent means 'state') is a resource in a wrong configuration: has
    *  resourceId/Type/Name below. 'activity' (spec 034) is an occurrence with no resource to point
    *  at; resourceId/Type/Name are absent and `dimensionKey` carries what makes it distinct instead.
    *  'advisory' has a resource like 'state' but comes from a rule marked Advisory. */
   kind?: RuleKind;
   /** Human-readable identity of an 'activity' occurrence's pattern. Absent for 'state' findings. */
   dimensionKey?: string;
-  // Resource — absent for kind: 'activity' findings, which have no resource to describe.
+  // Resource: absent for kind: 'activity' findings, which have no resource to describe.
   resourceId?: string;
   resourceType?: string;
   resourceName?: string;
@@ -50,7 +50,7 @@ export interface Finding {
  *  which is what a notification lists. */
 export interface ChangedFindingDetail extends Finding, ChangedFinding {}
 
-/** A rule that did not run to a trustworthy completion this scan — its prior findings were left
+/** A rule that did not run to a trustworthy completion this scan. Its prior findings were left
  *  untouched (not resolved) rather than treated as fixed. */
 export interface IncompleteRule {
   ruleId: string;
@@ -69,14 +69,14 @@ export interface ScanSummary {
   counts: Record<Severity, number>;
   totalRules: number; // enabled rules that ran; 0 for non-rule scans (identity)
   triggeredBy?: 'manual' | 'schedule';
-  /** 'partial' when one or more rules failed or returned a capped/truncated result this scan —
-   *  those rules' prior findings were preserved rather than resolved. Older scan rows have no
+  /** 'partial' when one or more rules failed or returned a capped/truncated result this scan.
+   *  Those rules' prior findings were preserved rather than resolved. Older scan rows have no
    *  stored value and read back as 'complete'. */
   coverage: 'complete' | 'partial';
   incompleteRules: IncompleteRule[];
 }
 
-/** Scan history row metadata without the findings blob — for history lists that don't need to
+/** Scan history row metadata without the findings blob, for history lists that don't need to
  *  deserialize every scan's full finding array (snapshot/compare views load the blob on demand). */
 export interface ScanMeta {
   id: string;
@@ -114,7 +114,7 @@ export type VisualFilterOperator =
   | 'olderThanDays' | 'withinLastDays'
   | 'arrayEmpty' | 'arrayNotEmpty' | 'arrayLengthGt' | 'arrayLengthLte' | 'arrayContains'
   | 'in' | 'notIn'
-  // Parser-only, never offered in the operator dropdown — KQL the builder has no operator for,
+  // Parser-only, never offered in the operator dropdown: KQL the builder has no operator for,
   // carried through verbatim in `rawExpr`. Must stay in step with the same union in
   // packages/core/src/engine/types.ts.
   | 'raw';
@@ -160,7 +160,7 @@ export interface SortStage { id: string; type: 'sort'; columns: SortColumn[]; }
 export interface LimitStage { id: string; type: 'limit'; mode: 'take' | 'top'; count: number; orderBy?: SortColumn; }
 export interface ShapeStage { id: string; type: 'shape'; mode: 'project' | 'project-away'; columns: string[]; }
 
-// Parser-only, never offered in the "Add stage" menu — currently only produced for `| union (...)`.
+// Parser-only, never offered in the "Add stage" menu: currently only produced for `| union (...)`.
 export interface RawStage { id: string; type: 'raw'; clause: string; }
 
 export type QueryStage = FilterStage | ComputeStage | ExpandStage | AggregateStage | JoinStage | SortStage | LimitStage | ShapeStage | RawStage;
@@ -241,7 +241,7 @@ export interface Category {
   createdAt: string;
 }
 
-/** `/api/widgets/filter-options` response shape — shared by the dashboard filter bar and every
+/** `/api/widgets/filter-options` response shape: shared by the dashboard filter bar and every
  *  widget's own "Scope" override config panel, both of which fetch that endpoint. */
 export interface FilterOptionsResponse {
   categories: Category[];
@@ -287,19 +287,19 @@ export interface RuleScope {
   managementGroups?: string[];
 }
 
-// Same concept as Azure Policy's policyType (BuiltIn/Custom) — gates edit/delete permissions.
+// Same concept as Azure Policy's policyType (BuiltIn/Custom): gates edit/delete permissions.
 // 'pack' (below) is the sub-classification within 'builtin' (e.g. rulebeat-core, aprl-v2) and
 // is what should grow over time, not this enum.
 export type RuleType = 'builtin' | 'community' | 'custom';
 
-// What system a rule's detection logic queries against — see RULE-MODEL-PROGRAM.md and spec 029.
+// What system a rule's detection logic queries against: see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
 // Resolved from queryBackend plus the kind an author asked for; see resolveKind() in lib/rules.ts.
 // 'state' is the code name for a Problem rule.
 export type RuleKind = 'state' | 'activity' | 'advisory';
 
-// Microsoft Graph query definition (spec 032) — set only when queryBackend = 'microsoft-graph'.
+// Microsoft Graph query definition (spec 032): set only when queryBackend = 'microsoft-graph'.
 // Mirrored from @rulebeat/core's engine/types.ts; keep the two in step.
 export type GraphResourcePath =
   | 'users' | 'groups' | 'applications' | 'servicePrincipals'
@@ -324,7 +324,7 @@ export interface GraphQuery {
   expand?: GraphExpandConfig;
 }
 
-// Log Analytics query definition (spec 036) — set only when queryBackend = 'log-analytics'.
+// Log Analytics query definition (spec 036): set only when queryBackend = 'log-analytics'.
 // Mirrored from @rulebeat/core's engine/types.ts; keep the two in step.
 export interface LogAnalyticsQuery {
   kql: string;
@@ -354,11 +354,11 @@ export interface Rule {
   remediationSteps?: RemediationStep[];
   rawKql?: string;
   visualQuery?: VisualQuery;
-  /** Microsoft Graph query definition (spec 032) — set only when queryBackend = 'microsoft-graph'. */
+  /** Microsoft Graph query definition (spec 032): set only when queryBackend = 'microsoft-graph'. */
   graphQuery?: GraphQuery;
-  /** Log Analytics query definition (spec 036) — set only when queryBackend = 'log-analytics'. */
+  /** Log Analytics query definition (spec 036): set only when queryBackend = 'log-analytics'. */
   logsQuery?: LogAnalyticsQuery;
-  /** This rule's outcome the last time a scan actually ran it — absent means never run. Zero
+  /** This rule's outcome the last time a scan actually ran it: absent means never run. Zero
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: 'success' | 'failed' | 'capped' | 'invalid';
   lastRunAt?: string;
@@ -416,7 +416,7 @@ export type QueryVisibility = 'private' | 'shared';
 
 /** A query composed on the /query page that a user chose to keep. 'private' is visible only to its
  *  owner and is deleted alongside them; 'shared' is visible to every editor/admin and survives its
- *  owner's deletion — `ownerEmail` stays denormalized for display once that happens. */
+ *  owner's deletion: `ownerEmail` stays denormalized for display once that happens. */
 export interface SavedQuery {
   id: string;
   name: string;
@@ -435,7 +435,7 @@ export interface SavedQuery {
   lastRunAt?: string;
 }
 
-/** A recorded run from the live query page (spec 037 follow-up). Always the caller's own — there is no shared visibility. */
+/** A recorded run from the live query page (spec 037 follow-up). Always the caller's own. There is no shared visibility. */
 export interface QueryRun {
   id: string;
   queryBackend: QueryBackend;

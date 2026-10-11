@@ -24,7 +24,7 @@ describe('migrateDashboardConfig', () => {
     expect(after.widgets[0]!.config.metric).toBe('rules-scanned');
   });
 
-  it('is idempotent — a config with nothing to migrate passes through unchanged', async () => {
+  it('is idempotent: a config with nothing to migrate passes through unchanged', async () => {
     const before = configOf(
       widget({ id: 'w1', type: 'top-rules', config: { limit: 8 } }),
       widget({ id: 'w2', type: 'stat-card', config: { metric: 'rules-scanned' } }),

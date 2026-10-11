@@ -10,7 +10,7 @@ import { hashPassword } from '@/lib/password';
 import { validatePasswordStrength } from '@/lib/password-policy';
 
 /**
- * Admin-managed local passwords — the break-glass this install can hand a colleague, or use to
+ * Admin-managed local passwords: the break-glass this install can hand a colleague, or use to
  * recover a locked-out account, without touching SSO at all.
  */
 export async function PUT(
@@ -29,7 +29,7 @@ export async function PUT(
 
   const hadAccount = !!await getLocalAccount(id);
   const generated = !body.password;
-  // A generated password is a random 16-char base64url string — always well past the 15-char
+  // A generated password is a random 16-char base64url string, always well past the 15-char
   // floor and never a real word, so it trivially clears the same validator an admin-typed one has
   // to. Running both through one path rather than skipping the check for the generated case keeps
   // there being exactly one place the policy is enforced.
@@ -40,7 +40,7 @@ export async function PUT(
   }
 
   try {
-    // Forced on every admin-set password — whoever actually knows the new value has to prove
+    // Forced on every admin-set password: whoever actually knows the new value has to prove
     // that by choosing their own on next sign-in, same as the first-boot owner account.
     await setPassword(id, await hashPassword(password), { mustChangePassword: true });
     await bumpSessionEpoch(id);

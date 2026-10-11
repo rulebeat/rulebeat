@@ -1,8 +1,8 @@
 /**
- * Spec 037 — POST /api/query/run-log-analytics, the live-query page's Log Analytics runner.
+ * Spec 037: POST /api/query/run-log-analytics, the live-query page's Log Analytics runner.
  * Same coverage shape as its ARG/Graph siblings, plus the one behavior unique to this route: a
  * LogAnalyticsNotConfiguredError (no workspace set) is reported at 400 with the error's own message
- * returned verbatim — not routed through safeErrorMessage() — since "no workspace configured" is
+ * returned verbatim (not routed through safeErrorMessage()) since "no workspace configured" is
  * itself the user-actionable detail, not something that could leak tenant internals. There is no
  * local 400-only unwrap helper on this route (unlike its ARG/Graph siblings): every other failure
  * falls straight through to the generic 502.
@@ -155,7 +155,7 @@ describe('POST /api/query/run-log-analytics (spec 037)', () => {
     expect(entries[0].summary).toBe('Ran a log-analytics query (truncated after 77 rows)');
   });
 
-  describe('query run history (spec 037 follow-up — persisted, not sessionStorage)', () => {
+  describe('query run history (spec 037 follow-up: persisted, not sessionStorage)', () => {
     it('records a query_runs row on the good path', async () => {
       fakeCtx = fakeTenantContext({ logsRows: [{ a: 1 }, { a: 2 }, { a: 3 }] });
       await POST(postRequest({ logsQuery: { kql: 'Heartbeat' } }));

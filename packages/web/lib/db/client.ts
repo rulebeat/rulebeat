@@ -55,7 +55,7 @@ if (dbKind === 'pg') {
   sqliteHandle = openDatabase(DB_PATH);
 
   // Bring the file up to the current schema, then seed built-in content. Both live in ./migrate so
-  // they can be run against a database other than this one — see tests/unit/db-migrations*.test.ts.
+  // they can be run against a database other than this one: see tests/unit/db-migrations*.test.ts.
   // The order matters and is asserted by those tests: nothing may be seeded into a schema that has
   // not been migrated first.
   runMigrations(sqliteHandle);
@@ -64,7 +64,7 @@ if (dbKind === 'pg') {
 
   // See runSeeds' own doc comment: this is the one call site that can't point dataDir at a
   // throwaway directory, so it's the one that opts out of the owner-bootstrap file write under Vitest
-  // (which sets this env var itself — nothing in the product does).
+  // (which sets this env var itself: nothing in the product does).
   runSeeds(sqliteHandle, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST });
 }
 

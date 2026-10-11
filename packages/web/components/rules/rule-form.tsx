@@ -47,7 +47,7 @@ const COMMON_RESOURCE_TYPES_LIST = [
   'microsoft.operationalinsights/workspaces', 'microsoft.managedidentity/userassignedidentities',
 ];
 
-// ARG ResourceContainers fields — ARM aliases API returns 0 for container types.
+// ARG ResourceContainers fields: ARM aliases API returns 0 for container types.
 const CONTAINER_FIELDS: Record<string, string[]> = {
   resourceGroup: [
     'id', 'name', 'type', 'location', 'subscriptionId', 'tenantId', 'tags', 'managedBy',
@@ -117,7 +117,7 @@ function legacyToVisualQuery(conditionGroups: ConditionGroup[], conditions: Cond
 
 /**
  * True when a parsed condition carries real content. A condition with an empty field is the parser's
- * blank placeholder — but a passthrough (`operator: 'raw'`) has no field by design and *is* content,
+ * blank placeholder, but a passthrough (`operator: 'raw'`) has no field by design and *is* content,
  * so it must not be mistaken for the placeholder.
  */
 function isRealCondition(c: VisualFilterCondition): boolean {
@@ -147,7 +147,7 @@ interface RuleFormProps {
   canAuthor?: boolean;
   /**
    * What a brand-new rule (no `initial`) checks against, chosen by ChecksPickerDialog before this
-   * form ever mounts (rule-new-client.tsx). Ignored once `initial` is set — an existing rule's
+   * form ever mounts (rule-new-client.tsx). Ignored once `initial` is set. An existing rule's
    * backend comes from `initial.queryBackend` instead and can't change via this form either way.
    */
   initialQueryBackend?: QueryBackend;
@@ -172,7 +172,7 @@ export function RuleForm({
 }: RuleFormProps) {
   // Every category, plus the rule's own category if it's not (or no longer) in the DB list, so old
   // rules with orphaned category values (e.g. legacy 'networking'/'operations') stay selectable.
-  // Category no longer implies backend (spec 029) — a custom rule can be filed under any category.
+  // Category no longer implies backend (spec 029). A custom rule can be filed under any category.
   const categoryOptions = useMemo(() => {
     const opts = categories.map(c => c.id);
     if (initial?.category && !opts.includes(initial.category)) opts.push(initial.category);
@@ -187,14 +187,14 @@ export function RuleForm({
 
   const isBuiltinCheck = initial?.type === 'builtin';
   const isReadOnly = isBuiltinCheck || !!readOnly;
-  // Tags and the enabled flag stay live-editable regardless of the view/edit toggle above —
+  // Tags and the enabled flag stay live-editable regardless of the view/edit toggle above:
   // gated on authoring permission alone, not on isReadOnly. A built-in never enters edit mode
   // at all (the API's PUT handler only allows tags/enabled for it), and a custom rule shouldn't
   // need "Edit" just to flip a switch or add a tag either.
   const operationalReadOnly = !canAuthor;
 
   // Origin (Built-in/Community/Custom) is its own field, matching the Library table's Type
-  // column — it's a permission-bearing classification, not a tag. Pack (e.g. APRL v2) is a
+  // column: it's a permission-bearing classification, not a tag. Pack (e.g. APRL v2) is a
   // sub-classification of type: 'builtin' and is shown as a locked tag chip instead, same as
   // the Library table's Tags column.
   const typeChip = useMemo(() => {
@@ -204,10 +204,10 @@ export function RuleForm({
     return { label: 'Custom', icon: undefined };
   }, [initial?.type]);
 
-  // What this rule checks against — orthogonal to Origin above. For an existing rule this comes
+  // What this rule checks against: orthogonal to Origin above. For an existing rule this comes
   // from initial.queryBackend; for a brand-new one it's whatever ChecksPickerDialog captured before
   // this form mounted (initialQueryBackend, see rule-new-client.tsx). Either way it's fixed once
-  // this form is on screen — there is no in-form control to change it, the picker dialog is the one
+  // this form is on screen: there is no in-form control to change it, the picker dialog is the one
   // place this gets chosen.
   const checksChip = useMemo(() => {
     const backend = initial?.type ? (initial.queryBackend ?? 'resource-graph') : initialQueryBackend;
@@ -222,12 +222,12 @@ export function RuleForm({
   const isGraphBackend = queryBackend === 'microsoft-graph';
   const isLogAnalyticsBackend = queryBackend === 'log-analytics';
   // Both backends use their own dedicated editor (GraphRuleEditor / LogAnalyticsRuleEditor) instead
-  // of the ARG visual/raw-KQL builder below — every save-gate and payload check that applies to one
+  // of the ARG visual/raw-KQL builder below. Every save-gate and payload check that applies to one
   // of them applies to both, so this is the one flag both branch on instead of repeating the pair.
   const usesDedicatedEditor = isGraphBackend || isLogAnalyticsBackend;
   // A built-in's query is read-only, like the rest of its definition: it only changes by switching
   // to another version, and the PUT route refuses a different one. A custom rule's query follows the
-  // ordinary view/edit toggle, like the KQL pane. Also used for the Log Analytics editor — the flag
+  // ordinary view/edit toggle, like the KQL pane. Also used for the Log Analytics editor. The flag
   // name is backend-agnostic despite the "graph" in it.
   const graphQueryReadOnly = isReadOnly;
 
@@ -237,7 +237,7 @@ export function RuleForm({
     return [{ label: PACK_LABELS[pack] ?? pack, icon: 'lock' }];
   }, [initial?.type, initial?.pack]);
 
-  // Parse rawKql once (mount only) — feeds the visual builder plus, for rules that don't
+  // Parse rawKql once (mount only): feeds the visual builder plus, for rules that don't
   // store resourceTypes/projectColumns explicitly (builtins, APRL), the Query Target and
   // Output Columns display values extracted from the KQL itself.
   const initialParsed = useMemo(
@@ -272,15 +272,15 @@ export function RuleForm({
       : DEFAULT_PROJECT_COLUMNS
   );
   // In read-only mode, only show Output Columns when they come from real data
-  // (stored on the rule or parsed from its KQL) — never the generic defaults.
+  // (stored on the rule or parsed from its KQL), never the generic defaults.
   const projectColumnsKnown = !!(initial?.projectColumns?.length || initialParsed?.projectColumns.length);
   const [addColInput, setAddColInput] = useState('');
 
-  // Visual builder state — initialized from saved visualQuery, legacy ruleGroups, or parsed rawKql.
+  // Visual builder state: initialized from saved visualQuery, legacy ruleGroups, or parsed rawKql.
   const [visualQuery, setVisualQuery] = useState<VisualQuery>(() => {
     if (initial?.visualQuery) {
       // A stored visualQuery can go stale relative to rawKql (e.g. a rule saved before a parser
-      // fix shipped) — see isVisualQueryStale for the detection rationale.
+      // fix shipped): see isVisualQueryStale for the detection rationale.
       if (initial.rawKql && initialParsed) {
         const stale = isVisualQueryStale({
           storedVisualQuery: initial.visualQuery,
@@ -304,12 +304,12 @@ export function RuleForm({
     return defaultVisualQuery();
   });
 
-  // Graph query state (spec 032) — only meaningful when isGraphBackend. Starts at a sane default
+  // Graph query state (spec 032), only meaningful when isGraphBackend. Starts at a sane default
   // for a brand-new Directory rule (users, no filter) rather than undefined, since GraphRuleEditor
   // needs a real GraphQuery to render.
   const [graphQuery, setGraphQuery] = useState<GraphQuery>(initial?.graphQuery ?? { path: 'users' });
 
-  // Log Analytics query state (spec 036) — only meaningful when isLogAnalyticsBackend. Same
+  // Log Analytics query state (spec 036), only meaningful when isLogAnalyticsBackend. Same
   // needs-a-real-default reasoning as graphQuery above; 30 days matches the common "last 30 days"
   // framing and is the same default the test fixtures use.
   const [logsQuery, setLogsQuery] = useState<LogAnalyticsQuery>(initial?.logsQuery ?? { kql: '', timeWindowDays: 30 });
@@ -319,7 +319,7 @@ export function RuleForm({
   const [kqlText, setKqlText] = useState(() => {
     const raw = isBuiltinCheck ? (kqlQuery ?? '') : (initial?.rawKql ?? '');
     // Mirrors the "Builder → KQL" memo below exactly. A mount that starts in edit mode (e.g. a
-    // ?edit=true deep link) would otherwise have that memo rewrite this via a post-mount effect —
+    // ?edit=true deep link) would otherwise have that memo rewrite this via a post-mount effect,
     // which dirty-tracking would see as a change nobody made.
     if (isReadOnly && raw) return raw;
     return buildQueryFromVisual(visualQuery, {
@@ -462,7 +462,7 @@ export function RuleForm({
   // ── Dirty tracking ────────────────────────────────────────────────────────
   // Diffed against a baseline rather than marked imperatively, so editing a field and then
   // reverting it clears the flag again instead of leaving Save stuck active. Uses the generated
-  // KQL string (kqlFromGui) rather than the raw visualQuery object — the parser assigns every
+  // KQL string (kqlFromGui) rather than the raw visualQuery object. The parser assigns every
   // condition/group/stage a fresh random id on every parse, so typing in the KQL pane and then
   // undoing it would otherwise leave visualQuery permanently different by id alone, even though
   // the query itself is byte-for-byte back to what it was.
@@ -478,14 +478,14 @@ export function RuleForm({
 
   async function save() {
     if (!name.trim()) return alert('Name is required');
-    // spec 044: the payload sent below must use this same value, not the raw `visualQuery` state —
-    // that state only syncs from kqlText after a 400ms debounce (see kqlDriver above) and can still
+    // spec 044: the payload sent below must use this same value, not the raw `visualQuery` state.
+    // That state only syncs from kqlText after a 400ms debounce (see kqlDriver above) and can still
     // be stale at the moment Save is clicked, even though this fresh re-parse (and therefore the
     // validation gate right below) already sees the real, current filter.
     let effectiveVisualQuery = visualQuery;
     if (!isBuiltinCheck && !usesDedicatedEditor) {
       // RB-RM-004: validate real compilation, not field non-emptiness (the old isRealCondition
-      // check) — a condition can reference an unwritable field or carry an empty value list and
+      // check): a condition can reference an unwritable field or carry an empty value list and
       // still look "filled in". When raw KQL is the driving surface, re-parse kqlText fresh rather
       // than trusting visualQuery, which only syncs from it after a 400ms debounce (see kqlDriver
       // above) and can still be stale at the moment Save is clicked.
@@ -574,7 +574,7 @@ export function RuleForm({
       {/* Details/target on the left and the query builder on the right, wide enough apart
           that a large screen isn't mostly blank. The sidebar sticks while the (usually much
           taller) query/conditions column scrolls, so Name/Category/Enabled etc. never need
-          a scroll to reach — they used to sit below the whole KQL card. Below `lg` this
+          a scroll to reach. They used to sit below the whole KQL card. Below `lg` this
           collapses to one column, sidebar first, same as before. */}
       <div className="space-y-6 lg:grid lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start lg:gap-6 lg:space-y-0">
 
@@ -995,7 +995,7 @@ export function RuleForm({
           {(() => {
             // In read-only mode, check whether the parsed visual query has any visible filter conditions.
             // APRL and complex rules produce only advanced stages (join/expand/aggregate) which would
-            // all render as AdvancedPassthroughBlock — not useful to show. If there are no filter
+            // all render as AdvancedPassthroughBlock, not useful to show. If there are no filter
             // conditions, show a brief note instead of a wall of "too complex" blocks.
             const hasFilterConditions = !isReadOnly || visualQuery.stages.some(
               s => s.type === 'filter' && (s as FilterStage).groups.some(g => g.conditions.some(isRealCondition))
@@ -1037,8 +1037,8 @@ export function RuleForm({
 
       {/* ── Actions ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 pb-6">
-        {/* When saveHandleRef is set, the embedding page renders Save itself (beside Edit) —
-            this bar would otherwise duplicate it. */}
+        {/* When saveHandleRef is set, the embedding page renders Save itself (beside Edit).
+            This bar would otherwise duplicate it. */}
         {!saveHandleRef && (!isReadOnly || !operationalReadOnly) && (
           <Button onClick={save} disabled={saving || (!!initial?.id && !dirty)}>
             {saving ? 'Saving…' : initial?.id ? 'Save changes' : 'Create Rule'}

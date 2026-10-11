@@ -1,7 +1,7 @@
 /**
  * dispatchNotifications' retry/backoff: transient failures (network errors, 429, 5xx) retry up to
- * 3 total attempts with backoff between them; a 4xx is never retried. Every outcome — success or
- * exhausted retries — must land exactly one row in notification_deliveries.
+ * 3 total attempts with backoff between them; a 4xx is never retried. Every outcome (success or
+ * exhausted retries) must land exactly one row in notification_deliveries.
  *
  * Fake timers stand in for the real 2s/8s backoff delays so this suite runs in milliseconds, not
  * seconds; vi.advanceTimersByTimeAsync lets the awaited sleep() inside sendWithRetry resolve.
@@ -118,7 +118,7 @@ describe('dispatchNotifications retry/backoff', () => {
     expect(history[0]).toMatchObject({ ok: true, attempts: 3, httpStatus: 200 });
   });
 
-  it('does not retry a 4xx — one attempt, one failed delivery row', async () => {
+  it('does not retry a 4xx: one attempt, one failed delivery row', async () => {
     const fetchMock = vi.fn().mockResolvedValue(fakeResponse(400, 'bad request'));
     setGuardedTransportForTests(fetchMock);
 

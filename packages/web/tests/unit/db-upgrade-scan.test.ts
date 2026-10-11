@@ -1,5 +1,5 @@
 /**
- * TS-25 · case 25-10 — running a scan after upgrading.
+ * TS-25 · case 25-10: running a scan after upgrading.
  *
  * Every other test in the upgrade suite inspects the database directly. This one goes through the
  * product: it upgrades a database that has a month of history in it, then runs a real scan over the
@@ -7,13 +7,13 @@
  * starting a new one.
  *
  * That distinction is the whole point. An upgrade that technically preserves every row but causes
- * the next scan to re-report the entire estate as brand new — resetting ages, breaking suppressions,
- * and making the "new findings" widgets spike — has failed the user just as badly as one that
+ * the next scan to re-report the entire estate as brand new (resetting ages, breaking suppressions,
+ * and making the "new findings" widgets spike) has failed the user just as badly as one that
  * deleted the rows.
  *
  * **Why this file is structured oddly.** `lib/db/client.ts` opens its connection and runs migrations
  * when it is *imported*, against whatever `RULEBEAT_DB_PATH` says at that moment. So the sample has
- * to be built and the variable repointed before anything pulls that module in — which means no
+ * to be built and the variable repointed before anything pulls that module in, which means no
  * static import here may reach it, and everything that does must be imported dynamically inside
  * `beforeAll`. The static imports below are deliberately limited to test helpers and types.
  */
@@ -106,7 +106,7 @@ describe('TS-25 · scanning after an upgrade', () => {
 
     const matching = (await findings.listFindings()).filter(f => f.resourceId === ACTIVE_RESOURCE_ID);
     // One row, not two. A second row for the same resource means the scan failed to recognise its
-    // own finding — which is what happens if the fingerprint it computes no longer matches the one
+    // own finding, which is what happens if the fingerprint it computes no longer matches the one
     // on disk.
     expect(matching.length, 'the same violation was recorded twice').toBe(1);
     expect(matching[0]!.firstSeenAt, 'the finding was aged back to today').toBe(FIXED_DATES.firstSeen);

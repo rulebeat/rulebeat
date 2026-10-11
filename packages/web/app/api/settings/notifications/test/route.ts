@@ -12,7 +12,7 @@ import { postWebhookJson, sendSmtpMail } from '@/lib/notifications/send';
 import type { Finding, Severity } from '@/lib/types';
 
 /**
- * "Send test" — sends a sample message to a channel.
+ * "Send test": sends a sample message to a channel.
  *
  * Two modes:
  *  - body contains { id } → tests the saved channel

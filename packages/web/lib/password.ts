@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
  * argon2/bcrypt/PBKDF2).
  *
  * Two traps this file exists to avoid re-introducing at every call site:
- *  - `scryptSync` blocks the single JS thread for 100ms-1s per call — every real login must use
+ *  - `scryptSync` blocks the single JS thread for 100ms-1s per call. Every real login must use
  *    the async `scrypt`. `hashPasswordSync` exists only for the startup seed, which runs before
  *    the server is accepting requests.
  *  - `N=2^16` throws unless `maxmem` is raised to match; the default 32MB budget is sized for
@@ -43,7 +43,7 @@ const SALT_LEN = 16;
  * Two call shapes share the same two concurrent slots and one bounded (20-deep) wait queue:
  *  - "wait in line" (`failFast: false`, the default): used by `hashPassword`, for an already-
  *    authenticated caller (password change, user create, admin reset). These must never be
- *    rejected — the request is already trusted, so the only question is how long it waits.
+ *    rejected: the request is already trusted, so the only question is how long it waits.
  *  - "fail fast" (`failFast: true`): used by the unauthenticated sign-in path (`verifyPassword`/
  *    `verifyDummyPassword` as called from `authorizeLocalAccount`). If the queue is already at
  *    its cap, the call throws `PasswordGateBusyError` immediately, before touching scrypt at all.
@@ -85,7 +85,7 @@ function releaseGateSlot(): void {
 
 /**
  * True while the gate has no room left to accept another fail-fast caller (every slot running
- * and the wait queue already full). A cheap, side-effect-free peek — checked before any DB lookup
+ * and the wait queue already full). A cheap, side-effect-free peek: checked before any DB lookup
  * in `authorizeLocalAccount` so a saturated gate costs neither a password claim nor a dummy hash.
  */
 export function isPasswordGateSaturated(): boolean {
@@ -110,13 +110,13 @@ export async function withPasswordGate<T>(fn: () => Promise<T>, opts: { failFast
   }
 }
 
-/** Test-only seam — shrink the gate so full-queue behaviour doesn't need 20+ real callers. */
+/** Test-only seam: shrink the gate so full-queue behaviour doesn't need 20+ real callers. */
 export function setPasswordGateLimitsForTests(maxConcurrent: number, maxQueue: number): void {
   gateMaxConcurrent = maxConcurrent;
   gateMaxQueue = maxQueue;
 }
 
-/** Test-only seam — restores the real limits and clears any state a test left behind. */
+/** Test-only seam: restores the real limits and clears any state a test left behind. */
 export function resetPasswordGateForTests(): void {
   gateMaxConcurrent = PASSWORD_GATE_MAX_CONCURRENT;
   gateMaxQueue = PASSWORD_GATE_MAX_QUEUE;
@@ -138,7 +138,7 @@ function parseParams(params: string): { N: number; r: number; p: number } | null
   return { N: Number(match[1]), r: Number(match[2]), p: Number(match[3]) };
 }
 
-/** Always waits for a gate slot rather than rejecting — every caller is already authenticated. */
+/** Always waits for a gate slot rather than rejecting. Every caller is already authenticated. */
 export async function hashPassword(password: string): Promise<string> {
   return withPasswordGate(async () => {
     const salt = randomBytes(SALT_LEN);
@@ -147,7 +147,7 @@ export async function hashPassword(password: string): Promise<string> {
   });
 }
 
-/** Synchronous — for the startup seed only, which runs before the server accepts requests. */
+/** Synchronous, for the startup seed only, which runs before the server accepts requests. */
 export function hashPasswordSync(password: string): string {
   const salt = randomBytes(SALT_LEN);
   const hash = scryptSync(password, salt, KEYLEN, { N, r, p, maxmem: MAXMEM });
@@ -156,7 +156,7 @@ export function hashPasswordSync(password: string): string {
 
 /**
  * Verifies a password against a stored hash. Returns `false` for any malformed hash rather than
- * throwing — a tampered or corrupted stored value should read as "wrong password", not crash the
+ * throwing: a tampered or corrupted stored value should read as "wrong password", not crash the
  * request.
  *
  * `opts.failFast` is for the unauthenticated sign-in path only (see `withPasswordGate`): pass it
@@ -193,7 +193,7 @@ export async function verifyPassword(
 
 let realVerificationCallCount = 0;
 
-/** Test-only seam — proves `verifyPassword` itself was never reached, not by timing. */
+/** Test-only seam: proves `verifyPassword` itself was never reached, not by timing. */
 export function getRealVerificationCallCountForTests(): number {
   return realVerificationCallCount;
 }
@@ -204,7 +204,7 @@ export function resetRealVerificationCallCountForTests(): void {
 
 let dummyVerificationCallCount = 0;
 
-/** Test-only seam — proves a code path really did run the dummy verification, not by timing. */
+/** Test-only seam: proves a code path really did run the dummy verification, not by timing. */
 export function getDummyVerificationCallCountForTests(): number {
   return dummyVerificationCallCount;
 }
@@ -214,7 +214,7 @@ export function resetDummyVerificationCallCountForTests(): void {
 }
 
 /**
- * A verification against no real account — burns the same async scrypt cost as a genuine failed
+ * A verification against no real account: burns the same async scrypt cost as a genuine failed
  * login, so "no such account" and "wrong password" take the same time and an attacker can't use
  * response timing to enumerate which emails exist. Also used on the *locked-account* branch for
  * the same reason: returning early there is its own timing oracle confirming the email exists.

@@ -3,13 +3,13 @@
  *
  * `await isDemoMode()` (lib/demo/index.ts) requires both `RULEBEAT_DEMO=1` (lib/demo-env.ts, gate 1) and the
  * `demo-mode-v2` stamp in the database's own `meta` table (gate 2, written only by the generator).
- * Neither gate is meaningful alone — the truth table below proves that directly, against the
+ * Neither gate is meaningful alone: the truth table below proves that directly, against the
  * ambient test database that `tests/setup.ts` already points at a throwaway file.
  *
  * The one thing that truth table *can't* prove is the file-routing decision in `lib/db/client.ts`:
  * `RULEBEAT_DB_PATH` (which `tests/setup.ts` always sets) deliberately beats the demo.db/rulebeat.db
  * choice, so within this process that choice is never actually exercised. Proving it needs the real
- * startup path in a process where `RULEBEAT_DB_PATH` is never set at all — the same reasoning
+ * startup path in a process where `RULEBEAT_DB_PATH` is never set at all. The same reasoning
  * `tests/fixtures/upgrade.ts`'s `upgradeViaStartup()` documents for the migration path.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -29,7 +29,7 @@ afterEach(async () => {
   resetDemoModeCacheForTests();
 });
 
-describe('isDemoEnv() — gate 1, the environment variable in isolation', () => {
+describe('isDemoEnv(): gate 1, the environment variable in isolation', () => {
   it('is false when unset', async () => {
     delete process.env.RULEBEAT_DEMO;
     expect(isDemoEnv()).toBe(false);
@@ -46,21 +46,21 @@ describe('isDemoEnv() — gate 1, the environment variable in isolation', () => 
   });
 });
 
-describe('await isDemoMode() — the two-gate truth table', () => {
+describe('await isDemoMode(): the two-gate truth table', () => {
   it('env unset, no stamp → false', async () => {
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
     expect(await isDemoMode()).toBe(false);
   });
 
-  it('env set, no stamp → false — the env var alone must not be enough', async () => {
+  it('env set, no stamp → false: the env var alone must not be enough', async () => {
     process.env.RULEBEAT_DEMO = '1';
     resetDemoModeCacheForTests();
     expect(await getMeta(STAMP_KEY)).toBeNull();
     expect(await isDemoMode()).toBe(false);
   });
 
-  it('stamp present, env unset → false — the stamp alone must not be enough', async () => {
+  it('stamp present, env unset → false: the stamp alone must not be enough', async () => {
     await stampDemoDatabase();
     delete process.env.RULEBEAT_DEMO;
     resetDemoModeCacheForTests();
@@ -81,7 +81,7 @@ describe('await isDemoMode() — the two-gate truth table', () => {
     expect(await isDemoMode()).toBe(true);
 
     await deleteMeta(STAMP_KEY);
-    // Nothing in the real app ever removes the stamp mid-process, so this isn't a real scenario —
+    // Nothing in the real app ever removes the stamp mid-process, so this isn't a real scenario:
     // it's here to pin the caching behaviour itself: the earlier `true` lookup stays cached.
     expect(await isDemoMode()).toBe(true);
 
@@ -101,7 +101,7 @@ describe('DEMO_VISITOR_ID', () => {
 const WEB_ROOT = resolve(__dirname, '..', '..');
 const REPO_ROOT = resolve(WEB_ROOT, '..', '..');
 const TSX_CLI = join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-// Reused from the upgrade suite's fixtures — its only job is `import '../../lib/db/client'`, which
+// Reused from the upgrade suite's fixtures. Its only job is `import '../../lib/db/client'`, which
 // is exactly what's needed here too; nothing about it is upgrade-specific.
 const RUNNER = join(WEB_ROOT, 'tests', 'fixtures', 'run-client-upgrade.ts');
 

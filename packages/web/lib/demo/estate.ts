@@ -20,7 +20,7 @@ export interface Estate {
 }
 
 /** Every resource type the estate ever generates. Also the allowlist the generator uses to decide
- *  which APRL rules are answerable — a rule whose resourceTypes aren't all in here has nothing in
+ *  which APRL rules are answerable: a rule whose resourceTypes aren't all in here has nothing in
  *  the estate to match, so it's never a candidate for enabling (see aprl-fixtures.ts). */
 export const TYPE_META: Record<string, { provider: string; segment: string }> = {
   'microsoft.compute/disks': { provider: 'Microsoft.Compute', segment: 'disks' },
@@ -82,7 +82,7 @@ function nameFor(type: string, rg: string, index: number, rng: () => number): st
 }
 
 /** Builds the whole synthetic tenant once, deterministically. Called a single time per generator
- *  run — resource identity (id, type, location) never changes across simulated days; only which
+ *  run: resource identity (id, type, location) never changes across simulated days; only which
  *  rules a resource violates changes day to day (see violation-engine.ts). */
 export function buildEstate(): Estate {
   const rng = mulberry32(seedFor(ESTATE_SEED));

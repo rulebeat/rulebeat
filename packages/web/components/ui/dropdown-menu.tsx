@@ -6,7 +6,7 @@ import { Check } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-/* Action menus — the "⋯" row menu, export menus, the dashboard widget menu.
+/* Action menus: the "⋯" row menu, export menus, the dashboard widget menu.
  *
  * Distinct from Select: a Select holds a value, a menu performs actions. Using
  * one for the other is why some of the old hand-rolled dropdowns had to invent

@@ -9,7 +9,7 @@ import type { PreflightResult } from '@/lib/preflight';
 import { KeyRound, ListChecks } from 'lucide-react';
 
 /**
- * Onboarding step 3 — choose what to scan.
+ * Onboarding step 3: choose what to scan.
  *
  * Deliberately resolves entirely onto `rule.enabled`, not a new category-level flag: a second way to
  * switch a check off would need ambiguous precedence against the rule's own flag, and every reader
@@ -17,7 +17,7 @@ import { KeyRound, ListChecks } from 'lucide-react';
  * learn about it. "All / High + critical only / None" per category is just three different
  * `enable`/`disable` id lists for `PATCH /api/rules/bulk`.
  *
- * Nothing here is applied automatically — the recommended tier is a badge, not a silent mutation, so
+ * Nothing here is applied automatically: the recommended tier is a badge, not a silent mutation, so
  * loading this step never changes what a scan does until the admin clicks a button.
  */
 
@@ -62,7 +62,7 @@ export function ScopeStep({
     void fetch('/api/diagnostics/preflight')
       .then(res => (res.ok ? res.json() as Promise<PreflightResult> : null))
       .then(body => { if (!cancelled && body) setSubscriptions(body.subscriptions); })
-      .catch(() => { /* the panel just stays empty — this is informational, not blocking */ });
+      .catch(() => { /* the panel just stays empty: this is informational, not blocking */ });
     return () => { cancelled = true; };
   }, []);
 

@@ -4,7 +4,7 @@ import { rand01 } from './prng';
 import type { RuleFixture } from './rule-fixture';
 
 /** Fraction of candidate resources ever selected as violators of a given rule, by severity.
- *  Deliberately inverted from how severe/rare real-world misconfigurations usually are — a demo
+ *  Deliberately inverted from how severe/rare real-world misconfigurations usually are. A demo
  *  where "critical" findings are the rarest and "low" findings are the most common reads as a
  *  believable, well-run-but-imperfect estate; a flat rate across severities would make critical
  *  findings implausibly common. */
@@ -28,7 +28,7 @@ interface Schedule {
  *  selected as a violator at all. Weights: steady offenders dominate (most findings just sit there
  *  until someone fixes them), a quarter get resolved partway through the window (remediation
  *  actually happening), a smaller slice start partway through (drift, not everything is broken on
- *  day one), and a rare few resolve then come back (regression) — together these are what make the
+ *  day one), and a rare few resolve then come back (regression): together these are what make the
  *  dashboard's trend/new-vs-fixed widgets show believable movement instead of a flat line. */
 function schedulePattern(ruleId: string, resourceId: string, totalDays: number): Schedule {
   const roll = rand01(`pattern::${ruleId}::${resourceId}`);
@@ -50,7 +50,7 @@ function schedulePattern(ruleId: string, resourceId: string, totalDays: number):
   return { pattern: 'resolved-reactivated', dayA, dayB: Math.min(totalDays - 1, dayB) };
 }
 
-/** Pure function of (rule, resource, day) — no state, no memoization needed, so the same simulated
+/** Pure function of (rule, resource, day). No state, no memoization needed, so the same simulated
  *  day always produces the same answer no matter how many times it's replayed or in what order. */
 export function isViolatingOnDay(
   ruleId: string,

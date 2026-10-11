@@ -60,11 +60,11 @@ tmp/
 # Schema cache (ARM resource type property schemas, auto-populated at runtime)
 packages/web/data/schemas/
 
-# SQLite database files (runtime data — not source controlled)
+# SQLite database files (runtime data, not source controlled)
 packages/web/data/*.db
 packages/web/data/*.db-shm
 packages/web/data/*.db-wal
-# Copies taken before a manual repair — real data, must never be committed
+# Copies taken before a manual repair: real data, must never be committed
 packages/web/data/*.db.backup-*
 # Demo snapshots, written by the demo server on start
 packages/web/data/demo-snapshots/
@@ -81,7 +81,7 @@ packages/web/data/demo-snapshots/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
-# Output of scripts/launch/build-public-snapshot.mjs — a generated dry-run tree, not source
+# Output of scripts/launch/build-public-snapshot.mjs. A generated dry-run tree, not source
 .public-snapshot/
 
 # Generated first-boot admin password (also printed to logs, never source controlled)

@@ -7,8 +7,8 @@ import {
 } from '../../src/clients/log-analytics.js';
 
 /**
- * `rowsFromLogsTable()` is the pure, SDK-independent half of the Log Analytics client (spec 035) —
- * the network call around it (`queryLogAnalyticsWorkspace()`) is deliberately not unit tested here,
+ * `rowsFromLogsTable()` is the pure, SDK-independent half of the Log Analytics client (spec 035).
+ * The network call around it (`queryLogAnalyticsWorkspace()`) is deliberately not unit tested here,
  * same precedent as `verifyAzureCredential()`: a function whose whole job is a live Azure call gets
  * its coverage from ctx-based fakes at the call sites, not a mocked SDK.
  */

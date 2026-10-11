@@ -48,7 +48,7 @@ export function checkReleaseVersion({ version, packageVersions, changelogText })
     if (!looksLikeADate) {
       errors.push(
         `CHANGELOG.md's "## [${version}]" header's date is "${date}", not a real date ` +
-          `(expected YYYY-MM-DD) — looks like the release was never finished.`
+          `(expected YYYY-MM-DD): looks like the release was never finished.`
       );
     }
   }

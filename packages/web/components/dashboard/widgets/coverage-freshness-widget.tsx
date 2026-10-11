@@ -33,7 +33,7 @@ const BADGE: Record<Freshness, { label: string; className: string; icon: typeof 
   never:  { label: 'Never scanned', className: 'border-border text-ink-faint',              icon: HelpCircle },
 };
 
-/** A high posture % means nothing if the underlying scan is weeks old — this widget surfaces
+/** A high posture % means nothing if the underlying scan is weeks old. This widget surfaces
  *  per-category scan recency so that trust signal is visible next to the score, not implied. */
 export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);

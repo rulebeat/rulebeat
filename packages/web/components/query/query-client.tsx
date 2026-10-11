@@ -51,8 +51,8 @@ const ARG_TABLE_OPTIONS: readonly SelectOption[] = [
   { value: 'managementGroup', label: 'Management Groups' },
 ];
 
-// Log Analytics is paused here (spec 038) pending multi-workspace targeting and a GUI builder —
-// it only supports one tenant-wide workspace today. RUN_URL and the backend-keyed branches below
+// Log Analytics is paused here (spec 038) pending multi-workspace targeting and a GUI builder.
+// It only supports one tenant-wide workspace today. RUN_URL and the backend-keyed branches below
 // keep their 'log-analytics' cases; they're just unreachable while it's absent from this list.
 const BACKEND_OPTIONS: { value: QueryBackend; label: string }[] = [
   { value: 'resource-graph',  label: 'Resource Graph' },

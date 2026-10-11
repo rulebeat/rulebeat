@@ -1,14 +1,14 @@
 /**
  * B3 phase 2 · lib/preflight.ts
  *
- * The whole point of this module is that its output is safe to show a browser — an ARG or Graph
+ * The whole point of this module is that its output is safe to show a browser. An ARG or Graph
  * failure carries the tenant id, subscription ids and correlation ids, none of which belong in a
  * response an admin might screenshot. Every scenario below that exercises a failure path also
  * asserts the raw error text is nowhere in the serialised result, not just that the status is right.
  *
  * `fakeTenantContext()`'s credential deliberately throws if used for real (see tests/helpers/
  * fake-azure.ts), so `getToken`/`fetchImpl` are always injected here rather than left to the
- * defaults — this suite makes zero live Azure or Graph calls.
+ * defaults: this suite makes zero live Azure or Graph calls.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fakeTenantContext } from '../helpers/fake-azure';
@@ -44,7 +44,7 @@ describe('B3 · runPreflight', () => {
   });
 
   describe('log-analytics check (spec 038: paused, must not appear)', () => {
-    it('never appears when no workspace is configured — the default fake context', async () => {
+    it('never appears when no workspace is configured: the default fake context', async () => {
       const ctx = fakeTenantContext({ subscriptionIds: ['sub-a'], rows: [{ subscriptionId: 'sub-a', name: 'Sub A' }] });
       const getToken = vi.fn(async () => 'fake-token');
 
@@ -116,7 +116,7 @@ describe('B3 · runPreflight', () => {
   it('subscriptions come straight from ctx.subscriptionIds, no second live call', async () => {
     // Reading ctx.subscriptionIds (already resolved by createTenantContext) rather than calling
     // listAccessibleSubscriptions() again is what makes this check reachable through the fake
-    // context at all — its credential throws if anything tries to use it for a real Azure SDK call.
+    // context at all: its credential throws if anything tries to use it for a real Azure SDK call.
     const ctx = fakeTenantContext({ subscriptionIds: ['sub-a'] });
     const getToken = vi.fn(async () => 'fake-token');
 
@@ -153,7 +153,7 @@ describe('B3 · runPreflight', () => {
     expect(JSON.stringify(result)).not.toContain(sensitive);
   });
 
-  it('Microsoft Graph 403 warns rather than fails — directory rules are one backend among several', async () => {
+  it('Microsoft Graph 403 warns rather than fails: directory rules are one backend among several', async () => {
     const ctx = fakeTenantContext({ subscriptionIds: ['sub-a'], rows: [{ subscriptionId: 'sub-a', name: 'Sub A' }] });
     const getToken = vi.fn(async () => 'fake-token');
 

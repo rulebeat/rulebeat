@@ -36,7 +36,7 @@ const OPTIONS = [
 /**
  * Shown before RuleForm on the /rules/new path (spec 029). Resource Graph and Directory objects
  * (Microsoft Graph) are authorable; Log Analytics is paused (spec 038) pending multi-workspace
- * targeting and a GUI builder — it only supports one tenant-wide workspace today.
+ * targeting and a GUI builder: it only supports one tenant-wide workspace today.
  */
 export function ChecksPickerDialog({ onSelect, onClose }: Props) {
   return (

@@ -1,4 +1,4 @@
-/** Theme preference — shared by the server (root layout reads the cookie) and the client
+/** Theme preference: shared by the server (root layout reads the cookie) and the client
  *  (the provider writes it). Kept free of React and of any Node-only import so both sides
  *  and the edge/proxy bundle can import it safely.
  *
@@ -32,7 +32,7 @@ export function parseThemePreference(value: string | undefined | null): ThemePre
 export const DARK_CLASS = 'dark';
 
 /** Runs in <head> before first paint, so a dark-mode user never sees a white flash.
- *  Only needed for the `system` preference — for an explicit choice the server already
+ *  Only needed for the `system` preference. For an explicit choice the server already
  *  stamped the class. It is written as a string rather than a real function because it has
  *  to be inlined into the HTML document; keep it small, dependency-free, and total (any
  *  throw here would block rendering, hence the try/catch).

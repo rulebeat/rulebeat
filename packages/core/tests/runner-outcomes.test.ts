@@ -1,10 +1,10 @@
 /**
- * Spec 004 — scan lifecycle correctness.
+ * Spec 004: scan lifecycle correctness.
  *
  * runRules() now yields a per-rule RuleExecutionOutcome alongside its findings, on the same
  * generator, rather than silently swallowing a query failure into a log line. The contract this
  * suite pins: only 'success' may be read by a caller as "safe to resolve this rule's prior
- * findings" — 'failed' (the query threw) and 'capped' (a top-level take/top, or Resource Graph
+ * findings": 'failed' (the query threw) and 'capped' (a top-level take/top, or Resource Graph
  * itself reporting a truncated result) must both be indistinguishable from each other in that
  * respect, even though their *cause* differs.
  */
@@ -120,7 +120,7 @@ describe('runRules() per-rule outcomes (spec 004)', () => {
     const findingEvents = events.filter(e => e.kind === 'finding');
     const outcomeEvents = events.filter(e => e.kind === 'outcome');
 
-    // A capped rule still reports whatever it found — the finding count is real, just not proven
+    // A capped rule still reports whatever it found. The finding count is real, just not proven
     // to be the *complete* set, which is exactly why 'capped' must not resolve prior findings.
     expect(findingEvents).toHaveLength(1);
     expect(outcomeEvents).toEqual([
@@ -161,7 +161,7 @@ describe('runRules() identity-less rows (spec 005)', () => {
     const findingEvents = events.filter(e => e.kind === 'finding');
     const outcomeEvents = events.filter(e => e.kind === 'outcome');
 
-    // Only the 2 rows with a real id become findings — this is the case that fails without the
+    // Only the 2 rows with a real id become findings. This is the case that fails without the
     // fix: today all 3 rows (including the id-less one) would be counted and 'success' returned.
     expect(findingEvents).toHaveLength(2);
     expect(outcomeEvents).toEqual([
@@ -219,8 +219,8 @@ describe('runRules() identity-less rows (spec 005)', () => {
   });
 
   it('catches an identity-less row beyond the first few, not just the leading rows', async () => {
-    // The save-time/validate-kql probe only samples 5 rows and can't see this by construction —
-    // this is the residual case that only runner.ts's own per-row filtering catches, at scan time.
+    // The save-time/validate-kql probe only samples 5 rows and can't see this by construction.
+    // This is the residual case that only runner.ts's own per-row filtering catches, at scan time.
     const rule = baseRule();
     const rows = Array.from({ length: 10 }, (_, i) =>
       i === 5
@@ -279,7 +279,7 @@ describe('runRules() structured logging (spec 006)', () => {
     expect(warnLog?.fields).toMatchObject({ ruleId: 'test-rule', category: 'reliability', level: 'warn' });
     expect(warnLog?.message).toContain('enrichment query failed');
 
-    // Enrichment failing is not the rule failing — the rule still completes and its own outcome
+    // Enrichment failing is not the rule failing. The rule still completes and its own outcome
     // log line still fires, separately from the warn line above.
     expect(events.filter(e => e.kind === 'outcome')).toEqual([
       { kind: 'outcome', outcome: { ruleId: 'test-rule', status: 'success', findingCount: 1 } },

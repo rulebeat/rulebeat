@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *  `gridTemplateColumns` string, so header and rows can never drift out of alignment.
  *
  *  `flexCol`, if given, names the one column that fills any leftover container width by default
- *  (so the table isn't left shrunk to the left with dead space on the right) — until the user
+ *  (so the table isn't left shrunk to the left with dead space on the right), until the user
  *  actually drags its handle, at which point it behaves like every other fixed-width column. */
 export function useResizableColumns<K extends string>(initial: Record<K, number>, opts?: { flexCol?: K; minWidth?: number }) {
   const minWidth = opts?.minWidth ?? 60;

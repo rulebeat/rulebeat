@@ -1,8 +1,8 @@
 /**
- * Spec 033(a) — the trend chart tooltip must read "passing/total (pct%)", not a bare percentage,
+ * Spec 033(a): the trend chart tooltip must read "passing/total (pct%)", not a bare percentage,
  * so a posture move is legible without cross-referencing another widget. Tested at the extracted
  * pure function rather than by rendering TrendWidget: this codebase has no React component-rendering
- * test layer (see tests/unit/toggle-set.test.ts's own note — Vitest runs environment: 'node', no
+ * test layer (see tests/unit/toggle-set.test.ts's own note: Vitest runs environment: 'node', no
  * @testing-library/react), so the formatting logic lives in dashboard-constants.ts precisely so it
  * can be exercised directly.
  */

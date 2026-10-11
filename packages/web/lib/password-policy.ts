@@ -1,4 +1,4 @@
-// Password strength policy for local accounts — spec 020.
+// Password strength policy for local accounts: spec 020.
 
 export const MIN_PASSWORD_LENGTH = 15;
 
@@ -11,7 +11,7 @@ export const MIN_PASSWORD_LENGTH = 15;
  */
 export const MAX_SIGNIN_PASSWORD_LENGTH = 1024;
 
-// Full strings, not fragments meant to be "padded" — every entry here is already 15+ characters,
+// Full strings, not fragments meant to be "padded". Every entry here is already 15+ characters,
 // so it actually proves the minimum length rather than depending on a caller adding padding that
 // might not happen. Comparison is case-insensitive (both sides lowercased before comparing).
 const BLOCKED_PASSWORDS = [

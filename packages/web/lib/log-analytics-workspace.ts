@@ -10,7 +10,7 @@ import { describeAadstsError } from '@/lib/entra-errors';
  * Resolves the default Log Analytics workspace RuleBeat queries `queryBackend: 'log-analytics'`
  * rules against (spec 035). Deliberately narrower than `resolveAzureCredential()` in
  * `lib/azure-credential.ts`: there is no ambient "chain" fallback here, because unlike an Azure
- * identity a workspace id can't be discovered — either one is named (by env or by the admin in
+ * identity a workspace id can't be discovered: either one is named (by env or by the admin in
  * Settings) or none is configured, and `createTenantContext()` passes `undefined` through to core,
  * which is what makes `queryLogs` reject immediately for a rule that needs it.
  */
@@ -34,7 +34,7 @@ function env(name: string): string | undefined {
   return value ? value : undefined;
 }
 
-/** Env always wins over the stored row, same reasoning as `resolveAzureCredential()` — a template
+/** Env always wins over the stored row, same reasoning as `resolveAzureCredential()`. A template
  *  deployment that names a workspace in its environment must never be overridden by a stray Settings
  *  entry. Returns null when nothing is configured; there is no third source to fall back to. */
 export async function resolveLogAnalyticsWorkspaceId(): Promise<ResolvedLogAnalyticsWorkspace | null> {
@@ -52,7 +52,7 @@ export interface LogAnalyticsWorkspaceStatus {
   source: LogAnalyticsWorkspaceSource | null;
   sourceLabel: string | null;
   workspaceId: string | null;
-  /** True when the environment is supplying the workspace id, which means the stored one is inert —
+  /** True when the environment is supplying the workspace id, which means the stored one is inert,
    *  same reasoning as AzureConnectionStatus.managedByEnv. */
   managedByEnv: boolean;
   stored: LogAnalyticsWorkspaceSummary | null;
@@ -114,7 +114,7 @@ export type VerifyLogAnalyticsResult =
  * `print 1`. Run before persisting, same reasoning as `verifyAzureCredential()`: a saved workspace id
  * that has never actually answered a query is the worst state to leave an install in.
  *
- * Takes the credential as a parameter rather than resolving it internally — there is no separate
+ * Takes the credential as a parameter rather than resolving it internally. There is no separate
  * "Log Analytics identity" to test (spec 035 deliberately reuses the existing Azure credential), so
  * the caller passes in whatever `getAzureCredential()` already returned.
  */

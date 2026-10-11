@@ -6,7 +6,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const web = resolve(root, 'packages/web');
 
 /**
- * One config, two projects — `core` and `web` — rather than a config file per package, so
+ * One config, two projects (`core` and `web`) rather than a config file per package, so
  * `npm test` at the root runs everything and coverage is reported across both.
  *
  * `web` tests run in the `node` environment on purpose: the suites here exercise pure logic,
@@ -30,7 +30,7 @@ export default defineConfig({
             // Mirrors packages/web/tsconfig.json's `@/*` path alias.
             '@': web,
             // next-auth's own lib/env.js does `import { NextRequest } from "next/server"` with no
-            // extension. Next's package.json `exports` map only resolves the extensioned form —
+            // extension. Next's package.json `exports` map only resolves the extensioned form:
             // fine inside Next's own bundler, a hard ESM resolution error under plain Node/Vitest.
             // Only this exact specifier is aliased; nothing else about module resolution changes.
             'next/server': resolve(root, 'node_modules/next/server.js'),
@@ -44,7 +44,7 @@ export default defineConfig({
           // deliberately not shared by the Postgres backend: Postgres starts empty, there is no
           // data migration between backends (issue #73). These suites point RULEBEAT_DB_PATH at a
           // sample file and then assert through the live singleton, which a Postgres-backed run
-          // never opens — so on the Postgres pass (RULEBEAT_TEST_PG_URL set) they are excluded
+          // never opens, so on the Postgres pass (RULEBEAT_TEST_PG_URL set) they are excluded
           // rather than weakened. Every other suite runs on both backends.
           exclude: process.env.RULEBEAT_TEST_PG_URL
             ? [
@@ -66,7 +66,7 @@ export default defineConfig({
             deps: {
               // Vitest resolves node_modules imports through Node's native loader by default, which
               // skips the resolve.alias above entirely. next-auth's own lib/env.js does an
-              // extensionless `import ... from "next/server"`, which only Next's bundler tolerates —
+              // extensionless `import ... from "next/server"`, which only Next's bundler tolerates:
               // "inlining" routes it through Vite's resolver instead, where the alias applies.
               inline: ['next-auth'],
             },

@@ -1,5 +1,5 @@
 /**
- * Spec 007 — the two raw fetch probes in this app (the Graph reachability check inside
+ * Spec 007: the two raw fetch probes in this app (the Graph reachability check inside
  * runPreflight, and the Entra OIDC discovery probe) now go through fetchWithRetry() instead of a
  * bare fetch, so a transient 503 from either endpoint is retried instead of surfacing immediately
  * as unreachable.

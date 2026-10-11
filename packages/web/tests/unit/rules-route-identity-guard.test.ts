@@ -1,7 +1,7 @@
 /**
- * Spec 005 — POST /api/rules and PUT /api/rules/[id] must block saving a rawKql rule whose sampled
+ * Spec 005: POST /api/rules and PUT /api/rules/[id] must block saving a rawKql rule whose sampled
  * rows have no resource id, and must fail open (still save) when the probe itself can't run at all
- * (no Azure credential configured yet, or a transient connection failure) — see rule-identity-check.ts.
+ * (no Azure credential configured yet, or a transient connection failure): see rule-identity-check.ts.
  * A GUI-built rule (no rawKql) must never trigger the probe, since there is nothing to sample.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,7 +62,7 @@ async function signInAsEditor(): Promise<void> {
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
-describe('POST /api/rules — identity guard (spec 005)', () => {
+describe('POST /api/rules: identity guard (spec 005)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();
@@ -102,7 +102,7 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
   });
 
   it('never probes a GUI-built rule that has no rawKql', async () => {
-    // fakeCtx stays null — if the route tried to probe, await createTenantContext() would throw calling
+    // fakeCtx stays null: if the route tried to probe, await createTenantContext() would throw calling
     // queryARG on null, which is exactly what proves the probe was skipped.
     const body = baseBody();
     const res = await POST(postRequest(body));
@@ -110,7 +110,7 @@ describe('POST /api/rules — identity guard (spec 005)', () => {
   });
 });
 
-describe('PUT /api/rules/[id] — identity guard (spec 005)', () => {
+describe('PUT /api/rules/[id]: identity guard (spec 005)', () => {
   let ruleId: string;
 
   beforeEach(async () => {

@@ -1,6 +1,6 @@
 import type { DashboardConfig, WidgetDef } from './types';
 
-// Pure data transform only — no lib/db/* imports (mirrors dashboard-templates.ts) so it can run
+// Pure data transform only: no lib/db/* imports (mirrors dashboard-templates.ts) so it can run
 // from rowToDashboard() on every read without a server/client boundary concern.
 
 const WIDGET_TYPE_MAP: Record<string, WidgetDef['type']> = {
@@ -18,7 +18,7 @@ const STAT_METRIC_MAP: Record<string, string> = {
 
 /** Applied on every dashboard read (see `rowToDashboard` in `lib/db/dashboards.ts`) so old
  *  widget types / stat-metric ids saved before the dashboard refinement pass keep rendering
- *  correctly, with zero explicit user-facing migration step. Idempotent — a config with nothing
+ *  correctly, with zero explicit user-facing migration step. Idempotent. A config with nothing
  *  to migrate passes through unchanged. */
 export function migrateDashboardConfig(config: DashboardConfig): DashboardConfig {
   let changed = false;

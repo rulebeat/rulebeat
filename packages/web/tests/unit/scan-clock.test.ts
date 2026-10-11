@@ -4,19 +4,19 @@
  * `RunScanOptions.now` (lib/scan-runner.ts), `StartRunOptions.now`/`finishRun`'s `patch.now`
  * (lib/schedule-runs.ts) and `executeTarget`'s `opts.now` (lib/run-executor.ts) all default to the
  * real clock so nothing changes for a live scan, but the demo generator needs a forward,
- * chronological replay to land on the *simulated* day at every layer — the scan summary's own
+ * chronological replay to land on the *simulated* day at every layer. The scan summary's own
  * timestamps, the schedule_runs row, `finding_events.occurred_at`, and the daily snapshot's date
  * key. This suite proves the override actually reaches every one of those, rather than trusting the
  * doc comments describing it.
  *
  * It also stands as the regression test for the correctness fix called out in
  * `lib/db/findings.ts`: `finding_events.occurred_at` must be stamped from the scan's own
- * `finishedAt`, not `new Date()` — an event records when the scan *observed* the transition, and a
+ * `finishedAt`, not `new Date()`. An event records when the scan *observed* the transition, and a
  * backdated replay needs that to be the simulated day, not the instant the generator happened to
  * run.
  *
  * The identity category is used throughout rather than a rule-engine category, because its rules
- * run through `runGraphRules()`, which never touches `queryARG` — only `graphGet` — which keeps
+ * run through `runGraphRules()`, which never touches `queryARG` (only `graphGet`) which keeps
  * every test here about the clock, not about getting a fake KQL match right.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -79,7 +79,7 @@ describe('await runCategoryScan() respects an injected now', () => {
     expect(started).toBeLessThanOrEqual(after);
   });
 
-  it('stamps finding_events.occurred_at from opts.now — the correctness fix', async () => {
+  it('stamps finding_events.occurred_at from opts.now: the correctness fix', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k3'));
     const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
 
@@ -96,7 +96,7 @@ describe('await runCategoryScan() respects an injected now', () => {
     const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx: createCtx });
     const fingerprint = newFindings[0]!.fingerprint;
 
-    // Day 2: the same app, no more expiring credentials — the finding resolves.
+    // Day 2: the same app, no more expiring credentials. The finding resolves.
     const resolveCtx = fakeTenantContext({ graphRows: [] });
     await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_2, ctx: resolveCtx });
 

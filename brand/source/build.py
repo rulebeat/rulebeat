@@ -4,16 +4,16 @@
 
 The tile and the wordmark itself ("RuleBeat." and its full-stop dot) are
 both rasterized straight from traced vector paths (tile_vector.py /
-wordmark_vector.py — see each file's docstring for provenance). Nothing is
+wordmark_vector.py: see each file's docstring for provenance). Nothing is
 redrawn or newly typeset. Paths resolve against this file, so it runs the
 same from any working directory.
 
-There used to be a third wordmark cut here — the name plus an "AZURE
+There used to be a third wordmark cut here. The name plus an "AZURE
 GOVERNANCE" tagline baked directly into the PNG. It was removed 2026-08-17:
 putting Azure's name in the same visual weight as the product's own mark
 read as if Azure were part of RuleBeat's brand identity, not a description
 of what it targets. The fix was to drop the baked-in slogan entirely rather
-than reword it — any positioning line now lives as page copy (website hero,
+than reword it. Any positioning line now lives as page copy (website hero,
 README), never as pixels in a logo asset, so wording can change without
 touching this pipeline. See brand/README.txt.
 
@@ -44,14 +44,14 @@ CLEAR      = (0, 0, 0, 0)
 
 # ---- source geometry ----------------------------------------------------
 # TILE_CROP (294, 276, 470, 470) and WM_CROP (109, 191, 806, 132) no longer
-# feed a decompose() call — both were traced once (tile_vector.py,
+# feed a decompose() call: both were traced once (tile_vector.py,
 # wordmark_vector.py) and everything below rasterizes from that instead.
 # Letters end at local x=858 of WM_CROP; the red full stop sits at 875..914.
 # Cropping the 806-wide vector to 750 wide (WM_VECTOR_PLAIN_W, below) drops
-# the stop with no redrawing — that's why WM_LETTERS_PATH covers roughly
+# the stop with no redrawing: that's why WM_LETTERS_PATH covers roughly
 # [0, 750] and WM_DOT_PATH sits past it, in [766, 805] (wordmark_vector.py).
 # The former WMT_CROP/WMTP_CROP tagline crops (name + raw-pixel "AZURE
-# GOVERNANCE" caption) are gone along with the tagline cut itself — see the
+# GOVERNANCE" caption) are gone along with the tagline cut itself: see the
 # module docstring above.
 
 # ---- tile: rasterized straight from the traced vector path, plus a
@@ -73,7 +73,7 @@ tile_dark  = _tile_layer(_tile_r_alpha, TILE_VECTOR_W, TILE_VECTOR_H, INK_D, SUR
 
 # ---- wordmark: rasterized straight from the traced vector paths ---------
 # One source of truth for both the SVGs (below) and these PNGs, instead of
-# an independent resample of the raw rwm.png pixels — see wordmark_vector.py.
+# an independent resample of the raw rwm.png pixels: see wordmark_vector.py.
 print('rasterizing wordmark vector (this takes a few seconds)')
 _letters_sp = parse_path(WM_LETTERS_PATH)
 _dot_sp     = parse_path(WM_DOT_PATH)
@@ -145,12 +145,12 @@ for w in [750, 400, 200]:
 
 # ---- wordmark SVGs (vector master, see wordmark_vector.py) --------------
 # Traced from the same rwm.png pixels the PNG wordmarks above are built
-# from, not redrawn or re-typeset — see wordmark_vector.py's docstring for
+# from, not redrawn or re-typeset: see wordmark_vector.py's docstring for
 # why.
 def wordmark_svg(w, h, ink_hex, dot_hex, include_dot):
     # fill-rule="evenodd": potrace emits holes (the bowls of R/B, the
     # counters of e/a) as extra subpaths that only cut the shape correctly
-    # under evenodd — this is potrace's own output convention (see
+    # under evenodd: this is potrace's own output convention (see
     # Potrace.js's getPathTag), not an arbitrary choice made here. Without
     # it every counter fills in solid.
     parts = [
@@ -184,7 +184,7 @@ print('  wordmark svg (vector)')
 # ---- tile SVG (vector master, see tile_vector.py) ------------------------
 # Icons are solid squares by design (see brand/README.txt), so unlike the
 # wordmark SVG this one paints a full-bleed background rect first, then the
-# R shape in the surface colour on top, then the accent square — the same
+# R shape in the surface colour on top, then the accent square. The same
 # three-layer order the PNG tile above is built in.
 def tile_svg(size, ink_hex, surface_hex, red_hex):
     dx, dy, dw, dh = TILE_DOT_RECT

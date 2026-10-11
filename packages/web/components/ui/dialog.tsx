@@ -6,15 +6,15 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 
 /* Shared modal dialog primitive: focus trap, Escape-to-close, and focus return to the trigger
- * are all handled by Base UI instead of being reimplemented per dialog — see components/ui/
+ * are all handled by Base UI instead of being reimplemented per dialog: see components/ui/
  * popover.tsx and select.tsx for the same reasoning applied to non-modal floating panels.
  *
  * `DialogViewport` is required, not optional: it is what positions the popup (centered,
  * right-docked, etc.) now that there is no hand-rolled outer wrapper doing that job. Each
- * consumer passes its own positioning classes to it. `DialogTitle` is required too — without it
+ * consumer passes its own positioning classes to it. `DialogTitle` is required too. Without it
  * the popup has no accessible name.
  *
- * No transition/animation classes are applied here, unlike Popover's fade/scale — these dialogs
+ * No transition/animation classes are applied here, unlike Popover's fade/scale. These dialogs
  * keep their existing instant show/hide, since Popover's motion was never part of what this
  * primitive is standing in for. */
 

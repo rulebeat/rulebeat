@@ -1,5 +1,5 @@
 /**
- * Spec 029 — queryBackend/kind round-trip through lib/rules.ts (ruleToRow/rowToRule).
+ * Spec 029: queryBackend/kind round-trip through lib/rules.ts (ruleToRow/rowToRule).
  * `kind` is never trusted from the input Rule: ruleToRow() always recomputes it from queryBackend
  * via deriveKind(), so a stale or forged kind on the wire (e.g. a hand-crafted API payload) can
  * never persist. See deriveKind()'s own comment in lib/rules.ts and the RuleKind field comment in

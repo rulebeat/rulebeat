@@ -35,7 +35,7 @@ let activeTransport: GuardedTransport = requestPinned;
 const testAllowedAddresses = new Set<string>();
 let testTrustedCa: string | undefined;
 
-/** Test-only seam — substitute a fake resolver so tests never touch real DNS. */
+/** Test-only seam: substitute a fake resolver so tests never touch real DNS. */
 export function setDnsLookupForTests(fn: DnsLookup): void {
   activeLookup = fn;
 }
@@ -91,7 +91,7 @@ function isBlockedIpv4(ip: string): boolean {
 }
 
 function expandIpv6(ip: string): string[] | null {
-  // Minimal expansion sufficient for prefix comparison — not a full normalizer.
+  // Minimal expansion sufficient for prefix comparison, not a full normalizer.
   if (!ip.includes(':')) return null;
   const unscoped = ip.split('%')[0];
   const [head, tail] = unscoped.includes('::') ? unscoped.split('::') : [unscoped, ''];
@@ -171,7 +171,7 @@ function isBlockedIpv6(ip: string): boolean {
 export function isBlockedAddress(ip: string): boolean {
   if (isIP(ip) === 4) return isBlockedIpv4(ip);
   if (isIP(ip) === 6) return isBlockedIpv6(ip);
-  return true; // unparseable — fail closed
+  return true; // unparseable: fail closed
 }
 
 function isBlockedForSend(ip: string): boolean {
@@ -369,7 +369,7 @@ function requestPinned(url: string, init: RequestInit, addresses: ResolvedAddres
 /**
  * Guarded `fetch` for an admin-configured destination: resolves the host once, rejects it unless
  * every address is public, then connects only to those addresses (TLS still verified against the
- * URL's hostname). A redirect response is rejected outright rather than followed (spec 021 —
+ * URL's hostname). A redirect response is rejected outright rather than followed (spec 021:
  * cheaper than re-validating each hop of a redirect chain). The body must be a string.
  */
 export async function guardedFetch(url: string, init: RequestInit): Promise<Response> {

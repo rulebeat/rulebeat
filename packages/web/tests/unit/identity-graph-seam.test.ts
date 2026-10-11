@@ -1,11 +1,11 @@
 /**
  * WS2g · the identity category's Graph seam.
  *
- * Spec 032 removed `lib/identity-scan.ts` and its hardcoded `collectIdentityFindings()` entirely —
- * the two identity rules (`cred:app-secret-expiring`, `cred:app-cert-expiring`, seeded in
+ * Spec 032 removed `lib/identity-scan.ts` and its hardcoded `collectIdentityFindings()` entirely.
+ * The two identity rules (`cred:app-secret-expiring`, `cred:app-cert-expiring`, seeded in
  * `lib/builtin-rules.ts`) are now ordinary `queryBackend: 'microsoft-graph'` rows, evaluated by the
  * generic `runGraphRules()` engine (packages/core/src/engine/graph-runner.ts) through its per-item
- * `graphQuery.expand` mechanism — no rule-specific code path left anywhere.
+ * `graphQuery.expand` mechanism. No rule-specific code path left anywhere.
  *
  * This suite proves that engine reproduces the credential-expiry behaviour end to end against the
  * fake Graph seam, with no network involved at any point. Rule fixtures below mirror the real

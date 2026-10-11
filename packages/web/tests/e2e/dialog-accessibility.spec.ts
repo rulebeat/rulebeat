@@ -3,23 +3,23 @@ import { ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD } from './fixtures';
 import { signIn } from './helpers';
 
 /**
- * Spec 012 — NewDashboardDialog and SlideOverPanel (widget config / add widget) are rebuilt on
+ * Spec 012: NewDashboardDialog and SlideOverPanel (widget config / add widget) are rebuilt on
  * the shared components/ui/dialog.tsx wrapper around @base-ui/react/dialog. A naive "press
  * Escape, assert closed" test would already pass against the old hand-rolled implementation,
- * since NewDashboardDialog's own text input had its own Escape handler — none of that proves
+ * since NewDashboardDialog's own text input had its own Escape handler: none of that proves
  * the actual fix (focus trap + focus restoration). These tests specifically target focus
  * containment, Escape fired from a control that is NOT that input, and focus return to the
  * trigger, which only the real Base UI dialog satisfies.
  */
 
 /** Presses Tab `count` times and asserts focus never leaves the dialog popup identified by
- *  data-slot="dialog-popup" — proof of the focus trap, not just that Escape happens to work.
+ *  data-slot="dialog-popup": proof of the focus trap, not just that Escape happens to work.
  *
  *  Base UI's trap is implemented with invisible focus-guard siblings of the popup: tabbing off
  *  the last (or first) tabbable element inside briefly lands on a guard, whose onFocus handler
  *  redirects focus back inside via requestAnimationFrame (enqueueFocus), not synchronously. A
  *  check taken immediately after the Tab keypress can race that frame and observe focus on the
- *  guard — outside the popup — for an instant even though the trap is working. Waiting one frame
+ *  guard (outside the popup) for an instant even though the trap is working. Waiting one frame
  *  before reading document.activeElement asserts the trap's settled state instead of that hop. */
 async function assertFocusStaysTrapped(page: Page, count: number) {
   for (let i = 0; i < count; i++) {
@@ -47,7 +47,7 @@ test('NewDashboardDialog has an accessible name, traps focus, closes on Escape o
 
   await assertFocusStaysTrapped(page, 8);
 
-  // Move focus to a control that is not the text input, then Escape — the input's own
+  // Move focus to a control that is not the text input, then Escape. The input's own
   // Escape-to-close handler (if it still existed) would not fire here.
   const cancelButton = dialog.getByRole('button', { name: 'Cancel' });
   await cancelButton.focus();
@@ -73,7 +73,7 @@ test('SlideOverPanel (widget config) has an accessible name, traps focus, closes
   await assertFocusStaysTrapped(page, 10);
 
   // A nested portalled control (ChecklistDropdown, built on the same Popover primitive) must
-  // still open and accept input while the outer dialog holds a focus trap — a trap that also
+  // still open and accept input while the outer dialog holds a focus trap. A trap that also
   // swallows focus meant for a nested portal is a real failure mode this rewrite could introduce.
   await panel.getByRole('button', { name: 'Subscription', exact: true }).click();
   const search = page.getByPlaceholder('Filter subscription');

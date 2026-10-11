@@ -1,13 +1,13 @@
 /**
  * Codex review Phase 5, item 3 (RB-QA-018): a route that calls `req.json()` directly, with no
- * try/catch, throws an uncaught `SyntaxError` on a malformed body — every one of these routes
+ * try/catch, throws an uncaught `SyntaxError` on a malformed body. Every one of these routes
  * documents a 400 for a bad request, but malformed JSON specifically fell through to Next's
  * generic 500 instead.
  *
  * The fix is `parseJsonBody()` (lib/api-body.ts), which returns the documented 400 for bad JSON
  * and otherwise behaves like `req.json()`. A handful of routes handle it with their own inline
  * try/catch instead (an empty body means "test what's currently saved" for a couple of them), which
- * is equally safe — so this test doesn't force every call site onto the shared helper, it only
+ * is equally safe, so this test doesn't force every call site onto the shared helper, it only
  * bans the unsafe third option: a raw, unguarded `req.json()` call.
  */
 import { describe, expect, it } from 'vitest';
@@ -36,7 +36,7 @@ const routeFiles = findRouteFiles(API_DIR).map(full => ({
 
 /**
  * A raw `req.json()` call is safe only if it's reached through `parseJsonBody(...)`, or if it sits
- * inside a `try { ... } catch { ... }` of its own — checked with a small window rather than a real
+ * inside a `try { ... } catch { ... }` of its own: checked with a small window rather than a real
  * parser, since every call site in this codebase is a one-line `body = await req.json()` a couple
  * of lines below its own `try {`.
  */

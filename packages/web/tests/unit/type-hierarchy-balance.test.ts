@@ -2,8 +2,8 @@
  * Architecture test for spec 002: type hierarchy is carried by weight, not by widening
  * `ink-muted`/`ink-faint` into a catch-all "make this text quieter" move.
  *
- * Same shape as azure-credential-chokepoint.test.ts — grep source files off disk for a convention
- * the type system can't express. This is a floor, not a quality proof: see spec 002 §2 Risks — the
+ * Same shape as azure-credential-chokepoint.test.ts: grep source files off disk for a convention
+ * the type system can't express. This is a floor, not a quality proof: see spec 002 §2 Risks. The
  * automated checks below catch gross backsliding (a stacked contradiction, raw counts moving the
  * wrong way, faint creeping into an unreviewed file), not whether an individual call site's role
  * was judged correctly. That judgment was reviewed manually, screen by screen, at build time.
@@ -44,7 +44,7 @@ const sourceFiles = SCANNED_DIRS
  * verified one by one to be a placeholder/disabled state, a decorative icon, a deliberate status
  * ramp with its own defending comment (e.g. stepper.tsx's future-step badge,
  * coverage-freshness-widget.tsx's "never scanned" state), or the one standing severity-ramp
- * exception (severity-badge.tsx's info row — severity is out of scope per the spec's Frame). A
+ * exception (severity-badge.tsx's info row: severity is out of scope per the spec's Frame). A
  * file not on this list gets none of that benefit of the doubt.
  */
 const ALLOWED_FAINT_FILES = new Set([
@@ -60,14 +60,14 @@ const ALLOWED_FAINT_FILES = new Set([
   'components/findings/findings-explorer-client.tsx',
   'components/findings/severity-badge.tsx',
   'components/modules/scans-client.tsx',
-  // spec 029: the "Coming soon" tag on a not-yet-authorable Checks option — a disabled-state label.
+  // spec 029: the "Coming soon" tag on a not-yet-authorable Checks option. A disabled-state label.
   'components/rules/checks-picker-dialog.tsx',
   'components/rules/field-combobox.tsx',
   // spec 032: decorative HelpCircle glyphs beside the Filter and "Flag expiring items" labels.
   'components/rules/graph-rule-editor.tsx',
   // spec 036: decorative HelpCircle glyphs beside the "Time window" and "Dimension key field" labels.
   'components/rules/log-analytics-rule-editor.tsx',
-  // spec 037: the "Delete" affordance on a saved-query row, hidden until hover — a disabled/hover-
+  // spec 037: the "Delete" affordance on a saved-query row, hidden until hover. A disabled/hover-
   // reveal affordance, the same role as every other hover-only action already on this allowlist.
   'components/query/query-client.tsx',
   'components/rules/rule-form.tsx',
@@ -82,7 +82,7 @@ const ALLOWED_FAINT_FILES = new Set([
 ]);
 
 /**
- * Coarse regression backstop, not a quality proof (spec 002 §2 Risks #1) — it only catches the raw
+ * Coarse regression backstop, not a quality proof (spec 002 §2 Risks #1). It only catches the raw
  * count moving the wrong way, nothing about whether existing sites are well-placed. Set from the
  * real count once all four batches landed (286 pre-sweep -> this). If a later change reverts one
  * of those batches, this cap moves down in the same commit rather than being left to silently pass
@@ -96,10 +96,10 @@ const ALLOWED_FAINT_FILES = new Set([
  * proven" span already counted above, not a structural label. Raised 156 -> 158 by spec 034: the
  * new activity-occurrences-widget's loading spinner and empty-state copy reuse the identical
  * text-ink-muted pattern every other widget file already carries (and was already counted in the
- * baseline) — a new widget, not a new role. Raised 158 -> 160 by spec 035: log-analytics-section's
+ * baseline): a new widget, not a new role. Raised 158 -> 160 by spec 035: log-analytics-section's
  * card-header icon tint and its StatusDetail caption (workspace id + last-verified timestamp) are
  * line-for-line the same two call sites azure-connection-section already carries for the sibling
- * card above it — a new settings section reusing an existing role, not a new one. Raised 160 -> 161
+ * card above it: a new settings section reusing an existing role, not a new one. Raised 160 -> 161
  * by spec 036: log-analytics-rule-editor's sample-row preview labels each field name (e.g. "UserId:")
  * beside its value, the same caption-paired-with-value role as every other metadata/timestamp site
  * already counted above, not a structural label. Raised 161 -> 168 by spec 037: query-client.tsx's
@@ -125,7 +125,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
   });
 
   it('no call site stacks label-grid/label-grid-strong with an ink-muted or ink-2 colour class', async () => {
-    // label-grid already sets its own colour (ink-2) — stacking an ink class on top is either
+    // label-grid already sets its own colour (ink-2): stacking an ink class on top is either
     // redundant or silently fighting the utility. This is the contradiction spec 002's challenge
     // found in review, grounded directly in a test rather than left in prose.
     const offenders: string[] = [];
@@ -138,7 +138,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     }
     expect(offenders, [
       'These lines combine label-grid/label-grid-strong with text-ink-muted or text-ink-2.',
-      'label-grid already sets ink-2 as its own colour — drop the extra colour class.',
+      'label-grid already sets ink-2 as its own colour: drop the extra colour class.',
     ].join(' ')).toEqual([]);
   });
 
@@ -150,7 +150,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     expect(total, [
       `text-ink-muted appears ${total} times, above the ceiling of ${INK_MUTED_CEILING} set after`,
       "spec 002's sweep. This is a backstop against backsliding into the generic \"make it quieter\"",
-      "tier, not proof any one call site is well-placed — judge a new site against ink-muted's",
+      "tier, not proof any one call site is well-placed: judge a new site against ink-muted's",
       'narrowed role (captions, timestamps, helper/metadata text only, not structural labels) before',
       'reaching for it.',
     ].join(' ')).toBeLessThanOrEqual(INK_MUTED_CEILING);
@@ -164,7 +164,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
     expect(offenders, [
       'These files use text-ink-faint but are not in the spec 002 hand-checked allowlist.',
       'ink-faint is reserved for placeholder/disabled states, decorative icons, a self-documented',
-      'status ramp, or the standing severity-ramp exception — verify the new site actually fits one',
+      'status ramp, or the standing severity-ramp exception: verify the new site actually fits one',
       'of those before adding it to ALLOWED_FAINT_FILES.',
     ].join(' ')).toEqual([]);
   });
@@ -178,7 +178,7 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
 
 /**
  * `label-grid`/`label-grid-strong` (app/globals.css) are the one documented, contained exception
- * to the 12px floor — verified deliberately at 11px in the 2026-08-10 design-system sweep. This
+ * to the 12px floor: verified deliberately at 11px in the 2026-08-10 design-system sweep. This
  * allowlist covers everything else pre-existing: non-linguistic icon glyphs (scope-tree-picker's
  * marker badges), and font-mono uppercase micro-labels that predate label-grid/label-grid-strong
  * existing as shared utilities (button.tsx's "grid" variant, visual-query-builder's condition
@@ -197,7 +197,7 @@ const TYPE_FLOOR_ALLOWLIST = new Set([
 ]);
 
 /** Tailwind's `text-[...]` arbitrary syntax is unambiguously font-size in this codebase (width/
- *  height arbitrary values use `w-[...]`/`h-[...]`, never `text-[...]`) — and a bare `fontSize:`
+ *  height arbitrary values use `w-[...]`/`h-[...]`, never `text-[...]`), and a bare `fontSize:`
  *  style value (Recharts tick/legend props) is always px-equivalent, never a unitless multiplier
  *  the way `lineHeight` can be. Returns every sub-12px value found on the line, if any. */
 function subFloorFontSizes(line: string): number[] {

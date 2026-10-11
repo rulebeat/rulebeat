@@ -1,6 +1,6 @@
 import type { DashboardConfig } from '@/lib/types';
 
-// Pure data only — this file must not import from lib/db/* (it's used both by the server-only
+// Pure data only: this file must not import from lib/db/* (it's used both by the server-only
 // seeding path in lib/db/client.ts and, potentially, an API route).
 
 export const STARTER_DASHBOARD: { name: string; description: string; config: DashboardConfig } = {

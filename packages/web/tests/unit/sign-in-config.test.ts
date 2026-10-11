@@ -29,7 +29,7 @@ const ENV_KEYS = [
 ] as const;
 const originalEnv: Record<string, string | undefined> = {};
 
-/** Writes `contents` to a throwaway file and returns its path — stands in for a mounted secret. */
+/** Writes `contents` to a throwaway file and returns its path: stands in for a mounted secret. */
 function secretFile(contents: string): string {
   const path = join(mkdtempSync(join(tmpdir(), 'rulebeat-sso-secret-')), 'entra_client_secret');
   writeFileSync(path, contents);
@@ -81,7 +81,7 @@ describe('resolveSignInConfig', () => {
     expect(resolved?.tenantId).toBe('11111111-1111-1111-1111-111111111111');
   });
 
-  it('env wins even when a stored row also exists — a stored row never overrides env', async () => {
+  it('env wins even when a stored row also exists: a stored row never overrides env', async () => {
     await saveSsoProvider({
       provider: 'microsoft-entra-id',
       tenantId: '22222222-2222-2222-2222-222222222222',
@@ -95,12 +95,12 @@ describe('resolveSignInConfig', () => {
     expect(resolved?.tenantId).toBe('11111111-1111-1111-1111-111111111111');
   });
 
-  it('needs all three env vars — partial env does not count as configured', async () => {
+  it('needs all three env vars: partial env does not count as configured', async () => {
     process.env.AUTH_MICROSOFT_ENTRA_ID_ID = 'only-this-one';
     expect(await resolveSignInConfig()).toBeNull();
   });
 
-  // spec 023: AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE — a mounted-secret path, same precedence as
+  // spec 023: AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE. A mounted-secret path, same precedence as
   // AZURE_CLIENT_SECRET_FILE / AUTH_SECRET_FILE / RULEBEAT_ENCRYPTION_KEY_FILE.
   it('AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE wins over a simultaneously-set _SECRET', async () => {
     process.env.AUTH_MICROSOFT_ENTRA_ID_ID = 'env-client-id';
@@ -125,7 +125,7 @@ describe('resolveSignInConfig', () => {
 
   it('never reads the secret file when the tenant/client id are not configured', async () => {
     // IDs are checked before the secret is resolved (mirrors azure-credential.ts's
-    // envCredentialSource) — an unrelated _FILE var left set on this host must not be read, and
+    // envCredentialSource): an unrelated _FILE var left set on this host must not be read, and
     // must not throw, when Entra sign-in isn't otherwise configured.
     process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE = '/nonexistent/path/should-never-be-opened';
     expect(await resolveSignInConfig()).toBeNull();
@@ -205,7 +205,7 @@ describe('local sign-in policy guard (the lockout risk)', () => {
   });
 
   // The guard itself lives in the API route (it needs to return a 409 with a specific message),
-  // not in this module — this suite just proves the ingredient the guard depends on, countAdmins-
+  // not in this module: this suite just proves the ingredient the guard depends on, countAdmins-
   // WithPassword, tells the truth, since that's what the route checks against.
   it('countAdminsWithPassword is 0 until an admin actually gets a local password', async () => {
     const { countAdminsWithPassword } = await import('@/lib/db/local-accounts');
@@ -295,7 +295,7 @@ describe('flood-vector logging inside authorizeLocalAccount (spec 022)', () => {
   it('a real user with no local password (SSO-only) on the local form is logged, not persisted', async () => {
     const created = await createUser({ email: 'sso-only@example.com', role: 'viewer', oid: 'oid-sso-only' });
     if ('error' in created) throw new Error(created.error);
-    // Deliberately no await setPassword() call — this account only ever signs in via Entra.
+    // Deliberately no await setPassword() call: this account only ever signs in via Entra.
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -317,7 +317,7 @@ describe('flood-vector logging inside authorizeLocalAccount (spec 022)', () => {
     if ('error' in created) throw new Error(created.error);
     await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });
 
-    // Cause the lockout directly rather than via 5 real requests — isLockedOut()'s threshold is
+    // Cause the lockout directly rather than via 5 real requests: isLockedOut()'s threshold is
     // MAX_FAILED_ATTEMPTS (5), and this is only testing what happens once that state is reached.
     for (let i = 0; i < 5; i++) await recordFailedAttempt(created.user.id);
 
@@ -330,14 +330,14 @@ describe('flood-vector logging inside authorizeLocalAccount (spec 022)', () => {
       const payload = JSON.parse(logSpy.mock.calls[0]![0] as string);
       expect(payload.message).toContain('locked out');
 
-      // No wrong-password audit row either — isLockedOut() short-circuits before verifyPassword runs.
+      // No wrong-password audit row either: isLockedOut() short-circuits before verifyPassword runs.
       expect(await listAuditEntries()).toHaveLength(0);
     } finally {
       logSpy.mockRestore();
     }
   });
 
-  it('a real user entering the wrong password (not locked out) still writes an audit row — unchanged', async () => {
+  it('a real user entering the wrong password (not locked out) still writes an audit row: unchanged', async () => {
     const created = await createUser({ email: 'wrongpw@example.com', role: 'viewer' });
     if ('error' in created) throw new Error(created.error);
     await setPassword(created.user.id, await hashPassword('CorrectPassword1!'), { mustChangePassword: false });

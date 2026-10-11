@@ -22,7 +22,7 @@ export async function resolveRulesForSchedule(schedule: Pick<Schedule, 'targetTy
   }
 }
 
-/** Category ids a schedule will actually touch when it runs — used both to execute a run
+/** Category ids a schedule will actually touch when it runs: used both to execute a run
  *  (per-category grouping) and to answer "does this schedule cover category X". */
 export async function resolveCategoriesForSchedule(schedule: Pick<Schedule, 'targetType' | 'targetValues'>): Promise<string[]> {
   if (schedule.targetType === 'all') return (await listCategories()).map(c => c.id);
@@ -30,7 +30,7 @@ export async function resolveCategoriesForSchedule(schedule: Pick<Schedule, 'tar
     const known = new Set((await listCategories()).map(c => c.id));
     return schedule.targetValues.filter(v => known.has(v));
   }
-  // tags / rules — derive from the resolved rule set
+  // tags / rules: derive from the resolved rule set
   return [...new Set((await resolveRulesForSchedule(schedule)).map(r => r.category))];
 }
 

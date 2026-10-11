@@ -26,7 +26,7 @@ export interface ScanRunOutcome {
 export interface RunScanOptions {
   triggeredBy?: 'manual' | 'schedule';
   scheduleId?: string;
-  /** The schedule_runs execution this category's scan belongs to — links the scan row back to
+  /** The schedule_runs execution this category's scan belongs to: links the scan row back to
    *  its run for the unified Run History drill-down. */
   runId?: string;
   ctx?: TenantContext;
@@ -34,8 +34,8 @@ export interface RunScanOptions {
    *  rules/tags). Omitted = every enabled rule in the category (the manual "Run Scan" button). */
   ruleIds?: string[];
   /** Injected by the demo generator so a replayed scan is stamped at its simulated date instead
-   *  of the real current time. Every consumer of "when did this scan happen" — the scan row, the
-   *  finding lifecycle timestamps, and the daily snapshot it rolls into — is driven from this one
+   *  of the real current time. Every consumer of "when did this scan happen" (the scan row, the
+   *  finding lifecycle timestamps, and the daily snapshot it rolls into) is driven from this one
    *  value, so a forward chronological replay produces a real trend history instead of everything
    *  landing on the day the generator happened to run. */
   now?: Date;
@@ -61,12 +61,12 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   const lawRules = enabledRules.filter(r => r.queryBackend === 'log-analytics');
   const argRules = enabledRules.filter(r => r.queryBackend !== 'microsoft-graph' && r.queryBackend !== 'log-analytics');
 
-  // Only rules whose outcome is 'success' may resolve a prior finding that didn't reappear —
+  // Only rules whose outcome is 'success' may resolve a prior finding that didn't reappear:
   // 'failed' (the query threw) and 'capped' (a top-level take/top, or ARG-truncated result) are
   // both "real but not proven complete" and must leave their prior findings untouched.
   const successRuleIds: string[] = [];
 
-  // Shared by all three backends' event loops (spec 032/036) — runRules(), runGraphRules(), and
+  // Shared by all three backends' event loops (spec 032/036): runRules(), runGraphRules(), and
   // runLawRules() all yield the same RuleRunEvent<Finding> contract (per-rule
   // success/failed/capped/invalid outcomes, never a thrown rejection for an individual rule's
   // failure), so one handler keeps the fingerprint/timestamp transform and the
@@ -76,7 +76,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions =
   function handleEvent(event: RuleRunEvent<CoreFinding>): void {
     if (event.kind === 'finding') {
       const finding = event.finding;
-      // kind:'activity' findings have no resourceId to fingerprint on — they hash ruleId +
+      // kind:'activity' findings have no resourceId to fingerprint on. They hash ruleId +
       // dimensionKey instead (spec 034), namespaced so it can never collide with a state
       // fingerprint for the same rule. '' is the same empty-dimensionKey convention
       // computeActivityFingerprint()'s own doc comment documents.

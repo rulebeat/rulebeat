@@ -20,7 +20,7 @@ export async function PUT(
   const before = await getUser(id);
   const result = await updateUserRole(id, body.role);
   if (result === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  // Refusing to demote the last admin — otherwise a single click locks everyone out of a
+  // Refusing to demote the last admin, otherwise a single click locks everyone out of a
   // self-hosted install with no recovery path short of editing SQLite by hand.
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
