@@ -1,3 +1,4 @@
+import { sql, type SQL } from 'drizzle-orm';
 import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core/finding';
 import { findingRows, mergeFindingsByFingerprint, type FindingRow } from '../finding-rows';
 
@@ -31,6 +32,24 @@ export const SCAN_FINDING_COLUMNS = [
  */
 export const SCAN_FINDING_SEVERITY_RANK = `CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 WHEN 'info' THEN 4 ELSE 5 END`;
 export const SCAN_FINDING_ORDER = `${SCAN_FINDING_SEVERITY_RANK}, title, fingerprint`;
+
+/** Every value `SCAN_FINDING_SEVERITY_RANK` can take: 0 to 4 for the five known severities, 5 for any other. */
+export const SCAN_FINDING_RANKS = [0, 1, 2, 3, 4, 5] as const;
+
+/** The order inside one rank. `SCAN_FINDING_ORDER` is this with the rank in front, so the two cannot drift. */
+export const SCAN_FINDING_RANK_ORDER = 'title, fingerprint';
+
+/**
+ * The records of one rank that come after `last` in `SCAN_FINDING_ORDER` (all of the rank when `last` is
+ * null). A keyset read walks the ranks one at a time: equality on the rank expression plus a row-value
+ * range on `(title, fingerprint)` is what the index seeks on, where a three-part comparison led by the
+ * rank is only applied as a filter. The comparison runs in the database, so it uses the collation the
+ * `ORDER BY` uses. Read the rank's records `ORDER BY SCAN_FINDING_RANK_ORDER`.
+ */
+export function scanFindingsAfter(rank: number, last: { title: string; fingerprint: string } | null): SQL {
+  const inRank = sql`${sql.raw(SCAN_FINDING_SEVERITY_RANK)} = ${sql.raw(String(rank))}`;
+  return last === null ? inRank : sql`${inRank} AND (title, fingerprint) > (${last.title}, ${last.fingerprint})`;
+}
 
 /** Scans whose records are not written yet: every stored scan the first time, and any scan a
  *  release without this table saved since. Plain SQL valid on both backends. The blobs are not read
