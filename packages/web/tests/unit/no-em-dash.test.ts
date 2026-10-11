@@ -7,7 +7,7 @@
  * The sweep asserts it saw the repo, so it cannot pass by finding nothing, and it fails outright when
  * git is not available rather than passing unchecked.
  *
- * This file writes the character as an escape so that it does not trip itself.
+ * This file builds the character from its code point so that it does not trip itself.
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const EM_DASH = '—';
+const EM_DASH = String.fromCharCode(0x2014);
 /** The repo tracked 941 files when this guard landed; a sweep that sees far fewer is not sweeping the repo. */
 const MIN_TRACKED_FILES = 900;
 
