@@ -37,10 +37,22 @@ export interface PairedRecommendation {
 export interface AprlPairing {
   /** The recommendations that ship, in the order the YAML lists them. */
   selected: PairedRecommendation[];
-  /** Recommendations left out: no guid or name, retired/preview/disabled, no automation, or no query. */
+  /** Recommendations left out: no guid or name, retired/preview/disabled, no automation, no query, or a query that is only comments. */
   skipped: number;
   /** Paths of `.kql` files that were paired with nothing because their name is not a guid. */
   unpairedFiles: string[];
+}
+
+/**
+ * True when a query has nothing to run: every line is blank or a `//` comment. Upstream ships a few
+ * recommendations whose file is only a note such as `// under-development`. Such a query returns
+ * nothing, so the rule could never pass or find anything.
+ */
+export function isCommentOnlyQuery(query: string): boolean {
+  return query.split(/\r?\n/).every(line => {
+    const trimmed = line.trim();
+    return trimmed === '' || trimmed.startsWith('//');
+  });
 }
 
 const GUID_FILE_NAME = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.kql$/i;
@@ -77,7 +89,7 @@ export function pairRecommendations(
 
     // An inline query wins; otherwise only the file named after this recommendation's guid.
     const rawKql = rec.query?.trim() || queryByGuid.get(guid.toLowerCase()) || '';
-    if (!rawKql) { skipped++; continue; }
+    if (!rawKql || isCommentOnlyQuery(rawKql)) { skipped++; continue; }
 
     selected.push({ rec, guid, name, rawKql });
   }

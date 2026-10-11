@@ -32,7 +32,7 @@ The generator builds a fictional four-subscription estate and replays sixty days
 it, so history, trends and finding lifecycles look like a tenant scanned for two months: roughly 50
 enabled rules (14 built-ins, including the two that check app registration credentials for expiry,
 plus the APRL pack rules whose resource types exist in the estate, out of
-<!-- count:pack-rules:aprl-v2 -->143), 28 fictional app registrations at various distances from
+<!-- count:pack-rules:aprl-v2 -->141), 28 fictional app registrations at various distances from
 credential expiry, and several hundred findings, some fixed along the way. One built-in rule,
 Missing Environment Tag, ships switched off. The generator is deterministic, so two people
 generating the demo get the same estate, and every id is an obvious placeholder.

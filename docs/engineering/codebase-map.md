@@ -55,7 +55,7 @@
 | `packages/web/app/(app)/library/page.tsx` | Library server page. Reads the `sidebar:library` cookie server-side so sidebar pin state renders correctly on first paint |
 | `packages/web/app/(app)/library/library-client.tsx` | Library UI: collapsible secondary sidebar, read-only status/tag chips (tag *editing* only happens on the rule's own page), page-level scroll (no bounded inner scrollbox). Rule creation (`New rule`) lives here only |
 | `packages/web/components/rules/tag-picker.tsx` | Multi-select tag chip picker, `lockedTags?` for non-removable system chips; used only in the rule form (Library shows read-only chips) |
-| `packages/web/data/packs/aprl-v2.json` | 143 APRL v2 reliability policies (committed, version-pinned); `id` is the bare upstream APRL guid |
+| `packages/web/data/packs/aprl-v2.json` | 141 APRL v2 reliability policies (committed, version-pinned); `id` is the bare upstream APRL guid |
 | `packages/web/data/packs/pack-manifest.json` | Pack registry: source, license, attribution, pinned commit |
 | `scripts/sync-pack.ts` | Generic pack sync runner; versions each rule through `lib/pack-versioning.ts` |
 | `packages/web/lib/pack-versioning.ts` | `versionPackRules()`: pure per-rule versioning for a pack sync (unchanged rules keep their version, changed ones take the commit date and a note naming the fields) |

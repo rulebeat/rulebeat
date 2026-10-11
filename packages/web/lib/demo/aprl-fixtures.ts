@@ -3,12 +3,13 @@ import { TYPE_META, type EstateResource } from './estate';
 import { extractProjectColumns } from './kql-columns';
 import { rand01 } from './prng';
 import { identityColumns, type RuleFixture } from './rule-fixture';
+import { isCommentOnlyQuery } from '../aprl-pairing';
 
 const IDENTITY_ALIASES = new Set(['id', 'name', 'type', 'location', 'resourcegroup', 'subscriptionid']);
 
 /** No real where-clause evaluation here: this only needs to produce evidence that *reads* as
  *  plausible for the column name, not a value that's provably derived from the rule's own logic.
- *  APRL rules are ~35 out of 143 curated ones; nobody reviewing the demo checks these against the
+ *  APRL rules are ~35 out of 141 curated ones; nobody reviewing the demo checks these against the
  *  upstream KQL line by line the way they would for the 13 hand-authored core rules. */
 function heuristicValue(alias: string, r: EstateResource, ruleId: string): unknown {
   const lower = alias.toLowerCase();
@@ -33,10 +34,13 @@ function heuristicValue(alias: string, r: EstateResource, ruleId: string): unkno
 
 /** Builds one generic RuleFixture per eligible APRL rule. A rule is eligible only if every one of
  *  its declared resourceTypes exists in `TYPE_META`, otherwise the estate has nothing that could
- *  ever match it, so it's silently excluded rather than enabled-but-permanently-empty. */
+ *  ever match it, so it's silently excluded rather than enabled-but-permanently-empty. A rule whose
+ *  query is only comments is excluded too: `queryIndex` in fake-context.ts keys fixtures by query
+ *  text, so rules with identical placeholder text would share one entry. */
 export function buildAprlFixtures(rules: Rule[]): RuleFixture[] {
   return rules
     .filter(rule => rule.pack === 'aprl-v2')
+    .filter(rule => !isCommentOnlyQuery(rule.rawKql ?? ''))
     .filter(rule => rule.resourceTypes.length > 0 && rule.resourceTypes.every(t => TYPE_META[t.toLowerCase()]))
     .map((rule): RuleFixture => {
       const columns = extractProjectColumns(rule.rawKql ?? '');

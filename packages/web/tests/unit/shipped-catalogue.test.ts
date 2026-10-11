@@ -26,7 +26,7 @@ describe('the shipped catalogue', () => {
 
   it('ships every APRL rule under the upstream commit timestamp, with the commit as its reference', () => {
     const aprl = catalogue.rules.filter(r => r.pack === 'aprl-v2');
-    expect(aprl).toHaveLength(143);
+    expect(aprl).toHaveLength(141);
     for (const r of aprl) {
       expect(r.versionScheme).toBe('upstream-commit-date');
       expect(r.version).toBe('2026-06-08T13:06:47Z');

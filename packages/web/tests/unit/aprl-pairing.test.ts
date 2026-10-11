@@ -89,4 +89,28 @@ describe('pairRecommendations', () => {
   it('accepts automationAvailable written as the string "true"', () => {
     expect(queries([rec(G1, { automationAvailable: 'true' })], files(file(G1, 'q')))).toEqual({ [G1]: 'q' });
   });
+
+  describe('a query that is only comments', () => {
+    it.each([
+      ['a placeholder note', '// under-development'],
+      ['a note with no space after the slashes', '//cannot-be-validated-with-arg'],
+      ['several comment lines with blank lines between them', '// one\n\n   // two\r\n\n//three\n'],
+    ])('is not shipped and is counted as skipped: %s', (_label, text) => {
+      const result = pairRecommendations([rec(G1), rec(G2)], files(file(G1, text), file(G2, 'resources | where b == 2')));
+      expect(result.selected.map(s => s.guid)).toEqual([G2]);
+      expect(result.skipped).toBe(1);
+    });
+
+    it('is not shipped when it is the inline query, and the file is not tried instead', () => {
+      const result = pairRecommendations([rec(G1, { query: '// under-development' })], files(file(G1, 'resources | where file == 1')));
+      expect(result.selected).toEqual([]);
+      expect(result.skipped).toBe(1);
+    });
+  });
+
+  it('ships a query that has real KQL between or around comments, with its text unchanged', () => {
+    const text = '// header\nresources\n// why this filter\n| where a == 1 // trailing\n// footer';
+    expect(queries([rec(G1)], files(file(G1, text)))).toEqual({ [G1]: text });
+    expect(queries([rec(G1, { query: `// note\n${'resources | take 1'}` })], {})).toEqual({ [G1]: '// note\nresources | take 1' });
+  });
 });

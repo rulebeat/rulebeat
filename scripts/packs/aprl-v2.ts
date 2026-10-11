@@ -15,7 +15,8 @@
  *
  * Each .kql file is named after the aprlGuid of its recommendation, and that name is the only link
  * between the two (lib/aprl-pairing.ts). A file whose name is not a guid is reported and paired
- * with nothing; a recommendation with no file named after it has no query and is not shipped.
+ * with nothing; a recommendation with no file named after it has no query and is not shipped, and
+ * neither is one whose query is only comments, such as `// under-development` (#222).
  * Files are never handed out by position: a skipped recommendation uses no file, so a positional
  * pairing would move every later recommendation onto another one's query (#221).
  */
