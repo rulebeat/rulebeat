@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/rulebeat/rulebeat/security/advisories/new
+    about: Do not open a public issue for a security problem. Send a private report instead.
+  - name: Ask a question
+    url: https://github.com/rulebeat/rulebeat/discussions
+    about: Ask how something works or talk an idea through in Discussions.
+  - name: Docs
+    url: https://docs.rulebeat.com
+    about: Install, permissions, security and how the rules and scans work.

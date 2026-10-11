@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in RuleBeat does not work as you expect.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public, and so is everything you post here. Redact tenant ids, subscription ids, resource names and anything else that identifies an environment or a person before you submit. Do not paste secrets or credentials.
+
+        For a security vulnerability, do not open an issue. Use the private report link on the issue chooser instead.
+  - type: input
+    id: version
+    attributes:
+      label: RuleBeat version
+      description: Find it on the Diagnostics page, in the System section. The page is admin-only.
+      placeholder: "0.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What you thought would happen.
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What happened instead, including any error text you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The clicks or requests that lead to it, in order.
+      placeholder: |
+        1. Open Scans
+        2. Run a scan
+        3. See the result
+  - type: textarea
+    id: deployment
+    attributes:
+      label: How it is deployed
+      description: For example Docker Compose on a VM, Azure Container Apps, or local development.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: The lines from `docker compose logs` that relate to the problem, with identifiers redacted.
+      render: shell
