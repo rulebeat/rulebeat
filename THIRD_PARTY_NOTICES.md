@@ -7,7 +7,7 @@ dependency tree's licenses.
 
 ## Azure Proactive Resiliency Library v2 (APRL)
 
-- **What:** 143 built-in rules under `packages/web/data/packs/aprl-v2.json`, synced from
+- **What:** 141 built-in rules under `packages/web/data/packs/aprl-v2.json`, synced from
   `https://github.com/Azure/Azure-Proactive-Resiliency-Library-v2`, pinned commit
   `1824eb5958d11482f6e23c231f0cb1d2d5bd44f6`.
 - **License:** MIT

@@ -130,7 +130,7 @@ describe.each(SHAPES)('#163 · %s · an upgrade leaves what the rules run alone'
     const core = catalogue.rules.filter(r => r.pack === 'rulebeat-core');
     const aprl = catalogue.rules.filter(r => r.pack === 'aprl-v2');
     expect(core.length).toBeGreaterThan(0);
-    expect(aprl).toHaveLength(143);
+    expect(aprl).toHaveLength(141);
     for (const r of core) expect(recorded.has(versionKey(r.id, '1.0.0')), `${r.id} 1.0.0`).toBe(true);
     for (const r of aprl) expect(recorded.has(versionKey(r.id, APRL_VERSION)), `${r.id} ${APRL_VERSION}`).toBe(true);
   });

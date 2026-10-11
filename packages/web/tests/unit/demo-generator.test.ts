@@ -244,6 +244,18 @@ describe('rowsForRuleOnDay()', () => {
 // tests/setup.ts already isolates per file.
 
 describe('buildAprlFixtures() against the real seeded aprl-v2 pack', () => {
+  it('builds no fixture for a rule whose query is only comments, and one for the same rule with a real query', () => {
+    const type = Object.keys(TYPE_META)[0]!;
+    const base = {
+      id: 'ffffffff-0000-4000-8000-000000000222', name: 'Placeholder', description: 'd', category: 'reliability', severity: 'high',
+      enabled: true, type: 'builtin', pack: 'aprl-v2', scope: { level: 'resource' }, resourceTypes: [type], conditions: [],
+    } as unknown as Rule;
+    const placeholder = { ...base, rawKql: '// under-development' } as Rule;
+    const real = { ...base, rawKql: `// note\nresources | where type =~ '${type}'` } as Rule;
+    expect(buildAprlFixtures([placeholder])).toEqual([]);
+    expect(buildAprlFixtures([real]).map(f => f.ruleId)).toEqual([base.id]);
+  });
+
   it('curates a non-empty subset of aprl-v2 rules whose resource types the estate can produce', async () => {
     const rules = await loadRules();
     const aprlRules = rules.filter(r => r.pack === 'aprl-v2');

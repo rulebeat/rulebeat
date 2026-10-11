@@ -78,7 +78,7 @@ one finding.
 RuleBeat's KQL parser aims to never lose anything. Most real-world KQL you paste in either maps onto
 the builder's fields and operators or is preserved verbatim as a read-only passthrough condition, so
 you can switch between the visual and raw views without losing a clause. Measured across the
-<!-- count:pack-rules:aprl-v2 -->143 rules in the APRL pack, two still lose a filter line on the
+<!-- count:pack-rules:aprl-v2 -->141 rules in the APRL pack, two still lose a filter line on the
 round trip, and a few edge cases (values containing the literal ` and ` or ` or `, a trailing
 `| limit` stage) are still being hardened. If a saved rule's raw KQL looks different from what you
 pasted, treat it as a bug report.
@@ -100,7 +100,7 @@ this way. The full guide is [`directory-rules.md`](directory-rules.md).
 ## Rule provenance
 
 Every rule has a `type`: `builtin` (shipped with RuleBeat, including the
-<!-- count:pack-rules:aprl-v2 -->143-rule Azure Proactive Resiliency Library pack, pinned to a named
+<!-- count:pack-rules:aprl-v2 -->141-rule Azure Proactive Resiliency Library pack, pinned to a named
 upstream commit), `community`, or `custom`. On a built-in rule you can turn it on or off
 and set its tags. Its name, description, category, severity, query and Kind are set by RuleBeat and
 change only through a new version of the rule

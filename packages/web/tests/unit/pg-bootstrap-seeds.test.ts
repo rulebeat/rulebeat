@@ -72,7 +72,7 @@ describe('seeded baseline (both backends)', () => {
         AND NOT EXISTS (SELECT 1 FROM rule_versions v WHERE v.rule_id = r.id AND v.version = r.version)`);
     expect(unrecorded).toBe(0);
     expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'rulebeat-core' AND version = '1.0.0'`)).toBeGreaterThan(0);
-    expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'aprl-v2' AND version = '2026-06-08T13:06:47Z'`)).toBe(143);
+    expect(await countOf(`SELECT COUNT(*) AS n FROM rules WHERE pack = 'aprl-v2' AND version = '2026-06-08T13:06:47Z'`)).toBe(141);
   });
 
   it('the five built-in categories exist in order', async () => {

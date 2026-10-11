@@ -19,6 +19,10 @@ import {
   CHANGED, DUMP_SQL, UNCHANGED, adminChoicesSql, committedCatalogue, committedPackEntries, coreRuleId,
   oldCatalogue, populationSql, type DumpTable,
 } from '../helpers/aprl-correction';
+import {
+  KEPT_SQL, PLACEHOLDERS, RULE_KEPT_COLUMNS, oldPlaceholderCatalogue, placeholderChoicesSql, placeholderPopulationSql,
+  type KeptTable,
+} from '../helpers/aprl-placeholders';
 
 const REAL_DATA_DIR = join(resolve(__dirname, '..', '..'), 'data');
 const APRL_VERSION = '2026-06-08T13:06:47Z';
@@ -112,7 +116,7 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule versions', () =>
       const [aprlOther] = await q(sql`SELECT COUNT(*) AS n FROM rules WHERE pack = 'aprl-v2' AND version IS DISTINCT FROM ${APRL_VERSION}`);
       expect(Number(core!.n)).toBeGreaterThan(0);
       expect(Number(coreOther!.n)).toBe(0);
-      expect(Number(aprl!.n)).toBe(143);
+      expect(Number(aprl!.n)).toBe(141);
       expect(Number(aprlOther!.n)).toBe(0);
       const [unversioned] = await q(sql`SELECT COUNT(*) AS n FROM rules r WHERE NOT EXISTS (SELECT 1 FROM rule_versions v WHERE v.rule_id = r.id AND v.version = r.version)`);
       expect(Number(unversioned!.n)).toBe(0);
@@ -420,6 +424,46 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule versions', () =>
       await seed(committedCatalogue());
       expect(await dumpAll()).toEqual(first);
       expect(first.findings.map(f => f.fingerprint)).toContain('fp-new-scan');
+    });
+  });
+
+  // #222: the same upgrade as rule-versions-aprl-placeholders.test.ts, through the Postgres seeder.
+  describe('the APRL placeholder rules', () => {
+    const dumpKept = async () => Object.fromEntries(
+      await Promise.all((Object.keys(KEPT_SQL) as KeptTable[]).map(async t => [t, await q(sql.raw(KEPT_SQL[t]))])),
+    ) as Record<KeptTable, Row[]>;
+    const allRules = () => q(sql`SELECT * FROM rules ORDER BY id`);
+    const kept = (r: Row) => RULE_KEPT_COLUMNS.map(c => r[c]);
+
+    beforeEach(async () => {
+      for (const table of ['finding_rows', 'finding_events']) await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
+    });
+
+    it('marks both retired and leaves their enabled state, tags, version, query, findings and suppressions alone, then changes nothing on a second start', async () => {
+      await seed(oldPlaceholderCatalogue());
+      for (const statement of [...placeholderChoicesSql(), ...placeholderPopulationSql()]) await pgDb!.execute(sql.raw(statement));
+      const rulesBefore = await allRules();
+      const keptBefore = await dumpKept();
+      for (const id of PLACEHOLDERS) expect(rulesBefore.find(r => r.id === id)!.retired_at, id).toBeNull();
+
+      await seed(committedCatalogue());
+      const rulesAfter = await allRules();
+      for (const id of PLACEHOLDERS) {
+        const after = rulesAfter.find(r => r.id === id)!;
+        expect(after.retired_at, id).not.toBeNull();
+        expect(kept(after), id).toEqual(kept(rulesBefore.find(r => r.id === id)!));
+      }
+      expect(PLACEHOLDERS.map(id => rulesAfter.find(r => r.id === id)!.enabled)).toEqual([true, false]);
+      expect(PLACEHOLDERS.map(id => rulesAfter.find(r => r.id === id)!.tags)).toEqual(['["mine"]', null]);
+      expect(rulesAfter.filter(r => r.retired_at !== null).map(r => r.id).sort()).toEqual([...PLACEHOLDERS].sort());
+      const keptAfter = await dumpKept();
+      expect(keptAfter).toEqual(keptBefore);
+      expect(keptAfter.findings).toHaveLength(3);
+      expect(keptAfter.suppressions).toHaveLength(2);
+
+      await seed(committedCatalogue());
+      expect(await allRules()).toEqual(rulesAfter);
+      expect(await dumpKept()).toEqual(keptAfter);
     });
   });
 });
