@@ -317,9 +317,10 @@ describe('upgrading to scan_findings', () => {
     const stored = recordsOf(scanPath, summary.id!);
     expect(stored).toHaveLength(3);
     expect(stored.map(r => r.kind).sort()).toEqual(['activity', 'state', 'state']);
-    // Back to a scan the upgrade has not converted: no records, no marker, only the blob.
+    // Back to a scan the upgrade has not converted: no records, no marker, only the blob the previous
+    // release would have stored for these findings (the scan path no longer writes one, #219).
     scanPath.prepare(`DELETE FROM scan_findings`).run();
-    scanPath.prepare(`UPDATE scans SET has_records = 0`).run();
+    scanPath.prepare(`UPDATE scans SET has_records = 0, findings = ?`).run(JSON.stringify(summary.findings));
     scanPath.close();
 
     await startProductOn(sample.file);
@@ -379,5 +380,113 @@ describe('a rule id rewrite carries the records of the scans it touched', () => 
     expect(all(db, `SELECT fingerprint, rule_id FROM scan_findings WHERE scan_id = 'scan-1' AND rule_id = ?`, RULE)).toEqual([
       { fingerprint: computeFingerprint(RULE, vm('vm-2')), rule_id: RULE },
     ]);
+  });
+});
+
+/**
+ * Issue #219: the release after #216 stops keeping the findings blob. The upgrade empties the blob of
+ * every scan whose records are stored, one transaction a scan, and only once both one-time backfills,
+ * which still rebuild finding and trend history from the blobs, have run on the database.
+ */
+describe('emptying the stored findings blobs', () => {
+  const BACKFILL_MARKERS = ['findings-backfilled-v1', 'snapshots-backfilled-v1'];
+  const markBackfilled = (db: Database.Database, keys = BACKFILL_MARKERS) => {
+    for (const key of keys) db.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES (?, '1')`).run(key);
+  };
+  const blobs = (db: Database.Database) => all(db, `SELECT id, findings FROM scans ORDER BY id`);
+  const allRecords = (db: Database.Database) => all(db, `SELECT * FROM scan_findings ORDER BY scan_id, fingerprint`);
+
+  it('empties the blob of every converted scan, keeps every record, and a second start changes nothing', async () => {
+    const { sample, db } = previousReleaseDatabase();
+    insertScan(db, 'scan-1', [blobFinding('vm-1', { rows: [{ n: 1 }, { n: 2 }] }), blobFinding('vm-2')], '2026-01-01T00:00:00.000Z');
+    insertScan(db, 'scan-2', [blobFinding('vm-1')], '2026-01-02T00:00:00.000Z');
+    insertScan(db, 'scan-empty', [], '2026-01-03T00:00:00.000Z');
+    // A blob the conversion cannot read keeps its scan unconverted, and so keeps its blob.
+    insertScan(db, 'scan-broken', '{not json', '2026-01-04T00:00:00.000Z');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // The records as the conversion writes them, before anything is emptied.
+    runMigrations(db);
+    const records = allRecords(db);
+    expect(records).toHaveLength(3);
+    markBackfilled(db);
+    db.close();
+
+    await startProductOn(sample.file);
+
+    sqlite = open(sample.file);
+    expect(blobs(sqlite)).toEqual([
+      { id: 'scan-1', findings: '[]' }, { id: 'scan-2', findings: '[]' }, { id: 'scan-broken', findings: '{not json' }, { id: 'scan-empty', findings: '[]' },
+    ]);
+    expect(allRecords(sqlite)).toEqual(records);
+    expect(converted(sqlite)).toEqual([
+      { id: 'scan-1', has_records: 1 }, { id: 'scan-2', has_records: 1 }, { id: 'scan-broken', has_records: 0 }, { id: 'scan-empty', has_records: 1 },
+    ]);
+
+    const scansAfter = all(sqlite, `SELECT * FROM scans ORDER BY id`);
+    runMigrations(sqlite);
+    expect(all(sqlite, `SELECT * FROM scans ORDER BY id`)).toEqual(scansAfter);
+    expect(allRecords(sqlite)).toEqual(records);
+  });
+
+  it('empties nothing while either backfill marker is unset', () => {
+    for (const keys of [[], ['findings-backfilled-v1'], ['snapshots-backfilled-v1']]) {
+      const { db } = previousReleaseDatabase();
+      insertScan(db, 'scan-1', [blobFinding('vm-1')], '2026-01-01T00:00:00.000Z');
+      const before = blobs(db);
+      markBackfilled(db, keys);
+
+      runMigrations(db);
+
+      expect(converted(db), `markers: ${keys.join(', ')}`).toEqual([{ id: 'scan-1', has_records: 1 }]);
+      expect(blobs(db), `markers: ${keys.join(', ')}`).toEqual(before);
+      db.close();
+    }
+  });
+
+  it('empties a scan the previous release saved only once its records are stored', () => {
+    const { db } = previousReleaseDatabase();
+    sqlite = db;
+    runMigrations(db);
+    markBackfilled(db);
+    // The previous release again: it saves a scan with a blob and no records.
+    insertScan(db, 'scan-new', [blobFinding('vm-1'), blobFinding('vm-2')], '2026-01-01T00:00:00.000Z');
+
+    runMigrations(db);
+
+    expect(recordsOf(db, 'scan-new')).toHaveLength(2);
+    expect(blobs(db)).toEqual([{ id: 'scan-new', findings: '[]' }]);
+  });
+
+  it('gives an old database that still needs the backfills its history from the blobs, then empties them', async () => {
+    const { sample, db } = previousReleaseDatabase();
+    insertScan(db, 'scan-1', [blobFinding('vm-1'), blobFinding('vm-2')], '2026-01-01T00:00:00.000Z');
+    insertScan(db, 'scan-2', [blobFinding('vm-1')], '2026-01-02T00:00:00.000Z');
+    db.exec(`DELETE FROM meta WHERE key IN ('findings-backfilled-v1', 'snapshots-backfilled-v1')`);
+    db.close();
+
+    // The first start, as instrumentation.ts runs it: the upgrade, then the two backfills.
+    const product = await startProductOn(sample.file);
+    const peek = open(sample.file);
+    expect(all(peek, `SELECT findings FROM scans WHERE id = 'scan-1'`)[0]!.findings, 'the upgrade emptied a blob before the backfills ran').not.toBe('[]');
+    peek.close();
+    await (await import('@/lib/db/findings')).backfillFindings();
+    await (await import('@/lib/db/snapshots')).backfillSnapshots();
+    const findings = await product.listFindings();
+    expect(findings.map(f => f.resourceName).sort()).toEqual(['vm-1', 'vm-2']);
+    expect(findings.find(f => f.resourceName === 'vm-2')).toMatchObject({ status: 'fixed' });
+    closeProductDb?.();
+    closeProductDb = undefined;
+    const between = open(sample.file);
+    const trend = all(between, `SELECT date, active_findings FROM posture_snapshots WHERE category = 'reliability' AND date < '2026-02-01' ORDER BY date`);
+    between.close();
+    expect(trend).toEqual([{ date: '2026-01-01', active_findings: 2 }, { date: '2026-01-02', active_findings: 1 }]);
+
+    // The next start finds both markers set and empties the blobs, and the history they gave stays.
+    const next = await startProductOn(sample.file);
+    expect((await next.listFindings()).map(f => f.resourceName).sort()).toEqual(['vm-1', 'vm-2']);
+
+    sqlite = open(sample.file);
+    expect(blobs(sqlite)).toEqual([{ id: 'scan-1', findings: '[]' }, { id: 'scan-2', findings: '[]' }]);
+    expect(recordsOf(sqlite, 'scan-1')).toHaveLength(2);
   });
 });

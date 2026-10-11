@@ -1,8 +1,9 @@
 /**
  * Issue #216 (ADR 0008): a Postgres database bootstrapped before `scan_findings` existed gains the table
  * and the scan marker column on the next boot, converts every stored scan's blob into records, one
- * transaction a scan, and converts what a returning previous release saved on the boot after. Postgres
- * only by nature; skipped on the default SQLite run.
+ * transaction a scan, and converts what a returning previous release saved on the boot after. Since #219 it
+ * then empties each converted scan's blob, once both one-time backfills have run. Postgres only by nature;
+ * skipped on the default SQLite run.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -37,6 +38,15 @@ async function insertScan(id: string, findings: unknown, startedAt: string): Pro
 const recordsOf = (scanId: string) => raw(`SELECT fingerprint, rule_id, severity, kind, category, resource_id, resource_name, row_count
   FROM scan_findings WHERE scan_id = '${scanId}' ORDER BY fingerprint COLLATE "C"`);
 const markers = () => raw(`SELECT id, has_records FROM scans ORDER BY id COLLATE "C"`);
+const blobs = () => raw(`SELECT id, findings FROM scans ORDER BY id COLLATE "C"`);
+
+/** The meta keys the two one-time backfills set. `resetDb()` keeps `meta`, so each test here says which
+ *  of them are set, and none is left set after it. */
+const BACKFILL_MARKERS = ['findings-backfilled-v1', 'snapshots-backfilled-v1'];
+async function setBackfilled(keys: string[]): Promise<void> {
+  await raw(`DELETE FROM meta WHERE key IN ('${BACKFILL_MARKERS.join("', '")}')`);
+  for (const key of keys) await raw(`INSERT INTO meta (key, value) VALUES ('${key}', '1')`);
+}
 
 /** The database as the previous release left it. */
 async function previousReleaseDatabase(): Promise<void> {
@@ -45,6 +55,7 @@ async function previousReleaseDatabase(): Promise<void> {
   await bootstrapPg(pgDb!);
   await raw(`DROP TABLE scan_findings`);
   await raw(`ALTER TABLE scans DROP COLUMN has_records`);
+  await setBackfilled([]);
 }
 
 describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings records (issue #216)', () => {
@@ -55,6 +66,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     await raw(`DROP FUNCTION IF EXISTS refuse_poison()`);
     await bootstrapPg(pgDb!);
     await resetDb();
+    await setBackfilled([]);
   });
 
   it('converts every stored scan to the records the scan path would have written, and changes nothing stored', async () => {
@@ -130,5 +142,35 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
     await raw(`DROP TRIGGER refuse_poison ON scan_findings`);
     await bootstrapPg(pgDb!);
     expect(await recordsOf('pg-scan-poisoned')).toHaveLength(2);
+  });
+
+  it('empties every converted scan\'s blob once both backfills have run, keeps every record, and a second boot changes nothing', async () => {
+    await previousReleaseDatabase();
+    await insertScan('pg-scan-1', [blobFinding('vm-1', { rows: [{ n: 1 }, { n: 2 }] }), blobFinding('vm-2')], '2026-01-01T00:00:00.000Z');
+    await insertScan('pg-scan-broken', '{not json', '2026-01-02T00:00:00.000Z');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const before = await blobs();
+
+    // Either marker unset: the scans convert and keep their blobs.
+    for (const keys of [[], ['findings-backfilled-v1'], ['snapshots-backfilled-v1']]) {
+      await setBackfilled(keys);
+      await bootstrapPg(pgDb!);
+      expect(await blobs(), `markers: ${keys.join(', ')}`).toEqual(before);
+    }
+    const records = await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`);
+    expect(records).toHaveLength(2);
+
+    await setBackfilled(BACKFILL_MARKERS);
+    await bootstrapPg(pgDb!);
+
+    // The scan that cannot convert keeps its blob, since it is all that scan has.
+    expect(await blobs()).toEqual([{ id: 'pg-scan-1', findings: '[]' }, { id: 'pg-scan-broken', findings: '{not json' }]);
+    expect(await markers()).toEqual([{ id: 'pg-scan-1', has_records: 1 }, { id: 'pg-scan-broken', has_records: 0 }]);
+    expect(await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`)).toEqual(records);
+
+    const scansAfter = await raw(`SELECT * FROM scans ORDER BY id COLLATE "C"`);
+    await bootstrapPg(pgDb!);
+    expect(await raw(`SELECT * FROM scans ORDER BY id COLLATE "C"`)).toEqual(scansAfter);
+    expect(await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`)).toEqual(records);
   });
 });

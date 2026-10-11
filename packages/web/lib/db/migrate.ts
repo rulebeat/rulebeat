@@ -27,6 +27,7 @@ import {
   type CatalogueRecord,
 } from './column-catalogue-build';
 import {
+  EMPTY_SCAN_BLOB, SCAN_BLOBS_READ_BACKFILLED, SCAN_BLOBS_READ_FULL,
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from './scan-findings-copy';
@@ -1218,6 +1219,34 @@ export function runMigrations(sqlite: Database.Database): void {
   buildColumnCatalogue(sqlite);
   // After every rule rename and the fingerprint rekey, so a blob carries the ids its records are made of.
   convertScanBlobs(sqlite);
+  // After the conversion, so a scan it just converted is emptied on the same start.
+  emptyScanBlobs(sqlite);
+}
+
+/**
+ * Empties the findings blob of every scan whose records are stored (#219): the records are what Run
+ * History reads, and the blob was most of the database. One transaction per scan, so a restart part way
+ * resumes at the next one and a second start finds nothing to do. A scan that is not converted keeps its
+ * blob, since the conversion still needs it.
+ *
+ * Nothing is emptied until both one-time backfills have run on this database: they rebuild finding and
+ * trend history from the blobs, and run from instrumentation.ts after this upgrade. A database that
+ * still needs them keeps its blobs on this start and has them emptied on the next. Nothing here throws.
+ */
+function emptyScanBlobs(sqlite: Database.Database): void {
+  try {
+    if ((sqlite.prepare(SCAN_BLOBS_READ_BACKFILLED).get() as { n: number }).n < 2) return;
+    const empty = sqlite.prepare(`UPDATE scans SET findings = ? WHERE id = ? AND has_records = 1`);
+    for (const { id } of sqlite.prepare(SCAN_BLOBS_READ_FULL).all() as { id: string }[]) {
+      try {
+        empty.run(EMPTY_SCAN_BLOB, id);
+      } catch (err) {
+        console.error(`[migrate] could not empty the stored findings of scan ${id}; it will be tried again on the next start:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('[migrate] could not empty the stored findings of converted scans:', err);
+  }
 }
 
 /**

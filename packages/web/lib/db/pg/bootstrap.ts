@@ -15,6 +15,7 @@ import {
   type CatalogueRecord,
 } from '../column-catalogue-build';
 import {
+  EMPTY_SCAN_BLOB, SCAN_BLOBS_READ_BACKFILLED, SCAN_BLOBS_READ_FULL,
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from '../scan-findings-copy';
@@ -509,6 +510,12 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not convert stored scans into records:', err);
     }
+    // After the conversion, so a scan it just converted is emptied on the same boot. Never throws.
+    try {
+      await emptyScanBlobs(tx);
+    } catch (err) {
+      console.error('[bootstrap] could not empty the stored findings of converted scans:', err);
+    }
   });
 }
 
@@ -604,6 +611,28 @@ async function convertScanBlobs(tx: PgTx): Promise<void> {
       });
     } catch (err) {
       console.error(`[bootstrap] could not store the records of scan ${scan.id}; it will be tried again on the next boot:`, err);
+    }
+  }
+}
+
+/**
+ * The Postgres half of migrate.ts's emptyScanBlobs(): only once both backfills have run, only a scan whose
+ * records are stored, one savepoint per scan so a failure costs only that scan until the next boot. The
+ * reads have a savepoint too: a failed statement on the outer transaction would abort the whole bootstrap.
+ */
+async function emptyScanBlobs(tx: PgTx): Promise<void> {
+  const ids = await tx.transaction(async (sp) => {
+    const [backfilled] = (await sp.execute(sql.raw(SCAN_BLOBS_READ_BACKFILLED))).rows as unknown as { n: number | string }[];
+    if (Number(backfilled?.n ?? 0) < 2) return [];
+    return ((await sp.execute(sql.raw(SCAN_BLOBS_READ_FULL))).rows as unknown as { id: string }[]).map(row => row.id);
+  });
+  for (const id of ids) {
+    try {
+      await tx.transaction(async (sp) => {
+        await sp.execute(sql`UPDATE scans SET findings = ${EMPTY_SCAN_BLOB} WHERE id = ${id} AND has_records = 1`);
+      });
+    } catch (err) {
+      console.error(`[bootstrap] could not empty the stored findings of scan ${id}; it will be tried again on the next boot:`, err);
     }
   }
 }

@@ -4,10 +4,10 @@ import { dbReady, rawSqlite, pgDb } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
 import { seedPg } from '@/lib/db/pg/seeds';
 import { createUser } from '@/lib/db/users';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { run } from '@/lib/db/exec';
-import { rules, ruleVersions } from '@/lib/db/tables';
+import { many, run } from '@/lib/db/exec';
+import { rules, ruleVersions, scanFindings } from '@/lib/db/tables';
 import { createRule, loadRules, updateRule } from '@/lib/rules';
 import { listAuditEntries } from '@/lib/db/audit';
 import { countRows } from '../helpers/db';
@@ -16,7 +16,7 @@ import { getFindingEventCounts, listFindings } from '@/lib/db/findings';
 import { getSnapshots } from '@/lib/db/snapshots';
 import { createSchedule, listSchedules } from '@/lib/db/schedules';
 import { addSuppression, loadSuppressions } from '@/lib/suppressions';
-import { loadScanHistory } from '@/lib/scan-history';
+import { listScanMetas } from '@/lib/scan-history';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 import { resetDb } from '../helpers/db';
@@ -132,11 +132,15 @@ describe('recorded Rule versions', () => {
       startAt: '2026-09-24T12:00:00Z', endType: 'never', endDate: null,
     });
     const schedules = await listSchedules();
-    const history = await loadScanHistory('security');
+    const scanHistory = async () => ({
+      scans: await listScanMetas('security', 1000),
+      records: await many(db.select().from(scanFindings).orderBy(asc(scanFindings.scanId), asc(scanFindings.fingerprint))),
+    });
+    const history = await scanHistory();
     const lastRun = await storedRule();
     expect((await PUT(switchRequest('2.0.0'), params)).status).toBe(200);
     expect(await listFindings()).toEqual(before);
-    expect(await loadScanHistory('security')).toEqual(history);
+    expect(await scanHistory()).toEqual(history);
     expect(await listSchedules()).toEqual(schedules);
     expect(await storedRule()).toMatchObject({ lastRunStatus: lastRun.lastRunStatus, lastRunAt: lastRun.lastRunAt });
 

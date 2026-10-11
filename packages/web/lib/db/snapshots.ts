@@ -5,7 +5,8 @@ import { many, run } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
-import { loadScanHistory } from '../scan-history';
+import { loadStoredScanBlobs } from './scan-blob-history';
+import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
 import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
 import { countsTowardPosture, isActivityRule } from '../finding-kinds';
@@ -13,7 +14,6 @@ import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import type { Severity } from '../types';
 
 const RETENTION_DAYS = 365;
-const BACKFILL_MARKER = 'snapshots-backfilled-v1';
 
 /** The posture formula a freshly-written row is computed under — bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and
@@ -185,11 +185,11 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
  *  wins) so trend charts aren't empty on upgrade. Then writes an accurate "today" row for every
  *  category from the live findings table, which supersedes the blob-derived approximation. */
 export async function backfillSnapshots(): Promise<void> {
-  if (await getMeta(BACKFILL_MARKER)) return;
+  if (await getMeta(SNAPSHOTS_BACKFILL_MARKER)) return;
 
   const categories = await listCategories();
   for (const category of categories) {
-    const history = await loadScanHistory(category.id); // newest-first
+    const history = await loadStoredScanBlobs(category.id); // newest-first
     if (history.length === 0) continue;
 
     const byDay = new Map<string, (typeof history)[number]>();
@@ -232,5 +232,5 @@ export async function backfillSnapshots(): Promise<void> {
     await upsertDailySnapshot(category.id);
   }
 
-  await setMeta(BACKFILL_MARKER, '1');
+  await setMeta(SNAPSHOTS_BACKFILL_MARKER, '1');
 }

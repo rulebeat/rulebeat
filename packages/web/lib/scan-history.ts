@@ -2,31 +2,17 @@ import { eq, desc, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { dbKind } from './db/backend';
 import { scans as scansTable, scanFindings } from './db/tables';
-import { many, one, run, inTransaction } from './db/exec';
+import { many, run, inTransaction } from './db/exec';
 import { chunk } from './db/chunk';
-import { recordsFromFindings } from './db/scan-findings-copy';
+import { EMPTY_SCAN_BLOB, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
 
-const MAX_HISTORY = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
+/** How many scans of a category history keeps (`SCAN_HISTORY_LIMIT`, default 90). */
+export const SCAN_HISTORY_LIMIT = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
 
 /** How many records one insert statement carries: 13 columns each, so as many as fit under SQLite's
  *  900 bound values (the same budget as `CHUNK_SIZE`) or Postgres's 65,535. */
 const RECORDS_PER_STATEMENT = dbKind === 'pg' ? 5000 : 69;
-
-export async function loadScanHistory(module: string): Promise<ScanSummary[]> {
-  return (await many(db
-    .select()
-    .from(scansTable)
-    .where(eq(scansTable.module, module))
-    .orderBy(desc(scansTable.startedAt))
-    .limit(MAX_HISTORY)))
-    .map(rowToScanSummary);
-}
-
-export async function getScanById(id: string): Promise<ScanSummary | null> {
-  const row = await one(db.select().from(scansTable).where(eq(scansTable.id, id)));
-  return row ? rowToScanSummary(row) : null;
-}
 
 type Row = typeof scansTable.$inferSelect;
 
@@ -62,8 +48,7 @@ function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>): ScanMeta
   };
 }
 
-/** History list without the findings blob — avoids deserializing every scan's full finding
- *  array just to render a clickable history list. */
+/** The history list of a category, newest first. */
 export async function listScanMetas(module: string, limit = 20): Promise<ScanMeta[]> {
   return (await many(db
     .select(SCAN_META_COLUMNS)
@@ -74,8 +59,8 @@ export async function listScanMetas(module: string, limit = 20): Promise<ScanMet
     .map(rowToScanMeta);
 }
 
-/** All per-category scan rows produced by a single run execution (schedule_runs.id) — the
- *  Run History detail drill-down. Excludes the findings blob for the same reason as listScanMetas. */
+/** All per-category scan rows produced by a single run execution (schedule_runs.id): the
+ *  Run History detail drill-down. */
 export async function getScansForRun(runId: string): Promise<ScanMeta[]> {
   return (await many(db
     .select(SCAN_META_COLUMNS)
@@ -92,7 +77,8 @@ export async function saveScanResult(
 ): Promise<void> {
   const id = opts.id ?? crypto.randomUUID();
   // ADR 0008: the scan row and its records are one write. If the records cannot be stored the scan is
-  // not either, so a scan is never half saved. The findings blob is still written, unchanged.
+  // not either, so a scan is never half saved. The records are all a scan keeps of its findings (#219):
+  // the blob column is written empty, so the previous release still reads the scan.
   await inTransaction(async (tx) => {
     await run(tx.insert(scansTable).values({
       id,
@@ -101,7 +87,7 @@ export async function saveScanResult(
       finishedAt: summary.finishedAt,
       durationMs: summary.durationMs,
       subscriptionsScanned: JSON.stringify(summary.subscriptionsScanned),
-      findings: JSON.stringify(summary.findings),
+      findings: EMPTY_SCAN_BLOB,
       counts: JSON.stringify(summary.counts),
       totalRules: summary.totalRules,
       triggeredBy: opts.triggeredBy ?? 'manual',
@@ -137,25 +123,6 @@ export async function saveScanResult(
 
 // --- helpers ---
 
-function rowToScanSummary(row: Row): ScanSummary {
-  return {
-    id: row.id,
-    module: row.module,
-    startedAt: row.startedAt,
-    finishedAt: row.finishedAt,
-    durationMs: row.durationMs,
-    subscriptionsScanned: JSON.parse(row.subscriptionsScanned) as string[],
-    findings: JSON.parse(row.findings) as ScanSummary['findings'],
-    counts: JSON.parse(row.counts) as ScanSummary['counts'],
-    totalRules: row.totalRules ?? 0,
-    triggeredBy: (row.triggeredBy as 'manual' | 'schedule' | undefined) ?? 'manual',
-    coverage: (row.coverage as 'complete' | 'partial' | undefined) ?? 'complete',
-    incompleteRules: row.incompleteRules
-      ? (JSON.parse(row.incompleteRules) as ScanSummary['incompleteRules'])
-      : [],
-  };
-}
-
 async function pruneOldScans(module: string): Promise<void> {
   const rows = await many(db
     .select({ id: scansTable.id })
@@ -163,7 +130,7 @@ async function pruneOldScans(module: string): Promise<void> {
     .where(eq(scansTable.module, module))
     .orderBy(desc(scansTable.startedAt)));
 
-  const expired = rows.slice(MAX_HISTORY).map(row => row.id);
+  const expired = rows.slice(SCAN_HISTORY_LIMIT).map(row => row.id);
   if (expired.length === 0) return;
 
   // A scan goes with its records, in one transaction: one statement for each table, or one per
