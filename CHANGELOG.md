@@ -17,6 +17,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - When rebuilding the finding history at startup fails for one category, that category keeps its stored findings and is tried again on every start, instead of the rebuild being marked done. Categories already rebuilt are not replayed, and the stored findings are emptied only once every category is rebuilt or had nothing to rebuild. A category that was scanned since the failed start is not rebuilt, so its newer findings stay as that scan left them.
 - The New Rule form let you choose neither the rule's kind nor its tags, and the Enabled switch could not be turned off. All three now work, as they already did when editing a custom rule.
 - The Library listed each rule's tags under the Kind column and its kind under Tags. Each now sits under its own header.
+- Building the image from a checkout that has run the Demo sent the Demo's saved snapshots, 15 MB each, to Docker with the source. They are now left out. The image itself does not change.
 
 ## [0.9.0] - 2026-10-11
 

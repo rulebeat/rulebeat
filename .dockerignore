@@ -9,6 +9,7 @@ packages/web/data/*.db
 packages/web/data/*.db-shm
 packages/web/data/*.db-wal
 packages/web/data/*.db.backup-*
+packages/web/data/demo-snapshots
 packages/core/dist
 *.md
 docs/
