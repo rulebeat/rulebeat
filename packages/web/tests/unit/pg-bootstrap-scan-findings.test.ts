@@ -12,6 +12,7 @@ import { computeActivityFingerprint, computeFingerprint, computeLegacyFingerprin
 import { dbKind } from '@/lib/db/backend';
 import { dbReady, pgDb } from '@/lib/db/client';
 import { bootstrapPg } from '@/lib/db/pg/bootstrap';
+import { backfillFindings } from '@/lib/db/findings';
 import { SCAN_COPY_READ_PENDING } from '@/lib/db/scan-findings-copy';
 import { resetDb } from '../helpers/db';
 
@@ -30,10 +31,10 @@ function blobFinding(name: string, over: Record<string, unknown> = {}) {
   };
 }
 
-async function insertScan(id: string, findings: unknown, startedAt: string): Promise<void> {
+async function insertScan(id: string, findings: unknown, startedAt: string, module = 'reliability'): Promise<void> {
   await pgDb!.execute(sql`
     INSERT INTO scans (id, module, started_at, finished_at, duration_ms, subscriptions_scanned, findings, counts, total_rules)
-    VALUES (${id}, 'reliability', ${startedAt}, ${startedAt}, 10, '[]', ${typeof findings === 'string' ? findings : JSON.stringify(findings)}, '{}', 1)
+    VALUES (${id}, ${module}, ${startedAt}, ${startedAt}, 10, '[]', ${typeof findings === 'string' ? findings : JSON.stringify(findings)}, '{}', 1)
   `);
 }
 
@@ -42,11 +43,11 @@ const recordsOf = (scanId: string) => raw(`SELECT fingerprint, rule_id, severity
 const markers = () => raw(`SELECT id, has_records FROM scans ORDER BY id COLLATE "C"`);
 const blobs = () => raw(`SELECT id, findings FROM scans ORDER BY id COLLATE "C"`);
 
-/** The meta keys the two one-time backfills set. `resetDb()` keeps `meta`, so each test here says which
- *  of them are set, and none is left set after it. */
+/** The meta keys the two one-time backfills set, and the per-category records the findings rebuild keeps.
+ *  `resetDb()` keeps `meta`, so each test here says which of the two are set, and none is left set after it. */
 const BACKFILL_MARKERS = ['findings-backfilled-v1', 'snapshots-backfilled-v1'];
 async function setBackfilled(keys: string[]): Promise<void> {
-  await raw(`DELETE FROM meta WHERE key IN ('${BACKFILL_MARKERS.join("', '")}')`);
+  await raw(`DELETE FROM meta WHERE key IN ('${BACKFILL_MARKERS.join("', '")}') OR key LIKE 'findings-backfilled-v1:%'`);
   for (const key of keys) await raw(`INSERT INTO meta (key, value) VALUES ('${key}', '1')`);
 }
 
@@ -263,5 +264,121 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg stores scans as scan_findings reco
 
     expect(await recordsOf('pg-scan-b')).toHaveLength(2);
     expect(await markers()).toEqual([{ id: 'pg-scan-a', has_records: 1 }, { id: 'pg-scan-b', has_records: 1 }, { id: 'pg-scan-c', has_records: 1 }]);
+  });
+});
+
+/**
+ * Issue #235: a category whose finding history cannot be rebuilt keeps its stored findings and is tried
+ * again on every boot, and the done marker is set only once every category is rebuilt. The failure is
+ * injected through the stored data: a blob that is not JSON fails the read before anything is replayed,
+ * and a `null` entry fails the replay at the newest scan, after the older ones were already replayed. A
+ * boot is `bootstrapPg()` and then `backfillFindings()` on the live database, as instrumentation.ts runs them.
+ * The snapshots marker is set by hand: backfillSnapshots() stops on the same blobs, which is its own,
+ * already correct, failure.
+ */
+describe.skipIf(dbKind !== 'pg')('a finding history rebuild that fails for one category (issue #235)', () => {
+  const FINDINGS_MARKER = 'findings-backfilled-v1';
+  const SEC_RULE = 'pg-scan-findings-security-rule';
+  const BROKEN = { unreadable: '{not json', 'part way': '[null]' } as const;
+  // Relative to today: finding events older than their retention window are deleted as they are written.
+  const midnight = new Date().setUTCHours(0, 0, 0, 0);
+  const day = (n: number) => new Date(midnight - (10 - n) * 86_400_000).toISOString();
+  const security = (name: string) => blobFinding(name, { module: 'security', category: 'security', ruleId: SEC_RULE });
+  const REPAIRED = (): unknown[] => [security('sec-1'), security('sec-3')];
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await bootstrapPg(pgDb!);
+    await resetDb();
+    await setBackfilled([]);
+  });
+
+  /** Two categories of history; the newest security scan holds `newestSecurityBlob`. */
+  async function twoCategories(newestSecurityBlob: unknown): Promise<void> {
+    await previousReleaseDatabase();
+    await insertScan('pg-r1', [blobFinding('vm-1'), blobFinding('vm-2')], day(1));
+    await insertScan('pg-r2', [blobFinding('vm-1')], day(2));
+    await insertScan('pg-s1', [security('sec-1'), security('sec-2')], day(1), 'security');
+    await insertScan('pg-s2', [security('sec-1')], day(2), 'security');
+    await insertScan('pg-s3', newestSecurityBlob, day(3), 'security');
+    await setBackfilled(['snapshots-backfilled-v1']);
+  }
+
+  const state = async () => ({
+    metaKeys: (await raw(`SELECT key FROM meta WHERE key LIKE 'findings-backfilled-v1%' ORDER BY key COLLATE "C"`)).map(r => r.key),
+    findings: await raw(`SELECT category, resource_name, status, first_seen_at, last_seen_at, resolved_at, times_seen
+      FROM findings ORDER BY category COLLATE "C", resource_name COLLATE "C"`),
+    events: await raw(`SELECT category, fingerprint, type, occurred_at FROM finding_events
+      ORDER BY category COLLATE "C", fingerprint COLLATE "C", occurred_at COLLATE "C", type COLLATE "C"`),
+    blobs: await blobs(),
+  });
+
+  async function start() {
+    await bootstrapPg(pgDb!);
+    await backfillFindings();
+    return state();
+  }
+
+  const repair = () => raw(`UPDATE scans SET findings = '${JSON.stringify(REPAIRED())}' WHERE id = 'pg-s3'`);
+
+  describe.each(Object.entries(BROKEN))('when a blob is %s', (_name, brokenBlob) => {
+    it('rebuilds every other category, keeps the stored findings, and tries the failed one again on every boot', async () => {
+      await twoCategories(brokenBlob);
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const first = await start();
+
+      expect(first.findings).toEqual([
+        { category: 'reliability', resource_name: 'vm-1', status: 'active', first_seen_at: day(1), last_seen_at: day(2), resolved_at: null, times_seen: 3 },
+        { category: 'reliability', resource_name: 'vm-2', status: 'fixed', first_seen_at: day(1), last_seen_at: day(1), resolved_at: day(2), times_seen: 1 },
+      ]);
+      expect(first.events.map(e => [e.category, e.type, e.occurred_at])).toEqual([['reliability', 'resolved', day(2)]]);
+      expect(first.metaKeys).toEqual([`${FINDINGS_MARKER}:category:reliability`]);
+      expect(log.mock.calls.map(c => String(c[0])).join('\n')).toMatch(/'security'.*tried again on the next start.*stored findings are kept/);
+
+      // The boot after it empties nothing: every converted scan keeps its blob, security's included.
+      log.mockClear();
+      const second = await start();
+      expect(second.blobs).toEqual(first.blobs);
+      expect(second.blobs.filter(b => b.findings === '[]')).toEqual([]);
+      expect((await markers()).filter(m => m.has_records === 1).map(m => m.id)).toEqual(['pg-r1', 'pg-r2', 'pg-s1', 'pg-s2']);
+
+      // Still failing: the category is logged and tried again, and reliability is not replayed.
+      expect(second.metaKeys).toEqual(first.metaKeys);
+      expect(second.findings).toEqual(first.findings);
+      expect(second.events).toEqual(first.events);
+      expect(log.mock.calls.map(c => String(c[0])).join('\n')).toMatch(/'security'/);
+    });
+
+    it('rebuilds the failed category on a later boot exactly as a run that never failed, and the boot after empties the blobs', async () => {
+      await twoCategories(REPAIRED());
+      const control = await start();
+
+      await twoCategories(brokenBlob);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const afterFailure = await start();
+      await repair();
+      const retried = await start();
+
+      expect(retried.findings).toEqual(control.findings);
+      expect(retried.events).toEqual(control.events);
+      expect(retried.findings.filter(f => f.category === 'security')).toEqual([
+        { category: 'security', resource_name: 'sec-1', status: 'active', first_seen_at: day(1), last_seen_at: day(3), resolved_at: null, times_seen: 4 },
+        { category: 'security', resource_name: 'sec-2', status: 'fixed', first_seen_at: day(1), last_seen_at: day(1), resolved_at: day(2), times_seen: 1 },
+        { category: 'security', resource_name: 'sec-3', status: 'active', first_seen_at: day(3), last_seen_at: day(3), resolved_at: null, times_seen: 2 },
+      ]);
+      expect(retried.events.filter(e => e.category === 'security').map(e => [e.type, e.occurred_at])).toEqual([['created', day(3)]]);
+      // The category that was rebuilt before is untouched by the retry.
+      expect(retried.findings.filter(f => f.category === 'reliability')).toEqual(afterFailure.findings);
+      expect(retried.events.filter(e => e.category === 'reliability')).toEqual(afterFailure.events);
+      expect(retried.metaKeys).toEqual([FINDINGS_MARKER, `${FINDINGS_MARKER}:category:reliability`, `${FINDINGS_MARKER}:category:security`]);
+
+      // Every category is rebuilt, so the next boot empties each converted scan's blob and keeps the records.
+      const records = await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`);
+      const last = await start();
+      expect(last.blobs).toEqual(['pg-r1', 'pg-r2', 'pg-s1', 'pg-s2', 'pg-s3'].map(id => ({ id, findings: '[]' })));
+      expect(last.findings).toEqual(retried.findings);
+      expect(await raw(`SELECT * FROM scan_findings ORDER BY scan_id COLLATE "C", fingerprint COLLATE "C"`)).toEqual(records);
+    });
   });
 });

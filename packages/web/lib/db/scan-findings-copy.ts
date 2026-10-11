@@ -67,9 +67,15 @@ export const SCAN_COPY_DELETE_ORPHANS = `DELETE FROM scan_findings WHERE scan_id
 export const EMPTY_SCAN_BLOB = '[]';
 
 /** The meta keys the two one-time backfills set once they have run (lib/db/findings.ts and
- *  lib/db/snapshots.ts). Both rebuild history from the blobs, so no blob is emptied before both are set. */
+ *  lib/db/snapshots.ts). Both rebuild history from the blobs, so no blob is emptied before both are set.
+ *  The findings marker is set only once every category is rebuilt or had nothing to rebuild; a category
+ *  that failed is tried again on the next start and the marker stays unset until then (#235). */
 export const FINDINGS_BACKFILL_MARKER = 'findings-backfilled-v1';
 export const SNAPSHOTS_BACKFILL_MARKER = 'snapshots-backfilled-v1';
+
+/** One meta row per category the findings backfill has rebuilt, so a retry skips it. The key can never
+ *  equal FINDINGS_BACKFILL_MARKER, which SCAN_BLOBS_READ_BACKFILLED matches exactly. */
+export const findingsBackfillCategoryKey = (category: string): string => `${FINDINGS_BACKFILL_MARKER}:category:${category}`;
 
 /** 1 when both backfills have run on this database. Plain SQL valid on both backends. */
 export const SCAN_BLOBS_READ_BACKFILLED =

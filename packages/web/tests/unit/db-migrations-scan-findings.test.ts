@@ -490,3 +490,132 @@ describe('emptying the stored findings blobs', () => {
     expect(recordsOf(sqlite, 'scan-1')).toHaveLength(2);
   });
 });
+
+/**
+ * Issue #235: a category whose finding history cannot be rebuilt keeps its stored findings and is tried
+ * again on every start. The done marker is set only once every category is rebuilt, so the upgrade that
+ * empties the blobs cannot run before then. The failure is injected through the stored data: a blob that
+ * is not JSON fails the read before anything is replayed, and a `null` entry fails the replay at the
+ * newest scan, after the older ones were already replayed.
+ *
+ * The snapshots marker is set by hand: backfillSnapshots() reads the same blobs and stops on the same
+ * ones, which is a separate, already-correct failure.
+ */
+describe('a finding history rebuild that fails for one category', () => {
+  const FINDINGS_MARKER = 'findings-backfilled-v1';
+  const BROKEN = { unreadable: '{not json', 'part way': '[null]' } as const;
+  const SEC_RULE = '5c1d8e2a-7b3f-4a6e-9d04-2e8b6f1a3c57';
+  // Relative to today: finding events older than their retention window are deleted as they are written.
+  const midnight = new Date().setUTCHours(0, 0, 0, 0);
+  const day = (n: number) => new Date(midnight - (10 - n) * 86_400_000).toISOString();
+  const security = (name: string) => blobFinding(name, { module: 'security', category: 'security', ruleId: SEC_RULE });
+  const metaKeys = (db: Database.Database) => all(db, `SELECT key FROM meta WHERE key LIKE 'findings-backfilled-v1%' ORDER BY key`).map(r => r.key);
+  const blobs = (db: Database.Database) => all(db, `SELECT id, findings FROM scans ORDER BY id`);
+  const stored = (db: Database.Database) => all(db, `SELECT category, resource_name, status, first_seen_at, last_seen_at, resolved_at, times_seen FROM findings ORDER BY category, resource_name`);
+  const events = (db: Database.Database) => all(db, `SELECT category, fingerprint, type, occurred_at FROM finding_events ORDER BY category, fingerprint, occurred_at, type`);
+
+  /** Two categories of history; the newest security scan holds `newestSecurityBlob`. */
+  function twoCategories(newestSecurityBlob: unknown): string {
+    const { sample, db } = previousReleaseDatabase();
+    // Its own rule: a sync resolves a rule's open findings in every category.
+    db.prepare(`
+      INSERT INTO rules (id, name, description, category, severity, enabled, scope, resource_types, conditions, raw_kql, type)
+      VALUES (?, 'Open ports', 'test', 'security', 'medium', 1, '{"level":"subscription"}', '[]', '[]',
+        'resources | project id, name, type, location, resourceGroup, subscriptionId', 'custom')
+    `).run(SEC_RULE);
+    insertScan(db, 'scan-r1', [blobFinding('vm-1'), blobFinding('vm-2')], day(1));
+    insertScan(db, 'scan-r2', [blobFinding('vm-1')], day(2));
+    insertScan(db, 'scan-s1', [security('sec-1'), security('sec-2')], day(1), 'security');
+    insertScan(db, 'scan-s2', [security('sec-1')], day(2), 'security');
+    insertScan(db, 'scan-s3', newestSecurityBlob, day(3), 'security');
+    db.exec(`DELETE FROM meta WHERE key IN ('findings-backfilled-v1', 'snapshots-backfilled-v1')`);
+    db.prepare(`INSERT INTO meta (key, value) VALUES ('snapshots-backfilled-v1', '1')`).run();
+    db.close();
+    return sample.file;
+  }
+
+  /** One start as instrumentation.ts runs it, then what the database holds. */
+  async function start(file: string) {
+    await startProductOn(file);
+    await (await import('@/lib/db/findings')).backfillFindings();
+    closeProductDb?.();
+    closeProductDb = undefined;
+    const peek = open(file);
+    const state = { metaKeys: metaKeys(peek), findings: stored(peek), events: events(peek), blobs: blobs(peek) };
+    peek.close();
+    return state;
+  }
+
+  const REPAIRED = (): unknown[] => [security('sec-1'), security('sec-3')];
+  const repair = (file: string) => {
+    const db = open(file);
+    db.prepare(`UPDATE scans SET findings = ? WHERE id = 'scan-s3'`).run(JSON.stringify(REPAIRED()));
+    db.close();
+  };
+
+  describe.each(Object.entries(BROKEN))('when a blob is %s', (_name, brokenBlob) => {
+    it('rebuilds every other category, keeps the stored findings, and tries the failed one again on every start', async () => {
+      const file = twoCategories(brokenBlob);
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const first = await start(file);
+
+      // reliability was rebuilt; security was not touched, and the marker is not set.
+      expect(first.findings).toEqual([
+        { category: 'reliability', resource_name: 'vm-1', status: 'active', first_seen_at: day(1), last_seen_at: day(2), resolved_at: null, times_seen: 3 },
+        { category: 'reliability', resource_name: 'vm-2', status: 'fixed', first_seen_at: day(1), last_seen_at: day(1), resolved_at: day(2), times_seen: 1 },
+      ]);
+      expect(first.events.map(e => [e.category, e.type, e.occurred_at])).toEqual([['reliability', 'resolved', day(2)]]);
+      expect(first.metaKeys).toEqual(['findings-backfilled-v1:category:reliability']);
+      expect(log.mock.calls.map(c => String(c[0])).join('\n')).toMatch(/'security'.*tried again on the next start.*stored findings are kept/);
+
+      // The start after it empties nothing: every converted scan keeps its blob, security's included.
+      // Still failing: the category is logged and tried again, and reliability is not replayed.
+      log.mockClear();
+      const secondFile = await start(file);
+      expect(secondFile.blobs).toEqual(first.blobs);
+      expect(secondFile.blobs.filter(b => b.findings === '[]')).toEqual([]);
+      const convertedDb = open(file);
+      expect(all(convertedDb, `SELECT id FROM scans WHERE has_records = 1 ORDER BY id`).map(r => r.id)).toEqual(['scan-r1', 'scan-r2', 'scan-s1', 'scan-s2']);
+      convertedDb.close();
+      expect(secondFile.metaKeys).toEqual(first.metaKeys);
+      expect(secondFile.findings).toEqual(first.findings);
+      expect(secondFile.events).toEqual(first.events);
+      expect(log.mock.calls.map(c => String(c[0])).join('\n')).toMatch(/'security'/);
+    });
+
+    it('rebuilds the failed category on a later start exactly as a run that never failed, and the start after empties the blobs', async () => {
+      const file = twoCategories(brokenBlob);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const afterFailure = await start(file);
+
+      repair(file);
+      const retried = await start(file);
+
+      const control = await start(twoCategories(REPAIRED()));
+      expect(retried.findings).toEqual(control.findings);
+      expect(retried.events).toEqual(control.events);
+      expect(retried.findings.filter(f => f.category === 'security')).toEqual([
+        { category: 'security', resource_name: 'sec-1', status: 'active', first_seen_at: day(1), last_seen_at: day(3), resolved_at: null, times_seen: 4 },
+        { category: 'security', resource_name: 'sec-2', status: 'fixed', first_seen_at: day(1), last_seen_at: day(1), resolved_at: day(2), times_seen: 1 },
+        { category: 'security', resource_name: 'sec-3', status: 'active', first_seen_at: day(3), last_seen_at: day(3), resolved_at: null, times_seen: 2 },
+      ]);
+      expect(retried.events.filter(e => e.category === 'security').map(e => [e.type, e.occurred_at])).toEqual([['created', day(3)]]);
+      // The category that was rebuilt before is untouched by the retry.
+      expect(retried.findings.filter(f => f.category === 'reliability')).toEqual(afterFailure.findings);
+      expect(retried.events.filter(e => e.category === 'reliability')).toEqual(afterFailure.events);
+      expect(retried.metaKeys).toEqual([FINDINGS_MARKER, `${FINDINGS_MARKER}:category:reliability`, `${FINDINGS_MARKER}:category:security`]);
+
+      // Every category is rebuilt, so the next start empties each converted scan's blob and keeps the records.
+      const beforeEmptying = open(file);
+      const records = all(beforeEmptying, `SELECT * FROM scan_findings ORDER BY scan_id, fingerprint`);
+      beforeEmptying.close();
+      const last = await start(file);
+      expect(last.blobs).toEqual(['scan-r1', 'scan-r2', 'scan-s1', 'scan-s2', 'scan-s3'].map(id => ({ id, findings: '[]' })));
+      expect(last.findings).toEqual(retried.findings);
+      const afterEmptying = open(file);
+      expect(all(afterEmptying, `SELECT * FROM scan_findings ORDER BY scan_id, fingerprint`)).toEqual(records);
+      afterEmptying.close();
+    });
+  });
+});
