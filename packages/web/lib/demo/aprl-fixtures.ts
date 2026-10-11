@@ -9,7 +9,7 @@ const IDENTITY_ALIASES = new Set(['id', 'name', 'type', 'location', 'resourcegro
 
 /** No real where-clause evaluation here — this only needs to produce evidence that *reads* as
  *  plausible for the column name, not a value that's provably derived from the rule's own logic.
- *  APRL rules are ~35 out of 143 curated ones; nobody reviewing the demo checks these against the
+ *  APRL rules are ~35 out of 141 curated ones; nobody reviewing the demo checks these against the
  *  upstream KQL line by line the way they would for the 13 hand-authored core rules. */
 function heuristicValue(alias: string, r: EstateResource, ruleId: string): unknown {
   const lower = alias.toLowerCase();
