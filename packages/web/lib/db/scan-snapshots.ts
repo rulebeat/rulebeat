@@ -11,7 +11,7 @@
 import { and, count, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { many, one, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import { findings as findingsTable, scanFindings, scans as scansTable } from './tables';
-import { SCAN_FINDING_ORDER } from './scan-findings-copy';
+import { SCAN_FINDING_ORDER, SCAN_FINDING_RANKS, SCAN_FINDING_RANK_ORDER, scanFindingsAfter } from './scan-findings-copy';
 import { pageBounds } from '../finding-rows';
 import { SNAPSHOT_PAGE_SIZE, type SnapshotQuery } from '../snapshot-query';
 import type { SnapshotFacetValue, SnapshotItem, SnapshotRecord, SnapshotResponse, SnapshotScan } from '../snapshot-response';
@@ -108,6 +108,34 @@ export const toRecord = (r: typeof t.$inferSelect): SnapshotRecord => ({
 });
 
 /**
+ * The records `where` selects, in `SCAN_FINDING_ORDER`, `batchSize` at a time: every batch but the last
+ * holds exactly `batchSize`, and none is empty. Each read starts after the last record of the one
+ * before, by key, so it costs the records it returns however deep into the run it is. Shared by the
+ * snapshot export and the compare export. A rank is read to its end before the next, and a batch fills
+ * across the ranks.
+ */
+export async function* readExportBatches(tx: DbHandle, where: SQL, batchSize: number): AsyncGenerator<SnapshotRecord[]> {
+  type Stored = typeof t.$inferSelect;
+  let batch: Stored[] = [];
+  for (const rank of SCAN_FINDING_RANKS) {
+    let last: Stored | null = null;
+    for (;;) {
+      const want = batchSize - batch.length;
+      const stored: Stored[] = await many(tx.select().from(t).where(and(where, scanFindingsAfter(rank, last)))
+        .orderBy(sql.raw(SCAN_FINDING_RANK_ORDER)).limit(want));
+      batch.push(...stored);
+      if (batch.length === batchSize) {
+        yield batch.map(toRecord);
+        batch = [];
+      }
+      if (stored.length < want) break;
+      last = stored[stored.length - 1]!;
+    }
+  }
+  if (batch.length > 0) yield batch.map(toRecord);
+}
+
+/**
  * The export of a snapshot: every record that matches the query's filters and search (its page is
  * ignored), in the snapshot's order, `batchSize` at a time. Read inside one snapshot that stays open as
  * long as the download reads (lib/export-stream.ts), so the batches agree with one another.
@@ -119,14 +147,7 @@ export function openSnapshotExport(scanId: string, query: SnapshotQuery, opts: {
     if (!header) throw new SnapshotUnavailable('not-found');
     if (!header.hasRecords) throw new SnapshotUnavailable('no-records');
     return use({
-      async *batches() {
-        for (let offset = 0; ; offset += batchSize) {
-          const stored = await many(tx.select().from(t).where(matching(scanId, query))
-            .orderBy(sql.raw(SCAN_FINDING_ORDER)).limit(batchSize).offset(offset));
-          if (stored.length > 0) yield stored.map(toRecord);
-          if (stored.length < batchSize) return;
-        }
-      },
+      batches: () => readExportBatches(tx, matching(scanId, query), batchSize),
     });
   });
 }

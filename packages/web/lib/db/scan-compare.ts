@@ -13,7 +13,7 @@ import { and, count, eq, sql, type SQL } from 'drizzle-orm';
 import { many, one, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import { scanFindings } from './tables';
 import { SCAN_FINDING_ORDER } from './scan-findings-copy';
-import { readExisting, readHeader, toRecord } from './scan-snapshots';
+import { readExisting, readExportBatches, readHeader, toRecord } from './scan-snapshots';
 import { pageBounds } from '../finding-rows';
 import { COMPARE_PAGE_SIZE, type CompareQuery } from '../compare-query';
 import type { CompareErrorCode, CompareResponse, CompareSide, CompareTotals } from '../compare-response';
@@ -136,13 +136,7 @@ export function openCompareExport(idA: string, idB: string, side: CompareSide, o
     if (read.status !== 'ok') throw new CompareUnavailable(read.status);
     const { pair } = read;
     return use({
-      async *batches() {
-        for (let offset = 0; ; offset += batchSize) {
-          const stored = await readPage(tx, side, pair, offset, batchSize);
-          if (stored.length > 0) yield stored.map(toRecord);
-          if (stored.length < batchSize) return;
-        }
-      },
+      batches: () => readExportBatches(tx, onSide(side, pair), batchSize),
     });
   });
 }
