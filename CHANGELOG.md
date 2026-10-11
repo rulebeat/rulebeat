@@ -17,6 +17,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - On PostgreSQL, a database read that failed while past scans were being converted into records at startup undid every other upgrade step of that start. Now a failed read costs only what it was reading: the whole conversion if it was the list of scans to convert, or one scan if it was that scan's stored findings. The failure is logged, the other steps are kept, the app starts, and the next start tries the conversion again.
 - The New Rule form let you choose neither the rule's kind nor its tags, and the Enabled switch could not be turned off. All three now work, as they already did when editing a custom rule.
 - The Library listed each rule's tags under the Kind column and its kind under Tags. Each now sits under its own header.
+- Building the image from a checkout that has run the Demo sent the Demo's saved snapshots, 15 MB each, to Docker with the source. They are now left out. The image itself does not change.
 
 ## [0.9.0] - 2026-10-11
 

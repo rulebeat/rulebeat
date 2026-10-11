@@ -66,6 +66,8 @@ packages/web/data/*.db-shm
 packages/web/data/*.db-wal
 # Copies taken before a manual repair — real data, must never be committed
 packages/web/data/*.db.backup-*
+# Demo snapshots, written by the demo server on start
+packages/web/data/demo-snapshots/
 
 # Pack files are source-controlled (committed, version-pinned)
 # data/packs/ is intentionally tracked
