@@ -47,7 +47,7 @@ async function main(): Promise<void> {
 
   const rules = await loadRules();
   const seedRule = rules.find(r => r.enabled) ?? rules[0];
-  if (!seedRule) throw new Error('seed-e2e: no rules available to seed a finding against — built-ins did not seed');
+  if (!seedRule) throw new Error('seed-e2e: no rules available to seed a finding against. Built-ins did not seed');
 
   const finding = createFinding({
     module: seedRule.category,
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     title: 'E2E seeded finding',
     description: 'Synthetic finding seeded for the Playwright suite, not a real scan result.',
     evidence: {},
-    recommendation: 'No action needed — this is test fixture data.',
+    recommendation: 'No action needed. This is test fixture data.',
   });
 
   await syncScanFindings({

@@ -157,7 +157,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
       {showSubscriptionDenominatorCaveat && (
         <p
           className="px-2 pb-1 text-xs text-ink-muted"
-          title="This subscription's total reflects every rule enabled for the category — it isn't narrowed to this subscription's own resources."
+          title="This subscription's total reflects every rule enabled for the category. It isn't narrowed to this subscription's own resources."
         >
           Total is per category, not per subscription
         </p>

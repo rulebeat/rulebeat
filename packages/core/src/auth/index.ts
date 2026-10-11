@@ -83,7 +83,7 @@ export const GRAPH_MAX_ROWS = 10_000;
 export class GraphTruncatedError extends Error {
   constructor(public readonly rowsSeen: number) {
     super(
-      `Microsoft Graph result set exceeded ${rowsSeen} row(s) — RuleBeat stopped paginating before ` +
+      `Microsoft Graph result set exceeded ${rowsSeen} row(s). RuleBeat stopped paginating before ` +
       'reaching the end of the result set.',
     );
     this.name = 'GraphTruncatedError';

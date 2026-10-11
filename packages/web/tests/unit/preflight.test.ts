@@ -35,6 +35,8 @@ describe('B3 · runPreflight', () => {
 
     expect(result.overall).toBe('ok');
     expect(result.checks.map(c => c.status)).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(result.checks.find(c => c.id === 'graph-applications')!.summary)
+      .toBe('Microsoft Graph is reachable. Directory rules will run.');
     expect(result.subscriptions).toEqual([
       { id: 'sub-a', name: 'Sub A' },
       { id: 'sub-b', name: 'Sub B' },

@@ -193,7 +193,7 @@ export function ScanHistoryTab({
                     <Callout tone="warn">
                       <span>
                         {scan.incompleteRules.length} rule{scan.incompleteRules.length === 1 ? '' : 's'} did not
-                        complete — findings from a prior scan for {scan.incompleteRules.length === 1 ? 'it' : 'them'} were
+                        complete. Findings from a prior scan for {scan.incompleteRules.length === 1 ? 'it' : 'them'} were
                         left as-is rather than marked fixed:{' '}
                         {scan.incompleteRules.map((r, i) => (
                           <span key={r.ruleId}>

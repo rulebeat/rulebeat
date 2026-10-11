@@ -212,7 +212,7 @@ async function checkGraphApplications(
     }
     return {
       id: 'graph-applications', label: 'Microsoft Graph (directory rules)', status: 'ok',
-      summary: 'Microsoft Graph is reachable — directory rules will run.',
+      summary: 'Microsoft Graph is reachable. Directory rules will run.',
       durationMs,
     };
   } catch (err) {

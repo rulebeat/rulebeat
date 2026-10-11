@@ -20,7 +20,7 @@ export function describeAadstsError(raw: string): string | null {
     return 'The client secret has expired. Create a new secret on the app registration and enter it here.';
   }
   if (/AADSTS90002|tenant .* not found/i.test(raw)) {
-    return 'That tenant ID does not exist. Check for a typo — it should be a GUID.';
+    return 'That tenant ID does not exist. Check for a typo. It should be a GUID.';
   }
   if (/AADSTS50011/i.test(raw)) {
     return 'The redirect URI Azure received doesn’t match what’s registered on the app. Copy the exact redirect URI shown below into the app registration’s Authentication settings.';

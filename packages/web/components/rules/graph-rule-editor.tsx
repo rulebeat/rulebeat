@@ -91,7 +91,7 @@ export function GraphRuleEditor({ value, onChange, readOnly }: GraphRuleEditorPr
         <CardContent className="space-y-3">
           {!readOnly && (
             <p className="text-[13px] text-ink-2">
-              Queries Microsoft Graph directly — this is a directory object, not an Azure resource, so there is no ARG scope or resource type filter here.
+              Queries Microsoft Graph directly. This is a directory object, not an Azure resource, so there is no ARG scope or resource type filter here.
             </p>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -181,7 +181,7 @@ export function GraphRuleEditor({ value, onChange, readOnly }: GraphRuleEditorPr
             <p className="py-1 text-xs text-ink-2">
               {readOnly
                 ? 'This rule flags the object itself.'
-                : 'Off — this rule flags the object itself. Turn on to flag items inside an array field instead, such as expiring credentials.'}
+                : 'Off. This rule flags the object itself. Turn on to flag items inside an array field instead, such as expiring credentials.'}
             </p>
           ) : (
             <div className="space-y-3">
@@ -199,7 +199,7 @@ export function GraphRuleEditor({ value, onChange, readOnly }: GraphRuleEditorPr
                 <div>
                   <Label className="mb-1 flex items-center gap-1">
                     Array field
-                    <span title="The array property on the object that holds the items to check — e.g. an Application's list of client secrets.">
+                    <span title="The array property on the object that holds the items to check. For example, an Application's list of client secrets.">
                       <HelpCircle className="size-3.5 text-ink-faint" />
                     </span>
                   </Label>
@@ -244,7 +244,7 @@ export function GraphRuleEditor({ value, onChange, readOnly }: GraphRuleEditorPr
                 <div>
                   <Label className="mb-1 flex items-center gap-1">
                     Item label
-                    <span title="A human-readable name for what each item is, shown on the finding — not a field name, just a word.">
+                    <span title="A human-readable name for what each item is, shown on the finding. It is not a field name, just a word.">
                       <HelpCircle className="size-3.5 text-ink-faint" />
                     </span>
                   </Label>
@@ -304,7 +304,7 @@ export function GraphRuleEditor({ value, onChange, readOnly }: GraphRuleEditorPr
                     </div>
                   ))}
                 </div>
-                <p className="mt-1.5 text-xs text-ink-muted">Bands are checked in order, tightest first — the first one whose day count covers the item wins.</p>
+                <p className="mt-1.5 text-xs text-ink-muted">Bands are checked in order, tightest first. The first one whose day count covers the item wins.</p>
               </div>
             </div>
           )}

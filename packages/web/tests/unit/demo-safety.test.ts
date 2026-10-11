@@ -67,7 +67,9 @@ describe('the kill switch beats a fully-specified environment credential', () =>
 
   it('the thrown error names the demo instance, not the usual "not configured" message', async () => {
     await enableDemoMode();
-    await expect(resolveAzureCredential()).rejects.toThrow(/demo instance/i);
+    await expect(resolveAzureCredential()).rejects.toThrow(
+      'This is a demo instance. It never connects to a real Azure tenant. Every scan runs against synthetic data baked in ahead of time.',
+    );
   });
 
   it('await getAzureCredential(), the ARM-routes entry point, throws the same way', async () => {

@@ -595,7 +595,7 @@ export function parseKqlToVisualQuery(kql: string): ParsedVisualResult {
   // literal read of what they typed.
   const bareLeadingPipe = /^\s*\|/.test(bodyLinesRaw[0] as string);
   if (bareLeadingPipe) {
-    result.warnings.push('No table name found before the first "|" — assumed "Resources".');
+    result.warnings.push('No table name found before the first "|". Assumed "Resources".');
   }
   const bodyLines = bareLeadingPipe ? ['Resources', ...bodyLinesRaw] : bodyLinesRaw;
 

@@ -244,13 +244,13 @@ const STATUS_CFG: Record<FindingDisplayStatus, { dot: string; chip: string; labe
 // ---- Helpers ----
 
 function fmt(iso?: string) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   return new Date(iso).toLocaleString('en-US', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   });
 }
 function shortDate(iso?: string) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 /** A date cell in the By resource table: First seen, and Last seen on the Activity tab. */
@@ -366,7 +366,7 @@ function PropertyCard({ label, value, mono, copyLabel }: { label: string; value?
       <p className="label-grid truncate">{label}</p>
       <div className="mt-1 flex min-w-0 items-center gap-1">
         <p className={cn('min-w-0 flex-1 break-words text-sm font-medium text-ink', mono && 'font-mono text-xs')}>
-          {value || '—'}
+          {value || '-'}
         </p>
         {copyLabel && value && <CopyButton value={value} label={copyLabel} />}
       </div>

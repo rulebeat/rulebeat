@@ -106,7 +106,7 @@ function EntryRow({ entry }: { entry: AuditEntry }) {
                 <div key={key} className="contents">
                   <dt className="text-xs text-ink-2">{key}</dt>
                   <dd className="break-all font-mono text-xs text-ink">
-                    {Array.isArray(value) ? (value.length ? value.join(', ') : '—') : String(value)}
+                    {Array.isArray(value) ? (value.length ? value.join(', ') : '-') : String(value)}
                   </dd>
                 </div>
               ))}

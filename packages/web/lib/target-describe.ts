@@ -9,7 +9,7 @@ export function describeTarget(
   ruleById: Map<string, Rule>,
 ): string {
   if (target.targetType === 'all') return 'All categories';
-  if (target.targetValues.length === 0) return '—';
+  if (target.targetValues.length === 0) return '-';
   if (target.targetType === 'categories') return target.targetValues.map(v => categoryById.get(v)?.label ?? v).join(', ');
   if (target.targetType === 'tags') return target.targetValues.join(', ');
   const names = target.targetValues.map(v => ruleById.get(v)?.name ?? v);

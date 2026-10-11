@@ -45,7 +45,7 @@ export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Pro
       <div data-widget-content className="grid content-start grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-5">
         <p
           className="col-span-full text-xs text-ink-muted"
-          title="Each subscription's total reflects every rule enabled for the category — it isn't narrowed to that subscription's own resources, so subscriptions with fewer applicable resource types will always show more headroom than they really have."
+          title="Each subscription's total reflects every rule enabled for the category. It isn't narrowed to that subscription's own resources, so subscriptions with fewer applicable resource types will always show more headroom than they really have."
         >
           Totals are per category, not per subscription
         </p>
