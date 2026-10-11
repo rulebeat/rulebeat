@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-11
+
 ### Added
 
 - Rules now have a Kind, Problem or Advisory. An Advisory rule reports something worth knowing that is not a misconfiguration to fix now, such as a VM size Azure is retiring. Choose the kind in the rule form of a custom rule. A built-in rule's kind is set by RuleBeat as part of the rule's version and cannot be changed; duplicate the rule to run it as a different kind. Its findings are tracked with the same age, resolution and suppressions as any finding, appear on a new Advisories tab on the Scans page, and are left out of posture, the Results tiles and the dashboard counts. The Rules tab and the Library show each rule's kind. Switching a rule's kind moves its existing findings with it and keeps their age and suppressions. Log Analytics rules stay Activity.
@@ -371,7 +373,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/rulebeat/rulebeat/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rulebeat/rulebeat/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/rulebeat/rulebeat/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/rulebeat/rulebeat/compare/v0.6.0...v0.7.0
