@@ -1,17 +1,17 @@
 name: Publish image
 
-# Promotes an already-built, already-CI-verified image to :latest/:<version> — it never builds
+# Promotes an already-built, already-CI-verified image to :latest/:<version>. It never builds
 # from source itself. ci.yml is the one place a Docker image is ever built: on every push to
 # main, after typecheck, unit tests, the production build, and the e2e suite all pass, it pushes
 # ghcr.io/<owner>/rulebeat:sha-<commit>. This workflow's only job, on a version tag, is to find
 # that commit's image, confirm CI actually passed for that exact commit, and retag it with
-# `docker buildx imagetools create` — a manifest copy, not a rebuild. That's what makes a released
+# `docker buildx imagetools create`: a manifest copy, not a rebuild. That's what makes a released
 # version provably the commit CI verified, rather than a second build done at tag time that could
 # differ from what was tested.
 #
 # On a real version tag, the first thing this workflow does is refuse to promote anything if the
 # tag disagrees with what package.json/CHANGELOG.md themselves say
-# (scripts/verify-release-version.mjs) — even a tag pushed entirely by hand, with no release
+# (scripts/verify-release-version.mjs). Even a tag pushed entirely by hand, with no release
 # process involved, cannot result in a published image whose version claims disagree with what
 # the running app itself reports via Diagnostics -> System (packages/web/lib/version.ts).
 on:
@@ -37,12 +37,12 @@ jobs:
       contents: read
       packages: write
       actions: read
-      # For the cosign "Verify signature" step below — cosign's keyless verify flow also uses
+      # For the cosign "Verify signature" step below: cosign's keyless verify flow also uses
       # OIDC even though this job never signs anything itself.
       id-token: write
 
     steps:
-      # Only a real version tag has a version to verify — workflow_dispatch can also run this
+      # Only a real version tag has a version to verify: workflow_dispatch can also run this
       # workflow from a plain branch (to republish :latest on demand), which "Determine tags"
       # below already treats as version-tag-less by checking the same ref_type.
       - name: Checkout
@@ -85,15 +85,15 @@ jobs:
             fi
             CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
             if [[ "$CONCLUSION" == "success" ]]; then
-              echo "CI verified for $SHA — promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
+              echo "CI verified for $SHA: promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
               exit 0
             fi
-            echo "::error::CI run for $SHA completed with conclusion '$CONCLUSION' — refusing to publish an unverified image."
+            echo "::error::CI run for $SHA completed with conclusion '$CONCLUSION': refusing to publish an unverified image."
             exit 1
           done
-          echo "::error::Timed out waiting for CI to finish on $SHA — refusing to publish an unverified image."
+          echo "::error::Timed out waiting for CI to finish on $SHA: refusing to publish an unverified image."
           exit 1
-          echo "CI verified for $SHA — promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
+          echo "CI verified for $SHA: promoting ${{ env.IMAGE_NAME }}:sha-${SHA}"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -130,7 +130,7 @@ jobs:
 
       # Proves, on every single promotion, that ci.yml's cosign signature really did travel with
       # the retagged image, rather than resting on that as an unverified assumption. Verifies
-      # every tag just promoted, not only one — `imagetools create` never
+      # every tag just promoted, not only one: `imagetools create` never
       # rebuilds, so each of them should resolve to the exact digest ci.yml signed; cosign resolves
       # a tag reference to its current digest itself via the registry, the same way `docker pull`
       # would, so this needs no separate digest-extraction step of its own.

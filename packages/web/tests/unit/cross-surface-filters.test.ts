@@ -5,14 +5,14 @@
  * parseWidgetFiltersFromSearchParams) round-trips.
  *
  * Three real, independent implementations are exercised directly (never re-implemented here):
- *  - await queryActiveFindings() (lib/dashboard-data.ts) — what a dashboard widget counts
- *  - matchesExplorerFilters() (lib/explorer-filters.ts) — what the Results tab shows, extracted
+ *  - await queryActiveFindings() (lib/dashboard-data.ts): what a dashboard widget counts
+ *  - matchesExplorerFilters() (lib/explorer-filters.ts): what the Results tab shows, extracted
  *    this session from findings-explorer-client.tsx's inline `passesGlobalFilters` closure so it's
  *    unit-testable outside a React render (see that file's `passesGlobalFilters` for the wiring)
- *  - buildScansHref() (lib/scans-link.ts) — the URL a widget click-through actually generates
+ *  - buildScansHref() (lib/scans-link.ts): the URL a widget click-through actually generates
  *
  * The one piece of glue that can't be imported is how scans/page.tsx's searchParams and
- * findings-explorer-client.tsx's useState initializers turn a URL back into filter state — that's
+ * findings-explorer-client.tsx's useState initializers turn a URL back into filter state: that's
  * exactly the spot docs/engineering/conventions/ui.md's URL-sync lesson flags as fragile.
  * `toExplorerState()` below mirrors that plumbing by hand; keep it in sync if
  * either file's param handling changes.
@@ -73,7 +73,7 @@ function finding(overrides: Partial<Finding> & { ruleId: string; category: strin
 // Mirrors findings-explorer-client.tsx's useState initializers reading `initialFilters` (itself
 // built by scans/page.tsx from searchParams) plus its default WidgetFilters -> component-state
 // mapping. `await queryActiveFindings()` always scopes to the DB's persisted status:'active', which is
-// exactly the Results tab's default status:'open' (active + new, never fixed) — the two are the
+// exactly the Results tab's default status:'open' (active + new, never fixed). The two are the
 // same underlying set by construction, not by coincidence, so 'open' is the only status tested here.
 async function toExplorerState(filters: WidgetFilters): Promise<ExplorerFilterState> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
@@ -115,7 +115,7 @@ beforeEach(async () => {
   await resetDb();
   // await clearRules(), not `await saveRules([...loadRules(), ...])`: this file's beforeEach re-inserts the
   // same fixed rule ids (RULE_A/B/C) on every test, and await resetDb() deliberately leaves the `rules`
-  // table alone (see tests/helpers/db.ts) — appending would collide on the 2nd test in this file.
+  // table alone (see tests/helpers/db.ts): appending would collide on the 2nd test in this file.
   await clearRules();
   await saveRules([
     testRule(RULE_A, 'security', ['baseline']),
@@ -145,7 +145,7 @@ beforeEach(async () => {
     findings: [critical, high, medium], finishedAt: new Date(Date.now() - 1 * 86_400_000).toISOString(),
   });
 
-  // Permanently suppress `high` — every agreement test below must therefore never see fpHigh.
+  // Permanently suppress `high`: every agreement test below must therefore never see fpHigh.
   await saveSuppressions([{ id: crypto.randomUUID(), fingerprint: high.fingerprint, resourceId: high.resourceId, reason: 'test', suppressedAt: '2026-01-01T00:00:00.000Z' } satisfies Suppression]);
 });
 
@@ -258,8 +258,8 @@ describe('date window never changes which findings count as "open"', () => {
 });
 
 describe('buildScansHref only ever emits params scans/page.tsx actually parses', () => {
-  // scans/page.tsx's searchParams destructure (see the type on ScansPage) is the full contract —
-  // this list is a deliberate hand-copy of it, kept next to the assertion that depends on it.
+  // scans/page.tsx's searchParams destructure (see the type on ScansPage) is the full contract.
+  // This list is a deliberate hand-copy of it, kept next to the assertion that depends on it.
   const KNOWN_PARAMS = new Set([
     'category', 'tab', 'scan', 'run', 'compare', 'compareCategory', 'status', 'ruleId',
     'severity', 'subscription', 'rg', 'location', 'tags', 'window', 'from', 'to', 'q',
@@ -282,7 +282,7 @@ describe('buildScansHref only ever emits params scans/page.tsx actually parses',
 describe('widget click-throughs and multi-category dashboard filters (RB-QA-020, fixed)', () => {
   it('a dashboard filtered to two categories still scopes the click-through to those categories', async () => {
     // Reproduces components/dashboard/widgets/{posture-ring,severity-breakdown,stat-card,
-    // top-resources}-widget.tsx, none of which pass a `category` override to buildScansHref — see
+    // top-resources}-widget.tsx, none of which pass a `category` override to buildScansHref: see
     // grep of every buildScansHref call site. dashboard-filter-bar.tsx lets a user multi-select
     // categories, so `merged.categories` can genuinely have length > 1 reaching these widgets.
     const filters = widgetFilters({ categories: ['security', 'cost'] });

@@ -39,11 +39,11 @@ RUN npm run build --workspace=packages/web
 
 # ── runner ──────────────────────────────────────────────────────────────────
 # Next's `output: 'standalone'` (packages/web/next.config.ts) traces the server's actual runtime
-# dependency graph and emits a self-contained node_modules — @rulebeat/core included, inlined
-# straight into the compiled server chunks since it isn't in serverExternalPackages — so the
+# dependency graph and emits a self-contained node_modules (@rulebeat/core included, inlined
+# straight into the compiled server chunks since it isn't in serverExternalPackages), so the
 # runner no longer needs the full workspace node_modules tree or a compiler toolchain to rebuild
 # native bindings; better-sqlite3's prebuilt binary comes along as a real copied package because
-# it *is* listed there. No build tools needed at runtime — only the compiled `.node` binary is
+# it *is* listed there. No build tools needed at runtime: only the compiled `.node` binary is
 # ever loaded, never rebuilt.
 FROM base AS runner
 
@@ -54,11 +54,11 @@ COPY --from=builder /app/packages/web/.next/standalone ./
 
 # lib/db/migrate.ts does dynamic readdirSync/readFileSync over the data directory (seeding packs,
 # legacy-JSON migration); Turbopack's file tracer can't prove those are safe and falls back to
-# tracing — and physically copying — this package's entire source tree instead of just what
+# tracing (and physically copying) this package's entire source tree instead of just what
 # server.js actually requires, including whatever happened to be in the *builder's own* data/
 # directory (a live SQLite db, if one existed there) and dev-only trees no image should ship.
 # None of it is on the runtime require graph (confirmed by inspecting the compiled chunks and
-# their .nft.json manifests during the P2-10 build verification) — the compiled server chunks
+# their .nft.json manifests during the P2-10 build verification). The compiled server chunks
 # already contain everything the app executes. Delete it, then restore only what's genuinely
 # needed at runtime: the committed pack seed files, static assets, and public files.
 RUN rm -rf packages/web/data packages/web/tests packages/web/scripts packages/web/test-results \
@@ -80,12 +80,12 @@ RUN printf '#!/bin/sh\nexec node /app/packages/web/bin/rulebeat-demo.mjs "$@"\n'
 #
 # Two directories must be writable by it, not just one: `data` holds the SQLite file and its
 # WAL/SHM siblings, and `.next` is written to at runtime (Next.js keeps a runtime cache under
-# .next/cache). Everything else — node_modules included — only needs read, which it already has,
+# .next/cache). Everything else (node_modules included) only needs read, which it already has,
 # so they are deliberately left alone rather than chowned: `chown -R` on node_modules would
 # duplicate the whole layer and bloat the image for no benefit.
 #
 # Note for bind mounts: Docker preserves this ownership when creating a *named* volume (what
-# docker-compose.yml uses), but a bind-mounted host directory keeps the host's ownership — mount
+# docker-compose.yml uses), but a bind-mounted host directory keeps the host's ownership: mount
 # one and you must chown it to uid 1000 yourself.
 RUN chown -R node:node /app/packages/web/data /app/packages/web/.next
 USER node
@@ -101,7 +101,7 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 # Node's own global `fetch` (stable since Node 18, and this image is node:22) rather than
-# installing curl/wget — neither is present in this stage today, and P2-10 already plans to slim
+# installing curl/wget: neither is present in this stage today, and P2-10 already plans to slim
 # this image further, so adding a package here just to remove it later would be wasted churn.
 # /api/health is unauthenticated by design (see proxy.ts) and does no DB/Azure work, so a
 # transient Azure or disk hiccup never restart-loops a container that isn't actually broken.

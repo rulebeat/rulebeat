@@ -16,7 +16,7 @@ const RECOVERY_ERROR_MESSAGE =
  * normally. A fresh heartbeat now means "someone else's, and still going": left alone.
  *
  * Whatever findings that run had already durably recorded (via `recordCategoryProgress()`,
- * category by category, before the crash) are preserved rather than discarded — and if the run was
+ * category by category, before the crash) are preserved rather than discarded, and if the run was
  * schedule-triggered and has any, `notifyStatus` is set to `'pending'` in the same write, handing
  * those findings to pass 2 exactly as if a live run had crashed between finishing and dispatching.
  */
@@ -47,7 +47,7 @@ export async function recoverInterruptedRuns(now: Date = new Date()): Promise<nu
 /**
  * Pass 2 of spec 025's recovery, also run at startup and on every tick. A row lands at
  * `notifyStatus: 'pending'` from either a live run that crashed between finishing and dispatching,
- * or from pass 1 recovering a stale `'running'` row above — this pass doesn't need to know which,
+ * or from pass 1 recovering a stale `'running'` row above. This pass doesn't need to know which,
  * since both leave the same durable shape: a run row with fingerprints and no confirmed dispatch.
  * A `'sending'` row whose claim is older than STALE_AFTER_MS is the third shape, a process that
  * died mid-dispatch, and is taken over the same way; a fresh `'sending'` claim belongs to a live
@@ -56,8 +56,8 @@ export async function recoverInterruptedRuns(now: Date = new Date()): Promise<nu
  * Every row goes through `dispatchAndMarkSent()`, which claims it first, so two processes running
  * this pass at once over the same rows send each batch once: only the claim winner counts here.
  *
- * Fingerprints are resolved back to finding rows regardless of current status (active or fixed) —
- * a since-fixed finding was still real and new when the run detected it. A fingerprint whose rule
+ * Fingerprints are resolved back to finding rows regardless of current status (active or fixed).
+ * A since-fixed finding was still real and new when the run detected it. A fingerprint whose rule
  * was since hard-deleted resolves to nothing; `dispatchAndMarkSent()` still marks the run `'sent'`
  * rather than dispatching an empty batch, so a startup with nothing left to notify about doesn't
  * loop on the same row forever.

@@ -9,7 +9,7 @@ import { deleteLinksForSchedule } from './schedule-notification-channels';
 export type ScheduleTargetType = 'all' | 'categories' | 'tags' | 'rules';
 const SCHEDULE_TARGET_TYPES: readonly ScheduleTargetType[] = ['all', 'categories', 'tags', 'rules'];
 
-/** Narrows an untrusted string to `ScheduleTargetType` — the one place that knows the type's full
+/** Narrows an untrusted string to `ScheduleTargetType`. The one place that knows the type's full
  *  set of values at runtime, so a route validating a request body checks against this instead of
  *  hand-copying the union as a second list that can silently drift from the type. */
 export function isScheduleTargetType(value: string): value is ScheduleTargetType {
@@ -28,7 +28,7 @@ export interface Schedule {
   interval: number;
   daysOfWeek: number[] | null; // 0=Sun..6=Sat, weekly only
   dayOfMonth: number | null;   // 1-31, monthly only
-  startAt: string;             // ISO datetime — anchors date, time-of-day, and interval alignment
+  startAt: string;             // ISO datetime: anchors date, time-of-day, and interval alignment
   endType: ScheduleEndType;
   endDate: string | null;      // ISO date
   enabled: boolean;
@@ -88,7 +88,7 @@ async function validateTarget(targetType: ScheduleTargetType, targetValues: stri
     const unknown = targetValues.find(v => !known.has(v));
     if (unknown) return `Unknown rule: "${unknown}"`;
   }
-  // 'tags' are free-form — any string is acceptable, rules simply won't match if the tag doesn't exist
+  // 'tags' are free-form: any string is acceptable, rules simply won't match if the tag doesn't exist
   return null;
 }
 
@@ -121,7 +121,7 @@ function validateRecurrence(data: {
   return null;
 }
 
-// ── Recurrence engine — pure date math, no cron ────────────────────────────────
+// ── Recurrence engine: pure date math, no cron ────────────────────────────────
 
 function stripTime(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -188,7 +188,7 @@ export function computeNextRun(s: Pick<Schedule, 'recurrenceType' | 'interval' |
     const monthsSinceStart = (from.getFullYear() - start.getFullYear()) * 12 + (from.getMonth() - start.getMonth());
     let n = Math.floor(Math.max(0, monthsSinceStart) / s.interval);
     const candidateAt = (idx: number) => {
-      // Resolve year/month by integer arithmetic first — never call Date.setMonth() on a Date that
+      // Resolve year/month by integer arithmetic first. Never call Date.setMonth() on a Date that
       // still carries a day (e.g. 31) the target month may not have, which rolls the month forward.
       const totalMonths = startMonthIndex + idx * s.interval;
       const year = Math.floor(totalMonths / 12);
@@ -226,7 +226,7 @@ export interface ScheduleInput {
   enabled?: boolean;
 }
 
-/** Raw, untrusted request body shape for POST/PUT — every field optional until validated. */
+/** Raw, untrusted request body shape for POST/PUT. Every field optional until validated. */
 export interface ScheduleBody {
   name?: string;
   targetType?: ScheduleTargetType;

@@ -91,7 +91,7 @@ describe('activityEmptyState', () => {
   it('never uses an em dash', () => {
     for (const rs of [[], [logs({})], [logs({ lastRunStatus: 'success', lastRunAt: 'x' })], [logs({ lastRunStatus: 'failed', lastRunAt: 'x' })]]) {
       const s = activityEmptyState(rs);
-      expect(`${s.title} ${s.hint}`).not.toContain('—');
+      expect(`${s.title} ${s.hint}`).not.toContain('\u2014');
     }
   });
 });

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
  *
  * The previous version wrapped every <table> in its own scroll container. That
  * made the table decide its own scrolling, which is why callers that needed a
- * different height reached past it and hand-rolled their own <table> instead —
+ * different height reached past it and hand-rolled their own <table> instead:
  * seven of them, each with a different header treatment and a different
  * arbitrary max-h.
  *
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
  *     correct, and neither needs a magic number like max-h-[65vh].
  *
  *   · Sticky headers work, because the scroll container is a known ancestor.
- *     `sticky` is applied per <th>, never on the <tr> — a <tr> does not
+ *     `sticky` is applied per <th>, never on the <tr>. A <tr> does not
  *     establish a containing block for it and the header slides away.
  * ─────────────────────────────────────────────────────────────────────────── */
 
@@ -29,14 +29,14 @@ import { cn } from "@/lib/utils"
  *  one leaves the other at `auto`, which lets a table scroll in a direction it
  *  was never meant to.
  *
- *  DEFAULT — the region scrolls sideways only and grows to the full height of its
+ *  DEFAULT: the region scrolls sideways only and grows to the full height of its
  *  rows. Vertical scrolling belongs to the app's single scroll region, so a long
  *  table is read by scrolling the page, the way a long page is read anywhere else.
  *  This is what replaced the assorted `max-h-[65vh]` caps: a table cut off at an
  *  arbitrary fraction of the screen puts a second scrollbar inside the first, and
  *  the number was never right on any particular screen.
  *
- *  `fill` — the region takes the height its parent gives it and scrolls inside.
+ *  `fill`: the region takes the height its parent gives it and scrolls inside.
  *  Only for a table placed in a parent with a real height (a flex or grid child
  *  with `min-h-0`), and it is the only mode where a sticky header can work, since
  *  sticky needs a scroll container that actually scrolls. */
@@ -50,7 +50,7 @@ function TableScroll({
       data-slot="table-scroll"
       data-fill={fill ? "" : undefined}
       // A region with overflow must itself be reachable by keyboard (WCAG 2.1.1 /
-      // axe "scrollable-region-focusable") — otherwise a keyboard-only user can
+      // axe "scrollable-region-focusable"), otherwise a keyboard-only user can
       // never scroll a table wider or taller than its container.
       tabIndex={0}
       className={cn(
@@ -78,7 +78,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
  *  cells rather than the row for the reason in the block comment above.
  *
  *  It only does anything inside `<TableScroll fill>`. In the default mode the
- *  wrapper never scrolls vertically, so the header simply stays where it is —
+ *  wrapper never scrolls vertically, so the header simply stays where it is:
  *  harmless, but do not expect it to follow you down the page. */
 function TableHeader({
   className,
@@ -117,7 +117,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
 }
 
 /** Rows are separated by the soft `border` token, so a long table reads as one
- *  block instead of a ladder. The table has no frame at all — it sits on the card
+ *  block instead of a ladder. The table has no frame at all. It sits on the card
  *  that holds it. The only line carrying real weight is the one under the header. */
 function TableRow({
   className,
@@ -197,7 +197,7 @@ function TableCaption({ className, ...props }: React.ComponentProps<"caption">) 
 }
 
 /** One empty state for every table, so "nothing here yet" looks the same on every
- *  screen. Say WHY it is empty — a filter that matches nothing and a table that has
+ *  screen. Say WHY it is empty. A filter that matches nothing and a table that has
  *  never had data are different situations and must not read identically. */
 function TableEmpty({
   colSpan,

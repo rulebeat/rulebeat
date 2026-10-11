@@ -1,7 +1,7 @@
 /**
  * The "reuse the Azure connection's app registration" path on PUT /api/settings/sign-in
  * (`reuseAzureConnection: true`). The server copies the already-encrypted Azure connection
- * credential straight into the SSO provider row — the client secret never travels to the browser
+ * credential straight into the SSO provider row. The client secret never travels to the browser
  * for this path, unlike manual entry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

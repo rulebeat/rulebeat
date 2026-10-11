@@ -4,9 +4,9 @@ import { and, count, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { many, one, run } from './exec';
 
 /**
- * Local username/password credentials — the break-glass path that exists so RuleBeat can never
+ * Local username/password credentials: the break-glass path that exists so RuleBeat can never
  * be a self-hosted install with literally no way in. Never returns a password hash to anything
- * but `lib/password.ts` — same discipline as `AzureCredentialSummary` never carrying a secret.
+ * but `lib/password.ts`, same discipline as `AzureCredentialSummary` never carrying a secret.
  */
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -41,7 +41,7 @@ export async function getLocalAccount(userId: string): Promise<LocalAccount | nu
   return row ? rowToAccount(row) : null;
 }
 
-/** Which users currently have a local password — for the Users table's status badge. */
+/** Which users currently have a local password, for the Users table's status badge. */
 export async function listUserIdsWithPassword(): Promise<string[]> {
   const rows = await many(db.select({ userId: localAccounts.userId }).from(localAccounts));
   return rows.map(r => r.userId);
@@ -53,8 +53,8 @@ export function isLockedOut(account: Pick<LocalAccount, 'lockedUntil'>): boolean
 }
 
 /**
- * Sets (or replaces) a user's local password. Always clears any lockout/failed-attempt state —
- * a fresh password is a fresh start, and an admin resetting a locked-out user's password is the
+ * Sets (or replaces) a user's local password. Always clears any lockout/failed-attempt state.
+ * A fresh password is a fresh start, and an admin resetting a locked-out user's password is the
  * normal way that lockout gets lifted early.
  */
 export async function setPassword(userId: string, passwordHash: string, opts: { mustChangePassword: boolean }): Promise<void> {
@@ -83,14 +83,14 @@ export async function setPassword(userId: string, passwordHash: string, opts: { 
   }));
 }
 
-/** Removes a user's local password entirely — they can only reach RuleBeat through SSO. */
+/** Removes a user's local password entirely. They can only reach RuleBeat through SSO. */
 export async function clearPassword(userId: string): Promise<void> {
   await run(db.delete(localAccounts).where(eq(localAccounts.userId, userId)));
 }
 
 /**
  * Records a failed sign-in attempt, locking the account once `MAX_FAILED_ATTEMPTS` is reached.
- * No-op if the user has no local account at all — the caller (`authorize()`) still burns a dummy
+ * No-op if the user has no local account at all. The caller (`authorize()`) still burns a dummy
  * password verification in that case, so timing doesn't reveal which emails exist.
  */
 export async function recordFailedAttempt(userId: string): Promise<void> {
@@ -106,7 +106,7 @@ export async function recordFailedAttempt(userId: string): Promise<void> {
     .where(eq(localAccounts.userId, userId)));
 }
 
-/** Resets the failure counter and any lockout — called after a successful sign-in. */
+/** Resets the failure counter and any lockout: called after a successful sign-in. */
 export async function clearFailedAttempts(userId: string): Promise<void> {
   await run(db.update(localAccounts).set({ failedAttempts: 0, lockedUntil: null })
     .where(eq(localAccounts.userId, userId)));
@@ -120,7 +120,7 @@ export async function clearFailedAttempts(userId: string): Promise<void> {
  * `MAX_FAILED_ATTEMPTS` wrong guesses through before the lock actually engages. One conditional
  * `UPDATE` closes that: it increments `failed_attempts` (and sets `locked_until` once the new
  * count reaches the threshold) in a single statement, and only matches a row that isn't currently
- * locked — so the claim and the lock check are the same atomic operation, on both SQLite and
+ * locked, so the claim and the lock check are the same atomic operation, on both SQLite and
  * Postgres. `RETURNING` (via the existing `many()` seam, same pattern as `claimDueSchedule()` in
  * `schedules.ts`) is how the caller learns whether its claim matched: no match means the account
  * was already locked by a previous attempt, reported as `'locked'` with no separate read.
@@ -131,7 +131,7 @@ export async function clearFailedAttempts(userId: string): Promise<void> {
  * columns, so a correct 5th attempt still signs in. Only a *failed* verification leaves the
  * claim's increment (and any lock it set) standing. The in-flight cap this claim enforces is
  * about bounding concurrent attempts against one account, not about perfectly attributing a lock
- * to the exact attempt that caused it — the pre-existing design already accepted that distinction
+ * to the exact attempt that caused it. The pre-existing design already accepted that distinction
  * (see the lockout-flood logging note on `authorizeLocalAccount`).
  */
 export async function claimFailedAttempt(userId: string): Promise<'claimed' | 'locked'> {
@@ -166,7 +166,7 @@ export async function refundFailedAttempt(userId: string): Promise<void> {
 }
 
 /**
- * How many admins currently have a local password set — the number that must stay above zero
+ * How many admins currently have a local password set. The number that must stay above zero
  * before local sign-in can be restricted, or an install could lock itself out of its own tool.
  */
 export async function countAdminsWithPassword(): Promise<number> {

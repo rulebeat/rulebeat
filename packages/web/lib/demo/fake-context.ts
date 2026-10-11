@@ -8,7 +8,7 @@ import type { RuleFixture } from './rule-fixture';
 import { rowsForRuleOnDay } from './violation-engine';
 
 // Built on the same `fakeTenantContext()` the unit test suite uses (tests/helpers/fake-azure.ts),
-// not a bespoke context shape — anything wired correctly for the test suite is already proven
+// not a bespoke context shape: anything wired correctly for the test suite is already proven
 // compatible with runRules()/runGraphRules(), and its `.logs` array is how a per-rule query
 // failure that either engine reports as an outcome (rather than throwing) gets surfaced (see
 // assertNoQueryFailures).
@@ -18,8 +18,8 @@ const DEMO_TENANT_ID = '11111111-2222-3333-4444-555555555555';
  *  finding on any resource, on any simulated day. Without this, every rule ends up with at least
  *  one violator somewhere across 510 resources purely from `violation-engine.ts`'s per-resource
  *  selection odds (the chance of a rule landing zero violators across hundreds of independent
- *  rolls is negligible), which makes the tenant-wide "Overall Posture" stat — a rule only
- *  counts as passing if it has *no* active finding anywhere — pin at 0% regardless of how healthy
+ *  rolls is negligible), which makes the tenant-wide "Overall Posture" stat (a rule only
+ *  counts as passing if it has *no* active finding anywhere) pin at 0% regardless of how healthy
  *  the estate otherwise looks. Deciding cleanliness per rule (not per resource) is what actually
  *  produces a "well-run-but-imperfect" posture percentage instead of a flat zero. */
 const CLEAN_RULE_RATE = 0.6;
@@ -32,7 +32,7 @@ function candidatesFor(fixture: RuleFixture, estate: Estate): EstateResource[] {
 }
 
 // Matches the one identity-enrichment query shape runner.ts ever issues (packages/core/src/engine
-// /runner.ts) — a fixed `resources | where id in~ (...) | project id, type, location,
+// /runner.ts). A fixed `resources | where id in~ (...) | project id, type, location,
 // resourceGroup, subscriptionId` follow-up for rows missing any of those four columns.
 const ENRICHMENT_RE =
   /^resources\s*\n\|\s*where id in~ \(([\s\S]*?)\)\s*\n\|\s*project id, type, location, resourceGroup, subscriptionId$/i;
@@ -61,7 +61,7 @@ export interface CreateFakeContextOptions {
   unknownQuery?: (what: string) => Error;
 }
 
-/** One fresh context per simulated day — cheap (a handful of closures), and it means `.logs` only
+/** One fresh context per simulated day: cheap (a handful of closures), and it means `.logs` only
  *  ever holds that day's activity, so `assertNoQueryFailures` doesn't need to track a read offset. */
 export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantContext {
   const { estate, rules, fixturesByRuleId, identityApps, day, totalDays } = opts;
@@ -85,7 +85,7 @@ export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantCon
       const enrichment = handleEnrichmentQuery(trimmed, estate);
       if (enrichment) return enrichment;
 
-      // Every enabled rule is enabled *because* it has a fixture (see replay.ts) — reaching here
+      // Every enabled rule is enabled *because* it has a fixture (see replay.ts): reaching here
       // means a fixture's stored rawKql no longer matches the seeded rule's actual rawKql, which
       // would otherwise silently render as "this rule found nothing" instead of a build error.
       throw unknownQuery(`no fixture matched this rule's KQL exactly:\n${kql}`);
@@ -98,7 +98,7 @@ export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantCon
 }
 
 /** `runRules()` catches and logs a per-rule query failure rather than throwing (so one bad rule
- *  doesn't abort a real scan) — call this after each simulated day's run so the same failure aborts
+ *  doesn't abort a real scan): call this after each simulated day's run so the same failure aborts
  *  *generation*, where silence would otherwise just make one category quietly sparse. */
 export function assertNoQueryFailures(ctx: FakeTenantContext, day: number): void {
   const failures = ctx.logs.filter(l => l.includes('query failed') || l.includes('Graph access failed'));

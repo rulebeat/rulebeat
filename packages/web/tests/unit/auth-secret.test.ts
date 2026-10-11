@@ -1,5 +1,5 @@
 /**
- * `lib/auth-secret.ts` — the value Auth.js signs/encrypts session JWTs with.
+ * `lib/auth-secret.ts`. The value Auth.js signs/encrypts session JWTs with.
  *
  * `tests/setup.ts` pins `AUTH_SECRET` for every other suite specifically so this generation path
  * never runs during the normal test run and never writes a file. This suite is the one place that
@@ -29,7 +29,7 @@ function withThrowawayDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-/** Writes `contents` to a throwaway file and returns its path — stands in for a mounted secret. */
+/** Writes `contents` to a throwaway file and returns its path: stands in for a mounted secret. */
 function secretFile(dir: string, contents: string): string {
   const path = join(dir, 'auth_secret_mounted');
   writeFileSync(path, contents);
@@ -89,11 +89,11 @@ describe('getAuthSecret', () => {
   });
 
   // The genuine race this file's `flag: 'wx'` + EEXIST fallback exists for is two real OS
-  // processes hitting first boot at once — not representable in a single synchronous test. What's
+  // processes hitting first boot at once, not representable in a single synchronous test. What's
   // covered above (a file that already exists is read, never overwritten) is the same guarantee
   // observed from the other side of that race.
 
-  // spec 023: AUTH_SECRET_FILE — a mounted-secret path, same precedence as AZURE_CLIENT_SECRET_FILE
+  // spec 023: AUTH_SECRET_FILE. A mounted-secret path, same precedence as AZURE_CLIENT_SECRET_FILE
   // in lib/azure-credential.ts.
   it('AUTH_SECRET_FILE wins over a simultaneously-set AUTH_SECRET', async () => {
     withThrowawayDir(dir => {
@@ -104,7 +104,7 @@ describe('getAuthSecret', () => {
     });
   });
 
-  it('AUTH_SECRET_FILE alone is read, trimmed, and used — never falls through to generation', async () => {
+  it('AUTH_SECRET_FILE alone is read, trimmed, and used: never falls through to generation', async () => {
     withThrowawayDir(dir => {
       const path = secretFile(dir, '  from-the-mounted-file  \n');
       process.env.AUTH_SECRET_FILE = path;

@@ -1,7 +1,7 @@
 /**
  * The authorization model. Pure data + one predicate, no DB or Node imports, so the same map
- * drives both the server guard (`requireRole` in lib/api-auth.ts) and the UI's button gating —
- * there is no second copy of "who may do what" to keep in sync.
+ * drives both the server guard (`requireRole` in lib/api-auth.ts) and the UI's button gating.
+ * There is no second copy of "who may do what" to keep in sync.
  *
  * Routes name the *action* they perform, never a role rank. Re-deciding that, say, editors may
  * manage categories is then one edit here rather than a sweep through route files.
@@ -49,7 +49,7 @@ const ADMIN_ACTIONS = [
   'notifications:manage',
 ] as const;
 
-// account:self sits outside the viewer/editor/admin ladder — every role can change their own
+// account:self sits outside the viewer/editor/admin ladder. Every role can change their own
 // password, so it is asserted directly in `can()` rather than added to all three arrays above.
 export const ALL_ACTIONS = [...ADMIN_ACTIONS, 'account:self'] as const;
 
@@ -64,7 +64,7 @@ const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
 };
 
 export function can(role: Role, action: Action): boolean {
-  // Every real role may manage their own password — it sits outside the viewer/editor/admin
+  // Every real role may manage their own password. It sits outside the viewer/editor/admin
   // ladder rather than being duplicated into all three action arrays above.
   if (action === 'account:self') return isRole(role);
   return ROLE_ACTIONS[role]?.has(action) ?? false;

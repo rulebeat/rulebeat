@@ -42,7 +42,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 };
 const ICON_NAMES = Object.keys(ICON_MAP);
 
-// Curated quick picks. Deliberately excludes pure "alarm" red — that hue is reserved for
+// Curated quick picks. Deliberately excludes pure "alarm" red. That hue is reserved for
 // severity/destructive elsewhere in the product, so a category shouldn't default to or be
 // nudged toward it. The native colour input below still lets a user pick literally anything,
 // including red, if that's genuinely what they want.
@@ -78,7 +78,7 @@ function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (c: s
           style={{ backgroundColor: c }}
         />
       ))}
-      {/* Any colour, not just the curated set above — a category's colour is a label, not a
+      {/* Any colour, not just the curated set above. A category's colour is a label, not a
           measurement, so it's a sanctioned exception to the token-only rule (see CLAUDE.md). */}
       <label
         title={isPreset ? 'Pick a custom colour' : value}
@@ -215,14 +215,14 @@ export function SettingsClient({
   initialCategories: Category[];
   role: Role;
   currentUserId: string;
-  /** Empty unless the viewer is an admin — the server only loads these for `users:manage`. */
+  /** Empty unless the viewer is an admin. The server only loads these for `users:manage`. */
   initialUsers: AppUser[];
   initialUsersWithPassword: string[];
-  /** Null unless the viewer is an admin — the server only loads it for `azure:manage`. */
+  /** Null unless the viewer is an admin. The server only loads it for `azure:manage`. */
   initialAzureStatus: AzureConnectionStatus | null;
-  /** Null unless the viewer is an admin — the server only loads it for `auth:manage`. */
+  /** Null unless the viewer is an admin. The server only loads it for `auth:manage`. */
   initialSignInStatus: SignInStatus | null;
-  /** Null unless the viewer is an admin — the server only loads it for `notifications:manage`. */
+  /** Null unless the viewer is an admin. The server only loads it for `notifications:manage`. */
   initialChannels: NotificationChannelSummary[] | null;
   /** A Demo: the Locked surfaces render with their reason and every control inside disabled. */
   demo?: boolean;
@@ -232,7 +232,7 @@ export function SettingsClient({
   const canManageAzure = can(role, 'azure:manage');
   const canManageAuth = can(role, 'auth:manage');
   const canManageNotifications = can(role, 'notifications:manage');
-  // Derived from what they actually can't do here, not from the role name — a future read-only
+  // Derived from what they actually can't do here, not from the role name. A future read-only
   // role would otherwise land on this page with no explanation of why nothing is clickable.
   const readOnlyHere = !canEditCategories && !canManageUsers;
   const [categories, setCategories] = useState<Category[]>(initialCategories);

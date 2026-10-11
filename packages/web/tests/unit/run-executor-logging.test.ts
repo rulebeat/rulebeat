@@ -1,8 +1,8 @@
 /**
- * Spec 006 — proves await createTenantContext({ runId }) is actually wired at run-executor.ts's one
+ * Spec 006: proves await createTenantContext({ runId }) is actually wired at run-executor.ts's one
  * production call site, not just that the plumbing compiles. '@/lib/azure-credential' is mocked so
  * no real Azure/network call happens (CLAUDE.md: no live Azure calls in tests), but the mock still
- * calls the real createScanLogger() from '@/lib/server-logger' — so a captured console.log line
+ * calls the real createScanLogger() from '@/lib/server-logger', so a captured console.log line
  * proves the runId genuinely flows from await executeTarget() through await createTenantContext() into the
  * logger, not merely that a mock recorded an argument.
  */

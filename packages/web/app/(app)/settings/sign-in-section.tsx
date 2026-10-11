@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 
 /**
- * Settings → Sign-in (B1b). Mirrors `azure-connection-section.tsx` deliberately — same card
- * shape, same locked-by-env branch, same "test before you trust it" posture — because it is the
+ * Settings → Sign-in (B1b). Mirrors `azure-connection-section.tsx` deliberately: same card
+ * shape, same locked-by-env branch, same "test before you trust it" posture, because it is the
  * same kind of screen: deployment configuration that must never appear to work when it doesn't.
  */
 

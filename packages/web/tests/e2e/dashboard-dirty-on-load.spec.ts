@@ -4,7 +4,7 @@ import { signIn } from './helpers';
 
 /**
  * The docs pass found the default dashboard loading with an active "Save changes" button that no
- * one had earned — the capture had to remove it with a DOM edit. Dirty was inferred from
+ * one had earned: the capture had to remove it with a DOM edit. Dirty was inferred from
  * onLayoutChange behind a 300ms suppression window around the fit-to-content pass, and any
  * machine-made position change that landed outside that window read as a person's drag: the
  * mount-time compaction of a stored layout the grid packs differently, overlapping fit passes on
@@ -16,7 +16,7 @@ import { signIn } from './helpers';
  *  - a drag followed by Cancel must stay clean.
  *
  * The first dashboard is stored with a deliberate vertical gap, which mount-time compaction
- * closes — a deterministic machine-made move, unlike racing the 300ms window.
+ * closes: a deterministic machine-made move, unlike racing the 300ms window.
  */
 
 const SAVE_CHANGES = /^Save changes$/;
@@ -99,7 +99,7 @@ test('a drag followed by Cancel leaves no Save changes behind', async ({ page })
   await page.getByRole('button', { name: 'Cancel' }).click();
 
   // Cancel resets the widgets to the saved layout, and the grid reports that reset through the
-  // same layout-change callback as a drag — which is exactly what used to re-mark the dashboard
+  // same layout-change callback as a drag, which is exactly what used to re-mark the dashboard
   // dirty right after cancelling.
   await expect.poll(async () => (await item.boundingBox())!.x, { timeout: 5_000 })
     .toBeLessThan(before.x + 50);

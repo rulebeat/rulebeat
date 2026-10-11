@@ -64,7 +64,7 @@ export function applyUnsuppress(suppressions: Suppression[], outcome: Unsuppress
 
 export interface SuppressionsLoadState {
   suppressions: Suppression[];
-  /** True only when the GET itself failed (non-2xx, bad body, thrown fetch) — never set for a
+  /** True only when the GET itself failed (non-2xx, bad body, thrown fetch), never set for a
    *  genuinely empty 2xx response. Keeping these apart is the whole point: collapsing both into
    *  `[]` is what made a failed load look like "no suppressions" in widget mode. */
   failed: boolean;
@@ -80,7 +80,7 @@ export function applySuppressionsLoad(result: FetchResult<Suppression[]>): Suppr
 
 /** GETs the suppression list for self-fetching callers (the widget-mode explorer, which gets no
  *  `suppressions` prop from a server-rendered page). Named distinctly from lib/suppressions.ts's
- *  server-side `loadSuppressions()` (a direct DB read) — this one is the client's `/api/suppressions`
+ *  server-side `loadSuppressions()` (a direct DB read). This one is the client's `/api/suppressions`
  *  GET, going through fetchJson so a failed request is never confused with a genuinely empty list. */
 export function fetchSuppressionList(): Promise<FetchResult<Suppression[]>> {
   return fetchJson<Suppression[]>('/api/suppressions');

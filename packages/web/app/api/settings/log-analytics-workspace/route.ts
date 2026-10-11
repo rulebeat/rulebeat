@@ -18,7 +18,7 @@ import { AzureNotConfiguredError, getAzureCredential } from '@/lib/azure-credent
  * The default Log Analytics workspace `queryBackend: 'log-analytics'` rules run against (spec 035).
  *
  * Admin-only on every verb, same as the Azure connection route it mirrors. Unlike that route there is
- * no secret to protect here — a workspace query is authorized by the Azure credential already
+ * no secret to protect here: a workspace query is authorized by the Azure credential already
  * configured elsewhere, so this endpoint only ever handles a workspace id.
  */
 

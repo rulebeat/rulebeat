@@ -3,8 +3,8 @@
 import { X } from 'lucide-react';
 import { Dialog, DialogBackdrop, DialogClose, DialogPopup, DialogPortal, DialogTitle, DialogViewport } from '@/components/ui/dialog';
 
-/** Shared right-hand slide-over shell — fixed backdrop + w-80 panel with a header (title + close)
- *  — used by both the "Add Widget" template picker and the per-widget "Configure Widget" form. */
+/** Shared right-hand slide-over shell: fixed backdrop + w-80 panel with a header (title + close),
+ * used by both the "Add Widget" template picker and the per-widget "Configure Widget" form. */
 export function SlideOverPanel({ title, onClose, children, bodyClassName, footer }: {
   title: string;
   onClose: () => void;

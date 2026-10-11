@@ -1,5 +1,5 @@
 /**
- * Spec 020 — both password-mutation routes must enforce the new policy and bump sessionEpoch so
+ * Spec 020: both password-mutation routes must enforce the new policy and bump sessionEpoch so
  * every outstanding token for the affected account goes stale.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

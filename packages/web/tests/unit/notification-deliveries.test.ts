@@ -1,5 +1,5 @@
 /**
- * The history behind notificationChannels' single-value lastNotifiedAt/lastError columns — one row
+ * The history behind notificationChannels' single-value lastNotifiedAt/lastError columns. One row
  * per delivery attempt sequence. Modeled on schedule-runs.ts's prune-after-insert pattern.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,7 +16,7 @@ describe('notification-deliveries repository', () => {
   }
 
   afterEach(async () => {
-    if (channelId) await deleteChannel(channelId); // idempotent — a test may have already deleted it
+    if (channelId) await deleteChannel(channelId); // idempotent. A test may have already deleted it
   });
 
   it('records a delivery and lists history newest-first', async () => {
@@ -31,7 +31,7 @@ describe('notification-deliveries repository', () => {
   });
 
   it('lists newest-first even when two deliveries land the same millisecond occurredAt', async () => {
-    // occurredAt is millisecond-resolution (Date#toISOString), so two rapid inserts can tie — this
+    // occurredAt is millisecond-resolution (Date#toISOString), so two rapid inserts can tie. This
     // freezes the clock to force that tie deterministically instead of hoping real-clock timing
     // reproduces it (see the rowid tiebreak note atop lib/db/notification-deliveries.ts).
     channelId = await makeChannel();
@@ -59,7 +59,7 @@ describe('notification-deliveries repository', () => {
 
     // Rapid successive inserts can land the same millisecond occurredAt; pruning breaks that tie via
     // rowid (lib/db/notification-deliveries.ts), so the cap still discards the oldest-by-insertion-
-    // order rows even then — this test only asserts the count, not which five ids were pruned.
+    // order rows even then: this test only asserts the count, not which five ids were pruned.
     const history = await listDeliveriesForChannel(channelId, 100);
     expect(history).toHaveLength(50);
   });

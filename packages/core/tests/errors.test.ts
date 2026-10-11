@@ -24,7 +24,7 @@ describe('extractAzureErrorMessage()', () => {
     expect(extractAzureErrorMessage(err)).toBe('plain failure');
   });
 
-  it('has no status-code gate — unwraps regardless of statusCode, since this is server-log-only', () => {
+  it('has no status-code gate: unwraps regardless of statusCode, since this is server-log-only', () => {
     const err = Object.assign(new Error('generic wrapper message'), {
       statusCode: 500,
       details: [{ message: 'internal detail' }],

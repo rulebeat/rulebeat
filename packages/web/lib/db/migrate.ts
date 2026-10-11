@@ -36,7 +36,7 @@ import {
  * Everything the app does to a database file on startup, in the order it does it.
  *
  * This was lifted out of `client.ts` unchanged so it can be run against a database other than the
- * live one — which is the only way to test it. `client.ts` still calls these in the same order at
+ * live one, which is the only way to test it. `client.ts` still calls these in the same order at
  * import time, so the product's behaviour is identical; what changed is that the upgrade is now
  * something you can point at a sample file.
  *
@@ -54,7 +54,7 @@ interface RenameOptions {
   /**
    * Rewrite references to `oldId` even when no rule carries it any more.
    *
-   * Only safe when the *new* id is fixed and known to be seeded — the built-in and pack renames. The
+   * Only safe when the *new* id is fixed and known to be seeded: the built-in and pack renames. The
    * legacy-slug renames mint a fresh `crypto.randomUUID()` per run, so rewriting a reference there
    * would swap a stale pointer for a dangling one.
    */
@@ -67,7 +67,7 @@ interface RenameOptions {
  * A finding is identified by `sha256(ruleId::resourceId)`, recomputed from scratch on every scan. So
  * when a rule's id changes and the stored fingerprints are left alone, the next scan derives
  * different ones: existing findings are never matched again (their age and history stranded), the
- * same violations are all reported as brand new, and — worst — **every suppression silently stops
+ * same violations are all reported as brand new, and (worst) **every suppression silently stops
  * suppressing**, because suppressions are keyed on the fingerprint alone. An accepted risk would
  * start alerting again with nothing to indicate why. See RB-QA-013.
  *
@@ -96,12 +96,12 @@ function remapFingerprints(sqlite: Database.Database, oldId: string, newId: stri
     // Each in its own try/catch: `findings.fingerprint` is a primary key, so a row already sitting
     // at the new value (from an interrupted earlier run) must not abort the remaining rewrites.
     let findingMoved = false;
-    try { findingMoved = updateFinding.run(next, storedFingerprint).changes > 0; } catch { /* collision — leave it */ }
-    try { updateEvents.run(next, storedFingerprint); } catch { /* collision — leave it */ }
-    try { updateSuppression.run(next, storedFingerprint); } catch { /* collision — leave it */ }
+    try { findingMoved = updateFinding.run(next, storedFingerprint).changes > 0; } catch { /* collision: leave it */ }
+    try { updateEvents.run(next, storedFingerprint); } catch { /* collision: leave it */ }
+    try { updateSuppression.run(next, storedFingerprint); } catch { /* collision: leave it */ }
     // A finding's rows go where the finding goes, and stay with it when it could not move.
     if (findingMoved) {
-      try { updateRows?.run(next, storedFingerprint); } catch { /* collision — leave it */ }
+      try { updateRows?.run(next, storedFingerprint); } catch { /* collision: leave it */ }
     }
   };
 
@@ -204,7 +204,7 @@ export function openDatabase(dbPath: string): Database.Database {
 }
 
 /**
- * Best-effort `0600` on the db file and its `-wal`/`-shm` sidecars — no-op on Windows, same
+ * Best-effort `0600` on the db file and its `-wal`/`-shm` sidecars: no-op on Windows, same
  * `try {} catch {}` shape already used for `auth.key`/`encryption.key`/`initial-password.txt`
  * elsewhere in this file. Runs on every open, not just first creation, so an upgrade from an older
  * RuleBeat version tightens permissions on its existing database the next time it starts. The
@@ -229,7 +229,7 @@ export function runMigrations(sqlite: Database.Database): void {
   // exists this is a no-op, and if 'policies' never existed it skips silently.
   //
   // This MUST run before the CREATE TABLE block below. It used to sit after it, where its own guard
-  // could never pass — `CREATE TABLE IF NOT EXISTS rules` had already created an empty `rules`, so
+  // could never pass: `CREATE TABLE IF NOT EXISTS rules` had already created an empty `rules`, so
   // `!hasRules` was always false, the rename never fired, and every rule an install of that vintage
   // owned stayed orphaned in a table nothing reads. See RB-QA-009.
   try {
@@ -575,7 +575,7 @@ export function runMigrations(sqlite: Database.Database): void {
   // heals itself:
   //
   //  - `compliance_snapshots_new` exists *and* the old table still does. The rebuild retries, its
-  //    CREATE hits a table that already exists, and the whole script aborts into the catch — on
+  //    CREATE hits a table that already exists, and the whole script aborts into the catch, on
   //    every start, forever, while snapshot writes keep failing against the old key.
   //  - `compliance_snapshots_new` exists and the old table does not, because the DROP landed. The
   //    CREATE TABLE IF NOT EXISTS above then recreated the live table empty and *in the new shape*,
@@ -647,27 +647,27 @@ export function runMigrations(sqlite: Database.Database): void {
     }
   } catch { /* best-effort */ }
 
-  // spec 030: honest compliance metric — a rule with zero findings only counts as passing if its
+  // spec 030: honest compliance metric. A rule with zero findings only counts as passing if its
   // last run proved it, so the snapshot needs to record what didn't fit either side of that split.
   try { sqlite.exec(`ALTER TABLE compliance_snapshots ADD COLUMN unknown_rules INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE compliance_snapshots ADD COLUMN activity_rule_count INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
 
   // spec 033: marks which compliance formula wrote each row, so a baseline comparison can exclude
-  // rows it can't honestly compare against (the "-75% vs baseline" bug) — every row written before
+  // rows it can't honestly compare against (the "-75% vs baseline" bug). Every row written before
   // this column existed defaults to 1 (pre-spec-030), same reasoning as unknown_rules above.
   try { sqlite.exec(`ALTER TABLE compliance_snapshots ADD COLUMN formula_version INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
 
   // Renames the generic "compliance" metric to "posture" everywhere outside the Compliance category
-  // itself (dev-phase rename, no real installs yet) — RENAME first, same ordering reasoning as
+  // itself (dev-phase rename, no real installs yet): RENAME first, same ordering reasoning as
   // rules.source → rules.type below: a fresh ADD COLUMN fallback would otherwise create an empty
   // posture_pct column and strand the real numbers under the old name.
   //
   // The CREATE TABLE IF NOT EXISTS compliance_snapshots near the top of this file can't know the
   // table was ever renamed away, so once the rename below has succeeded a single time, that
-  // statement starts recreating an empty compliance_snapshots on every later startup — the name is
+  // statement starts recreating an empty compliance_snapshots on every later startup. The name is
   // free again as far as IF NOT EXISTS is concerned. posture_snapshots already existing is proof the
   // rename already ran for real, so any compliance_snapshots sitting next to it here is that
-  // resurrected empty shell, not data — drop it before the rename runs again so it can't collide
+  // resurrected empty shell, not data: drop it before the rename runs again so it can't collide
   // with posture_snapshots and get left stranded under the old name forever.
   try {
     const alreadyRenamed = sqlite.prepare(
@@ -690,7 +690,7 @@ export function runMigrations(sqlite: Database.Database): void {
   // already dropped and silently recreated empty in the NEW shape by CREATE TABLE IF NOT EXISTS (which
   // would make the guard below see nothing to do and abandon every finding in the leftover table). Same
   // recovery: if the staged table is non-empty and the live table looks like the new (rebuilt) shape
-  // with zero rows, the staged rows are the only survivors — reclaim them, then drop the scaffolding
+  // with zero rows, the staged rows are the only survivors: reclaim them, then drop the scaffolding
   // either way so the rebuild below starts clean.
   try {
     const scaffolding = sqlite.prepare(
@@ -773,7 +773,7 @@ export function runMigrations(sqlite: Database.Database): void {
     }
   } catch { /* best-effort */ }
 
-  // Same rebuild, same reasoning, for suppressions.resource_id (spec 034) — suppressions are matched
+  // Same rebuild, same reasoning, for suppressions.resource_id (spec 034): suppressions are matched
   // purely by fingerprint (see isActiveSuppression()), so resource_id has always been display/audit
   // only; relaxing it to nullable needs no data transformation, just the NOT NULL removal itself.
   try {
@@ -822,7 +822,7 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN project_columns TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN raw_kql TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN rules_operator TEXT`); } catch { /* already exists */ }
-  // Rename source → type (if still named source) before falling back to ADD COLUMN — order
+  // Rename source → type (if still named source) before falling back to ADD COLUMN: order
   // matters here: source carries real per-row data (builtin/community/custom), so RENAME must
   // run first or a fresh ADD COLUMN would create an empty 'type' column defaulting every row to
   // 'custom' while the real data sits stranded in the old 'source' column.
@@ -832,17 +832,17 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN group_name TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN visual_query TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN tags TEXT`); } catch { /* already exists */ }
-  // spec 029: rule taxonomy — every pre-existing row is an ARG state-detection rule, which is
+  // spec 029: rule taxonomy. Every pre-existing row is an ARG state-detection rule, which is
   // exactly what these defaults say, so no backfill UPDATE is needed beyond the ALTER itself.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN query_backend TEXT NOT NULL DEFAULT 'resource-graph'`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN kind TEXT NOT NULL DEFAULT 'state'`); } catch { /* already exists */ }
   // spec 030: last real per-rule scan outcome, so "zero findings" can be told apart from "never
-  // successfully ran". Plain nullable columns — every existing row simply hasn't run yet.
+  // successfully ran". Plain nullable columns: every existing row simply hasn't run yet.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN last_run_status TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN last_run_at TEXT`); } catch { /* already exists */ }
-  // spec 032: Graph query definition — null for every rule except queryBackend = 'microsoft-graph'.
+  // spec 032: Graph query definition: null for every rule except queryBackend = 'microsoft-graph'.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN graph_query TEXT`); } catch { /* already exists */ }
-  // spec 036: Log Analytics query definition — null for every rule except queryBackend = 'log-analytics'.
+  // spec 036: Log Analytics query definition: null for every rule except queryBackend = 'log-analytics'.
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN logs_query TEXT`); } catch { /* already exists */ }
   // #152: rule versions. Every existing row simply has no recorded version yet; the seeder records
   // one on the first start after this upgrade (see lib/rule-versions.ts).
@@ -948,14 +948,14 @@ export function runMigrations(sqlite: Database.Database): void {
   // ADD COLUMN for installs that never had rule_groups at all. Same ordering rule as source → type
   // above, and for the same reason: an ADD COLUMN first makes the RENAME fail with "duplicate column
   // name", which is swallowed, leaving every rule's condition groups stranded in the old column and
-  // reading back as empty. That is what used to happen — see RB-QA-010.
+  // reading back as empty. That is what used to happen: see RB-QA-010.
   try { sqlite.exec(`ALTER TABLE rules RENAME COLUMN rule_groups TO condition_groups`); } catch { /* already renamed or doesn't exist */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN condition_groups TEXT`); } catch { /* already exists */ }
-  // Rename rules column → conditions (if still named rules — legacy schema)
+  // Rename rules column → conditions (if still named rules: legacy schema)
   try { sqlite.exec(`ALTER TABLE rules RENAME COLUMN rules TO conditions`); } catch { /* already renamed or doesn't exist */ }
 
   // spec 031: every rule row that predates the current authoring UI can carry only
-  // conditions/conditionGroups (or, on the oldest rows, only the legacy filter column — see
+  // conditions/conditionGroups (or, on the oldest rows, only the legacy filter column: see
   // rowToRule()'s own merge of the two in lib/rules.ts) with no raw_kql at all: a second,
   // independent execution path (buildRuleQuery()) nothing has written to since rule-form.tsx's
   // save() started always sending raw_kql instead. Compile each such row once through the now
@@ -1015,7 +1015,7 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN run_id TEXT`); } catch { /* already exists */ }
 
   // Scan lifecycle correctness (spec 004): a category's scan can now be 'partial' when one or
-  // more rules failed or returned a capped/truncated result — those rules' prior findings were
+  // more rules failed or returned a capped/truncated result. Those rules' prior findings were
   // preserved rather than resolved. Existing rows have no stored value and default to 'complete',
   // which is correct: every scan before this migration ran through the old all-or-nothing path.
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN coverage TEXT NOT NULL DEFAULT 'complete'`); } catch { /* already exists */ }
@@ -1031,7 +1031,7 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN target_type TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN target_values TEXT`); } catch { /* already exists */ }
 
-  // schedule_runs: durable notification outbox marker (spec 025) — 'none' | 'pending' | 'sent'.
+  // schedule_runs: durable notification outbox marker (spec 025): 'none' | 'pending' | 'sent'.
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN notify_status TEXT NOT NULL DEFAULT 'none'`); } catch { /* already exists */ }
 
   // schedule_runs: overlap safety (issue #88). A run's heartbeat, the process that owns it, and when
@@ -1047,7 +1047,7 @@ export function runMigrations(sqlite: Database.Database): void {
 
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any
-  // rows created under the old model (disabling them — the old fields don't map 1:1 onto the new
+  // rows created under the old model (disabling them: the old fields don't map 1:1 onto the new
   // recurrence shape, so migrated rows are surfaced as disabled rather than silently misfiring),
   // then drop the old columns entirely.
   try { sqlite.exec(`ALTER TABLE schedules ADD COLUMN target_type TEXT NOT NULL DEFAULT 'all'`); } catch { /* already exists */ }
@@ -1071,7 +1071,7 @@ export function runMigrations(sqlite: Database.Database): void {
       `);
       for (const row of legacy) {
         let cats: string[] = [];
-        try { cats = JSON.parse(row.categories) as string[]; } catch { /* malformed — treat as empty */ }
+        try { cats = JSON.parse(row.categories) as string[]; } catch { /* malformed: treat as empty */ }
         const isAll = cats.length === 1 && cats[0] === '*';
         migrate.run(isAll ? 'all' : 'categories', isAll ? '[]' : JSON.stringify(cats), new Date().toISOString(), row.id);
       }
@@ -1101,10 +1101,10 @@ export function runMigrations(sqlite: Database.Database): void {
   // One-time: rewrite rule ids to plain UUIDs, wherever they still carry a legacy scheme
   // (the 'builtin::<slug>' / 'builtin::aprl-<guid>' prefix, or a hand-typed slug from the old
   // data/policies.json sample seed). Provenance (builtin/community/custom) lives entirely in the
-  // `type`/`pack` columns now — the id itself is just an opaque, universally stable identifier,
+  // `type`/`pack` columns now: the id itself is just an opaque, universally stable identifier,
   // matching every other install that seeds the same builtin/pack data.
   //
-  // Each pair is renamed independently (own try/catch) so one bad pair can't abort the rest —
+  // Each pair is renamed independently (own try/catch) so one bad pair can't abort the rest:
   // seeding runs unconditionally afterward regardless of how far this migration gets, so a
   // silently-aborted loop would otherwise leave every remaining old-format row to be re-seeded
   // as a fresh duplicate under its new id.
@@ -1133,14 +1133,14 @@ export function runMigrations(sqlite: Database.Database): void {
     for (const [oldId, newId] of pairs) {
       try {
         const oldExists = !!getById.get(oldId);
-        // Nothing to rename, but references elsewhere may still point at the old id — see the
+        // Nothing to rename, but references elsewhere may still point at the old id: see the
         // rewriteOrphanedReferences note on RenameOptions.
         if (!oldExists && !opts.rewriteOrphanedReferences) continue;
 
         if (oldExists) {
           // A row already sitting at newId means a previous partial run re-seeded a fresh
           // duplicate before this pair got renamed. The old row holds any real user state
-          // (enabled/tags/etc.) — keep it, drop the auto-seeded stand-in, then rename.
+          // (enabled/tags/etc.): keep it, drop the auto-seeded stand-in, then rename.
           if (getById.get(newId)) deleteById.run(newId);
           renameRuleId.run(newId, oldId);
         }
@@ -1186,7 +1186,7 @@ export function runMigrations(sqlite: Database.Database): void {
     ).all() as { id: string }[];
 
     // These targets are fixed and always seeded, so references are worth rewriting even where the
-    // rule row itself is long gone — otherwise scan history from the oldest lineage keeps an id
+    // rule row itself is long gone, otherwise scan history from the oldest lineage keeps an id
     // that resolves to nothing and drill-through goes nowhere (RB-QA-012).
     renameRuleIds([
       ...BUILTIN_ID_RENAMES,
@@ -1195,7 +1195,7 @@ export function runMigrations(sqlite: Database.Database): void {
   } catch { /* ignore */ }
 
   // Installs that started before data/policies.json was removed may have these 4 sample rows
-  // seeded with hand-typed slug ids instead of a UUID — bring them in line with every other
+  // seeded with hand-typed slug ids instead of a UUID: bring them in line with every other
   // custom rule (which has always gotten a crypto.randomUUID() id at creation).
   try {
     renameRuleIds([
@@ -1207,7 +1207,7 @@ export function runMigrations(sqlite: Database.Database): void {
   } catch { /* ignore */ }
 
   // spec 020: session-invalidation counter. Existing rows default to 0, matching a token with no
-  // epoch claim at all (treated as 0 in getCurrentUser()) — an upgrade never mass-invalidates
+  // epoch claim at all (treated as 0 in getCurrentUser()). An upgrade never mass-invalidates
   // every current session.
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
 
@@ -1391,14 +1391,14 @@ function rekeyFingerprintCase(sqlite: Database.Database): void {
  * Seeds built-in content. Runs on every startup, not just the first: built-in rules and categories
  * are re-asserted with INSERT OR IGNORE. Rules pair that with an UPDATE that backfills engine-owned
  * fields (name/pack/raw_kql) but never touches anything a user edits. Categories used to pair it with
- * an UPDATE that overwrote label/color/icon on every startup — silently reverting any customization
- * in Settings — and now only resyncs sort_order/is_builtin for the same reason.
+ * an UPDATE that overwrote label/color/icon on every startup (silently reverting any customization
+ * in Settings), and now only resyncs sort_order/is_builtin for the same reason.
  *
- * `dataDir` is required rather than defaulted — it decides whether pack rules and legacy JSON get
+ * `dataDir` is required rather than defaulted. It decides whether pack rules and legacy JSON get
  * seeded at all, and a default would let a caller inherit `process.cwd()` without noticing.
  *
  * `skipOwnerBootstrap` exists for exactly one caller: `lib/db/client.ts`'s own module-scope call,
- * which — unlike every test fixture in tests/fixtures/upgrade.ts — cannot control `dataDir`
+ * which (unlike every test fixture in tests/fixtures/upgrade.ts) cannot control `dataDir`
  * (it's a fixed, non-overridable `<cwd>/data`, deliberately, so pack/schema seeding still reads
  * the real committed files under test). Every one of the ~10 test files that imports any
  * repository imports `client.ts` transitively and would otherwise write a real
@@ -1414,10 +1414,10 @@ export const BUILTIN_CATEGORIES = [
   { id: 'identity',    label: 'Identity',     color: '#8b5cf6', icon: 'KeyRound',   sortOrder: 4, isSpecial: true  },
   { id: 'reliability', label: 'Reliability',  color: '#22c55e', icon: 'Activity',   sortOrder: 5, isSpecial: false },
 ];
-// Security's old seeded default, red — red means "something is wrong" everywhere else in the
+// Security's old seeded default, red: red means "something is wrong" everywhere else in the
 // product (severity, destructive actions), so a category permanently flagged red trained people
 // to stop reading the colour as an alarm. Migrated away below, but only for installs that still
-// have the exact untouched old default — an admin who already chose their own colour keeps it.
+// have the exact untouched old default. An admin who already chose their own colour keeps it.
 export const OLD_SECURITY_RED = '#ef4444';
 
 export interface SeedOptions {
@@ -1437,13 +1437,13 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   seedCategories();
   // Seed the default dashboard if none exist
   seedDefaultDashboard();
-  // Decide, once, whether this install should see the onboarding wizard — "zero users exist" is the
+  // Decide, once, whether this install should see the onboarding wizard: "zero users exist" is the
   // only reliable way to tell a brand-new install from an upgrade, so this MUST run before
   // seedOwnerAccount() below, which creates the first user. Same ordering-is-load-bearing class as
   // the source→type / rule_groups→condition_groups RENAME-before-ADD-COLUMN fix (RB-QA-010): get the
   // order wrong and every existing customer's admin would be a "brand-new install" too.
   seedOnboardingState();
-  // A brand-new install has no users at all — create a local admin account so there is a way in
+  // A brand-new install has no users at all: create a local admin account so there is a way in
   // without touching env vars. Must run before seedInitialAdmin() so that function's "zero admins"
   // gate no-ops here and stays purely a recovery path for an install that already has users.
   if (!opts.skipOwnerBootstrap) seedOwnerAccount();
@@ -1638,7 +1638,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       INSERT OR IGNORE INTO categories (id, label, color, icon, sort_order, is_builtin, is_special, created_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
     `);
-    // label/color/icon are user-editable in Settings and must never be reverted by a restart — only
+    // label/color/icon are user-editable in Settings and must never be reverted by a restart. Only
     // sort_order and the is_builtin flag are structural and safe to re-assert on every startup.
     const resync = sqlite.prepare(`
       UPDATE categories SET sort_order = ?, is_builtin = 1 WHERE id = ?
@@ -1664,18 +1664,18 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   }
 
   // Seeds the starter dashboard on the very first startup only. Gated on a one-time 'meta' marker
-  // rather than "table is empty" alone — a user who later deletes every dashboard must never have
+  // rather than "table is empty" alone. A user who later deletes every dashboard must never have
   // one silently reappear on the next restart. The marker is set unconditionally at the end, even
   // for installs upgrading from a pre-Phase-3 version that already has dashboard rows
   // (existing.n > 0), so those installs pick up the marker on their next startup without
   // re-seeding a duplicate.
   // Wrapped in an IMMEDIATE transaction (write lock acquired before the marker/count checks run,
-  // not after) so two processes that both import this module at nearly the same instant — e.g.
+  // not after) so two processes that both import this module at nearly the same instant (e.g.
   // Next.js's `next build` page-data-collection workers, which each independently trigger this
-  // same import-time seed against the one real data/rulebeat.db — serialize instead of both
+  // same import-time seed against the one real data/rulebeat.db) serialize instead of both
   // observing "not seeded yet" and racing an INSERT into the same `id = 'default'` row. `INSERT OR
   // IGNORE` is defense in depth on top of that: `id` is a fixed literal, so even a re-entrant call
-  // is naturally idempotent. Kept as a `function` declaration (not `const`) so it stays hoisted —
+  // is naturally idempotent. Kept as a `function` declaration (not `const`) so it stays hoisted:
   // `runSeeds` calls it before this point in the file, same as every other seed function here.
   function seedDefaultDashboard() {
     sqlite.transaction(() => {
@@ -1703,10 +1703,10 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
 
   // Decides, once, whether this install starts the onboarding wizard. Gated on a one-time 'meta'
   // marker (never revisited) rather than "table is empty", matching seedDefaultDashboard()'s
-  // dashboards-seeded-v1 shape above — an admin who skips the wizard, or finishes it, must never
+  // dashboards-seeded-v1 shape above: an admin who skips the wizard, or finishes it, must never
   // have it reappear on a later restart.
   //
-  // Both branches write: 'pending' for a genuinely brand-new install (no users yet — the only signal
+  // Both branches write: 'pending' for a genuinely brand-new install (no users yet: the only signal
   // this function has, since it must run before seedOwnerAccount() creates the first one), 'skipped'
   // for anything upgrading from a version that predates this feature. A "leave it absent on fresh
   // installs" variant would break on the *second* startup, once the owner account exists and the
@@ -1723,7 +1723,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       .run('onboarding-v1', JSON.stringify(state));
   }
 
-  // Bootstraps a way into a brand-new install with no environment configuration at all — the
+  // Bootstraps a way into a brand-new install with no environment configuration at all. The
   // Jenkins/Portainer pattern: a generated password to a file and the log, not an unauthenticated
   // first-run form (which mints an admin from a request nobody had to prove they're allowed to
   // make). Gated on "zero users exist" rather than a one-time marker, matching seedInitialAdmin's
@@ -1781,7 +1781,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   // Deliberately gated on "there are currently zero admins" rather than a one-time meta marker, so
   // the env var doubles as the recovery path for a self-hosted install whose only admin was removed
   // or demoted: set it, restart, and access is back. It requires host access, so it can't be abused
-  // from inside the app. With the var unset, there is no Entra-side recovery — access comes back
+  // from inside the app. With the var unset, there is no Entra-side recovery: access comes back
   // through the seeded local owner account instead (see data/initial-password.txt).
   function seedInitialAdmin() {
     const email = process.env.RULEBEAT_INITIAL_ADMIN?.trim().toLowerCase();
@@ -1798,6 +1798,6 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
         sqlite.prepare(`INSERT INTO users (id, email, role, created_at) VALUES (?, ?, 'admin', ?)`)
           .run(crypto.randomUUID(), email, new Date().toISOString());
       }
-    } catch { /* email UNIQUE collision — someone already holds this row; leave it alone */ }
+    } catch { /* email UNIQUE collision: someone already holds this row; leave it alone */ }
   }
 }

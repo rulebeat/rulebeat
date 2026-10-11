@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  // Trend chart period is deliberately a separate param from the delta window — a widget often
+  // Trend chart period is deliberately a separate param from the delta window. A widget often
   // wants a longer trend chart (e.g. 30d) than the "vs N days ago" delta it also shows (e.g. 7d).
   const trendDaysParam = searchParams.get('trendDays');
   const trendDays = trendDaysParam ? (parseInt(trendDaysParam, 10) || 30) : 30;

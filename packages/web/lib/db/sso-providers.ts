@@ -6,7 +6,7 @@ import { decryptSecret, encryptSecret } from '@/lib/secret-box';
 
 /**
  * The SSO provider configured through Settings → Sign-in. See `lib/sign-in-config.ts` for how
- * this fits into resolution — environment variables always win over anything stored here, exactly
+ * this fits into resolution: environment variables always win over anything stored here, exactly
  * like `lib/db/azure-credentials.ts`, whose structure this file copies literally.
  */
 
@@ -57,7 +57,7 @@ function rowToSummary(row: Row): SsoProviderSummary {
   };
 }
 
-/** The single stored provider, if any — today's model is "at most one SSO provider configured". */
+/** The single stored provider, if any: today's model is "at most one SSO provider configured". */
 export async function getStoredSsoProviderSummary(): Promise<SsoProviderSummary | null> {
   const row = await one(db.select().from(ssoProviders).limit(1));
   return row ? rowToSummary(row) : null;
@@ -67,7 +67,7 @@ export async function getStoredSsoProviderSummary(): Promise<SsoProviderSummary 
  * The stored provider with its secret decrypted, for actually building a NextAuth provider.
  *
  * Returns null when the secret can't be opened (rotated or lost key), same reasoning as
- * `getActiveAzureCredential` — the caller falls through to "not configured" rather than handing
+ * `getActiveAzureCredential`: the caller falls through to "not configured" rather than handing
  * back ciphertext that would fail every sign-in with a baffling error.
  */
 export async function getStoredSsoProvider(): Promise<StoredSsoProvider | null> {
@@ -89,7 +89,7 @@ export interface SaveSsoProviderInput {
 }
 
 /**
- * Stores (or replaces) the one SSO provider row. Always saved inactive — see the design note in
+ * Stores (or replaces) the one SSO provider row. Always saved inactive: see the design note in
  * the B1b plan on why sign-in config is verified by a real sign-in, not a credentials probe: a
  * client-credentials check can't see the redirect URI, which is the most common Entra setup
  * failure, so a green tick here would be no guarantee the login button actually works.
@@ -146,7 +146,7 @@ export async function deleteSsoProvider(id: string): Promise<boolean> {
 
 /**
  * Flips a stored-but-unverified row active on its first successful sign-in. Called from `auth.ts`'s
- * `signIn` callback — a real OAuth round trip is a strictly stronger proof than any probe this
+ * `signIn` callback: a real OAuth round trip is a strictly stronger proof than any probe this
  * product could run ahead of time.
  */
 export async function markSsoProviderVerified(id: string): Promise<void> {

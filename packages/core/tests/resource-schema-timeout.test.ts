@@ -1,9 +1,9 @@
 /**
- * Spec 007 — Resource schema client request timeouts.
+ * Spec 007: Resource schema client request timeouts.
  *
  * `getResourceTypeFields()` makes a single ARM call (`providers.get`) and must use the true
  * per-request budget, `AZURE_CALL_TIMEOUT_MS`. `getAllResourceTypes()` drives an SDK pager
- * (`providers.list`) and must use the larger operation-wide budget, `AZURE_LIST_TIMEOUT_MS` — the
+ * (`providers.list`) and must use the larger operation-wide budget, `AZURE_LIST_TIMEOUT_MS`. The
  * two are asserted here against the literal options object handed to the SDK so the constants can
  * never be silently swapped between the single-shot and pager call sites.
  */

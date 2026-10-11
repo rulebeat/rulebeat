@@ -9,7 +9,7 @@ import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { PreflightChecks } from '@/components/diagnostics/preflight-checks';
 
 /**
- * Onboarding step 2 — runs `lib/preflight.ts` via `GET /api/diagnostics/preflight` and shows plainly
+ * Onboarding step 2: runs `lib/preflight.ts` via `GET /api/diagnostics/preflight` and shows plainly
  * what the connected identity can and can't see. Never blocking: RuleBeat's whole positioning is
  * guided visibility, not a firewall, so Continue stays available regardless of what this finds.
  */
@@ -30,7 +30,7 @@ export function PreflightStep({ onBack, onNext }: { onBack: () => void; onNext: 
     } finally { setLoading(false); }
   }
 
-  // Mount-triggered fetch of the connected identity's real access — an external-system read,
+  // Mount-triggered fetch of the connected identity's real access. An external-system read,
   // not derivable render state.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void run(); }, []);

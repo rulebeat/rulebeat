@@ -1,7 +1,7 @@
 /**
- * Spec 004 — the posture-freshness dashboard widget must surface a category's most recent
+ * Spec 004: the posture-freshness dashboard widget must surface a category's most recent
  * scan coverage, not just how long ago it ran. A category can be freshly scanned and still have a
- * rule that failed or was capped — the widget's data source (computeWidgetSummary) needs to expose
+ * rule that failed or was capped. The widget's data source (computeWidgetSummary) needs to expose
  * that alongside lastScanAt, or the widget has nothing to render it from.
  */
 import { beforeEach, describe, expect, it } from 'vitest';

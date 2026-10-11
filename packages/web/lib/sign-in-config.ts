@@ -13,7 +13,7 @@ import { readSecretFileTrimmed } from '@/lib/secret-file';
 import { MAX_SIGNIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 
 /**
- * Thrown when the password-hashing gate (`lib/password.ts`) is already full — the sign-in path
+ * Thrown when the password-hashing gate (`lib/password.ts`) is already full. The sign-in path
  * fails fast rather than queueing another password-verification call. `code` is what `@auth/core`
  * puts on the error it rethrows to `signIn()`'s caller in raw/server-action mode (`isAuthError &&
  * isRaw && !isRedirect` in `@auth/core/src/index.ts`'s `Auth()`), which is how `lib/actions.ts`'s
@@ -25,14 +25,14 @@ export class SignInBusyError extends CredentialsSignin {
 }
 
 /**
- * The single place RuleBeat decides how someone signs in — the sign-in equivalent of
+ * The single place RuleBeat decides how someone signs in. The sign-in equivalent of
  * `lib/azure-credential.ts`. Everything that builds a provider list or displays sign-in status
  * goes through here.
  *
  * Resolution order, same reasoning as the Azure credential resolver: environment variables always
  * win, because an IaC or Marketplace deployment must arrive fully configured and never show a
  * setup screen. Below that, whatever is saved in Settings → Sign-in. Below that, local accounts
- * only — RuleBeat is never unusable just because nobody has configured SSO yet.
+ * only: RuleBeat is never unusable just because nobody has configured SSO yet.
  */
 
 export type LocalSignInPolicy = 'always' | 'break-glass' | 'disabled';
@@ -71,7 +71,7 @@ export async function setPublicUrl(url: string | null): Promise<void> {
 
 /* next-auth reads the public URL from `process.env.AUTH_URL`, so a URL configured in Settings has
  * to be mirrored into that variable to have any effect. `OPERATOR_AUTH_URL` is whatever the
- * environment itself supplied, captured once when this module is first evaluated — which happens
+ * environment itself supplied, captured once when this module is first evaluated, which happens
  * inside instrumentation.ts's boot bootstrap, before anything writes the mirror. An operator's own
  * AUTH_URL is therefore still the value that wins, unchanged.
  *
@@ -84,7 +84,7 @@ const OPERATOR_AUTH_URL = process.env.AUTH_URL?.trim() || undefined;
  *
  * Both directions matter. Boot and the save handler used to write the mirror only while it was
  * empty, so the *second* save kept emitting the first URL and clearing the field kept emitting the
- * last one, in both cases until the next restart — while the Settings copy promises the change
+ * last one, in both cases until the next restart, while the Settings copy promises the change
  * takes effect immediately. A no-op when the operator set AUTH_URL themselves.
  */
 export function syncAuthUrlMirror(url: string | null): void {
@@ -94,7 +94,7 @@ export function syncAuthUrlMirror(url: string | null): void {
   else delete process.env.AUTH_URL;
 }
 
-// Re-exported for anything already importing it from here — the definition itself lives in
+// Re-exported for anything already importing it from here. The definition itself lives in
 // `redirect-uri.ts` because that file has no server-only imports and the client-side settings
 // screen needs the exact same string logic to compute what it displays.
 export { redirectUriFor } from './redirect-uri';
@@ -107,11 +107,11 @@ interface EnvSignInConfig {
 
 /**
  * IDs checked before the secret is resolved, same order as `azure-credential.ts`'s
- * `envCredentialSource()` — a `_FILE` (or plain) secret var left set on a host where Entra sign-in
+ * `envCredentialSource()`: a `_FILE` (or plain) secret var left set on a host where Entra sign-in
  * isn't otherwise configured is never read and can never throw for an irrelevant setting.
  *
  * `AUTH_MICROSOFT_ENTRA_ID_SECRET_FILE` wins over `AUTH_MICROSOFT_ENTRA_ID_SECRET` when both are
- * set. Unlike `auth-secret.ts`/`secret-box.ts`, nothing here is cached — this function already runs
+ * set. Unlike `auth-secret.ts`/`secret-box.ts`, nothing here is cached. This function already runs
  * fresh on every call, so a `_FILE`'s contents changing takes effect on the very next sign-in.
  */
 function envSignInConfig(): EnvSignInConfig | null {
@@ -134,7 +134,7 @@ export interface ResolvedSignInConfig extends EnvSignInConfig {
 }
 
 /**
- * Env wins over the stored row, exactly like `resolveAzureCredential` — and for the identical
+ * Env wins over the stored row, exactly like `resolveAzureCredential`, and for the identical
  * reason: a provider built from stored values silently ignores env if both are somehow present
  * (Auth.js's own env-var handling applies with `??=`), so precedence has to be enforced here.
  */
@@ -245,7 +245,7 @@ export async function getSignInStatus(): Promise<SignInStatus> {
 }
 
 /**
- * A cheap, unauthenticated reachability check — fetches the tenant's OIDC discovery document.
+ * A cheap, unauthenticated reachability check: fetches the tenant's OIDC discovery document.
  * Catches a typo'd tenant instantly. Deliberately does NOT prove the client id/secret or redirect
  * URI are correct, and is labelled as "tenant reachable" everywhere it's shown, not "verified".
  */
@@ -264,13 +264,13 @@ export async function probeTenant(tenantId: string): Promise<{ ok: true } | { ok
 }
 
 /**
- * The local-account sign-in path — break-glass access that doesn't depend on Entra being
+ * The local-account sign-in path: break-glass access that doesn't depend on Entra being
  * reachable or correctly configured. `authorize()` returns the *same* null for "no such account"
  * and "wrong password", and burns a dummy password verification on the unknown-account path, so
  * response timing can't be used to enumerate which emails exist.
  *
  * Refuses outright when the local policy is `disabled`, unless the host sets
- * `RULEBEAT_FORCE_LOCAL_SIGNIN=true` — the escape hatch for an SSO misconfiguration locking
+ * `RULEBEAT_FORCE_LOCAL_SIGNIN=true`: the escape hatch for an SSO misconfiguration locking
  * everyone out, since `RULEBEAT_INITIAL_ADMIN` only grants a role, not a password.
  */
 export async function authorizeLocalAccount(credentials: Partial<Record<string, unknown>>) {
@@ -282,7 +282,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
   const password = typeof credentials.password === 'string' ? credentials.password : '';
   if (!email || !password) return null;
 
-  // Oversized input, rejected before any lookup or hashing — the hashing cost doesn't depend on
+  // Oversized input, rejected before any lookup or hashing. The hashing cost doesn't depend on
   // input length, so an attacker-supplied multi-megabyte "password" would otherwise make every
   // gated verification (real or dummy) hash that much extra data for free. Does not touch what a
   // password can be *set* to; this only bounds sign-in input.
@@ -312,7 +312,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
 
     // Unbounded and attacker- or accident-reachable: a nonexistent email, or a real user with no
     // local password (e.g. an SSO-only user on the local form). Neither is a bounded, real account
-    // this history can be attributed to — logged, not persisted (spec 022).
+    // this history can be attributed to: logged, not persisted (spec 022).
     if (!user || !account) {
       await verifyDummyPassword(password, { failFast: true });
       logAuthEvent(`Failed local sign-in attempt for ${email}`, { reason: 'unknown-account' });
@@ -321,7 +321,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
 
     // Lockout race fix: claims the attempt atomically BEFORE verification runs (see
     // claimFailedAttempt()'s own doc comment). A 'locked' result means the claim's WHERE clause
-    // found the account already locked — treated exactly like the old isLockedOut() branch, plus
+    // found the account already locked: treated exactly like the old isLockedOut() branch, plus
     // a dummy verification so the locked branch burns the same hashing cost as every other branch
     // (otherwise returning early here is its own timing oracle confirming the email exists).
     const claim = await localAccounts.claimFailedAttempt(user.id);
@@ -334,7 +334,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
 
     const valid = await verifyPassword(password, account.passwordHash, { failFast: true });
     if (!valid) {
-      // No recordFailedAttempt() call here — claimFailedAttempt() above already recorded this
+      // No recordFailedAttempt() call here: claimFailedAttempt() above already recorded this
       // attempt (and locked the account if it was the one that crossed the threshold).
       await writeAudit({
         actor: user,
@@ -346,7 +346,7 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
       return null;
     }
 
-    // The claim above incremented failedAttempts speculatively, even for this correct password —
+    // The claim above incremented failedAttempts speculatively, even for this correct password:
     // clearFailedAttempts() unconditionally resets it, so a correct 5th attempt still signs in.
     await localAccounts.clearFailedAttempts(user.id);
     await touchLastSeen(user.id);
@@ -366,8 +366,8 @@ export async function authorizeLocalAccount(credentials: Partial<Record<string, 
 }
 
 /**
- * The full provider list for `auth.ts`. Local accounts (Credentials) are always present — they're
- * how you reach the console to configure SSO in the first place — Microsoft Entra ID is added only
+ * The full provider list for `auth.ts`. Local accounts (Credentials) are always present (they're
+ * how you reach the console to configure SSO in the first place). Microsoft Entra ID is added only
  * once something resolves.
  */
 export async function buildProviders() {

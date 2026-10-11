@@ -3,7 +3,7 @@
  *
  * `isVisualQueryStale()` is the pure logic behind rule-form.tsx's visualQuery initializer: a rule
  * opened and saved before the union-passthrough fix shipped has a stored visualQuery blob missing the
- * `raw` stage its own rawKql actually contains — regenerating from that stale blob would drop the
+ * `raw` stage its own rawKql actually contains: regenerating from that stale blob would drop the
  * union clause a second time, right back to the RB-QA-008 bug, even though the parser itself is fixed.
  */
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ import { parseKqlToVisualQuery } from '@/lib/kql';
 import { isVisualQueryStale } from '@/lib/rule-visual-query-drift';
 
 // The resource-type filter is written in the generator's own canonical form (`in~ (...)`, not
-// `=~`) so a freshly-parsed round trip is genuinely byte-stable — otherwise the normalization the
+// `=~`) so a freshly-parsed round trip is genuinely byte-stable, otherwise the normalization the
 // generator always applies would itself look like drift, unrelated to the union stage under test.
 const RAW_KQL = [
   'Resources',
@@ -22,7 +22,7 @@ const RAW_KQL = [
 
 describe('spec 016 · isVisualQueryStale', () => {
   it('flags a pre-fix stored visualQuery (missing the union raw stage) as stale', async () => {
-    // Simulates a blob saved before the union fix: a filter stage but no RawStage for the union —
+    // Simulates a blob saved before the union fix: a filter stage but no RawStage for the union:
     // exactly what the old parser would have produced and stored.
     const staleStoredVisualQuery = {
       stages: [

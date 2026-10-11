@@ -91,7 +91,7 @@ function NavItem({
 
 // ---- Type → locked tag ----
 // Type/pack is a permission-bearing field (drives delete/edit rights), kept separate in the
-// data model — but displayed as a regular (locked) tag chip alongside user tags, not a distinct badge.
+// data model, but displayed as a regular (locked) tag chip alongside user tags, not a distinct badge.
 
 function lockedTagFor(rule: Rule): LockedTag {
   if (rule.type === 'builtin') return { label: 'Built-in', icon: 'lock' };
@@ -99,7 +99,7 @@ function lockedTagFor(rule: Rule): LockedTag {
   return { label: 'Custom' };
 }
 
-// Pack (e.g. "APRL v2") is a sub-classification within type: 'builtin' — shown as its own
+// Pack (e.g. "APRL v2") is a sub-classification within type: 'builtin': shown as its own
 // locked tag in the Tags column, separate from the Type column.
 function packTagFor(rule: Rule): LockedTag | null {
   if (rule.type !== 'builtin') return null;
@@ -228,7 +228,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     router.replace(`/library?section=${encodeURIComponent(section)}`, { scroll: false });
   }, [router]);
   const [search, setSearch] = useState('');
-  // Per-column Excel-style filters (funnel icon in each header) — multi-select, empty set = no filter.
+  // Per-column Excel-style filters (funnel icon in each header): multi-select, empty set = no filter.
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set());
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
@@ -240,7 +240,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'type' | 'kind' | 'tags' | 'category' | 'severity' | 'status'>(
     // Rule is the flex column, so every pixel the other five don't take goes to it.
     // With the Rules rail open there are only about 1000px to share, and the name is
-    // the one column whose content is genuinely variable — the rest hold a chip or a
+    // the one column whose content is genuinely variable. The rest hold a chip or a
     // single word. They were sized well above what they show, which squeezed the names
     // into two lines and left the table looking ragged.
     { rule: 320, type: 100, kind: 100, tags: 170, category: 120, severity: 100, status: 100 },
@@ -250,7 +250,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   const { pinned: sidebarPinned, expanded: sidebarExpanded, setPinned: setSidebarPinned, hoverHandlers: sidebarHoverHandlers } = useSidebarPref('sidebar:library', initialSidebarPinned);
   const sidebarOverlay = sidebarExpanded && !sidebarPinned;
   const sidebarAsideWidth = sidebarExpanded ? SIDEBAR_EXPANDED_WIDTH : SIDEBAR_RAIL_WIDTH;
-  // The wrapper reserves real layout space equal to the aside's width — except in overlay mode,
+  // The wrapper reserves real layout space equal to the aside's width, except in overlay mode,
   // where the aside flies out over the table and the wrapper stays at the rail width instead.
   const sidebarWrapperWidth = sidebarOverlay ? SIDEBAR_RAIL_WIDTH : sidebarAsideWidth;
 
@@ -319,7 +319,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     });
   }
 
-  // Base filters (nav section + tags + search) — shared between the visible-rows list and the
+  // Base filters (nav section + tags + search): shared between the visible-rows list and the
   // per-column filter option builder below.
   const passesBaseFilters = useCallback((r: Rule) => {
     if (nav === 'gallery') return false;
@@ -350,7 +350,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     [rules, passesBaseFilters, passesColFilters],
   );
 
-  // Per-column filter option lists — built from the pool excluding that column's own selection
+  // Per-column filter option lists: built from the pool excluding that column's own selection
   // (so picking a value never makes the dropdown's other options vanish), values sourced
   // straight from live data rather than a static list (keeps orphaned/legacy values findable).
   const colOptions = useMemo(() => {
@@ -378,7 +378,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   }, []);
 
   // ---- Handlers ----
-  // Enable/disable is not editable from the Library — that's an operational concern owned by
+  // Enable/disable is not editable from the Library: that's an operational concern owned by
   // the Scans page (per-category "what runs"). The Library stays read-only status here (dot + filter).
 
   const handleDuplicate = useCallback(async (rule: Rule) => {
@@ -434,7 +434,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
           )}
           style={{ width: sidebarAsideWidth }}
         >
-          {/* Header: section label + pin toggle — uses the same PanelLeft/PanelLeftClose icon
+          {/* Header: section label + pin toggle: uses the same PanelLeft/PanelLeftClose icon
               pair as the main sidebar's own toggle, so "this collapses/pins" reads consistently
               across both, rather than repurposing the Library nav icon as decoration. */}
           <div className={cn('mb-2 flex h-8 items-center', sidebarExpanded ? 'justify-between pl-2 pr-1' : 'justify-center')}>
@@ -589,7 +589,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
             <TableScroll>
             <Table style={{ tableLayout: 'fixed', width: isFlexible('rule') ? '100%' : 'max-content', minWidth: '100%' }}>
               <colgroup>
-                {/* Rule column has no explicit width while unresized — fixed-layout tables give any
+                {/* Rule column has no explicit width while unresized: fixed-layout tables give any
                     column without a width the leftover space, which is what keeps the table filled
                     edge-to-edge by default instead of shrinking to the sum of the other columns. */}
                 <col style={isFlexible('rule') ? undefined : { width: colWidths.rule }} />
@@ -700,7 +700,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       )}
                     </TableCell>
 
-                    {/* Type — read-only, derived from source/pack (permission-bearing, not user-editable) */}
+                    {/* Type: read-only, derived from source/pack (permission-bearing, not user-editable) */}
                     <TableCell className="py-3">
                       {(() => {
                         const lt = lockedTagFor(rule);
@@ -726,7 +726,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       </span>
                     </TableCell>
 
-                    {/* Tags — read-only here; edit from the rule's own page to prevent accidental
+                    {/* Tags: read-only here; edit from the rule's own page to prevent accidental
                         add/remove from the list. Clicking a tag chip filters the list to it. */}
                     <TableCell className="max-w-[240px] py-3">
                       <div className="flex flex-wrap items-center gap-1">
@@ -763,7 +763,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       </div>
                     </TableCell>
 
-                    {/* Category — same component as every other table, so the mark and spacing
+                    {/* Category, same component as every other table, so the mark and spacing
                         match. The colour is the user's own choice from Settings and stays as a
                         swatch: an arbitrary hex used as both text and background colour cannot be
                         relied on to stay legible on either ground. */}
@@ -776,7 +776,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                       <SeverityBadge severity={rule.severity} />
                     </TableCell>
 
-                    {/* Status — read-only; toggle from the Scans page */}
+                    {/* Status: read-only; toggle from the Scans page */}
                     <TableCell className="py-3">
                       <span
                         className={cn(

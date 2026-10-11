@@ -1,7 +1,7 @@
 /**
  * Architecture test: password hashing happens in exactly one file.
  *
- * Same shape as `azure-credential-chokepoint.test.ts`. `lib/secret-box.ts` is allowlisted too — it
+ * Same shape as `azure-credential-chokepoint.test.ts`. `lib/secret-box.ts` is allowlisted too. It
  * calls `scryptSync` against a fixed, non-secret salt to derive a symmetric encryption key
  * deterministically, which is a different job from hardening a user's password against guessing
  * and is documented as such in that file. Nothing else should be reaching for any of these primitives at all.
@@ -53,7 +53,7 @@ describe('Password hashing has exactly one construction site', () => {
 
     expect(offenders, [
       'These files reference a password-hashing primitive directly. Password hashing belongs',
-      'only in lib/password.ts (hashPassword/verifyPassword) — a second implementation is a second',
+      'only in lib/password.ts (hashPassword/verifyPassword): a second implementation is a second',
       'place to get the cost parameters or salt handling wrong.',
     ].join(' ')).toEqual([]);
   });

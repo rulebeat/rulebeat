@@ -3,7 +3,7 @@
  *
  * buildScansHref used to only emit `?category=` when a widget's merged filters carried exactly
  * one category, silently dropping the param the moment a dashboard filter bar selected two or
- * more — the click-through landed on the Results tab scoped to nothing, showing every category's
+ * more: the click-through landed on the Results tab scoped to nothing, showing every category's
  * findings instead of just the ones the widget counted. Fixed to comma-join, matching every other
  * multi-value param (`ruleId`, `subscription`, `severity`, `tags`) already on this same function.
  */
@@ -32,7 +32,7 @@ describe('buildScansHref · category param', () => {
   });
 
   it('a per-widget category override wins over a multi-category dashboard filter', async () => {
-    // coverage-freshness-widget.tsx:67 does exactly this — one Link per category row, each
+    // coverage-freshness-widget.tsx:67 does exactly this. One Link per category row, each
     // overriding to its own single category regardless of how the dashboard filter bar is set.
     const href = buildScansHref(widgetFilters({ categories: ['security', 'cost'] }), { category: 'identity' });
     expect(new URLSearchParams(href.split('?')[1]).get('category')).toBe('identity');

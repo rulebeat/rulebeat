@@ -4,7 +4,7 @@ import { ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD } from './fixtures';
 import { signIn } from './helpers';
 
 /**
- * Spec 026 — no automated accessibility gate existed at all before this. Runs axe (serious/critical
+ * Spec 026: no automated accessibility gate existed at all before this. Runs axe (serious/critical
  * impact only), a horizontal page-overflow check (same assertion as min-width-guard.spec.ts), and a
  * console-error check across the app's primary authenticated routes, in both themes.
  *
@@ -13,7 +13,7 @@ import { signIn } from './helpers';
  * job), and WCAG/contrast auditing beyond axe's own default serious/critical impact flags.
  */
 
-// Same cookie lib/theme.ts reads — not imported directly since tests/e2e deliberately takes no
+// Same cookie lib/theme.ts reads, not imported directly since tests/e2e deliberately takes no
 // dependency on product code (see fixtures.ts).
 const THEME_COOKIE = 'theme';
 
@@ -29,7 +29,7 @@ const ROUTES = [
   '/diagnostics',
 ] as const;
 
-// The three routes re-checked at the 1024px floor spec 011 already established — a subset, not the
+// The three routes re-checked at the 1024px floor spec 011 already established. A subset, not the
 // full 8-route matrix, to avoid an 8x2x2 case explosion for marginal added value (spec 026 §2).
 const NARROW_ROUTES = ['/dashboard', '/scans?tab=results', '/settings'] as const;
 
@@ -41,7 +41,7 @@ async function setTheme(page: Page, theme: 'light' | 'dark') {
   ]);
 }
 
-/** Dashboard widgets self-fetch after mount and start in a loading state (useWidgetFetch) — running
+/** Dashboard widgets self-fetch after mount and start in a loading state (useWidgetFetch): running
  *  axe/overflow/console checks immediately after navigation would score the spinner, not the real
  *  content. Waits for network idle, then for every widget's own loading spinner (the `Loader2
  *  animate-spin` element every widgets/*-widget.tsx renders while `loading` is true) to clear. */
@@ -77,7 +77,7 @@ async function runChecks(page: Page, routeLabel: string) {
 }
 
 for (const theme of THEMES) {
-  test.describe(`accessibility sweep — ${theme} theme`, async () => {
+  test.describe(`accessibility sweep: ${theme} theme`, async () => {
     for (const route of ROUTES) {
       test(`${route} has no serious axe violations, no overflow, no console errors`, async ({ page }) => {
         const consoleErrors = await collectConsoleErrors(page);

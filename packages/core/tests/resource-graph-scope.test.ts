@@ -1,10 +1,10 @@
 /**
- * Spec 004 — Resource Graph request shape.
+ * Spec 004: Resource Graph request shape.
  *
  * Two documented Azure Resource Graph limits the client silently violated before this spec:
  * management groups and an explicit subscription list cannot be combined in one request, and a
  * request accepts at most 1,000 subscriptions. Both are asserted here against the literal request
- * object handed to the SDK, mocked at the module boundary — the point isn't what rows come back,
+ * object handed to the SDK, mocked at the module boundary. The point isn't what rows come back,
  * it's what RuleBeat actually asked Azure for.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,7 @@ import type { TokenCredential } from '@azure/identity';
 const { resourcesMock } = vi.hoisted(() => ({ resourcesMock: vi.fn() }));
 
 vi.mock('@azure/arm-resourcegraph', () => ({
-  // A plain arrow function has no [[Construct]] — `new mockFn()` would throw "is not a
+  // A plain arrow function has no [[Construct]]: `new mockFn()` would throw "is not a
   // constructor" even wrapped in vi.fn(). A function expression does support `new`.
   ResourceGraphClient: vi.fn().mockImplementation(function (this: unknown) {
     return { resources: resourcesMock };
@@ -36,7 +36,7 @@ beforeEach(() => {
 describe('ResourceGraphClient request shape (spec 004)', () => {
   it('never sends subscriptions alongside managementGroups', async () => {
     // Tenant default list is populated (as every real context's is) to prove the client doesn't
-    // fall back to it once a management-group scope is given — Azure rejects both together.
+    // fall back to it once a management-group scope is given: Azure rejects both together.
     const client = new ResourceGraphClient({ credential: FAKE_CREDENTIAL, subscriptionIds: subs(3) });
 
     await client.queryAll('resources', { managementGroups: ['mg-1'] });
@@ -85,7 +85,7 @@ describe('ResourceGraphClient request shape (spec 004)', () => {
 
   it('passes the request timeout as the second positional argument, not nested in the first (spec 007)', async () => {
     // The arm-resourcegraph SDK's .resources() takes transport options (OperationOptions, whose
-    // timeout lives at .requestOptions.timeout) as a second argument — Resource Graph's own
+    // timeout lives at .requestOptions.timeout) as a second argument: Resource Graph's own
     // QueryRequestOptions (the `options` field on the first argument) has no timeout field at all,
     // so nesting it there is a silent no-op that never bounds the call.
     const client = new ResourceGraphClient({ credential: FAKE_CREDENTIAL, subscriptionIds: subs(3) });

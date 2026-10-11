@@ -8,7 +8,7 @@ import { getAzureCredential, getAzureToken, resolveAzureCredential } from '@/lib
  *
  * These deliberately take no tenant id: which identity and which tenant RuleBeat uses is decided in
  * exactly one place (`lib/azure-credential.ts`). Passing `process.env.AZURE_TENANT_ID` in at each
- * call site — which is what these functions used to do — meant a credential configured through the
+ * call site (which is what these functions used to do) meant a credential configured through the
  * UI would have been ignored here while working everywhere else.
  */
 

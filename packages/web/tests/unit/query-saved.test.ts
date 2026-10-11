@@ -1,9 +1,9 @@
 /**
- * Spec 037 — /api/query/saved (GET/POST) and /api/query/saved/[id] (GET/DELETE), the live-query
+ * Spec 037: /api/query/saved (GET/POST) and /api/query/saved/[id] (GET/DELETE), the live-query
  * page's save/list/load/delete surface. Covers the two properties the routes' own comments call out
  * as deliberate: await getSavedQuery() (and therefore GET .../[id]) returns 404 identically for "doesn't
- * exist" and "exists but is a private query owned by someone else" — never 403, so existence can't be
- * probed — and visibility only ever controls *read* access: a non-owner can GET a shared query but
+ * exist" and "exists but is a private query owned by someone else", never 403, so existence can't be
+ * probed, and visibility only ever controls *read* access: a non-owner can GET a shared query but
  * can never DELETE it, because await deleteSavedQuery() re-checks strict ownership on its own.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

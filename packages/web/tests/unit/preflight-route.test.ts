@@ -2,11 +2,11 @@
  * GET /api/diagnostics/preflight, spec'd off the docs-pass finding: a credential that fails to
  * authenticate made the whole route 500 ("Failed to run preflight checks"), because
  * `await createTenantContext()` resolves the credential and its subscription list before `await runPreflight()`
- * ever gets a context — so the per-check rendering the onboarding step is built around never
+ * ever gets a context, so the per-check rendering the onboarding step is built around never
  * appeared for exactly the failure it exists to explain. The route must fold that failure into the
  * normal `PreflightResult` shape instead: the credential check fails with the curated wording, the
  * checks that never ran say why they were skipped, and the raw Azure error text stays out of the
- * response. "Nothing configured at all" is different — that stays the actionable 503 the setup
+ * response. "Nothing configured at all" is different. That stays the actionable 503 the setup
  * screen already understands.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,7 +53,7 @@ describe('GET /api/diagnostics/preflight', () => {
     expect(credential.status).toBe('fail');
     expect(credential.remediation).toBeTruthy();
 
-    // The checks that never got a context to run with still appear, saying why they did not run —
+    // The checks that never got a context to run with still appear, saying why they did not run,
     // not silently missing, and never pretending to have run.
     for (const id of ['subscriptions', 'resource-graph', 'graph-applications'] as const) {
       const check = body.checks.find(c => c.id === id)!;

@@ -2,7 +2,7 @@ import type { EstateResource } from './estate';
 import type { Severity } from '@rulebeat/core';
 
 /** How the fake ARG answers one rule's query for the resources currently selected as violating it
- *  on a given simulated day (selection itself is `violation-engine.ts`'s job — this only shapes
+ *  on a given simulated day (selection itself is `violation-engine.ts`'s job: this only shapes
  *  the row once a resource has been chosen). `buildRow` must return exactly the columns the real
  *  rule's `rawKql` would project, no more: a rulebeat-core rule projects full identity columns
  *  (type/location/resourceGroup/subscriptionId), so its rows never need the runner's enrichment

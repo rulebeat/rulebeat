@@ -50,7 +50,7 @@ export interface NotificationChannelSummary {
   id: string;
   name: string;
   type: NotificationChannelType;
-  /** Webhook hostname or "smtp.host:port" for email — enough for display, not enough to call. */
+  /** Webhook hostname or "smtp.host:port" for email: enough for display, not enough to call. */
   urlHost: string;
   emailConfig: EmailChannelConfig | null;
   includeAdvisories: boolean;

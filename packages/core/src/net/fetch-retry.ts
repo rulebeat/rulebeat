@@ -2,7 +2,7 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BACKOFF_MS = [2_000, 8_000]; // delay before attempt 2, then before attempt 3
 
 /**
- * True per-request timeout budget (spec 007) — safe wherever a fresh call and a fresh options
+ * True per-request timeout budget (spec 007): safe wherever a fresh call and a fresh options
  * object are made per request: a single HTTP request, or a hand-rolled loop that reconstructs its
  * call each iteration (e.g. ResourceGraphClient.queryBatch()'s do/while).
  */
@@ -12,7 +12,7 @@ export const AZURE_CALL_TIMEOUT_MS = 30_000;
  * Operation-wide timeout budget (spec 007) for an entire SDK-driven paginated enumeration. The
  * installed SDK pagers (`ResourceManagementClient.providers.list()`,
  * `SubscriptionClient.subscriptions.list()`) reuse the same options object, including whatever
- * `abortSignal` was passed at `.list()` call time, across every internal page fetch — so a signal
+ * `abortSignal` was passed at `.list()` call time, across every internal page fetch, so a signal
  * passed once here bounds the *whole* `for await` enumeration, not each page. Sized larger than
  * AZURE_CALL_TIMEOUT_MS for exactly that reason. Do not use this for a single-shot call.
  */
@@ -27,7 +27,7 @@ export interface FetchRetryOptions {
    *  for any attempt beyond its length. Overridden per-attempt by a response's Retry-After header
    *  when present. */
   backoffMs?: number[];
-  /** Test seam — defaults to the global fetch. */
+  /** Test seam: defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
 
@@ -59,10 +59,10 @@ function isTransient(status: number): boolean {
 }
 
 /**
- * A `fetch` with a per-attempt request timeout and retry/backoff for transient failures — 429, 408,
+ * A `fetch` with a per-attempt request timeout and retry/backoff for transient failures: 429, 408,
  * 5xx, or a thrown network/timeout error. A `Retry-After` response header (seconds or HTTP-date)
  * overrides the default backoff schedule when present. A non-transient response (any other status)
- * is returned as-is on the first attempt — this helper never inspects the response body or throws
+ * is returned as-is on the first attempt. This helper never inspects the response body or throws
  * on a non-ok status; callers keep their own existing error-message formatting.
  */
 export async function fetchWithRetry(

@@ -15,7 +15,7 @@ import type { Severity } from '../types';
 
 const RETENTION_DAYS = 365;
 
-/** The posture formula a freshly-written row is computed under — bump this whenever the
+/** The posture formula a freshly-written row is computed under: bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and
  *  exclude what it can't honestly compare against, instead of silently blending the two. */
 export const SNAPSHOT_FORMULA_VERSION = 2;
@@ -27,14 +27,14 @@ export interface DailySnapshot {
   posturePct: number | null;
   passingRules: number;
   totalRules: number;
-  /** Zero findings but the rule's last real run wasn't a proven success (or it never ran) —
+  /** Zero findings but the rule's last real run wasn't a proven success (or it never ran),
    *  neither passing nor failing (spec 030). 0 on every row written before this column existed,
    *  meaning "not distinguished then", not "genuinely none". */
   unknownRules: number;
-  /** 'activity'-kind rules enabled for this category, excluded from totalRules entirely — they
+  /** 'activity'-kind rules enabled for this category, excluded from totalRules entirely. They
    *  can never be scored the same way (no meaningful "zero findings" passing state). */
   activityRuleCount: number;
-  /** Which posture formula computed this row's pct/passingRules/totalRules — see
+  /** Which posture formula computed this row's pct/passingRules/totalRules: see
    *  SNAPSHOT_FORMULA_VERSION. 1 on every row written before this column existed. */
   formulaVersion: number;
   activeFindings: number;
@@ -65,7 +65,7 @@ function toDateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Recomputes and upserts today's (UTC) row(s) for a category from the live findings table — an
+/** Recomputes and upserts today's (UTC) row(s) for a category from the live findings table. An
  *  aggregate row (subscriptionId '') plus one row per subscription that currently has an active
  *  finding in this category (same "only knowable via live findings" limitation as
  *  dashboard-data.ts's `perSubscription`: a subscription that reaches zero findings simply stops
@@ -102,7 +102,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
     }
 
     // A rule only counts as passing if it has zero findings here AND its last real run actually
-    // succeeded — zero findings from a rule whose query is silently erroring is not posture,
+    // succeeded: zero findings from a rule whose query is silently erroring is not posture,
     // it's a blind spot (spec 030's whole reason for existing).
     const failingRuleIds = new Set(rows.map(f => f.ruleId).filter(id => stateRuleIds.has(id)));
     let passingRules = 0;
@@ -144,7 +144,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   await run(db.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)));
 }
 
-/** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row — the only
+/** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
  *  subscription's own trend history instead. */
 export async function getSnapshots(opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
@@ -157,7 +157,7 @@ export async function getSnapshots(opts: { categories?: string[]; subscriptionId
   return rows.map(rowToSnapshot);
 }
 
-/** Latest row per category on or before `onOrBefore` — used as the delta baseline. Defaults to
+/** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
  *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline. */
 export async function getBaselineSnapshots(categories: string[], onOrBefore: string, subscriptionId?: string): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
@@ -226,7 +226,7 @@ export async function backfillSnapshots(): Promise<void> {
     }
   }
 
-  // Write an accurate "today" row for every category from live state — supersedes any
+  // Write an accurate "today" row for every category from live state: supersedes any
   // blob-derived approximation for today specifically.
   for (const category of categories) {
     await upsertDailySnapshot(category.id);

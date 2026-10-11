@@ -11,7 +11,7 @@ import { hashPassword, verifyPassword } from '@/lib/password';
 import { validatePasswordStrength } from '@/lib/password-policy';
 
 /**
- * Self-service password change — `account:self`, granted to every role. The current password is
+ * Self-service password change: `account:self`, granted to every role. The current password is
  * required unless the account is still on its forced-change flag (the first-boot owner, or one an
  * admin just reset), since demanding a password the user was never told defeats the reset.
  */
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   try {
     await setPassword(actor.id, await hashPassword(newPassword), { mustChangePassword: false });
-    // Invalidates the actor's own current token too — change-password-client.tsx redirects to
+    // Invalidates the actor's own current token too: change-password-client.tsx redirects to
     // /signin rather than attempting to keep this session alive, which is the point (spec 020).
     await bumpSessionEpoch(actor.id);
 

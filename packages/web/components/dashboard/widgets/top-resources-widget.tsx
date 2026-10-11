@@ -16,7 +16,7 @@ interface ResourceOffender { resourceId: string; resourceName: string; resourceT
 interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 
-/** "These N resources carry the most findings" — the resource-side counterpart to the top-
+/** "These N resources carry the most findings". The resource-side counterpart to the top-
  *  violating-rules widget. Click → /scans filtered by the resource's name (Scans has no
  *  resource-id-scoped filter, so name search is the closest equivalent, same as the old
  *  findings-table row click used). */

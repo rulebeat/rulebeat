@@ -26,7 +26,7 @@ import { GRAPH_RESOURCE_PATHS } from '@rulebeat/core';
 import { BUILTIN_RULES } from '@/lib/builtin-rules';
 import { ROLES } from '@/lib/rbac';
 
-// Resolved from this file's own location, not `process.cwd()` — the working directory differs
+// Resolved from this file's own location, not `process.cwd()`. The working directory differs
 // between a whole-repo test run and a single-package one.
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REPO_ROOT = join(WEB_ROOT, '..', '..');

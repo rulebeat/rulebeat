@@ -46,7 +46,7 @@ export function ThemeProvider({
   /* `resolved` starts from the preference alone rather than from matchMedia, because on the
      server matchMedia does not exist and guessing here would produce a hydration mismatch.
      The effect below corrects it on mount, which is a no-op in every case except `system`
-     on a dark machine — and there the inline script has already painted dark, so the
+     on a dark machine, and there the inline script has already painted dark, so the
      correction is invisible. */
   const [resolved, setResolved] = useState<ResolvedTheme>(
     initialPreference === 'dark' ? 'dark' : 'light',
@@ -57,11 +57,11 @@ export function ThemeProvider({
     setResolved(next);
   }, []);
 
-  /* Keep the document in step with the preference, and — when following the system — with
+  /* Keep the document in step with the preference, and (when following the system) with
      the operating system as it changes. Someone flipping their machine to dark at sunset
      should see RuleBeat follow without a reload. */
   useEffect(() => {
-    // Synchronizing the DOM class and OS media-query subscription — the canonical external-system
+    // Synchronizing the DOM class and OS media-query subscription. The canonical external-system
     // effect, not derivable render state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     apply(resolve(preference));

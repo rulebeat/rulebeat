@@ -49,7 +49,7 @@ const STATUS_OPTIONS = [
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
- *  columns just as much as one that genuinely never ran — both read back as undefined. */
+ *  columns just as much as one that genuinely never ran. Both read back as undefined. */
 function ruleStatusLabel(status: Rule['lastRunStatus']): string | null {
   switch (status) {
     case 'failed': return 'query failed';
@@ -100,14 +100,14 @@ export interface ScansClientProps {
    *  findings: the compare screen reads them from the server. */
   compareIds?: ScanHistoryTabProps['compareIds'];
   compareQuery?: ScanHistoryTabProps['compareQuery'];
-  /** Undefined when the tab isn't active — server only loads this for ?tab=schedules. */
+  /** Undefined when the tab isn't active: server only loads this for ?tab=schedules. */
   initialSchedules?: ScheduleWithLastRun[];
   canEditSchedules?: boolean;
   /** Notification channel list for the Notifications section in the schedule form.
-   *  Empty when the user lacks notifications:manage — the section is simply hidden. */
+   *  Empty when the user lacks notifications:manage. The section is simply hidden. */
   notificationChannels?: NotificationChannelSummary[];
   /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
-   *  Undefined when the tab isn't active — server only computes this for ?tab=rules. */
+   *  Undefined when the tab isn't active: server only computes this for ?tab=rules. */
   ruleFindingCounts?: Record<string, number>;
   /** Why the Advisories or Activity tab is empty. Undefined on every other tab. */
   tabEmpty?: TabEmptyState;
@@ -285,7 +285,7 @@ export function ScansClient({
     }
   }
 
-  // Run Scan target defaults to whatever the Rules tab's Category filter currently holds — the
+  // Run Scan target defaults to whatever the Rules tab's Category filter currently holds. The
   // most direct expression of "run what I'm looking at" without forcing Results' own (separate,
   // single-select) category tabs to double as a run target too.
   const runDefaults = categoryFilter.size > 0

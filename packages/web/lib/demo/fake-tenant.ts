@@ -37,14 +37,14 @@ export interface FakeTenantContext extends TenantContext {
 export interface FakeOptions {
   /**
    * Rows to return. Either one fixed array for every query, or a function that decides based on
-   * the KQL — use the function form when a test needs the identity-enrichment follow-up query
+   * the KQL: use the function form when a test needs the identity-enrichment follow-up query
    * (`| where id in~ (...)`) to answer differently from the rule's own query.
    */
   rows?: Record<string, unknown>[] | ((kql: string, scope?: QueryScope) => Record<string, unknown>[]);
-  /** When set, every query rejects with this error — for testing the failure paths. */
+  /** When set, every query rejects with this error, for testing the failure paths. */
   failWith?: Error;
   /**
-   * Rows to return from `graphGet(path)` — the door every microsoft-graph rule goes through
+   * Rows to return from `graphGet(path)`: the door every microsoft-graph rule goes through
    * (`runGraphRules()`, packages/core/src/engine/graph-runner.ts). Same fixed-or-function shape
    * as `rows`.
    */
@@ -53,17 +53,17 @@ export interface FakeOptions {
   graphFailWith?: Error;
   /**
    * Rows to return from `queryLogs(kql)`. Same fixed-or-function shape as `rows`. Leaving this unset
-   * (the default) means "no workspace configured" — `queryLogs` rejects with
+   * (the default) means "no workspace configured": `queryLogs` rejects with
    * `LogAnalyticsNotConfiguredError`, matching what a real context built with no
-   * `logAnalyticsWorkspaceId` does — so a test only needs to opt in when it actually cares about
+   * `logAnalyticsWorkspaceId` does, so a test only needs to opt in when it actually cares about
    * Log Analytics.
    */
   logsRows?: Record<string, unknown>[] | ((kql: string) => Record<string, unknown>[]);
-  /** When set, every queryLogs call rejects with this error instead of the not-configured default —
+  /** When set, every queryLogs call rejects with this error instead of the not-configured default,
    *  for testing the "configured but failing" path, distinct from "never configured". */
   logsFailWith?: Error;
   /**
-   * `TenantContext.graphGet` is required by its type — every real context built by
+   * `TenantContext.graphGet` is required by its type. Every real context built by
    * `await createTenantContext()` implements it unconditionally (spec 032). Set this to omit it from the
    * fake anyway, for the one test that needs to prove `runGraphRules()`'s "this tenant context has
    * no Graph access configured" guard fires for a context that violates its own type at runtime.
@@ -88,7 +88,7 @@ export function fakeTenantContext(opts: FakeOptions = {}): FakeTenantContext {
   const logFields: LogFields[] = [];
 
   // TenantContext.graphGet is required (no `?`) as of spec 032, so the object literal below must
-  // include it unconditionally — TypeScript checks a literal against its declared type at
+  // include it unconditionally: TypeScript checks a literal against its declared type at
   // construction, not after a later conditional assignment. omitGraphGet still needs to produce a
   // context with no graphGet *at runtime* (to exercise runGraphRules()'s own guard for that case),
   // so that one option is the one deliberate, commented violation of the type via a cast.

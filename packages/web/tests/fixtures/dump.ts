@@ -12,14 +12,14 @@
  * the legacy-slug rule renames mint new ids every time. Those are normalised away.
  *
  * The normalisation is deliberately confined to the ROWS section. SCHEMA and COUNTS are printed
- * exactly, so the failures that actually matter for a refactor — a migration that stopped running, a
- * column that never got added, a seed that ran twice — still show up precisely even though the
+ * exactly, so the failures that actually matter for a refactor (a migration that stopped running, a
+ * column that never got added, a seed that ran twice) still show up precisely even though the
  * individual identifiers are masked.
  */
 import type { Database } from 'better-sqlite3';
 
 /**
- * Tables whose contents are large, machine-generated caches — shape matters, contents don't.
+ * Tables whose contents are large, machine-generated caches: shape matters, contents don't.
  * `local_accounts` joins them for a narrower reason: `password_hash` embeds a fresh random salt
  * on every run (see lib/password.ts), so even two runs seeding the exact same owner account would
  * never produce byte-identical rows.
@@ -123,7 +123,7 @@ function sortKeys(row: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(row).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-/** Table names come from sqlite_master or a fixed list, never user input — this is belt and braces. */
+/** Table names come from sqlite_master or a fixed list, never user input. This is belt and braces. */
 function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }

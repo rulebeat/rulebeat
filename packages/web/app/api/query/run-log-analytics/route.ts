@@ -8,7 +8,7 @@ import { recordQueryRun } from '@/lib/db/query-runs';
 import { LogAnalyticsNotConfiguredError, LogAnalyticsTruncatedError, type LogAnalyticsQuery, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 
-// This route's own display cap on the JSON payload — distinct from Azure's own truncation signal.
+// This route's own display cap on the JSON payload: distinct from Azure's own truncation signal.
 const RESPONSE_ROW_CAP = 500;
 
 export async function POST(req: Request) {
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const parsed = await parseJsonBody<{ logsQuery?: LogAnalyticsQuery; savedQueryId?: string }>(req);
   if (parsed instanceof NextResponse) return parsed;
   const { logsQuery, savedQueryId } = parsed;
-  // Deliberately not validateLogAnalyticsQueryShape() — that also requires timeWindowDays, which
+  // Deliberately not validateLogAnalyticsQueryShape(): that also requires timeWindowDays, which
   // this page never collects (spec 037): timeWindowDays is display/validation metadata that only
   // matters once a query becomes a rule, asked for at the existing "Save as rule" step instead.
   if (!logsQuery?.kql?.trim()) return NextResponse.json({ error: 'logsQuery.kql is required' }, { status: 400 });

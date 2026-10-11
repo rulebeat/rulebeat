@@ -168,7 +168,7 @@ function SystemSection({ data }: { data: SystemDiagnostics }) {
 
 export function DiagnosticsClient() {
   const [preflight, setPreflight] = useState<PreflightResult | null>(null);
-  // true once the localStorage read has happened — prevents "not yet checked" from flashing
+  // true once the localStorage read has happened: prevents "not yet checked" from flashing
   // before we know whether stored results exist.
   const [preflightReady, setPreflightReady] = useState(false);
   const [system, setSystem] = useState<SystemDiagnostics | null>(null);
@@ -177,7 +177,7 @@ export function DiagnosticsClient() {
   const [preflightError, setPreflightError] = useState(false);
 
   // localStorage is unavailable during SSR. useLayoutEffect fires synchronously during hydration,
-  // before the first browser paint — so stored results appear without a visible empty-state flash.
+  // before the first browser paint, so stored results appear without a visible empty-state flash.
   // localStorage restore before first paint is the whole point of useLayoutEffect here, not
   // derivable render state (see comment above).
   useLayoutEffect(() => {
@@ -187,7 +187,7 @@ export function DiagnosticsClient() {
   }, []);
 
   useEffect(() => {
-    // System checks are instant local reads — load once on mount, never on every refresh.
+    // System checks are instant local reads: load once on mount, never on every refresh.
     void fetchJson<SystemDiagnostics>('/api/diagnostics/system').then(result => {
       setSystem(result.ok ? result.data : null);
       setSystemLoading(false);

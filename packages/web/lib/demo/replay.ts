@@ -6,7 +6,7 @@ import type { SyntheticApp } from './identity-fixtures';
 import type { RuleFixture } from './rule-fixture';
 
 /** Total simulated days. Kept well under the 90-run-per-schedule and 90-row-per-category retention
- *  caps (lib/schedule-runs.ts, lib/scan-history.ts) — one run and one scan-history row per category
+ *  caps (lib/schedule-runs.ts, lib/scan-history.ts). One run and one scan-history row per category
  *  per day, so 90 would be the hard ceiling; 60 leaves headroom and still gives two months of
  *  trend/posture-snapshot history to show off. */
 export const TOTAL_DAYS = 60;
@@ -33,7 +33,7 @@ export interface ReplayOptions {
 }
 
 /** Runs `await executeTarget()` once per simulated day, oldest first, each against a fake context scoped
- *  to that day — the same shared execution path a real scheduled scan uses, so every downstream
+ *  to that day: the same shared execution path a real scheduled scan uses, so every downstream
  *  table (findings, finding_events, scan_history, posture_snapshots, schedule_runs) fills in
  *  exactly as it would from 60 days of a real 'all'-target daily schedule. Returns the last
  *  simulated run's timestamp: where the history ends. */

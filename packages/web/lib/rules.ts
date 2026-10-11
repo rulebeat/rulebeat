@@ -86,11 +86,11 @@ export function deriveKind(queryBackend: QueryBackend): RuleKind {
 export const APPLIES_TO_REMOVED_ERROR = 'Applies to has been removed. Remove the appliesTo field from the request.';
 
 /**
- * Flips just the `enabled` column for a batch of rules — a single `UPDATE ... WHERE id IN (...)`,
+ * Flips just the `enabled` column for a batch of rules. A single `UPDATE ... WHERE id IN (...)`,
  * deliberately not `saveRules()`, which deletes and reinserts every row. Round-tripping 156 rules
  * through `rowToRule`/`ruleToRow` to flip 143 booleans is how a field eventually gets dropped.
  *
- * Unknown ids are reported rather than failing the batch — a stale browser tab must not 404 the
+ * Unknown ids are reported rather than failing the batch. A stale browser tab must not 404 the
  * whole request over one id that no longer exists.
  */
 export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<{ updatedIds: string[]; notFoundIds: string[] }> {
@@ -109,7 +109,7 @@ export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<
 }
 
 /**
- * Batched per-rule run-outcome write after a scan (spec 030) — grouped by status since every rule
+ * Batched per-rule run-outcome write after a scan (spec 030): grouped by status since every rule
  * in `ids` shares the same outcome and timestamp this call. Mirrors `setRulesEnabled()`: a direct
  * `UPDATE ... WHERE id IN (...)`, not a round-trip through `saveRules()`/`ruleToRow()`, since this
  * runs on every scan and a delete+reinsert of every rule row is the wrong cost for that frequency.
@@ -123,7 +123,7 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
 
 /**
  * Issue #158: a rule name is meant to be unique (case-insensitively, ignoring surrounding spaces),
- * but there is no unique index — an existing install can already hold names that differ only by
+ * but there is no unique index. An existing install can already hold names that differ only by
  * case or spacing, and an upgrade must never disturb those rows. The check therefore lives in the
  * application, at `createRule()`/`updateRule()`, each returning a `'name-taken'` result the routes
  * map to 409, rather than in a route-level pre-check `isNameTaken()` the caller then writes after:
@@ -132,8 +132,8 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
  * On SQLite this check-then-write is already atomic: `inTransaction()` serializes every writer
  * through a process-wide lock (see exec.ts), so a second caller's transaction cannot even begin
  * until the first one has committed its insert or update. Postgres runs at READ COMMITTED, where
- * that is not true — each caller's own transaction would see no committed row from the other's
- * still-open one — so every write that calls this takes `pgAdvisoryXactLock()` first (a no-op on
+ * that is not true: each caller's own transaction would see no committed row from the other's
+ * still-open one, so every write that calls this takes `pgAdvisoryXactLock()` first (a no-op on
  * SQLite) to serialize the two backends the same way.
  */
 const RULE_NAME_LOCK_KEY = 7194826033;
@@ -308,7 +308,7 @@ export interface OnboardingRuleSummary {
 
 /**
  * A light-weight projection of every rule for onboarding step 3's category/severity picker.
- * Deliberately not `loadRules()` handed straight to the client — a rule's KQL, conditions and
+ * Deliberately not `loadRules()` handed straight to the client. A rule's KQL, conditions and
  * visual-query blob are several KB each, and the picker only ever needs id/category/severity/enabled
  * to compute counts and build the id lists `PATCH /api/rules/bulk` takes.
  */

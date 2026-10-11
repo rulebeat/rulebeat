@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, VIEWER_EMAIL, VIEWER_PASSWORD, ADMIN_URL } from './fixtures';
 
 // The admin-fixture server is started here, by hand, rather than through Playwright's own
-// `webServer` array — it needs a seed step (owner account + a viewer user + one synthetic
+// `webServer` array: it needs a seed step (owner account + a viewer user + one synthetic
 // finding) to run to completion, synchronously, before the server is allowed to boot and run its
 // own idempotent seeding. Playwright's documented ordering between globalSetup and webServer
 // startup isn't a contract worth relying on for that; owning both steps here removes the race
 // entirely.
 //
 // DATA_DIR in lib/db/client.ts is fixed at `<cwd>/data` regardless of RULEBEAT_DB_PATH, so
-// seedOwnerAccount() always writes data/initial-password.txt there — including the *real*
+// seedOwnerAccount() always writes data/initial-password.txt there, including the *real*
 // developer data dir, since this process's cwd is packages/web. Only the database file itself
 // moves; the password file's path does not. Back it up and restore it in teardown so a Playwright
 // run never leaves a developer's real initial-password.txt overwritten with e2e credentials.
@@ -61,7 +61,7 @@ export default async function globalSetup(): Promise<void> {
     RULEBEAT_INITIAL_PASSWORD: ADMIN_PASSWORD,
     // The developer's own .env.local pins AUTH_URL to http://localhost:3000 for the normal dev
     // server; `next start` loads .env.local regardless of what this process already set, but
-    // Next.js never lets a .env file override a variable already present in process.env — so
+    // Next.js never lets a .env file override a variable already present in process.env, so
     // setting it here (not just leaving it out) is what keeps next-auth's post-sign-in redirect
     // pointed at this server's own port instead of :3000, where nothing relevant is listening.
     AUTH_URL: ADMIN_URL,

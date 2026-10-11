@@ -78,7 +78,7 @@ export async function listSavedQueries(viewerId: string): Promise<SavedQuery[]> 
 }
 
 /**
- * Null both when the row doesn't exist and when it exists but isn't visible to `viewerId` — a
+ * Null both when the row doesn't exist and when it exists but isn't visible to `viewerId`. A
  * private query owned by someone else must read back exactly like a missing one (404), never a 403
  * that would confirm its existence.
  */
@@ -89,7 +89,7 @@ export async function getSavedQuery(id: string, viewerId: string): Promise<Saved
   return rowToSavedQuery(row);
 }
 
-/** Only the owner may delete — 'shared' controls read visibility, not write access. */
+/** Only the owner may delete: 'shared' controls read visibility, not write access. */
 export async function deleteSavedQuery(id: string, viewerId: string): Promise<boolean> {
   const row = await one(db.select().from(savedQueries).where(eq(savedQueries.id, id)));
   if (!row || row.ownerId !== viewerId) return false;
@@ -98,7 +98,7 @@ export async function deleteSavedQuery(id: string, viewerId: string): Promise<bo
 }
 
 /**
- * Best-effort — called after a live run against a previously-saved query. Silently does nothing
+ * Best-effort: called after a live run against a previously-saved query. Silently does nothing
  * when the query isn't visible to the caller, so an arbitrary id passed to a run request can't be
  * used to probe for existence or write to a query the caller can't otherwise see.
  */

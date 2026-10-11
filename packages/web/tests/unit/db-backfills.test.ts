@@ -3,7 +3,7 @@
  *
  * `backfillFindings` and `backfillSnapshots` are upgrade steps in everything but name: they run once
  * from `instrumentation.ts`, transform a customer's data, mark themselves done, and say nothing. They
- * live outside `lib/db/migrate.ts`, so the rest of the upgrade suite never touched them — and this is
+ * live outside `lib/db/migrate.ts`, so the rest of the upgrade suite never touched them, and this is
  * exactly the shape of code that produced three of the five bugs found on 2026-07-30.
  *
  * What `backfillFindings` does matters more than it sounds: it is what gives an install that predates
@@ -55,7 +55,7 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
 
   it('25-13 · a scan record missing newer fields is restored, not fatal', async () => {
     // The sample's scan history was written in an older shape: no resourceType, no subscriptionId.
-    // Those columns are NOT NULL today, so handing the record straight to the insert throws — and
+    // Those columns are NOT NULL today, so handing the record straight to the insert throws, and
     // this runs from instrumentation.ts at startup, which means an upgrade could fail to boot over
     // one old record. It must degrade instead, and keep as much of the history as it can.
     await findingsRepo.backfillFindings();
@@ -84,17 +84,17 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
     const after = await snapshotsRepo.getSnapshots({ categories: ['cost'] });
 
     expect(after.length, 'existing trend history was dropped').toBeGreaterThanOrEqual(before);
-    // The fixture's own snapshot row must come through untouched — it is real recorded history, not
+    // The fixture's own snapshot row must come through untouched. It is real recorded history, not
     // something to be recomputed from an approximation.
     const original = after.find(s => s.date === '2026-07-19');
     expect(original, 'the recorded snapshot was lost').toBeDefined();
     expect(original!.posturePct).toBe(80);
-    // It predates the formulaVersion column (spec 033) entirely, so it must read as old-formula —
+    // It predates the formulaVersion column (spec 033) entirely, so it must read as old-formula,
     // never silently upgraded to look like an honest row it never was.
     expect(original!.formulaVersion, 'a pre-existing row must not be mistaken for an honest one').toBe(1);
 
-    // await backfillSnapshots() also writes a fresh "today" row per category via upsertDailySnapshot —
-    // that one IS computed under the current formula and must say so.
+    // await backfillSnapshots() also writes a fresh "today" row per category via upsertDailySnapshot.
+    // That one IS computed under the current formula and must say so.
     const today = new Date().toISOString().slice(0, 10);
     const freshRow = after.find(s => s.date === today);
     expect(freshRow, 'backfillSnapshots did not write a fresh row for today').toBeDefined();

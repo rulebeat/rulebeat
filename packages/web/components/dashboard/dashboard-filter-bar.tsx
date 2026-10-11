@@ -28,7 +28,7 @@ interface Props {
   onDateWindowChange: (w: DateWindow) => void;
 }
 
-/** Dashboard-level filter toolbar — Category/Rule/Subscription/Tags/Severity multi-selects plus a
+/** Dashboard-level filter toolbar: Category/Rule/Subscription/Tags/Severity multi-selects plus a
  *  24h/7d/30d/custom window control. Persistence (debounced PUT) and refetch-triggering
  *  (refreshKey bump) both live in the parent (`dashboard-grid-client.tsx`); this component only
  *  reports changes upward via `onFiltersChange`/`onDateWindowChange`. */

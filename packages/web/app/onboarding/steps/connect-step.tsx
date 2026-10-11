@@ -12,7 +12,7 @@ import { redirectUriFor, isLoopbackIpOrigin, normalizeLoopbackOrigin } from '@/l
 import { Cloud, Loader2, Lock, Plug } from 'lucide-react';
 
 /**
- * Onboarding step 1 — connect Azure.
+ * Onboarding step 1: connect Azure.
  *
  * Two shapes, decided in the plan for this feature:
  *  - ambient (`credentialIsAmbient`): the credential comes from environment variables, or from the

@@ -4,7 +4,7 @@
  * Why builders rather than committed `.db` files or `.sql` scripts:
  *
  *  - A committed binary is the one format nobody can review or diff, and since the product has never
- *    been released there is no authentic old database to capture — it would be a shape we authored
+ *    been released there is no authentic old database to capture. It would be a shape we authored
  *    anyway, just stored unreadably. (Once v1 ships, a real `v1.db` fixture becomes worth adding, and
  *    this reasoning should be revisited.)
  *  - A `.sql` script handles the schema beautifully but not the content: a suppression has to carry a
@@ -15,7 +15,7 @@
  * versions. The DDL below is kept as literal SQL so it reads as a plain statement of what that era's
  * schema was.
  *
- * Note the current `CREATE TABLE` block in `runMigrations()` (`lib/db/migrate.ts`) is itself an *old* shape — `rules` has
+ * Note the current `CREATE TABLE` block in `runMigrations()` (`lib/db/migrate.ts`) is itself an *old* shape: `rules` has
  * no `type`/`tags`/`raw_kql`, `schedules` still has `cron`. Every install, fresh or upgraded, reaches
  * the current schema only by running the ALTERs. That's why `current` (an empty file) is a shape in
  * its own right.
@@ -30,7 +30,7 @@ export type ShapeName =
   | 'policies-era'    // `policies` table; `rules`/`rule_groups`/`source` columns; hand-typed slug ids
   | 'legacy-rules'    // table renamed to `rules`, still legacy columns; `builtin::`-prefixed ids
   | 'cron-schedules'  // modern rules; old cron schedules; 2-column snapshot PK
-  | 'pre-rbac'        // everything current except `users` and `audit_log` — the actual previous version
+  | 'pre-rbac'        // everything current except `users` and `audit_log`: the actual previous version
   | 'current';        // empty file: what a brand-new install starts from
 
 export const SHAPES: ShapeName[] = ['policies-era', 'legacy-rules', 'cron-schedules', 'pre-rbac', 'current'];
@@ -56,7 +56,7 @@ const EMPTY: Omit<BuiltShape, 'shape'> = {
   suppressionFingerprint: null, scanId: null, dashboardId: null, hasUsers: false,
 };
 
-/** Builds a sample database at `file`. Always closes its handle — Windows will not delete an open one. */
+/** Builds a sample database at `file`. Always closes its handle: Windows will not delete an open one. */
 export function buildShape(name: ShapeName, file: string): BuiltShape {
   const sqlite = new Database(file);
   sqlite.pragma('journal_mode = WAL');
@@ -234,7 +234,7 @@ function buildPoliciesEra(sqlite: Database.Database): Omit<BuiltShape, 'shape'> 
 
 /**
  * The table has been renamed to `rules` but its columns have not, and rule ids still carry the
- * `builtin::` prefix scheme. The densest shape — most of the risky migration code is only reachable
+ * `builtin::` prefix scheme. The densest shape. Most of the risky migration code is only reachable
  * from here.
  */
 function buildLegacyRules(sqlite: Database.Database): Omit<BuiltShape, 'shape'> {
@@ -354,7 +354,7 @@ function buildCronSchedules(sqlite: Database.Database): Omit<BuiltShape, 'shape'
     );
   `);
 
-  // A pack rule still on the old prefixed id scheme, with `pack` set — which is what the dynamic
+  // A pack rule still on the old prefixed id scheme, with `pack` set, which is what the dynamic
   // APRL rename keys off.
   const aprlLegacyId = 'builtin::aprl-11111111-2222-4333-8444-555555555555';
   const ruleIds = insertRules(

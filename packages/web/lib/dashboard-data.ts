@@ -10,7 +10,7 @@ import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 
-/** `from`/`to` are date keys (YYYY-MM-DD), inclusive — no `Date.now()` dependency, so this works
+/** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
 function isWithinRange(iso: string | undefined, from: string, to: string): boolean {
   if (!iso) return false;
@@ -27,12 +27,12 @@ function daysAgo(days: number): string {
 }
 
 /** Mirrors the enabled-rule-set logic in db/snapshots.ts's upsertDailySnapshot. Only 'state' rules
- *  count toward the posture score — 'activity' rules (spec 030) have no meaningful "zero
+ *  count toward the posture score: 'activity' rules (spec 030) have no meaningful "zero
  *  findings means passing" state, so they're split out as a count rather than folded into either
  *  side of the score.
  *
  *  `filters.severities`/`filters.tags` narrow the denominator the same way `matchesFilters` already
- *  narrows the numerator (spec 039 / RB-RM-015) — a widget scoped to "high severity" should count
+ *  narrows the numerator (spec 039 / RB-RM-015). A widget scoped to "high severity" should count
  *  only high-severity rules as "in scope", not the whole category. `resourceGroups`/`subscriptions`
  *  are deliberately NOT applied here: neither is a property of a `Rule`, so narrowing by them would
  *  need real per-subscription/RG resource-type applicability (out of scope, see spec 039 §2). */
@@ -53,8 +53,8 @@ function enabledRuleIdsForCategory(
 }
 
 /** Splits a scope's rule ids by outcome against its findings: passing (zero findings, proven
- *  success), or unknown (zero findings but not a proven success — including never run). A rule
- *  with an active finding is skipped — it's implicitly failing, and never 'unknown' even if its
+ *  success), or unknown (zero findings but not a proven success, including never run). A rule
+ *  with an active finding is skipped: it's implicitly failing, and never 'unknown' even if its
  *  last run technically errored, since the finding is real even if not exhaustive (spec 004's
  *  capped/failed distinction). */
 function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
@@ -153,10 +153,10 @@ export interface WidgetSummary {
     pct: number | null;
     passingRules: number;
     totalRules: number;
-    /** Zero active findings but the rule's last run wasn't a proven success (or it has never run)
-     *  — neither passing nor failing (spec 030). Never folded into passingRules or totalRules. */
+    /** Zero active findings but the rule's last run wasn't a proven success (or it has never run),
+     *  neither passing nor failing (spec 030). Never folded into passingRules or totalRules. */
     unknownRules: number;
-    /** 'activity'-kind rules in scope, excluded from totalRules/passingRules entirely — they can
+    /** 'activity'-kind rules in scope, excluded from totalRules/passingRules entirely. They can
      *  never be scored the same way (no meaningful "zero findings" passing state). */
     activityRuleCount: number;
     activeFindings: number;
@@ -165,53 +165,53 @@ export interface WidgetSummary {
     fixedInWindow: number;
   };
   /** Whether actively-suppressed findings were counted in the numbers above (spec 039 /
-   *  RB-RM-016) — mirrors `filters.includeSuppressed ?? false`. No dashboard control can set this
+   *  RB-RM-016): mirrors `filters.includeSuppressed ?? false`. No dashboard control can set this
    *  true yet (no widget exposes the toggle), but the response is self-describing the moment one
    *  does, rather than requiring every future consumer to separately track which mode it asked for. */
   suppressedIncluded: boolean;
-  /** Net lifecycle change over the window (newInWindow − fixedInWindow) — a count, not a level
+  /** Net lifecycle change over the window (newInWindow − fixedInWindow). A count, not a level
    *  comparison against a past snapshot. See DATA-SOURCE-UNIFICATION-PLAN.md §3. */
   deltaFindings: number | null;
   perCategory: Array<{
     category: string; label: string; color?: string; pct: number | null; activeFindings: number;
-    /** Same passing/total the pct is rounded from — the honest headline (spec 033), with pct as
+    /** Same passing/total the pct is rounded from. The honest headline (spec 033), with pct as
      *  the secondary, rounded figure. */
     passing: number; total: number;
     lastScanAt: string | null;
-    /** From the category's most recent scan row — null when it has never been scanned. A category
+    /** From the category's most recent scan row: null when it has never been scanned. A category
      *  can be 'fresh' by timestamp and still 'partial': the scan ran recently but a rule failed or
      *  was capped, so its posture % may not reflect reality (spec 004). */
     lastScanCoverage: 'complete' | 'partial' | null;
     lastScanIncompleteRules: IncompleteRule[];
   }>;
-  /** Per-subscription posture, derived live from findings (no schema change) — only subscriptions
+  /** Per-subscription posture, derived live from findings (no schema change): only subscriptions
    *  with at least one active finding appear (there's no tenant-wide subscription list without a
    *  live ARM call), sorted worst-posture-first. `pct`/`totalRules` mirror the per-category
    *  calc: rules with zero violations in that subscription / rules in scope for the active
    *  category+rule filters. */
   perSubscription: Array<{ subscriptionId: string; pct: number | null; activeFindings: number; totalRules: number; passingRules: number }>;
-  /** Daily created-vs-resolved counts for the New vs Fixed widget — available under every filter
+  /** Daily created-vs-resolved counts for the New vs Fixed widget: available under every filter
    *  combination (subscription/RG/severity via a fingerprint join to `findings`, tags resolved to
    *  rule ids), unlike the snapshot-sourced `trend`. */
   newVsFixedTrend: Array<{ date: string; created: number; resolved: number }>;
-  /** Daily occurrence counts for kind:'activity' findings — the Activity Occurrences widget's
+  /** Daily occurrence counts for kind:'activity' findings. The Activity Occurrences widget's
    *  data source (spec 034). Same filter support as newVsFixedTrend (subscription/RG/severity via
-   *  a fingerprint join, tags resolved to rule ids). Empty when nothing in scope is activity-kind
-   *  — the widget renders its own empty state for that, it isn't an error. */
+   *  a fingerprint join, tags resolved to rule ids). Empty when nothing in scope is activity-kind.
+   *  The widget renders its own empty state for that, it isn't an error. */
   activityTrend: Array<{ date: string; count: number }>;
   lastScanAt: string | null;
 
   // --- historical, snapshot-sourced: computed from `posture_snapshots`, needed because a past
   //     percentage requires the past denominator (rules enabled / resources in scope at that
   //     time), which live findings can't reconstruct. Null under filters snapshots can't
-  //     represent — see `trendIsCategoryScopedOnly`. ---
+  //     represent: see `trendIsCategoryScopedOnly`. ---
   /** `date` is the oldest per-category baseline row's date actually reached (categories can each
-   *  land on a different snapshot date) — always show this, not an assumed "N days ago". */
+   *  land on a different snapshot date), always show this, not an assumed "N days ago". */
   baseline: { pct: number | null; date: string } | null;
   deltaPct: number | null;
   trend: Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>;
   trendByCategory?: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>>;
-  /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters — i.e.
+  /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters, i.e.
    *  anything beyond category + at most one subscription (RG/tag/severity/rule, or more than one
    *  subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
    *  Name kept from pre-Phase-5 for call-site stability. */
@@ -220,7 +220,7 @@ export interface WidgetSummary {
 
 /** Live posture/findings numbers from the findings lifecycle table, plus trend/baseline
  *  history from posture_snapshots (meaningful when `filters` narrows to category and/or a
- *  single subscription — snapshots are recorded per category × subscription (Phase 5); any
+ *  single subscription: snapshots are recorded per category × subscription (Phase 5); any
  *  RG/tag/severity/rule filter, or more than one subscription at once, makes "trend over time"
  *  ill-defined at that granularity since it isn't recorded). */
 export async function computeWidgetSummary(filters: WidgetFilters, trendDays: number): Promise<WidgetSummary> {
@@ -249,7 +249,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   if (filters.ruleIds?.length) {
     // Rule-scoped widget (replaces the old policy-data route): pct is selected-rules
-    // passing/total, computed live — rule-level history isn't tracked in posture_snapshots.
+    // passing/total, computed live: rule-level history isn't tracked in posture_snapshots.
     // Excluded here too, not just in the category-wide branch below.
     // A ruleId not found in ruleById (stale selection) defaults to 'state', same as the predicate's
     // own default for an absent kind.
@@ -293,7 +293,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // Scans page and works under every filter (unlike deltaPct/baseline, which need a snapshot).
   const deltaFindings = newInWindow - fixedInWindow;
 
-  // Latest snapshot row per target category — used both for per-category lastScanAt and the
+  // Latest snapshot row per target category: used both for per-category lastScanAt and the
   // overall lastScanAt below. A category with no snapshot row yet has never been scanned.
   const categoryIds = targetCategories.map(c => c.id);
   const latestSnapshots = await getBaselineSnapshots(categoryIds, today());
@@ -305,7 +305,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const catFindings = activeFindings.filter(f => f.category === cat.id);
     const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
     const catPct = catTotal === 0 ? null : Math.round((catPassing / catTotal) * 100);
-    // A high posture % is misleading if the scan behind it didn't finish — the coverage-freshness
+    // A high posture % is misleading if the scan behind it didn't finish. The coverage-freshness
     // widget must show that alongside recency, not just "how long ago" (spec 004).
     const [lastScan] = await listScanMetas(cat.id, 1);
     return {
@@ -334,7 +334,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   };
   const suppressedIncluded = filters.includeSuppressed ?? false;
 
-  // Only subscriptions with at least one active finding are knowable without a live ARM call —
+  // Only subscriptions with at least one active finding are knowable without a live ARM call:
   // see WidgetSummary's perSubscription doc comment.
   const subIds = Array.from(new Set(activeFindings.map(f => f.subscriptionId).filter(Boolean)));
   const perSubscription = subIds.map(subId => {
@@ -353,7 +353,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // New vs Fixed supports every filter dimension: subscription/RG/severity via a join to the
   // findings row (see getFindingEventCounts), tags resolved here to rule ids (rules own tags,
   // same predicate as matchesFilters). An empty tag∩rule intersection must yield zero events,
-  // not "no filter" — hence the impossible-id sentinel.
+  // not "no filter": hence the impossible-id sentinel.
   let eventRuleIds = filters.ruleIds;
   if (filters.tags?.length) {
     const tagRuleIds = allRules
@@ -381,8 +381,8 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   });
 
   // Trend/baseline need a representation in posture_snapshots. Category is always supported
-  // (snapshots are recorded per category). A *single* subscription is also supported — snapshots
-  // now carry a per-subscription breakdown (Phase 5) — but RG/tag/severity/rule filters aren't
+  // (snapshots are recorded per category). A *single* subscription is also supported: snapshots
+  // now carry a per-subscription breakdown (Phase 5), but RG/tag/severity/rule filters aren't
   // recorded at all, and combining more than one subscription can't be reconstructed from summed
   // per-subscription totals (each rule's pass/fail would need to be evaluated across the union of
   // subscriptions, which isn't recoverable from the stored per-day counts).
@@ -406,7 +406,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trendByCategory = groupSnapshotsByCategory(snaps);
 
   // Only compare against baseline rows written under the same formula this scope's live `pct` is
-  // computed under — otherwise a category whose baseline predates spec 030 (or was backfilled)
+  // computed under, otherwise a category whose baseline predates spec 030 (or was backfilled)
   // gets blended in as if it were an honest number, producing a delta that doesn't mean anything
   // (the "-75% vs baseline" bug). A category with no honest baseline yet is excluded from the
   // blend entirely rather than blanking the whole widget; it reappears once enough days of
@@ -420,7 +420,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const baselinePassing = baselineSnaps.reduce((s, x) => s + x.passingRules, 0);
     const baselineTotal = baselineSnaps.reduce((s, x) => s + x.totalRules, 0);
     const basePct = baselineTotal === 0 ? null : Math.round((baselinePassing / baselineTotal) * 100);
-    // Categories can each land on a different snapshot date (missed scans, backfill drift) — the
+    // Categories can each land on a different snapshot date (missed scans, backfill drift). The
     // oldest is the honest bound for "how far back does this comparison actually reach".
     const oldestDate = baselineSnaps.reduce((min, x) => (x.date < min ? x.date : min), baselineSnaps[0].date);
     baseline = { pct: basePct, date: oldestDate };

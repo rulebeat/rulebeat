@@ -1,9 +1,9 @@
 /**
- * Spec 036 — await runCategoryScan()'s queryBackend partitioning (spec 029) extends to a third backend,
+ * Spec 036: await runCategoryScan()'s queryBackend partitioning (spec 029) extends to a third backend,
  * 'log-analytics', with no special-casing: a log-analytics rule filed under 'identity' runs through
  * runLawRules() side by side with an ordinary resource-graph rule and the seeded microsoft-graph
  * rule in the same category and the same scan, and a Log Analytics failure isolates to only that
- * backend's rules — mirrors scan-runner-taxonomy-dispatch.test.ts's coverage of the
+ * backend's rules: mirrors scan-runner-taxonomy-dispatch.test.ts's coverage of the
  * resource-graph/microsoft-graph split, extended to prove the same holds for all three backends
  * together rather than re-proving the two-backend case.
  */
@@ -23,7 +23,7 @@ const LOGS_RULE_ID = 'test-logs-rule-under-identity';
 const CAPPED_LOGS_RULE_ID = 'test-capped-logs-rule-under-identity';
 
 // Same idempotent-delete-then-insert pattern as scan-runner-taxonomy-dispatch.test.ts's
-// insertArgRuleUnderIdentity() — await resetDb() deliberately preserves the seeded rules table.
+// insertArgRuleUnderIdentity(): await resetDb() deliberately preserves the seeded rules table.
 async function insertArgRuleUnderIdentity(): Promise<void> {
   await execRun(db.delete(rulesTable).where(eq(rulesTable.id, ARG_RULE_ID)));
   await execRun(db.insert(rulesTable).values({
@@ -59,7 +59,7 @@ async function insertLogsRuleUnderIdentity(): Promise<void> {
   }));
 }
 
-// Issue #145 — a Log Analytics rule whose query ends in a top-level take/limit/top is just as
+// Issue #145: a Log Analytics rule whose query ends in a top-level take/limit/top is just as
 // incomplete as a capped Resource Graph query; distinct from insertLogsRuleUnderIdentity()'s
 // uncapped rule above only by that trailing `| take`.
 async function insertCappedLogsRuleUnderIdentity(): Promise<void> {
@@ -122,8 +122,8 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
     expect(outcome.summary.coverage).toBe('complete');
     expect(outcome.summary.incompleteRules).toEqual([]);
 
-    // Light sanity check that this finding really came from the activity engine, not ARG/Graph —
-    // the deeper kind:'activity'/dimensionKey mechanics have their own coverage in core's
+    // Light sanity check that this finding really came from the activity engine, not ARG/Graph.
+    // The deeper kind:'activity'/dimensionKey mechanics have their own coverage in core's
     // law-runner tests; this is only proving dispatch routed to the right engine.
     const logsFinding = outcome.summary.findings.find(f => f.ruleId === LOGS_RULE_ID);
     expect(logsFinding?.kind).toBe('activity');
@@ -149,7 +149,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
   });
 
   // Issue #145 regression: runLawRules() used to report every Log Analytics rule 'success', even
-  // one whose query had a top-level take/limit — exactly the kind of incomplete result
+  // one whose query had a top-level take/limit: exactly the kind of incomplete result
   // runRules()/runGraphRules() already flag as 'capped'. A rule like this is real but not
   // exhaustive, so it must show up in incompleteRules (status 'capped'), tip the scan's own
   // coverage to 'partial', and must never be stamped 'success' in the rules table.
@@ -164,7 +164,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
     expect(outcome.summary.incompleteRules).toEqual([
       { ruleId: CAPPED_LOGS_RULE_ID, ruleName: CAPPED_LOGS_RULE_ID, status: 'capped' },
     ]);
-    // Capped means "real but not proven exhaustive", not "nothing found" — the finding itself is
+    // Capped means "real but not proven exhaustive", not "nothing found". The finding itself is
     // still produced.
     expect(outcome.summary.findings.map(f => f.ruleId)).toEqual([CAPPED_LOGS_RULE_ID]);
 

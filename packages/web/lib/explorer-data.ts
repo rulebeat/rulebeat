@@ -7,7 +7,7 @@ import type { RuleKind } from './types';
 // ---- Types ----
 
 /** 'new'/'active' is a client-side elapsed-time judgment (see getRecencyStatus in
- *  findings-explorer-client.tsx) — deliberately not computed here, since "new" only means
+ *  findings-explorer-client.tsx): deliberately not computed here, since "new" only means
  *  something relative to a chosen time window, which is a UI setting, not stored data. */
 export type FindingDisplayStatus = 'new' | 'active' | 'fixed';
 

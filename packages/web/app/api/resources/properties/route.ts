@@ -25,7 +25,7 @@ export async function GET(req: Request) {
 
   const cached = await readSchemaCache(resourceType);
 
-  // Fresh cache — instant response
+  // Fresh cache: instant response
   if (cached && !cached.stale) {
     return NextResponse.json({
       fields: cached.entry.fields,
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // Stale cache — serve immediately, refresh in background
+  // Stale cache: serve immediately, refresh in background
   if (cached?.stale) {
     void fetchAndCache(resourceType).catch(err => {
       console.error('[RuleBeat] background resource-schema refresh failed:', err);
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // No cache — fetch from ARM now (first time for this type)
+  // No cache: fetch from ARM now (first time for this type)
   try {
     const fields = await fetchAndCache(resourceType);
     if (!fields) {

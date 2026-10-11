@@ -3,7 +3,7 @@ import type { VisualQuery } from '@/lib/kql';
 
 /** The query-shape fields rule-form.tsx's save() sends, before the caller adds the fields every
  *  backend shares (name/description/scope/etc). Graph and Log Analytics each own a dedicated
- *  editor and must null out the ARG visual/raw-KQL fields *and* each other's field — spec 036's
+ *  editor and must null out the ARG visual/raw-KQL fields *and* each other's field: spec 036's
  *  self-challenge found the pre-fix code gating this on `isGraphBackend` alone in two separate
  *  places, which silently missed the Log Analytics case in one of them. Centralizing the shape
  *  here, rather than repeating the per-backend ternaries at each call site, is what makes that

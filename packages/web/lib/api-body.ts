@@ -6,7 +6,7 @@ const JSON_CONTENT_TYPE_RESPONSE = () =>
 /**
  * A cross-site "simple request" (one that needs no CORS preflight) can only ever carry one of
  * three browser-set Content-Types when it has a body: text/plain, application/x-www-form-urlencoded
- * or multipart/form-data — never application/json, and never no Content-Type at all. Requiring an
+ * or multipart/form-data, never application/json, and never no Content-Type at all. Requiring an
  * explicit JSON Content-Type before treating a body as JSON is what makes that distinction useful;
  * `;charset=...` and similar parameters are ignored, and the `application/*+json` structured
  * suffix (RFC 6839) is accepted the same as plain `application/json`.
@@ -19,7 +19,7 @@ export function isJsonContentType(contentType: string | null): boolean {
 
 /**
  * Parses a request's JSON body, turning malformed JSON into the same client-safe 400 every route
- * already returns for a missing/invalid field — instead of an uncaught `SyntaxError` from
+ * already returns for a missing/invalid field, instead of an uncaught `SyntaxError` from
  * `req.json()` surfacing as an unhandled 500. A Content-Type that does not say JSON is refused
  * with 415 before the body is even read.
  *

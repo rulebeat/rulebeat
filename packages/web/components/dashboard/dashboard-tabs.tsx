@@ -12,7 +12,7 @@ interface Props {
   activeId?: string;
 }
 
-/** Quick-switch tab strip rendered above a single dashboard's grid — default-first then by
+/** Quick-switch tab strip rendered above a single dashboard's grid: default-first then by
  *  creation date, a `+` tab to create a new one (reusing the existing NewDashboardDialog), and a
  *  "Manage" link to the full gallery page (which owns per-card rename/duplicate/delete/set-default
  *  actions; this strip is only for fast switching + creating). */

@@ -2,10 +2,10 @@
  * Turns an Entra (AADSTS) error code into something an admin can act on.
  *
  * Lifted out of `lib/azure-credential.ts` (which re-exports this) so Settings → Sign-in can share
- * the same mapping rather than growing a second, drifting copy — AADSTS codes mean the same thing
+ * the same mapping rather than growing a second, drifting copy: AADSTS codes mean the same thing
  * whether they came from the scanning service principal or from an interactive sign-in.
  *
- * This module only maps error *strings* — it never constructs a credential or reads a secret, so
+ * This module only maps error *strings*. It never constructs a credential or reads a secret, so
  * it doesn't trip `tests/unit/azure-credential-chokepoint.test.ts` or
  * `tests/unit/password-chokepoint.test.ts`.
  */

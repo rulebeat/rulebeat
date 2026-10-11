@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-/* Covers both explicit notFound() calls in a route segment and genuinely unmatched routes — Next
+/* Covers both explicit notFound() calls in a route segment and genuinely unmatched routes: Next
  * routes both cases to the root app/not-found.tsx (see the not-found.js docs' "Good to know"). */
 export default function NotFound() {
   return (

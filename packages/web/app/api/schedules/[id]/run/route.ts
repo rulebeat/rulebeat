@@ -23,7 +23,7 @@ export async function POST(
     summary: `Ran schedule "${schedule.name}" manually`,
   });
 
-  // Scans can take minutes — fire and let the client poll /runs for status instead of blocking.
+  // Scans can take minutes: fire and let the client poll /runs for status instead of blocking.
   void executeSchedule(schedule);
   return NextResponse.json({ started: true }, { status: 202 });
 }

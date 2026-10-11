@@ -10,10 +10,10 @@ export default async function SignInPage() {
   if (await isDemoMode()) redirect('/');
   const status = await getSignInStatus();
   // RULEBEAT_FORCE_LOCAL_SIGNIN is the host-level escape when SSO breaks under a `disabled`
-  // policy — it has to make the form *visible* here, not just accepted by authorize(), or the
+  // policy: it has to make the form *visible* here, not just accepted by authorize(), or the
   // escape hatch is unreachable from the one page anyone locked out can actually get to.
   const forced = process.env.RULEBEAT_FORCE_LOCAL_SIGNIN === 'true';
-  // 'break-glass' hides the local form once Microsoft sign-in is verified — it still works
+  // 'break-glass' hides the local form once Microsoft sign-in is verified. It still works
   // (auth.ts's authorize() isn't gated on this), it just isn't the first thing offered.
   const showLocalForm = forced
     || status.localSignInPolicy === 'always'

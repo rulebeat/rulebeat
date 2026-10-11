@@ -1,13 +1,13 @@
 """Pure-Python SVG path parsing + rasterization for potrace-traced vector
 sources (see wordmark_vector.py). No new dependency: same philosophy as
-pngkit.py — hand-rolled, stdlib only.
+pngkit.py: hand-rolled, stdlib only.
 
 Handles exactly the path grammar potrace emits: M/L/C commands, with the
 SVG-standard implicit repeat (an extra coordinate set after a command
 letter repeats that command without re-stating the letter), and the
 evenodd fill rule potrace relies on for holes (see Potrace.js's own
 getPathTag, which hardcodes fill-rule="evenodd"). Arcs, quadratics and
-relative commands are out of scope — potrace doesn't emit them.
+relative commands are out of scope: potrace doesn't emit them.
 """
 import re
 

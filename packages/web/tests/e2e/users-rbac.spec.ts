@@ -10,7 +10,7 @@ test('admin adds a viewer user from Settings, then a viewer signs in and sees no
   await page.goto(`${ADMIN_URL}/settings`);
   await page.getByRole('button', { name: 'Add user' }).click();
   await page.getByLabel('Work email').fill(newUserEmail);
-  // exact: true — Settings also has an unrelated "Add channel" button (notifications) whose
+  // exact: true: Settings also has an unrelated "Add channel" button (notifications) whose
   // accessible name otherwise matches this substring search.
   await page.getByRole('button', { name: 'Add', exact: true }).click();
 

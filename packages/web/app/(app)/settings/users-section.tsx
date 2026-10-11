@@ -102,7 +102,7 @@ export function UsersSection({
   const [error, setError] = useState<string | null>(null);
 
   const adminCount = users.filter(u => u.role === 'admin').length;
-  // The API refuses this too — the disabled control just explains why before the click.
+  // The API refuses this too: the disabled control just explains why before the click.
   const lastAdminNote = 'This is the only admin. Promote someone else to admin first.';
 
   async function changeRole(user: AppUser, role: Role) {

@@ -3,7 +3,7 @@
  *
  * The db file holds every stored secret's ciphertext plus password hashes; group/world-readable
  * permissions on it (the default `umask` on most Linux hosts, e.g. 0644) hand a local read to any
- * other account on the box. Windows has no POSIX mode bits, so this suite is a no-op there — same
+ * other account on the box. Windows has no POSIX mode bits, so this suite is a no-op there, same
  * pattern `auth-secret.test.ts`'s 0600 check already uses.
  */
 import { afterEach, describe, expect, it } from 'vitest';

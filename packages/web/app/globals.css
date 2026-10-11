@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   RULEBEAT DESIGN SYSTEM — "GRID"
+   RULEBEAT DESIGN SYSTEM: "GRID"
    ───────────────────────────────────────────────────────────────────────────
    Swiss/International style. Structure comes from a strict modular grid and
    from GROUND, not from fills, shadows or rounded corners. Colour is spent
@@ -18,13 +18,13 @@
    three chips and a table showed twenty boxes and no hierarchy, which reads as
    fussy rather than precise. So the page now has a ground the panels sit ON,
    the small repeating elements are soft filled shapes with no outline at all,
-   and a line survives only where it does structural work — under a table
+   and a line survives only where it does structural work: under a table
    header, between table rows, around an input, at the edge of the chrome.
    The rule ramp below was softened to match: `rule-strong` is a real line but
    it is no longer black, because eighty-five of them across the app were.
 
    Two grounds. Light is the default and the reference. Dark is NOT an
-   inversion — pure white hairlines glare and #E3000F vibrates against near
+   inversion: pure white hairlines glare and #E3000F vibrates against near
    black, so both are retuned. See the dark block for the specifics.
 
    ADDING A FEATURE LATER? Use the semantic tokens below, never a literal
@@ -34,9 +34,9 @@
 
 @theme inline {
   /* ── Type ─────────────────────────────────────────────────────────────── */
-  --font-sans: var(--font-body);        /* Inter — running text, UI          */
-  --font-heading: var(--font-display);  /* Inter Tight — headings, big numbers */
-  --font-mono: var(--font-data);        /* IBM Plex Mono — labels, data, code */
+  --font-sans: var(--font-body);        /* Inter: running text, UI          */
+  --font-heading: var(--font-display);  /* Inter Tight: headings, big numbers */
+  --font-mono: var(--font-data);        /* IBM Plex Mono: labels, data, code */
 
   /* ── shadcn contract (kept, repointed to Grid) ────────────────────────── */
   --color-background: var(--background);
@@ -63,7 +63,7 @@
 
   /* Surfaces. These carry the separation now, so they are deliberately far
      enough apart to be seen without help from a border:
-       · `background` is the page ground — the canvas panels sit on.
+       · `background` is the page ground. The canvas panels sit on.
        · `surface`    is a panel: a card, the header, the sidebar rail.
        · `raised`     floats above a panel: dropdowns, popovers, dialogs.
        · `sunken`     is a soft filled shape: chips, badges, code blocks,
@@ -73,7 +73,7 @@
   --color-surface-hover: var(--surface-hover);
   --color-surface-raised: var(--surface-raised);
   /* Hover for something already filled with `sunken`. It needs its own value
-     rather than reusing `surface-hover`, which moves toward white — correct for
+     rather than reusing `surface-hover`, which moves toward white: correct for
      a white row, backwards for a grey chip, and backwards in the other
      direction again on the dark ground. */
   --color-surface-sunken-hover: var(--surface-sunken-hover);
@@ -84,7 +84,7 @@
   --color-ink-muted: var(--ink-muted);  /* labels, captions, metadata        */
   --color-ink-faint: var(--ink-faint);  /* placeholder, disabled             */
 
-  /* Rules. Three weights, all quiet. `strong` is the structural line — the
+  /* Rules. Three weights, all quiet. `strong` is the structural line. The
      frame of something that genuinely needs an edge. `border` (shadcn's name)
      is the repeating divider between table rows, so a long table reads as one
      block instead of a ladder. `faint` is for tracks and the quietest splits.
@@ -97,18 +97,18 @@
   /* The exception. One black line, under a table header, and nowhere else. It
      is what is left of the Swiss hairline once everything else stopped drawing
      one, and with a page of soft fills around it it is the strongest mark on
-     screen — which is the point. It is not `ink`: near-white under a header on
+     screen, which is the point. It is not `ink`: near-white under a header on
      the dark ground glares, so dark gets a lifted grey instead. */
   --color-rule-anchor: var(--rule-anchor);
 
-  /* Severity — encoded by weight. Critical is the only hue. */
+  /* Severity: encoded by weight. Critical is the only hue. */
   --color-sev-critical: var(--sev-critical);
   --color-sev-high: var(--sev-high);
   --color-sev-medium: var(--sev-medium);
   --color-sev-low: var(--sev-low);
   --color-sev-critical-soft: var(--sev-critical-soft);
 
-  /* Status — for outcomes (scan succeeded, credential verified), NOT for
+  /* Status, for outcomes (scan succeeded, credential verified), NOT for
      severity. Deliberately deep and desaturated so they never compete with
      the accent red. */
   --color-status-ok: var(--status-ok);
@@ -127,7 +127,7 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  /* Sidebar — now light in both grounds. The old dark-sidebar-on-light-body
+  /* Sidebar: now light in both grounds. The old dark-sidebar-on-light-body
      split is gone, which removes a whole class of token bugs where shared
      muted/foreground values resolved to the wrong theme. */
   --color-sidebar: var(--sidebar);
@@ -163,7 +163,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT — the default and the reference
+   LIGHT. The default and the reference
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
   color-scheme: light;
@@ -226,7 +226,7 @@
   /* Severity is a single warm ramp that cools as it descends: alarm red, burnt
      orange, ochre, then plain grey for the ordinary end. This replaces the first
      cut, which was red-then-greyscale on the theory that severity should be read
-     by weight alone. It failed in use — High rendered as a solid black square,
+     by weight alone. It failed in use: High rendered as a solid black square,
      the loudest mark on the screen, and Medium and Low were two greys nobody
      could order at a glance. One ramp is still not a rainbow: the hue only ever
      moves along the hot-to-neutral axis, and nothing here borrows a hue that
@@ -247,7 +247,7 @@
   /* The bar and area fill, and the colour a healthy posture score is drawn in.
      Deep blue rather than ink: a bar is a large solid shape, and filling every one
      of them with black made black the loudest thing on a dashboard whose whole job
-     is to make the unhealthy number stand out. Still not green — see postureColor. */
+     is to make the unhealthy number stand out. Still not green: see postureColor. */
   --fill: #1F5F8B;
   --track: #E4E4E4;
   /* Series colours for a chart comparing several categories. Deliberately not the
@@ -262,7 +262,7 @@
   --chart-5: #5A6570;
 
   /* The rail is chrome, so it takes the panel surface and reads as white
-     against the canvas — the same relationship the header has. */
+     against the canvas. The same relationship the header has. */
   --sidebar: #FFFFFF;
   --sidebar-foreground: #000000;
   --sidebar-primary: #000000;
@@ -277,7 +277,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DARK — retuned, not inverted
+   DARK: retuned, not inverted
 
    Four values could not simply flip:
      · Ground is #0D0E0F, not pure black. A hair off zero stops the screen
@@ -299,7 +299,7 @@
   /* Same relationship as light, inverted: the canvas is the darkest thing on
      screen and a panel is lifted off it. The old values had surface only two
      points above background, which was invisible without the border that used
-     to carry the card — with the border gone the gap has to be real. */
+     to carry the card: with the border gone the gap has to be real. */
   --background: #0B0C0D;
   --foreground: #F4F4F2;
 
@@ -454,7 +454,7 @@
    One definition so the tracking and size never drift between screens. */
 @utility label-grid {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;   /* 11px — the floor, and only for uppercase mono */
+  font-size: 0.6875rem;   /* 11px. The floor, and only for uppercase mono */
   line-height: 1.2;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -470,7 +470,7 @@
 
    This exists as its own utility on purpose. `label-grid` sets a colour, so
    writing `label-grid text-ink` puts two single-class rules in a specificity tie
-   that only stylesheet order breaks — it works or it doesn't depending on which
+   that only stylesheet order breaks. It works or it doesn't depending on which
    one Tailwind happens to emit last. Never override a Grid utility's colour from
    outside it; name the variant instead. */
 @utility label-grid-strong {
@@ -484,7 +484,7 @@
 
 /* The title of a panel: a card header, a dashboard widget header, a named
    section. One utility so a widget and a card never disagree about what a
-   title looks like — they did, and the widget lost. It was set in `label-grid`,
+   title looks like. They did, and the widget lost. It was set in `label-grid`,
    which is the *caption* style, so a widget's own name rendered smaller and
    lighter than the column headers inside it.
 
@@ -518,7 +518,7 @@
    other to `auto`, and the element scrolls in a direction it was never meant to.
 
    None of them contain the scroll. `overscroll-behavior: contain` looks like the
-   tidy choice, but it stops the wheel passing to the page — including on an axis
+   tidy choice, but it stops the wheel passing to the page, including on an axis
    the element cannot scroll at all. A findings table wide enough to scroll
    sideways swallowed every vertical wheel event, so the page sat still until the
    pointer moved off the table. Chaining to the page is the behaviour people

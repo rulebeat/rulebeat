@@ -28,7 +28,7 @@ export async function listLinksForSchedule(scheduleId: string): Promise<Schedule
 
 /**
  * Atomically replaces all notification links for a schedule.
- * Called on every schedule save — passing an empty array clears all links.
+ * Called on every schedule save: passing an empty array clears all links.
  */
 export async function setLinksForSchedule(scheduleId: string, links: ScheduleChannelLink[]): Promise<void> {
   await inTransaction(async (tx) => {

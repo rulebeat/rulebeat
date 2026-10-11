@@ -39,11 +39,11 @@ export async function POST() {
         await writeSchemaCache(type, fields);
         results.push({ type, status: 'ok', count: fields.length });
       } else {
-        // Azure answered but this type genuinely has no properties — not a failure to reach Azure.
+        // Azure answered but this type genuinely has no properties, not a failure to reach Azure.
         results.push({ type, status: 'empty' });
       }
     } catch (err) {
-      // The ARM call itself failed (timeout, credential, throttling) — distinct from a genuinely empty schema.
+      // The ARM call itself failed (timeout, credential, throttling): distinct from a genuinely empty schema.
       results.push({ type, status: 'error', error: safeErrorMessage(`Schema refresh failed for ${type}`, err) });
     }
   }

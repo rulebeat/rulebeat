@@ -1,5 +1,5 @@
 /**
- * Spec 007 — armFetch() now goes through fetchWithRetry() instead of a bare fetch, so a transient
+ * Spec 007: armFetch() now goes through fetchWithRetry() instead of a bare fetch, so a transient
  * ARM failure (503) is retried rather than surfacing immediately as an error.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';

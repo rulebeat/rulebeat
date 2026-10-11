@@ -30,7 +30,7 @@ export type QueryToRuleInput =
 
 /**
  * Builds the same Rule shape the /query page's "Save as rule" action hands to /rules/new via
- * sessionStorage (see rule-new-client.tsx's readQueryPrefill()) — pulled out of query-client.tsx
+ * sessionStorage (see rule-new-client.tsx's readQueryPrefill()): pulled out of query-client.tsx
  * so each backend's payload shape is independently testable without rendering the component.
  */
 export function buildRuleFromQuery(input: QueryToRuleInput): Rule {

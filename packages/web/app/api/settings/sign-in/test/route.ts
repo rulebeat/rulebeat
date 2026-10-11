@@ -6,10 +6,10 @@ import { writeAudit } from '@/lib/db/audit';
 import { probeTenant, resolveSignInConfig } from '@/lib/sign-in-config';
 
 /**
- * "Test sign-in" — a tenant-reachability probe, not a full verification. B1b's design note on
+ * "Test sign-in": a tenant-reachability probe, not a full verification. B1b's design note on
  * this is explicit: a client-credentials-style check can't see the redirect URI, which is the
  * single most common Entra setup failure, so a green tick here must never be confused with "login
- * will work" — that only gets proven by an actual sign-in through the button on /signin.
+ * will work": that only gets proven by an actual sign-in through the button on /signin.
  *
  * Two modes, same as the Azure connection test route: with a tenant id in the body, it tests what
  * the admin has typed but not yet saved; with an empty body, it tests whatever is currently

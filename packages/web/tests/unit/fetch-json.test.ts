@@ -1,5 +1,5 @@
 /**
- * Spec 010 — fetchJson() returns a FetchResult<T> discriminated union instead of collapsing every
+ * Spec 010: fetchJson() returns a FetchResult<T> discriminated union instead of collapsing every
  * failure into `null`, so callers can tell "fetch failed" apart from "fetch succeeded, empty body".
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +47,7 @@ describe('fetchJson', () => {
   });
 
   it('returns { ok: false } when the passed signal is already aborted', async () => {
-    // A real fetch rejects immediately when handed an already-aborted signal — the fake here
+    // A real fetch rejects immediately when handed an already-aborted signal. The fake here
     // mirrors that contract rather than exercising the platform's own abort machinery.
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The user aborted a request.', 'AbortError')));
 

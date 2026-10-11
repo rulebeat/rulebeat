@@ -4,15 +4,15 @@ import { notificationDeliveries, deliveriesInsertionOrder } from './tables';
 import { many, run } from './exec';
 
 /**
- * History behind notificationChannels' single-value lastNotifiedAt/lastError columns — one row per
+ * History behind notificationChannels' single-value lastNotifiedAt/lastError columns. One row per
  * delivery attempt sequence (a channel's final outcome for a single run, after retries are
  * exhausted). Modeled on schedule-runs.ts's pattern: plain TEXT ids, no SQL-level FK, prune-after-
  * insert cap.
  *
  * occurredAt is millisecond-resolution, so two deliveries dispatched back-to-back (e.g. a schedule
- * fanning out to several channels at once) can land the same timestamp — ORDER BY occurredAt DESC
+ * fanning out to several channels at once) can land the same timestamp: ORDER BY occurredAt DESC
  * alone leaves their relative order unspecified. Every ordered query below breaks that tie with
- * `deliveriesInsertionOrder` (SQLite's implicit rowid, Postgres's `seq` bigserial — both monotonic
+ * `deliveriesInsertionOrder` (SQLite's implicit rowid, Postgres's `seq` bigserial, both monotonic
  * on insert), so "newest first" stays true even under a tie instead of depending on the query
  * planner's incidental tie-break.
  */

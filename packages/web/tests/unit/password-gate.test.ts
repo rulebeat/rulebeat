@@ -28,7 +28,7 @@ describe('withPasswordGate concurrency', () => {
     await Promise.all(Array.from({ length: 8 }, job));
 
     expect(maxActive).toBeLessThanOrEqual(2);
-    // Not just "never exceeded" — the limit must actually have been hit, or this would pass
+    // Not just "never exceeded": the limit must actually have been hit, or this would pass
     // vacuously if the gate did nothing at all.
     expect(maxActive).toBe(2);
     expect(active).toBe(0);
@@ -58,7 +58,7 @@ describe('withPasswordGate fail-fast behaviour', () => {
     const block = () => new Promise<void>((resolve) => { releases.push(resolve); });
 
     // One caller takes the only running slot; two more fill the queue. None of these pass
-    // failFast, so they just wait — this is only to saturate the gate for the next assertion.
+    // failFast, so they just wait. This is only to saturate the gate for the next assertion.
     const occupied = [0, 1, 2].map(() => withPasswordGate(block));
     await Promise.resolve(); // let the synchronous acquire/enqueue logic run
 
@@ -71,7 +71,7 @@ describe('withPasswordGate fail-fast behaviour', () => {
     expect(ran).toBe(false);
 
     // Drain one at a time: releasing the running job frees a slot, which lets the next *queued*
-    // job start and call `block()` for the first time, pushing its own resolver — snapshotting
+    // job start and call `block()` for the first time, pushing its own resolver: snapshotting
     // `releases` up front would miss those later-created ones.
     while (releases.length > 0) {
       releases.shift()!();

@@ -66,7 +66,7 @@ describe('the empty copy', () => {
     expect(noRules.title).not.toBe(noneOpen.title);
     expect(noRules.hint).not.toBe(noneOpen.hint);
     for (const text of [noRules.title, noRules.hint, noneOpen.title, noneOpen.hint]) {
-      expect(text).not.toContain('—');
+      expect(text).not.toContain('\u2014');
     }
   });
 });

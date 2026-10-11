@@ -55,13 +55,13 @@ export default async function ScansPage({
         notificationLinks: await listLinksForSchedule(s.id),
       })))
     : undefined;
-  // Load channels for anyone who can edit schedules — the summary type carries no URL so it's
+  // Load channels for anyone who can edit schedules. The summary type carries no URL so it's
   // safe to send to editors. Admins manage the destinations; editors just assign them.
   const initialNotificationChannels = activeTab === 'schedules' && can(role, 'schedules:write')
     ? await listChannels()
     : undefined;
 
-  // Rules tab's "N resources affected" column — same group-by-ruleId pattern as
+  // Rules tab's "N resources affected" column, same group-by-ruleId pattern as
   // api/widgets/top-rules/route.ts. dateWindow is required by the type but unused for an
   // active-findings query, so the value here is a harmless placeholder.
   let ruleFindingCounts: Record<string, number> | undefined;

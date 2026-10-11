@@ -6,8 +6,8 @@
  * any change to the upgrade code which was supposed to be behaviour-preserving can be proven so.
  *
  * It is the reference the migration extraction was carried out against. Keep it: the snapshots are a
- * human-readable, diffable record of the current behaviour, including the behaviour that is wrong —
- * the bugs the rest of the suite pins are visible in here too, and fixing one is *supposed* to
+ * human-readable, diffable record of the current behaviour, including the behaviour that is wrong.
+ * The bugs the rest of the suite pins are visible in here too, and fixing one is *supposed* to
  * produce a snapshot diff. An unexplained diff, on the other hand, means something moved that
  * shouldn't have.
  */
@@ -38,7 +38,7 @@ describe('TS-25 · the upgrade produces a recorded, stable result', () => {
 describe('TS-25 · calling the migrations directly is the same as starting the app', () => {
   /**
    * The premise every other test in the upgrade suite rests on. Those tests call `runMigrations` and
-   * `runSeeds` directly because it is fast and lets them construct half-migrated states — but that is
+   * `runSeeds` directly because it is fast and lets them construct half-migrated states, but that is
    * only meaningful if it does what actually happens when someone starts RuleBeat, which goes through
    * `lib/db/client.ts` opening its connection at import time.
    *

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 
 /* Catches an uncaught render error within a route segment. `error.message` is already a generic,
  * identifier-only string when the throw came from a Server Component (Next strips the real detail
- * before it reaches the client) — matching the client-safe-message discipline lib/api-error.ts
+ * before it reaches the client): matching the client-safe-message discipline lib/api-error.ts
  * applies to API routes, so no extra scrubbing is needed here. `unstable_retry` (not the older
  * `reset()`) re-fetches and re-renders the segment. */
 export default function Error({

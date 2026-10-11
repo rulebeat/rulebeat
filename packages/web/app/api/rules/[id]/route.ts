@@ -103,7 +103,7 @@ export async function PUT(
     return NextResponse.json({ error: nameError }, { status: 400 });
   }
 
-  // RB-RM-004: same server-side guard as POST — see that route for the reasoning.
+  // RB-RM-004: same server-side guard as POST: see that route for the reasoning.
   if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
     return NextResponse.json({
       error: 'The rule has no condition that compiles to a filter. It would match every resource in scope. Add at least one real condition.',
@@ -111,7 +111,7 @@ export async function PUT(
   }
 
   // queryBackend can't change via edit (preserved from existing below), so existing.queryBackend is
-  // the authoritative backend for this rule — same allowlist/structural/probe validation as POST.
+  // the authoritative backend for this rule, same allowlist/structural/probe validation as POST.
   if (existing.queryBackend === 'microsoft-graph') {
     if (!body.graphQuery) {
       return NextResponse.json({ error: 'A Directory rule needs a Microsoft Graph query.' }, { status: 400 });

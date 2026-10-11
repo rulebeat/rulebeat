@@ -1,8 +1,8 @@
 /**
- * Spec 037 — buildRuleFromQuery() is the payload the /query page's "Save as rule" button hands
+ * Spec 037: buildRuleFromQuery() is the payload the /query page's "Save as rule" button hands
  * to /rules/new via sessionStorage (query-client.tsx's saveAsRule() -> rule-new-client.tsx's
  * readQueryPrefill()). Pulled out of the component specifically so each backend's shape is
- * testable without rendering React — this codebase has no @testing-library/RTL convention
+ * testable without rendering React: this codebase has no @testing-library/RTL convention
  * (grepped, zero hits), so a rendered-component test isn't the idiomatic path here.
  */
 import { describe, expect, it } from 'vitest';
@@ -120,7 +120,7 @@ describe('buildRuleFromQuery (spec 037)', () => {
 
   describe('sessionStorage round trip', () => {
     // saveAsRule() hands this object to JSON.stringify() for sessionStorage, and
-    // readQueryPrefill() JSON.parses it straight back into a Rule — a value that mutates
+    // readQueryPrefill() JSON.parses it straight back into a Rule. A value that mutates
     // under that round trip would silently corrupt the prefill.
     it('is unchanged by JSON.stringify -> JSON.parse for every backend', async () => {
       const rules = [

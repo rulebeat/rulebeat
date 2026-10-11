@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-/* Handles a fatal error in the root layout itself — replacing it entirely, so this file cannot
+/* Handles a fatal error in the root layout itself: replacing it entirely, so this file cannot
  * assume globals.css, the theme cookie, or next/font loaded correctly, since a root-layout
  * failure is exactly the moment those are least trustworthy. Defines its own <html>/<body> per the
  * global-error docs, system font stack, inline styles only, no metadata export (unsupported here). */

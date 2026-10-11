@@ -23,7 +23,7 @@ export function ResourceTypeInput({ value, onChange, readOnly }: ResourceTypeInp
   const selected = value.split(',').map(t => t.trim()).filter(Boolean);
 
   useEffect(() => {
-    if (readOnly) return; // display-only — no need to load the picker options
+    if (readOnly) return; // display-only. No need to load the picker options
     fetch('/api/resources/types')
       .then(async r => {
         const data = await r.json().catch(() => null) as { types?: string[]; error?: string } | null;

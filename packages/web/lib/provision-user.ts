@@ -4,7 +4,7 @@ import {
 import { writeAudit, logAuthEvent } from './db/audit';
 
 export interface SignInIdentity {
-  /** Entra object id — stable for this person within the tenant. */
+  /** Entra object id: stable for this person within the tenant. */
   oid: string;
   email: string;
   name?: string | null;
@@ -16,12 +16,12 @@ export interface SignInIdentity {
  * sign-in rather than on every token refresh.
  *
  * Two paths:
- *  1. Known oid — normal returning user.
- *  2. Unknown oid but a row exists for their email — an admin assigned them a role before they
+ *  1. Known oid: normal returning user.
+ *  2. Unknown oid but a row exists for their email. An admin assigned them a role before they
  *     ever signed in (via the invite flow, or `RULEBEAT_INITIAL_ADMIN` at restart); bind the oid
  *     to that row so the waiting role applies.
  *
- * Tenant membership alone is never enough — an oid RuleBeat has never seen, with no row waiting
+ * Tenant membership alone is never enough. An oid RuleBeat has never seen, with no row waiting
  * for its email, is denied. There is deliberately no "nobody knows them, create an account"
  * fallback: a fresh install already has the seeded local owner as admin, and recovering from
  * every admin being removed is `RULEBEAT_INITIAL_ADMIN` + restart, which pre-creates the row so
@@ -40,7 +40,7 @@ export async function provisionUser(identity: SignInIdentity): Promise<AppUser |
       await linkOid(invited.id, identity.oid, identity.name);
       user = await getUser(invited.id);
       if (user) {
-        // Distinguishable from the generic auth.sign_in line written below — a pre-created row's
+        // Distinguishable from the generic auth.sign_in line written below. A pre-created row's
         // first claim is exactly the moment P4-2's binding race can go wrong, so it gets its own
         // notable audit entry rather than blending into every other sign-in.
         await writeAudit({
@@ -54,7 +54,7 @@ export async function provisionUser(identity: SignInIdentity): Promise<AppUser |
       }
     } else {
       // Unbounded and reachable by anyone who can complete an Entra sign-in against the tenant,
-      // provisioned or not — logged, not persisted, same reasoning as the local-sign-in flood
+      // provisioned or not: logged, not persisted, same reasoning as the local-sign-in flood
       // vectors (spec 022).
       logAuthEvent(`Denied Entra sign-in for ${email}: not provisioned`, {
         reason: 'not-provisioned', oid: identity.oid,

@@ -1,8 +1,8 @@
 /**
- * Spec 021 — POST/PUT /api/settings/notifications and POST /api/settings/notifications/test must
+ * Spec 021: POST/PUT /api/settings/notifications and POST /api/settings/notifications/test must
  * reject a destination that resolves to a private/link-local/loopback address (SSRF hardening),
  * both for new channels and for unsaved values typed into the "send test" form. A PUT that only
- * changes the name (no url/config in the body) must be unaffected — the guard only runs when a
+ * changes the name (no url/config in the body) must be unaffected. The guard only runs when a
  * destination is actually present in the request.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,7 +33,7 @@ async function signInAsAdmin(): Promise<void> {
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
 }
 
-describe('notification channel routes — SSRF hardening (spec 021)', () => {
+describe('notification channel routes: SSRF hardening (spec 021)', () => {
   beforeEach(async () => {
     await resetDb();
     mockAuth.mockReset();

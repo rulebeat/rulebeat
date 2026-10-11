@@ -15,14 +15,14 @@ import { Check, Cloud, ExternalLink, Lock, Loader2, Plug, Trash2 } from 'lucide-
  *
  * Mirrors what Prowler and CloudQuery do: the tool's own sign-in is deployment configuration, but
  * the credential it reads the cloud with is entered here, after login. RuleBeat never creates the
- * service principal — creating an app registration and assigning roles are write operations, and
+ * service principal: creating an app registration and assigning roles are write operations, and
  * a governance tool that could grant itself permissions is a privilege-escalation primitive.
  */
 
 /**
  * Which variables are actually supplying the credential, so the lock message can name the exact
  * lines to edit instead of gesturing at "your configuration". `AZURE_TENANT_ID` is deliberately
- * left out — removing it would break sign-in too, which is not what anyone wants here.
+ * left out: removing it would break sign-in too, which is not what anyone wants here.
  */
 const ENV_VARS_BY_SOURCE: Partial<Record<AzureCredentialSource, string[]>> = {
   'env-federated': ['AZURE_CLIENT_ID', 'AZURE_FEDERATED_TOKEN_FILE'],

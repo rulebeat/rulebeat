@@ -3,7 +3,7 @@
  * database file with a throwaway "create then drop" table. Found by hand: Next's production build
  * opens the database from several parallel workers at once (page-data collection), and when two of
  * them race this on the same still-empty file, one can drop the table a moment before the other
- * gets to — an unconditional `DROP TABLE` then throws "no such table" instead of no-op'ing.
+ * gets to: an unconditional `DROP TABLE` then throws "no such table" instead of no-op'ing.
  * Reproduced here by driving two raw connections to the same fresh file through the exact
  * interleaving that triggers it, without relying on real OS-level concurrency.
  */

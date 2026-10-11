@@ -57,7 +57,7 @@ describe('computeActivityFingerprint()', () => {
 
   it('never collides with computeFingerprint() for the same rule + identical key string', () => {
     // Same ruleId, and the activity dimensionKey happens to equal what a resource fingerprint's
-    // resourceId would be — the 'activity' namespace segment must still keep these apart.
+    // resourceId would be: the 'activity' namespace segment must still keep these apart.
     const resourceFp = computeFingerprint('rule-1', 'shared-string');
     const activityFp = computeActivityFingerprint('rule-1', 'shared-string');
     expect(activityFp).not.toBe(resourceFp);
@@ -116,7 +116,7 @@ describe('createActivityFinding()', () => {
 });
 
 describe('createFinding() (regression: kind must stay unset for ordinary state findings)', () => {
-  it('never sets kind — absence is the "state" default', () => {
+  it('never sets kind: absence is the "state" default', () => {
     const finding = createFinding({
       module: 'security',
       ruleId: 'rule-1',

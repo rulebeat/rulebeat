@@ -1,5 +1,5 @@
 /**
- * Spec 032 — POST /api/rules/validate-graph, mirroring validate-kql-identity.test.ts's coverage of
+ * Spec 032: POST /api/rules/validate-graph, mirroring validate-kql-identity.test.ts's coverage of
  * its ARG sibling: good path, a malformed filter, and no-credential-configured (see
  * app/api/rules/validate-graph/route.ts). Also covers the two Graph-specific outcomes runner.ts's
  * ARG path has no equivalent for: a GraphTruncatedError counts as a real (if incomplete) result, not
@@ -130,7 +130,7 @@ describe('POST /api/rules/validate-graph (spec 032)', () => {
     expect(body.error).toMatch(/Invalid filter clause/);
   });
 
-  it('does not unwrap a non-400 Graph error — falls through to a generic 502', async () => {
+  it('does not unwrap a non-400 Graph error: falls through to a generic 502', async () => {
     fakeCtx = fakeTenantContext({ graphFailWith: new Error('Graph API 429: Too many requests') });
     const res = await POST(postRequest(VALID_GQ));
     expect(res.status).toBe(502);

@@ -17,7 +17,7 @@ interface TargetPickerProps {
   label?: string;
 }
 
-/** All/Categories/Tags/Rules target selector — shared between schedule creation and the
+/** All/Categories/Tags/Rules target selector: shared between schedule creation and the
  *  ad-hoc "Run Scan" picker so both surfaces express the same targeting model. */
 export function TargetPicker({
   targetType, targetValues, onTargetTypeChange, onTargetValuesChange, categories, rules, label = 'Target',
@@ -43,7 +43,7 @@ export function TargetPicker({
   }
 
   // Mirrors resolveRulesForSchedule (lib/schedule-target.ts) so the picker shows the same thing
-  // that will actually run — catches the case a rules-list filter alone can't: a whole category
+  // that will actually run: catches the case a rules-list filter alone can't: a whole category
   // or tag whose rules happen to all be disabled right now.
   const resolved = useMemo(() => {
     let matched: Rule[];

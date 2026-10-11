@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchJson } from '@/lib/fetch-json';
 
-// Mirrors AZURE_CALL_TIMEOUT_MS (packages/core/src/net/fetch-retry.ts) — reimplemented locally
+// Mirrors AZURE_CALL_TIMEOUT_MS (packages/core/src/net/fetch-retry.ts): reimplemented locally
 // since that module carries Node-only deps not meant for a client bundle.
 const WIDGET_FETCH_TIMEOUT_MS = 30_000;
 
@@ -22,7 +22,7 @@ interface UseWidgetFetchResult<T> {
  * of leaving the widget spinning forever).
  *
  * `deps` are extra invalidation triggers not already encoded in `url` (a dashboard-wide
- * `refreshKey`, most commonly) — `url` itself is always a dependency.
+ * `refreshKey`, most commonly): `url` itself is always a dependency.
  */
 export function useWidgetFetch<T>(url: string, deps: unknown[] = []): UseWidgetFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
@@ -39,7 +39,7 @@ export function useWidgetFetch<T>(url: string, deps: unknown[] = []): UseWidgetF
     setFailed(false);
     const signal = AbortSignal.timeout(WIDGET_FETCH_TIMEOUT_MS);
     fetchJson<T>(url, { signal }).then(result => {
-      if (id !== requestId.current) return; // superseded by a newer request — ignore
+      if (id !== requestId.current) return; // superseded by a newer request: ignore
       setLoading(false);
       if (result.ok) {
         setData(result.data);

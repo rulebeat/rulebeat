@@ -2,7 +2,7 @@
  * TS-25 · the individual migration steps that can lose data quietly.
  *
  * Where `db-migrations.test.ts` asks "did a customer's content survive a whole upgrade", this one
- * pins the specific mechanics that make losing it possible — column-rename ordering, in-place
+ * pins the specific mechanics that make losing it possible: column-rename ordering, in-place
  * backfills, id rewrites that have to reach five tables, and what happens when an upgrade is
  * interrupted halfway.
  *
@@ -29,7 +29,7 @@ function sampleWith(ddl: string, seed?: (sqlite: Database) => void): Sample {
   return sample;
 }
 
-/** Runs only the migrations, leaving seeding out — keeps a focused test's assertions uncluttered. */
+/** Runs only the migrations, leaving seeding out: keeps a focused test's assertions uncluttered. */
 function migrateOnly(sample: Sample): Database {
   const sqlite = open(sample.file);
   runMigrations(sqlite);
@@ -81,7 +81,7 @@ describe('TS-25 · renaming a column must carry its data', () => {
         (sqlite.prepare(`SELECT id, type FROM rules`).all() as { id: string; type: string | null }[])
           .map(r => [r.id, r.type]),
       );
-      // If ADD COLUMN ran before RENAME, every one of these would read 'custom' — the column would
+      // If ADD COLUMN ran before RENAME, every one of these would read 'custom'. The column would
       // exist, the upgrade would look successful, and every rule's provenance would be wrong.
       expect(byId).toEqual({ a: 'builtin', b: 'community', c: 'custom', d: null });
       expect(columnsOf(sqlite, 'rules')).not.toContain('source');
@@ -89,14 +89,14 @@ describe('TS-25 · renaming a column must carry its data', () => {
   });
 
   // spec 031 changed what "carries its data" means for these two columns once a row has no raw_kql
-  // of its own: the rename still has to succeed (that's still what RB-QA-010 was about — an ADD
+  // of its own: the rename still has to succeed (that's still what RB-QA-010 was about: an ADD
   // COLUMN run before the RENAME swallows the failure and stands up an empty column, stranding the
   // old one), but the data no longer sits unchanged in the renamed column afterward. A second,
   // gated migration step (migrate.ts's legacyConditionRows block) compiles it into raw_kql through
-  // buildRuleQuery() and clears the legacy column — see that block's own comment. Both tests below
+  // buildRuleQuery() and clears the legacy column: see that block's own comment. Both tests below
   // compute the expected KQL by calling buildRuleQuery() with the same compileTarget shape that
   // block builds, rather than hand-typing a KQL string that would drift the moment the compiler's
-  // output format changes — the same reasoning the fingerprint tests elsewhere in this suite use
+  // output format changes: the same reasoning the fingerprint tests elsewhere in this suite use
   // computeFingerprint() itself instead of a hand-typed hash.
   //
   // Both fixtures use two conditions joined by 'or' (not one, and deliberately not 'and') so the
@@ -104,11 +104,11 @@ describe('TS-25 · renaming a column must carry its data', () => {
   // buildRuleQuery(), the same shape already proven to need the De Morgan flip in core's
   // de-morgan-join-flip.test.ts. That file proves buildRuleQuery() itself flips correctly; a
   // single-condition fixture here would never exercise that path at all, since there is no join to
-  // flip — it would only prove the migration calls buildRuleQuery() with *something*, not that it
+  // flip: it would only prove the migration calls buildRuleQuery() with *something*, not that it
   // hands the compiler the row's real join structure instead of e.g. losing it during its own JSON
   // reshaping. 'or' is the deliberate choice, not 'and': buildConditionGroupExpr() falls back to
   // `cond.join ?? 'and'` for a condition with no join at all, so a fixture using 'and' cannot tell a
-  // correctly-preserved join apart from one silently dropped to the default — confirmed by hand: a
+  // correctly-preserved join apart from one silently dropped to the default: confirmed by hand: a
   // kill-switch that stripped `join` from every parsed condition before compiling left an 'and'-based
   // version of these two tests fully green. 'or' has no such collision with the fallback.
 
@@ -134,7 +134,7 @@ describe('TS-25 · renaming a column must carry its data', () => {
 
       expect(row.raw_kql, 'the nested condition logic was lost instead of being compiled').toBe(expectedKql);
       // Guards against a migration that silently drops the join (falls back to 'and', flips to 'or')
-      // instead of preserving the row's real 'or' (which flips to 'and') — see the comment above.
+      // instead of preserving the row's real 'or' (which flips to 'and'): see the comment above.
       expect(row.raw_kql).toContain(' and ');
       expect(row.conditions).toBe('[]');
       expect(row.condition_groups, 'condition groups were stranded in the old column instead of being cleared once compiled').toBeNull();
@@ -157,7 +157,7 @@ describe('TS-25 · renaming a column must carry its data', () => {
       const expectedKql = buildRuleQuery({ scope: {}, resourceTypes: [], conditions, conditionGroups: undefined } as unknown as Rule);
 
       expect(row.raw_kql, 'the flat condition list was lost instead of being compiled').toBe(expectedKql);
-      // Same join-flip guard as above — a flat rule.conditions list compiles through the identical
+      // Same join-flip guard as above: a flat rule.conditions list compiles through the identical
       // single-group-shorthand path in buildRuleQuery() (see that function's own comment), so it is
       // just as able to silently lose its join during the migration's JSON reshaping.
       expect(row.raw_kql).toContain(' and ');
@@ -295,7 +295,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
    * The contract: a finding's stored fingerprint must equal what the product would compute for it
    * today. Fingerprints are `sha256(ruleId::resourceId)` and are recomputed from scratch on every
    * scan (`lib/scan-runner.ts`), while the id-rewriting migration deliberately leaves the stored
-   * fingerprint alone — its comment calls it "an opaque hash, never recomputed here".
+   * fingerprint alone: its comment calls it "an opaque hash, never recomputed here".
    *
    * Both halves are individually reasonable and together they break: after a rule's id changes, the
    * next scan derives a different fingerprint for the same violation on the same resource. The old
@@ -303,7 +303,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
    * as brand new; and every suppression, which keys on the fingerprint, silently stops suppressing.
    *
    * Fixed by `remapFingerprints` (RB-QA-013), which moves findings, events and suppressions onto the
-   * fingerprint the new id produces — matching each row exactly rather than inferring, so nothing
+   * fingerprint the new id produces: matching each row exactly rather than inferring, so nothing
    * whose fingerprint was not derived from the old id is touched.
    */
   it('25-05 · every finding\'s fingerprint still matches its rule', async () => {
@@ -325,7 +325,7 @@ describe('TS-25 · a renamed rule keeps its findings addressable', () => {
   it('25-09 · a suppression still silences the same violation after its rule is renamed', async () => {
     // The user-visible half of the same fix. A suppression stores only a fingerprint and a resource
     // id, so if the fingerprint is not carried across the rename, an accepted risk quietly starts
-    // alerting again on the next scan — with nothing anywhere to say why.
+    // alerting again on the next scan, with nothing anywhere to say why.
     const sample = makeSample('legacy-rules');
     upgradeInProcess(sample);
     const sqlite = open(sample.file);
@@ -522,7 +522,7 @@ describe('TS-25 · seeding runs against an already-migrated schema', () => {
 
 // ── A rule survives the last-run-status column addition (spec 030) ──────────
 
-/** The rules table one migration before spec 030 added last_run_status/last_run_at — every other
+/** The rules table one migration before spec 030 added last_run_status/last_run_at. Every other
  *  column already at its modern name. Scoped to exactly this step rather than reusing RULES_LEGACY,
  *  since that shape predates raw_kql and can't carry the "KQL untouched" assertion below. Each
  *  column addition in migrate.ts is its own independent, idempotent ALTER TABLE, so a DDL missing

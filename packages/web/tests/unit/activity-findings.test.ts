@@ -1,8 +1,8 @@
 /**
  * Spec 034 (activity findings): kind:'activity' has no resource, fingerprints on
  * ruleId+dimensionKey (namespaced so it can never collide with a state fingerprint for the same
- * rule), never resolves via the normal resolve sweep — it ages out of a read-time window instead
- * — and suppresses through the existing fingerprint-only mechanism now that resourceId is
+ * rule), never resolves via the normal resolve sweep (it ages out of a read-time window instead),
+ * and suppresses through the existing fingerprint-only mechanism now that resourceId is
  * optional on both Finding and Suppression.
  *
  * Companion to finding-lifecycle-matrix.test.ts, which covers the kind:'state' lifecycle this
@@ -93,7 +93,7 @@ beforeEach(async () => {
   await resetDb();
 });
 
-describe('syncScanFindings — activity finding creation and repeat occurrence', () => {
+describe('syncScanFindings: activity finding creation and repeat occurrence', () => {
   it('creates an activity finding with kind, dimensionKey, and no resource fields; one created event', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
@@ -142,7 +142,7 @@ describe('syncScanFindings — activity finding creation and repeat occurrence',
   });
 });
 
-describe('syncScanFindings — an activity finding never resolves via the resolve sweep (spec 034)', () => {
+describe('syncScanFindings: an activity finding never resolves via the resolve sweep (spec 034)', () => {
   it('regression: a rule not re-reporting an activity finding this scan does not resolve it', async () => {
     const f = activityFinding('principal-a');
     const d1 = daysAgo(3);
@@ -163,7 +163,7 @@ describe('syncScanFindings — an activity finding never resolves via the resolv
 
   it('cross-contamination: a state finding from the same rule/category still resolves normally when a sibling activity finding does not', async () => {
     // Same rule id deliberately shared by both findings, to isolate that the resolve sweep's
-    // kind:'state' filter — not some incidental per-rule scoping — is what protects the activity
+    // kind:'state' filter (not some incidental per-rule scoping) is what protects the activity
     // finding.
     const activity = activityFinding('principal-a', { ruleId: RULE_A });
     const state = stateFinding('vm-1', { ruleId: RULE_A });

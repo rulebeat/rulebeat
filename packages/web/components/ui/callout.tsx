@@ -70,7 +70,7 @@ function Callout({
   )
 }
 
-/** A callout that wraps its own content — a result table, a list of samples.
+/** A callout that wraps its own content. A result table, a list of samples.
  *  Same frame and same header row, but the body sits flush instead of inset. */
 function CalloutPanel({
   tone = "info",

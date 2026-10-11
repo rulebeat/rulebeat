@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // Trims the Docker runner image to only the files the server actually needs (P2-10) instead of
   // shipping the full node_modules tree. Root points at the monorepo root, not this package,
   // because packages/core is a sibling workspace whose compiled `dist/` the traced server.js must
-  // be able to resolve — the default project-root tracing would miss it entirely.
+  // be able to resolve: the default project-root tracing would miss it entirely.
   output: 'standalone',
   outputFileTracingRoot: path.join(__dirname, '../../'),
   serverExternalPackages: ['better-sqlite3', 'nodemailer', 'pg'],
@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
         source: '/:path*',
         headers: [
           // RuleBeat has destructive admin actions behind plain buttons (delete a dashboard,
-          // remove a user), so framing it is worth denying outright — nothing here is meant to
+          // remove a user), so framing it is worth denying outright. Nothing here is meant to
           // be embedded.
           { key: 'X-Frame-Options', value: 'DENY' },
           // The full page policy (with its per-request nonce) is set in proxy.ts and replaces this

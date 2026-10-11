@@ -1,11 +1,11 @@
 /**
- * A tiny, standalone paren-aware `| project` clause splitter — deliberately not
+ * A tiny, standalone paren-aware `| project` clause splitter: deliberately not
  * `parseKqlToVisualQuery()` from `@rulebeat/core`. That parser's own comma-splitter
  * (`kql.ts`) is not paren/bracket-depth-aware for project-clause aliases the way
  * `splitTopLevelPipes` is for pipes, so an expression like `param1=strcat('a:', x[0].y)`
  * would be split on the comma inside the function call. This generator only ever needs to
  * *read* a rule's own `rawKql` to learn the exact column names/expressions it projects
- * (so the fake ARG answer shape matches what the real query would return) — it never
+ * (so the fake ARG answer shape matches what the real query would return). It never
  * needs to *write* KQL back out, so a small local helper is safer than depending on a
  * parser built for a different contract.
  *
@@ -56,7 +56,7 @@ export function extractProjectColumns(rawKql: string): ProjectColumn[] {
   const clause = projectLine.replace(/^\|\s*project\s*/, '');
   return splitTopLevelCommas(clause).map(part => {
     const eq = part.indexOf('=');
-    // `==` is a comparison, not an assignment — only a single, non-doubled `=` splits alias/expr.
+    // `==` is a comparison, not an assignment. Only a single, non-doubled `=` splits alias/expr.
     if (eq === -1 || part[eq + 1] === '=' || part[eq - 1] === '!' || part[eq - 1] === '<' || part[eq - 1] === '>') {
       return { alias: part, expr: part };
     }

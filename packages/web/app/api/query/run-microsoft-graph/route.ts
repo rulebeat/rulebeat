@@ -9,12 +9,12 @@ import { buildGraphPath, extractAzureErrorMessage, GraphTruncatedError, type Gra
 import { createTenantContext } from '@/lib/azure-credential';
 import { validateGraphQueryShape } from '@/lib/graph-rule-validation';
 
-// This route's own display cap on the JSON payload — distinct from Azure's own truncation signal.
+// This route's own display cap on the JSON payload: distinct from Azure's own truncation signal.
 const RESPONSE_ROW_CAP = 500;
 
 /**
  * Same 400-only gate as validate-graph's twin helper: graphGetAll() throws a plain Error whose
- * message is `Graph API {status}: {body}` — only a 400 (a malformed $filter) is safe and actionable
+ * message is `Graph API {status}: {body}`. Only a 400 (a malformed $filter) is safe and actionable
  * to show verbatim; anything else risks naming the tenant/identity.
  */
 function extractGraphQueryError(err: unknown): string | null {
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   const { graphQuery, savedQueryId } = parsed;
   if (!graphQuery) return NextResponse.json({ error: 'graphQuery is required' }, { status: 400 });
 
-  // The 7-path resource allowlist — this IS the security boundary for a Directory query, checked
+  // The 7-path resource allowlist: this IS the security boundary for a Directory query, checked
   // unconditionally before anything touches Azure. Live query is not a way to reach a Graph path
   // rule authoring's own validate-graph route doesn't already allow.
   const shapeError = validateGraphQueryShape(graphQuery);

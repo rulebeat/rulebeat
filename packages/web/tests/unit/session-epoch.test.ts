@@ -1,5 +1,5 @@
 /**
- * Spec 020 — the session-invalidation counter. A local-password mutation (self-service change,
+ * Spec 020: the session-invalidation counter. A local-password mutation (self-service change,
  * admin set/reset/remove) bumps users.sessionEpoch; a JWT stamped with a stale epoch must be
  * treated as signed out even though it still verifies cryptographically.
  */
@@ -80,7 +80,7 @@ describe('await getCurrentUser() epoch enforcement', () => {
 
 /**
  * `lib/api-auth.ts` imports `@/auth` at module scope, so the mock has to be registered via
- * `vi.doMock` + a fresh dynamic import per test rather than the usual top-of-file `vi.mock` — this
+ * `vi.doMock` + a fresh dynamic import per test rather than the usual top-of-file `vi.mock`. This
  * suite needs a different session value per case, not one fixed for the whole file.
  */
 async function loadApiAuth(session: unknown) {

@@ -8,7 +8,7 @@
  * highest today is date-range-picker.tsx's z-index: 1000).
  *
  * `max-[1024px]:` (not `max-[1023px]:`) is deliberate: Tailwind compiles an arbitrary `max-*`
- * variant to `not (min-width: <value>)`, which is exclusive of the value itself — so
+ * variant to `not (min-width: <value>)`, which is exclusive of the value itself, so
  * `max-[1023px]` would stay hidden at exactly 1023px, one pixel narrower than the guard is
  * supposed to cover. `max-[1024px]` is the one that actually means "below 1024px".
  */

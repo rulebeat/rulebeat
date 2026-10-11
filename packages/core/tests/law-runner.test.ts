@@ -1,10 +1,10 @@
 /**
- * Spec 036 — Log Analytics rule authoring.
+ * Spec 036: Log Analytics rule authoring.
  *
  * runLawRules() is the Log Analytics-backend counterpart to runner.ts's runRules() and
  * graph-runner.ts's runGraphRules(): same RuleRunEvent/RuleExecutionStatus contract
  * (success/failed/capped/invalid), but LAW-shaped internals (ctx.queryLogs() instead of
- * queryARG()/graphGet(), no ARM id or Graph object id — findings are 'activity' kind, keyed by an
+ * queryARG()/graphGet(), no ARM id or Graph object id: findings are 'activity' kind, keyed by an
  * optional per-row dimensionKeyField instead of a resource id). This suite pins that contract
  * directly, the same way graph-runner.test.ts pins runGraphRules()'s.
  */
@@ -87,7 +87,7 @@ describe('runLawRules() outcomes', () => {
     expect(findings.every(f => f.finding.fingerprint === findings[0].finding.fingerprint)).toBe(true);
   });
 
-  it('skips a disabled rule entirely — no query, no events', async () => {
+  it('skips a disabled rule entirely: no query, no events', async () => {
     const rule = baseRule({ enabled: false });
     const ctx = fakeCtx(async () => { throw new Error('queryLogs must not be called for a disabled rule'); });
 
@@ -145,7 +145,7 @@ describe('runLawRules() outcomes', () => {
       { ruleId: 'rule-a', status: 'failed', findingCount: 0 },
       { ruleId: 'rule-b', status: 'success', findingCount: 1 },
     ]);
-    // rule-b's finding must still have been yielded — one bad rule must not swallow another's results.
+    // rule-b's finding must still have been yielded. One bad rule must not swallow another's results.
     expect(events.filter(e => e.kind === 'finding')).toHaveLength(1);
   });
 
@@ -173,7 +173,7 @@ describe('runLawRules() outcomes', () => {
     expect(events).toEqual([{ kind: 'outcome', outcome: { ruleId: rule.id, status: 'success', findingCount: 0 } }]);
   });
 
-  // Issue #145 — a Log Analytics query with a top-level take/limit/top is just as incomplete as a
+  // Issue #145: a Log Analytics query with a top-level take/limit/top is just as incomplete as a
   // capped Resource Graph query, and must not report 'success' (runner.ts already makes this check
   // for its own backend via queryHasTopLevelLimit(); law-runner.ts was missing it entirely).
   it('yields capped, not success, for a query ending in a top-level `| take`', async () => {

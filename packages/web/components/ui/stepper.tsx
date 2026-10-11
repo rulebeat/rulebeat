@@ -6,7 +6,7 @@ export interface StepperStep {
   label: string;
 }
 
-/** Presentational only — no state of its own.
+/** Presentational only: no state of its own.
  *  Progress reads as weight rather than colour: a done step is filled solid, the
  *  current one is outlined, and the ones still ahead sit faint. Nothing here is a
  *  severity, so nothing here takes a hue. */

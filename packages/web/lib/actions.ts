@@ -13,7 +13,7 @@ export async function signOutUser() {
 
 /**
  * `useActionState`-shaped so the sign-in form can show an inline error without a full page
- * navigation. A successful `signIn()` throws Next.js's internal `NEXT_REDIRECT` — that must
+ * navigation. A successful `signIn()` throws Next.js's internal `NEXT_REDIRECT`. That must
  * propagate, not be caught here, which is why only `AuthError` gets a friendly message and
  * everything else rethrows.
  */

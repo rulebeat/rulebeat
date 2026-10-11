@@ -1,5 +1,5 @@
 /**
- * Spec 037 follow-up — GET /api/query/runs, the live-query page's persisted run-history list.
+ * Spec 037 follow-up: GET /api/query/runs, the live-query page's persisted run-history list.
  * Originally shipped as client-side sessionStorage; moved to a real `query_runs` table per an
  * explicit instruction to save it in the database instead. This file covers the GET route itself
  * (auth, own-runs-only scoping, ordering, shape); the POST-time await recordQueryRun() call sites and
@@ -101,7 +101,7 @@ describe('GET /api/query/runs (spec 037 follow-up)', () => {
   });
 
   describe('await deleteUser() cascade', () => {
-    it("removes the deleted user's query_runs rows outright — fully personal, no shared visibility to preserve", async () => {
+    it("removes the deleted user's query_runs rows outright: fully personal, no shared visibility to preserve", async () => {
       const ownerId = await signInAs('leaving@example.com');
       await recordQueryRun({
         queryBackend: 'resource-graph', rawKql: 'resources', ownerId,

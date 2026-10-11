@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
  * steps down alongside the colour rather than being decorative.
  *
  * The swatch is a filled square rather than a dot: it holds its weight at 8px,
- * and hard corners are the house style. Info stays hollow on purpose — filled
+ * and hard corners are the house style. Info stays hollow on purpose: filled
  * versus outline is the one bit that survives with no colour at all.
  */
 const config: Record<Severity, { label: string; swatch: string; text: string }> = {

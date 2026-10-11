@@ -5,7 +5,7 @@ import { setRulesEnabled } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 
 /**
- * Flips `enabled` for many rules in one request — onboarding step 3's "All / High + critical only /
+ * Flips `enabled` for many rules in one request: onboarding step 3's "All / High + critical only /
  * None" pickers can touch all 156 rules in one submit. One audit row covers the whole batch (counts
  * only); 143 ids in a details blob would bury every other entry in the log.
  */

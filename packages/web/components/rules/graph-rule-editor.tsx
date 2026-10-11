@@ -36,7 +36,7 @@ interface ValidateResult { count: number; truncated: boolean; samples: { id: str
 interface GraphRuleEditorProps {
   value: GraphQuery;
   onChange: (value: GraphQuery) => void;
-  /** Gates the fields themselves. Validate stays available either way — testing a saved
+  /** Gates the fields themselves. Validate stays available either way: testing a saved
    *  query live is not an editing action, same precedent as the KQL pane's Validate button. */
   readOnly?: boolean;
 }

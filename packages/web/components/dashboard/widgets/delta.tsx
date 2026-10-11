@@ -1,6 +1,6 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-/** Shared Up/Down/flat trend indicator — used by stat-card and posture-ring widgets, which
+/** Shared Up/Down/flat trend indicator: used by stat-card and posture-ring widgets, which
  *  each render a numeric delta with the same icon/color-by-sign logic but slightly different
  *  wrapping text and sizing. */
 export function Delta({ value, suffix = '%', title, neutralLabel, size = 'sm', display = 'flex' }: {

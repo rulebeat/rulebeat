@@ -9,7 +9,7 @@
  *  - the committed pack JSON itself defaults every rule to disabled;
  *  - `seedRules()` (migrate.ts) never touches `enabled` on a row that already exists, so an
  *    admin who turns a rule on keeps it on across every restart. The JSON assertion alone does not
- *    protect that — this second test is the one that actually gates it.
+ *    protect that: this second test is the one that actually gates it.
  *
  * Seeds against the real, committed `data/` directory (not a throwaway fixture dir) specifically so
  * this exercises the actual shipped `aprl-v2.json`, not a synthesised stand-in.
@@ -45,7 +45,7 @@ describe('B3 · the committed pack JSON default', () => {
 });
 
 describe('B3 · a fresh install starts quiet', () => {
-  it('exactly 13 rules are enabled — the builtin core set plus the two identity checks and the service retirements Advisory, none of APRL', async () => {
+  it('exactly 13 rules are enabled: the builtin core set plus the two identity checks and the service retirements Advisory, none of APRL', async () => {
     const sqlite = freshDb();
     try {
       seed(sqlite);
@@ -53,8 +53,8 @@ describe('B3 · a fresh install starts quiet', () => {
       const enabled = sqlite.prepare(`SELECT COUNT(*) AS n FROM rules WHERE enabled = 1`).get() as { n: number };
       expect(total.n).toBeGreaterThan(140);
       // 10 rulebeat-core resource-graph rules + 2 identity checks (spec 029 made the identity checks
-      // real, disableable `rules` rows instead of an isSpecial category that always ran unconditionally
-      // — seeded enabled:1 so the upgrade doesn't silently stop checking credentials that were always
+      // real, disableable `rules` rows instead of an isSpecial category that always ran unconditionally,
+      // seeded enabled:1 so the upgrade doesn't silently stop checking credentials that were always
       // being checked before). Plus the Service retirements Advisory (issue #181), enabled by default.
       expect(enabled.n).toBe(13);
     } finally {

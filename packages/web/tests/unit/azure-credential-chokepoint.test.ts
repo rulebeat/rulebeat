@@ -1,14 +1,14 @@
 /**
  * Architecture test: Azure credentials are constructed in exactly one file.
  *
- * Same shape as `route-guards.test.ts`, and for the same reason — this is a convention the type
+ * Same shape as `route-guards.test.ts`, and for the same reason. This is a convention the type
  * system can't express, so without a test it holds only while whoever adds the next Azure call
  * remembers.
  *
  * It matters more than it looks. Before this rule existed, nine call sites each built their own
  * `DefaultAzureCredential`, which was harmless while there was only one way to authenticate. The
  * moment a credential could also come from the UI, every one of those sites became a place that
- * silently ignores it — producing the worst class of bug, where scans work and the schema cache is
+ * silently ignores it: producing the worst class of bug, where scans work and the schema cache is
  * mysteriously empty, or vice versa.
  */
 import { describe, expect, it } from 'vitest';
@@ -67,7 +67,7 @@ describe('Azure credentials have exactly one construction site', () => {
       .map(f => f.rel.split(sep).join('/'));
 
     expect(offenders, [
-      'These files build an Azure credential directly, which bypasses credential resolution —',
+      'These files build an Azure credential directly, which bypasses credential resolution:',
       'so a credential set in the environment or entered in Settings → Azure connection would be',
       'ignored here while working everywhere else. Use await resolveAzureCredential(),',
       'await getAzureCredential() or await createTenantContext() from lib/azure-credential.ts instead.',

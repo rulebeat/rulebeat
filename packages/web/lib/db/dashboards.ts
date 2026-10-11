@@ -114,7 +114,7 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
   });
 }
 
-// Every dashboard is now deletable, including the default — if the deleted row was the default
+// Every dashboard is now deletable, including the default. If the deleted row was the default
 // and other dashboards remain, the oldest remaining one is promoted to default in the same
 // transaction. If none remain, the table is left empty (handled by an empty-state UI elsewhere).
 export async function deleteDashboard(id: string): Promise<boolean> {

@@ -1,9 +1,9 @@
 /**
- * TS-04 · Permission enforcement — the "no route is left unguarded" half.
+ * TS-04 · Permission enforcement: the "no route is left unguarded" half.
  *
  * The product's whole authorization story rests on one rule: every API route calls
  * `await requireRole(action)`. Nothing in the type system enforces that, so it currently holds because
- * whoever adds a route remembers. This suite makes forgetting impossible — it reads the route
+ * whoever adds a route remembers. This suite makes forgetting impossible. It reads the route
  * files on disk, so a new unguarded route fails the build the moment it's committed, without
  * anyone having to write a test for it.
  *
@@ -16,13 +16,13 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { can, type Action, type Role } from '@/lib/rbac';
 
-// Resolved from this file's own location, not `process.cwd()` — the working directory is the repo
+// Resolved from this file's own location, not `process.cwd()`. The working directory is the repo
 // root when the whole suite runs but the package root when only this project does.
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_DIR = join(WEB_ROOT, 'app', 'api');
 
 /**
- * Two legitimate exceptions, each listed explicitly with the reason — an allowlist that grows
+ * Two legitimate exceptions, each listed explicitly with the reason. An allowlist that grows
  * without justification is how this kind of test quietly stops working.
  * - The NextAuth catch-all *is* the sign-in mechanism, so it cannot require an existing session.
  * - `/api/health` is a container liveness probe: it must answer before any
@@ -78,7 +78,7 @@ describe('TS-04 · every API route is guarded', () => {
 
     expect(unguarded, [
       'These API routes never call requireRole, so any signed-in user can call them',
-      'regardless of role. Add the guard, or — if it genuinely must be public — add it to',
+      'regardless of role. Add the guard, or (if it genuinely must be public) add it to',
       'UNGUARDED_BY_DESIGN in this file with a written reason.',
     ].join(' ')).toEqual([]);
   });
@@ -126,7 +126,7 @@ describe('TS-04 · the actions the sensitive routes require', () => {
   }
 
   // These are pinned individually because a downgrade here is a security regression, not a
-  // refactor — and it would not otherwise fail any other test.
+  // refactor, and it would not otherwise fail any other test.
   const PINNED: Array<[string, Action]> = [
     ['users/route.ts', 'users:manage'],
     ['users/[id]/route.ts', 'users:manage'],

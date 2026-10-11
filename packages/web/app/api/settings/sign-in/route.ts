@@ -12,7 +12,7 @@ import {
 } from '@/lib/sign-in-config';
 
 /**
- * Settings → Sign-in (B1b). Admin-only on every verb, reads included — the response names the
+ * Settings → Sign-in (B1b). Admin-only on every verb, reads included. The response names the
  * tenant and app registration RuleBeat signs people in with, which is deployment configuration
  * rather than findings data, matching Settings → Azure connection.
  *
@@ -122,8 +122,8 @@ export async function PUT(req: Request) {
     let clientSecret: string;
 
     if (reuseAzureConnection) {
-      // Copies the already-encrypted Azure connection credential straight through, server-side —
-      // the secret never travels to the browser for this path, unlike the manual-entry one below.
+      // Copies the already-encrypted Azure connection credential straight through, server-side.
+      // The secret never travels to the browser for this path, unlike the manual-entry one below.
       const azureCred = await getActiveAzureCredential();
       if (!azureCred) {
         return NextResponse.json({
@@ -150,7 +150,7 @@ export async function PUT(req: Request) {
       }
     }
 
-    // A cheap, honest check — catches a typo'd tenant instantly, but doesn't prove the client id,
+    // A cheap, honest check: catches a typo'd tenant instantly, but doesn't prove the client id,
     // secret or redirect URI are right. It saves inactive regardless; only a real sign-in flips it.
     const probe = await probeTenant(tenantId);
     if (!probe.ok) {
@@ -173,7 +173,7 @@ export async function PUT(req: Request) {
         summary: reuseAzureConnection
           ? `Configured Microsoft sign-in for tenant ${tenantId}, reusing the Azure connection app registration (not yet verified)`
           : `Configured Microsoft sign-in for tenant ${tenantId} (not yet verified)`,
-        // Field names only — the secret and its length are both absent by design.
+        // Field names only: the secret and its length are both absent by design.
         details: { fields: ['tenantId', 'clientId', 'clientSecret'], reusedAzureConnection: reuseAzureConnection },
       });
     } catch (err) {
