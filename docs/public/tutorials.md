@@ -28,3 +28,11 @@ Turn a KQL query you run by hand into a RuleBeat rule: paste it on the Query pag
 Put your Azure governance checks on a RuleBeat schedule: findings saved and tracked on the dashboard, new ones sent to Teams.
 
 ▶ [Watch on YouTube](https://youtu.be/5jAe6CuMO1M), 2 min. Read more: [Scans and schedules](scans-and-schedules.md), [Notifications](notifications.md).
+
+## Which Azure findings are new, fixed or accepted?
+
+[![Watch: Which Azure findings are new, fixed or accepted?](img/tutorials/finding-lifecycle.png)](https://youtu.be/8RefxSdEvaw)
+
+See which Azure governance findings are new, which were fixed and which you accepted: RuleBeat tracks each one from scan to scan and keeps every exception on record.
+
+▶ [Watch on YouTube](https://youtu.be/8RefxSdEvaw), 2 min. Read more: [How it works](how-it-works.md), [Suppressions](suppressions.md).
