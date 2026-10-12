@@ -29,9 +29,9 @@ Put your Azure governance checks on a RuleBeat schedule: findings saved and trac
 
 ▶ [Watch on YouTube](https://youtu.be/5jAe6CuMO1M), 2 min. Read more: [Scans and schedules](scans-and-schedules.md), [Notifications](notifications.md).
 
-## Did anyone actually fix it?
+## Which Azure findings are new, fixed or accepted?
 
-[![Watch: Did anyone actually fix it?](img/tutorials/finding-lifecycle.png)](https://youtu.be/8RefxSdEvaw)
+[![Watch: Which Azure findings are new, fixed or accepted?](img/tutorials/finding-lifecycle.png)](https://youtu.be/8RefxSdEvaw)
 
 See which Azure governance findings are new, which were fixed and which you accepted: RuleBeat tracks each one from scan to scan and keeps every exception on record.
 
