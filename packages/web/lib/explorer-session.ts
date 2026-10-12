@@ -337,7 +337,7 @@ export class ExplorerSession {
 
   constructor(private readonly fetchFn: FetchFn, opts: { debounceMs?: number } = {}) {
     this.view = new ViewFeed(fetchFn, opts.debounceMs);
-    this.rows = new LazyReads(fetchFn, 'these rows');
+    this.rows = new LazyReads(fetchFn, 'this finding\'s details');
     this.groups = new LazyReads(fetchFn, 'this group');
     this.values = new LazyReads(fetchFn, 'the values');
     this.ruleFindings = new LazyReads(fetchFn, 'this rule\'s findings');

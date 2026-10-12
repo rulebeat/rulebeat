@@ -76,9 +76,10 @@ a Row counts as changed. Every rule kind and every query backend follows this.
 _Avoid_: issue, violation, alert
 
 **Row**:
-One line a rule's query returned. A finding has one or more; views group, filter and count rows.
-A service retirements rule that returns two retirements for one VM gives one finding with two
-rows.
+One line a rule's query returned. A finding has one or more; views group and filter by rows, but a
+group counts findings and the distinct resources they are on, never rows. The screen does not use
+the word: inside a finding, a row reads by its place, "2 of 3". A service retirements rule that
+returns two retirements for one VM gives one finding with two rows.
 _Avoid_: result (ambiguous), record, evidence
 
 **Rule kind**:

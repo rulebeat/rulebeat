@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  buildColumnValuesResponse, buildFindingRowsResponse, buildGroupResponse, buildViewResponse, decorateFinding, rulesInPlay,
+  buildColumnValuesResponse, buildFindingRowsResponse, buildGroupResponse, buildViewResponse, decorateFinding, groupCountText, rulesInPlay,
   type ViewResponseOptions,
 } from '@/lib/view-response';
 import { emptyView, rowField, type View } from '@/lib/finding-view';
@@ -138,9 +138,31 @@ describe('buildViewResponse', () => {
     expect(res.total).toBe(5);
     expect(res.grouped).toMatchObject({ groupTotal: 2, rowTotal: 30, page: 1, pageCount: 1 });
     expect(res.grouped!.groups).toEqual([
-      { field: 'category', value: 'cost', label: 'Cost', resourceCount: 3, rowCount: 29 },
-      { field: 'category', value: 'security', label: 'Security', resourceCount: 2, rowCount: 1 },
+      { field: 'category', value: 'cost', label: 'Cost', findingCount: 3, resourceCount: 3, rowCount: 29 },
+      { field: 'category', value: 'security', label: 'Security', findingCount: 2, resourceCount: 2, rowCount: 1 },
     ]);
+  });
+});
+
+describe('groupCountText', () => {
+  it('says how many findings a group holds and how many resources they are on', () => {
+    expect(groupCountText({ findingCount: 5, resourceCount: 3 }, 'results')).toBe('5 findings on 3 resources');
+    expect(groupCountText({ findingCount: 2, resourceCount: 1 }, 'advisories')).toBe('2 findings on 1 resource');
+    expect(groupCountText({ findingCount: 1, resourceCount: 1 }, 'results')).toBe('1 finding on 1 resource');
+  });
+
+  it('gives only the finding count on the Activity tab, which has no resources', () => {
+    expect(groupCountText({ findingCount: 4, resourceCount: 3 }, 'activity')).toBe('4 findings');
+    expect(groupCountText({ findingCount: 1, resourceCount: 1 }, 'activity')).toBe('1 finding');
+  });
+
+  it('reads the counts a grouped view answers with', () => {
+    const shared = [
+      finding({ fingerprint: 'p', ruleId: 'r1', resourceId: '/subscriptions/s1/vm-shared' }),
+      finding({ fingerprint: 'q', ruleId: 'r2', resourceId: '/subscriptions/s1/vm-shared' }),
+    ];
+    const [group] = buildViewResponse(shared, view({ groupBy: ['category'] }), CTX, OPTS).grouped!.groups;
+    expect(groupCountText(group, 'results')).toBe('2 findings on 1 resource');
   });
 });
 
@@ -180,15 +202,15 @@ describe('buildFindingRowsResponse', () => {
 describe('buildGroupResponse', () => {
   it('lists the next level\'s headers inside a group', () => {
     const res = buildGroupResponse(FINDINGS, view({ groupBy: ['category', rowField('sku')] }), CTX, { ...OPTS, groupPath: ['cost'], groupPage: 1 });
-    expect(res.group).toEqual({ field: 'category', value: 'cost', label: 'Cost', resourceCount: 3, rowCount: 29 });
+    expect(res.group).toEqual({ field: 'category', value: 'cost', label: 'Cost', findingCount: 3, resourceCount: 3, rowCount: 29 });
     expect(res.items).toEqual([]);
     // 'a' has two S1 rows in one group and one S2; 'f' has 25 bulk values. Values order as text does
     // in a locale, so bulk-* comes before S1.
     expect(res.groups).toHaveLength(2 + 25);
-    expect(res.groups[0]).toEqual({ field: 'row.sku', value: 'bulk-00', label: 'bulk-00', resourceCount: 1, rowCount: 1 });
+    expect(res.groups[0]).toEqual({ field: 'row.sku', value: 'bulk-00', label: 'bulk-00', findingCount: 1, resourceCount: 1, rowCount: 1 });
     expect(res.groups.slice(-2)).toEqual([
-      { field: 'row.sku', value: 'S1', label: 'S1', resourceCount: 1, rowCount: 2 },
-      { field: 'row.sku', value: 'S2', label: 'S2', resourceCount: 2, rowCount: 2 },
+      { field: 'row.sku', value: 'S1', label: 'S1', findingCount: 1, resourceCount: 1, rowCount: 2 },
+      { field: 'row.sku', value: 'S2', label: 'S2', findingCount: 2, resourceCount: 2, rowCount: 2 },
     ]);
   });
 

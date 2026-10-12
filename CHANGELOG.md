@@ -6,6 +6,14 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A group on the Scans page now reads how many findings it holds on how many resources, such as "5 findings on 3 resources", in place of a resource count that was really the finding count and a count of rows. A VM two rules flag is two findings on one resource. On the Activity tab a group shows the number of findings only. The group sort options are now Name and Findings, in place of Value and Resource count; a saved view keeps the sort it had. Inside a finding, each line its query returned reads "2 of 3" in place of "Row 2 of 3", and "Loading rows" reads "Loading".
+
+### Fixed
+
+- Opening the Views menu on the Scans page crashed the page. It now opens and lists the saved views.
+
 ## [0.10.0] - 2026-10-12
 
 ### Changed

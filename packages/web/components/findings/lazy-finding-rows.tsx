@@ -42,13 +42,13 @@ export function LazyFindingRows({
         <ol className="space-y-6">
           {body.rows.map((row, i) => (
             <li key={body.firstIndex + i}>
-              <p className="label-grid mb-2">Row {body.firstIndex + i + 1} of {total}</p>
+              <p className="label-grid mb-2">{body.firstIndex + i + 1} of {total}</p>
               <RowEvidence row={row} />
             </li>
           ))}
         </ol>
       ) : (
-        <ReadStatus failure={state?.status === 'failed' ? state.message : null} retry={retry} loading="Loading rows" />
+        <ReadStatus failure={state?.status === 'failed' ? state.message : null} retry={retry} loading="Loading" />
       )}
       <FindingsPager page={page} pageCount={pageCount} onPage={setAsked} />
     </div>

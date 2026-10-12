@@ -47,7 +47,7 @@ import {
 import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
-  NO_VALUE_LABEL, tabResolves, tabStatusOptions,
+  NO_VALUE_LABEL, groupCountText, tabResolves, tabStatusOptions,
   type ExplorerCategory, type GroupHeader, type GroupResponse, type ResponseFinding, type ViewItemResponse, type ViewTab,
 } from '@/lib/view-response';
 import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
@@ -1029,7 +1029,7 @@ export function FindingsExplorerClient({
               <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', group.value === null ? 'text-ink-2' : 'text-ink')} title={label}>{label}</span>
             </span>
             <span className="shrink-0 text-xs tabular-nums text-ink-2">
-              {group.resourceCount} {group.resourceCount === 1 ? 'resource' : 'resources'}, {group.rowCount} {group.rowCount === 1 ? 'row' : 'rows'}
+              {groupCountText(group, tab)}
             </span>
           </button>
           <GroupBody

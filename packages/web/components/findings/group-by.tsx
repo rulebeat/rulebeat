@@ -11,8 +11,8 @@ import type { GroupSort, ViewField } from '@/lib/finding-view';
 import type { AddFilterField } from '@/components/findings/add-filter';
 
 const SORT_BY: SegmentedOption<GroupSort['by']>[] = [
-  { value: 'value', label: 'Value' },
-  { value: 'count', label: 'Resource count' },
+  { value: 'value', label: 'Name' },
+  { value: 'count', label: 'Findings' },
 ];
 const SORT_DIR: SegmentedOption<GroupSort['dir']>[] = [
   { value: 'asc', label: 'Ascending' },

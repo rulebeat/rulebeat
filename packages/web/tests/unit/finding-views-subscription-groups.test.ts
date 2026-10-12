@@ -31,7 +31,7 @@ const query = { tab: 'results' as const, showSuppressed: false };
 describe('groups by subscription', () => {
   it('come in subscription id order, each labelled with its id', async () => {
     const response = await queryView(grouped(), query);
-    expect(response.grouped?.groups.map(g => [g.value, g.label, g.resourceCount])).toEqual([
+    expect(response.grouped?.groups.map(g => [g.value, g.label, g.findingCount])).toEqual([
       [FIRST, FIRST, 2],
       [SECOND, SECOND, 1],
     ]);

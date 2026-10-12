@@ -78,13 +78,15 @@ and a filter that keeps nothing.
 
 The Group by button in the By resource toolbar groups the list by one or more fields, the same
 built-in and returned fields Add filter offers. Pick a field to add it, and use the arrows to move
-it earlier or later: groups nest in that order. Each group shows its value, the number of resources
-in it and the number of rows, and opening it shows the groups under it or, at the last level, the
-resources, 50 to a page with a pager of their own. Grouping is over rows, so a resource with rows in
-two groups appears under both, and its row count in each is only the rows that fall in that group.
-Rows with no value for a field go in a No value group, which comes last whichever way groups are
-sorted. Groups sort by value or by resource count, ascending or descending, at every level. Sorting
-by value follows what the header shows: rules, categories and subscriptions go by name, and
+it earlier or later: groups nest in that order. Each group shows its value and how many findings it
+holds on how many resources, such as "5 findings on 3 resources": a VM two rules flag is two
+findings on one resource. On the Activity tab a group shows the number of findings only. Opening a
+group shows the groups under it or, at the last level, the findings, 50 to a page with a pager of
+their own. Grouping by a returned field goes by each line the query returned, so a finding with
+lines in two groups appears under both, and shows only the lines that fall in that group. Findings
+with no value for a field go in a No value group, which comes last whichever way groups are sorted.
+Groups sort by Name or by Findings (how many findings each holds), ascending or descending, at every
+level. Sorting by name follows what the header shows: rules, categories and subscriptions go by name, and
 severities go from critical down, with any severity outside critical to info last in both
 directions. The top
 level is paged too, and filters apply before grouping, so a returned-field filter narrows the rows

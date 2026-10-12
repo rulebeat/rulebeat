@@ -41,7 +41,7 @@ export type ViewFilter = BuiltinFilter | RowFilter;
 /** `then` breaks ties on the one before it. The URL carries only the first. */
 export interface ViewSort { field: ViewField; dir: 'asc' | 'desc'; then?: ViewSort }
 
-/** How groups are ordered at every level: by their value, or by their resource count. */
+/** How groups are ordered at every level: by their value (Name), or by how many findings they hold (Findings). */
 export interface GroupSort { by: 'value' | 'count'; dir: 'asc' | 'desc' }
 
 export interface View {
@@ -133,6 +133,22 @@ export function isRowFilter(filter: ViewFilter): filter is RowFilter {
  *  exactly the labels on screen. */
 export function findingSubject(f: { resourceName?: string; dimensionKey?: string; resourceId?: string }): string {
   return f.resourceName || f.dimensionKey || f.resourceId?.split('/').pop() || '';
+}
+
+/** What a finding is about, for counting distinct resources: its resource id (ARM ids compare
+ *  case-insensitively), else an activity finding's dimension key, else the finding itself. Two rules
+ *  that flag the same VM are two findings on one resource. */
+export function resourceKey(f: { fingerprint: string; resourceId?: string; dimensionKey?: string }): string {
+  if (f.resourceId) return `id:${f.resourceId.toLowerCase()}`;
+  if (f.dimensionKey) return `dim:${f.dimensionKey}`;
+  return `fp:${f.fingerprint}`;
+}
+
+/** How many distinct resources the findings are on. */
+export function countResources(findings: Iterable<{ fingerprint: string; resourceId?: string; dimensionKey?: string }>): number {
+  const keys = new Set<string>();
+  for (const f of findings) keys.add(resourceKey(f));
+  return keys.size;
 }
 
 /** The accepted values of the filter on `field`, empty when the view has none there. */
@@ -438,7 +454,7 @@ export interface GroupOptions {
   labelFor?: (field: ViewField, value: string) => string;
 }
 
-/** One group: a value of the group field, how many findings and rows fall in it, and either the
+/** One group: a value of the group field, how many findings, resources and rows fall in it, and either the
  *  groups of the next field (`groups`) or, at the last field, the findings themselves (`items`),
  *  each with only the rows that fell in this group. The other of the two is empty. */
 export interface ViewGroup<T> {
@@ -446,6 +462,8 @@ export interface ViewGroup<T> {
   /** Null is the empty-value group: rows with no value for the field. It always sorts last. */
   value: string | null;
   /** Distinct findings in the group. A finding is in every group its rows fall into. */
+  findingCount: number;
+  /** Distinct resources those findings are on (`resourceKey`). Never more than `findingCount`. */
   resourceCount: number;
   rowCount: number;
   groups: ViewGroup<T>[];
@@ -518,7 +536,7 @@ function compareGroupValues(field: ViewField, a: string, b: string, labelFor: Gr
 }
 
 /** What ordering two groups reads: the field, the value and how many findings fall in it. */
-export type GroupKey = Pick<ViewGroup<ViewFinding>, 'field' | 'value' | 'resourceCount'>;
+export type GroupKey = Pick<ViewGroup<ViewFinding>, 'field' | 'value' | 'findingCount'>;
 
 /** Groups order by `groupSort`, the empty-value group last whichever way it runs (and, sorting by
  *  value, a severity off the ramp too). Equal counts keep
@@ -533,7 +551,7 @@ export function compareGroups(a: GroupKey, b: GroupKey, sort: GroupSort, labelFo
   }
   const byValue = compareGroupValues(a.field, a.value, b.value, labelFor);
   if (sort.by === 'value') return sort.dir === 'asc' ? byValue : -byValue;
-  const byCount = a.resourceCount - b.resourceCount;
+  const byCount = a.findingCount - b.findingCount;
   return byCount !== 0 ? (sort.dir === 'asc' ? byCount : -byCount) : byValue;
 }
 
@@ -554,7 +572,8 @@ function buildGroups<T extends ViewFinding>(
     .map(([value, members]): ViewGroup<T> => ({
       field,
       value,
-      resourceCount: members.length,
+      findingCount: members.length,
+      resourceCount: countResources(members.map(m => m.finding)),
       rowCount: members.reduce((n, m) => n + m.rows.length, 0),
       groups: rest.length > 0 ? buildGroups(members, rest, groupSort, sort, labelFor) : [],
       items: rest.length > 0 ? [] : [...members].sort((a, b) => compareBy(a, b, sort)),
