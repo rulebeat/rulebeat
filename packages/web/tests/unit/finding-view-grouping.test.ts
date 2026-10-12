@@ -1,6 +1,6 @@
 /**
  * Grouping in the view engine (ADR 0006, #195), driven through its public functions only: findings
- * with rows and a View go in, a tree of groups with resource and row counts comes out. Covers nested
+ * with rows and a View go in, a tree of groups with finding, resource and row counts comes out. Covers nested
  * grouping, a resource under two groups, the empty-value group last, sort by value or count, paging
  * of groups and of the rows inside one, grouping combined with returned-column filters, the Service
  * retirements workbook, and the `group` / `gsort` URL params.
@@ -28,10 +28,10 @@ function view(overrides: Partial<View> = {}): View {
   return { ...emptyView(), ...overrides };
 }
 
-/** A group as `value|resources|rows`, null as `∅`, with its children indented under it. */
+/** A group as `value|findings|rows`, null as `∅`, with its children indented under it. */
 function outline(groups: ViewGroup<F>[], depth = 0): string[] {
   return groups.flatMap(g => [
-    `${'  '.repeat(depth)}${g.value ?? '∅'}|${g.resourceCount}|${g.rowCount}`,
+    `${'  '.repeat(depth)}${g.value ?? '∅'}|${g.findingCount}|${g.rowCount}`,
     ...outline(g.groups, depth + 1),
   ]);
 }
@@ -49,7 +49,7 @@ const retirements = [vmTwo, vmB, vmC, vmD, vmE];
 describe('the Service retirements workbook: group by retiring feature, then retirement date', () => {
   const grouped = applyGroupedView(retirements, view({ groupBy: ['row.retiringFeature', 'row.retirementDate'] }));
 
-  it('gives each group its resource count and row count, nested in order, with the empty date last', () => {
+  it('gives each group its finding count and row count, nested in order, with the empty date last', () => {
     expect(outline(grouped.groups)).toEqual([
       'Basic IP|2|2',
       '  2026-09-30|1|1',
@@ -71,8 +71,8 @@ describe('the Service retirements workbook: group by retiring feature, then reti
   it('counts a finding once per group, not once per row', () => {
     const twice = f('twice', { rows: [{ k: 'x', n: 1 }, { k: 'x', n: 2 }, { k: 'y', n: 3 }] });
     const [x, y] = applyGroupedView([twice], view({ groupBy: ['row.k'] })).groups;
-    expect([x.value, x.resourceCount, x.rowCount]).toEqual(['x', 1, 2]);
-    expect([y.value, y.resourceCount, y.rowCount]).toEqual(['y', 1, 1]);
+    expect([x.value, x.findingCount, x.rowCount]).toEqual(['x', 1, 2]);
+    expect([y.value, y.findingCount, y.rowCount]).toEqual(['y', 1, 1]);
   });
 
   it('reports the findings and rows that matched, across every group', () => {
@@ -100,7 +100,7 @@ describe('sorting groups', () => {
     expect(order({ by: 'value', dir: 'desc' })).toEqual(['small', 'mid', 'big', null]);
   });
 
-  it('sorts by resource count, the empty-value group last even when it is the biggest', () => {
+  it('sorts by finding count, the empty-value group last even when it is the biggest', () => {
     expect(order({ by: 'count', dir: 'desc' })).toEqual(['big', 'mid', 'small', null]);
     expect(order({ by: 'count', dir: 'asc' })).toEqual(['small', 'mid', 'big', null]);
   });
@@ -128,6 +128,55 @@ describe('sorting groups', () => {
     const items = (sort: View['sort']) => names(applyGroupedView(list, view({ groupBy: ['row.k'], sort })).groups[0]);
     expect(items(null)).toEqual(['vm-a', 'vm-b']);
     expect(items({ field: 'resourceName', dir: 'desc' })).toEqual(['vm-b', 'vm-a']);
+  });
+
+  it('sorts by findings, not by the resources they are on', () => {
+    // 'shared' holds three findings on one VM; 'spread' holds two findings on two VMs.
+    const list = [
+      f('s1', { ruleId: 'r1', resourceId: '/subscriptions/sub-1/vm-x', rows: [{ k: 'shared' }] }),
+      f('s2', { ruleId: 'r2', resourceId: '/subscriptions/sub-1/vm-x', rows: [{ k: 'shared' }] }),
+      f('s3', { ruleId: 'r3', resourceId: '/subscriptions/sub-1/vm-x', rows: [{ k: 'shared' }] }),
+      f('p1', { rows: [{ k: 'spread' }] }), f('p2', { rows: [{ k: 'spread' }] }),
+    ];
+    const groups = applyGroupedView(list, view({ groupBy: ['row.k'], groupSort: { by: 'count', dir: 'desc' } })).groups;
+    expect(groups.map(g => [g.value, g.findingCount, g.resourceCount])).toEqual([['shared', 3, 1], ['spread', 2, 2]]);
+  });
+});
+
+describe('counting the resources in a group', () => {
+  const count = (list: F[], groupBy: View['groupBy']) =>
+    applyGroupedView(list, view({ groupBy })).groups.map(g => [g.value, g.findingCount, g.resourceCount]);
+
+  it('counts a VM two rules flag as two findings on one resource, whatever the case of its id', () => {
+    const list = [
+      f('one', { ruleId: 'rule-a', resourceId: '/subscriptions/sub-1/resourceGroups/rg-1/vm-shared' }),
+      f('two', { ruleId: 'rule-b', resourceId: '/SUBSCRIPTIONS/sub-1/resourceGroups/RG-1/VM-SHARED' }),
+      f('three', { ruleId: 'rule-a' }),
+    ];
+    expect(count(list, ['category'])).toEqual([['reliability', 3, 2]]);
+    // Grouped by rule, each rule's own findings count their own resources.
+    expect(count(list, ['rule'])).toEqual([['rule-a', 2, 2], ['rule-b', 1, 1]]);
+  });
+
+  it('counts an activity finding by its dimension key, and one with neither as itself', () => {
+    const list = [
+      f('alice-1', { ruleId: 'r1', resourceId: undefined, resourceName: undefined, dimensionKey: 'alice' }),
+      f('alice-2', { ruleId: 'r2', resourceId: undefined, resourceName: undefined, dimensionKey: 'alice' }),
+      f('bare-1', { resourceId: undefined, resourceName: undefined }),
+      f('bare-2', { resourceId: undefined, resourceName: undefined }),
+    ];
+    expect(count(list, ['category'])).toEqual([['reliability', 4, 3]]);
+  });
+
+  it('counts the resources at every level of a nest', () => {
+    const list = [
+      f('one', { ruleId: 'rule-a', resourceId: '/subscriptions/sub-1/vm-shared', severity: 'high' }),
+      f('two', { ruleId: 'rule-b', resourceId: '/subscriptions/sub-1/vm-shared', severity: 'high' }),
+      f('three', { ruleId: 'rule-b', severity: 'low' }),
+    ];
+    const [group] = applyGroupedView(list, view({ groupBy: ['category', 'severity'] })).groups;
+    expect([group.findingCount, group.resourceCount]).toEqual([3, 2]);
+    expect(group.groups.map(g => [g.value, g.findingCount, g.resourceCount])).toEqual([['high', 2, 1], ['low', 1, 1]]);
   });
 });
 
@@ -258,7 +307,7 @@ describe('paging', () => {
   it('pages the rows inside a group 50 at a time, on that group\'s own page number', () => {
     const big = Array.from({ length: 2000 }, (_, i) => f(`r${String(i).padStart(4, '0')}`, { rows: [{ k: 'retiring' }] }));
     const [retiring] = applyGroupedView(big, view({ groupBy: ['row.k'], sort: { field: 'resourceName', dir: 'asc' } })).groups;
-    expect(retiring.resourceCount).toBe(2000);
+    expect(retiring.findingCount).toBe(2000);
     const first = pageGroupItems(retiring.items, 1);
     expect(first.items).toHaveLength(50);
     expect(first).toMatchObject({ total: 2000, page: 1, pageCount: 40 });

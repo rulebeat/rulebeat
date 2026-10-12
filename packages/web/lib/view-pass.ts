@@ -20,7 +20,7 @@ import type { ExplorerFinding } from './explorer-data';
 import type { FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings } from './explorer-filters';
 import {
-  BUILTIN_FIELDS, DEFAULT_PAGE_SIZE, DEFAULT_SORT, activeRowFilters, builtinFieldValues, clampPage, compareBy, compareGroups, filterFindings,
+  BUILTIN_FIELDS, DEFAULT_PAGE_SIZE, DEFAULT_SORT, activeRowFilters, builtinFieldValues, clampPage, compareBy, compareGroups, countResources, filterFindings,
   groupParts, isRowField, isRowFilter, pageGroupItems, readPath, rowMatches, rowPath, valueText,
   type RowFilter, type View, type ViewContext, type ViewField,
 } from './finding-view';
@@ -176,7 +176,7 @@ export function candidatesOf(
 
 /** A finding in a group, with the rows that fell in it (reduced to the paths read) and how many. */
 interface Member { finding: SlimFinding; rows: FindingRow[]; count: number }
-interface Bucket { field: ViewField; value: string | null; members: Member[]; resourceCount: number; rowCount: number }
+interface Bucket { field: ViewField; value: string | null; members: Member[]; findingCount: number; resourceCount: number; rowCount: number }
 
 function bucketMembers(members: readonly Member[], field: ViewField): Bucket[] {
   const buckets = new Map<string | null, Member[]>();
@@ -189,7 +189,10 @@ function bucketMembers(members: readonly Member[], field: ViewField): Bucket[] {
     }
   }
   return [...buckets].map(([value, list]) => ({
-    field, value, members: list, resourceCount: list.length, rowCount: list.reduce((n, m) => n + m.count, 0),
+    field, value, members: list,
+    findingCount: list.length,
+    resourceCount: countResources(list.map(m => m.finding)),
+    rowCount: list.reduce((n, m) => n + m.count, 0),
   }));
 }
 

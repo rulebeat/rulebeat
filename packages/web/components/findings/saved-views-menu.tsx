@@ -8,7 +8,7 @@ import {
   Dialog, DialogBackdrop, DialogClose, DialogPopup, DialogPortal, DialogTitle, DialogViewport,
 } from '@/components/ui/dialog';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
@@ -92,36 +92,39 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
           }
         />
         <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel>Saved views</DropdownMenuLabel>
-          {state.status === 'loading' && views.length === 0 && (
-            <p className="px-3 py-1.5 text-sm text-ink-2">Loading saved views.</p>
-          )}
-          {state.status === 'error' && (
-            <>
-              <p className="px-3 py-1.5 text-sm text-ink-2">Saved views could not be loaded.</p>
-              <DropdownMenuItem
-                closeOnClick={false}
-                onClick={() => { setState(prev => ({ ...prev, status: 'loading' })); setReloadKey(k => k + 1); }}
-              >
-                Try again
+          {/* A group label throws outside a group, so the list sits in one. */}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Saved views</DropdownMenuLabel>
+            {state.status === 'loading' && views.length === 0 && (
+              <p className="px-3 py-1.5 text-sm text-ink-2">Loading saved views.</p>
+            )}
+            {state.status === 'error' && (
+              <>
+                <p className="px-3 py-1.5 text-sm text-ink-2">Saved views could not be loaded.</p>
+                <DropdownMenuItem
+                  closeOnClick={false}
+                  onClick={() => { setState(prev => ({ ...prev, status: 'loading' })); setReloadKey(k => k + 1); }}
+                >
+                  Try again
+                </DropdownMenuItem>
+              </>
+            )}
+            {state.status === 'ready' && views.length === 0 && (
+              <p className="px-3 py-1.5 text-sm text-ink-2">
+                {canWrite
+                  ? 'No saved views yet. Save the current filters to share them.'
+                  : 'No one has saved a view here yet.'}
+              </p>
+            )}
+            {views.map(view => (
+              <DropdownMenuItem key={view.id} onClick={() => onOpen(view)}>
+                <span className="flex size-3.5 shrink-0 items-center justify-center">
+                  {view.id === openId && <Check className="size-3.5" aria-label="Open" />}
+                </span>
+                <span className="truncate">{view.name}</span>
               </DropdownMenuItem>
-            </>
-          )}
-          {state.status === 'ready' && views.length === 0 && (
-            <p className="px-3 py-1.5 text-sm text-ink-2">
-              {canWrite
-                ? 'No saved views yet. Save the current filters to share them.'
-                : 'No one has saved a view here yet.'}
-            </p>
-          )}
-          {views.map(view => (
-            <DropdownMenuItem key={view.id} onClick={() => onOpen(view)}>
-              <span className="flex size-3.5 shrink-0 items-center justify-center">
-                {view.id === openId && <Check className="size-3.5" aria-label="Open" />}
-              </span>
-              <span className="truncate">{view.name}</span>
-            </DropdownMenuItem>
-          ))}
+            ))}
+          </DropdownMenuGroup>
           {canWrite && (
             <>
               <DropdownMenuSeparator />

@@ -109,6 +109,8 @@ export interface GroupHeader {
   value: string | null;
   /** How the value reads on screen: a rule's name, a category's label. */
   label: string;
+  /** Findings in the group, and the distinct resources they are on. */
+  findingCount: number;
   resourceCount: number;
   rowCount: number;
 }
@@ -226,15 +228,24 @@ export function valueLabeler(
 }
 
 export function groupHeader(
-  group: Pick<ViewGroup<unknown>, 'field' | 'value' | 'resourceCount' | 'rowCount'>, label: (field: ViewField, value: string) => string,
+  group: Pick<ViewGroup<unknown>, 'field' | 'value' | 'findingCount' | 'resourceCount' | 'rowCount'>, label: (field: ViewField, value: string) => string,
 ): GroupHeader {
   return {
     field: group.field,
     value: group.value,
     label: group.value === null ? NO_VALUE_LABEL : isRowField(group.field) ? group.value : label(group.field, group.value),
+    findingCount: group.findingCount,
     resourceCount: group.resourceCount,
     rowCount: group.rowCount,
   };
+}
+
+/** What a group header says it holds: "5 findings on 3 resources". The Activity tab has no
+ *  resources, only the patterns its findings are about, so there it is the finding count alone. */
+export function groupCountText(group: Pick<GroupHeader, 'findingCount' | 'resourceCount'>, tab: ViewTab): string {
+  const findings = `${group.findingCount} ${group.findingCount === 1 ? 'finding' : 'findings'}`;
+  if (tab === 'activity') return findings;
+  return `${findings} on ${group.resourceCount} ${group.resourceCount === 1 ? 'resource' : 'resources'}`;
 }
 
 function itemResponse(item: ViewItem<ExplorerFinding>): ViewItemResponse {

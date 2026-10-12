@@ -65,7 +65,7 @@ export function FindingRowsDetail({ finding }: { finding: { evidence?: FindingRo
       <ol className="space-y-6">
         {shown.rows.map((row, i) => (
           <li key={shown.firstIndex + i}>
-            <p className="label-grid mb-2">Row {shown.firstIndex + i + 1} of {shown.total}</p>
+            <p className="label-grid mb-2">{shown.firstIndex + i + 1} of {shown.total}</p>
             <RowEvidence row={row} />
           </li>
         ))}

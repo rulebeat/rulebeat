@@ -539,10 +539,20 @@ describe('GET /api/findings/group answers one group as the explorer opens it', (
 
   it('opens a group of 63 findings 50 and 13 at a time, each with its first rows', async () => {
     const first = await (await getFrom(groupRoute, 'group', make({ groupBy: ['category'] }), { tab: 'results', groupPath: '["cost"]' })).json() as GroupResponse;
-    expect([first.group?.resourceCount, first.total, first.pageCount, first.items.length]).toEqual([63, 63, 2, 50]);
+    expect([first.group?.findingCount, first.total, first.pageCount, first.items.length]).toEqual([63, 63, 2, 50]);
     const second = await (await getFrom(groupRoute, 'group', make({ groupBy: ['category'] }), { tab: 'results', groupPath: '["cost"]', groupPage: '2' })).json() as GroupResponse;
     expect(second.items.length).toBe(13);
     expect(first.items[0]!.rows.length).toBeGreaterThan(0);
+  });
+
+  it('counts findings and the distinct resources they are on, a VM two rules flag once', async () => {
+    // Open security findings: vm-alpha under both security rules, vm-delta and VM-ECHO. vm-bravo is
+    // suppressed and vm-charlie is Fixed.
+    const body = await (await getView(make({ groupBy: ['category'] }), 'results', false)).json() as ViewResponse;
+    const security = body.grouped?.groups.find(g => g.value === 'security');
+    expect([security?.findingCount, security?.resourceCount]).toEqual([4, 3]);
+    const opened = await (await getFrom(groupRoute, 'group', make({ groupBy: ['category'] }), { tab: 'results', groupPath: '["security"]' })).json() as GroupResponse;
+    expect([opened.group?.findingCount, opened.group?.resourceCount]).toEqual([4, 3]);
   });
 });
 
