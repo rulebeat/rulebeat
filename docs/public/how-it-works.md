@@ -155,10 +155,11 @@ posture figure ([`posture.md`](posture.md)).
 Every shipped rule belongs to a Pack. Startup records each shipped Rule version and its definition
 in `rule_versions`. An enabled rule keeps its running definition; a disabled rule moves to a newer
 shipped version. A Retired rule keeps running even when its Pack no longer ships it. Custom rules
-are never changed by the seeder.
+are never changed by the seeder. The Library's Version column shows the version each shipped rule
+runs, with a **New** chip when a newer one is recorded.
 
-An admin can switch one shipped rule forward or back to any recorded version after reviewing its
-changes. The definition and version are saved together with the case-insensitive name check.
+An admin can switch one shipped rule forward or back to any recorded version, chosen from the
+rule's list of versions, after reviewing its changes. The definition and version are saved together with the case-insensitive name check.
 The switch is audited and starts no scan. The next scan uses the selected definition and the
 same rule id, preserving matched findings, their ages and suppressions through the normal sync
 path. See [Rule versions](rule-versions.md).

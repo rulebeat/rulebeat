@@ -215,9 +215,11 @@ version is skipped with a warning.
 
 **An upgrade never changes what an enabled shipped rule runs.** A new definition is recorded in
 `rule_versions` beside the running one, and only a disabled rule moves to it. A rule no pack ships
-any more gets `retired_at` and keeps running. A rule stored before versions existed is recorded as
-its shipped version, or as "Before versioning" when its stored definition differs; if that rule is
-disabled it then moves to the shipped version, and an enabled one stays on "Before versioning".
+any more gets `retired_at` and keeps running. The one stated exception is a built-in stored with no
+version, or left on the removed "Before versioning" pseudo-version by an earlier release (ADR 0009):
+it takes its pack's shipped definition and version, enabled or not, and a retired one keeps its
+stored definition with no version. No version list ever shows "Before versioning" now. The Library
+shows the running version in its own column; there is no version filter.
 
 ### Scans page pattern
 One page, no category routing; category is a filter like tags/severity/status. `scans/page.tsx`

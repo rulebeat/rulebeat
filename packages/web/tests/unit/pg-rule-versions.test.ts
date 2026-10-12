@@ -12,9 +12,9 @@ import { sql } from 'drizzle-orm';
 import { join, resolve } from 'node:path';
 import { dbReady, pgDb } from '@/lib/db/client';
 import { seedPg } from '@/lib/db/pg/seeds';
-import { BEFORE_VERSIONING, BEFORE_VERSIONING_SORT_KEY, versionSortKey } from '@/lib/rule-versions';
+import { versionSortKey } from '@/lib/rule-versions';
 import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
-import { catalogueOf, shippedRule } from '../helpers/catalogue';
+import { LEGACY_PSEUDO_VERSION, catalogueOf, shippedRule } from '../helpers/catalogue';
 import {
   CHANGED, DUMP_SQL, UNCHANGED, adminChoicesSql, committedCatalogue, committedPackEntries, coreRuleId,
   oldCatalogue, populationSql, type DumpTable,
@@ -216,31 +216,18 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule versions', () =>
       expect(await versionsOf(CORE_ID)).toEqual(['1.0.0']);
     });
 
-    it('keeps a differing stored definition running as "Before versioning" and still records the shipped one', async () => {
+    it('moves an enabled row whose stored definition differs to the shipped version, recording no other version', async () => {
       await seed(catalogueOf(shippedRule({ id: CORE_ID })));
       await forgetVersions();
       await pgDb!.execute(sql`UPDATE rules SET severity = 'critical', description = 'tuned by an admin' WHERE id = ${CORE_ID}`);
       await seed(catalogueOf(shippedRule({ id: CORE_ID })));
 
       const r = await row(CORE_ID);
-      expect([r.version, r.severity, r.description]).toEqual([BEFORE_VERSIONING, 'critical', 'tuned by an admin']);
-      expect(await versionsOf(CORE_ID)).toEqual(['1.0.0', BEFORE_VERSIONING]);
-      expect(await definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ severity: 'critical', description: 'tuned by an admin' });
-      expect(await definitionOf(CORE_ID, '1.0.0')).toMatchObject({ severity: 'medium' });
+      expect([r.version, r.severity, r.description, r.enabled]).toEqual(['1.0.0', 'medium', 'A test rule.', true]);
+      expect(await versionsOf(CORE_ID)).toEqual(['1.0.0']);
     });
 
-    it('keeps an enabled "Before versioning" rule there when a newer version ships', async () => {
-      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
-      await forgetVersions();
-      await pgDb!.execute(sql`UPDATE rules SET severity = 'critical' WHERE id = ${CORE_ID}`);
-      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
-      await seed(catalogueOf(shippedRule({ id: CORE_ID, version: '1.1.0', definition: { severity: 'low' } })));
-      const r = await row(CORE_ID);
-      expect([r.version, r.severity, r.enabled]).toEqual([BEFORE_VERSIONING, 'critical', true]);
-      expect(await versionsOf(CORE_ID)).toEqual(['1.0.0', '1.1.0', BEFORE_VERSIONING]);
-    });
-
-    it('moves a disabled rule whose stored definition differs to the shipped version, after recording the stored one', async () => {
+    it('moves a disabled row whose stored definition differs to the shipped version, and keeps it disabled', async () => {
       await seed(catalogueOf(shippedRule({ id: CORE_ID })));
       await forgetVersions();
       await pgDb!.execute(sql`UPDATE rules SET name = 'Renamed by hand', severity = 'critical', enabled = FALSE WHERE id = ${CORE_ID}`);
@@ -248,33 +235,119 @@ describe.runIf(process.env.RULEBEAT_TEST_PG_URL)('postgres rule versions', () =>
 
       const r = await row(CORE_ID);
       expect([r.name, r.severity, r.version, r.enabled]).toEqual(['Test rule', 'medium', '1.0.0', false]);
-      expect(await versionsOf(CORE_ID)).toEqual(['1.0.0', BEFORE_VERSIONING]);
-      expect(await definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ name: 'Renamed by hand', severity: 'critical' });
-      expect(await q(sql`SELECT sort_key FROM rule_versions WHERE rule_id = ${CORE_ID} AND version = ${BEFORE_VERSIONING}`)).toEqual([{ sort_key: BEFORE_VERSIONING_SORT_KEY }]);
+      expect(await versionsOf(CORE_ID)).toEqual(['1.0.0']);
     });
 
-    it('moves a rule left on "Before versioning" to the newest shipped version once it is disabled', async () => {
+    it('takes the shipped kind for an enabled row with no version whose stored kind differs', async () => {
       await seed(catalogueOf(shippedRule({ id: CORE_ID })));
       await forgetVersions();
-      await pgDb!.execute(sql`UPDATE rules SET severity = 'critical' WHERE id = ${CORE_ID}`);
-      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
-      expect((await row(CORE_ID)).version).toBe(BEFORE_VERSIONING);
-
-      await pgDb!.execute(sql`UPDATE rules SET enabled = FALSE WHERE id = ${CORE_ID}`);
+      await pgDb!.execute(sql`UPDATE rules SET kind = 'advisory' WHERE id = ${CORE_ID}`);
       await seed(catalogueOf(shippedRule({ id: CORE_ID })));
       const r = await row(CORE_ID);
-      expect([r.version, r.severity, r.enabled]).toEqual(['1.0.0', 'medium', false]);
-      expect(await definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ severity: 'critical' });
+      expect([r.kind, r.version]).toEqual(['state', '1.0.0']);
     });
 
-    it('records a dropped rule\'s stored definition and retires it', async () => {
+    it('retires a rule no pack ships, keeping its stored definition and giving it no version', async () => {
       await seed(catalogueOf(shippedRule({ id: 'gone' }), shippedRule({ id: 'stays', definition: { name: 'Other' } })));
       await forgetVersions();
+      await pgDb!.execute(sql`UPDATE rules SET severity = 'critical' WHERE id = 'gone'`);
       await seed(catalogueOf(shippedRule({ id: 'stays', definition: { name: 'Other' } })));
       const gone = await row('gone');
-      expect([gone.version, gone.enabled]).toEqual([BEFORE_VERSIONING, true]);
+      expect([gone.version, gone.enabled, gone.severity]).toEqual([null, true, 'critical']);
       expect(gone.retired_at).not.toBeNull();
-      expect(await versionsOf('gone')).toEqual([BEFORE_VERSIONING]);
+      expect(await versionsOf('gone')).toEqual([]);
+    });
+  });
+
+  describe('a database an earlier release left on "Before versioning"', () => {
+    /** The state that release wrote: the stored definition is recorded and run under the pseudo-version. */
+    async function leaveOnLegacyVersion(id: string, set: ReturnType<typeof sql>): Promise<void> {
+      await pgDb!.execute(sql`UPDATE rules SET ${set}, version = ${LEGACY_PSEUDO_VERSION} WHERE id = ${id}`);
+      await pgDb!.execute(sql`
+        INSERT INTO rule_versions (rule_id, version, sort_key, release_note, definition, upstream_ref, first_seen_at)
+        VALUES (${id}, ${LEGACY_PSEUDO_VERSION}, '', 'The definition this rule had before versions were recorded.', '{}', NULL, '2026-01-01T00:00:00.000Z')
+      `);
+    }
+
+    it('moves an enabled and a disabled shipped rule to the shipped definition and version, and deletes the record', async () => {
+      const both = () => catalogueOf(shippedRule({ id: 'on' }), shippedRule({ id: 'off', definition: { name: 'Off' } }));
+      await seed(both());
+      await leaveOnLegacyVersion('on', sql`severity = 'critical', enabled = TRUE`);
+      await leaveOnLegacyVersion('off', sql`severity = 'critical', enabled = FALSE`);
+      await seed(both());
+
+      for (const id of ['on', 'off']) {
+        const r = await row(id);
+        expect([r.version, r.severity], id).toEqual(['1.0.0', 'medium']);
+        expect(await versionsOf(id), id).toEqual(['1.0.0']);
+      }
+      expect([(await row('on')).enabled, (await row('off')).enabled]).toEqual([true, false]);
+    });
+
+    it('keeps a retired rule\'s stored definition, leaves it retired and gives it no version', async () => {
+      const stays = () => catalogueOf(shippedRule({ id: 'stays', definition: { name: 'Other' } }));
+      await seed(catalogueOf(shippedRule({ id: 'gone' }), shippedRule({ id: 'stays', definition: { name: 'Other' } })));
+      await seed(stays());
+      const retiredAt = (await row('gone')).retired_at;
+      await leaveOnLegacyVersion('gone', sql`severity = 'critical'`);
+      await seed(stays());
+
+      const gone = await row('gone');
+      expect([gone.version, gone.severity, gone.retired_at]).toEqual([null, 'critical', retiredAt]);
+      expect(await versionsOf('gone')).toEqual(['1.0.0']);
+    });
+
+    it('gives a rule whose pack file could not be read no version, and does not retire it', async () => {
+      await seed(catalogueOf(shippedRule({ id: 'aprl-1', pack: 'aprl-v2', versionScheme: 'upstream-commit-date', version: APRL_VERSION })));
+      await leaveOnLegacyVersion('aprl-1', sql`severity = 'critical'`);
+      await seed({ rules: [], packsDirRead: true, unreadablePacks: ['aprl-v2'] });
+
+      const r = await row('aprl-1');
+      expect([r.version, r.severity, r.retired_at]).toEqual([null, 'critical', null]);
+      expect(await versionsOf('aprl-1')).toEqual([APRL_VERSION]);
+    });
+
+    it('clears the origin version of a custom rule copied while the original ran it, and keeps the origin rule', async () => {
+      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      await pgDb!.execute(sql`
+        INSERT INTO rules (id, name, description, category, severity, enabled, scope, resource_types, conditions, type, origin_rule_id, origin_version)
+        VALUES ('copy', 'Copy', '', 'security', 'low', TRUE, '{"level":"resource"}', '[]', '[]', 'custom', ${CORE_ID}, ${LEGACY_PSEUDO_VERSION})
+      `);
+      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      const copy = await row('copy');
+      expect([copy.origin_rule_id, copy.origin_version]).toEqual([CORE_ID, null]);
+    });
+
+    it('keeps findings with their first-seen dates, suppressions, enabled state and tags', async () => {
+      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      await leaveOnLegacyVersion(CORE_ID, sql`severity = 'critical', tags = '["mine"]'`);
+      await pgDb!.execute(sql`
+        INSERT INTO findings (fingerprint, rule_id, category, severity, subscription_id, title, first_seen_at, last_seen_at, times_seen)
+        VALUES ('fp-1', ${CORE_ID}, 'security', 'critical', 'sub', 't', '2026-03-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z', 4)
+      `);
+      await pgDb!.execute(sql`INSERT INTO suppressions (id, fingerprint, reason, suppressed_at) VALUES ('s-1', 'fp-1', 'accepted', '2026-03-02T00:00:00.000Z')`);
+      const kept = async () => [
+        await q(sql`SELECT * FROM findings ORDER BY fingerprint`),
+        await q(sql`SELECT * FROM suppressions ORDER BY id`),
+        await q(sql`SELECT id, enabled, tags FROM rules ORDER BY id`),
+      ];
+      const before = await kept();
+      await seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      expect(await kept()).toEqual(before);
+    });
+
+    it('changes nothing on the start after', async () => {
+      await seed(catalogueOf(shippedRule({ id: 'on' }), shippedRule({ id: 'gone' })));
+      await leaveOnLegacyVersion('on', sql`severity = 'critical'`);
+      await leaveOnLegacyVersion('gone', sql`severity = 'critical'`);
+      await seed(catalogueOf(shippedRule({ id: 'on' })));
+      const snapshot = async () => JSON.stringify([
+        await q(sql`SELECT * FROM rules ORDER BY id`),
+        await q(sql`SELECT * FROM rule_versions ORDER BY rule_id, version`),
+      ]);
+      const first = await snapshot();
+      await seed(catalogueOf(shippedRule({ id: 'on' })));
+      expect(await snapshot()).toBe(first);
     });
   });
 

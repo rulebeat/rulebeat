@@ -49,7 +49,8 @@ _Avoid_: user rule, forked rule
 The version of a shipped rule's definition. RuleBeat Core rules start at 1.0.0 and are versioned
 by RuleBeat; a third-party rule uses the version its upstream gives it, or, when upstream has no
 versions, the upstream date of the commit its current definition was taken from. A new version is added beside
-the one in use; a rule keeps the version it runs until someone picks another. Custom rules have no version yet; they are planned to get one.
+the one in use; a rule keeps the version it runs until an admin switches to another, older or newer, from any
+recorded version. A disabled rule moves to the newest version when RuleBeat is upgraded. Custom rules have no version yet; they are planned to get one.
 _Avoid_: revision
 
 **Pack**:

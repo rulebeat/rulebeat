@@ -1,6 +1,7 @@
 # ADR 0004: Shipped rules are versioned, and a running rule changes only when an admin picks a version
 
-Status: accepted, 2026-10-06.
+Status: accepted, 2026-10-06. Partly superseded by [ADR 0009](0009-simpler-rule-versions.md): the
+Library no longer filters by version, and the "Before versioning" version is removed.
 
 ## Decision
 

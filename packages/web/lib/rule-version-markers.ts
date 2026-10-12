@@ -1,13 +1,12 @@
-import { BEFORE_VERSIONING } from './before-versioning';
 import type { Rule } from './types';
 
 /**
- * What the Library list and the rule view say about versions (ticket #165, ADR 0004). Everything
- * here is pure and client-safe: the database read lives in `db/recorded-versions.ts`, and the
- * components only call these.
+ * What the Library list and the rule view say about versions (ticket #165, ADR 0004, ADR 0009).
+ * Everything here is pure and client-safe: the database read lives in `db/recorded-versions.ts`, and
+ * the components only call these.
  *
- * Nothing else announces a version. A rule has a "New version" marker when this install has recorded
- * a version newer than the one the rule runs, and a "Retired" marker when no pack ships it any more.
+ * The Library shows the version a rule runs in its own column, with a "New" chip when this install
+ * has recorded a newer one, and a "Retired" marker when no pack ships the rule any more.
  */
 
 /** A row of `rule_versions` without its definition. `sortKey` orders a rule's versions oldest to
@@ -18,10 +17,7 @@ export interface RecordedVersion {
   sortKey: string;
 }
 
-/** The two things a Library filter can pick. */
-export type VersionMarker = 'new-version' | 'retired';
-
-/** An upstream-commit-date version (an ISO timestamp), as opposed to semver or Before versioning. */
+/** An upstream-commit-date version (an ISO timestamp), as opposed to semver. */
 export function isCommitDateVersion(version: string): boolean {
   return /^\d{4}-\d{2}-\d{2}T/.test(version);
 }
@@ -34,14 +30,12 @@ export function formatVersionDate(date: string): string {
 
 /** How an admin reads a version: semver as it is, an upstream commit date as its date. */
 export function versionLabel(version: string): string {
-  if (version === BEFORE_VERSIONING) return 'Before versioning';
   return isCommitDateVersion(version) ? formatVersionDate(version) : version;
 }
 
-/** The sentence for a rule converted in place from a built-in. "Before versioning" is not a version
- *  a rule can be "at", so a rule that ran its stored definition gets the plain sentence. */
+/** The sentence for a rule converted in place from a built-in. */
 export function convertedOriginText(version: string | null): string {
-  return version && version !== BEFORE_VERSIONING
+  return version
     ? `Converted from the built-in rule at ${versionLabel(version)}.`
     : 'Converted from the built-in rule.';
 }
@@ -80,21 +74,6 @@ export function newerVersionsByRule(
     if (latest.sortKey > running.sortKey) result[rule.id] = latest.version;
   }
   return result;
-}
-
-/** An empty selection keeps every rule; otherwise a rule stays if it carries any selected marker. */
-export function matchesVersionFilter(
-  rule: Pick<Rule, 'id' | 'retiredAt'>,
-  newerVersions: Record<string, string>,
-  selected: ReadonlySet<string>,
-): boolean {
-  // A set of plain strings, since that is what the toolbar's checklist holds; the values are the
-  // two `VersionMarker`s.
-  const wants = (marker: VersionMarker) => selected.has(marker);
-  if (selected.size === 0) return true;
-  if (wants('new-version') && newerVersions[rule.id] !== undefined) return true;
-  if (wants('retired') && !!rule.retiredAt) return true;
-  return false;
 }
 
 export type OriginNote =

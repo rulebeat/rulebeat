@@ -20,7 +20,9 @@ import { listScanMetas } from '@/lib/scan-history';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 import { resetDb } from '../helpers/db';
-import { catalogueOf, shippedRule } from '../helpers/catalogue';
+import { LEGACY_PSEUDO_VERSION, catalogueOf, shippedRule } from '../helpers/catalogue';
+import { describeOrigin } from '@/lib/rule-version-markers';
+import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import type { RuleVersionHistory } from '@/lib/types';
 import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
 
@@ -319,33 +321,44 @@ describe('recorded Rule versions', () => {
     expect(entries).toHaveLength(3);
   });
 
-  it('can switch back to Before versioning and previews generated KQL exactly as the next scan runs it', async () => {
-    await run(db.delete(ruleVersions).where(eq(ruleVersions.ruleId, ID)));
-    await updateRule(ID, {
-      description: 'Stored recommendation.',
-      rawKql: undefined, conditions: [{ field: 'name', operator: 'equals', value: 'old' }],
+  it('previews generated KQL exactly as the next scan runs it, for a conditions-based definition', async () => {
+    const byName = (version: string, value: string) => shippedRule({
+      version, definition: { rawKql: null, conditions: [{ field: 'name', operator: 'equals', value }] },
     });
-    await run(db.update(rules).set({ version: null }).where(eq(rules.id, ID)));
-    await seed(catalogueOf(v1));
+    await run(db.delete(ruleVersions).where(eq(ruleVersions.ruleId, ID)));
+    await run(db.delete(rules).where(eq(rules.id, ID)));
+    await seed(catalogueOf(byName('1.0.0', 'old')));
+    await seed(catalogueOf(byName('2.0.0', 'new')));
     const history: RuleVersionHistory = await (await GET(new Request('http://localhost/api/rules/x/versions'), params)).json();
     expect(history.versions.map(v => [v.version, v.isRunning, v.isNewer])).toEqual([
-      ['1.0.0', false, true], ['before-versioning', true, false],
+      ['2.0.0', false, true], ['1.0.0', true, false],
     ]);
-    const before = await storedRule();
-    const ctx = fakeTenantContext({ rows: [argRow()] });
-    await runCategoryScan((await getCategory('security'))!, { ctx, ruleIds: [ID] });
-    expect(history.currentQuery).toBe(ctx.queries[0].kql);
-    expect(history.versions[1].query).toBe(ctx.queries[0].kql);
-    expect((await PUT(switchRequest('1.0.0'), params)).status).toBe(200);
-    expect((await PUT(switchRequest('before-versioning'), params)).status).toBe(200);
-    expect(await storedRule()).toMatchObject({
-      version: 'before-versioning', description: before.description, conditions: before.conditions,
+
+    const category = (await getCategory('security'))!;
+    const before = fakeTenantContext({ rows: [argRow()] });
+    await runCategoryScan(category, { ctx: before, ruleIds: [ID] });
+    expect(history.currentQuery).toBe(before.queries[0].kql);
+
+    expect((await PUT(switchRequest('2.0.0'), params)).status).toBe(200);
+    const after = fakeTenantContext({ rows: [argRow()] });
+    await runCategoryScan(category, { ctx: after, ruleIds: [ID] });
+    expect(history.versions[0].query).toBe(after.queries[0].kql);
+    expect(after.queries[0].kql).not.toBe(before.queries[0].kql);
+    expect((await storedRule()).version).toBe('2.0.0');
+    expect((await listAuditEntries()).map(e => e.summary)).toEqual(['Switched built-in rule "Test rule" from 1.0.0 to 2.0.0']);
+  });
+
+  it('reads a copy made while the original ran "Before versioning" as a plain duplicate, with no newer-version sentence', async () => {
+    await createRule({ ...await storedRule(), id: 'copy-rule', name: 'Copy of the rule', type: 'custom', version: undefined });
+    await run(db.update(rules).set({ originRuleId: ID, originVersion: LEGACY_PSEUDO_VERSION }).where(eq(rules.id, 'copy-rule')));
+    await seed(catalogueOf(v1));
+
+    const all = await loadRules();
+    const copy = all.find(r => r.id === 'copy-rule')!;
+    expect(copy.originVersion).toBeUndefined();
+    expect(describeOrigin(copy, all, await loadRecordedVersions())).toEqual({
+      kind: 'duplicate', originRuleId: ID, originName: 'Test rule', version: null, hasNewerVersion: false,
     });
-    expect((await storedRule()).rawKql).toBeUndefined();
-    expect((await listAuditEntries()).map(e => e.summary)).toEqual(expect.arrayContaining([
-      'Switched built-in rule "Test rule" from Before versioning to 1.0.0',
-      'Switched built-in rule "Test rule" from 1.0.0 to Before versioning',
-    ]));
   });
 
   it('serializes a version rename with a concurrent create so only one can claim the name', async () => {

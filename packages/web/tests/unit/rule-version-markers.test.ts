@@ -18,7 +18,7 @@ import { seedPg } from '@/lib/db/pg/seeds';
 import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { createRule, duplicateRule, loadRules } from '@/lib/rules';
 import {
-  convertedOriginText, describeOrigin, matchesVersionFilter, newerVersionsByRule, retiredMessage, versionLabel,
+  convertedOriginText, describeOrigin, newerVersionsByRule, retiredMessage, versionLabel,
   type RecordedVersion,
 } from '@/lib/rule-version-markers';
 import type { Rule } from '@/lib/types';
@@ -138,34 +138,9 @@ describe('newerVersionsByRule', () => {
     expect(newerVersionsByRule([rule({ id: 'a', version: '1.0.0' })], recorded)).toEqual({ a: '1.2.0' });
   });
 
-  it('counts a rule left on "Before versioning" as having a newer version when the shipped one is recorded', () => {
-    const recorded = [rec('a', 'before-versioning', ''), rec('a', '1.0.0', 'k1')];
-    expect(newerVersionsByRule([rule({ id: 'a', version: 'before-versioning' })], recorded)).toEqual({ a: '1.0.0' });
-  });
-
   it('says nothing about a custom rule, or a rule whose running version was never recorded', () => {
     const recorded = [rec('c', '1.0.0', 'k1'), rec('c', '1.1.0', 'k2'), rec('x', '1.1.0', 'k2')];
     expect(newerVersionsByRule([rule({ id: 'c', type: 'custom', version: undefined }), rule({ id: 'x', version: '1.0.0' })], recorded)).toEqual({});
-  });
-});
-
-describe('matchesVersionFilter', () => {
-  const newer = { a: '1.1.0' };
-  const plain = rule({ id: 'b' });
-  const marked = rule({ id: 'a' });
-  const retired = rule({ id: 'c', retiredAt: '2026-10-01T00:00:00Z' });
-
-  it('lets everything through when nothing is selected', () => {
-    for (const r of [plain, marked, retired]) expect(matchesVersionFilter(r, newer, new Set())).toBe(true);
-  });
-
-  it('keeps only rules with a new version for "new-version" and only retired rules for "retired"', () => {
-    expect([plain, marked, retired].filter(r => matchesVersionFilter(r, newer, new Set(['new-version']))).map(r => r.id)).toEqual(['a']);
-    expect([plain, marked, retired].filter(r => matchesVersionFilter(r, newer, new Set(['retired']))).map(r => r.id)).toEqual(['c']);
-  });
-
-  it('keeps a rule matching either selected marker', () => {
-    expect([plain, marked, retired].filter(r => matchesVersionFilter(r, newer, new Set(['new-version', 'retired']))).map(r => r.id)).toEqual(['a', 'c']);
   });
 });
 
@@ -175,16 +150,14 @@ describe('the words', () => {
     expect(retiredMessage('RuleBeat Core')).toBe('Retired. RuleBeat Core no longer ships this rule.');
   });
 
-  it('shows semver as is, a commit-date version as its date and the first upgrade as "Before versioning"', () => {
+  it('shows semver as is, a commit-date version as its date', () => {
     expect(versionLabel('1.2.0')).toBe('1.2.0');
     expect(versionLabel('2026-06-08T13:06:47Z')).toBe('2026-06-08');
-    expect(versionLabel('before-versioning')).toBe('Before versioning');
   });
 
-  it('words a converted rule "at" a real version, and plainly when it ran its stored definition', () => {
+  it('words a converted rule "at" a real version, and plainly when no version was recorded', () => {
     expect(convertedOriginText('1.0.0')).toBe('Converted from the built-in rule at 1.0.0.');
     expect(convertedOriginText('2026-06-08T13:06:47Z')).toBe('Converted from the built-in rule at 2026-06-08.');
-    expect(convertedOriginText('before-versioning')).toBe('Converted from the built-in rule.');
     expect(convertedOriginText(null)).toBe('Converted from the built-in rule.');
   });
 });

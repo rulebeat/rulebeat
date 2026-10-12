@@ -59,7 +59,7 @@
 | `packages/web/data/packs/pack-manifest.json` | Pack registry: source, license, attribution, pinned commit |
 | `scripts/sync-pack.ts` | Generic pack sync runner; versions each rule through `lib/pack-versioning.ts` |
 | `packages/web/lib/pack-versioning.ts` | `versionPackRules()`: pure per-rule versioning for a pack sync (unchanged rules keep their version, changed ones take the commit date and a note naming the fields) |
-| `packages/web/lib/rule-version-markers.ts` | Pure, client-safe: the Library's "New version" and "Retired" markers and filter, the retired copy, and `describeOrigin()` for a custom rule's "Duplicated from" line |
+| `packages/web/lib/rule-version-markers.ts` | Pure, client-safe: the Library's Version column helpers (`versionLabel()`, `newerVersionsByRule()` for the "New" chip), the retired copy, and `describeOrigin()` for a custom rule's "Duplicated from" line |
 | `packages/web/lib/db/recorded-versions.ts` | `loadRecordedVersions()`: every recorded `(ruleId, version, sortKey)` in one query, no definitions |
 | `packages/web/components/rules/rule-origin.tsx` | The "Duplicated from <rule> <version>" line on a custom rule's page |
 | `scripts/packs/aprl-v2.ts` | APRL v2 pack transform; fetches the tree and files, then pairs through `lib/aprl-pairing.ts` |

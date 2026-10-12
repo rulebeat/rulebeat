@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, runMigrations, runSeeds } from '@/lib/db/migrate';
-import { BEFORE_VERSIONING, BEFORE_VERSIONING_SORT_KEY, versionSortKey } from '@/lib/rule-versions';
+import { versionSortKey } from '@/lib/rule-versions';
 import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
-import { catalogueOf, shippedRule } from '../helpers/catalogue';
+import { LEGACY_PSEUDO_VERSION, catalogueOf, shippedRule } from '../helpers/catalogue';
 
 const APRL_VERSION = '2026-06-08T13:06:47Z';
 const CORE_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -179,33 +179,18 @@ describe('the first start after versions shipped', () => {
     expect(versionsOf(CORE_ID)).toEqual(['1.0.0']);
   });
 
-  it('keeps a differing stored definition running as "Before versioning" and still records the shipped one', () => {
+  it('moves an enabled row whose stored definition differs to the shipped version, recording no other version', () => {
     seed(catalogueOf(shippedRule({ id: CORE_ID })));
     forgetVersions();
     sqlite.prepare(`UPDATE rules SET severity = 'critical', description = 'tuned by an admin' WHERE id = ?`).run(CORE_ID);
     seed(catalogueOf(shippedRule({ id: CORE_ID })));
 
     const r = row(CORE_ID);
-    expect([r.version, r.severity, r.description]).toEqual([BEFORE_VERSIONING, 'critical', 'tuned by an admin']);
-    expect(versionsOf(CORE_ID)).toEqual(['1.0.0', BEFORE_VERSIONING]);
-    expect(sqlite.prepare(`SELECT version FROM rule_versions WHERE rule_id = ? ORDER BY sort_key`).all(CORE_ID)).toEqual([{ version: BEFORE_VERSIONING }, { version: '1.0.0' }]);
-    expect(sqlite.prepare(`SELECT sort_key FROM rule_versions WHERE rule_id = ? AND version = ?`).get(CORE_ID, BEFORE_VERSIONING)).toEqual({ sort_key: BEFORE_VERSIONING_SORT_KEY });
-    expect(definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ severity: 'critical', description: 'tuned by an admin' });
-    expect(definitionOf(CORE_ID, '1.0.0')).toMatchObject({ severity: 'medium' });
+    expect([r.version, r.severity, r.description, r.enabled]).toEqual(['1.0.0', 'medium', 'A test rule.', 1]);
+    expect(versionsOf(CORE_ID)).toEqual(['1.0.0']);
   });
 
-  it('keeps an enabled "Before versioning" rule there when a newer version ships', () => {
-    seed(catalogueOf(shippedRule({ id: CORE_ID })));
-    forgetVersions();
-    sqlite.prepare(`UPDATE rules SET severity = 'critical' WHERE id = ?`).run(CORE_ID);
-    seed(catalogueOf(shippedRule({ id: CORE_ID })));
-    seed(catalogueOf(shippedRule({ id: CORE_ID, version: '1.1.0', definition: { severity: 'low' } })));
-    const r = row(CORE_ID);
-    expect([r.version, r.severity, r.enabled]).toEqual([BEFORE_VERSIONING, 'critical', 1]);
-    expect(versionsOf(CORE_ID)).toEqual(['1.0.0', '1.1.0', BEFORE_VERSIONING]);
-  });
-
-  it('moves a disabled rule whose stored definition differs to the shipped version, after recording the stored one', () => {
+  it('moves a disabled row whose stored definition differs to the shipped version, and keeps it disabled', () => {
     seed(catalogueOf(shippedRule({ id: CORE_ID })));
     forgetVersions();
     sqlite.prepare(`UPDATE rules SET name = 'Renamed by hand', severity = 'critical', enabled = 0 WHERE id = ?`).run(CORE_ID);
@@ -213,32 +198,91 @@ describe('the first start after versions shipped', () => {
 
     const r = row(CORE_ID);
     expect([r.name, r.severity, r.version, r.enabled]).toEqual(['Test rule', 'medium', '1.0.0', 0]);
-    expect(versionsOf(CORE_ID)).toEqual(['1.0.0', BEFORE_VERSIONING]);
-    expect(definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ name: 'Renamed by hand', severity: 'critical' });
+    expect(versionsOf(CORE_ID)).toEqual(['1.0.0']);
   });
 
-  it('moves a rule left on "Before versioning" to the newest shipped version once it is disabled', () => {
+  it('takes the shipped kind for an enabled row with no version whose stored kind differs', () => {
     seed(catalogueOf(shippedRule({ id: CORE_ID })));
     forgetVersions();
-    sqlite.prepare(`UPDATE rules SET severity = 'critical' WHERE id = ?`).run(CORE_ID);
+    sqlite.prepare(`UPDATE rules SET kind = 'advisory' WHERE id = ?`).run(CORE_ID);
     seed(catalogueOf(shippedRule({ id: CORE_ID })));
-    expect(row(CORE_ID).version).toBe(BEFORE_VERSIONING);
-
-    sqlite.prepare(`UPDATE rules SET enabled = 0 WHERE id = ?`).run(CORE_ID);
-    seed(catalogueOf(shippedRule({ id: CORE_ID })));
-    const r = row(CORE_ID);
-    expect([r.version, r.severity, r.enabled]).toEqual(['1.0.0', 'medium', 0]);
-    expect(definitionOf(CORE_ID, BEFORE_VERSIONING)).toMatchObject({ severity: 'critical' });
+    expect([row(CORE_ID).kind, row(CORE_ID).version]).toEqual(['state', '1.0.0']);
   });
 
-  it('records a dropped rule\'s stored definition and retires it', () => {
+  it('retires a rule no pack ships, keeping its stored definition and giving it no version', () => {
     seed(catalogueOf(shippedRule({ id: 'gone' }), shippedRule({ id: 'stays', definition: { name: 'Other' } })));
     forgetVersions();
+    sqlite.prepare(`UPDATE rules SET severity = 'critical' WHERE id = 'gone'`).run();
     seed(catalogueOf(shippedRule({ id: 'stays', definition: { name: 'Other' } })));
     const gone = row('gone');
-    expect([gone.version, gone.enabled]).toEqual([BEFORE_VERSIONING, 1]);
+    expect([gone.version, gone.enabled, gone.severity]).toEqual([null, 1, 'critical']);
     expect(gone.retired_at).not.toBeNull();
-    expect(versionsOf('gone')).toEqual([BEFORE_VERSIONING]);
+    expect(versionsOf('gone')).toEqual([]);
+  });
+
+  describe('a database an earlier release left on "Before versioning"', () => {
+    /** The state that release wrote: the stored definition is recorded and run under the pseudo-version. */
+    function leaveOnLegacyVersion(id: string, set: string): void {
+      sqlite.prepare(`UPDATE rules SET ${set}, version = ? WHERE id = ?`).run(LEGACY_PSEUDO_VERSION, id);
+      sqlite.prepare(`INSERT INTO rule_versions (rule_id, version, sort_key, release_note, definition, upstream_ref, first_seen_at) VALUES (?, ?, '', 'The definition this rule had before versions were recorded.', '{}', NULL, '2026-01-01T00:00:00.000Z')`).run(id, LEGACY_PSEUDO_VERSION);
+    }
+
+    it('moves an enabled and a disabled shipped rule to the shipped definition and version, and deletes the record', () => {
+      seed(catalogueOf(shippedRule({ id: 'on' }), shippedRule({ id: 'off', definition: { name: 'Off' } })));
+      leaveOnLegacyVersion('on', `severity = 'critical', enabled = 1`);
+      leaveOnLegacyVersion('off', `severity = 'critical', enabled = 0`);
+      seed(catalogueOf(shippedRule({ id: 'on' }), shippedRule({ id: 'off', definition: { name: 'Off' } })));
+
+      for (const id of ['on', 'off']) {
+        expect([row(id).version, row(id).severity], id).toEqual(['1.0.0', 'medium']);
+        expect(versionsOf(id), id).toEqual(['1.0.0']);
+      }
+      expect([row('on').enabled, row('off').enabled]).toEqual([1, 0]);
+    });
+
+    it('keeps a retired rule\'s stored definition, leaves it retired and gives it no version', () => {
+      seed(catalogueOf(shippedRule({ id: 'gone' }), shippedRule({ id: 'stays', definition: { name: 'Other' } })));
+      seed(catalogueOf(shippedRule({ id: 'stays', definition: { name: 'Other' } })));
+      const retiredAt = row('gone').retired_at;
+      leaveOnLegacyVersion('gone', `severity = 'critical'`);
+      seed(catalogueOf(shippedRule({ id: 'stays', definition: { name: 'Other' } })));
+
+      const gone = row('gone');
+      expect([gone.version, gone.severity, gone.retired_at]).toEqual([null, 'critical', retiredAt]);
+      expect(versionsOf('gone')).toEqual(['1.0.0']);
+    });
+
+    it('gives a rule whose pack file could not be read no version, and does not retire it', () => {
+      const aprl = shippedRule({ id: 'aprl-1', pack: 'aprl-v2', versionScheme: 'upstream-commit-date', version: APRL_VERSION });
+      seed(catalogueOf(aprl));
+      leaveOnLegacyVersion('aprl-1', `severity = 'critical'`);
+      seed({ rules: [], packsDirRead: true, unreadablePacks: ['aprl-v2'] });
+
+      const r = row('aprl-1');
+      expect([r.version, r.severity, r.retired_at]).toEqual([null, 'critical', null]);
+      expect(versionsOf('aprl-1')).toEqual([APRL_VERSION]);
+    });
+
+    it('clears the origin version of a custom rule copied while the original ran it, and keeps the origin rule', () => {
+      seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      sqlite.prepare(`INSERT INTO rules (id, name, description, category, severity, enabled, scope, resource_types, conditions, type, origin_rule_id, origin_version) VALUES ('copy', 'Copy', '', 'security', 'low', 1, '{"level":"resource"}', '[]', '[]', 'custom', ?, ?)`).run(CORE_ID, LEGACY_PSEUDO_VERSION);
+      seed(catalogueOf(shippedRule({ id: CORE_ID })));
+      expect([row('copy').origin_rule_id, row('copy').origin_version]).toEqual([CORE_ID, null]);
+    });
+
+    it('changes nothing on the start after', () => {
+      seed(catalogueOf(shippedRule({ id: 'on' }), shippedRule({ id: 'gone' })));
+      leaveOnLegacyVersion('on', `severity = 'critical'`);
+      leaveOnLegacyVersion('gone', `severity = 'critical'`);
+      seed(catalogueOf(shippedRule({ id: 'on' })));
+      const snapshot = () => JSON.stringify([
+        sqlite.prepare(`SELECT * FROM rules ORDER BY id`).all(),
+        sqlite.prepare(`SELECT * FROM rule_versions ORDER BY rule_id, version`).all(),
+      ]);
+      const first = snapshot();
+      seed(catalogueOf(shippedRule({ id: 'on' })));
+      expect(snapshot()).toBe(first);
+    });
   });
 
   it('re-asserts type and pack on a row that has lost them, like the old seeder did', () => {

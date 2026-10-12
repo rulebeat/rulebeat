@@ -9,20 +9,26 @@ and it has no Rule versions to switch yet. Duplicate a shipped rule to change it
 
 ## Review and switch
 
-Open a shipped rule from the Library or the Rules tab. Its **Rule version** panel shows the
-running version. The selector and **Version history** show every version this install has recorded,
-with its date, release note and upstream reference when there is one. **New** means newer than
-the running version, not unread.
+The Library has a **Version** column right after the rule's name. It shows the version each
+shipped rule runs: `1.0.0` for a RuleBeat Core rule, the upstream commit date such as `2026-06-08`
+for an APRL rule. It is blank for a Custom rule. A **New** chip beside the version means this
+install has recorded a newer one; hover it to see which. **New** means newer than the running
+version, not unread.
 
-Choose a version to review every changed definition field before and after. The query also appears
+Open a shipped rule from the Library or the Rules tab. Its **Rule version** panel is one list of
+every version this install has recorded, newest first, each with its date, release note and upstream
+reference when there is one, and a **Running** or **New** tag. A disabled rule moves to the newest
+version when RuleBeat is upgraded.
+
+Select a version to review every changed definition field before and after. The query also appears
 as a line diff: `-` removes a line from the running query, and `+` adds one in the selected version.
-An admin can then choose **Switch version**. Viewers and editors can review the same history
-and changes, but cannot switch. Save any pending tag or enabled-state changes before switching.
+An admin can then choose **Switch version**, to an older or a newer version. Viewers and editors
+can review the same list and changes, but cannot switch. Save any pending tag or enabled-state changes before switching.
 
 Switching changes only the definition and running version. It does not change enabled state,
 tags, suppressions, schedules or the last run status. **It starts no scan.** The next manual or
-scheduled scan uses the chosen version. You can return to any recorded version using the same
-selector; the install keeps its recorded versions.
+scheduled scan uses the chosen version. You can return to any recorded version from the same
+list; the install keeps its recorded versions.
 
 If the selected definition would rename the rule to another rule's name, the switch fails and
 names the other rule. Nothing changes. Names are compared without regard to case or surrounding
@@ -50,7 +56,7 @@ detects, a minor version fixes the query without changing its meaning, and a pat
 Its date is when this install first recorded the version.
 
 A third-party Pack uses its upstream version when one exists. APRL uses the upstream commit's
-date, not the date RuleBeat ran the sync. The full timestamp is stored; the selector shows time
+date, not the date RuleBeat ran the sync. The full timestamp is stored; the list shows time
 in UTC only when versions of the same rule share a date. The upstream commit is a detail,
 not the version label. Audit summaries show the date without the time.
 
@@ -60,9 +66,11 @@ A new install begins on the newest shipped definitions. On upgrade, an enabled s
 keeps its current version. A disabled one moves to a newer shipped version because nothing it
 produces can change while it is disabled.
 
-On the first upgrade that records versions, a stored definition that differs from the shipped one
-is recorded as **Before versioning**. An enabled rule keeps that definition, with the shipped
-version available beside it. A disabled rule moves to the shipped version.
+One exception applies once. An earlier release could leave a shipped rule running a stored
+definition that differed from the shipped one, listed as "Before versioning". That entry no longer
+exists. On the first start after this change, such a rule runs its Pack's shipped definition and
+version, enabled or not, and the next scan may flag different resources. A rule no Pack ships keeps
+the definition it had, is marked Retired, and shows no version.
 
 A **Retired rule** is a shipped rule its Pack no longer ships. It keeps running its last version
 until someone disables it. Its panel says **Retired. &lt;Pack label&gt; no longer ships this rule.**

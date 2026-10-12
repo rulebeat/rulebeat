@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select } from '@/components/ui/select';
 import { PACK_LABELS } from '@/lib/pack-labels';
 import { KIND_LABEL } from '@/lib/finding-kinds';
 import { changedFields } from '@/lib/changed-fields';
@@ -77,61 +76,49 @@ export function RuleVersionSelector({
     <Card>
       <CardHeader>
         <CardTitle>Rule version</CardTitle>
-        <span className="text-xs text-ink-2">
-          Running {selectorVersionLabel(rule.version)}
-        </span>
+        {rule.version && (
+          <span className="text-xs text-ink-2">
+            Running {selectorVersionLabel(rule.version)}
+          </span>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {history.retired && (
           <p className="text-sm text-ink-2">Retired. {PACK_LABELS[rule.pack ?? 'rulebeat-core'] ?? rule.pack} no longer ships this rule.</p>
         )}
+        <p className="text-sm text-ink-2">A disabled rule moves to the newest version when RuleBeat is upgraded.</p>
         {history.versions.length === 0 ? (
           <p className="text-sm text-ink-2">No Rule versions have been recorded for this rule on this install.</p>
         ) : (
-          <>
-            <div className="max-w-lg space-y-2">
-              <Select
-                aria-label="Rule version"
-                value={selected?.version ?? null}
-                disabled={saving}
-                onValueChange={value => { setSelectedVersion(value); setError(null); }}
-                options={history.versions.map(v => ({
-                  value: v.version,
-                  label: `${selectorVersionLabel(v.version)}${v.isRunning ? ' (running)' : ''}${v.isNewer ? ' · New' : ''}`,
-                }))}
-              />
-              <p className="text-xs text-ink-2">
-                {canSwitch ? 'Review the changes before switching. Nothing runs until the next scan.' : 'Version history is read-only. Only an admin can switch Rule versions.'}
-              </p>
-            </div>
-            {selected && (
-              <div className="space-y-1 text-sm text-ink-2">
-                <p><span className="font-medium">Date:</span> <time dateTime={selected.date}>{formatVersionDate(selected.date)}</time></p>
-                <p>{selected.releaseNote}</p>
-                {selected.upstreamRef && <p className="break-all font-mono text-xs">Upstream reference: {selected.upstreamRef}</p>}
-              </div>
-            )}
-            <details className="text-sm text-ink-2">
-              <summary className="cursor-pointer font-medium">Version history</summary>
-              <ul className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {history.versions.map(v => (
-                  <li key={v.version} className="space-y-1 bg-surface-sunken p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button type="button" className="font-medium text-ink underline underline-offset-4" disabled={saving}
-                        onClick={() => { setSelectedVersion(v.version); setError(null); }}>
-                        {selectorVersionLabel(v.version)}
-                      </button>
-                      {v.isRunning && <span className="text-xs">Running</span>}
-                      {v.isNewer && <span className="bg-surface px-1.5 py-0.5 text-xs font-medium">New</span>}
-                    </div>
-                    <time dateTime={v.date} className="text-xs">{formatVersionDate(v.date)}</time>
-                    <p>{v.releaseNote}</p>
-                    {v.upstreamRef && <p className="break-all font-mono text-xs">Upstream reference: {v.upstreamRef}</p>}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </>
+          <div className="space-y-2">
+            <p className="text-xs text-ink-2">
+              {canSwitch
+                ? 'Select a version to review its changes before switching. Nothing runs until the next scan.'
+                : 'Select a version to review its changes. Only an admin can switch Rule versions.'}
+            </p>
+            <ul aria-label="Rule versions" className="space-y-2">
+              {history.versions.map(v => (
+                <li key={v.version}>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    aria-current={selected?.version === v.version ? 'true' : undefined}
+                    onClick={() => { setSelectedVersion(v.version); setError(null); }}
+                    className={`block w-full space-y-1 p-3 text-left text-sm text-ink-2 transition-colors hover:bg-surface-hover ${selected?.version === v.version ? 'bg-surface-hover' : 'bg-surface-sunken'}`}
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-ink">{selectorVersionLabel(v.version)}</span>
+                      {v.isRunning && <span className="bg-surface px-1.5 py-0.5 text-xs font-medium text-ink">Running</span>}
+                      {v.isNewer && <span className="bg-surface px-1.5 py-0.5 text-xs font-medium text-ink">New</span>}
+                      <time dateTime={v.date} className="text-xs">{formatVersionDate(v.date)}</time>
+                    </span>
+                    <span className="block">{v.releaseNote}</span>
+                    {v.upstreamRef && <span className="block break-all font-mono text-xs">Upstream reference: {v.upstreamRef}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {reviewing && selected && (
           <section aria-label="Version changes" className="space-y-4 border-t border-rule-faint pt-4">

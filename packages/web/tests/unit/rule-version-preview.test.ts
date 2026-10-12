@@ -23,8 +23,7 @@ describe('Rule version review', () => {
     expect(diffQueryLines('A\n', 'A')).toEqual([{ kind: 'same', text: 'A' }, { kind: 'removed', text: '' }]);
   });
 
-  it('labels Before versioning and upstream dates, with optional UTC time for selector entries on the same day', () => {
-    expect(versionLabel('before-versioning')).toBe('Before versioning');
+  it('labels upstream dates, with optional UTC time for selector entries on the same day', () => {
     expect(versionLabel('1.2.0')).toBe('1.2.0');
     expect(versionLabel('2026-06-08T13:06:47Z')).toBe('2026-06-08');
     const versions = [{ version: '2026-06-08T13:06:47Z' }, { version: '2026-06-08T16:06:47Z' }];

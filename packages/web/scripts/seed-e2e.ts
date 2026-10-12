@@ -7,6 +7,37 @@
 //
 // Run only by tests/e2e/global-setup.ts, via `npx tsx scripts/seed-e2e.ts`, never by the product.
 
+import { join } from 'node:path';
+
+// The rule version specs need one enabled RuleBeat Core rule that has a newer recorded version. Run
+// the product's own seeder a second time with a catalogue whose copy of that rule ships 1.1.0 and a
+// different query: an enabled rule keeps running 1.0.0 and the new one is recorded beside it, the same
+// as an upgrade. No other spec touches this rule.
+const VERSIONED_RULE_NAME = 'Empty Network Security Group';
+
+async function recordNewerCoreVersion(): Promise<void> {
+  const { rawSqlite } = await import('../lib/db/client');
+  const { runSeeds } = await import('../lib/db/migrate');
+  const { loadShippedCatalogue } = await import('../lib/shipped-catalogue');
+  if (!rawSqlite) throw new Error('seed-e2e: expected the SQLite backend');
+
+  const dataDir = join(process.cwd(), 'data');
+  const shipped = loadShippedCatalogue(dataDir);
+  const target = shipped.rules.find(r => r.pack === 'rulebeat-core' && r.definition.name === VERSIONED_RULE_NAME);
+  if (!target) throw new Error(`seed-e2e: RuleBeat Core no longer ships "${VERSIONED_RULE_NAME}"`);
+  const catalogue = {
+    ...shipped,
+    rules: shipped.rules.map(r => r.id !== target.id ? r : {
+      ...r,
+      version: '1.1.0',
+      releaseNote: 'Fixture release: skips groups whose name starts with e2e-.',
+      definition: { ...r.definition, rawKql: `${r.definition.rawKql}
+| where name !startswith 'e2e-'` },
+    }),
+  };
+  runSeeds(rawSqlite, dataDir, { skipOwnerBootstrap: true, catalogue });
+}
+
 async function main(): Promise<void> {
   const viewerEmail = process.env.RULEBEAT_E2E_VIEWER_EMAIL;
   const viewerPassword = process.env.RULEBEAT_E2E_VIEWER_PASSWORD;
@@ -44,6 +75,8 @@ async function main(): Promise<void> {
     const admin = await getUserByEmail(adminEmail.trim().toLowerCase());
     if (admin) await setPassword(admin.id, hashPasswordSync(adminPassword), { mustChangePassword: false });
   }
+
+  await recordNewerCoreVersion();
 
   const rules = await loadRules();
   const seedRule = rules.find(r => r.enabled) ?? rules[0];

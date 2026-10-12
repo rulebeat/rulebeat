@@ -1535,7 +1535,8 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
 
   // Seeds the shipped rules (RuleBeat Core and every pack) and records their versions. What it may
   // change is decided by `planRuleSeeding()` (lib/rule-versions.ts), shared with the Postgres seeder:
-  // it adds versions beside the one a rule runs and never changes what an enabled rule runs (ADR 0004).
+  // it adds versions beside the one a rule runs and never changes what an enabled rule runs (ADR 0004),
+  // bar the one-time move off the removed "Before versioning" pseudo-version (ADR 0009).
   function seedRules() {
     // Remove legacy orphan:: / standards:: rows superseded by builtin:: equivalents
     sqlite.exec(`DELETE FROM rules WHERE id LIKE 'orphan::%' OR id LIKE 'standards::%'`);
@@ -1555,6 +1556,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     const setRunning = sqlite.prepare(`UPDATE rules SET version = ? WHERE id = ?`);
+    const clearRunning = sqlite.prepare(`UPDATE rules SET version = NULL WHERE id = ?`);
+    const clearOriginVersion = sqlite.prepare(`UPDATE rules SET origin_version = NULL WHERE id = ?`);
+    const deleteRecorded = sqlite.prepare(`DELETE FROM rule_versions WHERE rule_id = ? AND version = ?`);
     const applyVersion = sqlite.prepare(`
       UPDATE rules SET name = @name, description = @description, category = @category, severity = @severity,
         query_backend = @queryBackend, kind = @kind, resource_types = @resourceTypes, scope = @scope,
@@ -1592,6 +1596,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
           record.run(a.ruleId, a.version, a.sortKey, a.releaseNote, JSON.stringify(a.definition), a.upstreamRef ?? null, now);
           break;
         case 'set-running': setRunning.run(a.version, a.ruleId); break;
+        case 'clear-running': clearRunning.run(a.ruleId); break;
+        case 'clear-origin-version': clearOriginVersion.run(a.ruleId); break;
+        case 'delete-recorded': deleteRecorded.run(a.ruleId, a.version); break;
         case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
         case 'correct':
           // `version` is written back unchanged: the rule keeps the version it already runs.
@@ -1613,7 +1620,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
                conditions, condition_groups AS conditionGroups, visual_query AS visualQuery,
                project_columns AS projectColumns, raw_kql AS rawKql, query_backend AS queryBackend, kind,
                graph_query AS graphQuery, logs_query AS logsQuery, type, pack, version,
-               retired_at AS retiredAt, origin_rule_id AS originRuleId
+               retired_at AS retiredAt, origin_rule_id AS originRuleId, origin_version AS originVersion
         FROM rules
       `).all() as Array<Omit<StoredRuleRow, 'enabled'> & { enabled: number }>)
         .map(r => ({ ...r, enabled: r.enabled === 1 }));
