@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-12
+
 ### Changed
 
 - A group on the Scans page now reads how many findings it holds on how many resources, such as "5 findings on 3 resources", in place of a resource count that was really the finding count and a count of rows. A VM two rules flag is two findings on one resource. On the Activity tab a group shows the number of findings only. The group sort options are now Name and Findings, in place of Value and Resource count; a saved view keeps the sort it had. Inside a finding, each line its query returned reads "2 of 3" in place of "Row 2 of 3", and "Loading rows" reads "Loading".
@@ -401,7 +403,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/rulebeat/rulebeat/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/rulebeat/rulebeat/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/rulebeat/rulebeat/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rulebeat/rulebeat/compare/v0.7.1...v0.8.0
