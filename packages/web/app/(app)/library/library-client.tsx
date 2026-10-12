@@ -20,7 +20,7 @@ import type { LockedTag } from '@/components/rules/tag-picker';
 import { cn } from '@/lib/utils';
 import { matchesRuleSearch } from '@/lib/rule-filters';
 import { PACK_LABELS } from '@/lib/pack-labels';
-import { matchesVersionFilter, retiredMessage, versionLabel, type VersionMarker } from '@/lib/rule-version-markers';
+import { retiredMessage, versionLabel } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, RuleKind } from '@/lib/types';
@@ -235,15 +235,14 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [kindFilter, setKindFilter] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set(initialTag ? [initialTag] : []));
-  const [versionFilter, setVersionFilter] = useState<Set<string>>(new Set());
 
-  const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'type' | 'kind' | 'tags' | 'category' | 'severity' | 'status'>(
-    // Rule is the flex column, so every pixel the other five don't take goes to it.
+  const { widths: colWidths, startResize, isFlexible } = useResizableColumns<'rule' | 'version' | 'type' | 'kind' | 'tags' | 'category' | 'severity' | 'status'>(
+    // Rule is the flex column, so every pixel the other six don't take goes to it.
     // With the Rules rail open there are only about 1000px to share, and the name is
     // the one column whose content is genuinely variable. The rest hold a chip or a
     // single word. They were sized well above what they show, which squeezed the names
     // into two lines and left the table looking ragged.
-    { rule: 320, type: 100, kind: 100, tags: 170, category: 120, severity: 100, status: 100 },
+    { rule: 320, version: 110, type: 100, kind: 100, tags: 170, category: 120, severity: 100, status: 100 },
     { flexCol: 'rule' },
   );
 
@@ -288,22 +287,6 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     });
   }, []);
 
-  // The two version markers, counted over every rule so the toolbar says how many there are
-  // before anything is picked (the same as Tags). A rule that is both retired and has a newer
-  // recorded version counts in each.
-  const versionOptions = useMemo((): Array<{ value: VersionMarker; label: string; count: number }> => [
-    { value: 'new-version', label: 'New version', count: rules.filter(r => newerVersions[r.id] !== undefined).length },
-    { value: 'retired', label: 'Retired', count: rules.filter(r => !!r.retiredAt).length },
-  ], [rules, newerVersions]);
-
-  const toggleVersionFilter = useCallback((value: string) => {
-    setVersionFilter(s => {
-      const next = new Set(s);
-      if (next.has(value)) next.delete(value); else next.add(value);
-      return next;
-    });
-  }, []);
-
   // The label of the pack that no longer ships a retired rule: the manifest's own, then the
   // built-in list, then the pack id.
   const packLabelOf = useCallback((rule: Rule) => {
@@ -329,10 +312,9 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     } else if (nav === 'community'       && r.type !== 'community')     return false;
     else if (nav === 'custom'            && r.type !== 'custom')        return false;
     if (tagFilter.size > 0 && !(r.tags ?? []).some(t => tagFilter.has(t))) return false;
-    if (!matchesVersionFilter(r, newerVersions, versionFilter)) return false;
     if (!matchesRuleSearch(r, search, categoryById.get(r.category)?.label)) return false;
     return true;
-  }, [nav, tagFilter, versionFilter, newerVersions, search, categoryById]);
+  }, [nav, tagFilter, search, categoryById]);
 
   type ColKey = 'type' | 'kind' | 'category' | 'severity' | 'status';
   const passesColFilters = useCallback((r: Rule, exclude?: ColKey) => {
@@ -371,9 +353,9 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
     };
   }, [rules, passesBaseFilters, passesColFilters, categoryById]);
 
-  const hasActiveFilter = search !== '' || tagFilter.size > 0 || versionFilter.size > 0 || typeFilter.size > 0 || kindFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
+  const hasActiveFilter = search !== '' || tagFilter.size > 0 || typeFilter.size > 0 || kindFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0 || statusFilter.size > 0;
   const clearFilters = useCallback(() => {
-    setSearch(''); setTagFilter(new Set()); setVersionFilter(new Set()); setTypeFilter(new Set()); setKindFilter(new Set());
+    setSearch(''); setTagFilter(new Set()); setTypeFilter(new Set()); setKindFilter(new Set());
     setCategoryFilter(new Set()); setSeverityFilter(new Set()); setStatusFilter(new Set());
   }, []);
 
@@ -527,16 +509,6 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
             />
           )}
 
-          {/* Always shown, even at 0 and 0: a filter that appears only once a rule has a new
-              version would leave an admin unsure whether none exist or the filter is missing. */}
-          <ChecklistDropdown
-            label="Version"
-            options={versionOptions}
-            selected={versionFilter}
-            onToggle={toggleVersionFilter}
-            onClear={() => setVersionFilter(new Set())}
-          />
-
           {hasActiveFilter && (
             <Button variant="outline" size="sm" onClick={clearFilters}>
               <X className="size-3.5" />
@@ -593,6 +565,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                     column without a width the leftover space, which is what keeps the table filled
                     edge-to-edge by default instead of shrinking to the sum of the other columns. */}
                 <col style={isFlexible('rule') ? undefined : { width: colWidths.rule }} />
+                <col style={{ width: colWidths.version }} />
                 <col style={{ width: colWidths.type }} />
                 <col style={{ width: colWidths.kind }} />
                 <col style={{ width: colWidths.tags }} />
@@ -606,6 +579,10 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                   <TableHead className="relative">
                     Rule
                     <ColumnResizeHandle onMouseDown={startResize('rule')} />
+                  </TableHead>
+                  <TableHead className="relative">
+                    Version
+                    <ColumnResizeHandle onMouseDown={startResize('version')} />
                   </TableHead>
                   <TableHead className="relative">
                     <span className="flex items-center gap-1">
@@ -651,7 +628,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
               </TableHeader>
               <TableBody>
                 {visible.length === 0 ? (
-                  <TableEmpty colSpan={8}>
+                  <TableEmpty colSpan={9}>
                     {hasActiveFilter
                       ? 'No rules match your filters.'
                       : 'No rules in this section yet.'}
@@ -672,14 +649,6 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                         >
                           {rule.name}
                         </Link>
-                        {newerVersions[rule.id] !== undefined && (
-                          <span
-                            title={`Version ${versionLabel(newerVersions[rule.id])} is available. This rule still runs ${rule.version ? versionLabel(rule.version) : 'its current version'}.`}
-                            className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink"
-                          >
-                            New version
-                          </span>
-                        )}
                         {rule.retiredAt && (
                           <span className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2">
                             Retired
@@ -697,6 +666,25 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                         <p className="mt-1 line-clamp-1 text-xs leading-relaxed text-ink-2">
                           {splitLearnMore(rule.description).text}
                         </p>
+                      )}
+                    </TableCell>
+
+                    {/* Version: what the rule runs now. Blank for a custom rule and for a built-in
+                        with no version. "New" says a newer one is recorded; the page of the rule
+                        lists them. */}
+                    <TableCell className="py-3">
+                      {rule.version && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-sm tabular-nums text-ink-2">{versionLabel(rule.version)}</span>
+                          {newerVersions[rule.id] !== undefined && (
+                            <span
+                              title={`Version ${versionLabel(newerVersions[rule.id])} is available. This rule runs ${versionLabel(rule.version)}.`}
+                              className="inline-flex items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink"
+                            >
+                              New
+                            </span>
+                          )}
+                        </div>
                       )}
                     </TableCell>
 

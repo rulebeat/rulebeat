@@ -49,7 +49,8 @@ export async function seedPg(
 /**
  * The Postgres twin of `migrate.ts`'s `seedRules()`: the same plan (`planRuleSeeding()`), executed
  * with Drizzle. An upgrade adds versions beside the one a rule runs and never changes what an
- * enabled rule runs (ADR 0004).
+ * enabled rule runs (ADR 0004), bar the one-time move off the removed "Before versioning"
+ * pseudo-version (ADR 0009).
  */
 async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined): Promise<void> {
   const { rules, ruleVersions, findings, findingRows, findingEvents, columnCatalogue } = pgSchema;
@@ -64,6 +65,7 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
       projectColumns: rules.projectColumns, rawKql: rules.rawKql, queryBackend: rules.queryBackend,
       kind: rules.kind, graphQuery: rules.graphQuery, logsQuery: rules.logsQuery, type: rules.type,
       pack: rules.pack, version: rules.version, retiredAt: rules.retiredAt, originRuleId: rules.originRuleId,
+      originVersion: rules.originVersion,
     }).from(rules));
     const recorded = new Set(
       (await tx.select({ ruleId: ruleVersions.ruleId, version: ruleVersions.version }).from(ruleVersions))
@@ -102,6 +104,15 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
           break;
         case 'set-running':
           await t.update(rules).set({ version: a.version }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'clear-running':
+          await t.update(rules).set({ version: null }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'clear-origin-version':
+          await t.update(rules).set({ originVersion: null }).where(eq(rules.id, a.ruleId));
+          break;
+        case 'delete-recorded':
+          await t.delete(ruleVersions).where(and(eq(ruleVersions.ruleId, a.ruleId), eq(ruleVersions.version, a.version)));
           break;
         case 'apply':
           await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })

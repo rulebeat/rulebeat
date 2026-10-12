@@ -7,7 +7,6 @@
 import { describe, expect, it } from 'vitest';
 import { catalogueOf, shippedRule } from '../helpers/catalogue';
 import { planRuleSeeding, versionKey, type StoredRuleRow } from '@/lib/rule-versions';
-import { BEFORE_VERSIONING } from '@/lib/before-versioning';
 
 const ID = 'aaaaaaaa-0000-4000-8000-0000000000a1';
 const v1 = shippedRule({ id: ID });
@@ -23,7 +22,7 @@ const rowOf = (over: Partial<StoredRuleRow>): StoredRuleRow => {
     enabled: true, scope: JSON.stringify(d.scope), resourceTypes: JSON.stringify(d.resourceTypes),
     conditions: JSON.stringify(d.conditions), conditionGroups: null, visualQuery: null, projectColumns: null,
     rawKql: d.rawKql, queryBackend: d.queryBackend, kind: d.kind, graphQuery: null, logsQuery: null,
-    type: 'builtin', pack: v1.pack, version: null, retiredAt: null, originRuleId: null, ...over,
+    type: 'builtin', pack: v1.pack, version: null, retiredAt: null, originRuleId: null, originVersion: null, ...over,
   };
 };
 
@@ -31,14 +30,12 @@ describe('planRuleSeeding and a built-in rule\'s kind', () => {
   it('records an enabled row with no version as the shipped version when its kind matches', () => {
     const actions = planRuleSeeding({ catalogue: catalogueOf(v1), rows: [rowOf({})], recorded: new Set() });
     expect(actions.map(a => a.action)).toContain('set-running');
-    expect(JSON.stringify(actions)).not.toContain(BEFORE_VERSIONING);
+    expect(actions.map(a => a.action)).not.toContain('apply');
   });
 
-  it('keeps an enabled row whose kind differs from what ships running as Before versioning', () => {
+  it('moves an enabled row whose kind differs from what ships to the shipped kind', () => {
     const actions = planRuleSeeding({ catalogue: catalogueOf(v1), rows: [rowOf({ kind: 'advisory' })], recorded: new Set() });
-    expect(actions).toContainEqual({ action: 'set-running', ruleId: ID, version: BEFORE_VERSIONING });
-    expect(actions.find(a => a.action === 'record' && a.version === BEFORE_VERSIONING))
-      .toMatchObject({ definition: { kind: 'advisory' } });
+    expect(actions).toContainEqual({ action: 'apply', rule: v1 });
   });
 
   it('moves a disabled row to a version that ships a different kind, carrying that kind', () => {

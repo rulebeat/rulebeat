@@ -1,14 +1,13 @@
 /**
- * The pure steps of rule seeding (ticket #163): version ordering, definition comparison, and the
- * one guard the database-level tests cannot reach because no real version string sorts after
- * "before-versioning".
+ * The pure steps of rule seeding (ticket #163, #246): version ordering, definition comparison, and
+ * what the plan does with a row left on the removed "Before versioning" pseudo-version.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  APRL_QUERY_CORRECTION, BEFORE_VERSIONING, canonicalDefinition, compareVersions, planRuleSeeding, sameDefinition, versionKey, versionSortKey,
+  APRL_QUERY_CORRECTION, canonicalDefinition, compareVersions, planRuleSeeding, sameDefinition, versionKey, versionSortKey,
   type StoredRuleRow,
 } from '@/lib/rule-versions';
-import { catalogueOf, shippedRule } from '../helpers/catalogue';
+import { LEGACY_PSEUDO_VERSION, catalogueOf, shippedRule } from '../helpers/catalogue';
 
 describe('compareVersions', () => {
   it('orders semver numerically, not as text', () => {
@@ -63,18 +62,6 @@ describe('versionSortKey', () => {
     expect(versionSortKey('upstream-release', 'rc-1')).toBe('rc-1');
   });
 
-  it('sorts "Before versioning" before every other key, under every scheme', () => {
-    const before = versionSortKey('semver', BEFORE_VERSIONING);
-    const others = [
-      versionSortKey('semver', '0.0.0'),
-      versionSortKey('upstream-commit-date', '1970-01-01T00:00:00Z'),
-      versionSortKey('upstream-release', '0'),
-      versionSortKey('upstream-release', '!'),
-    ];
-    for (const key of others) expect(before < key, key).toBe(true);
-    expect(versionSortKey('upstream-commit-date', BEFORE_VERSIONING)).toBe(before);
-  });
-
   it('agrees with compareVersions for every pair', () => {
     const versions = ['0.9.0', '1.0.0', '1.0.1', '1.10.0', '2'];
     for (const a of versions) for (const b of versions) {
@@ -109,19 +96,12 @@ describe('planRuleSeeding', () => {
       severity: def.severity, enabled: false, scope: JSON.stringify(def.scope), resourceTypes: JSON.stringify(def.resourceTypes),
       conditions: '[]', conditionGroups: null, visualQuery: null, projectColumns: null, rawKql: def.rawKql,
       queryBackend: def.queryBackend, kind: def.kind, graphQuery: null, logsQuery: null, type: 'builtin',
-      pack: 'rulebeat-core', version: '1.0.0', retiredAt: null, originRuleId: null,
+      pack: 'rulebeat-core', version: '1.0.0', retiredAt: null, originRuleId: null, originVersion: null,
       ...over,
     };
   }
 
-  it('moves a disabled rule running "Before versioning" to the newest shipped version, whatever it sorts as, and leaves an enabled one', () => {
-    const newer = shippedRule({ versionScheme: 'upstream-release', version: 'zeta' });
-    const input = { catalogue: catalogueOf(newer), recorded: new Set([versionKey(newer.id, BEFORE_VERSIONING)]) };
-    expect(planRuleSeeding({ ...input, rows: [stored({ version: BEFORE_VERSIONING, enabled: false })] }).map(a => a.action)).toEqual(['record', 'apply']);
-    expect(planRuleSeeding({ ...input, rows: [stored({ version: BEFORE_VERSIONING, enabled: true })] }).map(a => a.action)).toEqual(['record']);
-  });
-
-  it('records a version with the sort key its scheme gives it, and "Before versioning" with the lowest key', () => {
+  it('records a version with the sort key its scheme gives it', () => {
     const rule = shippedRule({ versionScheme: 'upstream-commit-date', version: '2026-06-08T13:06:47Z' });
     const plan = planRuleSeeding({
       catalogue: catalogueOf(rule),
@@ -131,30 +111,107 @@ describe('planRuleSeeding', () => {
     const recordedKeys = Object.fromEntries(
       plan.flatMap(a => (a.action === 'record' ? [[a.version, a.sortKey]] : [])),
     );
-    expect(recordedKeys).toEqual({
-      '2026-06-08T13:06:47Z': versionSortKey('upstream-commit-date', '2026-06-08T13:06:47Z'),
-      [BEFORE_VERSIONING]: versionSortKey('upstream-commit-date', BEFORE_VERSIONING),
-    });
+    expect(recordedKeys).toEqual({ '2026-06-08T13:06:47Z': '2026-06-08T13:06:47.000Z' });
   });
 
-  it('on the first upgrade keeps a differing stored definition as "Before versioning", then moves a disabled row to the shipped version', () => {
+  it('never plans a record of the removed pseudo-version, for any row state', () => {
     const rule = shippedRule();
-    const plan = planRuleSeeding({
-      catalogue: catalogueOf(rule),
-      rows: [stored({ version: null, enabled: false, severity: 'critical' })],
-      recorded: new Set<string>(),
-    });
-    expect(plan.map(a => a.action)).toEqual(['record', 'record', 'apply']);
-    expect(plan.filter(a => a.action === 'record').map(a => a.action === 'record' && a.version)).toEqual([rule.version, BEFORE_VERSIONING]);
+    for (const enabled of [true, false]) for (const version of [null, LEGACY_PSEUDO_VERSION, '1.0.0']) {
+      const plan = planRuleSeeding({ catalogue: catalogueOf(rule), rows: [stored({ version, enabled, severity: 'critical' })], recorded: new Set() });
+      expect(plan.filter(a => a.action === 'record').map(a => a.action === 'record' && a.version), `${enabled} ${version}`)
+        .toEqual([rule.version]);
+    }
   });
 
-  it('on the first upgrade keeps a differing enabled row running as "Before versioning"', () => {
-    const plan = planRuleSeeding({
-      catalogue: catalogueOf(shippedRule()),
-      rows: [stored({ version: null, enabled: true, severity: 'critical' })],
-      recorded: new Set<string>(),
+  it('on the first upgrade moves a differing row with no version to the shipped version, enabled or not', () => {
+    const rule = shippedRule();
+    for (const enabled of [true, false]) {
+      const plan = planRuleSeeding({
+        catalogue: catalogueOf(rule),
+        rows: [stored({ version: null, enabled, severity: 'critical' })],
+        recorded: new Set<string>(),
+      });
+      expect(plan, `enabled=${enabled}`).toEqual([
+        expect.objectContaining({ action: 'record', version: rule.version }),
+        { action: 'apply', rule },
+      ]);
+    }
+  });
+
+  it('only gives the version to a row with no version whose definition already matches', () => {
+    const rule = shippedRule();
+    const plan = planRuleSeeding({ catalogue: catalogueOf(rule), rows: [stored({ version: null, enabled: true })], recorded: new Set<string>() });
+    expect(plan.map(a => a.action)).toEqual(['record', 'set-running']);
+  });
+
+  describe('the removed "Before versioning" pseudo-version (#246)', () => {
+    const recordedLegacy = (id: string) => versionKey(id, LEGACY_PSEUDO_VERSION);
+
+    it('moves an enabled and a disabled row on it to the shipped definition and version, and deletes its record', () => {
+      const rule = shippedRule();
+      for (const enabled of [true, false]) {
+        const plan = planRuleSeeding({
+          catalogue: catalogueOf(rule),
+          rows: [stored({ version: LEGACY_PSEUDO_VERSION, enabled, severity: 'critical' })],
+          recorded: new Set([recordedLegacy(rule.id)]),
+        });
+        expect(plan.map(a => a.action), `enabled=${enabled}`).toEqual(['record', 'apply', 'delete-recorded']);
+        expect(plan).toContainEqual({ action: 'apply', rule });
+        expect(plan).toContainEqual({ action: 'delete-recorded', ruleId: rule.id, version: LEGACY_PSEUDO_VERSION });
+      }
     });
-    expect(plan.map(a => a.action)).toEqual(['record', 'record', 'set-running']);
+
+    it('does not move an enabled row on a real version', () => {
+      const rule = shippedRule({ version: '1.1.0' });
+      const plan = planRuleSeeding({
+        catalogue: catalogueOf(rule), rows: [stored({ version: '1.0.0', enabled: true })], recorded: new Set([versionKey(rule.id, '1.0.0')]),
+      });
+      expect(plan.map(a => a.action)).toEqual(['record']);
+    });
+
+    it('keeps a rule no pack ships any more as it is, with no version, retired', () => {
+      const other = shippedRule({ id: 'bbbbbbbb-0000-4000-8000-000000000002' });
+      const row = stored({ version: LEGACY_PSEUDO_VERSION, enabled: true });
+      const plan = planRuleSeeding({ catalogue: catalogueOf(other), rows: [row], recorded: new Set([recordedLegacy(row.id)]) });
+      expect(plan).toEqual([
+        { action: 'insert', rule: other },
+        expect.objectContaining({ action: 'record', ruleId: other.id }),
+        { action: 'clear-running', ruleId: row.id },
+        { action: 'retire', ruleId: row.id },
+        { action: 'delete-recorded', ruleId: row.id, version: LEGACY_PSEUDO_VERSION },
+      ]);
+    });
+
+    it('clears the version of a rule whose pack could not be read, and does not retire it', () => {
+      const row = stored({ version: LEGACY_PSEUDO_VERSION, pack: 'aprl-v2' });
+      const plan = planRuleSeeding({
+        catalogue: { rules: [], packsDirRead: true, unreadablePacks: ['aprl-v2'] }, rows: [row], recorded: new Set([recordedLegacy(row.id)]),
+      });
+      expect(plan).toEqual([
+        { action: 'clear-running', ruleId: row.id },
+        { action: 'delete-recorded', ruleId: row.id, version: LEGACY_PSEUDO_VERSION },
+      ]);
+    });
+
+    it('gives a retirable rule with no version nothing but the Retired label', () => {
+      const row = stored({ version: null, enabled: true });
+      expect(planRuleSeeding({ catalogue: catalogueOf(), rows: [row], recorded: new Set() }))
+        .toEqual([{ action: 'retire', ruleId: row.id }]);
+    });
+
+    it('forgets the version a custom rule was copied from, and only that', () => {
+      const row = stored({ type: 'custom', pack: null, version: null, originRuleId: 'cccccccc-0000-4000-8000-000000000003', originVersion: LEGACY_PSEUDO_VERSION });
+      expect(planRuleSeeding({ catalogue: catalogueOf(), rows: [row], recorded: new Set() }))
+        .toEqual([{ action: 'clear-origin-version', ruleId: row.id }]);
+      const real = stored({ type: 'custom', pack: null, version: null, originRuleId: 'cccccccc-0000-4000-8000-000000000003', originVersion: '1.0.0' });
+      expect(planRuleSeeding({ catalogue: catalogueOf(), rows: [real], recorded: new Set() })).toEqual([]);
+    });
+
+    it('plans nothing on a second start', () => {
+      const rule = shippedRule();
+      expect(planRuleSeeding({ catalogue: catalogueOf(rule), rows: [stored({ version: rule.version, enabled: true })], recorded: new Set([versionKey(rule.id, rule.version)]) }))
+        .toEqual([]);
+    });
   });
 
   describe('the APRL query correction (#221)', () => {

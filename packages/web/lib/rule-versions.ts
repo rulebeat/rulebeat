@@ -1,4 +1,3 @@
-import { BEFORE_VERSIONING } from './before-versioning';
 import {
   CORE_PACK, emptyToNull, definitionKind, parseMaybeJson,
   type RuleDefinition, type ShippedCatalogue, type ShippedRule, type VersionScheme,
@@ -13,19 +12,21 @@ import {
  * The one rule everything here serves: an upgrade never changes what an enabled shipped rule runs.
  * A new version is recorded beside the running one; only a disabled rule moves to it.
  *
- * The one exception is `APRL_QUERY_CORRECTION` (#221): most APRL rules shipped another
- * recommendation's query, so at that one pack and version a stored definition that differs from
- * the shipped one is corrected in place, enabled or not, and the findings the wrong query produced
- * are removed. Nothing else is ever overwritten at an unchanged version.
+ * Two exceptions, each stated in its own decision:
+ *  - `APRL_QUERY_CORRECTION` (#221): most APRL rules shipped another recommendation's query, so at
+ *    that one pack and version a stored definition that differs from the shipped one is corrected in
+ *    place, enabled or not, and the findings the wrong query produced are removed.
+ *  - Leaving the old "Before versioning" pseudo-version (#246, ADR 0009): an earlier release recorded
+ *    a stored definition that differed from what ships under it. That version no longer exists. A
+ *    built-in on it, or with no version at all, takes its pack's shipped definition and version,
+ *    enabled or not, and the record is deleted.
+ * Nothing else is ever overwritten at an unchanged version.
  */
 
-/** The version recorded for a definition that was stored before versions existed and differs from
- *  what ships. It keeps running until an admin switches it. Defined in `before-versioning.ts` so
- *  client code can read it too; re-exported here so existing imports keep working. */
-export { BEFORE_VERSIONING };
-export const BEFORE_VERSIONING_NOTE = 'The definition this rule had before versions were recorded.';
-/** The empty string sorts before every other sort key, so this version is always the oldest. */
-export const BEFORE_VERSIONING_SORT_KEY = '';
+/** What an earlier release recorded for a stored definition that differed from what ships. Stored
+ *  rows still carry it, so the step that removes it must still recognise it. Private on purpose:
+ *  nothing else may name it, and no new row is ever given it. */
+const REMOVED_PSEUDO_VERSION = 'before-versioning';
 
 /** A `rules` row as the seeders read it: JSON columns still as the text the database holds. */
 export interface StoredRuleRow {
@@ -51,6 +52,7 @@ export interface StoredRuleRow {
   version: string | null;
   retiredAt: string | null;
   originRuleId: string | null;
+  originVersion: string | null;
 }
 
 /**
@@ -77,6 +79,12 @@ export type SeedAction =
   | { action: 'record'; ruleId: string; version: string; sortKey: string; releaseNote: string; definition: RuleDefinition; upstreamRef?: string }
   /** Set which version a row says it runs, without touching its definition. */
   | { action: 'set-running'; ruleId: string; version: string }
+  /** Say a row runs no recorded version, without touching its definition. */
+  | { action: 'clear-running'; ruleId: string }
+  /** Forget the version a custom rule was copied from, when that version no longer exists. */
+  | { action: 'clear-origin-version'; ruleId: string }
+  /** Delete one recorded version. Only ever the removed pseudo-version. */
+  | { action: 'delete-recorded'; ruleId: string; version: string }
   /** Move a disabled rule to a shipped version: writes the definition fields and the version. `kind`
    *  is the install's own kind, carried over so the move never turns an Advisory back into a Problem. */
   | { action: 'apply'; rule: ShippedRule }
@@ -118,11 +126,9 @@ function paddedNumericKey(version: string): string | null {
  * version is recorded.
  *  - semver, and an upstream release that is numeric: each part zero-padded to a fixed width;
  *  - upstream-commit-date: the timestamp as UTC ISO text, so offsets and precision do not matter;
- *  - anything the scheme cannot read: the raw text;
- *  - "Before versioning": BEFORE_VERSIONING_SORT_KEY.
+ *  - anything the scheme cannot read: the raw text.
  */
 export function versionSortKey(scheme: VersionScheme, version: string): string {
-  if (version === BEFORE_VERSIONING) return BEFORE_VERSIONING_SORT_KEY;
   if (scheme === 'upstream-commit-date') {
     const time = Date.parse(version);
     return Number.isNaN(time) ? version : new Date(time).toISOString();
@@ -208,19 +214,6 @@ export function definitionToColumns(def: RuleDefinition) {
 
 // ---- The plan --------------------------------------------------------------------------------
 
-/** Remembers a stored definition that differs from what ships, so it is never lost. */
-function recordBeforeVersioning(ruleId: string, definition: RuleDefinition): SeedAction {
-  return {
-    action: 'record', ruleId, version: BEFORE_VERSIONING, sortKey: BEFORE_VERSIONING_SORT_KEY,
-    releaseNote: BEFORE_VERSIONING_NOTE, definition,
-  };
-}
-
-/** Keeps a stored definition running, under the "Before versioning" label. */
-function runAsBeforeVersioning(ruleId: string, definition: RuleDefinition): SeedAction[] {
-  return [recordBeforeVersioning(ruleId, definition), { action: 'set-running', ruleId, version: BEFORE_VERSIONING }];
-}
-
 /** True for a row of the corrected pack, running the corrected version, whose stored definition is not
  *  the shipped one. Once corrected the definitions match, so a second start plans nothing. */
 function needsQueryCorrection(row: StoredRuleRow, rule: ShippedRule): boolean {
@@ -237,6 +230,8 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
   const rowsById = new Map(rows.map(r => [r.id, r]));
   const knownPacks = new Set(catalogue.rules.map(r => r.pack));
   const planned = new Set<string>();
+  // Rows the loops below have already dealt with, so the sweep at the end only sees what is left.
+  const settled = new Set<string>();
 
   const record = (rule: ShippedRule) => {
     const key = versionKey(rule.id, rule.version);
@@ -257,6 +252,7 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
     }
     // A rule that was converted to a custom rule in place is the admin's now, and is never re-seeded.
     if (row.originRuleId !== null) continue;
+    settled.add(row.id);
 
     // An Identity built-in whose Graph query an admin edited (possible before built-in queries became
     // read-only) cannot stay a built-in, since a built-in's definition now only changes by version.
@@ -285,20 +281,16 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
     }
 
     record(rule);
-    if (row.version === null) {
-      // The first start after versions shipped: record what this row actually runs.
-      const stored = definitionOfRow(effective);
-      if (sameDefinition(stored, rule.definition)) {
+    if (row.version === null || row.version === REMOVED_PSEUDO_VERSION) {
+      // No version (stored before versions existed) or the removed pseudo-version: the row runs what
+      // ships, enabled or not. A row that already matches only gets the version.
+      if (sameDefinition(definitionOfRow(effective), rule.definition)) {
         actions.push({ action: 'set-running', ruleId: row.id, version: rule.version });
-      } else if (row.enabled) {
-        actions.push(...runAsBeforeVersioning(row.id, stored));
       } else {
-        // Nothing a disabled rule produces can change, so it moves to what ships; its old definition is kept.
-        actions.push(recordBeforeVersioning(row.id, stored), { action: 'apply', rule });
+        actions.push({ action: 'apply', rule });
       }
     } else if (!row.enabled && compareVersions(rule.versionScheme, rule.version, row.version) > 0) {
-      // A disabled rule always moves to the newest shipped version, "Before versioning" included
-      // (its key sorts before every other).
+      // A disabled rule always moves to the newest shipped version.
       actions.push({ action: 'apply', rule });
     } else if (needsQueryCorrection(row, rule)) {
       actions.push({ action: 'correct', rule });
@@ -307,15 +299,30 @@ export function planRuleSeeding(input: SeedPlanInput): SeedAction[] {
     if (row.retiredAt !== null) actions.push({ action: 'unretire', ruleId: row.id });
   }
 
-  // Rules no pack ships any more. They keep running; they are only labelled.
+  // Rules no pack ships any more. They keep running with the stored definition; they are only
+  // labelled. A rule with no version is not given one: no shipped version describes it. One on the
+  // removed pseudo-version loses it, whether or not it can be labelled retired (an unreadable pack).
   for (const row of rows) {
     if (row.type !== 'builtin' || row.originRuleId !== null || shippedById.has(row.id)) continue;
+    settled.add(row.id);
     const pack = row.pack ?? CORE_PACK;
     const retirable = knownPacks.has(pack) || pack === CORE_PACK
       || (catalogue.packsDirRead && !catalogue.unreadablePacks.includes(pack));
-    if (!retirable) continue;
-    if (row.version === null) actions.push(...runAsBeforeVersioning(row.id, definitionOfRow(row)));
-    if (row.retiredAt === null) actions.push({ action: 'retire', ruleId: row.id });
+    if (row.version === REMOVED_PSEUDO_VERSION) actions.push({ action: 'clear-running', ruleId: row.id });
+    if (retirable && row.retiredAt === null) actions.push({ action: 'retire', ruleId: row.id });
+  }
+
+  // What is left of the removed pseudo-version: a row of any other kind still running it, a custom
+  // rule copied from it, and every record of it.
+  for (const row of rows) {
+    if (!settled.has(row.id) && row.version === REMOVED_PSEUDO_VERSION) {
+      actions.push({ action: 'clear-running', ruleId: row.id });
+    }
+    if (row.originVersion === REMOVED_PSEUDO_VERSION) actions.push({ action: 'clear-origin-version', ruleId: row.id });
+  }
+  for (const key of recorded) {
+    const [ruleId, version] = key.split('\u0000');
+    if (ruleId && version === REMOVED_PSEUDO_VERSION) actions.push({ action: 'delete-recorded', ruleId, version });
   }
 
   return actions;

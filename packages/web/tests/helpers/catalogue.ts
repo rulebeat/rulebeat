@@ -48,3 +48,9 @@ export const SERVICE_RETIREMENTS_RULE_ID = '3d0a6f52-8b71-4f0e-9c34-5e2b7a91d8c6
 export function catalogueOf(...rules: ShippedRule[]): ShippedCatalogue {
   return { rules, packsDirRead: true, unreadablePacks: [] };
 }
+
+/**
+ * What an earlier release stored for a definition that differed from what shipped. The product no
+ * longer names it, so a test that builds that upgrade state spells it out here, in the one place.
+ */
+export const LEGACY_PSEUDO_VERSION = 'before-versioning';
