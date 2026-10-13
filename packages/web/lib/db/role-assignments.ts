@@ -3,7 +3,7 @@ import { roleAssignments } from './tables';
 import { eq, and, sql } from 'drizzle-orm';
 import { many, run, type DbHandle } from './exec';
 import {
-  EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID, parseScope, type Scope,
+  EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID, collapseGrants, parseScope, type Scope,
 } from '@/lib/access-model';
 import type { Role } from '@/lib/rbac';
 
@@ -34,6 +34,26 @@ export async function replaceWithEverythingOn(tx: DbHandle, userId: string, role
   await run(tx.insert(roleAssignments).values({
     userId, tenantId: EVERYTHING_TENANT_ID, scope: EVERYTHING_SCOPE_PATH, role,
   }));
+}
+
+/** A Role at a Scope path, with the tenant it is stored under, as a write takes it. */
+export interface AssignmentInput {
+  tenantId: string;
+  scope: string;
+  role: Role;
+}
+
+/**
+ * Gives a person exactly these rows, replacing whatever they held. A Scope listed twice, in any casing,
+ * is stored once at the higher Role. A path that is not a Scope is skipped, never stored: the caller
+ * has validated, and a row `resolveAccess` would ignore anyway is worth nothing.
+ */
+export async function replaceAssignmentsOn(tx: DbHandle, userId: string, inputs: readonly AssignmentInput[]): Promise<void> {
+  await deleteAssignmentsOn(tx, userId);
+  const kept = collapseGrants(inputs.filter(i => parseScope(i.scope) !== null));
+  for (const row of kept) {
+    await run(tx.insert(roleAssignments).values({ userId, tenantId: row.tenantId, scope: row.scope, role: row.role }));
+  }
 }
 
 /** Sets the Role on every row a person holds, leaving the Scopes as they are. */

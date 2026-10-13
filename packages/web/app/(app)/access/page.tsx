@@ -2,15 +2,30 @@ import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
-import { listUsersWithAccess } from '@/lib/access';
+import { listUsersWithAccess, ownAccessOf, resolveAccess } from '@/lib/access';
 import { listUserIdsWithPassword } from '@/lib/db/local-accounts';
 import { isDemoMode } from '@/lib/demo';
 import { AccessClient } from './access-client';
+import { OwnAccessSection } from './own-access-section';
 
 export default async function AccessPage() {
   const user = await getCurrentUser();
-  // notFound() rather than a "forbidden" page: a non-admin has no reason to learn this route exists.
-  if (!user || !can(user.role, 'users:manage')) notFound();
+  // No session has no page. A signed-in person who does not manage users sees their own access and
+  // nothing else: the user list and the password ids are loaded only below, for the role that uses them.
+  if (!user) notFound();
+
+  if (!can(user.role, 'users:manage')) {
+    return (
+      <>
+        <Header title="Access" description="What you can see in RuleBeat, and the Role you have at each" />
+        <main className="flex-1 p-8">
+          <div className="max-w-4xl">
+            <OwnAccessSection own={ownAccessOf(user, await resolveAccess(user))} />
+          </div>
+        </main>
+      </>
+    );
+  }
 
   return (
     <>

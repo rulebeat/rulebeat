@@ -61,7 +61,7 @@ describe('a subscription filter does not count Directory findings', () => {
   });
 
   it('keeps them out of an export', async () => {
-    mockRequireRole.mockResolvedValue({ id: 'viewer' });
+    mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
     const params = viewToSearchParams(withSubscription(SUB_A), { tab: 'results' });
     const res = await exportRoute.GET(new Request(`http://localhost/api/findings/export?${params}&format=json`));
     const exported = await res.json() as { resourceName: string }[];
@@ -108,7 +108,7 @@ describe('Directory is one choice in the subscription filter', () => {
   });
 
   it('reads Directory in a CSV export, not a blank or a GUID', async () => {
-    mockRequireRole.mockResolvedValue({ id: 'viewer' });
+    mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
     const params = viewToSearchParams(withSubscription(DIRECTORY_SUBSCRIPTION), { tab: 'results' });
     const csv = await (await exportRoute.GET(new Request(`http://localhost/api/findings/export?${params}&format=csv`))).text();
     const lines = csv.split('\n');

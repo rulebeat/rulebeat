@@ -25,6 +25,7 @@ export const MANAGEMENT_GROUP = 'mg-example';
 const RG_ONE = 'rg-one';
 const RG_TWO = 'rg-two';
 const RULE = 'matrix-rule';
+const ADVISORY_RULE = 'matrix-advisory-rule';
 const CATEGORY = 'security';
 
 export const SCOPE_MANAGEMENT_GROUP = `/providers/Microsoft.Management/managementGroups/${MANAGEMENT_GROUP}`;
@@ -73,6 +74,8 @@ export interface MatrixSeed {
   scheduleId: string;
   runId: string;
   suppressedFingerprint: string;
+  /** Every stored finding's fingerprint, by the name it was seeded with. */
+  fingerprints: Record<string, string>;
 }
 
 function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSummary {
@@ -92,19 +95,29 @@ function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSum
   };
 }
 
-/** Two subscriptions under one management group, a finding at each placement, two scans of one category,
- *  one suppression, one schedule and one run. */
+/**
+ * Two subscriptions under one management group and a finding at each placement, two scans of one category,
+ * one suppression, one schedule and one run. By tab:
+ *
+ *  - Results: `vm-one` (subscription one, `rg-one`), `vm-two` (subscription one, `rg-two`, suppressed),
+ *    `vm-other-sub` (subscription two, also `rg-one`, with a column no other finding returns),
+ *    `subscription-level`, `management-group-level`, `directory-app` and `unplaceable-thing`.
+ *  - Advisories: `advisory-one` (subscription one, `rg-one`) and `advisory-other-sub` (subscription two).
+ *  - Activity: `workspace-user` (a workspace in subscription one, `rg-one`).
+ */
 export async function seedMatrix(): Promise<MatrixSeed> {
   const at = { ruleId: RULE, category: CATEGORY };
   const all: Finding[] = [
     syntheticFinding('vm-one', [{ zone: 'a' }], { ...at, subscriptionId: SUB_ONE, resourceGroup: RG_ONE }),
     syntheticFinding('vm-two', [{ zone: 'b' }], { ...at, subscriptionId: SUB_ONE, resourceGroup: RG_TWO }),
-    syntheticFinding('vm-other-sub', [{ zone: 'a' }], { ...at, subscriptionId: SUB_TWO, resourceGroup: RG_ONE }),
+    syntheticFinding('vm-other-sub', [{ zone: 'a', otherSubColumn: 'x' }], { ...at, subscriptionId: SUB_TWO, resourceGroup: RG_ONE }),
     syntheticFinding('subscription-level', [{ zone: 'a' }], { ...at, placement: 'subscription', subscriptionId: SUB_ONE }),
     syntheticFinding('management-group-level', [{ zone: 'a' }], { ...at, placement: 'management-group', managementGroupId: MANAGEMENT_GROUP }),
     syntheticFinding('directory-app', [{ zone: 'a' }], { ...at, placement: 'directory' }),
-    syntheticFinding('workspace-user', [{ zone: 'a' }], { ...at, placement: 'workspace', subscriptionId: SUB_ONE }),
+    syntheticFinding('workspace-user', [{ zone: 'a' }], { ...at, placement: 'workspace', subscriptionId: SUB_ONE, resourceGroup: RG_ONE }),
     syntheticFinding('unplaceable-thing', [{ zone: 'a' }], { ...at, placement: 'unplaceable' }),
+    syntheticFinding('advisory-one', [{ zone: 'a' }], { ruleId: ADVISORY_RULE, category: CATEGORY, kind: 'advisory', subscriptionId: SUB_ONE, resourceGroup: RG_ONE }),
+    syntheticFinding('advisory-other-sub', [{ zone: 'a' }], { ruleId: ADVISORY_RULE, category: CATEGORY, kind: 'advisory', subscriptionId: SUB_TWO, resourceGroup: RG_ONE }),
   ];
 
   const scanIds: [string, string] = ['00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2'];
@@ -115,7 +128,7 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   ];
   for (const [id, finishedAt, findings] of stored) {
     await saveScanResult(CATEGORY, summaryOf(id, finishedAt, findings), { id });
-    await syncScanFindings({ scanId: id, category: CATEGORY, ranRuleIds: [RULE], findings, finishedAt });
+    await syncScanFindings({ scanId: id, category: CATEGORY, ranRuleIds: [RULE, ADVISORY_RULE], findings, finishedAt });
   }
 
   const suppressedFingerprint = all[1]!.fingerprint;
@@ -138,5 +151,6 @@ export async function seedMatrix(): Promise<MatrixSeed> {
     now: new Date('2026-06-02T00:01:00.000Z'),
   });
 
-  return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint };
+  const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
+  return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint, fingerprints };
 }

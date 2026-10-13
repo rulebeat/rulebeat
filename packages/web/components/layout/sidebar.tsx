@@ -52,7 +52,8 @@ export function navForRole(role: Role): { top: NavEntry[]; bottom: NavEntry[] } 
     ],
     bottom: [
       ...staticNavBottom,
-      ...(can(role, 'users:manage') ? [accessNavItem] : []),
+      // Everyone has an Access page: an Admin manages people there, anyone else reads their own access.
+      accessNavItem,
       ...(can(role, 'audit:read') ? [auditNavItem] : []),
       ...(can(role, 'azure:manage') ? [diagnosticsNavItem] : []),
     ],

@@ -4,8 +4,10 @@ import { eq, and, asc, count, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { dbKind } from './backend';
 import { isRole, type Role } from '@/lib/rbac';
-import { isAccessSource, type AccessSource } from '@/lib/access-model';
-import { deleteAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn } from './role-assignments';
+import { highestRole, isAccessSource, type AccessSource } from '@/lib/access-model';
+import {
+  deleteAssignmentsOn, replaceAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn, type AssignmentInput,
+} from './role-assignments';
 
 export interface AppUser {
   id: string;
@@ -92,27 +94,36 @@ async function lockAdminRowsForUpdate(tx: DbHandle): Promise<void> {
   );
 }
 
-export async function createUser(data: { email: string; role: Role; oid?: string; name?: string }): Promise<{ user: AppUser } | { error: string }> {
+/**
+ * Creates a person. A Viewer or Editor holds what `access` says: Manual access an Admin chose, and the
+ * Role they hold is the highest among its rows. With no `access` they start with Everything at `role`,
+ * which is what a caller that has nothing to ask (a test, the Demo) gets; the invite route never leaves
+ * it out. An Admin holds Everything without a row and has no source.
+ */
+export async function createUser(
+  data: { email: string; role: Role; oid?: string; name?: string; access?: readonly AssignmentInput[] },
+): Promise<{ user: AppUser } | { error: string }> {
   const email = data.email.trim().toLowerCase();
   if (!email) return { error: 'Email is required.' };
   if (!email.includes('@')) return { error: 'Enter a valid email address.' };
   if (await getUserByEmail(email)) return { error: `${email} already has a role assigned.` };
 
   const id = globalThis.crypto.randomUUID();
-  // A Viewer or Editor starts with Everything at their Role, set by hand. An Admin holds Everything
-  // without a row and has no source.
+  const role = data.role !== 'admin' && data.access ? highestRole(data.access) : data.role;
   await inTransaction(async (tx) => {
     await run(tx.insert(users).values({
       id,
       email,
       oid: data.oid ?? null,
       name: data.name ?? null,
-      role: data.role,
+      role,
       accessSource: data.role === 'admin' ? null : 'manual',
       createdAt: new Date().toISOString(),
       lastSeenAt: data.oid ? new Date().toISOString() : null,
     }));
-    if (data.role !== 'admin') await replaceWithEverythingOn(tx, id, data.role);
+    if (data.role === 'admin') return;
+    if (data.access) await replaceAssignmentsOn(tx, id, data.access);
+    else await replaceWithEverythingOn(tx, id, data.role);
   });
 
   return { user: (await getUser(id))! };
@@ -123,7 +134,9 @@ export async function createUser(data: { email: string; role: Role; oid?: string
  * concurrent call can read the same "still 2 admins" count this one just acted on. See
  * `lockAdminRowsForUpdate()` for how that holds on Postgres as well as SQLite.
  */
-export async function updateUserRole(id: string, role: Role): Promise<{ user: AppUser } | { error: string } | null> {
+export async function updateUserRole(
+  id: string, role: Role, access?: readonly AssignmentInput[],
+): Promise<{ user: AppUser } | { error: string } | null> {
   return inTransaction(async (tx) => {
     const existing = await getUserOn(tx, id);
     if (!existing) return null;
@@ -141,12 +154,33 @@ export async function updateUserRole(id: string, role: Role): Promise<{ user: Ap
       await run(tx.update(users).set({ role, accessSource: null }).where(eq(users.id, id)));
       await deleteAssignmentsOn(tx, id);
     } else if (existing.role === 'admin') {
-      await run(tx.update(users).set({ role, accessSource: 'manual' }).where(eq(users.id, id)));
-      await replaceWithEverythingOn(tx, id, role);
+      // Demoting an Admin: the access the caller chose, else Everything at the new Role.
+      await run(tx.update(users).set({ role: access ? highestRole(access) : role, accessSource: 'manual' }).where(eq(users.id, id)));
+      if (access) await replaceAssignmentsOn(tx, id, access);
+      else await replaceWithEverythingOn(tx, id, role);
     } else {
       await run(tx.update(users).set({ role }).where(eq(users.id, id)));
       await setRoleOnAssignmentsOn(tx, id, role);
     }
+    return { user: (await getUserOn(tx, id))! };
+  });
+}
+
+/**
+ * Replaces a Viewer's or Editor's Manual access with exactly `access` and marks it manual, in one
+ * transaction. The Role on the person is the highest among the rows (a Viewer when there are none), so
+ * a page or sidebar that reads `users.role` has a defined value once Roles differ per Scope. An Admin is
+ * never scoped, so they are refused rather than given rows that mean nothing.
+ */
+export async function setManualAccess(
+  id: string, access: readonly AssignmentInput[],
+): Promise<{ user: AppUser } | 'notfound' | 'admin'> {
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!existing) return 'notfound';
+    if (existing.role === 'admin') return 'admin';
+    await run(tx.update(users).set({ role: highestRole(access), accessSource: 'manual' }).where(eq(users.id, id)));
+    await replaceAssignmentsOn(tx, id, access);
     return { user: (await getUserOn(tx, id))! };
   });
 }

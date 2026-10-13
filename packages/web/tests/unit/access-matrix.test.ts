@@ -1,9 +1,10 @@
 /**
  * #270: the access matrix. Seven people who hold different Scopes call every stored-data GET route through
  * the real `requireRole` (only the session, `@/auth`, is mocked) and the real repositories, over one data
- * set written through the real write paths. Nothing is narrowed yet, so every route is on `NOT_YET_SCOPED`
- * and every person must get a 200 whose body equals the Admin's. A ticket that narrows a route moves it
- * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see.
+ * set written through the real write paths. A route that does not narrow yet is on `NOT_YET_SCOPED`, and
+ * every person must get a 200 whose body equals the Admin's from it. A ticket that narrows a route moves it
+ * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see: #272 did so for the five
+ * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
  *
  * The lists are checked against the route files on disk, the way `route-guards.test.ts` checks guards:
  * a route that uses the actor's access must be in exactly one of the two lists, and an entry must name a
@@ -13,8 +14,15 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { createPeople, PEOPLE, seedMatrix, type MatrixSeed } from '../helpers/access-matrix';
-import { emptyView, viewToSearchParams } from '@/lib/finding-view';
+import { createUser } from '@/lib/db/users';
+import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
+import { inTransaction } from '@/lib/db/exec';
+import {
+  createPeople, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_ONE, SUB_TWO, seedMatrix, type MatrixSeed,
+} from '../helpers/access-matrix';
+import type { OwnAccess } from '@/lib/access';
+import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
+import { VIEW_TABS, type ViewTab } from '@/lib/view-response';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -51,8 +59,13 @@ interface NotYetScoped {
   unprobed?: string;
 }
 
+/** Calls a route for one tab and reduces the answer to the parts the expectations name. */
+type TabProbe = (seed: MatrixSeed, tab: ViewTab) => Promise<unknown>;
+
 interface Matrix {
-  probe: Probe;
+  probe: TabProbe;
+  /** What each person gets on each tab, by person name, written by hand from the seed. */
+  expected: Record<string, Record<ViewTab, unknown>>;
 }
 
 const get = (url: string, route: { GET(req: Request, ctx?: never): Promise<Response> }) => route.GET(new Request(`http://localhost${url}`));
@@ -67,12 +80,6 @@ const azure = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'calls Azur
 const byHand = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'listed by hand: it reads no findings-derived data and does not take the actor\'s access yet' });
 
 export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
-  'findings/view': stored(async () => get(`/api/findings/view?${view}`, await import('@/app/api/findings/view/route')), '#272'),
-  'findings/rows': stored(async seed => get(`/api/findings/rows?${view}&fingerprint=${seed.suppressedFingerprint}`, await import('@/app/api/findings/rows/route')), '#272'),
-  'findings/group': stored(async () => get(`/api/findings/group?${view}&group=category&groupPath=%5B%22security%22%5D`, await import('@/app/api/findings/group/route')), '#272'),
-  'findings/column-values': stored(async () => get(`/api/findings/column-values?${view}&column=row.zone`, await import('@/app/api/findings/column-values/route')), '#272'),
-  'findings/export': stored(async () => get(`/api/findings/export?${exportOf('json')}`, await import('@/app/api/findings/export/route')), '#272'),
-
   'widgets/summary': stored(async () => get('/api/widgets/summary', await import('@/app/api/widgets/summary/route')), '#274'),
   'widgets/findings': stored(async () => get('/api/widgets/findings', await import('@/app/api/widgets/findings/route')), '#274'),
   'widgets/top-rules': stored(async () => get('/api/widgets/top-rules', await import('@/app/api/widgets/top-rules/route')), '#274'),
@@ -107,14 +114,305 @@ export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
   'rules': azure('#277'),
   'rules/[id]': azure('#277'),
 
+  'azure/subscriptions/[id]/resource-groups': azure('#273'),
+
   'schemas': azure('#284'),
   'resources/types': azure('#284'),
   'resources/properties': azure('#284'),
   'diagnostics/preflight': azure('#284'),
 };
 
-/** Routes that already narrow what a person sees. None yet: #272 is the first ticket to put one here. */
-export const MATRIX: Record<string, Matrix> = {};
+const BODY = async (res: Response): Promise<unknown> => {
+  expect(res.status).toBe(200);
+  return res.json();
+};
+
+const tabParams = (tab: ViewTab, extra: Partial<View> = {}) => viewToSearchParams({ ...emptyView(), ...extra }, { tab }).toString();
+
+/** The seeded finding names a response lists, from the fingerprints it holds, sorted. */
+const namesOf = (seed: MatrixSeed, items: { fingerprint: string }[]): string[] => {
+  const byFingerprint = new Map(Object.entries(seed.fingerprints).map(([name, fp]) => [fp, name]));
+  return items.map(i => byFingerprint.get(i.fingerprint) ?? `unknown ${i.fingerprint}`).sort();
+};
+
+type ByTab = Record<ViewTab, unknown>;
+
+/**
+ * What each person gets, by what they hold: Everything (the Admin and the Editor), one subscription, one
+ * resource group, the Directory, and nothing (the management group Viewer, whose Scope covers nothing until
+ * #273, and the person with no Scope).
+ */
+const byPerson = (everything: ByTab, subscription: ByTab, resourceGroup: ByTab, directory: ByTab, nothing: ByTab): Record<string, ByTab> => ({
+  'Admin': everything,
+  'Editor on Everything': everything,
+  'Viewer on the management group': nothing,
+  'Viewer on one subscription': subscription,
+  'Viewer on one resource group': resourceGroup,
+  'Directory only': directory,
+  'No Scope': nothing,
+});
+
+const same = (value: unknown): ByTab => ({ results: value, advisories: value, activity: value });
+
+// The seed, by tab. Results: vm-one (subscription one, rg-one), vm-two (subscription one, rg-two, suppressed),
+// vm-other-sub (subscription two, rg-one), subscription-level (subscription one), management-group-level,
+// directory-app and unplaceable-thing. Advisories: advisory-one (subscription one, rg-one) and
+// advisory-other-sub (subscription two, rg-one). Activity: workspace-user (subscription one, rg-one).
+
+const DATE = '2026-06-02T00:00:00.000Z';
+const NOTHING_VIEW = { names: [], total: 0, tilesTotal: 0, subscriptions: [], ruleRows: [], columns: [], suppressedCount: 0, lastScanAt: undefined, policyOptions: [] };
+
+const viewEntry: Matrix = {
+  probe: async (seed, tab) => {
+    const body = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${tabParams(tab)}`))) as {
+      items: { finding: { fingerprint: string } }[]; total: number; tiles: { total: number };
+      facets: { subscription: { value: string; count: number }[] }; ruleRows: { ruleId: string; open: number }[];
+      columns: string[]; suppressedCount: number; lastScanAt?: string; policyOptions: { id: string }[];
+    };
+    return {
+      names: namesOf(seed, body.items.map(i => i.finding)),
+      total: body.total,
+      tilesTotal: body.tiles.total,
+      subscriptions: body.facets.subscription.map(f => [f.value, f.count]),
+      ruleRows: body.ruleRows.map(r => [r.ruleId, r.open]),
+      columns: body.columns,
+      suppressedCount: body.suppressedCount,
+      lastScanAt: body.lastScanAt,
+      policyOptions: body.policyOptions.map(p => p.id),
+    };
+  },
+  expected: byPerson(
+    {
+      results: {
+        names: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'],
+        total: 6, tilesTotal: 6, subscriptions: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], ruleRows: [['matrix-rule', 6]],
+        columns: ['otherSubColumn', 'zone'], suppressedCount: 1, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: {
+        names: ['advisory-one', 'advisory-other-sub'], total: 2, tilesTotal: 2, subscriptions: [[SUB_ONE, 1], [SUB_TWO, 1]],
+        ruleRows: [['matrix-advisory-rule', 2]], columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-advisory-rule'],
+      },
+      // Under Everything the column list is the rule's catalogue, unchanged by scoping, and the workspace
+      // finding shares its rule with vm-other-sub, whose extra column the catalogue holds.
+      activity: {
+        names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['otherSubColumn', 'zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+    },
+    {
+      results: {
+        names: ['subscription-level', 'vm-one'], total: 2, tilesTotal: 2, subscriptions: [[SUB_ONE, 2]], ruleRows: [['matrix-rule', 2]],
+        columns: ['zone'], suppressedCount: 1, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: {
+        names: ['advisory-one'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-advisory-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-advisory-rule'],
+      },
+      activity: {
+        names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+    },
+    {
+      results: {
+        names: ['vm-one'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: {
+        names: ['advisory-one'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-advisory-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-advisory-rule'],
+      },
+      activity: {
+        names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+    },
+    {
+      results: {
+        names: ['directory-app'], total: 1, tilesTotal: 1, subscriptions: [['directory', 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: NOTHING_VIEW,
+      activity: NOTHING_VIEW,
+    },
+    same(NOTHING_VIEW),
+  ),
+};
+
+const NOTHING_GROUP = { headers: [], names: [], total: 0, groupCount: null };
+
+const group: Matrix = {
+  probe: async (seed, tab) => {
+    const grouped = tabParams(tab, { groupBy: ['category'] });
+    const headers = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${grouped}`))) as {
+      grouped: { groups: { value: string; findingCount: number }[] };
+    };
+    const inside = await BODY(await (await import('@/app/api/findings/group/route')).GET(
+      new Request(`http://localhost/api/findings/group?${grouped}&groupPath=%5B%22security%22%5D`),
+    )) as { items: { finding: { fingerprint: string } }[]; total: number; group?: { findingCount: number } | null };
+    return {
+      headers: headers.grouped.groups.map(g => [g.value, g.findingCount]),
+      names: namesOf(seed, inside.items.map(i => i.finding)),
+      total: inside.total,
+      groupCount: inside.group?.findingCount ?? null,
+    };
+  },
+  expected: byPerson(
+    {
+      results: { headers: [['security', 6]], names: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'], total: 6, groupCount: 6 },
+      advisories: { headers: [['security', 2]], names: ['advisory-one', 'advisory-other-sub'], total: 2, groupCount: 2 },
+      activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
+    },
+    {
+      results: { headers: [['security', 2]], names: ['subscription-level', 'vm-one'], total: 2, groupCount: 2 },
+      advisories: { headers: [['security', 1]], names: ['advisory-one'], total: 1, groupCount: 1 },
+      activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
+    },
+    {
+      results: { headers: [['security', 1]], names: ['vm-one'], total: 1, groupCount: 1 },
+      advisories: { headers: [['security', 1]], names: ['advisory-one'], total: 1, groupCount: 1 },
+      activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
+    },
+    {
+      results: { headers: [['security', 1]], names: ['directory-app'], total: 1, groupCount: 1 },
+      advisories: NOTHING_GROUP,
+      activity: NOTHING_GROUP,
+    },
+    same(NOTHING_GROUP),
+  ),
+};
+
+const NOTHING_COLUMN = { zone: [], otherSubColumn: [] };
+
+const columnValues: Matrix = {
+  probe: async (_seed, tab) => {
+    const route = await import('@/app/api/findings/column-values/route');
+    const read = async (column: string) => {
+      const body = await BODY(await route.GET(new Request(`http://localhost/api/findings/column-values?${tabParams(tab)}&column=row.${column}`))) as {
+        values: { value: string; count: number }[];
+      };
+      return body.values.map(v => [v.value, v.count]);
+    };
+    return { zone: await read('zone'), otherSubColumn: await read('otherSubColumn') };
+  },
+  expected: byPerson(
+    {
+      results: { zone: [['a', 6]], otherSubColumn: [['x', 1]] },
+      advisories: { zone: [['a', 2]], otherSubColumn: [] },
+      activity: { zone: [['a', 1]], otherSubColumn: [] },
+    },
+    {
+      results: { zone: [['a', 2]], otherSubColumn: [] },
+      advisories: { zone: [['a', 1]], otherSubColumn: [] },
+      activity: { zone: [['a', 1]], otherSubColumn: [] },
+    },
+    {
+      results: { zone: [['a', 1]], otherSubColumn: [] },
+      advisories: { zone: [['a', 1]], otherSubColumn: [] },
+      activity: { zone: [['a', 1]], otherSubColumn: [] },
+    },
+    {
+      results: { zone: [['a', 1]], otherSubColumn: [] },
+      advisories: NOTHING_COLUMN,
+      activity: NOTHING_COLUMN,
+    },
+    same(NOTHING_COLUMN),
+  ),
+};
+
+const NOTHING_EXPORT = { names: [], rowKeys: [] };
+
+const exported: Matrix = {
+  probe: async (seed, tab) => {
+    const res = await (await import('@/app/api/findings/export/route')).GET(
+      new Request(`http://localhost/api/findings/export?${tabParams(tab)}&format=json`),
+    );
+    const list = await BODY(res) as { fingerprint: string; rows: Record<string, unknown>[] }[];
+    return {
+      names: namesOf(seed, list),
+      rowKeys: [...new Set(list.flatMap(f => f.rows.flatMap(r => Object.keys(r))))].sort(),
+    };
+  },
+  expected: byPerson(
+    {
+      results: { names: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
+      advisories: { names: ['advisory-one', 'advisory-other-sub'], rowKeys: ['zone'] },
+      activity: { names: ['workspace-user'], rowKeys: ['zone'] },
+    },
+    {
+      results: { names: ['subscription-level', 'vm-one'], rowKeys: ['zone'] },
+      advisories: { names: ['advisory-one'], rowKeys: ['zone'] },
+      activity: { names: ['workspace-user'], rowKeys: ['zone'] },
+    },
+    {
+      results: { names: ['vm-one'], rowKeys: ['zone'] },
+      advisories: { names: ['advisory-one'], rowKeys: ['zone'] },
+      activity: { names: ['workspace-user'], rowKeys: ['zone'] },
+    },
+    {
+      results: { names: ['directory-app'], rowKeys: ['zone'] },
+      advisories: NOTHING_EXPORT,
+      activity: NOTHING_EXPORT,
+    },
+    same(NOTHING_EXPORT),
+  ),
+};
+
+/** Every finding stored on a tab, suppressed ones included: what the rows route is asked for. */
+const STORED_BY_TAB: Record<ViewTab, string[]> = {
+  results: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub', 'vm-two'],
+  advisories: ['advisory-one', 'advisory-other-sub'],
+  activity: ['workspace-user'],
+};
+/** 200 for the names a person may open and 404 for every other finding stored on the tab. */
+const opens = (tab: ViewTab, names: string[]): Record<string, number> =>
+  Object.fromEntries(STORED_BY_TAB[tab].map(name => [name, names.includes(name) ? 200 : 404]));
+
+const rows: Matrix = {
+  probe: async (seed, tab) => {
+    const route = await import('@/app/api/findings/rows/route');
+    const out: Record<string, number> = {};
+    for (const name of STORED_BY_TAB[tab]) {
+      const res = await route.GET(new Request(`http://localhost/api/findings/rows?${tabParams(tab)}&fingerprint=${seed.fingerprints[name]}`));
+      out[name] = res.status;
+    }
+    return out;
+  },
+  expected: byPerson(
+    { results: opens('results', STORED_BY_TAB.results), advisories: opens('advisories', STORED_BY_TAB.advisories), activity: opens('activity', STORED_BY_TAB.activity) },
+    { results: opens('results', ['subscription-level', 'vm-one', 'vm-two']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
+    { results: opens('results', ['vm-one']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
+    { results: opens('results', ['directory-app']), advisories: opens('advisories', []), activity: opens('activity', []) },
+    { results: opens('results', []), advisories: opens('advisories', []), activity: opens('activity', []) },
+  ),
+};
+
+/** The one route that answers a person with their own access: each person gets their own rows and nobody else's. */
+const ownAccess: Matrix = {
+  probe: async () => {
+    const body = await BODY(await (await import('@/app/api/access/route')).GET()) as OwnAccess;
+    return { role: body.role, source: body.source, scopes: body.scopes.map(scope => [scope.path, scope.role]) };
+  },
+  expected: {
+    'Admin': same({ role: 'admin', source: null, scopes: [['/', 'admin']] }),
+    'Editor on Everything': same({ role: 'editor', source: 'manual', scopes: [['/', 'editor']] }),
+    'Viewer on the management group': same({ role: 'viewer', source: 'manual', scopes: [[SCOPE_MANAGEMENT_GROUP, 'viewer']] }),
+    'Viewer on one subscription': same({ role: 'viewer', source: 'manual', scopes: [[SCOPE_SUBSCRIPTION, 'viewer']] }),
+    'Viewer on one resource group': same({ role: 'viewer', source: 'manual', scopes: [[SCOPE_RESOURCE_GROUP, 'viewer']] }),
+    'Directory only': same({ role: 'viewer', source: 'manual', scopes: [[SCOPE_DIRECTORY, 'viewer']] }),
+    'No Scope': same({ role: 'viewer', source: 'manual', scopes: [] }),
+  },
+};
+
+/** Routes that narrow what a person sees, and what each person gets from them. */
+export const MATRIX: Record<string, Matrix> = {
+  'access': ownAccess,
+  'findings/view': viewEntry,
+  'findings/group': group,
+  'findings/column-values': columnValues,
+  'findings/export': exported,
+  'findings/rows': rows,
+};
 
 export interface ListProblems {
   unlisted: string[];
@@ -219,9 +517,6 @@ describe('every person reads what the Admin reads', () => {
 
   it('runs every stored-data GET, and finds the seeded data in the Admin\'s answers', () => {
     expect(probed.length).toBeGreaterThan(10);
-    // Eight findings are stored: one is suppressed and one is an activity finding, so Results lists six.
-    const results = JSON.parse(adminBodies['findings/view']!) as { items: unknown[] };
-    expect(results.items).toHaveLength(6);
     expect(adminBodies['suppressions']).toContain(seed.suppressedFingerprint);
     expect(adminBodies['schedules/[id]/runs']).toContain(seed.runId);
     expect(adminBodies['scans/[id]/snapshot']).toContain('vm-other-sub');
@@ -237,4 +532,77 @@ describe('every person reads what the Admin reads', () => {
       }
     });
   }
+});
+
+describe('the findings routes show each person only what their Scopes cover', () => {
+  const userIds: Record<string, string> = {};
+  let seed: MatrixSeed;
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    seed = await seedMatrix();
+  });
+
+  it('holds an expectation for every person, route and tab', () => {
+    for (const entry of Object.values(MATRIX)) {
+      expect(Object.keys(entry.expected).sort()).toEqual(PEOPLE.map(p => p.name).sort());
+      for (const byTab of Object.values(entry.expected)) expect(Object.keys(byTab).sort()).toEqual([...VIEW_TABS].sort());
+    }
+  });
+
+  for (const [route, entry] of Object.entries(MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      for (const tab of VIEW_TABS) {
+        it(`${route}: ${person}, ${tab} tab`, async () => {
+          mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+          expect(await entry.probe(seed, tab)).toEqual(entry.expected[person]![tab]);
+        });
+      }
+    }
+  }
+
+  /** A new Viewer holding exactly these Scopes, signed in, and what the Results and Advisories tabs list for them. */
+  async function listedFor(...scopes: string[]): Promise<{ results: string[]; advisories: string[] }> {
+    const created = await createUser({ email: `extra${scopes.length}-${Math.random().toString(36).slice(2)}@example.com`, role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await inTransaction(tx => replaceAssignmentsOn(tx, created.user.id, scopes.map(scope => ({ tenantId: MATRIX_TENANT, scope, role: 'viewer' as const }))));
+    mockAuth.mockResolvedValue({ user: { uid: created.user.id } });
+    const read = async (tab: ViewTab) => ((await viewEntry.probe(seed, tab)) as { names: string[] }).names;
+    return { results: await read('results'), advisories: await read('advisories') };
+  }
+
+  it('compares subscription ids and resource group names without regard to case', async () => {
+    expect(await listedFor(SCOPE_SUBSCRIPTION.toUpperCase())).toEqual({ results: ['subscription-level', 'vm-one'], advisories: ['advisory-one'] });
+    const shouted = `/SUBSCRIPTIONS/${SUB_ONE.toUpperCase()}/RESOURCEGROUPS/RG-ONE`;
+    expect(await listedFor(shouted)).toEqual({ results: ['vm-one'], advisories: ['advisory-one'] });
+  });
+
+  it('adds overlapping Scopes up: a subscription and a resource group in another subscription see the union', async () => {
+    const otherGroup = `/subscriptions/${SUB_TWO}/resourceGroups/rg-one`;
+    expect(await listedFor(SCOPE_SUBSCRIPTION, otherGroup)).toEqual({
+      results: ['subscription-level', 'vm-one', 'vm-other-sub'], advisories: ['advisory-one', 'advisory-other-sub'],
+    });
+    expect(await listedFor(SCOPE_RESOURCE_GROUP, SCOPE_DIRECTORY)).toEqual({ results: ['directory-app', 'vm-one'], advisories: ['advisory-one'] });
+    expect(await listedFor(SCOPE_SUBSCRIPTION, SCOPE_RESOURCE_GROUP)).toEqual({ results: ['subscription-level', 'vm-one'], advisories: ['advisory-one'] });
+  });
+
+  it('shows a person with a resource group in one subscription nothing from a same-named group in another', async () => {
+    expect(await listedFor(`/subscriptions/${SUB_TWO}/resourceGroups/rg-two`)).toEqual({ results: [], advisories: [] });
+  });
+
+  it('shows nothing, never everything, to a person who holds no usable Scope', async () => {
+    expect(await listedFor()).toEqual({ results: [], advisories: [] });
+  });
+
+  it('answers a finding outside the Scopes with the body of one that does not exist', async () => {
+    const route = await import('@/app/api/findings/rows/route');
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one resource group'] } });
+    const ask = (fingerprint: string) => route.GET(new Request(`http://localhost/api/findings/rows?${tabParams('results')}&fingerprint=${fingerprint}`));
+    const outside = await ask(seed.fingerprints['vm-other-sub']!);
+    const unknown = await ask('0000000000000000');
+    expect(outside.status).toBe(404);
+    expect(unknown.status).toBe(404);
+    expect(await outside.text()).toBe(await unknown.text());
+  });
 });

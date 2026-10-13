@@ -10,6 +10,7 @@ import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { emptyView, type View, type ViewFilter } from '@/lib/finding-view';
 import { groupUrl, rowsUrl, type RowCondition, type ViewRequest } from '@/lib/explorer-session';
 import type { FindingRowsResponse, GroupResponse } from '@/lib/view-response';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockRequireRole = vi.fn();
 vi.mock('@/lib/api-auth', () => ({ requireRole: (...args: unknown[]) => mockRequireRole(...args) }));
@@ -40,7 +41,7 @@ const make = (patch: Partial<View> & { filters?: ViewFilter[] }): View => ({ ...
 const request = (view: View): ViewRequest => ({ view, tab: 'results', showSuppressed: false });
 
 async function get<T>(route: { GET(req: Request): Promise<Response> }, url: string): Promise<T> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   const res = await route.GET(new Request(`http://localhost${url}`));
   expect(res.status).toBe(200);
   return res.json() as Promise<T>;

@@ -92,9 +92,16 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   authorizes through `mayAct()` in `lib/rbac.ts`, which classes every action (install
   administration, install-wide, placed, scoped) and calls `can()`. Every read of findings, or of data
   derived from them, takes the caller's `Access` as a required `access: Access` parameter
-  (`findings-reads-take-access.test.ts`), and routes pass `actor.access`; no read is narrowed by it
-  yet, and `access-matrix.test.ts` keeps each route on `NOT_YET_SCOPED` until the ticket that narrows
-  it. Page and sidebar gating stays on `can(user.role, action)`.
+  (`findings-reads-take-access.test.ts`), and routes pass `actor.access`. The Scans page's reads
+  (`findings/view|rows|group|column-values|export`, `lib/db/finding-views.ts`) narrow by it in SQL
+  (`lib/db/access-filter.ts`): a finding is seen when its placement sits inside a Scope the person
+  holds, and a column list for anyone but Everything comes from the rows of the findings they see.
+  `access-matrix.test.ts` holds each narrowed route in `MATRIX`, with what each person gets written by
+  hand, and keeps every other route on `NOT_YET_SCOPED` until the ticket that narrows it. An Admin
+  sets a Viewer's or Editor's Manual access (`PUT /api/users/[id]/access`, the invite, and demoting an
+  Admin); the tenant id on a row is resolved on the server (`lib/manual-access.ts`), never read from
+  the request. Page and sidebar gating stays on `can(user.role, action)`; every Role has the Access
+  page, and a non-Admin sees only their own access there.
   `lib/system-access.ts` is Everything for the scheduler and startup and must never be imported
   from `app/`.
 - **Audit log:** written at the API route layer, never the repository layer. Records a human summary

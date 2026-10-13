@@ -36,7 +36,7 @@ const view = { ...emptyView(), filters: [{ field: 'rule', values: [RULE] }] } as
 const query = viewToSearchParams(view, { tab: 'results' });
 
 function openExport(format: 'csv' | 'json'): Promise<Response> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   return exportRoute.GET(new Request(`http://localhost/api/findings/export?${query}&format=${format}`));
 }
 

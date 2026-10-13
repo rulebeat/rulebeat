@@ -8,6 +8,9 @@
  */
 import type { Role } from '@/lib/rbac';
 
+/** The Roles a Scope can be granted at. An Admin is never scoped, so it is not one of them. */
+export type GrantRole = 'viewer' | 'editor';
+
 /** The Scope path of Everything: every finding on the install, whatever sits where. */
 export const EVERYTHING_SCOPE_PATH = '/';
 
@@ -116,6 +119,63 @@ export function scopeCovers(grant: Scope, placement: Scope): boolean {
   const p = placement.path.toLowerCase();
   if (g === p) return true;
   return grant.kind === 'subscription' && placement.kind === 'resourceGroup' && p.startsWith(`${g}/`);
+}
+
+/** One Scope an Admin hands someone, as the request carries it: a path and a Role, no tenant id. */
+export interface ManualGrant {
+  scope: string;
+  role: GrantRole;
+}
+
+/** The most that can be handed out in one save. A person holds a few Scopes; this keeps one request bounded. */
+export const MAX_MANUAL_GRANTS = 200;
+
+/** The highest Role among some grants: an Editor if any is, else a Viewer, which is also what holding none reads as. */
+export function highestRole(grants: readonly { role: Role }[]): GrantRole {
+  return grants.some(g => g.role === 'editor') ? 'editor' : 'viewer';
+}
+
+/** A Scope listed twice, in any casing, is held once, at the higher Role. The first casing wins. */
+export function collapseGrants<T extends { scope: string; role: Role }>(grants: readonly T[]): T[] {
+  const byPath = new Map<string, T>();
+  for (const grant of grants) {
+    const key = grant.scope.toLowerCase();
+    const held = byPath.get(key);
+    if (!held) byPath.set(key, grant);
+    else if (grant.role === 'editor' && held.role !== 'editor') byPath.set(key, { ...held, role: grant.role });
+  }
+  return [...byPath.values()];
+}
+
+export type ManualAccessResult = { ok: true; grants: ManualGrant[] } | { ok: false; error: string };
+
+/**
+ * Reads the list of Scopes an Admin chose, or says why it cannot be stored. The messages are what the
+ * route returns, so they are stable and name no path. A management group is refused until the hierarchy
+ * cache can say what sits under one (#273): a row for it would cover nothing and look like it did.
+ */
+export function parseManualAccess(input: unknown): ManualAccessResult {
+  if (!Array.isArray(input)) return { ok: false, error: 'Access must be a list of scopes.' };
+  if (input.length > MAX_MANUAL_GRANTS) return { ok: false, error: `Give at most ${MAX_MANUAL_GRANTS} scopes at a time.` };
+  const grants: ManualGrant[] = [];
+  for (const item of input) {
+    const entry = (typeof item === 'object' && item !== null ? item : {}) as { scope?: unknown; role?: unknown };
+    if (typeof entry.scope !== 'string' || typeof entry.role !== 'string') {
+      return { ok: false, error: 'Each scope needs a path and a Role.' };
+    }
+    if (entry.role === 'admin') return { ok: false, error: 'The Admin Role cannot be given at a scope.' };
+    if (entry.role !== 'viewer' && entry.role !== 'editor') return { ok: false, error: 'Choose Viewer or Editor for each scope.' };
+    const scope = parseScope(entry.scope);
+    if (!scope) return { ok: false, error: 'A scope must be Everything, the Directory, a subscription or a resource group.' };
+    if (scope.kind === 'managementGroup') return { ok: false, error: 'Management group scopes are not available yet.' };
+    grants.push({ scope: entry.scope, role: entry.role });
+  }
+  return { ok: true, grants: collapseGrants(grants) };
+}
+
+/** Whether a person holds no Scope at all, so every read of findings is empty for them. */
+export function holdsNoScope(access: Access): boolean {
+  return access.grants.length === 0;
 }
 
 /** The text the Access page shows for one person's access. */

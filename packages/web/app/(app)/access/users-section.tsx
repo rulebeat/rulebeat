@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
@@ -11,8 +11,10 @@ import {
 } from '@/components/ui/table';
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
-import { describeAccess } from '@/lib/access-model';
+import { describeAccess, EVERYTHING_SCOPE_PATH, type GrantRole, type ManualGrant } from '@/lib/access-model';
+import { canInvite, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
 import { Plus, Trash2, Check, X, Mail, ShieldCheck, KeyRound } from 'lucide-react';
+import { ScopePicker } from './scope-picker';
 
 const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: ROLE_LABELS[r] }));
 
@@ -41,18 +43,21 @@ function RoleSelect({
   );
 }
 
-function InviteRow({ onSave, onCancel, saving }: {
-  onSave: (email: string, role: Role) => void;
+export function InviteRow({ onSave, onCancel, saving }: {
+  onSave: (email: string, role: Role, access: ManualGrant[] | undefined) => void;
   onCancel: () => void;
   saving?: boolean;
 }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('viewer');
+  // Nothing is chosen to start with: an invited Viewer or Editor is given what an Admin picks, never a default.
+  const [grants, setGrants] = useState<ManualGrant[]>([]);
+  const scoped = role !== 'admin';
 
   return (
     <tr className="border-b border-border bg-surface-sunken last:border-0">
       <td colSpan={7} className="px-3 py-4">
-        <div className="flex max-w-lg flex-col gap-3">
+        <div className="flex max-w-2xl flex-col gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="invite-email">Work email</Label>
             <Input
@@ -63,21 +68,82 @@ function InviteRow({ onSave, onCancel, saving }: {
               autoFocus
             />
             <FieldHint>
-              They keep this role when they first sign in. No invitation email is sent, since
+              They keep this access when they first sign in. No invitation email is sent, since
               RuleBeat never sends mail.
             </FieldHint>
           </div>
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <RoleSelect value={role} onChange={setRole} />
+            <RoleSelect
+              value={role}
+              onChange={r => { setRole(r); if (r !== 'admin') setGrants(g => setEveryRole(g, r as GrantRole)); }}
+            />
             <FieldHint>{ROLE_DESCRIPTIONS[role]}</FieldHint>
           </div>
+          {scoped ? (
+            <div className="space-y-1.5">
+              <Label>Access</Label>
+              <ScopePicker value={grants} onChange={setGrants} defaultRole={role as GrantRole} />
+              <FieldHint>
+                {grants.length === 0
+                  ? 'Choose at least one. They see only the findings inside what you choose, and can act only there.'
+                  : 'Each Scope has its own Role. Change one to make this person an Editor in one place and a Viewer in another.'}
+              </FieldHint>
+            </div>
+          ) : (
+            <FieldHint>An Admin has access to everything, so there is no access to choose.</FieldHint>
+          )}
           <div className="flex items-center gap-2 pt-1">
-            <Button size="sm" disabled={saving || !email.trim()} onClick={() => onSave(email.trim(), role)}>
+            <Button
+              size="sm"
+              disabled={saving || (scoped ? !canInvite(email, grants) : !email.trim())}
+              onClick={() => onSave(email.trim(), role, scoped ? grants : undefined)}
+            >
               <Check className="size-3.5" />
               Add
             </Button>
             <Button size="sm" variant="outline" onClick={onCancel}>
+              <X className="size-3.5" />
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** Chooses what one existing person can access: an edit of their Manual access, or what a demoted Admin is given. */
+function AccessPromptRow({ heading, hint, initial, defaultRole, confirmLabel, onConfirm, onCancel, saving }: {
+  heading: string;
+  hint: string;
+  initial: ManualGrant[];
+  defaultRole: GrantRole;
+  confirmLabel: string;
+  onConfirm: (grants: ManualGrant[]) => void;
+  onCancel: () => void;
+  saving?: boolean;
+}) {
+  const [grants, setGrants] = useState<ManualGrant[]>(initial);
+  return (
+    <tr className="border-b border-border bg-surface-sunken last:border-0">
+      <td colSpan={7} className="px-3 py-4">
+        <div className="flex max-w-2xl flex-col gap-3">
+          <div className="space-y-1.5">
+            <Label>{heading}</Label>
+            <ScopePicker value={grants} onChange={setGrants} defaultRole={defaultRole} disabled={saving} />
+            <FieldHint>
+              {grants.length === 0
+                ? 'Nothing is chosen, so this person will see no findings until an Admin gives them access.'
+                : hint}
+            </FieldHint>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button size="sm" disabled={saving} onClick={() => onConfirm(grants)}>
+              <Check className="size-3.5" />
+              {confirmLabel}
+            </Button>
+            <Button size="sm" variant="outline" disabled={saving} onClick={onCancel}>
               <X className="size-3.5" />
               Cancel
             </Button>
@@ -98,6 +164,8 @@ export function UsersSection({
   const [users, setUsers] = useState<AppUserWithAccess[]>(initialUsers);
   const [usersWithPassword, setUsersWithPassword] = useState<Set<string>>(new Set(initialUsersWithPassword));
   const [inviting, setInviting] = useState(false);
+  const [editingAccess, setEditingAccess] = useState<string | null>(null);
+  const [demoting, setDemoting] = useState<{ id: string; role: Role } | null>(null);
   const [saving, setSaving] = useState(false);
   const [passwordBusyFor, setPasswordBusyFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,29 +174,61 @@ export function UsersSection({
   // The API refuses this too: the disabled control just explains why before the click.
   const lastAdminNote = 'This is the only admin. Promote someone else to admin first.';
 
-  async function changeRole(user: AppUserWithAccess, role: Role) {
+  /** A Role change. Demoting an Admin first asks what they are to access, so it opens that prompt instead. */
+  function changeRole(user: AppUserWithAccess, role: Role) {
+    if (user.role === 'admin' && role !== 'admin') {
+      setError(null);
+      setEditingAccess(null);
+      setDemoting({ id: user.id, role });
+      return;
+    }
+    void sendRole(user, { role });
+  }
+
+  async function sendRole(user: AppUserWithAccess, payload: { role: Role; access?: ManualGrant[] }) {
     setSaving(true);
     setError(null);
     try {
       const res = await fetch(`/api/users/${encodeURIComponent(user.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify(payload),
       });
       const body = await res.json() as AppUserWithAccess & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Failed to change role'); return; }
       setUsers(us => us.map(u => u.id === user.id ? body : u));
+      setDemoting(null);
+    } catch {
+      setError('Could not reach the RuleBeat server.');
     } finally { setSaving(false); }
   }
 
-  async function invite(email: string, role: Role) {
+  async function saveAccess(user: AppUserWithAccess, access: ManualGrant[]) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(user.id)}/access`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access }),
+      });
+      const body = await res.json() as AppUserWithAccess & { error?: string };
+      if (!res.ok) { setError(body.error ?? 'Failed to change access'); return; }
+      setUsers(us => us.map(u => u.id === user.id ? body : u));
+      setEditingAccess(null);
+    } catch {
+      setError('Could not reach the RuleBeat server.');
+    } finally { setSaving(false); }
+  }
+
+  async function invite(email: string, role: Role, access: ManualGrant[] | undefined) {
     setSaving(true);
     setError(null);
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role }),
+        body: JSON.stringify(access ? { email, role, access } : { email, role }),
       });
       const body = await res.json() as AppUserWithAccess & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Failed to add user'); return; }
@@ -229,7 +329,8 @@ export function UsersSection({
               {users.map(user => {
                 const isLastAdmin = user.role === 'admin' && adminCount === 1;
                 return (
-                  <TableRow key={user.id} className="group transition-colors hover:bg-surface-hover">
+                  <Fragment key={user.id}>
+                  <TableRow className="group transition-colors hover:bg-surface-hover">
                     <TableCell>
                       <div className="font-medium text-ink">{user.name ?? user.email}</div>
                       {user.name && <div className="text-xs text-ink">{user.email}</div>}
@@ -254,10 +355,22 @@ export function UsersSection({
                         value={user.role}
                         disabled={saving || isLastAdmin}
                         title={isLastAdmin ? lastAdminNote : undefined}
-                        onChange={r => { void changeRole(user, r); }}
+                        onChange={r => changeRole(user, r)}
                       />
                     </TableCell>
-                    <TableCell className="text-xs text-ink-2">{describeAccess(user.access)}</TableCell>
+                    <TableCell className="text-xs text-ink-2">
+                      <span>{describeAccess(user.access)}</span>
+                      {user.role !== 'admin' && (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => { setDemoting(null); setEditingAccess(user.id); }}
+                          className="ml-2 font-medium text-ink underline underline-offset-2 hover:no-underline disabled:opacity-60"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-ink-muted">
                       {user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString() : '-'}
                     </TableCell>
@@ -311,11 +424,36 @@ export function UsersSection({
                       </div>
                     </TableCell>
                   </TableRow>
+                  {editingAccess === user.id && user.role !== 'admin' && (
+                    <AccessPromptRow
+                      heading={`What ${user.email} can access`}
+                      hint="Each Scope has its own Role. Saving replaces everything this person had."
+                      initial={grantsOfAccess(user.access)}
+                      defaultRole={user.role as GrantRole}
+                      confirmLabel="Save access"
+                      saving={saving}
+                      onConfirm={grants => { void saveAccess(user, grants); }}
+                      onCancel={() => setEditingAccess(null)}
+                    />
+                  )}
+                  {demoting?.id === user.id && (
+                    <AccessPromptRow
+                      heading={`What ${user.email} can access as ${ROLE_LABELS[demoting.role]}`}
+                      hint="An Admin holds everything, so the access they keep after this is chosen here. Everything is preselected."
+                      initial={[{ scope: EVERYTHING_SCOPE_PATH, role: demoting.role as GrantRole }]}
+                      defaultRole={demoting.role as GrantRole}
+                      confirmLabel={`Make ${ROLE_LABELS[demoting.role]}`}
+                      saving={saving}
+                      onConfirm={access => { void sendRole(user, { role: demoting.role, access }); }}
+                      onCancel={() => setDemoting(null)}
+                    />
+                  )}
+                  </Fragment>
                 );
               })}
               {inviting && (
                 <InviteRow
-                  onSave={(email, role) => { void invite(email, role); }}
+                  onSave={(email, role, access) => { void invite(email, role, access); }}
                   onCancel={() => setInviting(false)}
                   saving={saving}
                 />

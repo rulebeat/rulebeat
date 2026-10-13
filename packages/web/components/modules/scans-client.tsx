@@ -106,6 +106,8 @@ export interface ScansClientProps {
   /** Notification channel list for the Notifications section in the schedule form.
    *  Empty when the user lacks notifications:manage. The section is simply hidden. */
   notificationChannels?: NotificationChannelSummary[];
+  /** The person holds no Scope: the Results, Advisories and Activity tabs say so instead of "No findings yet". */
+  noAccess?: boolean;
   /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
    *  Undefined when the tab isn't active: server only computes this for ?tab=rules. */
   ruleFindingCounts?: Record<string, number>;
@@ -135,6 +137,7 @@ export function ScansClient({
   notificationChannels = [],
   ruleFindingCounts = {},
   tabEmpty,
+  noAccess,
 }: ScansClientProps) {
   const router = useRouter();
   const searchString = useSearchParams().toString();
@@ -335,6 +338,7 @@ export function ScansClient({
           hideRuleView={explorerTab === 'advisories'}
           emptyTitle={tabEmpty?.title}
           emptyHint={tabEmpty?.hint}
+          noAccess={noAccess}
         />
       )}
 

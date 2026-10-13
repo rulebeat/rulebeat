@@ -46,6 +46,7 @@ import {
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
 import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
   NO_VALUE_LABEL, groupCountText, tabResolves, tabStatusOptions,
@@ -94,6 +95,8 @@ interface FindingsExplorerClientProps {
   emptyHint?: string;
   /** Overrides the "No findings yet" empty-state title, for a tab that has its own reason to be empty. */
   emptyTitle?: string;
+  /** The person holds no Scope: the list says so and to ask an Admin, in place of any other empty state. */
+  noAccess?: boolean;
   /** Hides the By rule view, for a listing where the per-rule pivot would not add anything. */
   hideRuleView?: boolean;
   /** Shows the saved-views menu (page mode only). The parent owns what opening a view does, since
@@ -452,7 +455,7 @@ function SuppressionPanel({
 
 export function FindingsExplorerClient({
   tab, categories, scansFinished = 0, suppressions: suppressionsProp, initialView, canSuppress, mode = 'page', lockedCategory, basePath = '/findings',
-  extraParams, emptyHint, emptyTitle, hideRuleView = false, savedViews,
+  extraParams, emptyHint, emptyTitle, hideRuleView = false, noAccess = false, savedViews,
 }: FindingsExplorerClientProps) {
   const router = useRouter();
   const session = useExplorerSession();
@@ -810,7 +813,8 @@ export function FindingsExplorerClient({
   // Which screen to draw is decided by `screenOf` (lib/explorer-screen.ts): a failed suppressions load
   // in the widget, then a failed read, then loading, then the empty state, so a failure is never
   // drawn as "no findings".
-  const screen = screenOf({ mode, suppressionsFailed, failure, data });
+  const screen = screenOf({ noAccess, mode, suppressionsFailed, failure, data });
+  if (screen === 'no-access') return <NoAccessState />;
   if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
   }
