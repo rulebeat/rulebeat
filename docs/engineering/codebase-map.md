@@ -48,7 +48,10 @@
 | `packages/web/app/signin/` | `page.tsx` (server, reads `getSignInStatus()`) + `signin-client.tsx`: the Microsoft button shows as soon as sign-in is configured, not gated on `isActive`/verified. A bad config surfaces as `?error=` here instead |
 | `packages/web/lib/fetch-json.ts` | `fetchJson<T>()` returns a `FetchResult<T>` (`{ok:true,data}` \| `{ok:false}`) instead of storing an error body as data or collapsing failure to null; every self-fetching widget goes through it |
 | `packages/web/types/next-auth.d.ts` | Session augmentation carrying `user.oid` (the JWT needs none, since Auth.js types it as `Record<string, unknown>`) |
-| `packages/web/app/(app)/settings/users-section.tsx` | Admin-only Users card: roles, invite-by-email, default role for new sign-ins |
+| `packages/web/app/(app)/access/users-section.tsx` | Users card on the Access page: roles, invite-by-email, local passwords |
+| `packages/web/app/(app)/access/page.tsx` | Access page, admin-only (`can(role, 'users:manage')` + `notFound()` gate like `/audit`), loads users and password ids, renders `AccessClient` |
+| `packages/web/app/(app)/access/access-client.tsx` | Access page client: `UsersSection` inside a `LockedSurface` |
+| `packages/web/components/layout/locked-surface.tsx` | `LockedSurface`: the Demo lock message plus disabled controls, shared by Settings and Access |
 | `packages/web/app/(app)/audit/audit-client.tsx` | Admin-only audit log viewer, expandable detail rows |
 | `packages/web/lib/severity.ts` | `SEVERITY_ORDER`, `emptySeverityCounts()`: canonical severity ordering, shared by scan-runner/dashboard-data/snapshots |
 | `packages/web/lib/rule-description.ts` | `splitLearnMore()` splits a rule description's optional trailing `\nLearn more: <url>` marker into text + link |
@@ -181,7 +184,7 @@
 | `packages/web/app/onboarding/` | The first-run wizard: `page.tsx` (server, guards), `onboarding-client.tsx` (step state/chrome), `steps/{connect,preflight,scope,scan}-step.tsx` |
 | `packages/web/components/ui/stepper.tsx` | Presentational step-progress indicator, used only by the onboarding wizard |
 | `docs/public/permissions.md` | The Azure permissions guide: create the service principal, grant Reader, optionally grant Graph `Application.Read.All`. CLI + Portal for each step. Linked from onboarding steps 1 and 2 |
-| `packages/web/app/(app)/settings/settings-client.tsx` | Settings UI: Categories CRUD (sign-in, Azure connection, users) |
+| `packages/web/app/(app)/settings/settings-client.tsx` | Settings UI: Appearance, Categories CRUD, and the sign-in, Azure connection and notifications cards. People live on the Access page |
 | `packages/web/components/modules/schedules-tab.tsx` | Schedules tab UI: recurrence builder + target picker; lives in the Scans page (`?tab=schedules`) |
 | `packages/web/lib/db/schedules.ts` | `Schedule` type + CRUD + `computeNextRun()`, a cron-free recurrence engine |
 | `packages/web/lib/schedule-target.ts` | `resolveRulesForSchedule`/`resolveCategoriesForSchedule` |
@@ -311,4 +314,4 @@
 | `scripts/verify-release-version.test.mjs` | `node:test` cases for `checkReleaseVersion()` |
 | `CHANGELOG.md` | Keep a Changelog format. `[Unreleased]` is the running record every behaviour-changing PR adds a line to; `release.mjs` moves it under a dated header at release time |
 | `docs/engineering/conventions/releases.md` | The release/CHANGELOG conventions, each written after something broke |
-| `docs/engineering/decisions/` | Architecture decision records, one file per decision, numbered. `0001` fixes the single-replica topology and lists the triggers that would reopen multi-replica work. `0002` replaces the read-only demo with one writable, shared Demo that resets on a timer |
+| `docs/engineering/decisions/` | Architecture decision records, one file per decision, numbered. `0001` fixes the single-replica topology and lists the triggers that would reopen multi-replica work. `0002` replaces the read-only demo with one writable, shared Demo that resets on a timer. `0010` defines access as roles at scopes, mirrored from Azure or set by hand, with admins never scoped. `0011` keeps the library to people on Everything, with personal rules and library requests for everyone else, and limits a written query by its request |

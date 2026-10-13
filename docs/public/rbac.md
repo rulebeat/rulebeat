@@ -37,11 +37,11 @@ than when a token expires.
 
 A brand-new install with zero users seeds one local admin account with a generated password, forced
 to change on first sign-in ([`install.md`](install.md)). From there an admin can add local accounts
-from Settings → Users with their role chosen up front, or configure Microsoft Entra ID sign-in
+from the Access page with their role chosen up front, or configure Microsoft Entra ID sign-in
 ([`configure.md`](configure.md)) so people use their work account. A user's row can be created by
 email before they have ever signed in; the account binds to their identity on first login.
 
-![Settings, the Users table with a role dropdown and local password actions per user](img/settings-users.png)
+![The Access page, with a role dropdown and local password actions per user](img/settings-users.png)
 
 `RULEBEAT_INITIAL_ADMIN` names a work email that becomes an admin automatically on first Microsoft
 sign-in. It doubles as the lockout recovery path if every admin is ever removed: set it and restart.
