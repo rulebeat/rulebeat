@@ -131,3 +131,49 @@ _Avoid_: scan result, history entry, posture snapshot (that is the dashboard's d
 Two snapshots of one category set side by side. A finding in only the newer one is added, in only
 the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
 _Avoid_: diff, delta
+
+## Access
+
+**Role**:
+What someone can do in RuleBeat: Viewer, Editor or Admin. A role is always set in RuleBeat; the
+name of an Azure role never decides it.
+_Avoid_: permission level, Azure role (that is a role in Azure, which only ever grants a Scope)
+
+**Scope**:
+The part of Azure whose findings someone can see and run scans against: Everything, a management
+group, a subscription or a resource group, never a single resource. A management group covers
+whatever sits under it now, including subscriptions added later.
+_Avoid_: rule scope (that is where a rule's query looks, a separate thing), tenant scope
+
+**Everything**:
+The Scope that covers every finding on the install, including findings that belong to no
+subscription. It is not the tenant root management group.
+_Avoid_: whole tenant, global, unrestricted
+
+**Access**:
+The Roles a person holds and the Scope each one holds on. Overlapping access adds up: the higher
+Role wins where two Scopes meet. An Admin always holds Everything and is never scoped.
+_Avoid_: permissions, rights
+
+**Mirrored access**:
+Access whose Scopes come from the Azure role assignments of a person's Linked account, kept in
+sync with Azure. An Admin picks the one Role it carries. Any role assignment counts, active or
+PIM-eligible, held directly or through a group; one on a single resource gives its resource group.
+_Avoid_: synced access, Azure-managed access
+
+**Manual access**:
+Access whose Scopes an Admin picked by hand, each with its own Role. Nothing in Azure changes it.
+Editing a person's Mirrored access by hand, or switching it to manual, turns it into Manual access
+with the same Scopes.
+_Avoid_: custom access, static access
+
+**Linked account**:
+The Azure account whose role assignments a person's Mirrored access follows. An Admin chooses it,
+and it may differ from the account the person signs in with, such as their separate admin account.
+_Avoid_: Azure identity, mirror account
+
+**Install administration**:
+Running the RuleBeat install itself: people and their Access, sign-in, the Azure connection,
+notifications, the audit log, categories and rule versions. Only an Admin does it, and it has no
+Scope.
+_Avoid_: tenant admin, global admin
