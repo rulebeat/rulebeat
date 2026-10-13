@@ -3,7 +3,7 @@ import type { Action } from '../rbac';
 /**
  * The Locked surfaces of a Demo: parts of the console every Visitor can see but not change, because
  * a Reset only cleans them up after the fact. Pure data with no imports beyond a type, so the server
- * guard (`requireRole()` in lib/api-auth.ts) and the settings UI read the same list and the same
+ * guard (`requireRole()` in lib/api-auth.ts) and the Access page read the same list and the same
  * wording.
  *
  * Keyed by action, not by route. Every route that changes one of these surfaces already names one

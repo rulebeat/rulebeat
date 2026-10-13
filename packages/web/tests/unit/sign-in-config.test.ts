@@ -258,7 +258,7 @@ describe('local sign-in policy enforcement inside authorizeLocalAccount', () => 
     }
   });
 
-  // Settings → Users reads lastSeenAt to decide between "Never signed in" and a real timestamp.
+  // The Access page reads lastSeenAt to decide between "Never signed in" and a real timestamp.
   // The Entra path updates it via await provisionUser()'s await touchLastSeen() call; a successful local
   // sign-in must do the same, or a local admin who signs in every day still shows as never
   // having signed in.

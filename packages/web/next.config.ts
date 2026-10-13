@@ -34,6 +34,7 @@ const nextConfig: NextConfig = {
     return [
       { source: '/categories/:slug', destination: '/scans?category=:slug', permanent: false },
       { source: '/findings', destination: '/scans?category=all&tab=results', permanent: false },
+      { source: '/settings/users', destination: '/access', permanent: false },
     ];
   },
 };

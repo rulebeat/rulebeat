@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Managing people moved from the Users card in Settings to a new Access page, reached from "Access" beside "Audit log" in the sidebar. Admins invite people, change a Role and set, reset or remove a local password there, as before. Viewers and Editors do not see the entry, and `/settings/users` now opens `/access`.
+
 ## [0.10.1] - 2026-10-12
 
 ### Changed

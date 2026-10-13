@@ -25,6 +25,7 @@ const ROUTES = [
   '/scans?tab=rules',
   '/suppressions',
   '/settings',
+  '/access',
   '/audit',
   '/diagnostics',
 ] as const;

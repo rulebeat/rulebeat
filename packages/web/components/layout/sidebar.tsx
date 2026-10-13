@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { useSidebarPref } from '@/lib/hooks/use-sidebar-pref';
 import { can, type Role } from '@/lib/rbac';
 import {
-  LayoutDashboard, Settings, Library, EyeOff, Radar, PanelLeftClose, PanelLeft, ScrollText, Activity, Terminal,
+  LayoutDashboard, Settings, Library, EyeOff, Radar, PanelLeftClose, PanelLeft, ScrollText, Activity, Terminal, UserCog,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,9 +33,31 @@ const staticNavBottom = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const accessNavItem = { href: '/access', label: 'Access', icon: UserCog };
 const auditNavItem = { href: '/audit', label: 'Audit log', icon: ScrollText };
 const diagnosticsNavItem = { href: '/diagnostics', label: 'Diagnostics', icon: Activity };
 const queryNavItem = { href: '/query', label: 'Query', icon: Terminal };
+
+type NavEntry = { href: string; label: string; icon: LucideIcon };
+
+/**
+ * The two nav groups a role sees. Pure so a test can call it: hiding an entry is presentation
+ * only, and each page and route still enforces its own action.
+ */
+export function navForRole(role: Role): { top: NavEntry[]; bottom: NavEntry[] } {
+  return {
+    top: [
+      ...staticNavTop,
+      ...(can(role, 'rules:validate') ? [queryNavItem] : []),
+    ],
+    bottom: [
+      ...staticNavBottom,
+      ...(can(role, 'users:manage') ? [accessNavItem] : []),
+      ...(can(role, 'audit:read') ? [auditNavItem] : []),
+      ...(can(role, 'azure:manage') ? [diagnosticsNavItem] : []),
+    ],
+  };
+}
 
 const RAIL_WIDTH = 64;
 const EXPANDED_WIDTH = 256;
@@ -73,15 +95,7 @@ function NavItem({ item, active, expanded }: {
 
 export function Sidebar({ initialPinned, role, version }: { initialPinned: boolean; role: Role; version: string }) {
   const pathname = usePathname();
-  const topNav = [
-    ...staticNavTop,
-    ...(can(role, 'rules:validate') ? [queryNavItem] : []),
-  ];
-  const bottomNav = [
-    ...staticNavBottom,
-    ...(can(role, 'audit:read') ? [auditNavItem] : []),
-    ...(can(role, 'azure:manage') ? [diagnosticsNavItem] : []),
-  ];
+  const { top: topNav, bottom: bottomNav } = navForRole(role);
   const { pinned, expanded, setPinned, hoverHandlers } = useSidebarPref('sidebar:main', initialPinned);
   // The aside is always absolutely positioned (avoids toggling `position` mid-transition, which
   // caused a one-frame flash as the width animated). Unpinned + hover-expanded flies out as an

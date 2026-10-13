@@ -90,7 +90,7 @@ export async function PUT(req: Request) {
     if (body.localSignInPolicy !== 'always' && await countAdminsWithPassword() === 0) {
       return NextResponse.json({
         error: 'At least one admin needs a local password before local sign-in can be restricted. '
-          + 'Set one for yourself or another admin in the Users table first.',
+          + 'Set one for yourself or another admin on the Access page first.',
       }, { status: 409 });
     }
 
