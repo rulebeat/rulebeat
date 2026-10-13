@@ -180,6 +180,16 @@ The Azure account whose role assignments a person's Mirrored access follows. An 
 and it may differ from the account the person signs in with, such as their separate admin account.
 _Avoid_: Azure identity, mirror account
 
+**Personal rule**:
+A rule only its author sees and runs, by hand, on their own Access. It keeps only its latest run's
+results, which never count anywhere shared. It reaches the library only through a Library request.
+_Avoid_: draft rule, private rule, sandbox
+
+**Library request**:
+A request to copy a Personal rule into the library, or to update the rule it became there. An Admin
+or an Editor on Everything approves it or rejects it with a reason.
+_Avoid_: pull request, promotion, submission
+
 **Install administration**:
 Running the RuleBeat install itself: people and their Access, sign-in, the Azure connection,
 notifications, the audit log, categories and rule versions. Only an Admin does it, and it has no
