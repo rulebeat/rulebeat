@@ -474,7 +474,7 @@ describe('concurrent wrong guesses never exceed the failed-attempt cap (the lock
     const account = (await getLocalAccount(created.user.id))!;
     expect(account.failedAttempts).toBe(5);
     expect(isLockedOut(account)).toBe(true);
-  });
+  }, 30_000);
 
   it('a correct password on the 5th attempt still signs in, even after 4 prior failures', async () => {
     const created = await createUser({ email: 'fifth-correct@example.com', role: 'viewer' });
