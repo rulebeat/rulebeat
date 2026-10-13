@@ -13,8 +13,8 @@ switched on.
   able to create and edit rules, run scans, suppress findings, and change schedules, dashboards and
   notification channels. Every Visitor is the same account, so what one changes, the next one sees.
 - **Some surfaces are locked.** The Azure connection, sign-in configuration and users are visible
-  but cannot be changed, and each one says why on the Settings page. The sign-in page sends a
-  Visitor straight to the console.
+  but cannot be changed. The Azure connection and sign-in say why on the Settings page, and users
+  say why on the Access page. The sign-in page sends a Visitor straight to the console.
 - **No Azure access, structurally.** Credential resolution is short-circuited before it reads the
   environment or the database, so a Demo cannot connect to a tenant even with a real service
   principal in its environment.
