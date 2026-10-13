@@ -5,6 +5,7 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from '../fingerprint-rekey';
+import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from '../finding-placement';
 import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
@@ -306,11 +307,20 @@ CREATE TABLE IF NOT EXISTS scan_findings (
   resource_type TEXT,
   resource_group TEXT,
   subscription_id TEXT NOT NULL,
+  placement TEXT NOT NULL DEFAULT 'resource',
+  management_group_id TEXT,
   row_count INTEGER NOT NULL,
   PRIMARY KEY (scan_id, fingerprint)
 );
 CREATE INDEX IF NOT EXISTS idx_scan_findings_order
   ON scan_findings (scan_id, (${SCAN_FINDING_SEVERITY_RANK}), title, fingerprint);
+
+-- #271: where a finding sits. Existing rows read 'resource' until placeFindings() works out what each
+-- one really is; management_group_id names the group of a finding that sits at one.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS placement TEXT NOT NULL DEFAULT 'resource';
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS management_group_id TEXT;
+ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS placement TEXT NOT NULL DEFAULT 'resource';
+ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS management_group_id TEXT;
 
 -- The columns each rule's findings returned. Filled once by buildColumnCatalogue(), then kept
 -- in step by every scan save.
@@ -517,7 +527,26 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not empty the stored findings of converted scans:', err);
     }
+    // After the conversion too, so the records it just wrote are placed on the same boot. One
+    // savepoint a table, for the same reason as above.
+    for (const table of PLACEMENT_TABLES) {
+      try {
+        await tx.transaction(async (sp) => { await placeFindings(sp, table); });
+      } catch (err) {
+        console.error(`[bootstrap] could not place the findings in ${table}:`, err);
+      }
+    }
   });
+}
+
+/** The Postgres half of migrate.ts's placeFindings(): the same plan, run on every boot. */
+async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number]): Promise<void> {
+  const rows = (await tx.execute(sql.raw(placementRead(table)))).rows as unknown as PlacementRow[];
+  for (const s of planFindingPlacement(table, rows)) {
+    const parts = s.sql.split('?');
+    const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
+    await tx.execute(sql.join(chunks, sql.raw('')));
+  }
 }
 
 type PgTx = Parameters<Parameters<NodePgDatabase<typeof pgSchema>['transaction']>[0]>[0];

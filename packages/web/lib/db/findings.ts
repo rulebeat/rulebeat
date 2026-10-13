@@ -10,10 +10,13 @@ import { FINDINGS_BACKFILL_MARKER, findingsBackfillCategoryKey } from './scan-fi
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
+import { derivePlacement } from './finding-placement';
+import { subscriptionFilterSql } from './subscription-filter';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
+import type { FindingPlacement } from '../placement';
 import type { Finding, RuleKind, Severity } from '../types';
 
 export interface FindingRecord extends Finding {
@@ -59,6 +62,25 @@ export interface SyncScanFindingsOptions {
 }
 
 const EVENT_RETENTION_DAYS = 180;
+
+/** The two placement columns a finding is written with. A finding the scan path placed says where it
+ *  sits; one built outside it (a restored scan blob) is placed by what it implies. */
+function placementColumns(f: Finding): { placement: FindingPlacement; managementGroupId: string | null } {
+  const { placement, managementGroupId } = f.placement ? { placement: f.placement, managementGroupId: f.managementGroupId } : derivePlacement(f);
+  return { placement, managementGroupId: managementGroupId ?? null };
+}
+
+/** What a re-sighted finding's subscription, resource group and placement are rewritten to. A Logs
+ *  finding already at its workspace keeps it when this scan could not look the workspace up (it came
+ *  back unplaceable): a Resource Graph blip must not take the finding out of its subscription's views
+ *  until a later scan finds the workspace again. Everything else takes what the scan says. */
+function placedColumns(f: Finding, existing: Row | undefined) {
+  const placed = placementColumns(f);
+  if (existing?.placement === 'workspace' && f.kind === 'activity' && placed.placement === 'unplaceable') {
+    return { subscriptionId: existing.subscriptionId, resourceGroup: existing.resourceGroup, placement: existing.placement, managementGroupId: existing.managementGroupId };
+  }
+  return { subscriptionId: f.subscriptionId, resourceGroup: f.resourceGroup ?? null, ...placed };
+}
 
 type Row = typeof findingsTable.$inferSelect;
 
@@ -171,6 +193,8 @@ export function rowToSummary(row: Omit<Row, 'evidence' | 'evidenceRows'>): Findi
     subscriptionId: row.subscriptionId,
     resourceGroup: row.resourceGroup ?? undefined,
     location: row.location ?? undefined,
+    placement: row.placement as FindingPlacement,
+    managementGroupId: row.managementGroupId ?? undefined,
     title: row.title,
     description: row.description,
     recommendation: row.recommendation,
@@ -310,6 +334,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
         subscriptionId: f.subscriptionId,
         resourceGroup: f.resourceGroup ?? null,
         location: f.location ?? null,
+        ...placementColumns(f),
         title: f.title,
         description: f.description,
         recommendation: f.recommendation,
@@ -334,8 +359,9 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
           kind: f.kind ?? 'state',
           resourceType: f.resourceType ?? null,
           resourceName: f.resourceName ?? null,
-          subscriptionId: f.subscriptionId,
-          resourceGroup: f.resourceGroup ?? null,
+          // Placement refreshes like the columns it is read from: a Logs finding first stored
+          // unplaceable moves to its workspace on the scan that resolves it, same fingerprint, same age.
+          ...placedColumns(f, existingByFp.get(f.fingerprint)),
           location: f.location ?? null,
           title: f.title,
           description: f.description,
@@ -481,7 +507,7 @@ export async function getFindingEventCounts(opts: {
   ];
   if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
-  if (opts.subscriptions?.length) conditions.push(inArray(findingsTable.subscriptionId, opts.subscriptions));
+  if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
 
@@ -536,7 +562,7 @@ export async function getActivityOccurrenceCounts(opts: {
   ];
   if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
-  if (opts.subscriptions?.length) conditions.push(inArray(findingsTable.subscriptionId, opts.subscriptions));
+  if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
 
@@ -621,10 +647,17 @@ export async function refreshSnapshotsFor(categories: string[], now?: Date): Pro
  * finding, so those records are skipped. Everything else falls back to something honest and the
  * history is kept, which is the entire point of the backfill.
  */
-function restoreHistoricFinding(raw: Partial<Finding>, category: string): Finding | null {
+function restoreHistoricFinding(raw: Partial<Finding>, category: string, directoryRuleIds: ReadonlySet<string>): Finding | null {
   if (!raw.ruleId || !raw.resourceId) return null;
 
+  // A blob predates placement. A Graph rule's finding and a Logs finding carry the subscription they
+  // borrowed, which they never sat in; every other finding sits where its own subscription and
+  // resource group say.
+  const inDirectory = directoryRuleIds.has(raw.ruleId);
+  const borrowed = inDirectory || raw.kind === 'activity';
   const subscriptionFromId = raw.resourceId.match(/\/subscriptions\/([^/]+)/i)?.[1];
+  const subscriptionId = borrowed ? '' : raw.subscriptionId ?? subscriptionFromId ?? '';
+  const resourceGroup = borrowed ? undefined : raw.resourceGroup;
   return {
     ...raw,
     ruleId: raw.ruleId,
@@ -633,7 +666,11 @@ function restoreHistoricFinding(raw: Partial<Finding>, category: string): Findin
     severity: raw.severity ?? 'medium',
     resourceType: raw.resourceType ?? '',
     resourceName: raw.resourceName ?? raw.resourceId.split('/').pop() ?? raw.resourceId,
-    subscriptionId: raw.subscriptionId ?? subscriptionFromId ?? '',
+    subscriptionId,
+    resourceGroup,
+    ...(inDirectory
+      ? { placement: 'directory' as const }
+      : derivePlacement({ kind: raw.kind, subscriptionId, resourceGroup, resourceId: raw.resourceId })),
     title: raw.title ?? raw.ruleId,
     description: raw.description ?? '',
     recommendation: raw.recommendation ?? '',
@@ -646,6 +683,7 @@ export async function backfillFindings(): Promise<void> {
 
   const categories = await listCategories();
   const allRules = await loadRules();
+  const directoryRuleIds = new Set(allRules.filter(r => r.queryBackend === 'microsoft-graph').map(r => r.id));
   const enabledIdsByCategory = new Map<string, string[]>();
   for (const r of allRules) {
     if (!r.enabled) continue;
@@ -683,7 +721,7 @@ export async function backfillFindings(): Promise<void> {
 
       const oldestFirst = [...history].reverse();
       const restore = (scan: { findings: Finding[] }) => scan.findings
-        .map(f => restoreHistoricFinding(f, category.id))
+        .map(f => restoreHistoricFinding(f, category.id, directoryRuleIds))
         .filter((f): f is Finding => f !== null);
 
       // One transaction for the whole category: a replay that stops part way leaves nothing behind, so

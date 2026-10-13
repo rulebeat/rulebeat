@@ -229,6 +229,8 @@ export const findings = pgTable('findings', {
   subscriptionId: text('subscription_id').notNull(),
   resourceGroup: text('resource_group'),
   location: text('location'),
+  placement: text('placement').notNull().default('resource'),
+  managementGroupId: text('management_group_id'),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   recommendation: text('recommendation').notNull().default(''),
@@ -267,6 +269,8 @@ export const scanFindings = pgTable('scan_findings', {
   resourceType: text('resource_type'),
   resourceGroup: text('resource_group'),
   subscriptionId: text('subscription_id').notNull(),
+  placement: text('placement').notNull().default('resource'),
+  managementGroupId: text('management_group_id'),
   rowCount: integer('row_count').notNull(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.scanId, table.fingerprint] }),

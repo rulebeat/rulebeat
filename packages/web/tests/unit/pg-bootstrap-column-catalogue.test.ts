@@ -23,9 +23,9 @@ const raw = async (statement: string) => (await pgDb!.execute(sql.raw(statement)
 
 async function insertFinding(fingerprint: string, ruleId: string, status: 'active' | 'fixed', rows: Record<string, unknown>[]): Promise<void> {
   await pgDb!.execute(sql`
-    INSERT INTO findings (fingerprint, rule_id, category, severity, subscription_id, title, evidence, evidence_rows,
+    INSERT INTO findings (fingerprint, rule_id, category, severity, subscription_id, resource_group, title, evidence, evidence_rows,
       status, first_seen_at, last_seen_at, last_scan_id, times_seen, row_count, rows_scan_id)
-    VALUES (${fingerprint}, ${ruleId}, 'reliability', 'medium', 'sub', 'VM retirements', ${JSON.stringify(rows[0] ?? {})},
+    VALUES (${fingerprint}, ${ruleId}, 'reliability', 'medium', 'sub', 'rg', 'VM retirements', ${JSON.stringify(rows[0] ?? {})},
       ${JSON.stringify(rows)}, ${status}, '2026-01-02T03:04:05.000Z', '2026-02-03T04:05:06.000Z', 'scan-1', 9, ${rows.length}, 'scan-1')
   `);
   for (const [position, row] of rows.entries()) {

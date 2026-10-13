@@ -89,6 +89,8 @@ describe('GET /api/scans/[id]/snapshot: the page', () => {
       resourceType: 'microsoft.compute/virtualmachines',
       resourceGroup: 'rg-test',
       subscriptionId: String(argRow({ name: 'vm-a' }).subscriptionId),
+      placement: 'resource',
+      managementGroupId: null,
       rowCount: 1,
       exists: true,
       tab: 'results',

@@ -1,6 +1,7 @@
 import { createActivityFinding } from '../finding.js';
 import { LogAnalyticsTruncatedError } from '../clients/log-analytics.js';
 import { extractAzureErrorMessage } from '../errors.js';
+import { resolveWorkspacePlacement, type WorkspacePlacement } from '../workspace-placement.js';
 import type { Finding, TenantContext } from '../types.js';
 import { queryHasTopLevelLimit } from './kql.js';
 import type { Rule, RuleExecutionStatus, RuleRunEvent } from './types.js';
@@ -18,6 +19,11 @@ export async function* runLawRules(
   ctx: TenantContext,
 ): AsyncIterable<RuleRunEvent<Finding>> {
   const enabled = rules.filter(r => r.enabled);
+
+  // Where this run's findings sit: the workspace's subscription and resource group, looked up once,
+  // the first time a finding needs it. A run with no Logs finding makes no lookup at all, and a lookup
+  // that finds nothing leaves its findings unplaceable without changing any rule's outcome.
+  let workspace: WorkspacePlacement | null | undefined;
 
   for (const rule of enabled) {
     ctx.log(`Running rule: ${rule.name}`, { operation: 'rule-start', ruleId: rule.id, category: rule.category });
@@ -96,6 +102,7 @@ export async function* runLawRules(
       }
 
       findingCount++;
+      if (workspace === undefined) workspace = await resolveWorkspacePlacement(ctx);
       yield {
         kind: 'finding',
         finding: createActivityFinding({
@@ -104,7 +111,9 @@ export async function* runLawRules(
           severity: rule.severity,
           category: rule.category,
           dimensionKey,
-          subscriptionId: ctx.subscriptionIds[0] ?? '',
+          placement: workspace ? 'workspace' : 'unplaceable',
+          subscriptionId: workspace?.subscriptionId ?? '',
+          resourceGroup: workspace?.resourceGroup,
           title: rule.name,
           description: rule.description,
           evidence: row,

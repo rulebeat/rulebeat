@@ -329,3 +329,34 @@ describe('runRules() structured logging (spec 006)', () => {
     ]);
   });
 });
+
+describe('runRules() placement', () => {
+  const placed = async (rows: Record<string, unknown>[]) => {
+    const rule = baseRule();
+    const ctx = fakeCtx(async kql => (kql === rule.rawKql ? rows : []));
+    return (await drain(rule, ctx)).flatMap(e => (e.kind === 'finding' ? [e.finding] : []));
+  };
+
+  it('places a resource in a resource group at a resource, with its subscription and resource group', async () => {
+    const [f] = await placed([argRow('/subscriptions/sub-1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1')]);
+    expect(f).toMatchObject({ placement: 'resource', subscriptionId: 'sub-1', resourceGroup: 'rg1' });
+    expect(f!.managementGroupId).toBeUndefined();
+  });
+
+  it('places a subscription-level object at the subscription, with no resource group', async () => {
+    const [f] = await placed([{ id: '/subscriptions/sub-1', name: 'sub', type: 'microsoft.resources/subscriptions', subscriptionId: 'sub-1', location: 'global' }]);
+    expect(f).toMatchObject({ placement: 'subscription', subscriptionId: 'sub-1' });
+    expect(f!.resourceGroup).toBeUndefined();
+  });
+
+  it('places an object under a management group at that group', async () => {
+    const [f] = await placed([{ id: '/providers/Microsoft.Management/managementGroups/mg-platform', name: 'mg-platform', type: 'microsoft.management/managementgroups' }]);
+    expect(f).toMatchObject({ placement: 'management-group', managementGroupId: 'mg-platform', subscriptionId: '' });
+  });
+
+  it('calls a tenant-level object it cannot place unplaceable', async () => {
+    const [f] = await placed([{ id: '/providers/Microsoft.Foo/things/t1', name: 't1', type: 'microsoft.foo/things' }]);
+    expect(f).toMatchObject({ placement: 'unplaceable', subscriptionId: '' });
+    expect(f!.managementGroupId).toBeUndefined();
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeFingerprint, createFinding, computeActivityFingerprint, createActivityFinding } from '../src/finding.js';
+import { classifyArmPlacement, computeFingerprint, createFinding, computeActivityFingerprint, createActivityFinding } from '../src/finding.js';
 
 const baseActivityInput = {
   module: 'identity',
@@ -7,6 +7,7 @@ const baseActivityInput = {
   severity: 'high' as const,
   category: 'identity',
   dimensionKey: 'principal:foo@bar.com',
+  placement: 'workspace' as const,
   subscriptionId: 'sub-1',
   title: 'Repeated sign-in from unfamiliar location',
   description: 'desc',
@@ -133,5 +134,54 @@ describe('createFinding() (regression: kind must stay unset for ordinary state f
     });
     expect(finding.kind).toBeUndefined();
     expect(finding.dimensionKey).toBeUndefined();
+  });
+});
+
+describe('classifyArmPlacement()', () => {
+  it('is a resource when it has a subscription and a resource group', () => {
+    expect(classifyArmPlacement({ subscriptionId: 'sub-1', resourceGroup: 'rg-1', resourceId: '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm' }))
+      .toEqual({ placement: 'resource' });
+  });
+
+  it('is a subscription finding when it has a subscription and no resource group', () => {
+    expect(classifyArmPlacement({ subscriptionId: 'sub-1', resourceId: '/subscriptions/sub-1' })).toEqual({ placement: 'subscription' });
+    expect(classifyArmPlacement({ subscriptionId: 'sub-1', resourceGroup: '', resourceId: '/subscriptions/sub-1' })).toEqual({ placement: 'subscription' });
+  });
+
+  it('is a management group finding, naming the group, when there is no subscription and the id sits under one', () => {
+    expect(classifyArmPlacement({ subscriptionId: '', resourceId: '/providers/Microsoft.Management/managementGroups/mg-platform' }))
+      .toEqual({ placement: 'management-group', managementGroupId: 'mg-platform' });
+    expect(classifyArmPlacement({ resourceId: '/providers/microsoft.management/managementgroups/MG-Root/providers/Microsoft.Authorization/policyAssignments/pa' }))
+      .toEqual({ placement: 'management-group', managementGroupId: 'MG-Root' });
+  });
+
+  it('is unplaceable when there is no subscription and the id is not under a management group', () => {
+    expect(classifyArmPlacement({ subscriptionId: '', resourceId: '/providers/Microsoft.Foo/things/t1' })).toEqual({ placement: 'unplaceable' });
+    expect(classifyArmPlacement({ subscriptionId: '', resourceId: '/tenants/t1' })).toEqual({ placement: 'unplaceable' });
+    expect(classifyArmPlacement({})).toEqual({ placement: 'unplaceable' });
+  });
+
+  it('does not take a management group id from the middle of an id', () => {
+    expect(classifyArmPlacement({ resourceId: '/foo/providers/Microsoft.Management/managementGroups/mg-1' })).toEqual({ placement: 'unplaceable' });
+  });
+});
+
+describe('createFinding() placement', () => {
+  const input = {
+    module: 'security', ruleId: 'rule-1', severity: 'high' as const, category: 'security',
+    resourceType: 'x', resourceName: 'n', title: 't', description: 'd', evidence: {}, recommendation: 'r',
+  };
+
+  it('works the placement out from the subscription, resource group and id when none is given', () => {
+    const f = createFinding({ ...input, resourceId: '/providers/Microsoft.Management/managementGroups/mg-1', subscriptionId: '' });
+    expect(f.placement).toBe('management-group');
+    expect(f.managementGroupId).toBe('mg-1');
+  });
+
+  it('keeps a placement the engine states, and no management group for it', () => {
+    const f = createFinding({ ...input, resourceId: 'users/u1', subscriptionId: '', placement: 'directory' });
+    expect(f.placement).toBe('directory');
+    expect(f.subscriptionId).toBe('');
+    expect(f.managementGroupId).toBeUndefined();
   });
 });

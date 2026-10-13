@@ -131,7 +131,9 @@ describe('upgrading to scan_findings', () => {
     expect(byFingerprint(computeFingerprint(RULE, vm('vm-3')))).toMatchObject({ row_count: 0 });
     expect(byFingerprint(computeActivityFingerprint(RULE, 'user-1'))).toEqual({
       fingerprint: computeActivityFingerprint(RULE, 'user-1'), rule_id: RULE, severity: 'medium', title: 'VM retirements', kind: 'activity',
-      category: 'reliability', resource_id: null, resource_name: null, resource_type: null, resource_group: null, subscription_id: SUB, row_count: 1,
+      // A Logs finding's blob carries the subscription it borrowed, which it never sat in (#271): the record
+      // has none until the workspace is resolved.
+      category: 'reliability', resource_id: null, resource_name: null, resource_type: null, resource_group: null, subscription_id: '', row_count: 1,
     });
     expect(recordsOf(sqlite, 'scan-2')).toHaveLength(1);
     expect(recordsOf(sqlite, 'scan-empty')).toEqual([]);

@@ -71,8 +71,8 @@ function insertFinding(db: Database.Database, f: {
 }): void {
   db.prepare(`
     INSERT INTO findings (fingerprint, rule_id, category, severity, kind, resource_id, resource_type, resource_name,
-      subscription_id, title, evidence, evidence_rows, status, first_seen_at, last_seen_at, last_scan_id, times_seen, row_count, rows_scan_id)
-    VALUES (?, ?, 'reliability', 'medium', 'state', ?, 'microsoft.compute/virtualmachines', ?, ?, 'VM retirements', ?, ?,
+      subscription_id, resource_group, title, evidence, evidence_rows, status, first_seen_at, last_seen_at, last_scan_id, times_seen, row_count, rows_scan_id)
+    VALUES (?, ?, 'reliability', 'medium', 'state', ?, 'microsoft.compute/virtualmachines', ?, ?, 'rg', 'VM retirements', ?, ?,
       ?, '2026-01-02T03:04:05.000Z', '2026-02-03T04:05:06.000Z', 'scan-1', 9, ?, 'scan-1')
   `).run(f.fingerprint, f.ruleId ?? RULE, vm(f.name), f.name, SUB, JSON.stringify(f.rows[0] ?? {}), JSON.stringify(f.rows), f.status ?? 'active', f.rows.length);
   f.rows.forEach((row, position) => {

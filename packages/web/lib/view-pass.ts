@@ -33,7 +33,7 @@ import {
 /** A finding as a pass holds it: what filters, facets, tiles and sorts read, and nothing else. */
 export type SlimFinding = Pick<ExplorerFinding,
   'fingerprint' | 'ruleId' | 'category' | 'severity' | 'kind' | 'dimensionKey' | 'resourceId' | 'resourceType' | 'resourceName'
-  | 'subscriptionId' | 'resourceGroup' | 'location' | 'title' | 'status' | 'firstSeenAt' | 'lastSeenAt' | 'resolvedAt'
+  | 'subscriptionId' | 'placement' | 'resourceGroup' | 'location' | 'title' | 'status' | 'firstSeenAt' | 'lastSeenAt' | 'resolvedAt'
   | 'policyName' | 'ruleDisabled' | 'ruleTags'>;
 
 /** A view's context with its window resolved to dates, once, so every part agrees on them. */

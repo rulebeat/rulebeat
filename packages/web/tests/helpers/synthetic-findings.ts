@@ -13,11 +13,18 @@ export interface SyntheticOptions {
   subscriptionId?: string;
   resourceGroup?: string;
   location?: string;
+  /** 'directory' builds a finding that sits in the directory: no subscription, no resource group. */
+  placement?: 'directory';
+  kind?: Finding['kind'];
 }
 
 export function syntheticFinding(name: string, rows: Record<string, unknown>[], opts: SyntheticOptions): Finding & { rows: Record<string, unknown>[] } {
-  const subscriptionId = opts.subscriptionId ?? 'sub-1';
-  const resourceId = `/subscriptions/${subscriptionId}/resourceGroups/${opts.resourceGroup ?? 'rg-1'}/providers/Microsoft.Compute/virtualMachines/${name}`;
+  const directory = opts.placement === 'directory';
+  const subscriptionId = directory ? '' : opts.subscriptionId ?? 'sub-1';
+  const resourceGroup = directory ? undefined : opts.resourceGroup ?? 'rg-1';
+  const resourceId = directory
+    ? `applications/${name}`
+    : `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.Compute/virtualMachines/${name}`;
   const category = opts.category ?? 'security';
   return {
     module: category,
@@ -26,11 +33,13 @@ export function syntheticFinding(name: string, rows: Record<string, unknown>[], 
     severity: opts.severity ?? 'high',
     category: category as Finding['category'],
     resourceId,
-    resourceType: 'microsoft.compute/virtualmachines',
+    ...(opts.kind ? { kind: opts.kind } : {}),
+    resourceType: directory ? 'microsoft.graph/applications' : 'microsoft.compute/virtualmachines',
     resourceName: name,
     subscriptionId,
-    resourceGroup: opts.resourceGroup ?? 'rg-1',
-    location: opts.location ?? 'westeurope',
+    resourceGroup,
+    placement: directory ? 'directory' : 'resource',
+    location: directory ? undefined : opts.location ?? 'westeurope',
     title: `Finding of ${opts.ruleId}`,
     description: 'test',
     evidence: rows[0] ?? {},

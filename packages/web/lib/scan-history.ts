@@ -4,15 +4,15 @@ import { dbKind } from './db/backend';
 import { scans as scansTable, scanFindings } from './db/tables';
 import { many, run, inTransaction } from './db/exec';
 import { chunk } from './db/chunk';
-import { EMPTY_SCAN_BLOB, recordsFromFindings } from './db/scan-findings-copy';
+import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
 
 /** How many scans of a category history keeps (`SCAN_HISTORY_LIMIT`, default 90). */
 export const SCAN_HISTORY_LIMIT = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
 
-/** How many records one insert statement carries: 13 columns each, so as many as fit under SQLite's
- *  900 bound values (the same budget as `CHUNK_SIZE`) or Postgres's 65,535. */
-const RECORDS_PER_STATEMENT = dbKind === 'pg' ? 5000 : 69;
+/** How many records one insert statement carries: as many as fit, a bound value for each column of a
+ *  record, under SQLite's 900 bound values (the same budget as `CHUNK_SIZE`) or Postgres's 65,535. */
+const RECORDS_PER_STATEMENT = Math.floor((dbKind === 'pg' ? 65_000 : 900) / SCAN_FINDING_COLUMNS.length);
 
 type Row = typeof scansTable.$inferSelect;
 
@@ -111,6 +111,8 @@ export async function saveScanResult(
       resourceType: r.resource_type,
       resourceGroup: r.resource_group,
       subscriptionId: r.subscription_id,
+      placement: r.placement,
+      managementGroupId: r.management_group_id,
       rowCount: r.row_count,
     }));
     for (const part of chunk(records, RECORDS_PER_STATEMENT)) {

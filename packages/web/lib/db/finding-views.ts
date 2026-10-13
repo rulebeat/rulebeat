@@ -43,6 +43,7 @@ import { pageBounds, type FindingRow } from '../finding-rows';
 import { activeRowFilters, applyView, readPath, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { isActiveSuppression } from '../suppressions';
+import { subscriptionValue } from '../placement';
 import {
   ColumnCounter, RowMatcher, answerExport, answerGroup, answerView, candidatesOf, columnPool, finishColumnValues, indexOf, rawGateOf, resolveContext, rowNeeds,
   type PageEntry, type ResolvedContext, type RowIndex, type SlimFinding,
@@ -87,7 +88,7 @@ async function readSlim(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, R
   const stored = await many(tx.select({
     fingerprint: t.fingerprint, ruleId: t.ruleId, category: t.category, severity: t.severity, kind: t.kind,
     dimensionKey: t.dimensionKey, resourceId: t.resourceId, resourceType: t.resourceType, resourceName: t.resourceName,
-    subscriptionId: t.subscriptionId, resourceGroup: t.resourceGroup, location: t.location, title: t.title,
+    subscriptionId: t.subscriptionId, placement: t.placement, resourceGroup: t.resourceGroup, location: t.location, title: t.title,
     status: t.status, firstSeenAt: t.firstSeenAt, lastSeenAt: t.lastSeenAt, resolvedAt: t.resolvedAt,
   }).from(t).where(inArray(t.kind, [...TAB_KINDS[tab]])));
   return stored
@@ -95,6 +96,7 @@ async function readSlim(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, R
       fingerprint: r.fingerprint, ruleId: r.ruleId, category: r.category, severity: r.severity as SlimFinding['severity'],
       kind: r.kind as SlimFinding['kind'], dimensionKey: r.dimensionKey ?? undefined, resourceId: r.resourceId ?? undefined,
       resourceType: r.resourceType ?? undefined, resourceName: r.resourceName ?? undefined, subscriptionId: r.subscriptionId,
+      placement: r.placement as SlimFinding['placement'],
       resourceGroup: r.resourceGroup ?? undefined, location: r.location ?? undefined, title: r.title,
       status: r.status as SlimFinding['status'], firstSeenAt: r.firstSeenAt, lastSeenAt: r.lastSeenAt, resolvedAt: r.resolvedAt ?? undefined,
       ...ruleDecoration(r, rules.get(r.ruleId)),
@@ -312,7 +314,8 @@ export function queryFilterOptions(): Promise<FilterOptions> {
     for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules));
     const named = new Map(found.map(f => [f.ruleId, { id: f.ruleId, name: rules.get(f.ruleId)?.name ?? f.title }]));
     return {
-      subscriptions: [...new Set(found.map(f => f.subscriptionId).filter(Boolean))].sort(),
+      // A Directory finding is one more option, the reserved value, since its stored subscription is empty.
+      subscriptions: [...new Set(found.map(f => subscriptionValue(f)).filter(Boolean))].sort(),
       resourceGroups: [...new Set(found.map(f => f.resourceGroup).filter((g): g is string => Boolean(g)))].sort(),
       rules: [...named.values()].sort((a, b) => a.name.localeCompare(b.name)),
     };

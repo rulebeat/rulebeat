@@ -17,7 +17,7 @@ const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
   fingerprint: 'fp-1', ruleId: 'rule-1', severity: 'high', title: 'Example', kind: 'state',
   resourceId: '/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-one',
   resourceName: 'vm-one', resourceType: 'Microsoft.Compute/virtualMachines', resourceGroup: 'rg',
-  subscriptionId: 's', rowCount: 1, exists: true, tab: 'results', ...over,
+  subscriptionId: 's', placement: 'resource', managementGroupId: null, rowCount: 1, exists: true, tab: 'results', ...over,
 });
 
 const response = (over: Partial<SnapshotResponse> = {}): SnapshotResponse => ({

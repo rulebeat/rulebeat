@@ -118,6 +118,8 @@ describe('a scan save', () => {
       resourceType: 'microsoft.compute/virtualmachines',
       resourceGroup: 'rg-test',
       subscriptionId: String(VM_ONE.subscriptionId),
+      placement: 'resource',
+      managementGroupId: null,
       rowCount: 3,
     });
     expect(records.find(r => r.resourceName === 'vm-two')).toMatchObject({ resourceGroup: 'rg-other', rowCount: 1 });

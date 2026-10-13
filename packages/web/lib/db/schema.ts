@@ -248,9 +248,14 @@ export const findings = sqliteTable('findings', {
   resourceId: text('resource_id'),
   resourceType: text('resource_type'),
   resourceName: text('resource_name'),
-  subscriptionId: text('subscription_id').notNull(),
+  subscriptionId: text('subscription_id').notNull(),   // '' for a 'directory' or 'unplaceable' finding
   resourceGroup: text('resource_group'),
   location: text('location'),
+  // Where the finding sits (#271): 'resource' | 'subscription' | 'management-group' | 'directory' |
+  // 'workspace' | 'unplaceable'. subscription_id and resource_group say which one, for the kinds that
+  // have one; management_group_id names the group of a 'management-group' finding.
+  placement: text('placement').notNull().default('resource'),
+  managementGroupId: text('management_group_id'),
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   recommendation: text('recommendation').notNull().default(''),
@@ -298,6 +303,8 @@ export const scanFindings = sqliteTable('scan_findings', {
   resourceType: text('resource_type'),
   resourceGroup: text('resource_group'),
   subscriptionId: text('subscription_id').notNull(),
+  placement: text('placement').notNull().default('resource'),   // as findings.placement, as this scan saw the finding
+  managementGroupId: text('management_group_id'),
   rowCount: integer('row_count').notNull(),     // how many rows the finding held in this scan
 }, (table) => ({
   pk: primaryKey({ columns: [table.scanId, table.fingerprint] }),

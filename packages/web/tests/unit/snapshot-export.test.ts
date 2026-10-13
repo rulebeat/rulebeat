@@ -12,7 +12,7 @@ import type { SnapshotRecord } from '@/lib/snapshot-response';
 const record = (name: string): SnapshotRecord => ({
   fingerprint: `fp-${name}`, ruleId: 'rule-1', severity: 'high', title: 'Example', kind: 'state',
   resourceId: `/subscriptions/s/${name}`, resourceName: name, resourceType: 'Microsoft.Compute/virtualMachines',
-  resourceGroup: 'rg', subscriptionId: 'sub', rowCount: 2,
+  resourceGroup: 'rg', subscriptionId: 'sub', placement: 'resource', managementGroupId: null, rowCount: 2,
 });
 
 /** A source that hands out the batches given, one by one, and says how far it was read. */
@@ -125,5 +125,25 @@ describe('a snapshot export that stops', () => {
     expect(failure).toBeInstanceOf(Error);
     expect(failure!.message).not.toContain('tenant');
     expect(first).not.toContain('tenant');
+  });
+});
+
+describe('where a snapshot export says a finding sat (#271)', () => {
+  const directory = (name: string): SnapshotRecord => ({ ...record(name), subscriptionId: '', placement: 'directory' });
+
+  it('names a Directory record "Directory" in the Subscription column, not a blank', async () => {
+    const { open } = stubSource([[directory('app-one'), record('vm-one')]]);
+    const csv = await readAll(await streamSnapshotExport(open, 'csv'));
+    const [header, directoryLine, armLine] = csv.split('\n');
+    const column = header!.split(',').indexOf('Subscription');
+    expect(column).toBeGreaterThan(-1);
+    expect(directoryLine!.split(',')[column]).toBe('Directory');
+    expect(armLine!.split(',')[column]).toBe('sub');
+  });
+
+  it('keeps the record as it was stored in JSON: an empty subscription and its placement', async () => {
+    const { open } = stubSource([[directory('app-one')]]);
+    const [stored] = JSON.parse(await readAll(await streamSnapshotExport(open, 'json'))) as SnapshotRecord[];
+    expect(stored).toMatchObject({ subscriptionId: '', placement: 'directory' });
   });
 });

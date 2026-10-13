@@ -429,3 +429,32 @@ describe('runGraphRules() portal links', () => {
     expect(finding?.finding.azurePortalLink).toBeUndefined();
   });
 });
+
+describe('runGraphRules() placement', () => {
+  const findingsOf = (events: RuleRunEvent<Finding>[]) =>
+    events.flatMap(e => (e.kind === 'finding' ? [e.finding] : []));
+
+  it('places a plain Graph finding in the directory, with no subscription and no resource group', async () => {
+    const ctx = fakeCtx(async () => [{ id: 'app-1', displayName: 'App' }]);
+    const [f] = findingsOf(await drain([baseRule()], ctx));
+
+    expect(f).toMatchObject({ placement: 'directory', subscriptionId: '' });
+    expect(f!.resourceGroup).toBeUndefined();
+    expect(f!.managementGroupId).toBeUndefined();
+  });
+
+  it('places an expanded credential finding in the directory too', async () => {
+    const rule = baseRule({ graphQuery: EXPAND_GQ });
+    const ctx = fakeCtx(async () => [{ id: 'app-1', displayName: 'App', passwordCredentials: [{ keyId: 'k1', endDateTime: isoDaysFromNow(3) }] }]);
+    const [f] = findingsOf(await drain([rule], ctx));
+
+    expect(f).toMatchObject({ placement: 'directory', subscriptionId: '' });
+  });
+
+  it('borrows no subscription from the context, whatever it lists', async () => {
+    const ctx = { ...fakeCtx(async () => [{ id: 'app-1' }]), subscriptionIds: ['sub-first', 'sub-second'] };
+    const [f] = findingsOf(await drain([baseRule()], ctx));
+
+    expect(f!.subscriptionId).toBe('');
+  });
+});

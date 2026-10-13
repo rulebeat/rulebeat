@@ -12,6 +12,7 @@
 import type { Severity } from './types';
 import { resolveDateWindow, type DateWindow } from './date-window';
 import { findingRows, type FindingRow } from './finding-rows';
+import { subscriptionValue } from './placement';
 import { parseCategoryParam } from './scans-link';
 import { SEVERITY_ORDER } from './severity';
 import {
@@ -326,7 +327,7 @@ function sortValue(item: ViewItem<ViewFinding>, field: ViewField): string | numb
     case 'category': return f.category;
     case 'severity': return SEVERITY_ORDER.indexOf(f.severity);
     case 'status': return f.status;
-    case 'subscription': return f.subscriptionId;
+    case 'subscription': return subscriptionValue(f);
     case 'resourceGroup': return f.resourceGroup;
     case 'location': return f.location;
     case 'resourceType': return f.resourceType;
@@ -406,7 +407,7 @@ export function builtinFieldValues(f: ViewFinding, field: BuiltinField): string[
     case 'category': return [f.category];
     case 'severity': return [f.severity];
     case 'status': return [f.status];
-    case 'subscription': return [f.subscriptionId];
+    case 'subscription': return [subscriptionValue(f)];
     case 'resourceGroup': return [f.resourceGroup ?? ''];
     case 'location': return [f.location ?? ''];
     case 'resourceType': return [f.resourceType ?? ''];

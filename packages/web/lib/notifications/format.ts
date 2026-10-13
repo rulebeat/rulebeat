@@ -3,6 +3,7 @@ import type { FindingRow } from '@/lib/finding-rows';
 import type { NotificationChannelType } from '@/lib/db/notification-channels';
 import type { ScheduleRun } from '@/lib/schedule-runs';
 import { isActivityRule } from '@/lib/finding-kinds';
+import { subscriptionText } from '@/lib/placement';
 import { tabForKind, type ViewTab } from '@/lib/view-response';
 
 export type NotificationPayload =
@@ -396,7 +397,7 @@ function webhookFinding(f: Finding) {
     category: f.category,
     resourceId: f.resourceId,
     resourceName: f.resourceName,
-    subscriptionId: f.subscriptionId,
+    subscriptionId: subscriptionText(f),
   };
 }
 

@@ -59,6 +59,8 @@ export interface CreateFakeContextOptions {
   /** What a query no fixture answers throws. The generator's default treats it as a build error;
    *  the running Demo passes the Demo's own reason instead (./live-context.ts). */
   unknownQuery?: (what: string) => Error;
+  /** The Log Analytics workspace the context reports as configured, when a caller has one. */
+  logAnalyticsWorkspaceId?: string;
 }
 
 /** One fresh context per simulated day: cheap (a handful of closures), and it means `.logs` only
@@ -77,6 +79,7 @@ export function createFakeContext(opts: CreateFakeContextOptions): FakeTenantCon
   return fakeTenantContext({
     tenantId: DEMO_TENANT_ID,
     subscriptionIds: DEMO_SUBSCRIPTIONS.map(s => s.id),
+    logAnalyticsWorkspaceId: opts.logAnalyticsWorkspaceId,
     rows: kql => {
       const trimmed = kql.trim();
       const fixture = queryIndex.get(trimmed);
