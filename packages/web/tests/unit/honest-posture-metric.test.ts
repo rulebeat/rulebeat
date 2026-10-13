@@ -16,6 +16,7 @@ import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { SNAPSHOT_FORMULA_VERSION } from '@/lib/db/snapshots';
 import { resetDb, clearRules } from '../helpers/db';
 import type { Finding } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const RULE_PASSING = 'test-rule-passing';
@@ -86,14 +87,14 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('a rule with zero findings but a failed or never-run last status counts as unknown, never passing', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.current.passingRules).toBe(1);
     expect(summary.current.unknownRules).toBe(2);
   });
 
   it('an activity-kind rule is excluded from totalRules/passingRules and counted in activityRuleCount', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     // 4 state rules (passing, unknown-failed, unknown-never-run, with-finding). The activity
     // rule is not one of them, no matter how healthy its own status looks.
@@ -102,7 +103,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('perCategory carries the same passing/total its pct is rounded from (spec 033)', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     const mod = summary.perCategory.find(m => m.category === CATEGORY);
 
     expect(mod).toBeDefined();
@@ -112,7 +113,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('perSubscription carries the same passingRules/totalRules its pct is rounded from (spec 033)', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     const sub = summary.perSubscription.find(s => s.subscriptionId === 'sub-1');
 
     expect(sub).toBeDefined();
@@ -155,7 +156,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
 
-    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.baseline, 'the old-formula row should not have blanked the baseline entirely').not.toBeNull();
     expect(summary.baseline!.pct, 'the old-formula row leaked into the baseline blend').toBe(25);
@@ -166,7 +167,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.baseline).not.toBeNull();
     expect(summary.baseline!.pct).toBe(75);

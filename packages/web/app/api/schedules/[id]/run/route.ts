@@ -24,6 +24,6 @@ export async function POST(
   });
 
   // Scans can take minutes: fire and let the client poll /runs for status instead of blocking.
-  void executeSchedule(schedule);
+  void executeSchedule(schedule, actor.access);
   return NextResponse.json({ started: true }, { status: 202 });
 }

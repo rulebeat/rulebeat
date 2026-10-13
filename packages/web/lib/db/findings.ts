@@ -11,6 +11,8 @@ import { loadRules } from '../rules';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
 import { derivePlacement } from './finding-placement';
+import type { Access } from '../access-model';
+import { SYSTEM_ACCESS } from '../system-access';
 import { subscriptionFilterSql } from './subscription-filter';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
@@ -213,7 +215,7 @@ export function rowToSummary(row: Omit<Row, 'evidence' | 'evidenceRows'>): Findi
  *  A since-fixed finding was still real and new when a run first detected it, and notifying about it
  *  after the fact remains correct (spec 025). Fingerprints with no row (the rule was hard-deleted via
  *  deleteFindingsForRule()) are silently omitted, not errored. */
-export async function getFindingsByFingerprints(fingerprints: string[]): Promise<FindingRecord[]> {
+export async function getFindingsByFingerprints(fingerprints: string[], access: Access): Promise<FindingRecord[]> {
   if (fingerprints.length === 0) return [];
   const out: FindingRecord[] = [];
   for (const fpChunk of chunk(fingerprints, CHUNK_SIZE)) {
@@ -236,13 +238,13 @@ function listConditions(opts: ListFindingsOptions) {
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
-export async function listFindings(opts: ListFindingsOptions = {}): Promise<FindingRecord[]> {
+export async function listFindings(access: Access, opts: ListFindingsOptions = {}): Promise<FindingRecord[]> {
   const rows = await many(db.select().from(findingsTable).where(listConditions(opts)));
   return toRecords(rows);
 }
 
 /** listFindings() without the rows: the same findings, never reading the stored row columns. */
-export async function listFindingSummaries(opts: ListFindingsOptions = {}): Promise<FindingSummary[]> {
+export async function listFindingSummaries(access: Access, opts: ListFindingsOptions = {}): Promise<FindingSummary[]> {
   const rows = await many(db.select(summaryColumns).from(findingsTable).where(listConditions(opts)));
   return rows.map(rowToSummary);
 }
@@ -497,7 +499,7 @@ export async function getFindingEventCounts(opts: {
   resourceGroups?: string[];
   severities?: string[];
   sinceDate: string;
-}): Promise<FindingEventCount[]> {
+}, access: Access): Promise<FindingEventCount[]> {
   // Only the lifecycle types are counted, in the query itself: an event of any other type (row_added,
   // row_removed) must not add a day, move the first day back or turn an empty window into a series.
   const conditions = [
@@ -554,7 +556,7 @@ export async function getActivityOccurrenceCounts(opts: {
   resourceGroups?: string[];
   severities?: string[];
   sinceDate: string;
-}): Promise<ActivityOccurrenceCount[]> {
+}, access: Access): Promise<ActivityOccurrenceCount[]> {
   const conditions = [
     sql`${findingEventsTable.occurredAt} >= ${opts.sinceDate}`,
     inArray(findingEventsTable.type, ['created', 'occurred']),
@@ -702,7 +704,7 @@ export async function backfillFindings(): Promise<void> {
       if (await getMeta(recordKey)) continue;
 
       // A read that throws is a failure (caught below), not "nothing to rebuild".
-      const history = await loadStoredScanBlobs(category.id); // newest-first
+      const history = await loadStoredScanBlobs(category.id, SYSTEM_ACCESS); // newest-first
       if (history.length === 0) continue;
 
       // Scans that found nothing have no findings to rebuild. This also covers a category whose only
@@ -713,7 +715,7 @@ export async function backfillFindings(): Promise<void> {
       // A scan saved since the start that could not rebuild this category already holds its current
       // findings. Replaying older scans over them would mark open findings Fixed with a past date and
       // move last seen backwards, so the category is left as that scan left it.
-      if (await hasScanLeftOutOfHistory(category.id)) {
+      if (await hasScanLeftOutOfHistory(category.id, SYSTEM_ACCESS)) {
         tryAgain++;
         console.error(`[backfill] did not rebuild finding history for '${category.id}': a scan of it was saved since an earlier start, and replaying older scans would overwrite its findings. Its stored findings are kept.`);
         continue;

@@ -13,6 +13,7 @@ import { rules as rulesTable } from '@/lib/db/tables';
 import { executeTarget } from '@/lib/run-executor';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_OK = 'test-rule-ok';
 const RULE_FAIL = 'test-rule-fail';
@@ -70,7 +71,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
   it('maps a category coverage of partial to a run-level status of partial, without any thrown error', async () => {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      {
+      { access: EVERYTHING_ACCESS,
         triggeredBy: 'manual',
         ctx: makeCtx({
           [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
@@ -103,7 +104,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      {
+      { access: EVERYTHING_ACCESS,
         triggeredBy: 'manual',
         ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [] } }),
       },
@@ -119,7 +120,7 @@ describe('await executeTarget() partial coverage (spec 004)', () => {
   it('regression guard: a fully clean run across all rules still reports success', async () => {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      {
+      { access: EVERYTHING_ACCESS,
         triggeredBy: 'manual',
         ctx: makeCtx({
           [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },

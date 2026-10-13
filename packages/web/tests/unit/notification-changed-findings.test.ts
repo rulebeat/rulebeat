@@ -27,6 +27,7 @@ import {
 import type { Severity } from '@/lib/types';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const PROBLEM_RULE = 'changed-problem-rule';
@@ -132,7 +133,7 @@ describe('changed findings in a scheduled scan', () => {
   async function seed(resultsByRule: Record<string, Result[]>): Promise<void> {
     await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: ctxWith(resultsByRule) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith(resultsByRule) },
     );
     expect(fetchMock).not.toHaveBeenCalled();
   }
@@ -140,18 +141,18 @@ describe('changed findings in a scheduled scan', () => {
   async function runScheduled(ctx: TenantContext) {
     return executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx },
     );
   }
 
   async function runScheduledAndWait(resultsByRule: Record<string, Result[]>) {
     const run = await runScheduled(ctxWith(resultsByRule));
-    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent'));
     return run;
   }
 
   async function fingerprintOf(resourceName: string): Promise<string> {
-    return (await listFindings({ status: 'active' })).find(f => f.resourceName === resourceName)!.fingerprint;
+    return (await listFindings(EVERYTHING_ACCESS, { status: 'active' })).find(f => f.resourceName === resourceName)!.fingerprint;
   }
 
   describe('a second scan that returns an extra row for an open finding', () => {
@@ -206,7 +207,7 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduledAndWait({ [PROBLEM_RULE]: [BASIC, TLS] });
 
-      expect((await getRun(run.id))!.changedFindings).toEqual([
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.changedFindings).toEqual([
         { fingerprint: await fingerprintOf('vm-1'), addedRows: [{ retirement: 'TLS 1.0' }] },
       ]);
     });
@@ -218,7 +219,7 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduled(ctxWith({ [PROBLEM_RULE]: [BASIC, TLS] }));
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -229,8 +230,8 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduled(ctxWith({ [PROBLEM_RULE]: [BASIC] }));
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
-      expect((await getRun(run.id))!.changedFindings).toEqual([]);
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.changedFindings).toEqual([]);
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -250,7 +251,7 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduled(ctxWith({}, { failing: true }));
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -261,7 +262,7 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduled(ctxWith({ [PROBLEM_RULE]: [BASIC, TLS] }));
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -272,10 +273,10 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: [BASIC, TLS] }) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: [BASIC, TLS] }) },
       );
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -335,7 +336,7 @@ describe('changed findings in a scheduled scan', () => {
 
       const run = await runScheduled(ctxWith({ [ADVISORY_RULE]: [BASIC, TLS] }));
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -382,14 +383,14 @@ describe('changed findings in a scheduled scan', () => {
       });
 
       expect(await recoverInterruptedRuns()).toBe(1);
-      expect((await getRun(crashed.id))!.notifyStatus).toBe('pending');
+      expect((await getRun(crashed.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('pending');
       expect(await recoverPendingNotifications()).toBe(1);
 
       expect(sentTo('off')).toHaveLength(1);
       expect(sentTo('off')[0]!.changed!.findings).toEqual([expect.objectContaining({
         fingerprint, resourceName: 'vm-1', addedRows: [{ retirement: 'TLS 1.0' }],
       })]);
-      expect((await getRun(crashed.id))!.notifyStatus).toBe('sent');
+      expect((await getRun(crashed.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
     });
 
     it('sends the changed finding of a finished run whose dispatch never happened', async () => {
@@ -411,7 +412,7 @@ describe('changed findings in a scheduled scan', () => {
 
       expect(await recoverInterruptedRuns()).toBe(1);
 
-      expect((await getRun(crashed.id))!.notifyStatus).toBe('none');
+      expect((await getRun(crashed.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
     });
   });
 
@@ -428,7 +429,7 @@ describe('changed findings in a scheduled scan', () => {
         changedFindings: [{ fingerprint: 'fp-a', addedRows: [{ n: 2 }] }, { fingerprint: 'fp-b', addedRows: [{ n: 3 }] }],
       });
 
-      expect((await getRun(started.id))!.changedFindings).toEqual([
+      expect((await getRun(started.id, EVERYTHING_ACCESS))!.changedFindings).toEqual([
         { fingerprint: 'fp-a', addedRows: [{ n: 1 }, { n: 2 }] },
         { fingerprint: 'fp-b', addedRows: [{ n: 3 }] },
       ]);
@@ -447,7 +448,7 @@ describe('changed findings in a scheduled scan', () => {
         changedFindings: [{ fingerprint: 'fp-a', addedRows: [{ retirement: 'TLS 1.0', name: 'vm-1' }, { n: 3 }, { n: 2 }] }],
       });
 
-      expect((await getRun(started.id))!.changedFindings).toEqual([
+      expect((await getRun(started.id, EVERYTHING_ACCESS))!.changedFindings).toEqual([
         { fingerprint: 'fp-a', addedRows: [{ name: 'vm-1', retirement: 'TLS 1.0' }, { n: 2 }, { n: 3 }] },
       ]);
     });
@@ -461,7 +462,7 @@ describe('changed findings in a scheduled scan', () => {
 
       await recordCategoryProgress(started.id, { totalFindings: 2, newFindings: 0, newFindingFingerprints: [] });
 
-      expect((await getRun(started.id))!.changedFindings).toEqual([{ fingerprint: 'fp-a', addedRows: [{ n: 1 }] }]);
+      expect((await getRun(started.id, EVERYTHING_ACCESS))!.changedFindings).toEqual([{ fingerprint: 'fp-a', addedRows: [{ n: 1 }] }]);
     });
   });
 });

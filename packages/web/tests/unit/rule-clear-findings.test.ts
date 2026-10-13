@@ -22,6 +22,7 @@ import { upsertDailySnapshot, getSnapshots } from '@/lib/db/snapshots';
 import { resetDb, clearRules, countRows } from '../helpers/db';
 import type { Finding } from '@/lib/types';
 import type { Role } from '@/lib/rbac';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -124,7 +125,7 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ruleId: BUILTIN_RULE, deleted: 2 });
 
-    expect((await listFindings()).map(f => f.fingerprint)).toEqual([customB1.fingerprint]);
+    expect((await listFindings(EVERYTHING_ACCESS)).map(f => f.fingerprint)).toEqual([customB1.fingerprint]);
 
     const del = await deleteRule(
       new Request(`http://localhost/api/rules/${BUILTIN_RULE}`, { method: 'DELETE' }),
@@ -142,7 +143,7 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
 
     expect(await countRows('findings')).toBe(1);
     expect(await countRows('finding_events')).toBe(1);
-    const [remaining] = await listFindings();
+    const [remaining] = await listFindings(EVERYTHING_ACCESS);
     expect(remaining!.fingerprint).toBe(customB1.fingerprint);
     expect(remaining!.status).toBe('active');
     expect(await eventsFor(customB1.fingerprint)).toHaveLength(1);
@@ -155,11 +156,11 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
     await syncScanFindings({
       scanId: 's2', category: CATEGORY, ranRuleIds: [BUILTIN_RULE], findings: [builtinA1], finishedAt: new Date().toISOString(),
     });
-    expect((await listFindings({ status: 'fixed' })).map(f => f.fingerprint)).toEqual([builtinA2.fingerprint]);
+    expect((await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).map(f => f.fingerprint)).toEqual([builtinA2.fingerprint]);
 
     const res = await callClear(BUILTIN_RULE);
     expect(await res.json()).toMatchObject({ deleted: 2 });
-    expect(await listFindings({ status: 'fixed' })).toHaveLength(0);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).toHaveLength(0);
   });
 
   it('writes exactly one audit entry naming the rule and the number of findings removed', async () => {
@@ -204,12 +205,12 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
 
   it("refreshes today's aggregate posture snapshot for the category", async () => {
     await upsertDailySnapshot(CATEGORY);
-    const before = await getSnapshots({ categories: [CATEGORY] });
+    const before = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] });
     expect(before.at(-1)!.activeFindings).toBe(3);
 
     await callClear(BUILTIN_RULE);
 
-    const after = await getSnapshots({ categories: [CATEGORY] });
+    const after = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] });
     expect(after.at(-1)!.activeFindings).toBe(1);
   });
 
@@ -219,12 +220,12 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
   // until the next scan. The aggregate row above is always rewritten, so the headline is right.
   it.fails("today's per-subscription snapshot row keeps the cleared count until the next scan", async () => {
     await upsertDailySnapshot(CATEGORY);
-    const before = await getSnapshots({ categories: [CATEGORY], subscriptionId: SUB_BUILTIN });
+    const before = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY], subscriptionId: SUB_BUILTIN });
     expect(before.at(-1)!.activeFindings).toBe(2);
 
     await callClear(BUILTIN_RULE);
 
-    const after = await getSnapshots({ categories: [CATEGORY], subscriptionId: SUB_BUILTIN });
+    const after = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY], subscriptionId: SUB_BUILTIN });
     expect(after.at(-1)!.activeFindings).toBe(0);
   });
 });

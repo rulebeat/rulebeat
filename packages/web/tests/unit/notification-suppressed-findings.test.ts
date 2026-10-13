@@ -24,6 +24,7 @@ import {
 } from '@/lib/ssrf-guard';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_ID = 'suppressed-notify-rule';
 const CATEGORY = 'security';
@@ -104,14 +105,14 @@ describe('notifications leave out suppressed findings', () => {
   async function createAndResolveVm(): Promise<string> {
     await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: ctxWithVms(['vm-old']) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWithVms(['vm-old']) },
     );
-    const fingerprint = (await listFindings({ status: 'active' }))[0]!.fingerprint;
+    const fingerprint = (await listFindings(EVERYTHING_ACCESS, { status: 'active' }))[0]!.fingerprint;
     await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: ctxWithVms([]) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWithVms([]) },
     );
-    expect((await listFindings({ status: 'fixed' })).map(f => f.fingerprint)).toEqual([fingerprint]);
+    expect((await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).map(f => f.fingerprint)).toEqual([fingerprint]);
     return fingerprint;
   }
 
@@ -128,10 +129,10 @@ describe('notifications leave out suppressed findings', () => {
   async function runScheduled(names: string[]) {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: ctxWithVms(names) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWithVms(names) },
     );
     // Dispatch is fired without being awaited; wait for the outbox row to close.
-    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent'));
     return run;
   }
 
@@ -142,7 +143,7 @@ describe('notifications leave out suppressed findings', () => {
     const run = await runScheduled(['vm-old', 'vm-new']);
 
     expect(run.newFindings).toBe(2); // the scan still counts both as new
-    const fresh = (await listFindings({ status: 'active' })).map(f => f.fingerprint).filter(fp => fp !== suppressed);
+    const fresh = (await listFindings(EVERYTHING_ACCESS, { status: 'active' })).map(f => f.fingerprint).filter(fp => fp !== suppressed);
     expect(fresh).toHaveLength(1);
     expect(sentFingerprints()).toEqual([fresh]);
   });
@@ -155,7 +156,7 @@ describe('notifications leave out suppressed findings', () => {
 
     expect(run.newFindings).toBe(1);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('a suppression that has expired no longer hides the finding', async () => {
@@ -190,9 +191,9 @@ describe('notifications leave out suppressed findings', () => {
     async function activeFingerprints(names: string[]): Promise<string[]> {
       await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'manual', ctx: ctxWithVms(names) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWithVms(names) },
       );
-      return (await listFindings({ status: 'active' })).map(f => f.fingerprint);
+      return (await listFindings(EVERYTHING_ACCESS, { status: 'active' })).map(f => f.fingerprint);
     }
 
     it('leaves a suppressed finding out of the recovered payload and sends the rest', async () => {
@@ -203,7 +204,7 @@ describe('notifications leave out suppressed findings', () => {
       expect(await recoverPendingNotifications()).toBe(1);
 
       expect(sentFingerprints()).toEqual([[second]]);
-      expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
     });
 
     it('sends nothing for a recovered run whose findings are all suppressed, and closes it', async () => {
@@ -214,7 +215,7 @@ describe('notifications leave out suppressed findings', () => {
       expect(await recoverPendingNotifications()).toBe(1);
 
       expect(fetchMock).not.toHaveBeenCalled();
-      expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
     });
 
     it('sends a recovered finding whose suppression has expired', async () => {

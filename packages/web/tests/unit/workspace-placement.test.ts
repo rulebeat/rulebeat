@@ -13,6 +13,7 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { placeWorkspaceFindings } from '@/lib/workspace-placement';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const LOGS_RULE = 'test-workspace-step-logs-rule';
 const WORKSPACE_CUSTOMER_ID = '99999999-9999-9999-9999-999999999999';
@@ -37,7 +38,7 @@ async function scanLeavingUnplaceableFinding(): Promise<string> {
     logsQuery: JSON.stringify({ kql: 'SigninLogs | where ResultType != 0', timeWindowDays: 30, dimensionKeyField: 'UserId' }),
   }));
   const ctx = fakeTenantContext({ logAnalyticsWorkspaceId: WORKSPACE_CUSTOMER_ID, rows: () => [], logsRows: [{ UserId: 'u1' }] });
-  const { summary } = await runCategoryScan((await getCategory('identity'))!, { ctx, ruleIds: [LOGS_RULE], now: T1 });
+  const { summary } = await runCategoryScan((await getCategory('identity'))!, { access: EVERYTHING_ACCESS, ctx, ruleIds: [LOGS_RULE], now: T1 });
   return summary.id!;
 }
 

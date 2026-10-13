@@ -22,6 +22,7 @@ import { saveSuppressions } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ARG_RULE = 'test-rows-arg-rule';
 const OTHER_ARG_RULE = 'test-rows-other-arg-rule';
@@ -62,14 +63,14 @@ const insertLogsRule = () => insertRule(LOGS_RULE, {
 
 async function scan(ruleIds: string[], ctxOptions: Parameters<typeof fakeTenantContext>[0], hoursFromBase = 0) {
   const category = (await getCategory('identity'))!;
-  return runCategoryScan(category, {
+  return runCategoryScan(category, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext(ctxOptions),
     ruleIds,
     now: new Date(Date.UTC(2026, 5, 1, hoursFromBase)),
   });
 }
 
-const findingFor = async (fingerprint: string) => (await listFindings()).find(f => f.fingerprint === fingerprint);
+const findingFor = async (fingerprint: string) => (await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint);
 
 beforeEach(async () => {
   await resetDb();
@@ -85,7 +86,7 @@ describe('Resource Graph rules', () => {
     const other = { ...VM_TWO, retirement: 'Basic tier', retiresOn: '2026-09-30' };
     await scan([ARG_RULE], { rows: [first, other, second, third] });
 
-    const stored = await listFindings();
+    const stored = await listFindings(EVERYTHING_ACCESS);
     expect(stored.map(f => f.resourceId).sort()).toEqual([VM_ONE_ID, String(VM_TWO.id)].sort());
 
     const vmOne = (await findingFor(computeFingerprint(ARG_RULE, VM_ONE_ID)))!;
@@ -141,15 +142,15 @@ describe('Resource Graph rules', () => {
 
     await scan([ARG_RULE], { rows: [{ ...VM_ONE, retirement: 'a' }, { ...VM_ONE, retirement: 'b' }] }, 24);
 
-    expect((await queryActiveFindings(FILTERS)).map(f => f.fingerprint)).not.toContain(fingerprint);
-    expect((await queryActiveFindingsWithRows({ ...FILTERS, includeSuppressed: true })).find(f => f.fingerprint === fingerprint)!.rows).toHaveLength(2);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(f => f.fingerprint)).not.toContain(fingerprint);
+    expect((await queryActiveFindingsWithRows({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint)!.rows).toHaveLength(2);
   });
 
   it('keeps the same resource found by two rules as two findings, each with its own rows', async () => {
     await insertArgRule(OTHER_ARG_RULE);
     await scan([ARG_RULE, OTHER_ARG_RULE], { rows: [{ ...VM_ONE, n: 1 }, { ...VM_ONE, n: 2 }] });
 
-    const stored = (await listFindings()).filter(f => f.resourceId === VM_ONE_ID);
+    const stored = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.resourceId === VM_ONE_ID);
     expect(stored.map(f => f.ruleId).sort()).toEqual([ARG_RULE, OTHER_ARG_RULE].sort());
     expect(new Set(stored.map(f => f.fingerprint)).size).toBe(2);
     expect(stored.every(f => f.rows.length === 2)).toBe(true);
@@ -168,7 +169,7 @@ describe('Microsoft Graph rules', () => {
       ],
     });
 
-    const stored = await listFindings();
+    const stored = await listFindings(EVERYTHING_ACCESS);
     expect(stored).toHaveLength(2);
     const appOne = (await findingFor(computeFingerprint(GRAPH_RULE, 'applications/app-1')))!;
     expect(appOne.rows.map(r => r.owner)).toEqual(['alice', 'bob']);
@@ -188,7 +189,7 @@ describe('Logs rules', () => {
       ],
     });
 
-    const stored = await listFindings();
+    const stored = await listFindings(EVERYTHING_ACCESS);
     expect(stored.map(f => f.dimensionKey).sort()).toEqual(['u1', 'u2']);
     const userOne = (await findingFor(computeActivityFingerprint(LOGS_RULE, 'u1')))!;
     expect(userOne.kind).toBe('activity');

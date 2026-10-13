@@ -22,6 +22,7 @@ import { computeFingerprint } from '@rulebeat/core';
 import { makeSample, upgradeInProcess } from '../fixtures/upgrade';
 import { fakeTenantContext, argRow, TEST_SUB_A, type FakeTenantContext } from '../helpers/fake-azure';
 import { ACTIVE_RESOURCE_ID, CUSTOM_RULES, FIXED_DATES, SUPPRESSED_RESOURCE_ID } from '../fixtures/populate';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 // Module scope, before any dynamic import below: build a populated database in the previous
 // version's shape, upgrade it, and point the app at it.
@@ -63,7 +64,7 @@ async function scanWith(rows: Record<string, unknown>[]): Promise<FakeTenantCont
     rows: kql => (/advisorresources/i.test(kql) ? [] : rows),
     subscriptionIds: [TEST_SUB_A],
   });
-  await scanRunner.runCategoryScan(category!, { ctx });
+  await scanRunner.runCategoryScan(category!, { access: EVERYTHING_ACCESS, ctx });
   return ctx;
 }
 
@@ -87,24 +88,24 @@ describe('TS-25 · scanning after an upgrade', () => {
   it('25-10 · pre-upgrade scan history is added to, not replaced', async () => {
     // The fixture's history was recorded against a different category than the one being scanned,
     // which is the point: a new scan must not disturb history it has nothing to do with.
-    const otherCategoryBefore = (await history.listScanMetas('cost')).length;
+    const otherCategoryBefore = (await history.listScanMetas('cost', EVERYTHING_ACCESS)).length;
     expect(otherCategoryBefore, 'history from before the upgrade was dropped').toBeGreaterThan(0);
 
-    const before = (await history.listScanMetas(RULE.category)).length;
+    const before = (await history.listScanMetas(RULE.category, EVERYTHING_ACCESS)).length;
     await scanWith([]);
 
-    expect((await history.listScanMetas(RULE.category)).length, 'the new scan did not record a run').toBe(before + 1);
-    expect((await history.listScanMetas('cost')).length, 'the scan clobbered unrelated history').toBe(otherCategoryBefore);
+    expect((await history.listScanMetas(RULE.category, EVERYTHING_ACCESS)).length, 'the new scan did not record a run').toBe(before + 1);
+    expect((await history.listScanMetas('cost', EVERYTHING_ACCESS)).length, 'the scan clobbered unrelated history').toBe(otherCategoryBefore);
   });
 
   it('25-10 · a finding that still exists keeps its age and its count', async () => {
-    const before = (await findings.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const before = (await findings.listFindings(EVERYTHING_ACCESS)).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(before, 'the pre-upgrade finding is missing').toBeDefined();
     const timesSeenBefore = before!.timesSeen;
 
     await scanWith([argRow({ id: ACTIVE_RESOURCE_ID, name: 'vm-legacy-01' })]);
 
-    const matching = (await findings.listFindings()).filter(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const matching = (await findings.listFindings(EVERYTHING_ACCESS)).filter(f => f.resourceId === ACTIVE_RESOURCE_ID);
     // One row, not two. A second row for the same resource means the scan failed to recognise its
     // own finding, which is what happens if the fingerprint it computes no longer matches the one
     // on disk.
@@ -119,7 +120,7 @@ describe('TS-25 · scanning after an upgrade', () => {
     // findings are keyed by sha256(ruleId::resourceId), recomputed on every scan. If an upgrade
     // rewrites a rule's id, every fingerprint derived from it silently stops matching.
     const rule = (await rules.loadRules()).find(r => r.name === RULE.name)!;
-    const stored = (await findings.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const stored = (await findings.listFindings(EVERYTHING_ACCESS)).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(stored).toBeDefined();
     expect(computeFingerprint(rule.id, ACTIVE_RESOURCE_ID)).toBe(stored!.fingerprint);
   });
@@ -133,7 +134,7 @@ describe('TS-25 · scanning after an upgrade', () => {
     const rule = (await rules.loadRules()).find(r => r.name === RULE.name)!;
     const suppressedFingerprint = computeFingerprint(rule.id, SUPPRESSED_RESOURCE_ID);
     const { loadSuppressions } = await import('@/lib/suppressions');
-    const active = (await loadSuppressions()).map(s => s.fingerprint);
+    const active = (await loadSuppressions(EVERYTHING_ACCESS)).map(s => s.fingerprint);
 
     expect(
       active.includes(suppressedFingerprint),

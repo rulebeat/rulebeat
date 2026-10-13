@@ -16,7 +16,7 @@ export async function GET() {
     // Raw subscription ids only: display-name enrichment happens client-side via
     // /api/azure/subscriptions, same as the explorer does. Only rules that actually have findings
     // are listed, so the dropdown never offers a rule with nothing to filter to.
-    const { subscriptions, resourceGroups, rules } = await queryFilterOptions();
+    const { subscriptions, resourceGroups, rules } = await queryFilterOptions(actor.access);
 
     return Response.json({ categories, tags, subscriptions, resourceGroups, rules });
   } catch (err) {

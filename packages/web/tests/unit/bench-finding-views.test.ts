@@ -26,6 +26,7 @@ import {
 } from '../../scripts/bench/finding-views';
 import { isActiveSuppression, loadSuppressions } from '@/lib/suppressions';
 import { countRows, resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const OPTIONS = { findings: 60, rowsPerFinding: 3, seed: 7, warmRuns: 1 };
 
@@ -100,12 +101,12 @@ describe('a run over a tiny database', () => {
     expect(dataset.findings).toBe(60);
     expect(await countRows('findings')).toBe(60);
     expect(await countRows('finding_rows')).toBe(dataset.rows);
-    const stored = await listFindings({});
+    const stored = await listFindings(EVERYTHING_ACCESS, {});
     expect(stored.reduce((sum, f) => sum + (f.rows?.length ?? 0), 0)).toBe(dataset.rows);
     expect(stored.filter(f => f.status === 'fixed')).toHaveLength(dataset.fixed);
     expect(dataset.fixed).toBeGreaterThan(0);
     expect(dataset.suppressed).toBeGreaterThan(0);
-    expect(await loadSuppressions()).toHaveLength(dataset.suppressed);
+    expect(await loadSuppressions(EVERYTHING_ACCESS)).toHaveLength(dataset.suppressed);
     expect(dataset.averageRowBytes).toBeGreaterThanOrEqual(ROW_TARGET_BYTES);
   });
 
@@ -129,15 +130,15 @@ describe('a run over a tiny database', () => {
 
   it('compares two paths that answer the same question', async () => {
     const view = emptyView();
-    const suppressedFingerprints = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
-    const inFingerprintOrder = (await listFindings({ kinds: RESULTS_KINDS })).sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0));
+    const suppressedFingerprints = new Set((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint));
+    const inFingerprintOrder = (await listFindings(EVERYTHING_ACCESS, { kinds: RESULTS_KINDS })).sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0));
     const today = applyView(inFingerprintOrder, view, { suppressedFingerprints, showSuppressed: false });
-    const now = await queryView(view, { tab: 'results', showSuppressed: false });
+    const now = await queryView(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
     expect(now.total).toBe(today.total);
     expect(now.total).toBeGreaterThan(0);
     expect(now.items.map(i => i.finding.fingerprint)).toEqual(today.items.map(i => i.finding.fingerprint));
     // Showing suppressed findings adds the ones on this tab (an advisory's belongs to the other).
-    expect((await queryView(view, { tab: 'results', showSuppressed: true })).total).toBeGreaterThan(now.total);
+    expect((await queryView(view, { tab: 'results', showSuppressed: true }, EVERYTHING_ACCESS)).total).toBeGreaterThan(now.total);
   });
 
   it('measures a row-filtered view that narrows the rows the default view sends', () => {
@@ -161,13 +162,13 @@ describe('a run over a tiny database', () => {
     expect(byName('export: CSV, row-filtered view').bytes).toBeLessThan(byName('export: CSV, default view').bytes);
 
     // The file measured is the file the route streams for the same view.
-    const file = await new Response(await streamExport(openExport(emptyView(), { tab: 'results', showSuppressed: false }), 'csv')).text();
+    const file = await new Response(await streamExport(openExport(emptyView(), { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS), 'csv')).text();
     expect(Buffer.byteLength(file)).toBe(byName('export: CSV, default view').bytes);
   });
 
   it('measures the snapshot of the biggest scan: the page, a later page and a filtered one, which answer what the route answers', async () => {
     const scanId = await largestSnapshotScanId();
-    const first = await querySnapshot(scanId, emptySnapshotQuery());
+    const first = await querySnapshot(scanId, emptySnapshotQuery(), EVERYTHING_ACCESS);
     expect(first.status).toBe('ok');
     if (first.status !== 'ok') return;
     // The biggest scan holds at least as many records as any other, and the page is the run's first.
@@ -176,12 +177,12 @@ describe('a run over a tiny database', () => {
     const mostRecords = Math.max(...(await many(db.select({ n: sql<number | string>`count(*)` }).from(scanFindings).groupBy(scanFindings.scanId))).map(r => Number(r.n)));
     expect(first.response.total).toBe(mostRecords);
 
-    const filtered = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search });
+    const filtered = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search }, EVERYTHING_ACCESS);
     expect(filtered.status === 'ok' && filtered.response.total).toBeGreaterThan(0);
     expect(filtered.status === 'ok' && filtered.response.total).toBeLessThan(first.response.total);
     expect(filtered.status === 'ok' && filtered.response.items.every(i => i.severity === 'high' && i.title.includes('disks'))).toBe(true);
     // Search alone narrows the run too, so the filter measured is not the severity doing all the work.
-    const severityOnly = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity] });
+    const severityOnly = await querySnapshot(scanId, { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity] }, EVERYTHING_ACCESS);
     expect(severityOnly.status === 'ok' && filtered.status === 'ok' && filtered.response.total < severityOnly.response.total).toBe(true);
 
     const bytes = (name: string) => result.measurements.find(m => m.name === name)!.bytes!;
@@ -207,7 +208,7 @@ describe('a run over a tiny database', () => {
     expect(Date.parse(older!.startedAt)).toBeLessThan(Date.parse(newer!.startedAt));
     expect(records[0]).toBe(Number((await one(db.select({ n: sql<number | string>`count(*)` }).from(scanFindings).where(eq(scanFindings.scanId, ids[0]))))!.n));
 
-    const answer = await queryCompare(ids[0], ids[1], emptyCompareQuery());
+    const answer = await queryCompare(ids[0], ids[1], emptyCompareQuery(), EVERYTHING_ACCESS);
     expect(answer.status).toBe('ok');
     if (answer.status !== 'ok') return;
     const { totals } = answer.response;
@@ -220,7 +221,7 @@ describe('a run over a tiny database', () => {
 
     const bytes = (name: string) => result.measurements.find(m => m.name === name)!.bytes!;
     expect(bytes('compare: added page')).toBe(Buffer.byteLength(JSON.stringify(answer.response)));
-    const fixed = await queryCompare(ids[0], ids[1], { side: 'fixed', page: 1 });
+    const fixed = await queryCompare(ids[0], ids[1], { side: 'fixed', page: 1 }, EVERYTHING_ACCESS);
     expect(fixed.status === 'ok' && bytes('compare: fixed page')).toBe(fixed.status === 'ok' ? Buffer.byteLength(JSON.stringify(fixed.response)) : -1);
   });
 
@@ -237,9 +238,9 @@ describe('a run over a tiny database', () => {
     const scanId = await largestSnapshotScanId();
     const byName = (name: string) => result.exports.find(e => e.name === name)!;
     const query = { ...emptySnapshotQuery(), severity: [...BENCH_SNAPSHOT_FILTERS.severity], search: BENCH_SNAPSHOT_FILTERS.search };
-    const csv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery()), 'csv')).text();
-    const filteredCsv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, query), 'csv')).text();
-    const json = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery()), 'json')).text();
+    const csv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery(), EVERYTHING_ACCESS), 'csv')).text();
+    const filteredCsv = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, query, EVERYTHING_ACCESS), 'csv')).text();
+    const json = await new Response(await streamSnapshotExport(openSnapshotExport(scanId, emptySnapshotQuery(), EVERYTHING_ACCESS), 'json')).text();
     expect(Buffer.byteLength(csv)).toBe(byName('export: snapshot CSV, whole run').bytes);
     expect(Buffer.byteLength(filteredCsv)).toBe(byName('export: snapshot CSV, filtered with search').bytes);
     expect(Buffer.byteLength(json)).toBe(byName('export: snapshot JSON, whole run').bytes);

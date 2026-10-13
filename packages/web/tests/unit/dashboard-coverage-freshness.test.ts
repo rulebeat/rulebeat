@@ -15,6 +15,7 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_OK = 'test-rule-ok';
 const RULE_FAIL = 'test-rule-fail';
@@ -71,7 +72,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
 
   it('reports the security category as partial, with the failed rule named, after a mixed scan', async () => {
     const category = (await getCategory('security'))!;
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({
         [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
         [MARKER_FAIL]: { failWith: new Error('429 Too Many Requests') },
@@ -79,7 +80,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBe('partial');
@@ -88,7 +89,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
 
   it('reports complete coverage and no incomplete rules after a fully clean scan', async () => {
     const category = (await getCategory('security'))!;
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({
         [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
         [MARKER_FAIL]: { rows: [] },
@@ -96,7 +97,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBe('complete');
@@ -104,7 +105,7 @@ describe('coverage-freshness widget data (spec 004)', () => {
   });
 
   it('reports null coverage for a category that has never been scanned', async () => {
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     const security = summary.perCategory.find(c => c.category === 'security');
 
     expect(security?.lastScanCoverage).toBeNull();

@@ -4,11 +4,12 @@ import { azureError } from '@/lib/api-error';
 import { getResourceTypeFields } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { readSchemaCache, writeSchemaCache } from '@/lib/schema-cache';
+import type { Access } from '@/lib/access-model';
 
 export const dynamic = 'force-dynamic';
 
-async function fetchAndCache(resourceType: string): Promise<string[] | null> {
-  const ctx = await createTenantContext();
+async function fetchAndCache(resourceType: string, access: Access): Promise<string[] | null> {
+  const ctx = await createTenantContext(access);
   const fields = await getResourceTypeFields(resourceType, ctx);
   if (fields.length === 0) return null;
   await writeSchemaCache(resourceType, fields);
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
 
   // Stale cache: serve immediately, refresh in background
   if (cached?.stale) {
-    void fetchAndCache(resourceType).catch(err => {
+    void fetchAndCache(resourceType, actor.access).catch(err => {
       console.error('[RuleBeat] background resource-schema refresh failed:', err);
     });
     return NextResponse.json({
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
 
   // No cache: fetch from ARM now (first time for this type)
   try {
-    const fields = await fetchAndCache(resourceType);
+    const fields = await fetchAndCache(resourceType, actor.access);
     if (!fields) {
       return NextResponse.json(
         { error: `No schema found for '${resourceType}'. Verify the resource type name (e.g. microsoft.compute/virtualmachines).` },

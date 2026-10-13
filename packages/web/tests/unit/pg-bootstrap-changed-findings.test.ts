@@ -11,6 +11,7 @@ import { dbReady, pgDb } from '@/lib/db/client';
 import { bootstrapPg } from '@/lib/db/pg/bootstrap';
 import { getRun, recordCategoryProgress } from '@/lib/schedule-runs';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const FINGERPRINT = 'pg-changed-fp';
 
@@ -34,7 +35,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds the changed-finding columns t
 
     await bootstrapPg(pgDb!);
 
-    expect(await getRun('pg-run-1')).toMatchObject({ newFindingFingerprints: [FINGERPRINT], notifyStatus: 'pending', changedFindings: [] });
+    expect(await getRun('pg-run-1', EVERYTHING_ACCESS)).toMatchObject({ newFindingFingerprints: [FINGERPRINT], notifyStatus: 'pending', changedFindings: [] });
     const event = await pgDb!.execute(sql.raw(`SELECT type, row_payload FROM finding_events WHERE id = 'pg-evt-1'`));
     expect(event.rows).toEqual([{ type: 'created', row_payload: null }]);
 
@@ -48,6 +49,6 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds the changed-finding columns t
     });
     const added = await pgDb!.execute(sql.raw(`SELECT row_payload FROM finding_events WHERE id = 'pg-evt-2'`));
     expect(added.rows).toEqual([{ row_payload: '{"retirement":"TLS 1.0"}' }]);
-    expect((await getRun('pg-run-1'))!.changedFindings).toEqual([{ fingerprint: FINGERPRINT, addedRows: [{ retirement: 'TLS 1.0' }] }]);
+    expect((await getRun('pg-run-1', EVERYTHING_ACCESS))!.changedFindings).toEqual([{ fingerprint: FINGERPRINT, addedRows: [{ retirement: 'TLS 1.0' }] }]);
   });
 });

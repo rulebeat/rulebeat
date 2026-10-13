@@ -37,6 +37,7 @@ import {
 import { resolveDateWindow } from '@/lib/date-window';
 import type { Finding, Suppression } from '@/lib/types';
 import { clearRules, resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'xs-rule-a'; // security, tags: [baseline]
 const RULE_B = 'xs-rule-b'; // security, tags: [cost-hygiene]
@@ -81,7 +82,7 @@ async function toExplorerState(filters: WidgetFilters): Promise<ExplorerFilterSt
     showSuppressed: !!filters.includeSuppressed,
     suppressedFingerprints: filters.includeSuppressed
       ? new Set()
-      : new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint)),
+      : new Set((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint)),
     categories: new Set(filters.categories ?? []),
     severities: new Set(filters.severities ?? []),
     status: 'open',
@@ -98,11 +99,11 @@ async function toExplorerState(filters: WidgetFilters): Promise<ExplorerFilterSt
 
 async function explorerFingerprints(filters: WidgetFilters): Promise<Set<string>> {
   const state = await toExplorerState(filters);
-  return new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
+  return new Set((await buildExplorerData(EVERYTHING_ACCESS)).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
 }
 
 async function dashboardFingerprints(filters: WidgetFilters): Promise<Set<string>> {
-  return new Set((await queryActiveFindings(filters)).map(f => f.fingerprint));
+  return new Set((await queryActiveFindings(filters, EVERYTHING_ACCESS)).map(f => f.fingerprint));
 }
 
 function sorted(s: Set<string>): string[] {
@@ -298,7 +299,7 @@ describe('widget click-throughs and multi-category dashboard filters (RB-QA-020,
     const parsedCategories = parseCategoryParam(params.get('category') ?? undefined);
     const state = await toExplorerState(filters);
     state.categories = new Set(parsedCategories);
-    const exp = new Set((await buildExplorerData()).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
+    const exp = new Set((await buildExplorerData(EVERYTHING_ACCESS)).findings.filter(f => matchesExplorerFilters(f, state)).map(f => f.fingerprint));
     expect(sorted(dash)).toEqual(sorted(exp));
   });
 });

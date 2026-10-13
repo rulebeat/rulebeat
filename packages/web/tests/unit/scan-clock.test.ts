@@ -30,6 +30,7 @@ import { getSnapshots } from '@/lib/db/snapshots';
 import { executeTarget } from '@/lib/run-executor';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const SIMULATED_DAY_1 = new Date('2026-05-01T09:00:00.000Z');
 const SIMULATED_DAY_2 = new Date('2026-05-02T09:00:00.000Z');
@@ -61,7 +62,7 @@ beforeEach(async () => {
 describe('await runCategoryScan() respects an injected now', () => {
   it('stamps the scan summary startedAt/finishedAt from opts.now, not the real clock', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k1'));
-    const { summary } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    const { summary } = await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, now: SIMULATED_DAY_1, ctx });
 
     expect(summary.startedAt).toBe(SIMULATED_DAY_1.toISOString());
     expect(summary.finishedAt).toBe(SIMULATED_DAY_1.toISOString());
@@ -71,7 +72,7 @@ describe('await runCategoryScan() respects an injected now', () => {
   it('defaults to the real clock when no now is passed', async () => {
     const before = Date.now();
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k2'));
-    const { summary } = await runCategoryScan(await identityCategory(), { ctx });
+    const { summary } = await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, ctx });
     const after = Date.now();
 
     const started = new Date(summary.startedAt).getTime();
@@ -81,7 +82,7 @@ describe('await runCategoryScan() respects an injected now', () => {
 
   it('stamps finding_events.occurred_at from opts.now: the correctness fix', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k3'));
-    const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    const { newFindings } = await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, now: SIMULATED_DAY_1, ctx });
 
     expect(newFindings).toHaveLength(1);
     const event = await execOne(db.select().from(findingEvents).where(eq(findingEvents.fingerprint, newFindings[0]!.fingerprint)));
@@ -93,12 +94,12 @@ describe('await runCategoryScan() respects an injected now', () => {
 
   it('stamps a resolved event from the resolving scan\'s own now, not the creating scan\'s', async () => {
     const createCtx = fakeTenantContext(expiringAppFixture(10, 'k4'));
-    const { newFindings } = await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx: createCtx });
+    const { newFindings } = await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, now: SIMULATED_DAY_1, ctx: createCtx });
     const fingerprint = newFindings[0]!.fingerprint;
 
     // Day 2: the same app, no more expiring credentials. The finding resolves.
     const resolveCtx = fakeTenantContext({ graphRows: [] });
-    await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_2, ctx: resolveCtx });
+    await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, now: SIMULATED_DAY_2, ctx: resolveCtx });
 
     const event = (await execMany(db.select().from(findingEvents)
       .where(eq(findingEvents.fingerprint, fingerprint))))
@@ -110,9 +111,9 @@ describe('await runCategoryScan() respects an injected now', () => {
 
   it('passes opts.now through to the daily snapshot it writes', async () => {
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k5'));
-    await runCategoryScan(await identityCategory(), { now: SIMULATED_DAY_1, ctx });
+    await runCategoryScan(await identityCategory(), { access: EVERYTHING_ACCESS, now: SIMULATED_DAY_1, ctx });
 
-    const snapshots = await getSnapshots({ categories: ['identity'] });
+    const snapshots = await getSnapshots(EVERYTHING_ACCESS, { categories: ['identity'] });
     const dateKey = SIMULATED_DAY_1.toISOString().slice(0, 10);
     expect(snapshots.some(s => s.date === dateKey)).toBe(true);
   });
@@ -123,7 +124,7 @@ describe('await executeTarget() threads opts.now and opts.ctx end to end', () =>
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k6'));
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['identity'] },
-      { triggeredBy: 'manual', ctx, now: SIMULATED_DAY_1 },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx, now: SIMULATED_DAY_1 },
     );
 
     expect(run.status).toBe('success');
@@ -135,7 +136,7 @@ describe('await executeTarget() threads opts.now and opts.ctx end to end', () =>
     const ctx = fakeTenantContext(expiringAppFixture(10, 'k7'));
     await executeTarget(
       { targetType: 'categories', targetValues: ['identity'] },
-      { triggeredBy: 'manual', ctx, now: SIMULATED_DAY_1 },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx, now: SIMULATED_DAY_1 },
     );
 
     expect(ctx.queries).toEqual([]); // identity never issues ARG queries

@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     const { view, tab, showSuppressed } = request.value;
     return Response.json(await queryGroup(view, {
       tab, showSuppressed, groupPath: groupPath.value, groupPage: parsePageParam(params.get('groupPage')),
-    }));
+    }, actor.access));
   } catch (err) {
     return serverError('Could not load the group', err);
   }

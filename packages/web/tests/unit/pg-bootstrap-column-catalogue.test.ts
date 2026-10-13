@@ -15,6 +15,7 @@ import { listFindings } from '@/lib/db/findings';
 import { listReturnedColumns } from '@/lib/db/column-catalogue';
 import { addSuppression, loadSuppressions } from '@/lib/suppressions';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = 'pg-catalogue-rule';
 const OTHER_RULE = 'pg-catalogue-other-rule';
@@ -56,12 +57,12 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg builds the column catalogue', () =
 
     await bootstrapPg(pgDb!);
 
-    expect(await listReturnedColumns([RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
-    expect(await listReturnedColumns([OTHER_RULE])).toEqual(['other']);
-    expect((await loadSuppressions()).filter(s => s.fingerprint === 'pg-fp-a')).toEqual([
+    expect(await listReturnedColumns(EVERYTHING_ACCESS, [RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
+    expect(await listReturnedColumns(EVERYTHING_ACCESS, [OTHER_RULE])).toEqual(['other']);
+    expect((await loadSuppressions(EVERYTHING_ACCESS)).filter(s => s.fingerprint === 'pg-fp-a')).toEqual([
       expect.objectContaining({ id: 'pg-catalogue-sup', reason: 'Accepted risk' }),
     ]);
-    expect((await listFindings()).find(f => f.fingerprint === 'pg-fp-a')).toMatchObject({ firstSeenAt: '2026-01-02T03:04:05.000Z', timesSeen: 9 });
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === 'pg-fp-a')).toMatchObject({ firstSeenAt: '2026-01-02T03:04:05.000Z', timesSeen: 9 });
     expect(await raw(`SELECT * FROM findings ORDER BY fingerprint`)).toEqual(findingsBefore);
     expect(await raw(`SELECT key FROM meta WHERE key = '${COLUMN_CATALOGUE_MARKER}'`)).toHaveLength(1);
   });
@@ -74,7 +75,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg builds the column catalogue', () =
 
     await bootstrapPg(pgDb!);
 
-    expect(await listReturnedColumns([RULE])).toEqual(['added-by-a-scan', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
+    expect(await listReturnedColumns(EVERYTHING_ACCESS, [RULE])).toEqual(['added-by-a-scan', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
   });
 
   it('does not build before the rows are copied', async () => {
@@ -111,7 +112,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg builds the column catalogue', () =
     await raw(`DROP TRIGGER fail_build ON column_catalogue`);
     await raw(`DROP FUNCTION fail_build()`);
     await bootstrapPg(pgDb!);
-    expect(await listReturnedColumns([RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
+    expect(await listReturnedColumns(EVERYTHING_ACCESS, [RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
     expect(await raw(`SELECT key FROM meta WHERE key = '${COLUMN_CATALOGUE_MARKER}'`)).toHaveLength(1);
   });
 });

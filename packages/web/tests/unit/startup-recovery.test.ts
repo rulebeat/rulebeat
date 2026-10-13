@@ -22,6 +22,7 @@ import { setDnsLookupForTests, resetDnsLookupForTests, setGuardedTransportForTes
 import { resetDb, clearRules, execRaw } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
 import type { Finding } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'test-rule-a';
 const CATEGORY = 'security';
@@ -115,7 +116,7 @@ describe('recoverInterruptedRuns (pass 1)', () => {
     const recovered = await recoverInterruptedRuns();
     expect(recovered).toBe(1);
 
-    const after = (await getRun(run.id))!;
+    const after = (await getRun(run.id, EVERYTHING_ACCESS))!;
     expect(after.status).toBe('error');
     expect(after.finishedAt).not.toBeNull();
     expect(after.error).toBe('Run did not complete. The server restarted or crashed while this scan was in progress.');
@@ -158,7 +159,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('leaves an already-sent run untouched: no re-dispatch', async () => {
@@ -175,7 +176,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('marks a pending run sent without dispatching when its fingerprints belong to a hard-deleted rule', async () => {
@@ -196,7 +197,7 @@ describe('recoverPendingNotifications (pass 2)', () => {
 
     expect(recovered).toBe(1);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 });
 
@@ -228,7 +229,7 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
     );
 
     // await executeTarget() fires dispatch without awaiting it: give the microtask queue a chance to
@@ -237,10 +238,10 @@ describe('await executeTarget() live path (notifyStatus persisted before + after
     // durable, so a crash here is recovered after the stale window, and exclusive, so a second
     // process seeing the same row does not send it again meanwhile.
     await vi.waitFor(async () => expect(fetchMock).toHaveBeenCalled());
-    expect((await getRun(run.id))!.notifyStatus).toBe('sending');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sending');
 
     resolveFetch(fakeResponse(200, 'ok'));
-    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent'));
   });
 });
 
@@ -250,7 +251,7 @@ describe('notifyStatus stays "none" when there is nothing to notify', () => {
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: makeCtx({ [MARKER_OK]: { rows: [argRow({ name: 'vm-1' })] } }) },
     );
 
     expect(run.newFindings).toBeGreaterThan(0);
@@ -263,7 +264,7 @@ describe('notifyStatus stays "none" when there is nothing to notify', () => {
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_EMPTY]: { rows: [] } }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: makeCtx({ [MARKER_EMPTY]: { rows: [] } }) },
     );
 
     expect(run.newFindings).toBe(0);

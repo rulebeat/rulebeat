@@ -21,6 +21,7 @@ import { saveSuppressions, loadSuppressions, isActiveSuppression } from '@/lib/s
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import type { Finding, Suppression } from '@/lib/types';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'test-activity-rule-a';
 const RULE_B = 'test-state-rule-b';
@@ -100,7 +101,7 @@ describe('syncScanFindings: activity finding creation and repeat occurrence', ()
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
 
     expect(result).toEqual({ created: [f.fingerprint], reactivated: [], resolved: [] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.kind).toBe('activity');
     expect(row.dimensionKey).toBe('principal-a');
     expect(row.resourceId).toBeUndefined();
@@ -121,7 +122,7 @@ describe('syncScanFindings: activity finding creation and repeat occurrence', ()
     const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
 
     expect(result).toEqual({ created: [], reactivated: [], resolved: [] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d2);
@@ -136,7 +137,7 @@ describe('syncScanFindings: activity finding creation and repeat occurrence', ()
     await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(3) });
     await syncScanFindings({ scanId: 's3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(2) });
 
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.timesSeen).toBe(3);
     expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created', 'occurred', 'occurred']);
   });
@@ -155,7 +156,7 @@ describe('syncScanFindings: an activity finding never resolves via the resolve s
     const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
 
     expect(result.resolved).toEqual([]);
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.resolvedAt).toBeUndefined();
     expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created']);
@@ -174,8 +175,8 @@ describe('syncScanFindings: an activity finding never resolves via the resolve s
     const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
 
     expect(result.resolved).toEqual([state.fingerprint]);
-    expect((await listFindings()).find(r => r.fingerprint === activity.fingerprint)!.status).toBe('active');
-    expect((await listFindings()).find(r => r.fingerprint === state.fingerprint)!.status).toBe('fixed');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === activity.fingerprint)!.status).toBe('active');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === state.fingerprint)!.status).toBe('fixed');
   });
 });
 
@@ -186,7 +187,7 @@ describe('getActivityOccurrenceCounts', () => {
     const d1 = daysAgo(2);
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A, RULE_B], findings: [activity, state], finishedAt: d1 });
 
-    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) }, EVERYTHING_ACCESS);
     expect(counts.find(c => c.date === d1.slice(0, 10))?.count).toBe(1);
   });
 
@@ -197,7 +198,7 @@ describe('getActivityOccurrenceCounts', () => {
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
     await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
 
-    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getActivityOccurrenceCounts({ sinceDate: daysAgo(5).slice(0, 10) }, EVERYTHING_ACCESS);
     expect(counts.find(c => c.date === d1.slice(0, 10))?.count).toBe(1);
     expect(counts.find(c => c.date === d2.slice(0, 10))?.count).toBe(1);
   });
@@ -209,14 +210,14 @@ describe('getActivityOccurrenceCounts', () => {
     const day = d1.slice(0, 10);
     const since = daysAgo(5).slice(0, 10);
 
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: [CATEGORY] })).find(c => c.date === day)?.count).toBe(1);
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: ['cost'] })).find(c => c.date === day)).toBeUndefined();
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: [RULE_A] })).find(c => c.date === day)?.count).toBe(1);
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: ['nope'] })).find(c => c.date === day)).toBeUndefined();
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-x'] })).find(c => c.date === day)?.count).toBe(1);
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-other'] })).find(c => c.date === day)).toBeUndefined();
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['high'] })).find(c => c.date === day)?.count).toBe(1);
-    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['low'] })).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: [CATEGORY] }, EVERYTHING_ACCESS)).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, categories: ['cost'] }, EVERYTHING_ACCESS)).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: [RULE_A] }, EVERYTHING_ACCESS)).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, ruleIds: ['nope'] }, EVERYTHING_ACCESS)).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-x'] }, EVERYTHING_ACCESS)).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, subscriptions: ['sub-other'] }, EVERYTHING_ACCESS)).find(c => c.date === day)).toBeUndefined();
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['high'] }, EVERYTHING_ACCESS)).find(c => c.date === day)?.count).toBe(1);
+    expect((await getActivityOccurrenceCounts({ sinceDate: since, severities: ['low'] }, EVERYTHING_ACCESS)).find(c => c.date === day)).toBeUndefined();
   });
 });
 
@@ -226,7 +227,7 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
-    const loaded = await loadSuppressions();
+    const loaded = await loadSuppressions(EVERYTHING_ACCESS);
     expect(loaded).toHaveLength(1);
     expect(loaded[0]!.resourceId).toBeUndefined();
     expect(isActiveSuppression(loaded[0]!)).toBe(true);
@@ -237,7 +238,7 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
     await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
-    expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
-    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).map(r => r.fingerprint)).toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
 });

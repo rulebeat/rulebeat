@@ -28,6 +28,7 @@ import {
 import { resetDb } from '../helpers/db';
 import { referenceInputs, wire } from '../helpers/view-reference';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockRequireRole = vi.fn();
 vi.mock('@/lib/api-auth', () => ({ requireRole: (...args: unknown[]) => mockRequireRole(...args) }));
@@ -147,11 +148,11 @@ async function scanAt(moment: Moment): Promise<void> {
   };
   for (const categoryId of ['security', 'cost', 'reliability'] as const) {
     const ruleIds = Object.entries(ARG_RULES).filter(([, plan]) => plan.category === categoryId).map(([id]) => id);
-    await runCategoryScan((await getCategory(categoryId))!, {
+    await runCategoryScan((await getCategory(categoryId))!, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: rowsFor, subscriptionIds: [TEST_SUB_A, TEST_SUB_B] }), ruleIds, now: new Date(AT[moment]),
     });
   }
-  await runCategoryScan((await getCategory('identity'))!, {
+  await runCategoryScan((await getCategory('identity'))!, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext({ logsRows: () => LOGS_AT[moment] }), ruleIds: [LOGS_RULE], now: new Date(AT[moment]),
   });
 }
@@ -418,7 +419,7 @@ describe('what the fixture holds, so the reference itself is pinned', () => {
   });
 
   it('still offers a Logs rule in the dashboard filter lists, though its findings are on the Activity tab', async () => {
-    const { rules } = await queryFilterOptions();
+    const { rules } = await queryFilterOptions(EVERYTHING_ACCESS);
     expect(rules.map(r => r.id)).toContain(LOGS_RULE);
   });
 
@@ -451,7 +452,7 @@ async function getFrom(route: RouteHandler, name: string, view: View, params: Re
 }
 
 const fingerprintOf = async (ruleId: string, resourceName: string) =>
-  (await listFindings()).find(r => r.ruleId === ruleId && r.resourceName === resourceName)!.fingerprint;
+  (await listFindings(EVERYTHING_ACCESS)).find(r => r.ruleId === ruleId && r.resourceName === resourceName)!.fingerprint;
 
 describe('GET /api/findings/rows answers one finding\'s rows as the explorer pages them', () => {
   interface RowsCase { name: string; view?: View; tab?: ViewTab; rule: string; resource: string; rowsPage?: number; found?: boolean }
@@ -472,7 +473,7 @@ describe('GET /api/findings/rows answers one finding\'s rows as the explorer pag
   ];
 
   it.each(ROWS_CASES)('$name', async ({ view = make({}), tab = 'results', rule, resource, rowsPage, found = true }) => {
-    const fingerprint = (await listFindings()).find(r => r.ruleId === rule && (r.resourceName === resource || r.dimensionKey === resource))!.fingerprint;
+    const fingerprint = (await listFindings(EVERYTHING_ACCESS)).find(r => r.ruleId === rule && (r.resourceName === resource || r.dimensionKey === resource))!.fingerprint;
     const res = await getFrom(rowsRoute, 'rows', view, { tab, fingerprint, ...(rowsPage ? { rowsPage: String(rowsPage) } : {}) });
     const { findings, options, ctx } = await referenceInputs(tab, false);
     const expected = buildFindingRowsResponse(findings, view, ctx, { tab, fingerprint, rowsPage: rowsPage ?? 1 });

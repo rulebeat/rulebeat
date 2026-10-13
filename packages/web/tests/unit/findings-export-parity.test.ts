@@ -27,6 +27,7 @@ import type { FindingRowsResponse, ViewResponse, ViewTab } from '@/lib/view-resp
 import { resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockRequireRole = vi.fn();
 vi.mock('@/lib/api-auth', () => ({ requireRole: (...args: unknown[]) => mockRequireRole(...args) }));
@@ -85,7 +86,7 @@ async function scanAt(moment: Moment): Promise<void> {
   };
   for (const categoryId of ['security', 'reliability'] as const) {
     const ruleIds = Object.entries(PLANS).filter(([, plan]) => plan.category === categoryId).map(([id]) => id);
-    await runCategoryScan((await getCategory(categoryId))!, {
+    await runCategoryScan((await getCategory(categoryId))!, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: rowsFor, subscriptionIds: [TEST_SUB_A, TEST_SUB_B] }), ruleIds, now: new Date(AT[moment]),
     });
   }

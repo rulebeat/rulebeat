@@ -1,5 +1,5 @@
 /**
- * Spec 006: proves await createTenantContext({ runId }) is actually wired at run-executor.ts's one
+ * Spec 006: proves await createTenantContext(access, { runId }) is actually wired at run-executor.ts's one
  * production call site, not just that the plumbing compiles. '@/lib/azure-credential' is mocked so
  * no real Azure/network call happens (CLAUDE.md: no live Azure calls in tests), but the mock still
  * calls the real createScanLogger() from '@/lib/server-logger', so a captured console.log line
@@ -12,9 +12,10 @@ import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { resetDb, clearRules } from '../helpers/db';
 import { createScanLogger } from '@/lib/server-logger';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 vi.mock('@/lib/azure-credential', () => ({
-  createTenantContext: async (logContext?: { runId?: string }) => ({
+  createTenantContext: async (_access: unknown, logContext?: { runId?: string }) => ({
     tenantId: 'test-tenant',
     subscriptionIds: ['sub-1'],
     credential: {},
@@ -55,7 +56,7 @@ describe('await executeTarget() wires runId into the production scan logger (spe
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      { triggeredBy: 'manual' },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual' },
     );
 
     const parsedLines = logSpy.mock.calls

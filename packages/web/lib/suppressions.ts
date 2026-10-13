@@ -3,8 +3,9 @@ import { db } from './db/client';
 import { suppressions as suppressionsTable } from './db/tables';
 import { many, one, run, inTransaction } from './db/exec';
 import type { Suppression } from './types';
+import type { Access } from './access-model';
 
-export async function loadSuppressions(): Promise<Suppression[]> {
+export async function loadSuppressions(access: Access): Promise<Suppression[]> {
   return (await many(db.select().from(suppressionsTable))).map(rowToSuppression);
 }
 

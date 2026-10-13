@@ -19,6 +19,7 @@ import type { AdvisoriesWidgetData } from '@/lib/advisories-widget';
 import type { ViewResponse } from '@/lib/view-response';
 import { clearRules, resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -52,7 +53,7 @@ async function scan(): Promise<void> {
       return [argRow({ name: 'low-1', resourceGroup: 'rg-low' })];
     },
   });
-  await runCategoryScan((await getCategory('security'))!, { ctx, ruleIds: [PROBLEM, ADV_HIGH, ADV_LOW] });
+  await runCategoryScan((await getCategory('security'))!, { access: EVERYTHING_ACCESS, ctx, ruleIds: [PROBLEM, ADV_HIGH, ADV_LOW] });
 }
 
 const widgetUrl = (query = '') => new Request(`http://localhost/api/widgets/advisories${query}`);
@@ -93,7 +94,7 @@ describe('the filter lists', () => {
     // a-two leaves the next scan, so it is fixed: its subscription and resource group stay listed.
     advRows = () => [argRow({ name: 'a-one' }), argRow({ name: 'a-three' })];
     await scan();
-    expect((await listFindings()).find(f => f.resourceName === 'a-two')?.status).toBe('fixed');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'a-two')?.status).toBe('fixed');
 
     const res = await filterOptions.GET();
     expect(res.status).toBe(200);
@@ -111,10 +112,10 @@ describe('the filter lists', () => {
   });
 
   it('name a rule from the rules table, and fall back to the finding title once the rule is gone', async () => {
-    const titles = new Map((await listFindings()).map(f => [f.ruleId, f.title ?? ''] as const));
+    const titles = new Map((await listFindings(EVERYTHING_ACCESS)).map(f => [f.ruleId, f.title ?? ''] as const));
     await execRun(db.update(rulesTable).set({ name: 'Renamed' }).where(eq(rulesTable.id, PROBLEM)));
     await execRun(db.delete(rulesTable).where(eq(rulesTable.id, ADV_LOW)));
-    const { rules } = await queryFilterOptions();
+    const { rules } = await queryFilterOptions(EVERYTHING_ACCESS);
     expect(rules).toEqual([
       { id: ADV_HIGH, name: `Rule ${ADV_HIGH}` },
       { id: PROBLEM, name: 'Renamed' },
@@ -124,7 +125,7 @@ describe('the filter lists', () => {
   });
 
   it('list the same subscriptions and resource groups the view route facets list when nothing is filtered', async () => {
-    const options = await queryFilterOptions();
+    const options = await queryFilterOptions(EVERYTHING_ACCESS);
     const results = await view('tab=results&status=all');
     const advisories = await view('tab=advisories&status=all');
     const facetValues = (r: ViewResponse, dim: 'subscription' | 'resourceGroup') => r.facets[dim].map(o => o.value);
@@ -157,7 +158,7 @@ describe('the Advisories widget', () => {
   });
 
   it('lists the same open Advisories, and counts the same total, as the view route for the same filters', async () => {
-    const found = (await listFindings()).find(f => f.resourceName === 'a-three')!;
+    const found = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'a-three')!;
     await addSuppression({
       id: 'wv-sup', fingerprint: found.fingerprint, resourceId: found.resourceId, reason: 'accepted', suppressedAt: NOW.toISOString(),
     });

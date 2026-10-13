@@ -3,6 +3,7 @@ import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { RESULTS_KINDS } from './finding-kinds';
 import type { RuleKind } from './types';
+import type { Access } from './access-model';
 
 // ---- Types ----
 
@@ -32,13 +33,14 @@ export interface ExplorerData {
  *  (the default), the Advisories tab for Advisory. It is a kind filter on the one findings table,
  *  not a second read model, so the next tab that needs a kind only passes its own. */
 export async function buildExplorerData(
+  access: Access,
   opts: { kinds?: readonly RuleKind[] } = {},
 ): Promise<ExplorerData> {
   const rules = await loadRules();
   const policyMap = new Map(rules.map(r => [r.id, r]));
   const categories = await listCategories();
 
-  const all = await listFindings({ kinds: opts.kinds ?? RESULTS_KINDS });
+  const all = await listFindings(access, { kinds: opts.kinds ?? RESULTS_KINDS });
 
   const findings: ExplorerFinding[] = all.map(({ evidence: _evidence, ...f }) => {
     const rule = policyMap.get(f.ruleId);

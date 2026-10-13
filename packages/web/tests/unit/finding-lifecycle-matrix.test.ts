@@ -30,6 +30,7 @@ import { saveSuppressions } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import type { Finding, Suppression } from '@/lib/types';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'test-rule-a';
 const CATEGORY = 'security';
@@ -89,7 +90,7 @@ describe('syncScanFindings: created / repeat / resolved / reactivated', () => {
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1 });
 
     expect(result).toEqual({ created: [f.fingerprint], reactivated: [], resolved: [] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d1);
@@ -110,7 +111,7 @@ describe('syncScanFindings: created / repeat / resolved / reactivated', () => {
     const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2 });
 
     expect(result).toEqual({ created: [], reactivated: [], resolved: [] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d2);
     expect(row.timesSeen).toBe(2);
@@ -125,7 +126,7 @@ describe('syncScanFindings: created / repeat / resolved / reactivated', () => {
     const result = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d2 });
 
     expect(result).toEqual({ created: [], reactivated: [], resolved: [f.fingerprint] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('fixed');
     expect(row.resolvedAt).toBe(d2);
 
@@ -143,7 +144,7 @@ describe('syncScanFindings: created / repeat / resolved / reactivated', () => {
     const result = await syncScanFindings({ scanId: 's3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d3 });
 
     expect(result).toEqual({ created: [], reactivated: [f.fingerprint], resolved: [] });
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.resolvedAt).toBeUndefined();
     expect(row.firstSeenAt).toBe(d1);
@@ -160,14 +161,14 @@ describe('syncScanFindings: 500-row CHUNK_SIZE boundary', () => {
     const many = Array.from({ length: 501 }, (_, i) => finding(`vm-${i}`));
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: many, finishedAt: daysAgo(2) });
     expect(result.created).toHaveLength(501);
-    expect(await listFindings({ status: 'active' })).toHaveLength(501);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'active' })).toHaveLength(501);
 
     // Only the first row survives: the other 500 must resolve, exercising the same chunk
     // boundary on the resolve side (both the seen-set lookup and the resolve UPDATE are chunked).
     const result2 = await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [many[0]!], finishedAt: daysAgo(1) });
     expect(result2.resolved).toHaveLength(500);
-    expect(await listFindings({ status: 'active' })).toHaveLength(1);
-    expect(await listFindings({ status: 'fixed' })).toHaveLength(500);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'active' })).toHaveLength(1);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).toHaveLength(500);
   });
 
   it('resolves stale findings correctly when ranRuleIds itself spans more than 500 ids', async () => {
@@ -177,11 +178,11 @@ describe('syncScanFindings: 500-row CHUNK_SIZE boundary', () => {
     const manyFindings = Array.from({ length: 501 }, (_, i) => finding(`vm-${i}`, { ruleId: `rule-${i}` }));
     const ranRuleIds = manyFindings.map(f => f.ruleId);
     await syncScanFindings({ scanId: 's0', category: CATEGORY, ranRuleIds, findings: manyFindings, finishedAt: daysAgo(2) });
-    expect(await listFindings({ status: 'active' })).toHaveLength(501);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'active' })).toHaveLength(501);
 
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds, findings: [], finishedAt: daysAgo(1) });
     expect(result.resolved).toHaveLength(501);
-    expect(await listFindings({ status: 'active' })).toHaveLength(0);
+    expect(await listFindings(EVERYTHING_ACCESS, { status: 'active' })).toHaveLength(0);
   });
 });
 
@@ -189,12 +190,12 @@ describe('deleteFindingsForRule', () => {
   it('removes both the findings row and its finding_events rows for that rule', async () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
-    expect(await listFindings()).toHaveLength(1);
+    expect(await listFindings(EVERYTHING_ACCESS)).toHaveLength(1);
     expect(await eventsFor(f.fingerprint)).toHaveLength(1);
 
     expect(await deleteFindingsForRule(RULE_A)).toBe(1);
 
-    expect(await listFindings()).toHaveLength(0);
+    expect(await listFindings(EVERYTHING_ACCESS)).toHaveLength(0);
     expect(await eventsFor(f.fingerprint)).toHaveLength(0);
   });
 
@@ -204,10 +205,10 @@ describe('deleteFindingsForRule', () => {
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [active, fixed], finishedAt: daysAgo(2) });
     // A second scan that ran the rule and no longer sees vm-fixed marks it fixed; the row stays.
     await syncScanFindings({ scanId: 's2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [active], finishedAt: daysAgo(1) });
-    expect((await listFindings({ status: 'fixed' })).map(f => f.fingerprint)).toEqual([fixed.fingerprint]);
+    expect((await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).map(f => f.fingerprint)).toEqual([fixed.fingerprint]);
 
     expect(await deleteFindingsForRule(RULE_A)).toBe(2);
-    expect(await listFindings()).toHaveLength(0);
+    expect(await listFindings(EVERYTHING_ACCESS)).toHaveLength(0);
 
     // Nothing left to delete is a normal outcome, not an error: the caller reports the number.
     expect(await deleteFindingsForRule(RULE_A)).toBe(0);
@@ -247,7 +248,7 @@ describe('duplicate ARG rows sharing one fingerprint (RB-QA-019, fixed)', () => 
     const result = await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f, f], finishedAt: daysAgo(1) });
 
     expect(result.created).toEqual([f.fingerprint]);
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.timesSeen).toBe(1);
     expect(await eventsFor(f.fingerprint)).toHaveLength(1);
   });
@@ -262,7 +263,7 @@ describe('duplicate ARG rows sharing one fingerprint (RB-QA-019, fixed)', () => 
     const result = await syncScanFindings({ scanId: 's3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f, f], finishedAt: d3 });
 
     expect(result.reactivated).toEqual([f.fingerprint]);
-    const row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.timesSeen).toBe(2);
     expect((await eventsFor(f.fingerprint)).map(e => e.type)).toEqual(['created', 'resolved', 'reactivated']);
@@ -273,7 +274,7 @@ describe('duplicate ARG rows sharing one fingerprint (RB-QA-019, fixed)', () => 
     const f2 = { ...f1, description: 'second observation' };
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f1, f2], finishedAt: daysAgo(1) });
 
-    const row = (await listFindings()).find(r => r.fingerprint === f1.fingerprint)!;
+    const row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f1.fingerprint)!;
     expect(row.description).toBe('second observation');
   });
 
@@ -297,7 +298,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
     await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
 
-    expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
   });
 
   it('a suppression with a future expiresAt still excludes the finding', async () => {
@@ -306,7 +307,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     const future = new Date(Date.now() + 30 * 86_400_000).toISOString();
     await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: future })]);
 
-    expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
   });
 
   it('an expired suppression no longer excludes the finding', async () => {
@@ -315,7 +316,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     const past = new Date(Date.now() - 1 * 86_400_000).toISOString();
     await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId, expiresAt: past })]);
 
-    expect((await queryActiveFindings(FILTERS)).map(r => r.fingerprint)).toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
 
   it('filters.includeSuppressed bypasses even a permanent suppression', async () => {
@@ -323,6 +324,6 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
     await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
 
-    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true })).map(r => r.fingerprint)).toContain(f.fingerprint);
+    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
 });

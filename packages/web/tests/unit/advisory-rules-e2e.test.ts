@@ -24,6 +24,7 @@ import { ADVISORY_KINDS, RESULTS_KINDS } from '@/lib/finding-kinds';
 import type { RuleKind } from '@rulebeat/core';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -63,7 +64,7 @@ function ctxWith(behavior: { problem?: 'ok' | 'fail'; advisory?: 'ok' | 'fail' }
 
 async function scan(behavior: Parameters<typeof ctxWith>[0] = {}) {
   const category = (await getCategory('security'))!;
-  return runCategoryScan(category, { ctx: ctxWith(behavior), ruleIds: [PROBLEM, ADVISORY] });
+  return runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: ctxWith(behavior), ruleIds: [PROBLEM, ADVISORY] });
 }
 
 async function asViewer(): Promise<void> {
@@ -84,17 +85,17 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('stores each finding under its rule\'s kind', async () => {
     await scan();
-    const all = await listFindings();
+    const all = await listFindings(EVERYTHING_ACCESS);
     expect(all.filter(f => f.ruleId === PROBLEM).map(f => f.kind)).toEqual(['state', 'state']);
     expect(all.filter(f => f.ruleId === ADVISORY).map(f => f.kind)).toEqual(['advisory', 'advisory', 'advisory']);
   });
 
   it('counts only Problem findings in posture, the severity breakdown and the daily snapshot', async () => {
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     expect(summary.current.activeFindings).toBe(2);
     expect(summary.current.severityCounts.high).toBe(2);
-    const snapshot = (await getSnapshots({ categories: ['security'] })).at(-1);
+    const snapshot = (await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1);
     expect(snapshot?.activeFindings).toBe(2);
   });
 
@@ -105,12 +106,12 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
       conditions: JSON.stringify([]), rawKql: 'resources // marker-activity', type: 'custom', kind: 'activity',
     }));
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     expect(summary.current.totalRules).toBe(1);
     expect(summary.current.activityRuleCount).toBe(1);
-    const scoped = await computeWidgetSummary({ ruleIds: [PROBLEM, ADVISORY, 'adv-e2e-activity'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const scoped = await computeWidgetSummary({ ruleIds: [PROBLEM, ADVISORY, 'adv-e2e-activity'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     expect(scoped.current.activityRuleCount).toBe(1);
-    const snapshot = (await getSnapshots({ categories: ['security'] })).at(-1);
+    const snapshot = (await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1);
     expect(snapshot?.totalRules).toBe(1);
     expect(snapshot?.activityRuleCount).toBe(1);
   });
@@ -129,7 +130,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('keeps Advisory findings out of the Results listing, and the tiles add up to Open', async () => {
     await scan();
-    const results = await buildExplorerData();
+    const results = await buildExplorerData(EVERYTHING_ACCESS);
     expect(results.findings.map(f => f.ruleId)).toEqual([PROBLEM, PROBLEM]);
     const stats = summarizeFindings(results.findings, WINDOW.from, WINDOW.to);
     const bySeverity = Object.values(stats.counts).reduce((a, b) => a + b, 0);
@@ -140,7 +141,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('lists Advisory findings, with their rule name, in the Advisories read model', async () => {
     await scan();
-    const advisories = await buildExplorerData({ kinds: ['advisory'] });
+    const advisories = await buildExplorerData(EVERYTHING_ACCESS, { kinds: ['advisory'] });
     expect(advisories.findings.map(f => f.resourceName).sort()).toEqual(['vm-a1', 'vm-a2', 'vm-a3']);
     expect(advisories.findings.every(f => f.policyName === ADVISORY && f.kind === 'advisory')).toBe(true);
     const stats = summarizeFindings(advisories.findings, WINDOW.from, WINDOW.to, ['advisory']);
@@ -150,7 +151,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('moves the same findings across a kind switch and rescan, keeping their age and suppression', async () => {
     await scan();
-    const before = (await listFindings()).find(f => f.ruleId === ADVISORY && f.resourceName === 'vm-a1')!;
+    const before = (await listFindings(EVERYTHING_ACCESS)).find(f => f.ruleId === ADVISORY && f.resourceName === 'vm-a1')!;
     await addSuppression({
       id: 'sup-1', fingerprint: before.fingerprint, resourceId: before.resourceId,
       reason: 'accepted', suppressedAt: new Date().toISOString(),
@@ -159,18 +160,18 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
     await updateRule(ADVISORY, { kind: 'state' });
     await scan();
 
-    const after = (await listFindings()).find(f => f.fingerprint === before.fingerprint)!;
+    const after = (await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === before.fingerprint)!;
     expect(after.kind).toBe('state');
     expect(after.firstSeenAt).toBe(before.firstSeenAt);
     expect(after.status).toBe('active');
-    expect((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint)).toContain(before.fingerprint);
-    expect((await buildExplorerData()).findings.filter(f => f.ruleId === ADVISORY)).toHaveLength(3);
-    expect((await buildExplorerData({ kinds: ['advisory'] })).findings).toHaveLength(0);
+    expect((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint)).toContain(before.fingerprint);
+    expect((await buildExplorerData(EVERYTHING_ACCESS)).findings.filter(f => f.ruleId === ADVISORY)).toHaveLength(3);
+    expect((await buildExplorerData(EVERYTHING_ACCESS, { kinds: ['advisory'] })).findings).toHaveLength(0);
 
     await updateRule(ADVISORY, { kind: 'advisory' });
     await scan();
-    expect((await buildExplorerData({ kinds: ['advisory'] })).findings).toHaveLength(3);
-    expect((await listFindings()).find(f => f.fingerprint === before.fingerprint)?.firstSeenAt).toBe(before.firstSeenAt);
+    expect((await buildExplorerData(EVERYTHING_ACCESS, { kinds: ['advisory'] })).findings).toHaveLength(3);
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === before.fingerprint)?.firstSeenAt).toBe(before.firstSeenAt);
   });
 
   it('leaves the rule, its findings and how they display unchanged by a kind switch, apart from the tab they list under', async () => {
@@ -178,7 +179,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
       const { kind, lastRunAt: _at, lastRunStatus: _status, ...rest } = (await loadRules()).find(r => r.id === ADVISORY)!;
       return { kind, rest };
     };
-    const rowsOf = async (kinds: readonly RuleKind[]) => (await buildExplorerData({ kinds })).findings
+    const rowsOf = async (kinds: readonly RuleKind[]) => (await buildExplorerData(EVERYTHING_ACCESS, { kinds })).findings
       .filter(f => f.ruleId === ADVISORY)
       .map(({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, rows, firstSeenAt, status }) =>
         ({ fingerprint, ruleId, policyName, severity, resourceId, resourceName, title, description, recommendation, rows, firstSeenAt, status }))
@@ -202,11 +203,11 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
   it('resolves an Advisory finding that stops appearing when the rule ran successfully', async () => {
     await scan();
     const category = (await getCategory('security'))!;
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: kql => (kql.includes(A_MARK) ? [advisoryRows[0]] : problemRows) }),
       ruleIds: [PROBLEM, ADVISORY],
     });
-    const advisory = (await listFindings()).filter(f => f.ruleId === ADVISORY);
+    const advisory = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === ADVISORY);
     expect(advisory.filter(f => f.status === 'active')).toHaveLength(1);
     expect(advisory.filter(f => f.status === 'fixed')).toHaveLength(2);
   });
@@ -217,7 +218,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
     expect(outcome.summary.coverage).toBe('partial');
     expect(outcome.summary.incompleteRules.map(r => r.ruleId)).toEqual([ADVISORY]);
     expect(outcome.summary.totalRules).toBe(2);
-    const advisory = (await listFindings()).filter(f => f.ruleId === ADVISORY);
+    const advisory = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === ADVISORY);
     expect(advisory).toHaveLength(3);
     expect(advisory.every(f => f.status === 'active')).toBe(true);
   });
@@ -225,19 +226,19 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
   it('leaves prior Advisories open when the Advisory rule is capped by a top-level take', async () => {
     await scan();
     await updateRule(ADVISORY, { rawKql: `resources | where type == "microsoft.compute/virtualmachines" | take 1 ${A_MARK}` });
-    const outcome = await runCategoryScan((await getCategory('security'))!, {
+    const outcome = await runCategoryScan((await getCategory('security'))!, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: kql => (kql.includes(A_MARK) ? [advisoryRows[0]] : problemRows) }),
       ruleIds: [PROBLEM, ADVISORY],
     });
     expect(outcome.summary.coverage).toBe('partial');
     expect(outcome.summary.incompleteRules).toEqual([expect.objectContaining({ ruleId: ADVISORY, status: 'capped' })]);
-    const advisory = (await listFindings()).filter(f => f.ruleId === ADVISORY);
+    const advisory = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === ADVISORY);
     expect(advisory.every(f => f.status === 'active')).toBe(true);
   });
 
   it('computes the fingerprint exactly as a Problem finding does', async () => {
     await scan();
-    const f = (await listFindings()).find(x => x.ruleId === ADVISORY && x.resourceName === 'vm-a1')!;
+    const f = (await listFindings(EVERYTHING_ACCESS)).find(x => x.ruleId === ADVISORY && x.resourceName === 'vm-a1')!;
     expect(f.fingerprint).toBe(computeFingerprint(ADVISORY, f.resourceId!));
   });
 });

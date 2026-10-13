@@ -4,6 +4,7 @@ import { columnCatalogue as catalogueTable, findings as findingsTable, findingRo
 import { many, one, run, type DbHandle } from './exec';
 import { chunk } from './chunk';
 import { COLUMN_CATALOGUE_MARKER, PathCollector } from './column-catalogue-build';
+import type { Access } from '../access-model';
 
 /**
  * The per-rule column catalogue (ADR 0007): which columns a rule's findings returned, kept beside the
@@ -27,7 +28,7 @@ export async function listReturnedColumnsIn(handle: DbHandle, ruleIds?: readonly
 }
 
 /** The distinct paths for `ruleIds` (every rule when omitted), sorted with `localeCompare`. */
-export function listReturnedColumns(ruleIds?: readonly string[]): Promise<string[]> {
+export function listReturnedColumns(access: Access, ruleIds?: readonly string[]): Promise<string[]> {
   return listReturnedColumnsIn(db, ruleIds);
 }
 

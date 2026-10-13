@@ -5,6 +5,8 @@ import { many, run } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
+import { SYSTEM_ACCESS } from '../system-access';
+import type { Access } from '../access-model';
 import { loadStoredScanBlobs } from './scan-blob-history';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
 import { getMeta, setMeta } from './meta';
@@ -86,8 +88,10 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   const activeRows = await many(db.select().from(findingsTable)
     .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'), countsInFindingTotalsSql)));
 
+  // A stored snapshot is an install-wide value, so it is computed under SYSTEM_ACCESS, never under
+  // whoever triggered the scan or backfill.
   const suppressedFingerprints = new Set(
-    (await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint),
+    (await loadSuppressions(SYSTEM_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint),
   );
   const visible = activeRows.filter(f => !suppressedFingerprints.has(f.fingerprint));
 
@@ -147,7 +151,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
  *  subscription's own trend history instead. */
-export async function getSnapshots(opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
+export async function getSnapshots(access: Access, opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
   const conditions = [eq(snapshotsTable.subscriptionId, opts.subscriptionId ?? '')];
   if (opts.categories && opts.categories.length > 0) conditions.push(inArray(snapshotsTable.category, opts.categories));
   if (opts.sinceDate) conditions.push(gte(snapshotsTable.date, opts.sinceDate));
@@ -159,7 +163,7 @@ export async function getSnapshots(opts: { categories?: string[]; subscriptionId
 
 /** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
  *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline. */
-export async function getBaselineSnapshots(categories: string[], onOrBefore: string, subscriptionId?: string): Promise<DailySnapshot[]> {
+export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
   const rows = await many(db.select().from(snapshotsTable)
     .where(and(
@@ -189,7 +193,7 @@ export async function backfillSnapshots(): Promise<void> {
 
   const categories = await listCategories();
   for (const category of categories) {
-    const history = await loadStoredScanBlobs(category.id); // newest-first
+    const history = await loadStoredScanBlobs(category.id, SYSTEM_ACCESS); // newest-first
     if (history.length === 0) continue;
 
     const byDay = new Map<string, (typeof history)[number]>();

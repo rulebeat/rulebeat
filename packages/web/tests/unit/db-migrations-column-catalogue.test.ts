@@ -11,6 +11,7 @@ import { makeSample, open } from '../fixtures/upgrade';
 import { runMigrations } from '@/lib/db/migrate';
 import { FINDING_ROWS_COPY_MARKER } from '@/lib/db/finding-rows-copy';
 import { COLUMN_CATALOGUE_MARKER } from '@/lib/db/column-catalogue-build';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = '9a4e7c31-5b2d-4e8f-8c6a-1d3f5b7a9c20';
 const OTHER_RULE = '1b2c3d4e-0000-4000-8000-000000000001';
@@ -101,12 +102,12 @@ describe('upgrading to the column catalogue', () => {
 
     const product = await startProductOn(sample.file);
 
-    expect(await product.listReturnedColumns([RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
-    expect(await product.listReturnedColumns([OTHER_RULE])).toEqual(['other']);
-    expect((await product.loadSuppressions()).filter(s => s.fingerprint === 'fp-a')).toEqual([
+    expect(await product.listReturnedColumns(EVERYTHING_ACCESS, [RULE])).toEqual(['date', 'feature', 'onlyWhenFixed', 'properties.sku.name']);
+    expect(await product.listReturnedColumns(EVERYTHING_ACCESS, [OTHER_RULE])).toEqual(['other']);
+    expect((await product.loadSuppressions(EVERYTHING_ACCESS)).filter(s => s.fingerprint === 'fp-a')).toEqual([
       expect.objectContaining({ id: 'sup-1', reason: 'Accepted risk' }),
     ]);
-    expect((await product.listFindings()).find(f => f.fingerprint === 'fp-a')).toMatchObject({
+    expect((await product.listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === 'fp-a')).toMatchObject({
       firstSeenAt: '2026-01-02T03:04:05.000Z', timesSeen: 9, status: 'active',
     });
 
@@ -138,7 +139,7 @@ describe('upgrading to the column catalogue', () => {
 
     const product = await startProductOn(sample.file);
 
-    expect(await product.listReturnedColumns([RULE])).toEqual(['a', 'b']);
+    expect(await product.listReturnedColumns(EVERYTHING_ACCESS, [RULE])).toEqual(['a', 'b']);
   });
 
   it('does not build before the rows are copied: no copy marker, no catalogue marker', async () => {

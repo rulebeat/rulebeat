@@ -5,6 +5,7 @@ import { findings as findingsTable, scanFindings as scanFindingsTable } from './
 import { inTransaction, one, run } from './db/exec';
 import { resolveLogAnalyticsWorkspaceId } from './log-analytics-workspace';
 import { createScanContext } from './scan-context';
+import { SYSTEM_ACCESS } from './system-access';
 
 /**
  * Moves the stored Logs findings to the workspace they sit at (#271).
@@ -40,7 +41,7 @@ export async function placeWorkspaceFindings(opts: { ctx?: TenantContext } = {})
     if (!ctx) {
       // No workspace configured is nothing to look up, and no reason to open an Azure connection.
       if (!(await resolveLogAnalyticsWorkspaceId())) return 'unresolved';
-      ctx = await createScanContext();
+      ctx = await createScanContext(SYSTEM_ACCESS);
     }
     const workspace = await resolveWorkspacePlacement(ctx);
     if (!workspace) return 'unresolved';

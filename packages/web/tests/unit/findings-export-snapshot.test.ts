@@ -15,6 +15,7 @@ import { openExport as openExportSource } from '@/lib/db/finding-views';
 import { streamExport } from '@/lib/export-stream';
 import { viewToSearchParams, emptyView, type View } from '@/lib/finding-view';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 
 const mockRequireRole = vi.fn();
@@ -134,7 +135,7 @@ describe.skipIf(dbKind !== 'sqlite')('an export that is being downloaded', () =>
 
   it('gives its connection up when the download stops reading', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const body = await streamExport(openExportSource(view, { tab: 'results', showSuppressed: false }), 'json', { stallMs: 50 });
+    const body = await streamExport(openExportSource(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS), 'json', { stallMs: 50 });
     const reader = body.getReader();
     open.push(reader);
     await reader.read();
@@ -146,14 +147,14 @@ describe.skipIf(dbKind !== 'sqlite')('an export that is being downloaded', () =>
 
   it('gives its connection up when the read fails after the first byte', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const failing: typeof openExportSource = (view, request) => use => openExportSource(view, request)(source => use({
+    const failing: typeof openExportSource = (view, request, access) => use => openExportSource(view, request, access)(source => use({
       columns: source.columns,
       async *batches() {
         yield* (async function* () { for await (const batch of source.batches()) { yield batch; break; } })();
         throw new Error('disk I/O error');
       },
     }));
-    const reader = (await streamExport(failing(view, { tab: 'results', showSuppressed: false }), 'json')).getReader();
+    const reader = (await streamExport(failing(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS), 'json')).getReader();
     open.push(reader);
     await reader.read();
     await expect(reader.read()).rejects.toThrow('The export was stopped before it finished.');

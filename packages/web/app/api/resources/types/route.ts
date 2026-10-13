@@ -4,11 +4,12 @@ import { azureError } from '@/lib/api-error';
 import { getAllResourceTypes } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { readResourceTypesCache, writeResourceTypesCache } from '@/lib/schema-cache';
+import type { Access } from '@/lib/access-model';
 
 export const dynamic = 'force-dynamic';
 
-async function fetchAndCache(): Promise<string[]> {
-  const ctx = await createTenantContext();
+async function fetchAndCache(access: Access): Promise<string[]> {
+  const ctx = await createTenantContext(access);
   const types = await getAllResourceTypes(ctx);
   if (types.length > 0) await writeResourceTypesCache(types);
   return types;
@@ -25,14 +26,14 @@ export async function GET() {
   }
 
   if (cached?.stale) {
-    void fetchAndCache().catch(err => {
+    void fetchAndCache(actor.access).catch(err => {
       console.error('[RuleBeat] background resource-types refresh failed:', err);
     });
     return NextResponse.json({ types: cached.types, source: 'cache-stale' });
   }
 
   try {
-    const types = await fetchAndCache();
+    const types = await fetchAndCache(actor.access);
     return NextResponse.json({ types, source: 'arm' });
   } catch (err) {
     return azureError('Could not load resource types from Azure', err);

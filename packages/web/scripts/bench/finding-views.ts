@@ -19,11 +19,15 @@
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import type { SQL } from 'drizzle-orm';
+import { everythingAccess } from '../../lib/access-model';
 import type { OpenExport } from '../../lib/export-stream';
 import type { View } from '../../lib/finding-view';
 import type { SnapshotQuery } from '../../lib/snapshot-query';
 import type { CompareQuery } from '../../lib/compare-query';
 import type { OpenSnapshotExport } from '../../lib/snapshot-export';
+
+/** The bench measures the reads themselves, so it reads as Everything. */
+const BENCH_ACCESS = everythingAccess('admin');
 
 // ---- The dataset ----
 
@@ -284,7 +288,7 @@ export async function seedDatabase(
           return (byRule.get(id ?? '') ?? []).filter(includes).flatMap(res => Array.from({ length: res.rowCount }, (_, n) => generateRow(seed, res, n)));
         },
       });
-      await runCategoryScan((await getCategory(category))!, { ctx, ruleIds, now });
+      await runCategoryScan((await getCategory(category))!, { ctx, ruleIds, now, access: BENCH_ACCESS });
     }
     const ms = performance.now() - start;
     log(`${label}: ${Math.round(ms)} ms`);
@@ -359,23 +363,23 @@ export async function buildMeasurements(): Promise<Measurement[]> {
 
   const snapshotScanId = await largestSnapshotScanId();
   const snapshotPage = async (over: Partial<SnapshotQuery>): Promise<number> => {
-    const answer = await querySnapshot(snapshotScanId, { ...emptySnapshotQuery(), ...over });
+    const answer = await querySnapshot(snapshotScanId, { ...emptySnapshotQuery(), ...over }, BENCH_ACCESS);
     if (answer.status !== 'ok') throw new Error(`The snapshot of ${snapshotScanId} answered ${answer.status}.`);
     return Buffer.byteLength(JSON.stringify(answer.response));
   };
   // The later page is the middle of the run, which a first read of the run says the place of.
-  const firstAnswer = await querySnapshot(snapshotScanId, emptySnapshotQuery());
+  const firstAnswer = await querySnapshot(snapshotScanId, emptySnapshotQuery(), BENCH_ACCESS);
   const laterPage = firstAnswer.status === 'ok' ? Math.max(1, Math.ceil(firstAnswer.response.pageCount / 2)) : 1;
 
   // A compare of the largest category's two scans (ADR 0008): one side's page of 50 and all three totals.
   const { ids: compareIds } = await comparedScans();
   const comparePage = async (over: Partial<CompareQuery>): Promise<number> => {
-    const answer = await queryCompare(compareIds[0], compareIds[1], { ...emptyCompareQuery(), ...over });
+    const answer = await queryCompare(compareIds[0], compareIds[1], { ...emptyCompareQuery(), ...over }, BENCH_ACCESS);
     if (answer.status !== 'ok') throw new Error(`The compare of ${compareIds.join(' and ')} answered ${answer.status}.`);
     return Buffer.byteLength(JSON.stringify(answer.response));
   };
   // The later page is the middle of the biggest side, which a first read of the compare says the place of.
-  const firstCompare = await queryCompare(compareIds[0], compareIds[1], emptyCompareQuery());
+  const firstCompare = await queryCompare(compareIds[0], compareIds[1], emptyCompareQuery(), BENCH_ACCESS);
   const biggest = firstCompare.status === 'ok'
     ? COMPARE_SIDES.reduce((a, b) => (firstCompare.response.totals[b] > firstCompare.response.totals[a] ? b : a))
     : 'added';
@@ -390,16 +394,16 @@ export async function buildMeasurements(): Promise<Measurement[]> {
 
   return [
     // Today: every finding with every row goes to the browser, which computes the view.
-    { name: 'today: payload, Results tab', run: async () => sizeOf(await buildExplorerData({ kinds: kindsOf.results })) },
-    { name: 'today: payload, Advisories tab', run: async () => sizeOf(await buildExplorerData({ kinds: kindsOf.advisories })) },
-    { name: 'today: default view', run: async () => { applyView(await listFindings({ kinds: kindsOf.results }), defaultView); } },
-    { name: 'today: row-filtered view', run: async () => { applyView(await listFindings({ kinds: kindsOf.results }), rowFilterView); } },
-    { name: 'today: column dropdown', run: async () => { rowFieldOptions(await listFindings({ kinds: kindsOf.results }), [], BENCH_ROW_PATH); } },
+    { name: 'today: payload, Results tab', run: async () => sizeOf(await buildExplorerData(BENCH_ACCESS, { kinds: kindsOf.results })) },
+    { name: 'today: payload, Advisories tab', run: async () => sizeOf(await buildExplorerData(BENCH_ACCESS, { kinds: kindsOf.advisories })) },
+    { name: 'today: default view', run: async () => { applyView(await listFindings(BENCH_ACCESS, { kinds: kindsOf.results }), defaultView); } },
+    { name: 'today: row-filtered view', run: async () => { applyView(await listFindings(BENCH_ACCESS, { kinds: kindsOf.results }), rowFilterView); } },
+    { name: 'today: column dropdown', run: async () => { rowFieldOptions(await listFindings(BENCH_ACCESS, { kinds: kindsOf.results }), [], BENCH_ROW_PATH); } },
     // New: the server computes the view and sends the page.
-    { name: 'new: default view', run: async () => sizeOf(await queryView(defaultView, { tab: 'results', showSuppressed: false })) },
-    { name: 'new: row-filtered view', run: async () => sizeOf(await queryView(rowFilterView, { tab: 'results', showSuppressed: false })) },
-    { name: 'new: default view, Advisories tab', run: async () => sizeOf(await queryView(defaultView, { tab: 'advisories', showSuppressed: false })) },
-    { name: 'new: column dropdown', run: async () => sizeOf(await queryColumnValues(defaultView, { tab: 'results', showSuppressed: false, column: rowField(BENCH_ROW_PATH) })) },
+    { name: 'new: default view', run: async () => sizeOf(await queryView(defaultView, { tab: 'results', showSuppressed: false }, BENCH_ACCESS)) },
+    { name: 'new: row-filtered view', run: async () => sizeOf(await queryView(rowFilterView, { tab: 'results', showSuppressed: false }, BENCH_ACCESS)) },
+    { name: 'new: default view, Advisories tab', run: async () => sizeOf(await queryView(defaultView, { tab: 'advisories', showSuppressed: false }, BENCH_ACCESS)) },
+    { name: 'new: column dropdown', run: async () => sizeOf(await queryColumnValues(defaultView, { tab: 'results', showSuppressed: false, column: rowField(BENCH_ROW_PATH) }, BENCH_ACCESS)) },
     // A past run's snapshot (ADR 0008): the page of 50, the total and the facets, from the scan's records.
     { name: 'snapshot: first page', run: () => snapshotPage({}) },
     { name: 'snapshot: later page', run: () => snapshotPage({ page: laterPage }) },
@@ -462,14 +466,14 @@ export async function measureExports(warmRuns: number, log: (line: string) => vo
    *  to the stream of its file, so findings and snapshots go through one set of measurements. */
   type Source = (sample?: () => void) => Promise<ReadableStream<Uint8Array>>;
   const findings = (view: View, format: 'csv' | 'json'): Source => async sample => {
-    const open: OpenExport = use => openExport(view, query)(source => use({
+    const open: OpenExport = use => openExport(view, query, BENCH_ACCESS)(source => use({
       columns: async () => { const columns = await source.columns(); sample?.(); return columns; },
       batches: () => (async function* () { for await (const batch of source.batches()) { sample?.(); yield batch; } })(),
     }));
     return streamExport(open, format);
   };
   const snapshot = (scanQuery: SnapshotQuery, format: 'csv' | 'json'): Source => async sample => {
-    const open: OpenSnapshotExport = use => openSnapshotExport(snapshotScanId, scanQuery)(source => use({
+    const open: OpenSnapshotExport = use => openSnapshotExport(snapshotScanId, scanQuery, BENCH_ACCESS)(source => use({
       batches: () => (async function* () { for await (const batch of source.batches()) { sample?.(); yield batch; } })(),
     }));
     return streamSnapshotExport(open, format);

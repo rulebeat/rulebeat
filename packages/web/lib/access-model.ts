@@ -87,6 +87,17 @@ export function buildAccess(grants: ScopeGrant[], source: AccessSource | null): 
   };
 }
 
+/**
+ * Holds nothing. What a page reads under when nobody is signed in: never Everything. Frozen, so
+ * one shared value cannot be widened by a caller.
+ */
+export const NO_ACCESS: Access = Object.freeze({
+  grants: Object.freeze([]) as unknown as ScopeGrant[],
+  everything: false,
+  directory: false,
+  source: null,
+});
+
 /** The Role on Everything, with no source: an Admin's access, and the system's. */
 export function everythingAccess(role: Role, source: AccessSource | null = null): Access {
   return buildAccess(

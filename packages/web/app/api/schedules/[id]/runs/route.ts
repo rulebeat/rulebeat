@@ -13,5 +13,5 @@ export async function GET(
   const { id } = await params;
   if (!await getSchedule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json(await listRuns(id, 20));
+  return NextResponse.json(await listRuns(id, actor.access, 20));
 }

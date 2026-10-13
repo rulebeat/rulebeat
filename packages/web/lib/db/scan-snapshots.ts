@@ -13,6 +13,7 @@ import { many, one, inReadTransaction, inSnapshotRead, type DbHandle } from './e
 import { findings as findingsTable, scanFindings, scans as scansTable } from './tables';
 import { SCAN_FINDING_ORDER, SCAN_FINDING_RANKS, SCAN_FINDING_RANK_ORDER, scanFindingsAfter } from './scan-findings-copy';
 import { pageBounds } from '../finding-rows';
+import type { Access } from '../access-model';
 import { SNAPSHOT_PAGE_SIZE, type SnapshotQuery } from '../snapshot-query';
 import type { SnapshotFacetValue, SnapshotItem, SnapshotRecord, SnapshotResponse, SnapshotScan } from '../snapshot-response';
 import type { OpenSnapshotExport } from '../snapshot-export';
@@ -141,7 +142,7 @@ export async function* readExportBatches(tx: DbHandle, where: SQL, batchSize: nu
  * ignored), in the snapshot's order, `batchSize` at a time. Read inside one snapshot that stays open as
  * long as the download reads (lib/export-stream.ts), so the batches agree with one another.
  */
-export function openSnapshotExport(scanId: string, query: SnapshotQuery, opts: { batchSize?: number } = {}): OpenSnapshotExport {
+export function openSnapshotExport(scanId: string, query: SnapshotQuery, access: Access, opts: { batchSize?: number } = {}): OpenSnapshotExport {
   const batchSize = opts.batchSize ?? SNAPSHOT_EXPORT_BATCH;
   return use => inSnapshotRead(async tx => {
     const header = await readHeader(tx, scanId);
@@ -154,7 +155,7 @@ export function openSnapshotExport(scanId: string, query: SnapshotQuery, opts: {
 }
 
 /** A past scan's findings, one page of them, with the total and the facets for the query. */
-export function querySnapshot(scanId: string, query: SnapshotQuery): Promise<SnapshotAnswer> {
+export function querySnapshot(scanId: string, query: SnapshotQuery, access: Access): Promise<SnapshotAnswer> {
   return inReadTransaction(async (tx): Promise<SnapshotAnswer> => {
     const header = await readHeader(tx, scanId);
     if (!header) return { status: 'not-found' };

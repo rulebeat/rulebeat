@@ -4,6 +4,7 @@ import { scans as scansTable } from './tables';
 import { many, one } from './exec';
 import { EMPTY_SCAN_BLOB } from './scan-findings-copy';
 import { SCAN_HISTORY_LIMIT } from '../scan-history';
+import type { Access } from '../access-model';
 import type { Finding } from '../types';
 
 /** What one stored scan's findings blob says, as the backfills replay it. */
@@ -22,7 +23,7 @@ const EMPTY_BLOB_WITH_RECORDS =
  * category, so its findings already describe the category more recently than any blob does. A scan
  * that found nothing has no records and is not seen here.
  */
-export async function hasScanLeftOutOfHistory(category: string): Promise<boolean> {
+export async function hasScanLeftOutOfHistory(category: string, access: Access): Promise<boolean> {
   const row = await one(db
     .select({ id: scansTable.id })
     .from(scansTable)
@@ -43,7 +44,7 @@ export async function hasScanLeftOutOfHistory(category: string): Promise<boolean
  * blob is not what it found, and replaying it as a scan that found nothing would mark every open
  * finding Fixed. An empty blob with no records is a scan that found nothing, and is kept.
  */
-export async function loadStoredScanBlobs(category: string): Promise<StoredScanBlob[]> {
+export async function loadStoredScanBlobs(category: string, access: Access): Promise<StoredScanBlob[]> {
   return (await many(db
     .select({ finishedAt: scansTable.finishedAt, totalRules: scansTable.totalRules, findings: scansTable.findings })
     .from(scansTable)

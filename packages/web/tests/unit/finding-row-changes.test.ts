@@ -20,6 +20,7 @@ import { getActivityOccurrenceCounts, getFindingEventCounts, listFindings } from
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ARG_RULE = 'test-changes-arg-rule';
 const LOGS_RULE = 'test-changes-logs-rule';
@@ -49,7 +50,7 @@ const insertArgRule = (kql = ARG_KQL) => insertRule(ARG_RULE, { rawKql: kql });
 
 async function scan(ctxOptions: Parameters<typeof fakeTenantContext>[0], hoursFromBase = 0, ruleId = ARG_RULE) {
   const category = (await getCategory('identity'))!;
-  return runCategoryScan(category, {
+  return runCategoryScan(category, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext(ctxOptions),
     ruleIds: [ruleId],
     now: new Date(Date.UTC(2026, 5, 1, hoursFromBase)),
@@ -70,7 +71,7 @@ async function eventTypes(fingerprint = FINGERPRINT) {
   return (await execMany(db.select().from(findingEventsTable).where(eq(findingEventsTable.fingerprint, fingerprint)))).map(e => e.type).sort();
 }
 
-const storedRows = async (fingerprint = FINGERPRINT) => (await listFindings()).find(f => f.fingerprint === fingerprint)!.rows;
+const storedRows = async (fingerprint = FINGERPRINT) => (await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint)!.rows;
 
 beforeEach(async () => {
   await resetDb();
@@ -95,7 +96,7 @@ describe('a finding that gains a row', () => {
   it('keeps its age and counts one more sighting', async () => {
     await scan({ rows: vmRows('a') }, 0);
     await scan({ rows: vmRows('a', 'b') }, 24);
-    const found = (await listFindings())[0]!;
+    const found = (await listFindings(EVERYTHING_ACCESS))[0]!;
     expect(found.firstSeenAt).toBe('2026-06-01T00:00:00.000Z');
     expect(found.timesSeen).toBe(2);
     expect(found.rows.map(r => r.retirement)).toEqual(['a', 'b']);
@@ -213,7 +214,7 @@ describe('an outcome that is not a success', () => {
     await insertArgRule(`${ARG_KQL} | take 5`);
     await scan({ rows: vmRows('a') }, 24);
 
-    const found = (await listFindings())[0]!;
+    const found = (await listFindings(EVERYTHING_ACCESS))[0]!;
     expect(found.status).toBe('active');
     expect(found.timesSeen).toBe(2);
     expect(found.lastSeenAt).toBe('2026-06-02T00:00:00.000Z');
@@ -252,10 +253,10 @@ describe('the counts that read finding events', () => {
     expect(await rowEvents()).toHaveLength(3);
 
     const windows = [SINCE, '2026-06-02T00:00:00.000Z', '2026-06-03T00:00:00.000Z', '2026-06-04T00:00:00.000Z'];
-    const withRowEvents = await Promise.all(windows.map(sinceDate => getFindingEventCounts({ sinceDate })));
+    const withRowEvents = await Promise.all(windows.map(sinceDate => getFindingEventCounts({ sinceDate }, EVERYTHING_ACCESS)));
     await dropRowEvents();
     expect(await rowEvents()).toEqual([]);
-    const withoutRowEvents = await Promise.all(windows.map(sinceDate => getFindingEventCounts({ sinceDate })));
+    const withoutRowEvents = await Promise.all(windows.map(sinceDate => getFindingEventCounts({ sinceDate }, EVERYTHING_ACCESS)));
 
     expect(withRowEvents).toEqual(withoutRowEvents);
     // The lifecycle counts themselves, so the comparison above is not two copies of one wrong answer.
@@ -272,7 +273,7 @@ describe('the counts that read finding events', () => {
     await scan({ rows: vmRows('a', 'b') }, 24);
     expect(await rowEvents()).toHaveLength(1);
 
-    expect(await getFindingEventCounts({ sinceDate: '2026-06-02T00:00:00.000Z' })).toEqual([]);
+    expect(await getFindingEventCounts({ sinceDate: '2026-06-02T00:00:00.000Z' }, EVERYTHING_ACCESS)).toEqual([]);
   });
 
   it('leave the activity occurrence counts at one per sighting when an Activity finding gains a row', async () => {
@@ -286,7 +287,7 @@ describe('the counts that read finding events', () => {
     const fingerprint = computeActivityFingerprint(LOGS_RULE, 'u1');
     expect(second.changedFindings.map(f => f.fingerprint)).toEqual([fingerprint]);
     expect(await eventTypes(fingerprint)).toEqual(['created', 'occurred', 'row_added']);
-    const occurrences = await getActivityOccurrenceCounts({ sinceDate: SINCE });
+    const occurrences = await getActivityOccurrenceCounts({ sinceDate: SINCE }, EVERYTHING_ACCESS);
     expect(occurrences.reduce((sum, d) => sum + d.count, 0)).toBe(2);
   });
 });

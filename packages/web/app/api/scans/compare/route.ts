@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   if (!ids) return NextResponse.json(COMPARE_ERRORS['bad-request'].body, { status: COMPARE_ERRORS['bad-request'].status });
 
   try {
-    const answer = await queryCompare(ids[0], ids[1], compareQueryFromParams(search));
+    const answer = await queryCompare(ids[0], ids[1], compareQueryFromParams(search), actor.access);
     if (answer.status === 'ok') return NextResponse.json(answer.response);
     return NextResponse.json(COMPARE_ERRORS[answer.status].body, { status: COMPARE_ERRORS[answer.status].status });
   } catch (err) {

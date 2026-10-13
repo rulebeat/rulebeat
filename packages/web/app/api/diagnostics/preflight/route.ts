@@ -17,7 +17,7 @@ export async function GET() {
   const actor = await requireRole('azure:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
 
-  // Building the context is where a bad credential actually surfaces: await createTenantContext()
+  // Building the context is where a bad credential actually surfaces: await createTenantContext(actor.access)
   // resolves the credential and its subscription list, and await runPreflight() below only ever probes
   // with a context that already exists. So this failure gets the per-check treatment too: a 200
   // whose credential check failed, not a wholesale 500 that hides the one answer the person on the
@@ -26,7 +26,7 @@ export async function GET() {
   let ctx: TenantContext;
   const start = Date.now();
   try {
-    ctx = await createTenantContext();
+    ctx = await createTenantContext(actor.access);
   } catch (err) {
     if (err instanceof Error && (err as { code?: string }).code === 'azure_not_configured') {
       return azureError('Failed to run preflight checks', err);

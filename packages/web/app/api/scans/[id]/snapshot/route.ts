@@ -15,7 +15,7 @@ export async function GET(
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   try {
-    const answer = await querySnapshot(id, snapshotQueryFromParams(new URL(req.url).searchParams));
+    const answer = await querySnapshot(id, snapshotQueryFromParams(new URL(req.url).searchParams), actor.access);
     if (answer.status === 'not-found') return NextResponse.json(SNAPSHOT_ERRORS['not-found'].body, { status: SNAPSHOT_ERRORS['not-found'].status });
     if (answer.status === 'no-records') return NextResponse.json(SNAPSHOT_ERRORS['no-records'].body, { status: SNAPSHOT_ERRORS['no-records'].status });
     return NextResponse.json(answer.response);

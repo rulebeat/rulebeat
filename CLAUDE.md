@@ -73,7 +73,10 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   *specific* credential rather than letting the chain rediscover the same variables, so a
   misconfigured service principal fails loudly instead of silently scanning under the developer's
   local identity. Never uses the user's OAuth token, never holds write credentials.
-  `createTenantContext()` is what every scan/schema/KQL path calls.
+  `createTenantContext(access)` is what every scan/schema/KQL path calls: it takes the `Access`
+  `requireRole` returned, and `app/` has no other way to Azure
+  (`tenant-context-takes-access.test.ts`; the two settings routes that test an unsaved credential or
+  workspace are the written exceptions).
 - **Route protection:** `proxy.ts` (Next.js 16's rename of `middleware.ts`) guards all routes except
   `/signin`, `/api/auth/*`, `/api/health` and a few static brand images. It also stamps the security
   headers (CSP, plus HSTS over HTTPS) on every response it sees and refuses a write request whose `Origin` is not an
@@ -87,8 +90,11 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   resolved per request into one `Access` value by `lib/access.ts`'s `resolveAccess()` (an Admin is
   Everything without reading rows); `requireRole` returns the user with that `access`, and
   authorizes through `mayAct()` in `lib/rbac.ts`, which classes every action (install
-  administration, install-wide, placed, scoped) and calls `can()`. No route reads `access` yet and
-  no read is narrowed by it; page and sidebar gating stays on `can(user.role, action)`.
+  administration, install-wide, placed, scoped) and calls `can()`. Every read of findings, or of data
+  derived from them, takes the caller's `Access` as a required `access: Access` parameter
+  (`findings-reads-take-access.test.ts`), and routes pass `actor.access`; no read is narrowed by it
+  yet, and `access-matrix.test.ts` keeps each route on `NOT_YET_SCOPED` until the ticket that narrows
+  it. Page and sidebar gating stays on `can(user.role, action)`.
   `lib/system-access.ts` is Everything for the scheduler and startup and must never be imported
   from `app/`.
 - **Audit log:** written at the API route layer, never the repository layer. Records a human summary
@@ -275,7 +281,7 @@ and usually `auth-security.md`.
 - **Test the contract, not the implementation.** For the KQL engine specifically the contract is:
   whatever the builder generates, the parser parses back, and regenerating does not change the query.
 - **No live Azure or Microsoft Graph calls in tests.** `TenantContext` is an injectable parameter
-  (`runRules(rules, ctx)`, `runCategoryScan(cat, { ctx })`); use `tests/helpers/fake-azure.ts`.
+  (`runRules(rules, ctx)`, `runCategoryScan(cat, { access, ctx })`); use `tests/helpers/fake-azure.ts`.
 - Tests never touch the real database. `tests/setup.ts` points `RULEBEAT_DB_PATH` at a temp file
   before any repository module is imported. That env var exists for tests only.
 - **Assert through the code under test, not beside it.** A test that re-implements the assertion

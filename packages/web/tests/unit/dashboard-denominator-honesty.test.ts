@@ -20,6 +20,7 @@ import { syncScanFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { resetDb, clearRules } from '../helpers/db';
 import type { Finding, Severity } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const RULE_HIGH = 'test-rule-high';
@@ -85,7 +86,7 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
   });
 
   it('with no severity filter, totalRules counts both rules and passingRules counts only the clean one', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.current.totalRules).toBe(2);
     expect(summary.current.passingRules).toBe(1);
@@ -94,7 +95,7 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
   it('filtering by severity:high narrows totalRules to just the high-severity rule, not the whole category', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
-      30,
+      30, EVERYTHING_ACCESS,
     );
 
     // Before the fix, totalRules stayed 2 (the medium rule still counted toward the denominator
@@ -107,7 +108,7 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
   it('the same narrowing applies to perCategory, which the pct is rounded from', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
-      30,
+      30, EVERYTHING_ACCESS,
     );
     const mod = summary.perCategory.find(m => m.category === CATEGORY);
 
@@ -137,7 +138,7 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
   it('filtering by tag narrows totalRules to just the tagged rule', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], tags: ['pci'], dateWindow: { mode: 'relative', days: 7 } },
-      30,
+      30, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(1);
@@ -164,7 +165,7 @@ describe('dashboard denominator honesty: resourceGroups/subscriptions are delibe
   it('a resourceGroups-only filter leaves totalRules at the full category count', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
-      30,
+      30, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -179,7 +180,7 @@ describe('WidgetSummary.suppressedIncluded self-describes which mode produced th
   });
 
   it('is false when filters.includeSuppressed is omitted', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.suppressedIncluded).toBe(false);
   });
@@ -187,7 +188,7 @@ describe('WidgetSummary.suppressedIncluded self-describes which mode produced th
   it('is true when filters.includeSuppressed is true', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], includeSuppressed: true, dateWindow: { mode: 'relative', days: 7 } },
-      30,
+      30, EVERYTHING_ACCESS,
     );
 
     expect(summary.suppressedIncluded).toBe(true);

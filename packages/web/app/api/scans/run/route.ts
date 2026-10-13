@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   const since = new URL(req.url).searchParams.get('since');
-  const latest = (await listAllRuns(1))[0] ?? null;
+  const latest = (await listAllRuns(actor.access, 1))[0] ?? null;
   return NextResponse.json({ run: latest && (!since || latest.startedAt >= since) ? latest : null });
 }
 
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   // ScheduleRun.startedAt (also server time), so deriving it in the browser would let clock skew
   // silently drop a real run. The response is already sent when a run fails to start, so the
   // failure is logged here rather than left as an unhandled rejection.
-  void runManualTarget({ targetType: body.targetType, targetValues }).catch(err => {
+  void runManualTarget({ targetType: body.targetType, targetValues }, actor.access).catch(err => {
     console.error('[RuleBeat] manual scan run failed to start:', err);
   });
   return NextResponse.json({ started: true, requestedAt: new Date().toISOString() }, { status: 202 });

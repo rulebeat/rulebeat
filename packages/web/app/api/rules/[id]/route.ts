@@ -121,7 +121,7 @@ export async function PUT(
       return NextResponse.json({ error: shapeError }, { status: 400 });
     }
     try {
-      const ctx = await createTenantContext();
+      const ctx = await createTenantContext(actor.access);
       await probeGraphQuerySample(body.graphQuery, ctx);
     } catch (err) {
       console.error('[RuleBeat] rule-save Graph probe could not connect to Azure, allowing save:', err);
@@ -137,7 +137,7 @@ export async function PUT(
       return NextResponse.json({ error: shapeError }, { status: 400 });
     }
     try {
-      const ctx = await createTenantContext();
+      const ctx = await createTenantContext(actor.access);
       await probeLogAnalyticsQuerySample(body.logsQuery, ctx);
     } catch (err) {
       console.error('[RuleBeat] rule-save Log Analytics probe could not connect to Azure, allowing save:', err);
@@ -146,7 +146,7 @@ export async function PUT(
 
   if (body.rawKql) {
     try {
-      const ctx = await createTenantContext();
+      const ctx = await createTenantContext(actor.access);
       const probe = await probeRuleIdentitySample(body.rawKql, ctx);
       if (probe.blocked) {
         return NextResponse.json({

@@ -14,6 +14,7 @@ import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ARG_RULE = 'test-placement-arg-rule';
 const LOGS_RULE = 'test-placement-logs-rule';
@@ -78,7 +79,7 @@ function context(workspace: Record<string, unknown>[] | Error) {
 const RULES = [ARG_RULE, GRAPH_RULE, LOGS_RULE];
 
 async function storedPlacement() {
-  const live = await listFindings();
+  const live = await listFindings(EVERYTHING_ACCESS);
   const byRule = (ruleId: string) => live.find(f => f.ruleId === ruleId)!;
   return { live, arg: byRule(ARG_RULE), graph: byRule(GRAPH_RULE), logs: byRule(LOGS_RULE) };
 }
@@ -95,7 +96,7 @@ describe('a scan records where each finding sits (#271)', () => {
 
   it('places a Resource Graph finding at its resource, a Graph finding in the directory and a Logs finding at its workspace', async () => {
     const category = (await getCategory('identity'))!;
-    const outcome = await runCategoryScan(category, { ctx: context([workspaceRow()]), ruleIds: RULES });
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context([workspaceRow()]), ruleIds: RULES });
 
     const { arg, graph, logs } = await storedPlacement();
     expect(arg).toMatchObject({ placement: 'resource', subscriptionId: TEST_SUB_A, resourceGroup: 'rg-test' });
@@ -114,7 +115,7 @@ describe('a scan records where each finding sits (#271)', () => {
 
   it('borrows no subscription for a finding that sits in none, whatever the credential lists first', async () => {
     const category = (await getCategory('identity'))!;
-    await runCategoryScan(category, { ctx: context([workspaceRow()]), ruleIds: [GRAPH_RULE] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context([workspaceRow()]), ruleIds: [GRAPH_RULE] });
 
     const rows = await many(db.select().from(findingsTable).where(eq(findingsTable.ruleId, GRAPH_RULE)));
     expect(rows.map(r => r.subscriptionId)).toEqual(['']);
@@ -123,7 +124,7 @@ describe('a scan records where each finding sits (#271)', () => {
   it('calls a Logs finding unplaceable, with no subscription, when the workspace is not found', async () => {
     const category = (await getCategory('identity'))!;
     const ctx = context([]);
-    const outcome = await runCategoryScan(category, { ctx, ruleIds: RULES });
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: RULES });
 
     const { logs } = await storedPlacement();
     expect(logs).toMatchObject({ placement: 'unplaceable', subscriptionId: '' });
@@ -135,7 +136,7 @@ describe('a scan records where each finding sits (#271)', () => {
 
   it('calls a Logs finding unplaceable when the lookup throws, and still scans every rule', async () => {
     const category = (await getCategory('identity'))!;
-    const outcome = await runCategoryScan(category, { ctx: context(new Error('Resource Graph is down')), ruleIds: RULES });
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context(new Error('Resource Graph is down')), ruleIds: RULES });
 
     const { arg, graph, logs } = await storedPlacement();
     expect(logs.placement).toBe('unplaceable');
@@ -146,11 +147,11 @@ describe('a scan records where each finding sits (#271)', () => {
 
   it('moves a finding stored unplaceable to its workspace on the next scan that resolves it, keeping its fingerprint and age', async () => {
     const category = (await getCategory('identity'))!;
-    await runCategoryScan(category, { ctx: context([]), ruleIds: [LOGS_RULE], now: new Date('2026-03-01T00:00:00.000Z') });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context([]), ruleIds: [LOGS_RULE], now: new Date('2026-03-01T00:00:00.000Z') });
     const before = (await storedPlacement()).logs;
     expect(before.placement).toBe('unplaceable');
 
-    await runCategoryScan(category, { ctx: context([workspaceRow()]), ruleIds: [LOGS_RULE], now: new Date('2026-03-02T00:00:00.000Z') });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context([workspaceRow()]), ruleIds: [LOGS_RULE], now: new Date('2026-03-02T00:00:00.000Z') });
     const after = (await storedPlacement()).logs;
 
     expect(after).toMatchObject({ placement: 'workspace', subscriptionId: TEST_SUB_B, resourceGroup: 'rg-logs' });
@@ -161,8 +162,8 @@ describe('a scan records where each finding sits (#271)', () => {
 
   it('keeps a Logs finding at its workspace through a scan whose lookup failed, and says unplaceable only of that scan', async () => {
     const category = (await getCategory('identity'))!;
-    await runCategoryScan(category, { ctx: context([workspaceRow()]), ruleIds: [LOGS_RULE], now: new Date('2026-03-01T00:00:00.000Z') });
-    const blip = await runCategoryScan(category, { ctx: context(new Error('Resource Graph is down')), ruleIds: [LOGS_RULE], now: new Date('2026-03-02T00:00:00.000Z') });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context([workspaceRow()]), ruleIds: [LOGS_RULE], now: new Date('2026-03-01T00:00:00.000Z') });
+    const blip = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: context(new Error('Resource Graph is down')), ruleIds: [LOGS_RULE], now: new Date('2026-03-02T00:00:00.000Z') });
 
     expect((await storedPlacement()).logs).toMatchObject({ placement: 'workspace', subscriptionId: TEST_SUB_B, resourceGroup: 'rg-logs', timesSeen: 2 });
     expect((await recordsOf(blip.summary.id!))[0]).toMatchObject({ placement: 'unplaceable', subscriptionId: '' });
@@ -171,7 +172,7 @@ describe('a scan records where each finding sits (#271)', () => {
   it('makes no workspace lookup in a scan that runs no Logs rule', async () => {
     const category = (await getCategory('identity'))!;
     const ctx = context([workspaceRow()]);
-    await runCategoryScan(category, { ctx, ruleIds: [ARG_RULE, GRAPH_RULE] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ARG_RULE, GRAPH_RULE] });
 
     expect(ctx.queries.some(q => isWorkspaceLookup(q.kql))).toBe(false);
   });

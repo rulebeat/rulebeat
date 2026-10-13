@@ -16,6 +16,7 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { loadRules } from '@/lib/rules';
 import { resetDb, clearRules } from '../helpers/db';
 import { TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_OK = 'test-rule-ok';
 const RULE_FAILS = 'test-rule-fails';
@@ -85,7 +86,7 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
 
   it('a rule whose query throws is stamped "failed"; one that returns cleanly is stamped "success", both at this scan\'s finish time', async () => {
     const category = (await getCategory('security'))!;
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({
         [MARKER_OK]: { rows: [] },
         [MARKER_FAIL]: { failWith: new Error('429 Too Many Requests') },
@@ -99,7 +100,7 @@ describe('runCategoryScan persists each rule\'s own last-run outcome (spec 030)'
 
   it('a rule excluded from this scan by opts.ruleIds keeps its prior last-run status untouched', async () => {
     const category = (await getCategory('security'))!;
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [] } }),
       ruleIds: [RULE_OK], // RULE_OUT_OF_SCOPE is deliberately not included
     });

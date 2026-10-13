@@ -20,6 +20,7 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { listFindings } from '@/lib/db/findings';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_OK = 'test-rule-ok';
 const RULE_FAIL = 'test-rule-fail';
@@ -93,17 +94,17 @@ describe('scan lifecycle coverage (spec 004)', () => {
     const failFingerprint = computeFingerprint(RULE_FAIL, failRow.id as string);
 
     // Scan 1: both rules succeed, both findings created active.
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [okRow] }, [MARKER_FAIL]: { rows: [failRow] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
-    let findings = await listFindings();
+    let findings = await listFindings(EVERYTHING_ACCESS);
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('active');
     expect(findings.find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: rule-ok's resource is genuinely gone; rule-fail's query throws (e.g. a 429).
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({
         [MARKER_OK]: { rows: [] },
         [MARKER_FAIL]: { failWith: new Error('429 Too Many Requests') },
@@ -116,7 +117,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'failed' },
     ]);
 
-    findings = await listFindings();
+    findings = await listFindings(EVERYTHING_ACCESS);
     // rule-ok genuinely found nothing this time: resolving it is correct, not a regression.
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('fixed');
     // rule-fail's query threw: its prior finding must survive, not be silently marked fixed.
@@ -145,15 +146,15 @@ describe('scan lifecycle coverage (spec 004)', () => {
     const failRow = argRow({ name: 'vm-capped' });
     const failFingerprint = computeFingerprint(RULE_FAIL, failRow.id as string);
 
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [failRow] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: the capped rule returns no rows this time. A real result set could easily still
     // contain the same resource, just past the take-5 cutoff, so this must not resolve it either.
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
@@ -162,7 +163,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
     expect(outcome.summary.incompleteRules).toEqual([
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'capped' },
     ]);
-    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
   });
 
   it('a rule returning identity-less rows (spec 005) leaves its prior active finding untouched and reports invalid', async () => {
@@ -173,17 +174,17 @@ describe('scan lifecycle coverage (spec 004)', () => {
     const failFingerprint = computeFingerprint(RULE_FAIL, failRow.id as string);
 
     // Scan 1: both rules succeed cleanly, both findings created active.
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [okRow] }, [MARKER_FAIL]: { rows: [failRow] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect((await listFindings()).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
 
     // Scan 2: rule-fail's query still runs fine but now returns a mix of a real row and one with no
     // usable id: a bad projection, not an ARG failure. Its result can't be trusted as exhaustive
     // (the identity-less row could just as easily have been the one resource that matched before),
     // so the prior finding must survive exactly like the failed/capped cases above.
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({
         [MARKER_OK]: { rows: [] },
         [MARKER_FAIL]: { rows: [failRow, { name: 'no-id-row', type: 'microsoft.compute/virtualmachines' }] },
@@ -196,7 +197,7 @@ describe('scan lifecycle coverage (spec 004)', () => {
       { ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'invalid' },
     ]);
 
-    const findings = await listFindings();
+    const findings = await listFindings(EVERYTHING_ACCESS);
     expect(findings.find(f => f.fingerprint === okFingerprint)?.status).toBe('fixed');
     expect(findings.find(f => f.fingerprint === failFingerprint)?.status).toBe('active');
   });
@@ -206,19 +207,19 @@ describe('scan lifecycle coverage (spec 004)', () => {
     const row = argRow({ name: 'vm-both-ok' });
     const fingerprint = computeFingerprint(RULE_OK, row.id as string);
 
-    await runCategoryScan(category, {
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [row] }, [MARKER_FAIL]: { rows: [] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
-    expect((await listFindings()).find(f => f.fingerprint === fingerprint)?.status).toBe('active');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint)?.status).toBe('active');
 
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx: makeCtx({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { rows: [] } }),
       ruleIds: [RULE_OK, RULE_FAIL],
     });
 
     expect(outcome.summary.coverage).toBe('complete');
     expect(outcome.summary.incompleteRules).toEqual([]);
-    expect((await listFindings()).find(f => f.fingerprint === fingerprint)?.status).toBe('fixed');
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint)?.status).toBe('fixed');
   });
 });

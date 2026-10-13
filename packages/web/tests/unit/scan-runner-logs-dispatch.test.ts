@@ -17,6 +17,7 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { loadRules } from '@/lib/rules';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ARG_RULE_ID = 'test-arg-rule-under-identity-logs';
 const LOGS_RULE_ID = 'test-logs-rule-under-identity';
@@ -112,7 +113,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
       logsRows: [{ UserId: 'u1' }],
     });
 
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx,
       ruleIds: [ARG_RULE_ID, 'cred:app-secret-expiring', LOGS_RULE_ID],
     });
@@ -138,7 +139,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
       logsFailWith: new Error('Log Analytics unavailable'),
     });
 
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx,
       ruleIds: [ARG_RULE_ID, 'cred:app-secret-expiring', LOGS_RULE_ID],
     });
@@ -158,7 +159,7 @@ describe('runCategoryScan dispatches log-analytics rules through runLawRules (sp
     await insertCappedLogsRuleUnderIdentity();
     const ctx = fakeTenantContext({ logsRows: [{ UserId: 'u1' }] });
 
-    const outcome = await runCategoryScan(category, { ctx, ruleIds: [CAPPED_LOGS_RULE_ID] });
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [CAPPED_LOGS_RULE_ID] });
 
     expect(outcome.summary.coverage).toBe('partial');
     expect(outcome.summary.incompleteRules).toEqual([

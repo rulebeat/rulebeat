@@ -13,6 +13,7 @@ import { listFindings } from '@/lib/db/findings';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb, clearRules } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_ID = 'test-rule-casing';
 
@@ -42,11 +43,11 @@ describe('a resource id whose casing changes between scans', () => {
   it('stays one open finding instead of resolving and re-opening', async () => {
     const category = (await getCategory('security'))!;
 
-    await runCategoryScan(category, { ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1', resourceGroup: 'RG-APP' })] }), ruleIds: [RULE_ID] });
-    const second = await runCategoryScan(category, { ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1', resourceGroup: 'rg-app' })] }), ruleIds: [RULE_ID] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1', resourceGroup: 'RG-APP' })] }), ruleIds: [RULE_ID] });
+    const second = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1', resourceGroup: 'rg-app' })] }), ruleIds: [RULE_ID] });
 
     expect(second.newFindings).toHaveLength(0);
-    const rows = await listFindings();
+    const rows = await listFindings(EVERYTHING_ACCESS);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe('active');
   });
