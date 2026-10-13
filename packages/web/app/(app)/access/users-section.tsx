@@ -154,6 +154,63 @@ function AccessPromptRow({ heading, hint, initial, defaultRole, confirmLabel, on
   );
 }
 
+/** What remounts an Edit prompt: the Role and Scopes it was opened on. A prompt copies them into its own
+ *  list once, so a prompt left open over a person whose access has since changed would otherwise save the
+ *  old Roles back over the new ones. */
+export function editPromptKey(user: AppUserWithAccess): string {
+  return `edit:${user.role}:${JSON.stringify(grantsOfAccess(user.access))}`;
+}
+
+/** What remounts a demote prompt: the Role the Admin is being made. Picking another Role has to start the
+ *  list again at that Role, or the button would say Editor and the person would become a Viewer. */
+export function demotePromptKey(role: Role): string {
+  return `demote:${role}`;
+}
+
+/** The prompts that can open under one person's row, each keyed by what it was opened on so it remounts
+ *  when that changes. */
+export function PromptRows({ user, editing, demotingTo, saving, onSaveAccess, onDemote, onCancelEdit, onCancelDemote }: {
+  user: AppUserWithAccess;
+  editing: boolean;
+  demotingTo: Role | null;
+  saving: boolean;
+  onSaveAccess: (grants: ManualGrant[]) => void;
+  onDemote: (role: Role, access: ManualGrant[]) => void;
+  onCancelEdit: () => void;
+  onCancelDemote: () => void;
+}) {
+  return (
+    <>
+      {editing && user.role !== 'admin' && (
+        <AccessPromptRow
+          key={editPromptKey(user)}
+          heading={`What ${user.email} can access`}
+          hint="Each Scope has its own Role. Saving replaces everything this person had."
+          initial={grantsOfAccess(user.access)}
+          defaultRole={user.role as GrantRole}
+          confirmLabel="Save access"
+          saving={saving}
+          onConfirm={onSaveAccess}
+          onCancel={onCancelEdit}
+        />
+      )}
+      {demotingTo && (
+        <AccessPromptRow
+          key={demotePromptKey(demotingTo)}
+          heading={`What ${user.email} can access as ${ROLE_LABELS[demotingTo]}`}
+          hint="An Admin holds everything, so the access they keep after this is chosen here. Everything is preselected."
+          initial={[{ scope: EVERYTHING_SCOPE_PATH, role: demotingTo as GrantRole }]}
+          defaultRole={demotingTo as GrantRole}
+          confirmLabel={`Make ${ROLE_LABELS[demotingTo]}`}
+          saving={saving}
+          onConfirm={access => onDemote(demotingTo, access)}
+          onCancel={onCancelDemote}
+        />
+      )}
+    </>
+  );
+}
+
 export function UsersSection({
   initialUsers, initialUsersWithPassword, currentUserId,
 }: {
@@ -424,30 +481,16 @@ export function UsersSection({
                       </div>
                     </TableCell>
                   </TableRow>
-                  {editingAccess === user.id && user.role !== 'admin' && (
-                    <AccessPromptRow
-                      heading={`What ${user.email} can access`}
-                      hint="Each Scope has its own Role. Saving replaces everything this person had."
-                      initial={grantsOfAccess(user.access)}
-                      defaultRole={user.role as GrantRole}
-                      confirmLabel="Save access"
-                      saving={saving}
-                      onConfirm={grants => { void saveAccess(user, grants); }}
-                      onCancel={() => setEditingAccess(null)}
-                    />
-                  )}
-                  {demoting?.id === user.id && (
-                    <AccessPromptRow
-                      heading={`What ${user.email} can access as ${ROLE_LABELS[demoting.role]}`}
-                      hint="An Admin holds everything, so the access they keep after this is chosen here. Everything is preselected."
-                      initial={[{ scope: EVERYTHING_SCOPE_PATH, role: demoting.role as GrantRole }]}
-                      defaultRole={demoting.role as GrantRole}
-                      confirmLabel={`Make ${ROLE_LABELS[demoting.role]}`}
-                      saving={saving}
-                      onConfirm={access => { void sendRole(user, { role: demoting.role, access }); }}
-                      onCancel={() => setDemoting(null)}
-                    />
-                  )}
+                  <PromptRows
+                    user={user}
+                    editing={editingAccess === user.id}
+                    demotingTo={demoting?.id === user.id ? demoting.role : null}
+                    saving={saving}
+                    onSaveAccess={grants => { void saveAccess(user, grants); }}
+                    onDemote={(role, access) => { void sendRole(user, { role, access }); }}
+                    onCancelEdit={() => setEditingAccess(null)}
+                    onCancelDemote={() => setDemoting(null)}
+                  />
                   </Fragment>
                 );
               })}

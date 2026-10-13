@@ -17,7 +17,7 @@ import { deleteAssignmentsOn, listAssignmentsFor, replaceAssignmentsOn } from '@
 import { inTransaction } from '@/lib/db/exec';
 import { listUsersWithAccess, type AppUserWithAccess, type OwnAccess } from '@/lib/access';
 import { describeAccess } from '@/lib/access-model';
-import { UsersSection, InviteRow } from '@/app/(app)/access/users-section';
+import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { NO_AZURE_CONNECTION_MESSAGE } from '@/lib/manual-access';
@@ -650,5 +650,47 @@ describe('setManualAccess', () => {
   it('refuses an Admin, who is never scoped, and a person who does not exist', async () => {
     expect(await setManualAccess(admin.id, [])).toBe('admin');
     expect(await setManualAccess('00000000-0000-0000-0000-000000000099', [])).toBe('notfound');
+  });
+});
+
+describe("the prompts under a person's row", () => {
+  /** The prompt elements a row opens, each with the key React remounts it by. */
+  function promptsOf(user: AppUserWithAccess, open: { editing?: boolean; demotingTo?: Role | null }) {
+    const fragment = PromptRows({
+      user, editing: open.editing ?? false, demotingTo: open.demotingTo ?? null, saving: false,
+      onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
+    }) as ReactElement<{ children: ReactNode }>;
+    const found: ReactElement<Record<string, unknown>>[] = [];
+    for (const child of [fragment.props.children].flat()) if (isValidElement(child)) found.push(child as ReactElement<Record<string, unknown>>);
+    return found;
+  }
+
+  it('restarts the demote prompt at the Role picked, so the button and the list never disagree', async () => {
+    const second = await makeUser('second@example.com', 'admin');
+    const person = (await listUsersWithAccess()).find(u => u.id === second.id)!;
+    const [asViewer] = promptsOf(person, { demotingTo: 'viewer' });
+    const [asEditor] = promptsOf(person, { demotingTo: 'editor' });
+    expect(asViewer!.props.confirmLabel).toBe('Make Viewer');
+    expect(asViewer!.props.initial).toEqual([{ scope: '/', role: 'viewer' }]);
+    expect(asEditor!.props.confirmLabel).toBe('Make Editor');
+    expect(asEditor!.props.initial).toEqual([{ scope: '/', role: 'editor' }]);
+    // The prompt keeps its list in its own state, so only a different key makes it start again.
+    expect(asEditor!.key).not.toBe(asViewer!.key);
+  });
+
+  it("restarts the Edit prompt when the person's Role or Scopes change under it", async () => {
+    const before = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    await inTransaction(tx => replaceAssignmentsOn(tx, target.id, [{ tenantId: TENANT, scope: SUB, role: 'editor' }]));
+    const after = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const [opened] = promptsOf(before, { editing: true });
+    const [reopened] = promptsOf(after, { editing: true });
+    expect(opened!.key).not.toBe(reopened!.key);
+    expect(promptsOf(before, { editing: true })[0]!.key).toBe(opened!.key);
+  });
+
+  it('opens nothing for a closed prompt, and no Edit prompt for an Admin', async () => {
+    const person = (await listUsersWithAccess()).find(u => u.id === admin.id)!;
+    expect(promptsOf(person, {})).toEqual([]);
+    expect(promptsOf(person, { editing: true })).toEqual([]);
   });
 });
