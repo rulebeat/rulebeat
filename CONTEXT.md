@@ -140,15 +140,23 @@ name of an Azure role never decides it.
 _Avoid_: permission level, Azure role (that is a role in Azure, which only ever grants a Scope)
 
 **Scope**:
-The part of Azure whose findings someone can see and run scans against: Everything, a management
-group, a subscription or a resource group, never a single resource. A management group covers
-whatever sits under it now, including subscriptions added later.
+The part of Azure whose findings someone can see and run scans against: Everything, the
+Directory, a management group, a subscription or a resource group, never a single resource. A
+management group covers whatever sits under it now, including subscriptions added later. A finding
+is seen by whoever's Scope contains the place it sits; one RuleBeat cannot place is seen only under
+Everything. A rule's kind never changes who sees its findings.
 _Avoid_: rule scope (that is where a rule's query looks, a separate thing), tenant scope
 
 **Everything**:
-The Scope that covers every finding on the install, including findings that belong to no
-subscription. It is not the tenant root management group.
+The Scope that covers every finding on the install, including the Directory and findings RuleBeat
+cannot place. It is not the tenant root management group.
 _Avoid_: whole tenant, global, unrestricted
+
+**Directory**:
+The Scope that covers findings about the Entra directory itself, such as an app registration's
+expiring secret. These belong to no subscription. Only an Admin grants it, by hand; it is never
+mirrored.
+_Avoid_: identity scope, tenant (that is the whole Azure tenant)
 
 **Access**:
 The Roles a person holds and the Scope each one holds on. Overlapping access adds up: the higher

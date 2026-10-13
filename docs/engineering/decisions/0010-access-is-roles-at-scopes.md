@@ -5,16 +5,27 @@ Status: accepted, 2026-10-13 (issue #255, map #254).
 ## Decision
 
 **A person's access is a set of roles, each held at a scope.** The roles are RuleBeat's own
-(Viewer, Editor, Admin) and say what someone can do. The scope says where: Everything, a management
-group, a subscription or a resource group. Every scope is stored as a tenant id plus its Azure scope
-path from day one, so an install that later covers more than one tenant needs no rewrite of existing
-access. Everything is its own scope, not the tenant root management group, because findings from
-Microsoft Graph and Log Analytics rules belong to no subscription. A management group scope covers
+(Viewer, Editor, Admin) and say what someone can do. The scope says where: Everything, the
+Directory, a management group, a subscription or a resource group. Every scope is stored as a tenant
+id plus its Azure scope path from day one, so an install that later covers more than one tenant
+needs no rewrite of existing access. Everything is its own scope, not the tenant root management
+group, because findings from Microsoft Graph rules belong to no subscription. A management group scope covers
 whatever sits under it now, including subscriptions added after it was granted. Overlapping access
 adds up, the higher role winning, as Azure's own does.
 
 **There are no resource-level scopes.** The smallest scope is a resource group. RuleBeat is a
 compliance tool and a person who looks after one VM looks at its resource group.
+
+**A finding is seen by whoever's scope contains the place it sits** (issue #259), whatever the
+rule's kind. A Resource Graph finding sits at its resource, or at the subscription or management
+group a row names; someone scoped to one resource group does not see a finding on the subscription
+above it. A Microsoft Graph finding sits in the **Directory**, a scope of its own that carries no
+subscription, granted only by hand because Entra directory roles are not visible through ARM. A Log
+Analytics finding sits at the workspace it came from, as in Azure's workspace-context access, so
+whoever's scope covers the workspace's resource group sees it. A finding RuleBeat cannot place is
+seen only under Everything. Graph and Logs findings no longer borrow the first subscription the
+credential lists; existing ones are corrected on upgrade, which strands nothing because a
+fingerprint does not include the subscription.
 
 **Azure decides where, never what.** An Azure role name never maps to a RuleBeat role: Azure
 Contributor means "can change Azure resources", RuleBeat Editor means "can write rules, schedules
