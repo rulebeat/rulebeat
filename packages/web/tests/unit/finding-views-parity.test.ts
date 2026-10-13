@@ -183,7 +183,7 @@ async function referenceView(view: View, tab: ViewTab, showSuppressed: boolean):
 }
 
 async function getView(view: View, tab: ViewTab, showSuppressed: boolean): Promise<Response> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   const query = viewToSearchParams(view, { tab, ...(showSuppressed ? { suppressed: '1' } : {}) });
   return viewRoute.GET(new Request(`http://localhost/api/findings/view?${query}`));
 }
@@ -446,7 +446,7 @@ describe('what the fixture holds, so the reference itself is pinned', () => {
 type RouteHandler = { GET(req: Request): Promise<Response> };
 
 async function getFrom(route: RouteHandler, name: string, view: View, params: Record<string, string>): Promise<Response> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   const query = viewToSearchParams(view, params);
   return route.GET(new Request(`http://localhost/api/findings/${name}?${query}`));
 }

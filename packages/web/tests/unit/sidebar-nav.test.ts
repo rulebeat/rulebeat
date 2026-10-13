@@ -12,9 +12,15 @@ describe('the sidebar nav by role', () => {
     expect(list.indexOf('/access')).toBe(list.indexOf('/audit') - 1);
   });
 
-  it.each(['viewer', 'editor'] as const)('has no Access entry for a %s', (role) => {
-    expect(hrefs(role)).not.toContain('/access');
+  it.each(ROLES)('shows the Access entry to a %s: a person who manages no one reads their own access there', (role) => {
+    const list = hrefs(role);
+    expect(list).toContain('/access');
+    expect(list.indexOf('/access')).toBe(list.indexOf('/settings') + 1);
     expect(navForRole(role).top.map(item => item.href)).not.toContain('/access');
+  });
+
+  it.each(['viewer', 'editor'] as const)('still hides the Audit log from a %s', (role) => {
+    expect(hrefs(role)).not.toContain('/audit');
   });
 
   it('labels the entry Access', () => {

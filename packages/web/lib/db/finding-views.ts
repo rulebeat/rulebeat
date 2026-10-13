@@ -25,14 +25,18 @@
  * (a connection of its own on SQLite, so a slow download never holds up a scan save or another read),
  * and never holds more than a batch (a finding with more rows than a block is read in blocks).
  *
- * Every reader takes the caller's `Access` (#270). None narrows by it yet: an Access that is not
- * Everything reads what Everything reads until its route leaves the not-yet-scoped list.
+ * Every reader takes the caller's `Access` (#270) and narrows by it (#272): a person who does not hold
+ * Everything is shown only the findings whose placement sits inside a Scope they hold, in every list,
+ * count, facet, column option and export. The narrowing is in the SQL that reads the tab's findings
+ * (lib/db/access-filter.ts), so everything built over them is already in scope. `queryFilterOptions`
+ * is the one reader that does not narrow yet: the dashboards that use it are narrowed in #274.
  *
  * Before the upgrade's copy into finding_rows has been proven, the old row columns are the truth (as
  * in listFindings()), so a view then reads every finding in full and the reference answers it.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import type { Access } from '../access-model';
+import { everythingAccess, type Access } from '../access-model';
+import { accessFilterSql } from './access-filter';
 import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import {
   categories as categoriesTable, findingRows as findingRowsTable, findings as findingsTable,
@@ -40,11 +44,12 @@ import {
 } from './tables';
 import { CHUNK_SIZE, chunk } from './chunk';
 import { listReturnedColumnsIn } from './column-catalogue';
+import { PathCollector } from './column-catalogue-build';
 import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSummary, rowsTableReady, summaryColumns } from './findings';
 import { ruleTagsOf } from '../rules';
 import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
-import { activeRowFilters, applyView, readPath, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
+import { activeRowFilters, applyView, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { isActiveSuppression } from '../suppressions';
 import { subscriptionValue } from '../placement';
@@ -86,15 +91,15 @@ async function readSuppressedFingerprints(tx: DbHandle): Promise<Set<string>> {
 
 const fingerprintOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** The tab's findings without rows, long text or evidence, in fingerprint order. */
-async function readSlim(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, RuleDetails>): Promise<SlimFinding[]> {
+/** The tab's findings that sit inside `access`, without rows, long text or evidence, in fingerprint order. */
+async function readSlim(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, RuleDetails>, access: Access): Promise<SlimFinding[]> {
   const t = findingsTable;
   const stored = await many(tx.select({
     fingerprint: t.fingerprint, ruleId: t.ruleId, category: t.category, severity: t.severity, kind: t.kind,
     dimensionKey: t.dimensionKey, resourceId: t.resourceId, resourceType: t.resourceType, resourceName: t.resourceName,
     subscriptionId: t.subscriptionId, placement: t.placement, resourceGroup: t.resourceGroup, location: t.location, title: t.title,
     status: t.status, firstSeenAt: t.firstSeenAt, lastSeenAt: t.lastSeenAt, resolvedAt: t.resolvedAt,
-  }).from(t).where(inArray(t.kind, [...TAB_KINDS[tab]])));
+  }).from(t).where(and(inArray(t.kind, [...TAB_KINDS[tab]]), accessFilterSql(access))));
   return stored
     .map((r): SlimFinding => ({
       fingerprint: r.fingerprint, ruleId: r.ruleId, category: r.category, severity: r.severity as SlimFinding['severity'],
@@ -221,12 +226,25 @@ function readSummaryChunk(tx: DbHandle, fingerprints: string[]) {
 
 // ---- Before the upgrade's copy has been proven ----
 
-/** Every finding of the tab in full, from the old row columns, as the explorer holds them. */
-async function readWhole(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, RuleDetails>) {
-  const stored = await many(tx.select().from(findingsTable).where(inArray(findingsTable.kind, [...TAB_KINDS[tab]])));
+/** Every finding of the tab that sits inside `access`, in full, from the old row columns, as the explorer holds them. */
+async function readWhole(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, RuleDetails>, access: Access) {
+  const stored = await many(tx.select().from(findingsTable).where(and(inArray(findingsTable.kind, [...TAB_KINDS[tab]]), accessFilterSql(access))));
   return stored
     .map(row => decorateFinding(rowToRecordFromColumns(row), rules.get(row.ruleId)))
     .sort((a, b) => fingerprintOrder(a.fingerprint, b.fingerprint));
+}
+
+/** The columns the "Add filter" list offers. Under Everything that is the per-rule catalogue. The
+ *  catalogue also holds paths only an out-of-scope finding of the same rule returned, so for anyone
+ *  else the paths are read from the rows of the findings they are shown. */
+async function returnedColumns(tx: DbHandle, access: Access, slim: readonly SlimFinding[]): Promise<string[]> {
+  if (access.everything) return listReturnedColumnsIn(tx, rulesInPlay(slim));
+  const collector = new PathCollector();
+  for (const fpChunk of chunk(slim.map(f => f.fingerprint))) {
+    const stored = await many(tx.select({ data: findingRowsTable.data }).from(findingRowsTable).where(inArray(findingRowsTable.fingerprint, fpChunk)));
+    for (const r of stored) collector.add(r.data);
+  }
+  return collector.result();
 }
 
 // ---- The answers ----
@@ -237,13 +255,13 @@ export function queryView(view: View, query: ViewQuery, access: Access): Promise
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);
     if (!(await rowsTableReady(tx))) {
-      const findings = await readWhole(tx, query.tab, rules);
-      const catalogueColumns = await listReturnedColumnsIn(tx, rulesInPlay(findings));
+      const findings = await readWhole(tx, query.tab, rules, access);
+      const catalogueColumns = access.everything ? await listReturnedColumnsIn(tx, rulesInPlay(findings)) : rowLeafPaths(findings);
       return buildViewResponse(findings, view, ctx, { tab: query.tab, catalogueColumns, categories });
     }
-    const slim = await readSlim(tx, query.tab, rules);
+    const slim = await readSlim(tx, query.tab, rules, access);
     const index = await buildIndex(tx, slim, view, ctx);
-    const catalogueColumns = await listReturnedColumnsIn(tx, rulesInPlay(slim));
+    const catalogueColumns = await returnedColumns(tx, access, slim);
     const { entries, ...answer } = answerView(slim, index, view, ctx, { tab: query.tab, catalogueColumns, categories });
     return { ...answer, items: await fillEntries(tx, entries, view, rules) };
   });
@@ -253,7 +271,10 @@ export function queryView(view: View, query: ViewQuery, access: Access): Promise
  *  no finding with that fingerprint. Reads only that finding. */
 export function queryFindingRows(view: View, query: ViewQuery & { fingerprint: string; rowsPage: number }, access: Access): Promise<FindingRowsResponse | null> {
   return inReadTransaction(async (tx) => {
-    const where = and(eq(findingsTable.fingerprint, query.fingerprint), inArray(findingsTable.kind, [...TAB_KINDS[query.tab]]));
+    // A finding outside the person's Scopes answers as one that does not exist.
+    const where = and(
+      eq(findingsTable.fingerprint, query.fingerprint), inArray(findingsTable.kind, [...TAB_KINDS[query.tab]]), accessFilterSql(access),
+    );
     const rules = await readRuleDetails(tx);
     const ready = await rowsTableReady(tx);
     const [row] = ready
@@ -291,9 +312,9 @@ export function queryGroup(view: View, query: ViewQuery & { groupPath: readonly 
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);
     const options = { tab: query.tab, catalogueColumns: [], categories, groupPath: query.groupPath, groupPage: query.groupPage };
-    if (!(await rowsTableReady(tx))) return buildGroupResponse(await readWhole(tx, query.tab, rules), view, ctx, options);
+    if (!(await rowsTableReady(tx))) return buildGroupResponse(await readWhole(tx, query.tab, rules, access), view, ctx, options);
 
-    const slim = await readSlim(tx, query.tab, rules);
+    const slim = await readSlim(tx, query.tab, rules, access);
     // A path that leads nowhere reads nothing: it has no group to narrow the findings to.
     const valid = query.groupPath.length > 0 && query.groupPath.length <= view.groupBy.length;
     const index = await buildIndex(tx, slim, view, ctx, valid ? query.groupPath : undefined);
@@ -315,7 +336,8 @@ export function queryFilterOptions(access: Access): Promise<FilterOptions> {
   return inReadTransaction(async (tx) => {
     const rules = await readRuleDetails(tx);
     const found: Awaited<ReturnType<typeof readSlim>> = [];
-    for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules));
+    // Not narrowed yet (#274 narrows the dashboards that read it), so it reads as Everything does.
+    for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules, everythingAccess('admin')));
     const named = new Map(found.map(f => [f.ruleId, { id: f.ruleId, name: rules.get(f.ruleId)?.name ?? f.title }]));
     return {
       // A Directory finding is one more option, the reserved value, since its stored subscription is empty.
@@ -331,9 +353,9 @@ export function queryColumnValues(view: View, query: ViewQuery & { column: RowFi
   return inReadTransaction(async (tx) => {
     const { rules, ctx } = await prepare(tx, view, query);
     if (!(await rowsTableReady(tx))) {
-      return buildColumnValuesResponse(await readWhole(tx, query.tab, rules), view, ctx, { tab: query.tab, column: query.column, q: query.q });
+      return buildColumnValuesResponse(await readWhole(tx, query.tab, rules, access), view, ctx, { tab: query.tab, column: query.column, q: query.q });
     }
-    const slim = await readSlim(tx, query.tab, rules);
+    const slim = await readSlim(tx, query.tab, rules, access);
     const path = rowPath(query.column);
     const others = activeRowFilters(view.filters, new Set([query.column]));
     const counter = new ColumnCounter(others, path);
@@ -417,13 +439,13 @@ async function* exportPieces(
 
 /** What an export of the view reads: the findings the view lists in its order, ungrouped, with every
  *  row that passes its row filters. */
-async function exportSource(tx: DbHandle, view: View, query: ViewQuery): Promise<ExportSource> {
+async function exportSource(tx: DbHandle, view: View, query: ViewQuery, access: Access): Promise<ExportSource> {
   const flat: View = { ...view, groupBy: [] };
   const { rules, ctx } = await prepare(tx, flat, query);
   const rowFilters = activeRowFilters(flat.filters);
 
   if (!(await rowsTableReady(tx))) {
-    const pieces = applyView(await readWhole(tx, query.tab, rules), flat, ctx).matched.map(({ finding, rows }): ExportPiece => {
+    const pieces = applyView(await readWhole(tx, query.tab, rules, access), flat, ctx).matched.map(({ finding, rows }): ExportPiece => {
       const { rows: _rows, ...own } = finding;
       return { finding: own, rows, start: true, end: true };
     });
@@ -437,7 +459,7 @@ async function exportSource(tx: DbHandle, view: View, query: ViewQuery): Promise
     };
   }
 
-  const slim = await readSlim(tx, query.tab, rules);
+  const slim = await readSlim(tx, query.tab, rules, access);
   // An empty path asks for the listed findings alone: the facets and tiles of a view are not wanted.
   const index = await buildIndex(tx, slim, flat, ctx, []);
   const fingerprints = answerExport(slim, index, flat, ctx).map(f => f.fingerprint);
@@ -455,5 +477,5 @@ async function exportSource(tx: DbHandle, view: View, query: ViewQuery): Promise
 /** The export of a view, to be read inside a snapshot that stays open as long as `use` runs
  *  (lib/export-stream.ts keeps it open for as long as the download reads). */
 export function openExport(view: View, query: ViewQuery, access: Access): OpenExport {
-  return use => inSnapshotRead(async tx => use(await exportSource(tx, view, query)));
+  return use => inSnapshotRead(async tx => use(await exportSource(tx, view, query, access)));
 }

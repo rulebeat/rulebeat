@@ -16,7 +16,7 @@ import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
-import { NO_ACCESS } from '@/lib/access-model';
+import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
 import { can } from '@/lib/rbac';
 import type { Rule, Suppression } from '@/lib/types';
 
@@ -126,6 +126,7 @@ export default async function ScansPage({
           notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
         tabEmpty={tabEmpty}
+        noAccess={holdsNoScope(access)}
       />
     </>
   );

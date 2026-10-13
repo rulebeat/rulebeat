@@ -23,6 +23,18 @@ describe('which screen the explorer shows', () => {
     }
   });
 
+  it('tells a person with no Scope so, ahead of loading, a failure and the empty state', () => {
+    for (const data of [null, answered(0), answered(2)]) {
+      for (const failure of [null, 'Could not load the findings.']) {
+        expect(screenOf({ noAccess: true, mode: 'page', suppressionsFailed: false, failure, data })).toBe('no-access');
+      }
+    }
+  });
+
+  it('shows the empty state, not the no-access one, to a person who does hold a Scope', () => {
+    expect(screenOf({ noAccess: false, mode: 'page', suppressionsFailed: false, failure: null, data: answered(0) })).toBe('empty');
+  });
+
   it('ignores a failed suppressions load on the page, which is always given them', () => {
     expect(screenOf({ mode: 'page', suppressionsFailed: true, failure: null, data: answered(2) })).toBe('explorer');
   });

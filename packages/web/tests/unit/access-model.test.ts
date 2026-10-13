@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  buildAccess, describeAccess, everythingAccess, parseScope, sameScopePath, scopeCovers,
+  buildAccess, collapseGrants, describeAccess, everythingAccess, highestRole, MAX_MANUAL_GRANTS, parseManualAccess, parseScope, sameScopePath, scopeCovers,
   DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID,
 } from '@/lib/access-model';
 
@@ -106,5 +106,61 @@ describe('describeAccess', () => {
     expect(describeAccess(one)).toBe('1 scope, manual');
     const two = buildAccess([...one.grants, { tenantId: 't', scope: parseScope(MG)!, role: 'viewer' }], 'mirrored');
     expect(describeAccess(two)).toBe('2 scopes, mirrored');
+  });
+});
+
+describe('parseManualAccess (#272)', () => {
+  const rg = `${SUB}/resourceGroups/rg-app`;
+
+  it('reads a list of Scopes with a Role each', () => {
+    const result = parseManualAccess([
+      { scope: '/', role: 'viewer' }, { scope: DIRECTORY_SCOPE_PATH, role: 'editor' }, { scope: SUB, role: 'viewer' }, { scope: rg, role: 'editor' },
+    ]);
+    expect(result).toEqual({ ok: true, grants: [
+      { scope: '/', role: 'viewer' }, { scope: DIRECTORY_SCOPE_PATH, role: 'editor' }, { scope: SUB, role: 'viewer' }, { scope: rg, role: 'editor' },
+    ] });
+  });
+
+  it('carries only a path and a Role: a tenant id in the request is dropped', () => {
+    const result = parseManualAccess([{ scope: SUB, role: 'viewer', tenantId: 'other', userId: 'x' }]);
+    expect(result).toEqual({ ok: true, grants: [{ scope: SUB, role: 'viewer' }] });
+  });
+
+  it('refuses each thing that is not storable, with a message that names no path', () => {
+    const refused = (input: unknown) => (parseManualAccess(input) as { ok: false; error: string }).error;
+    expect(refused('/')).toBe('Access must be a list of scopes.');
+    expect(refused([{ scope: `${rg}/providers/Microsoft.Compute/virtualMachines/vm-1`, role: 'viewer' }]))
+      .toBe('A scope must be Everything, the Directory, a subscription or a resource group.');
+    expect(refused([{ scope: 'not a scope', role: 'viewer' }])).toBe('A scope must be Everything, the Directory, a subscription or a resource group.');
+    expect(refused([{ scope: MG, role: 'viewer' }])).toBe('Management group scopes are not available yet.');
+    expect(refused([{ scope: SUB, role: 'admin' }])).toBe('The Admin Role cannot be given at a scope.');
+    expect(refused([{ scope: SUB, role: 'owner' }])).toBe('Choose Viewer or Editor for each scope.');
+    expect(refused([{ scope: SUB }])).toBe('Each scope needs a path and a Role.');
+    expect(refused([null])).toBe('Each scope needs a path and a Role.');
+    expect(refused(Array.from({ length: MAX_MANUAL_GRANTS + 1 }, () => ({ scope: '/', role: 'viewer' })))).toMatch(/at most/);
+  });
+
+  it('accepts an empty list: that is a person who holds nothing', () => {
+    expect(parseManualAccess([])).toEqual({ ok: true, grants: [] });
+  });
+
+  it('stores a Scope listed twice, in any casing, once at the higher Role', () => {
+    expect(parseManualAccess([{ scope: SUB, role: 'viewer' }, { scope: SUB.toUpperCase(), role: 'editor' }]))
+      .toEqual({ ok: true, grants: [{ scope: SUB, role: 'editor' }] });
+    expect(parseManualAccess([{ scope: SUB, role: 'editor' }, { scope: SUB.toUpperCase(), role: 'viewer' }]))
+      .toEqual({ ok: true, grants: [{ scope: SUB, role: 'editor' }] });
+  });
+});
+
+describe('highestRole and collapseGrants (#272)', () => {
+  it('is an Editor when any Role is, and a Viewer otherwise, including when there is none', () => {
+    expect(highestRole([{ role: 'viewer' }, { role: 'editor' }])).toBe('editor');
+    expect(highestRole([{ role: 'viewer' }])).toBe('viewer');
+    expect(highestRole([])).toBe('viewer');
+  });
+
+  it('keeps one entry a Scope and the first casing', () => {
+    expect(collapseGrants([{ scope: '/A', role: 'viewer' as const }, { scope: '/a', role: 'editor' as const }, { scope: '/b', role: 'viewer' as const }]))
+      .toEqual([{ scope: '/A', role: 'editor' }, { scope: '/b', role: 'viewer' }]);
   });
 });

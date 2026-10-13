@@ -127,7 +127,7 @@ const f = (field: ViewFilter['field'], ...values: string[]): ViewFilter => ({ fi
 /** Every finding the view route lists for the query, one page after another, each with all its matched
  *  rows, the rows route's pages added up when the first page of them held fewer. */
 async function findingsOfViewRoute(query: URLSearchParams): Promise<HeldFinding[]> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   const out: HeldFinding[] = [];
   for (let page = 1; ; page++) {
     const params = new URLSearchParams(query);
@@ -150,7 +150,7 @@ async function findingsOfViewRoute(query: URLSearchParams): Promise<HeldFinding[
 }
 
 async function getExport(query: URLSearchParams, format: 'csv' | 'json'): Promise<Response> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   return exportRoute.GET(new Request(`http://localhost/api/findings/export?${query}&format=${format}`));
 }
 

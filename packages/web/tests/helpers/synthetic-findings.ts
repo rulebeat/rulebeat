@@ -29,6 +29,7 @@ function placedFinding(name: string, rows: Record<string, unknown>[], opts: Synt
   const category = opts.category ?? 'security';
   const placement = opts.placement!;
   const subscriptionId = placement === 'subscription' || placement === 'workspace' ? opts.subscriptionId ?? 'sub-1' : '';
+  const resourceGroup = placement === 'workspace' ? opts.resourceGroup : undefined;
   const managementGroupId = placement === 'management-group' ? opts.managementGroupId ?? 'mg-1' : undefined;
   const resourceId = placement === 'subscription' ? `/subscriptions/${subscriptionId}`
     : placement === 'management-group' ? `/providers/Microsoft.Management/managementGroups/${managementGroupId}`
@@ -44,6 +45,7 @@ function placedFinding(name: string, rows: Record<string, unknown>[], opts: Synt
     kind: activity ? 'activity' : opts.kind,
     ...(activity ? { dimensionKey: name } : { resourceId, resourceName: name, resourceType: 'microsoft.resources/things' }),
     subscriptionId,
+    ...(resourceGroup ? { resourceGroup } : {}),
     placement,
     ...(managementGroupId ? { managementGroupId } : {}),
     title: `Finding of ${opts.ruleId}`,

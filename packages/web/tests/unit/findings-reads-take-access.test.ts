@@ -11,7 +11,7 @@
  *     `TABLE_IMPORT_EXEMPT` (a SQL-fragment builder, the connection and the schema bootstrap), so a read
  *     cannot go around the family's functions.
  *
- * No read is narrowed by the access yet; this test only keeps the parameter from being dropped.
+ * This test only keeps the parameter from being dropped; access-matrix.test.ts checks what it narrows.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -98,6 +98,7 @@ const EXEMPT: Record<string, Record<string, string>> = {
 const TABLE_IMPORT_EXEMPT: Record<string, string> = {
   'lib/db/finding-kinds-sql.ts': 'SQL-fragment builder: returns a predicate, reads nothing',
   'lib/db/subscription-filter.ts': 'SQL-fragment builder: returns a predicate, reads nothing',
+  'lib/db/access-filter.ts': 'SQL-fragment builder: returns the predicate an access puts on findings, reads nothing',
   'lib/db/client.ts': 'opens the connection with the whole schema',
   'lib/db/tables.ts': 'picks the table set for the backend',
   'lib/db/snapshot.ts': 'opens a read-only connection of its own with the whole schema, for an export',

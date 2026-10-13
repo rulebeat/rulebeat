@@ -197,6 +197,21 @@ describe('mayAct: may this access do this action (#269)', () => {
     expect(mayAct(everything('editor'), 'suppressions:write', outside)).toBe(true);
   });
 
+  it('lets a Viewer on a subscription who is an Editor on a resource group inside it act there, and nowhere else in the subscription', () => {
+    const access = buildAccess([
+      { tenantId: '', scope: parseScope(SUB)!, role: 'viewer' },
+      { tenantId: '', scope: parseScope(`${SUB}/resourceGroups/rg-app`)!, role: 'editor' },
+    ], 'manual');
+    expect(mayAct(access, 'suppressions:write', parseScope(`${SUB}/resourceGroups/rg-app`)!)).toBe(true);
+    expect(mayAct(access, 'suppressions:write', parseScope(`${SUB}/resourceGroups/rg-other`)!)).toBe(false);
+    expect(mayAct(access, 'suppressions:write', parseScope(SUB)!)).toBe(false);
+    expect(mayAct(access, 'suppressions:write', parseScope(`${OTHER_SUB}/resourceGroups/rg-app`)!)).toBe(false);
+    // Scoped actions need the Role at any Scope that allows them, so the Editor row is enough.
+    expect(mayAct(access, 'scans:run')).toBe(true);
+    // Install-wide actions need Everything, whichever Roles are held below it.
+    expect(mayAct(access, 'rules:write')).toBe(false);
+  });
+
   it('agrees with can() for every action when the Role is held on Everything', () => {
     for (const role of ROLES) {
       for (const action of MODEL_ALL_ACTIONS) {

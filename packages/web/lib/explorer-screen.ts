@@ -10,18 +10,22 @@ import { NO_VALUE_LABEL, type ColumnValuesResponse, type ViewResponse } from './
 
 // ---- The screen ----
 
-export type ExplorerScreen = 'widget-unavailable' | 'unavailable' | 'loading' | 'empty' | 'explorer';
+export type ExplorerScreen = 'no-access' | 'widget-unavailable' | 'unavailable' | 'loading' | 'empty' | 'explorer';
 
 /** Which screen the explorer shows. `data` is the answer on screen (the last one while the next is on
  *  its way), `failure` the message of a failed read. A failed read with no earlier answer has nothing
  *  else to draw; with one, the controls stay and the list is where the failure shows. The empty screen
- *  is for a tab where no rule has a finding at all, which is not the same as filters matching none. */
+ *  is for a tab where no rule has a finding at all, which is not the same as filters matching none.
+ *  A person who holds no Scope is told so before anything else: whatever the read answers, it answers
+ *  for nobody, and "No findings yet" would send them to run a scan that cannot change it. */
 export function screenOf(state: {
+  noAccess?: boolean;
   mode: 'page' | 'widget';
   suppressionsFailed: boolean;
   failure: string | null;
   data: Pick<ViewResponse, 'policyOptions'> | null;
 }): ExplorerScreen {
+  if (state.noAccess) return 'no-access';
   // Only the widget loads its own suppressions, and a failed load must not read as "no suppressions".
   if (state.mode === 'widget' && state.suppressionsFailed) return 'widget-unavailable';
   if (state.failure && !state.data) return 'unavailable';

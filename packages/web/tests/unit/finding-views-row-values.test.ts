@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { referenceInputs, wire } from '../helpers/view-reference';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 import { emptyView, valueText, viewToSearchParams, type View, type ViewFilter } from '@/lib/finding-view';
 import {
   buildColumnValuesResponse, buildGroupResponse, buildViewResponse,
@@ -56,7 +57,7 @@ const make = (patch: Partial<View> & { filters?: ViewFilter[] }): View => ({ ...
 const f = (field: ViewFilter['field'], ...values: string[]): ViewFilter => ({ field, values } as ViewFilter);
 
 async function call(route: { GET(req: Request): Promise<Response> }, name: string, view: View, params: Record<string, string>): Promise<Response> {
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: EVERYTHING_ACCESS });
   return route.GET(new Request(`http://localhost/api/findings/${name}?${viewToSearchParams(view, params)}`));
 }
 

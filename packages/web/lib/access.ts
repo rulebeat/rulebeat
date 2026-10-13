@@ -1,7 +1,7 @@
 import { listAssignmentsFor, listAllAssignments, type RoleAssignment } from '@/lib/db/role-assignments';
 import { listUsers, type AppUser } from '@/lib/db/users';
-import { buildAccess, everythingAccess, parseScope, type Access, type ScopeGrant } from '@/lib/access-model';
-import { isRole } from '@/lib/rbac';
+import { buildAccess, everythingAccess, parseScope, type Access, type AccessSource, type ScopeGrant, type ScopeKind } from '@/lib/access-model';
+import { isRole, type Role } from '@/lib/rbac';
 
 /** A person together with the Access they resolve to: what the user routes and the Access page carry. */
 export type AppUserWithAccess = AppUser & { access: Access };
@@ -60,4 +60,27 @@ export function changedAccessFields(before: AppUserWithAccess | null, after: App
   if ((before?.accessSource ?? null) !== after.accessSource) changed.push('accessSource');
   if (JSON.stringify(stored(before)) !== JSON.stringify(stored(after))) changed.push('assignments');
   return changed;
+}
+
+/** One Scope a person holds, as their own access page and the own-access route show it: no tenant id. */
+export interface OwnScope {
+  kind: ScopeKind;
+  path: string;
+  role: Role;
+}
+
+/** What a person is told about their own access. */
+export interface OwnAccess {
+  role: Role;
+  source: AccessSource | null;
+  scopes: OwnScope[];
+}
+
+/** A person's own access, for the page and the route that read it: the Role they hold, where it came from, and each Scope with its Role. */
+export function ownAccessOf(user: Pick<AppUser, 'role'>, access: Access): OwnAccess {
+  return {
+    role: user.role,
+    source: access.source,
+    scopes: access.grants.map(g => ({ kind: g.scope.kind, path: g.scope.path, role: g.role })),
+  };
 }
