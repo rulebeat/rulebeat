@@ -4,6 +4,8 @@ import { eq, and, asc, count, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { dbKind } from './backend';
 import { isRole, type Role } from '@/lib/rbac';
+import { isAccessSource, type AccessSource } from '@/lib/access-model';
+import { deleteAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn } from './role-assignments';
 
 export interface AppUser {
   id: string;
@@ -12,8 +14,8 @@ export interface AppUser {
   oid: string | null;
   name: string | null;
   role: Role;
-  /** Reserved for scoped roles ("this team only sees these subscriptions"). Always null today. */
-  scope: string | null;
+  /** Where a Viewer's or Editor's access came from. Null for an Admin. */
+  accessSource: AccessSource | null;
   /** Bumped by bumpSessionEpoch() on any local-password mutation: see spec 020. */
   sessionEpoch: number;
   createdAt: string;
@@ -29,7 +31,7 @@ function rowToUser(row: Row): AppUser {
     oid: row.oid ?? null,
     name: row.name ?? null,
     role: isRole(row.role) ? row.role : 'viewer',
-    scope: row.scope ?? null,
+    accessSource: isAccessSource(row.accessSource) ? row.accessSource : null,
     sessionEpoch: row.sessionEpoch,
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt ?? null,
@@ -97,16 +99,21 @@ export async function createUser(data: { email: string; role: Role; oid?: string
   if (await getUserByEmail(email)) return { error: `${email} already has a role assigned.` };
 
   const id = globalThis.crypto.randomUUID();
-  await run(db.insert(users).values({
-    id,
-    email,
-    oid: data.oid ?? null,
-    name: data.name ?? null,
-    role: data.role,
-    scope: null,
-    createdAt: new Date().toISOString(),
-    lastSeenAt: data.oid ? new Date().toISOString() : null,
-  }));
+  // A Viewer or Editor starts with Everything at their Role, set by hand. An Admin holds Everything
+  // without a row and has no source.
+  await inTransaction(async (tx) => {
+    await run(tx.insert(users).values({
+      id,
+      email,
+      oid: data.oid ?? null,
+      name: data.name ?? null,
+      role: data.role,
+      accessSource: data.role === 'admin' ? null : 'manual',
+      createdAt: new Date().toISOString(),
+      lastSeenAt: data.oid ? new Date().toISOString() : null,
+    }));
+    if (data.role !== 'admin') await replaceWithEverythingOn(tx, id, data.role);
+  });
 
   return { user: (await getUser(id))! };
 }
@@ -129,13 +136,23 @@ export async function updateUserRole(id: string, role: Role): Promise<{ user: Ap
       }
     }
 
-    await run(tx.update(users).set({ role }).where(eq(users.id, id)));
+    if (role === 'admin') {
+      // An Admin is never scoped: no rows, no source.
+      await run(tx.update(users).set({ role, accessSource: null }).where(eq(users.id, id)));
+      await deleteAssignmentsOn(tx, id);
+    } else if (existing.role === 'admin') {
+      await run(tx.update(users).set({ role, accessSource: 'manual' }).where(eq(users.id, id)));
+      await replaceWithEverythingOn(tx, id, role);
+    } else {
+      await run(tx.update(users).set({ role }).where(eq(users.id, id)));
+      await setRoleOnAssignmentsOn(tx, id, role);
+    }
     return { user: (await getUserOn(tx, id))! };
   });
 }
 
 /**
- * The last-admin check and all three deletes run inside one transaction: the check can't be
+ * The last-admin check and every delete run inside one transaction: the check can't be
  * raced the same way `updateUserRole`'s can't (see `lockAdminRowsForUpdate()`), and a failure
  * part-way through the deletes rolls every one of them back instead of leaving the user row gone
  * but their saved queries or run history still present, or vice versa.
@@ -156,6 +173,7 @@ export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'la
     // Run history (spec 037 follow-up) has no shared visibility at all: it's always fully personal,
     // so every row goes, not just a 'private' subset.
     await run(tx.delete(queryRuns).where(eq(queryRuns.ownerId, id)));
+    await deleteAssignmentsOn(tx, id);
     await run(tx.delete(users).where(eq(users.id, id)));
     return true;
   });

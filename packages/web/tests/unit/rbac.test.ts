@@ -7,9 +7,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_ACTIONS as MODEL_ALL_ACTIONS, can, isRole, ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS,
+  ALL_ACTIONS as MODEL_ALL_ACTIONS, ACTION_CLASS, can, isRole, mayAct, ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS,
   type Action, type Role,
 } from '@/lib/rbac';
+import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/access-model';
 
 /** The authorization model, restated independently of the implementation. */
 const EXPECTED: Record<Role, Action[]> = {
@@ -131,6 +132,76 @@ describe('every role is presentable in the UI', () => {
     for (const role of ROLES) {
       expect(ROLE_LABELS[role]).toBeTruthy();
       expect(ROLE_DESCRIPTIONS[role]).toBeTruthy();
+    }
+  });
+});
+
+describe('action classes (#269)', () => {
+  const EXPECTED_CLASS: Record<string, string[]> = {
+    'install-administration': ['rules:version', 'categories:write', 'users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'],
+    'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
+    placed: ['suppressions:write'],
+    scoped: ['read', 'rules:validate', 'scans:run'],
+    outside: ['account:self'],
+  };
+
+  it('gives every action exactly one class, as the model states it', () => {
+    for (const [cls, actions] of Object.entries(EXPECTED_CLASS)) {
+      for (const action of actions) expect(ACTION_CLASS[action as Action], action).toBe(cls);
+    }
+    expect(Object.keys(ACTION_CLASS).sort()).toEqual([...MODEL_ALL_ACTIONS].sort());
+    expect(Object.values(EXPECTED_CLASS).flat().sort()).toEqual([...MODEL_ALL_ACTIONS].sort());
+  });
+});
+
+describe('mayAct: may this access do this action (#269)', () => {
+  const SUB = '/subscriptions/00000000-0000-0000-0000-000000000000';
+  const OTHER_SUB = '/subscriptions/11111111-1111-1111-1111-111111111111';
+  const everything = (role: Role): Access => everythingAccess(role, role === 'admin' ? null : 'manual');
+  const onSubscription = (role: Role): Access => buildAccess(
+    [{ tenantId: '', scope: { kind: 'subscription', path: SUB }, role }], 'manual');
+  const none: Access = buildAccess([], 'manual');
+
+  const table: Array<[string, Access, Action, boolean]> = [
+    ['admin on Everything', everything('admin'), 'users:manage', true],
+    ['editor on Everything', everything('editor'), 'users:manage', false],
+    ['viewer on Everything', everything('viewer'), 'users:manage', false],
+    ['editor on Everything, install administration', everything('editor'), 'azure:manage', false],
+    ['editor on Everything, install-wide', everything('editor'), 'rules:write', true],
+    ['viewer on Everything, install-wide', everything('viewer'), 'rules:write', false],
+    ['editor on a subscription, install-wide', onSubscription('editor'), 'rules:write', false],
+    ['editor on a subscription, schemas', onSubscription('editor'), 'schemas:refresh', false],
+    ['editor on a subscription, scoped', onSubscription('editor'), 'scans:run', true],
+    ['viewer on a subscription, scoped', onSubscription('viewer'), 'scans:run', false],
+    ['editor on a subscription, placed, no placement', onSubscription('editor'), 'suppressions:write', true],
+    ['viewer on a subscription, placed', onSubscription('viewer'), 'suppressions:write', false],
+    ['editor on a subscription, read', onSubscription('editor'), 'read', true],
+    ['no grants, read', none, 'read', true],
+    ['no grants, scoped', none, 'scans:run', false],
+    ['no grants, install-wide', none, 'rules:write', false],
+    ['no grants, own account', none, 'account:self', true],
+    ['viewer on Everything, own account', everything('viewer'), 'account:self', true],
+  ];
+  for (const [name, access, action, expected] of table) {
+    it(`${name}: ${action} is ${expected ? 'allowed' : 'refused'}`, () => {
+      expect(mayAct(access, action)).toBe(expected);
+    });
+  }
+
+  it('narrows a placed action to the Scope that contains the placement', () => {
+    const access = onSubscription('editor');
+    const inside = parseScope(`${SUB}/resourceGroups/rg-app`)!;
+    const outside = parseScope(`${OTHER_SUB}/resourceGroups/rg-app`)!;
+    expect(mayAct(access, 'suppressions:write', inside)).toBe(true);
+    expect(mayAct(access, 'suppressions:write', outside)).toBe(false);
+    expect(mayAct(everything('editor'), 'suppressions:write', outside)).toBe(true);
+  });
+
+  it('agrees with can() for every action when the Role is held on Everything', () => {
+    for (const role of ROLES) {
+      for (const action of MODEL_ALL_ACTIONS) {
+        expect(mayAct(everything(role), action), `${role} ${action}`).toBe(can(role, action));
+      }
     }
   });
 });

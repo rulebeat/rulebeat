@@ -7,6 +7,8 @@
  * manage categories is then one edit here rather than a sweep through route files.
  */
 
+import { scopeCovers, type Access, type Scope } from '@/lib/access-model';
+
 export type Role = 'viewer' | 'editor' | 'admin';
 
 export const ROLES: readonly Role[] = ['viewer', 'editor', 'admin'];
@@ -68,6 +70,66 @@ export function can(role: Role, action: Action): boolean {
   // ladder rather than being duplicated into all three action arrays above.
   if (action === 'account:self') return isRole(role);
   return ROLE_ACTIONS[role]?.has(action) ?? false;
+}
+
+/**
+ * What an action touches, which decides where a person must hold a Role for it.
+ *
+ * - `install-administration`: running the install itself. Admin only, never scoped.
+ * - `install-wide`: changes what the whole install shares. A Role on Everything.
+ * - `placed`: acts on one finding, so it needs a Role at a Scope containing where that finding sits.
+ * - `scoped`: acts inside what the person may see. A Role at any Scope.
+ * - `outside`: asks nothing of Scope.
+ *
+ * An exhaustive record: adding an action without a class is a type error.
+ */
+export type ActionClass = 'install-administration' | 'install-wide' | 'placed' | 'scoped' | 'outside';
+
+export const ACTION_CLASS: Record<Action, ActionClass> = {
+  'rules:version': 'install-administration',
+  'categories:write': 'install-administration',
+  'users:manage': 'install-administration',
+  'audit:read': 'install-administration',
+  'azure:manage': 'install-administration',
+  'auth:manage': 'install-administration',
+  'notifications:manage': 'install-administration',
+  'rules:write': 'install-wide',
+  'rules:delete': 'install-wide',
+  'schedules:write': 'install-wide',
+  'dashboards:write': 'install-wide',
+  'views:write': 'install-wide',
+  'schemas:refresh': 'install-wide',
+  'suppressions:write': 'placed',
+  'read': 'scoped',
+  'rules:validate': 'scoped',
+  'scans:run': 'scoped',
+  'account:self': 'outside',
+};
+
+/**
+ * May this access do this action, at this placement. `can(role, action)` stays the one map of what
+ * a Role allows; this only decides where the Role has to be held.
+ *
+ * A placed or scoped action called with no placement needs a Role at any Scope that allows it.
+ * `read` passes for any signed-in person: a person with no Scope reads an empty install, and the
+ * reads themselves are what narrow to a Scope (#270).
+ */
+export function mayAct(access: Access, action: Action, placement?: Scope): boolean {
+  if (action === 'read') return true;
+  switch (ACTION_CLASS[action]) {
+    case 'outside':
+      return true;
+    case 'install-administration':
+      return access.grants.some(g => g.scope.kind === 'everything' && g.role === 'admin' && can(g.role, action));
+    case 'install-wide':
+      return access.grants.some(g => g.scope.kind === 'everything' && can(g.role, action));
+    case 'placed':
+    case 'scoped':
+      return access.grants.some(g =>
+        can(g.role, action) && (placement === undefined || scopeCovers(g.scope, placement)));
+    default:
+      return false;
+  }
 }
 
 export function isRole(value: unknown): value is Role {

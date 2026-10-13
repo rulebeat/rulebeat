@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getUser, updateUserRole, deleteUser } from '@/lib/db/users';
+import { withAccess, changedAccessFields } from '@/lib/access';
 import { writeAudit } from '@/lib/db/audit';
 import { isRole } from '@/lib/rbac';
 
@@ -18,22 +19,24 @@ export async function PUT(
   if (!isRole(body.role)) return NextResponse.json({ error: 'Unknown role.' }, { status: 400 });
 
   const before = await getUser(id);
+  const beforeWithAccess = before ? await withAccess(before) : null;
   const result = await updateUserRole(id, body.role);
   if (result === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Refusing to demote the last admin, otherwise a single click locks everyone out of a
   // self-hosted install with no recovery path short of editing SQLite by hand.
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
+  const updated = await withAccess(result.user);
   await writeAudit({
     actor,
     action: 'user.role_change',
     entityType: 'user',
     entityId: id,
-    summary: `Changed ${result.user.email} from ${before?.role ?? 'unknown'} to ${result.user.role}`,
-    details: { from: before?.role, to: result.user.role },
+    summary: `Changed ${updated.email} from ${before?.role ?? 'unknown'} to ${updated.role}`,
+    details: { changed: changedAccessFields(beforeWithAccess, updated) },
   });
 
-  return NextResponse.json(result.user);
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(

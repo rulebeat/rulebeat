@@ -18,6 +18,7 @@ import {
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from './fingerprint-rekey';
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from './finding-placement';
+import { planAccessUpgrade } from './access-upgrade';
 import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
@@ -414,6 +415,14 @@ export function runMigrations(sqlite: Database.Database): void {
       last_seen_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_users_oid ON users(oid);
+
+    CREATE TABLE IF NOT EXISTS role_assignments (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tenant_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      role TEXT NOT NULL,
+      PRIMARY KEY (user_id, tenant_id, scope)
+    );
 
     CREATE TABLE IF NOT EXISTS audit_log (
       id TEXT PRIMARY KEY,
@@ -1223,6 +1232,10 @@ export function runMigrations(sqlite: Database.Database): void {
   // every current session.
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
 
+  // #269: where a Viewer's or Editor's access came from. Null on every existing row until the
+  // upgrade below sets it.
+  try { sqlite.exec(`ALTER TABLE users ADD COLUMN access_source TEXT`); } catch { /* already exists */ }
+
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);
   // After the rekey, so the rows are copied under the fingerprints the findings end up with.
@@ -1235,6 +1248,23 @@ export function runMigrations(sqlite: Database.Database): void {
   emptyScanBlobs(sqlite);
   // After the conversion too, so the records it just wrote are placed on the same start.
   placeFindings(sqlite);
+  // Independent of the findings steps; after the column it reads exists.
+  upgradeAccess(sqlite);
+}
+
+/**
+ * Runs lib/db/access-upgrade.ts's plan (#269) in one transaction, on every start: it only touches a
+ * person whose access source is unset, so a second start changes nothing. A failure is logged and
+ * retried on the next start rather than allowed to stop the app booting.
+ */
+function upgradeAccess(sqlite: Database.Database): void {
+  try {
+    sqlite.transaction(() => {
+      for (const statement of planAccessUpgrade()) sqlite.prepare(statement).run();
+    })();
+  } catch (err) {
+    console.error('[migrate] could not give existing people their access:', err);
+  }
 }
 
 /**
@@ -1834,7 +1864,11 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     try {
       const existing = sqlite.prepare(`SELECT id FROM users WHERE email = ?`).get(email) as { id: string } | undefined;
       if (existing) {
-        sqlite.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(existing.id);
+        // An Admin is never scoped: clear what the person held as a Viewer or Editor.
+        sqlite.transaction(() => {
+          sqlite.prepare(`UPDATE users SET role = 'admin', access_source = NULL WHERE id = ?`).run(existing.id);
+          sqlite.prepare(`DELETE FROM role_assignments WHERE user_id = ?`).run(existing.id);
+        })();
       } else {
         sqlite.prepare(`INSERT INTO users (id, email, role, created_at) VALUES (?, ?, 'admin', ?)`)
           .run(crypto.randomUUID(), email, new Date().toISOString());

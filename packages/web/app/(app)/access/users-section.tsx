@@ -10,7 +10,8 @@ import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from '@/lib/rbac';
-import type { AppUser } from '@/lib/db/users';
+import type { AppUserWithAccess } from '@/lib/access';
+import { describeAccess } from '@/lib/access-model';
 import { Plus, Trash2, Check, X, Mail, ShieldCheck, KeyRound } from 'lucide-react';
 
 const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: ROLE_LABELS[r] }));
@@ -50,7 +51,7 @@ function InviteRow({ onSave, onCancel, saving }: {
 
   return (
     <tr className="border-b border-border bg-surface-sunken last:border-0">
-      <td colSpan={6} className="px-3 py-4">
+      <td colSpan={7} className="px-3 py-4">
         <div className="flex max-w-lg flex-col gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="invite-email">Work email</Label>
@@ -90,11 +91,11 @@ function InviteRow({ onSave, onCancel, saving }: {
 export function UsersSection({
   initialUsers, initialUsersWithPassword, currentUserId,
 }: {
-  initialUsers: AppUser[];
+  initialUsers: AppUserWithAccess[];
   initialUsersWithPassword: string[];
   currentUserId: string;
 }) {
-  const [users, setUsers] = useState<AppUser[]>(initialUsers);
+  const [users, setUsers] = useState<AppUserWithAccess[]>(initialUsers);
   const [usersWithPassword, setUsersWithPassword] = useState<Set<string>>(new Set(initialUsersWithPassword));
   const [inviting, setInviting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -105,7 +106,7 @@ export function UsersSection({
   // The API refuses this too: the disabled control just explains why before the click.
   const lastAdminNote = 'This is the only admin. Promote someone else to admin first.';
 
-  async function changeRole(user: AppUser, role: Role) {
+  async function changeRole(user: AppUserWithAccess, role: Role) {
     setSaving(true);
     setError(null);
     try {
@@ -114,7 +115,7 @@ export function UsersSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role }),
       });
-      const body = await res.json() as AppUser & { error?: string };
+      const body = await res.json() as AppUserWithAccess & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Failed to change role'); return; }
       setUsers(us => us.map(u => u.id === user.id ? body : u));
     } finally { setSaving(false); }
@@ -129,14 +130,14 @@ export function UsersSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, role }),
       });
-      const body = await res.json() as AppUser & { error?: string };
+      const body = await res.json() as AppUserWithAccess & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Failed to add user'); return; }
       setUsers(us => [...us, body].sort((a, b) => a.email.localeCompare(b.email)));
       setInviting(false);
     } finally { setSaving(false); }
   }
 
-  async function remove(user: AppUser) {
+  async function remove(user: AppUserWithAccess) {
     const self = user.id === currentUserId;
     const message = self
       ? 'Remove your own access? You will be signed out on your next request, and denied if you try to sign in again. An admin would need to add you back first.'
@@ -153,7 +154,7 @@ export function UsersSection({
     setUsers(us => us.filter(u => u.id !== user.id));
   }
 
-  async function setOrResetPassword(user: AppUser) {
+  async function setOrResetPassword(user: AppUserWithAccess) {
     const hasPassword = usersWithPassword.has(user.id);
     if (!confirm(
       hasPassword
@@ -180,7 +181,7 @@ export function UsersSection({
     } finally { setPasswordBusyFor(null); }
   }
 
-  async function removePassword(user: AppUser) {
+  async function removePassword(user: AppUserWithAccess) {
     if (!confirm(`Remove ${user.email}'s local password? They'll only be able to sign in through SSO.`)) return;
     setPasswordBusyFor(user.id);
     setError(null);
@@ -218,6 +219,7 @@ export function UsersSection({
                 <TableHead>User</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead shrink>Role</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead>Last seen</TableHead>
                 <TableHead>Local password</TableHead>
                 <TableHead shrink />
@@ -255,6 +257,7 @@ export function UsersSection({
                         onChange={r => { void changeRole(user, r); }}
                       />
                     </TableCell>
+                    <TableCell className="text-xs text-ink-2">{describeAccess(user.access)}</TableCell>
                     <TableCell className="text-xs text-ink-muted">
                       {user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString() : '-'}
                     </TableCell>
@@ -318,7 +321,7 @@ export function UsersSection({
                 />
               )}
               {users.length === 0 && !inviting && (
-                <TableEmpty colSpan={6}>
+                <TableEmpty colSpan={7}>
                   <ShieldCheck className="mx-auto mb-2 size-5 text-ink-faint" />
                   No one has signed in yet.
                 </TableEmpty>

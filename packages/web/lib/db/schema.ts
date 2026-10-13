@@ -144,7 +144,11 @@ export const users = sqliteTable('users', {
   oid: text('oid'),                                // Entra object id: null until first sign-in
   name: text('name'),                              // display name, filled in on first sign-in
   role: text('role').notNull().default('viewer'),  // 'admin' | 'editor' | 'viewer'
-  scope: text('scope'),                            // JSON: reserved for scoped roles, always null today
+  scope: text('scope'),                            // RETIRED: never read or written; the column stays because 0.10.1 selects it by name
+  // Where this person's non-Admin access came from: 'manual' or 'mirrored'. Null for an Admin, and
+  // for a row no start of this release has seen yet (the upgrade's marker). It sits on the person
+  // because a person narrowed to no Scope still has a source.
+  accessSource: text('access_source'),
   // Bumped by any local-password mutation (self-service change, admin set/reset/remove) to
   // invalidate every outstanding JWT for this account: see spec 020. A token's `epoch` claim must
   // match this value or getCurrentUser() treats the session as signed out.
@@ -152,6 +156,18 @@ export const users = sqliteTable('users', {
   createdAt: text('created_at').notNull(),
   lastSeenAt: text('last_seen_at'),
 });
+
+// A Role held at a Scope (ADR 0010). `scope` is the Azure scope path in the casing Azure returned,
+// compared case-insensitively; `/` is Everything and carries tenant_id ''. A person has no row when
+// they hold nothing, and an Admin never has one.
+export const roleAssignments = sqliteTable('role_assignments', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: text('tenant_id').notNull(),
+  scope: text('scope').notNull(),
+  role: text('role').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
+}));
 
 // The Azure service principal RuleBeat scans with, when it was entered in the UI rather than
 // supplied as an environment variable. Modelled as a table rather than a handful of `meta` keys so
