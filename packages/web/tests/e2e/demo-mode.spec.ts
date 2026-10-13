@@ -15,6 +15,9 @@ test('a Demo signs the Visitor in as an admin, is writable, and is pre-populated
   await page.goto(`${DEMO_URL}/settings`);
   await expect(page.getByText('The Azure connection is locked in the Demo.', { exact: false })).toBeVisible();
 
+  await page.goto(`${DEMO_URL}/access`);
+  await expect(page.getByText('Users are locked in the Demo.', { exact: false })).toBeVisible();
+
   await page.goto(`${DEMO_URL}/signin`);
   await page.waitForURL(url => !url.pathname.startsWith('/signin'), { timeout: 15_000 });
 

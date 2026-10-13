@@ -48,10 +48,10 @@ const sourceFiles = SCANNED_DIRS
  * file not on this list gets none of that benefit of the doubt.
  */
 const ALLOWED_FAINT_FILES = new Set([
+  'app/(app)/access/users-section.tsx',
   'app/(app)/dashboards/dashboards-gallery.tsx',
   'app/(app)/diagnostics/diagnostics-client.tsx',
   'app/(app)/library/library-client.tsx',
-  'app/(app)/settings/users-section.tsx',
   'app/(app)/suppressions/suppressions-client.tsx',
   'components/dashboard/widget-config-panel.tsx',
   'components/dashboard/widget-wrapper.tsx',

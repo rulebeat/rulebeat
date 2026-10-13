@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
@@ -10,10 +10,8 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/types';
-import type { AppUser } from '@/lib/db/users';
-import { can, ROLE_LABELS, type Action, type Role } from '@/lib/rbac';
-import { lockedSurfaceMessage } from '@/lib/demo/locked';
-import { UsersSection } from './users-section';
+import { can, ROLE_LABELS, type Role } from '@/lib/rbac';
+import { LockedSurface } from '@/components/layout/locked-surface';
 import { AzureConnectionSection } from './azure-connection-section';
 import type { AzureConnectionStatus } from '@/lib/azure-credential';
 import { SignInSection } from './sign-in-section';
@@ -185,28 +183,9 @@ function EditRow({
   );
 }
 
-/**
- * A section every Visitor can see but not change in a Demo. The server refuses the change anyway
- * (requireRole() in lib/api-auth.ts); this says why before anyone tries, and disables the form
- * controls inside so nothing looks clickable. Outside a Demo it renders its children untouched.
- */
-function LockedSurface({ demo, action, children }: { demo: boolean; action: Action; children: ReactNode }) {
-  const message = demo ? lockedSurfaceMessage(action) : null;
-  if (!message) return <>{children}</>;
-  return (
-    <div className="space-y-2">
-      <Callout icon={Lock}>{message}</Callout>
-      <fieldset disabled className="contents">{children}</fieldset>
-    </div>
-  );
-}
-
 export function SettingsClient({
   initialCategories,
   role,
-  currentUserId,
-  initialUsers,
-  initialUsersWithPassword,
   initialAzureStatus,
   initialSignInStatus,
   initialChannels,
@@ -214,10 +193,6 @@ export function SettingsClient({
 }: {
   initialCategories: Category[];
   role: Role;
-  currentUserId: string;
-  /** Empty unless the viewer is an admin. The server only loads these for `users:manage`. */
-  initialUsers: AppUser[];
-  initialUsersWithPassword: string[];
   /** Null unless the viewer is an admin. The server only loads it for `azure:manage`. */
   initialAzureStatus: AzureConnectionStatus | null;
   /** Null unless the viewer is an admin. The server only loads it for `auth:manage`. */
@@ -228,13 +203,12 @@ export function SettingsClient({
   demo?: boolean;
 }) {
   const canEditCategories = can(role, 'categories:write');
-  const canManageUsers = can(role, 'users:manage');
   const canManageAzure = can(role, 'azure:manage');
   const canManageAuth = can(role, 'auth:manage');
   const canManageNotifications = can(role, 'notifications:manage');
   // Derived from what they actually can't do here, not from the role name. A future read-only
   // role would otherwise land on this page with no explanation of why nothing is clickable.
-  const readOnlyHere = !canEditCategories && !canManageUsers;
+  const readOnlyHere = !canEditCategories && !canManageAzure && !canManageAuth && !canManageNotifications;
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -429,16 +403,6 @@ export function SettingsClient({
           </TableScroll>
         </CardContent>
       </Card>
-
-      {canManageUsers && (
-        <LockedSurface demo={demo} action="users:manage">
-          <UsersSection
-            initialUsers={initialUsers}
-            initialUsersWithPassword={initialUsersWithPassword}
-            currentUserId={currentUserId}
-          />
-        </LockedSurface>
-      )}
     </div>
   );
 }

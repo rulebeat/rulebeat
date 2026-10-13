@@ -139,7 +139,7 @@ the lock straight away, as does an admin setting a new password for that user.
 Signing into the tenant proves who someone is, not that they should have access, so a Microsoft
 account with no matching RuleBeat user is refused. `RULEBEAT_INITIAL_ADMIN` names the work email that
 becomes an admin the moment they sign in, and doubles as the recovery path if every admin is removed.
-Add everyone else from Settings → Users, by email, ahead of their first sign-in.
+Add everyone else on the Access page, by email, ahead of their first sign-in.
 `RULEBEAT_INITIAL_PASSWORD` sets the seeded local account's password instead of a random one, and
 still forces a change on first sign-in.
 

@@ -41,7 +41,7 @@ export async function getLocalAccount(userId: string): Promise<LocalAccount | nu
   return row ? rowToAccount(row) : null;
 }
 
-/** Which users currently have a local password, for the Users table's status badge. */
+/** Which users currently have a local password, for the Access page's status badge. */
 export async function listUserIdsWithPassword(): Promise<string[]> {
   const rows = await many(db.select({ userId: localAccounts.userId }).from(localAccounts));
   return rows.map(r => r.userId);
