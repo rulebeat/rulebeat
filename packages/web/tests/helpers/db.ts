@@ -32,6 +32,7 @@ const CLEARABLE = [
   'suppressions',
   'audit_log',
   'local_accounts',
+  'role_assignments',
   'users',
   'sso_providers',
   'saved_queries',

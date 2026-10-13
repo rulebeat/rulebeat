@@ -1,6 +1,6 @@
 'use client';
 
-import type { AppUser } from '@/lib/db/users';
+import type { AppUserWithAccess } from '@/lib/access';
 import { LockedSurface } from '@/components/layout/locked-surface';
 import { UsersSection } from './users-section';
 
@@ -10,7 +10,7 @@ export function AccessClient({
   currentUserId,
   demo = false,
 }: {
-  initialUsers: AppUser[];
+  initialUsers: AppUserWithAccess[];
   initialUsersWithPassword: string[];
   currentUserId: string;
   /** A Demo: the Users lock message shows and every control inside is disabled. */

@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { listUsers, createUser } from '@/lib/db/users';
+import { createUser } from '@/lib/db/users';
+import { listUsersWithAccess, withAccess, changedAccessFields } from '@/lib/access';
 import { writeAudit } from '@/lib/db/audit';
 import { isRole } from '@/lib/rbac';
 
 export async function GET() {
   const actor = await requireRole('users:manage', { readOnly: true });
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(await listUsers());
+  return NextResponse.json(await listUsersWithAccess());
 }
 
 export async function POST(req: Request) {
@@ -24,14 +25,15 @@ export async function POST(req: Request) {
   const result = await createUser({ email: body.email, role: body.role });
   if ('error' in result) return NextResponse.json({ error: result.error }, { status: 409 });
 
+  const created = await withAccess(result.user);
   await writeAudit({
     actor,
     action: 'user.invite',
     entityType: 'user',
-    entityId: result.user.id,
-    summary: `Assigned the ${result.user.role} role to ${result.user.email} (before first sign-in)`,
-    details: { role: result.user.role },
+    entityId: created.id,
+    summary: `Assigned the ${created.role} role to ${created.email} (before first sign-in)`,
+    details: { changed: changedAccessFields(null, created) },
   });
 
-  return NextResponse.json(result.user, { status: 201 });
+  return NextResponse.json(created, { status: 201 });
 }

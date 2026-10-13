@@ -82,7 +82,15 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   `requireRole(action)` (`lib/api-auth.ts`), GETs included, so a removed user loses read access
   immediately. **The role is never on the session token**; it's read from SQLite per request, so a
   demotion takes effect on the next request. Routes name the *action* (`'rules:write'`), never a role
-  rank; `lib/rbac.ts`'s `can(role, action)` map is the one place the mapping lives.
+  rank; `lib/rbac.ts`'s `can(role, action)` map is the one place the mapping lives. Access is stored
+  as Roles held at Scopes (`role_assignments`, plus `users.access_source` on the person) and
+  resolved per request into one `Access` value by `lib/access.ts`'s `resolveAccess()` (an Admin is
+  Everything without reading rows); `requireRole` returns the user with that `access`, and
+  authorizes through `mayAct()` in `lib/rbac.ts`, which classes every action (install
+  administration, install-wide, placed, scoped) and calls `can()`. No route reads `access` yet and
+  no read is narrowed by it; page and sidebar gating stays on `can(user.role, action)`.
+  `lib/system-access.ts` is Everything for the scheduler and startup and must never be imported
+  from `app/`.
 - **Audit log:** written at the API route layer, never the repository layer. Records a human summary
   plus changed field *names*, never values.
 - **Error responses:** a caught Azure SDK error never reaches the browser; `lib/api-error.ts`'s

@@ -278,7 +278,11 @@ async function seedInitialAdmin(db: PgDb): Promise<void> {
   try {
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing.length > 0) {
-      await db.update(users).set({ role: 'admin' }).where(eq(users.id, existing[0]!.id));
+      // An Admin is never scoped: clear what the person held as a Viewer or Editor.
+      await db.transaction(async (tx) => {
+        await tx.update(users).set({ role: 'admin', accessSource: null }).where(eq(users.id, existing[0]!.id));
+        await tx.delete(pgSchema.roleAssignments).where(eq(pgSchema.roleAssignments.userId, existing[0]!.id));
+      });
     } else {
       await db.insert(users).values({
         id: randomUUID(), email, role: 'admin', createdAt: new Date().toISOString(),

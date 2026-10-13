@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getCurrentUser } from '@/lib/api-auth';
 import { can } from '@/lib/rbac';
-import { listUsers } from '@/lib/db/users';
+import { listUsersWithAccess } from '@/lib/access';
 import { listUserIdsWithPassword } from '@/lib/db/local-accounts';
 import { isDemoMode } from '@/lib/demo';
 import { AccessClient } from './access-client';
@@ -17,7 +17,7 @@ export default async function AccessPage() {
       <Header title="Access" description="Who can sign in to RuleBeat, and what each person can do" />
       <main className="flex-1 p-8">
         <AccessClient
-          initialUsers={await listUsers()}
+          initialUsers={await listUsersWithAccess()}
           initialUsersWithPassword={await listUserIdsWithPassword()}
           currentUserId={user.id}
           demo={await isDemoMode()}

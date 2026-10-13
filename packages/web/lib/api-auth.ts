@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { can, type Action } from '@/lib/rbac';
+import { mayAct, type Action } from '@/lib/rbac';
+import { resolveAccess } from '@/lib/access';
+import type { Access } from '@/lib/access-model';
 import { getUser, type AppUser } from '@/lib/db/users';
 import { getLocalAccount } from '@/lib/db/local-accounts';
 import { isDemoMode, DEMO_VISITOR_ID } from '@/lib/demo';
@@ -50,16 +52,17 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 export async function requireRole(
   action: Action,
   opts: { readOnly?: boolean } = {},
-): Promise<AppUser | NextResponse> {
+): Promise<(AppUser & { access: Access }) | NextResponse> {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const access = await resolveAccess(user);
 
   if (!opts.readOnly && (await isDemoMode())) {
     const locked = lockedSurfaceMessage(action);
     if (locked) return NextResponse.json({ error: locked }, { status: 403 });
   }
 
-  if (!can(user.role, action)) {
+  if (!mayAct(access, action)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   // Mirrors app/(app)/layout.tsx's page-level redirect: a temporary password (first-boot owner,
@@ -69,5 +72,5 @@ export async function requireRole(
   if (action !== 'account:self' && (await getLocalAccount(user.id))?.mustChangePassword) {
     return NextResponse.json({ error: 'You must set a new password before doing anything else.' }, { status: 403 });
   }
-  return user;
+  return { ...user, access };
 }

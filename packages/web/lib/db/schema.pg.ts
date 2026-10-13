@@ -150,11 +150,22 @@ export const users = pgTable('users', {
   oid: text('oid').unique(),
   name: text('name'),
   role: text('role').notNull().default('viewer'),
+  // RETIRED: nothing reads or writes it. The column stays because 0.10.1 selects it by name.
   scope: text('scope'),
+  accessSource: text('access_source'),
   sessionEpoch: integer('session_epoch').notNull().default(0),
   createdAt: text('created_at').notNull(),
   lastSeenAt: text('last_seen_at'),
 });
+
+export const roleAssignments = pgTable('role_assignments', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: text('tenant_id').notNull(),
+  scope: text('scope').notNull(),
+  role: text('role').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
+}));
 
 export const azureCredentials = pgTable('azure_credentials', {
   id: text('id').primaryKey(),

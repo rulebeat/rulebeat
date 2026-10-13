@@ -6,6 +6,7 @@ import {
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from '../fingerprint-rekey';
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from '../finding-placement';
+import { planAccessUpgrade } from '../access-upgrade';
 import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
@@ -181,10 +182,20 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'viewer',
   scope TEXT,
   session_epoch INTEGER NOT NULL DEFAULT 0,
+  access_source TEXT,
   created_at TEXT NOT NULL,
   last_seen_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_users_oid ON users(oid);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS access_source TEXT;
+
+CREATE TABLE IF NOT EXISTS role_assignments (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  role TEXT NOT NULL,
+  PRIMARY KEY (user_id, tenant_id, scope)
+);
 
 CREATE TABLE IF NOT EXISTS azure_credentials (
   id TEXT PRIMARY KEY,
@@ -535,6 +546,14 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
       } catch (err) {
         console.error(`[bootstrap] could not place the findings in ${table}:`, err);
       }
+    }
+    // Independent of the findings steps, in its own savepoint for the same reason.
+    try {
+      await tx.transaction(async (sp) => {
+        for (const statement of planAccessUpgrade()) await sp.execute(sql.raw(statement));
+      });
+    } catch (err) {
+      console.error('[bootstrap] could not give existing people their access:', err);
     }
   });
 }
