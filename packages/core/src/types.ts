@@ -14,6 +14,21 @@ export interface RemediationStep {
   content: string;
 }
 
+/**
+ * Where in Azure a finding sits. `resource` and `subscription` carry a subscription id (a resource
+ * group too, for `resource`); `management-group` carries `managementGroupId`; `directory` is the
+ * Microsoft Entra tenant itself (every Microsoft Graph finding) and `workspace` the Log Analytics
+ * workspace (every Log Analytics finding), where neither has a subscription of its own to name.
+ * `unplaceable` is a finding whose place could not be worked out.
+ */
+export type FindingPlacement =
+  | 'resource'
+  | 'subscription'
+  | 'management-group'
+  | 'directory'
+  | 'workspace'
+  | 'unplaceable';
+
 export interface Finding {
   // Identity
   module: string;
@@ -42,9 +57,15 @@ export interface Finding {
   resourceId?: string;
   resourceType?: string;
   resourceName?: string;
+  /** Empty for a `directory` or `unplaceable` finding, which sits under no subscription. */
   subscriptionId: string;
   resourceGroup?: string;
   location?: string;
+
+  /** Where the finding sits. See FindingPlacement. */
+  placement: FindingPlacement;
+  /** The management group a `management-group` finding sits at. Absent for every other placement. */
+  managementGroupId?: string;
 
   // Content
   title: string;
@@ -114,6 +135,13 @@ export interface TenantContext {
    * answer it from static data with no network at all.
    */
   queryLogs<TRow = Record<string, unknown>>(kql: string): Promise<TRow[]>;
+  /**
+   * The customer id of the workspace `queryLogs` runs against, or undefined when none is configured.
+   * Only the Log Analytics engine reads it, to work out which subscription and resource group the
+   * workspace sits in (`resolveWorkspacePlacement()`). Optional so a context that predates it, or one
+   * built for a test that never touches Logs, still satisfies the type.
+   */
+  logAnalyticsWorkspaceId?: string;
 }
 
 export interface ScanSummary {

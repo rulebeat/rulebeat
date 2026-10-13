@@ -1,5 +1,6 @@
 import type { Severity, RuleKind } from './types';
 import type { ExplorerFinding, FindingDisplayStatus } from './explorer-data';
+import { subscriptionValue, type FindingPlacement } from './placement';
 import { countsInFindingTotals, isOfKind } from './finding-kinds';
 
 /** 'open' is every finding open right now; 'new' and 'fixed' are both bounded by the chosen
@@ -18,6 +19,8 @@ export interface FilterableFinding {
   ruleId: string;
   kind?: RuleKind;
   subscriptionId: string;
+  /** Read only for the subscription filter: a 'directory' finding is the reserved Directory value there. */
+  placement?: FindingPlacement;
   resourceGroup?: string;
   location?: string;
   resourceType?: string;
@@ -182,7 +185,7 @@ export function matchesExplorerFilters(
     if (state.status === 'fixed' && recency !== 'fixed') return false;
   }
   if (state.ruleIds.size > 0 && !state.ruleIds.has(f.ruleId)) return false;
-  if (!exclude?.has('subscription') && state.subscriptions.size > 0 && !state.subscriptions.has(f.subscriptionId)) return false;
+  if (!exclude?.has('subscription') && state.subscriptions.size > 0 && !state.subscriptions.has(subscriptionValue(f))) return false;
   if (!exclude?.has('resourceGroup') && state.resourceGroups.size > 0 && !state.resourceGroups.has(f.resourceGroup ?? '')) return false;
   if (!exclude?.has('location') && state.locations.size > 0 && !state.locations.has(f.location ?? '')) return false;
   if (!exclude?.has('tags') && state.tags.size > 0 && !(f.ruleTags ?? []).some(t => state.tags.has(t))) return false;

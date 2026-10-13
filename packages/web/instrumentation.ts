@@ -83,6 +83,16 @@ export async function register() {
     console.error('[startup] finding-history backfill failed:', err);
   }
 
+  // Gives a stored Logs finding the subscription of its workspace. Needs Azure, which the upgrade
+  // cannot call, so it runs here, and only when a Logs finding is waiting for it. Not awaited, like
+  // the schema warm-up: a slow Azure call must not hold the app back from serving. It never throws.
+  try {
+    const { placeWorkspaceFindings } = await import('./lib/workspace-placement');
+    void placeWorkspaceFindings();
+  } catch (err) {
+    console.error('[startup] Log Analytics finding placement failed:', err);
+  }
+
   try {
     const { backfillSnapshots } = await import('./lib/db/snapshots');
     await backfillSnapshots();

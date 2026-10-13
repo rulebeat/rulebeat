@@ -8,6 +8,7 @@ import { listScanMetas } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
+import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
@@ -77,7 +78,7 @@ function matchesFilters(
 ): boolean {
   if (suppressedFingerprints.has(f.fingerprint)) return false;
   if (filters.categories?.length && !filters.categories.includes(f.category)) return false;
-  if (filters.subscriptions?.length && !filters.subscriptions.includes(f.subscriptionId)) return false;
+  if (filters.subscriptions?.length && !filters.subscriptions.includes(subscriptionValue(f))) return false;
   if (filters.resourceGroups?.length && (!f.resourceGroup || !filters.resourceGroups.includes(f.resourceGroup))) return false;
   if (filters.severities?.length && !filters.severities.includes(f.severity)) return false;
   if (filters.ruleIds?.length && !filters.ruleIds.includes(f.ruleId)) return false;
@@ -385,11 +386,13 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // now carry a per-subscription breakdown (Phase 5), but RG/tag/severity/rule filters aren't
   // recorded at all, and combining more than one subscription can't be reconstructed from summed
   // per-subscription totals (each rule's pass/fail would need to be evaluated across the union of
-  // subscriptions, which isn't recoverable from the stored per-day counts).
+  // subscriptions, which isn't recoverable from the stored per-day counts). Directory is not a
+  // subscription and no snapshot is recorded for it, so choosing it is unsupported too.
   const hasUnsupportedTrendFilter = Boolean(
     filters.resourceGroups?.length || filters.tags?.length ||
     filters.severities?.length || filters.ruleIds?.length ||
-    (filters.subscriptions && filters.subscriptions.length > 1),
+    (filters.subscriptions && filters.subscriptions.length > 1) ||
+    filters.subscriptions?.includes(DIRECTORY_SUBSCRIPTION),
   );
 
   if (hasUnsupportedTrendFilter) {

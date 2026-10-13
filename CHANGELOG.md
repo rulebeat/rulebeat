@@ -8,7 +8,13 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Changed
 
+- Every finding now records where it sits: at a resource, at a subscription, at a management group, in the Directory, at a Log Analytics workspace, or nowhere RuleBeat could place it. Microsoft Graph findings sit in the Directory and Log Analytics findings sit at their workspace, where both used to borrow the first subscription the credential listed. A Directory finding has no subscription, so the Scans page, the dashboard filters, the CSV export, the Run History snapshot and its export and webhook notifications read "Directory" where a subscription would be named, and "Directory" is one choice in the subscription filter, which also groups. A Logs finding takes the subscription and resource group of the workspace, looked up in Resource Graph by the workspace's customer id; when the workspace is not configured or cannot be found, the finding has no subscription until a scan can find it. On the first start after this upgrade every stored finding and every Run History record is placed from its own columns and its rule, and each Logs finding is placed at its workspace once it resolves. No fingerprint, age, history, row or suppression changes, and a suppression on a Graph finding still suppresses it. Going back to 0.10.1 loses nothing, since it ignores the new columns, and the next start or scan of this release corrects whatever it wrote meanwhile.
+- A notification channel limited to certain subscriptions no longer receives Directory findings, such as expiring app secrets and certificates, because they sit under no subscription. They had been delivered to a channel limited to the first subscription listed. A channel with no subscription limit still receives them.
 - Managing people moved from the Users card in Settings to a new Access page, reached from "Access" beside "Audit log" in the sidebar. Admins invite people, change a Role and set, reset or remove a local password there, as before. Viewers and Editors do not see the entry, and `/settings/users` now opens `/access`.
+
+### Fixed
+
+- A saved view or dashboard filtered to one subscription counted Microsoft Graph and Log Analytics findings under it, because they carried the first subscription the credential listed. Filtered to a subscription, the Scans page, its exports, and the dashboard (including New vs Fixed and the Activity occurrences widget) no longer count them, and the subscription scorecard and the per-subscription trend no longer include them. They still count in the tenant-wide totals.
 
 ## [0.10.1] - 2026-10-12
 

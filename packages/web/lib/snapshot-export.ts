@@ -10,6 +10,7 @@
 import { csvRow } from './csv';
 import { streamBody, type BodyWriter, type OpenBody } from './export-stream';
 import type { ExportFormat } from './findings-export';
+import { subscriptionText } from './placement';
 import { SNAPSHOT_EXPORT_COLUMNS, type SnapshotRecord } from './snapshot-response';
 
 /** What a snapshot export reads, inside one read snapshot. */
@@ -20,7 +21,8 @@ export interface SnapshotExportSource {
 
 export type OpenSnapshotExport = OpenBody<SnapshotExportSource>;
 
-const csvLine = (record: SnapshotRecord) => csvRow(SNAPSHOT_EXPORT_COLUMNS.map(column => record[column.key]));
+// The subscription column names a Directory record "Directory", not the empty string it is stored as.
+const csvLine = (record: SnapshotRecord) => csvRow(SNAPSHOT_EXPORT_COLUMNS.map(column => (column.key === 'subscriptionId' ? subscriptionText(record) : record[column.key])));
 
 /** The records as a JSON array in the layout `JSON.stringify(records, null, 2)` gives, one element at a time. */
 class RecordsJson {

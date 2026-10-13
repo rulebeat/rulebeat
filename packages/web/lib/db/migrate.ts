@@ -17,6 +17,7 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from './fingerprint-rekey';
+import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from './finding-placement';
 import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
@@ -907,12 +908,23 @@ export function runMigrations(sqlite: Database.Database): void {
       resource_type TEXT,
       resource_group TEXT,
       subscription_id TEXT NOT NULL,
+      placement TEXT NOT NULL DEFAULT 'resource',
+      management_group_id TEXT,
       row_count INTEGER NOT NULL,
       PRIMARY KEY (scan_id, fingerprint)
     );
     CREATE INDEX IF NOT EXISTS idx_scan_findings_order
       ON scan_findings (scan_id, (${SCAN_FINDING_SEVERITY_RANK}), title, fingerprint);
   `);
+
+  // #271: where a finding sits. A NOT NULL column needs its default at migration time, and every
+  // row an earlier release stored reads 'resource' until placeFindings() (the end of this function)
+  // works out what it really is. A second column names the management group of a finding that sits
+  // at one.
+  for (const table of ['findings', 'scan_findings']) {
+    try { sqlite.exec(`ALTER TABLE ${table} ADD COLUMN placement TEXT NOT NULL DEFAULT 'resource'`); } catch { /* already exists */ }
+    try { sqlite.exec(`ALTER TABLE ${table} ADD COLUMN management_group_id TEXT`); } catch { /* already exists */ }
+  }
 
   // #193: the row a 'row_added' / 'row_removed' finding event is about. Nullable, never backfilled.
   try { sqlite.exec(`ALTER TABLE finding_events ADD COLUMN row_payload TEXT`); } catch { /* already exists */ }
@@ -1221,6 +1233,28 @@ export function runMigrations(sqlite: Database.Database): void {
   convertScanBlobs(sqlite);
   // After the conversion, so a scan it just converted is emptied on the same start.
   emptyScanBlobs(sqlite);
+  // After the conversion too, so the records it just wrote are placed on the same start.
+  placeFindings(sqlite);
+}
+
+/**
+ * Runs lib/db/finding-placement.ts's plan (#271) on `findings` and on `scan_findings`, one
+ * transaction each. It has no marker: the plan only changes a row that does not already have the
+ * placement its columns and its rule imply, so it runs on every start and corrects a row a returning
+ * earlier release wrote as well. A failure is logged and retried on the next start rather than
+ * allowed to stop the app booting.
+ */
+function placeFindings(sqlite: Database.Database): void {
+  for (const table of PLACEMENT_TABLES) {
+    try {
+      sqlite.transaction(() => {
+        const statements = planFindingPlacement(table, sqlite.prepare(placementRead(table)).all() as PlacementRow[]);
+        for (const s of statements) sqlite.prepare(s.sql).run(...s.params);
+      })();
+    } catch (err) {
+      console.error(`[migrate] could not place the findings in ${table}:`, err);
+    }
+  }
 }
 
 /**

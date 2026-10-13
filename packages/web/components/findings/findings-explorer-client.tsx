@@ -24,6 +24,7 @@ import { useResizableColumns, ColumnResizeHandle } from '@/lib/hooks/use-resizab
 import { cn } from '@/lib/utils';
 import { resolveDateWindow, dateWindowLabel, type DateWindow } from '@/lib/date-window';
 import { toggleInSet } from '@/lib/toggle-set';
+import { subscriptionText } from '@/lib/placement';
 import { Segmented, type SegmentedOption } from '@/components/ui/segmented';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import {
@@ -928,7 +929,7 @@ export function FindingsExplorerClient({
               {f.kind === 'activity' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                   <PropertyCard label="Pattern" value={f.dimensionKey} mono copyLabel="pattern" />
-                  <PropertyCard label="Subscription" value={f.subscriptionId} />
+                  <PropertyCard label="Subscription" value={subscriptionText(f)} />
                 </div>
               ) : (
                 <>
@@ -936,7 +937,7 @@ export function FindingsExplorerClient({
                     <PropertyCard label="Resource name" value={findingSubject(f)} copyLabel="resource name" />
                     <PropertyCard label="Type" value={f.resourceType} />
                     <PropertyCard label="Resource Group" value={f.resourceGroup} />
-                    <PropertyCard label="Subscription" value={f.subscriptionId} />
+                    <PropertyCard label="Subscription" value={subscriptionText(f)} />
                     <PropertyCard label="Location" value={f.location} />
                   </div>
                   {/* Full-width row: the resource ID is always long, squeezing it into a

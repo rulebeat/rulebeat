@@ -2,6 +2,7 @@
  * What the snapshot routes answer (ADR 0008), in one place for the module that builds it, the routes
  * that send it and the screen that reads it. No imports from the server, so a client component can use it.
  */
+import type { FindingPlacement } from './placement';
 import type { ViewTab } from './view-response';
 
 /** One finding of a snapshot as the scan saw it: the record in `scan_findings`, nothing derived. */
@@ -17,6 +18,10 @@ export interface SnapshotRecord {
   resourceType: string | null;
   resourceGroup: string | null;
   subscriptionId: string;
+  /** Where the finding sat in this scan. A 'directory' record has an empty subscription and is
+   *  shown as "Directory" (lib/placement.ts). */
+  placement: FindingPlacement;
+  managementGroupId: string | null;
   /** How many rows the finding held in this scan. The rows themselves are on the live finding. */
   rowCount: number;
 }

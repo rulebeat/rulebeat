@@ -17,6 +17,7 @@ import { SNAPSHOT_PAGE_SIZE, type SnapshotQuery } from '../snapshot-query';
 import type { SnapshotFacetValue, SnapshotItem, SnapshotRecord, SnapshotResponse, SnapshotScan } from '../snapshot-response';
 import type { OpenSnapshotExport } from '../snapshot-export';
 import { tabForKind } from '../view-response';
+import type { FindingPlacement } from '../placement';
 import type { RuleKind } from '../types';
 
 /** Why a snapshot has nothing to list: the run is unknown or has aged out, or its records were never stored. */
@@ -104,7 +105,7 @@ export class SnapshotUnavailable extends Error {
 export const toRecord = (r: typeof t.$inferSelect): SnapshotRecord => ({
   fingerprint: r.fingerprint, ruleId: r.ruleId, severity: r.severity, title: r.title, kind: r.kind,
   resourceId: r.resourceId, resourceName: r.resourceName, resourceType: r.resourceType, resourceGroup: r.resourceGroup,
-  subscriptionId: r.subscriptionId, rowCount: r.rowCount,
+  subscriptionId: r.subscriptionId, placement: r.placement as FindingPlacement, managementGroupId: r.managementGroupId, rowCount: r.rowCount,
 });
 
 /**

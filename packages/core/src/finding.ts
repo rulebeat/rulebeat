@@ -1,5 +1,35 @@
 import { createHash } from 'crypto';
-import type { Finding, ModuleCategory, RemediationStep, Severity } from './types.js';
+import type { Finding, FindingPlacement, ModuleCategory, RemediationStep, Severity } from './types.js';
+
+export interface ArmPlacement {
+  placement: FindingPlacement;
+  /** Set only for `management-group`. */
+  managementGroupId?: string;
+}
+
+const MANAGEMENT_GROUP_ID = /^\/providers\/microsoft\.management\/managementgroups\/([^/]+)/i;
+
+/**
+ * Where an Azure Resource Manager finding sits, from what its row says about itself. A subscription
+ * and a resource group make it a `resource`; a subscription alone a `subscription`. With no
+ * subscription, an id under `/providers/Microsoft.Management/managementGroups/<id>` is a
+ * `management-group` finding (and names that group); anything else has no place we can name and is
+ * `unplaceable`. Pure and SDK-free: the engine classifies a fresh row with it and the upgrade
+ * classifies a stored one, so a finding cannot read one way when it is scanned and another when it is
+ * corrected.
+ */
+export function classifyArmPlacement(input: {
+  subscriptionId?: string | null;
+  resourceGroup?: string | null;
+  resourceId?: string | null;
+}): ArmPlacement {
+  if (input.subscriptionId) {
+    return { placement: input.resourceGroup ? 'resource' : 'subscription' };
+  }
+  const managementGroupId = input.resourceId?.match(MANAGEMENT_GROUP_ID)?.[1];
+  if (managementGroupId) return { placement: 'management-group', managementGroupId };
+  return { placement: 'unplaceable' };
+}
 
 export interface CreateFindingInput {
   module: string;
@@ -12,6 +42,10 @@ export interface CreateFindingInput {
   subscriptionId: string;
   resourceGroup?: string;
   location?: string;
+  /** Left out, the placement is worked out from the subscription, resource group and resource id
+   *  (classifyArmPlacement()). Set by an engine whose findings have no ARM place, such as Graph's. */
+  placement?: FindingPlacement;
+  managementGroupId?: string;
   title: string;
   description: string;
   evidence: Record<string, unknown>;
@@ -39,9 +73,13 @@ export function computeLegacyFingerprint(ruleId: string, resourceId: string): st
 
 export function createFinding(input: CreateFindingInput): Finding {
   const fingerprint = computeFingerprint(input.ruleId, input.resourceId);
+  const placed: ArmPlacement = input.placement
+    ? { placement: input.placement, managementGroupId: input.managementGroupId }
+    : classifyArmPlacement(input);
 
   return {
     ...input,
+    ...placed,
     fingerprint,
     remediationSteps: input.remediationSteps ?? [],
     detectedAt: new Date(),
@@ -57,7 +95,11 @@ export interface CreateActivityFindingInput {
    *  its own query result; see computeActivityFingerprint(). Pass '' when the rule has no natural
    *  grouping dimension, which deliberately collapses every occurrence onto one finding. */
   dimensionKey: string;
+  /** `workspace` with the workspace's subscription (and resource group), or `unplaceable` with an
+   *  empty subscription when the workspace could not be resolved. */
+  placement: Extract<FindingPlacement, 'workspace' | 'unplaceable'>;
   subscriptionId: string;
+  resourceGroup?: string;
   title: string;
   description: string;
   evidence: Record<string, unknown>;

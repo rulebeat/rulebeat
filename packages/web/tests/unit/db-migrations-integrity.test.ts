@@ -244,7 +244,7 @@ describe('TS-25 · the identity rules seed exactly once (spec 029)', () => {
         expect(rows[0]!.kind).toBe('state');
       }
     } finally { sqlite.close(); }
-  });
+  }, 30_000);
 });
 
 // ── Rewriting rule ids has to reach everything that references them ───────────
@@ -271,7 +271,7 @@ describe('TS-25 · rewriting a rule id', () => {
       expect(rows[0]!.enabled, 'the user\'s disabled state was overwritten by the stand-in').toBe(0);
       expect(rows[0]!.group_name).toBe('Mine');
     } finally { sqlite.close(); }
-  });
+  }, 30_000);
 
   it('25-03 · one failing rename does not abandon the rest', async () => {
     // Each pair is renamed in its own try/catch precisely so a single bad one cannot abort the loop

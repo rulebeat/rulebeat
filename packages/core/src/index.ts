@@ -1,5 +1,6 @@
 export type {
   Finding,
+  FindingPlacement,
   // Part of TenantContext.log's second parameter, so callers implementing or wrapping a context
   // (including the test suite's fake Azure layer and the production server logger) need it by name.
   LogFields,
@@ -14,7 +15,9 @@ export type {
   TenantContext,
 } from './types.js';
 
-export { createFinding, computeFingerprint, createActivityFinding, computeActivityFingerprint } from './finding.js';
+export { createFinding, computeFingerprint, createActivityFinding, computeActivityFingerprint, classifyArmPlacement } from './finding.js';
+export { resolveWorkspacePlacement } from './workspace-placement.js';
+export type { WorkspacePlacement } from './workspace-placement.js';
 export { extractAzureErrorMessage } from './errors.js';
 export { buildTenantContext, listAccessibleSubscriptions, GraphTruncatedError, GRAPH_MAX_ROWS } from './auth/index.js';
 export {

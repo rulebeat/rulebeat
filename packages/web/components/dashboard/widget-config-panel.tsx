@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { SlideOverPanel } from '@/components/dashboard/slide-over-panel';
 import type { WidgetDef, WidgetType, StatMetric, Category, FilterOptionsResponse } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { subscriptionValueLabel } from '@/lib/placement';
 
 interface PolicyOption { id: string; name: string; category: string; enabled?: boolean }
 
@@ -250,7 +251,7 @@ function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroup
         <div className="flex flex-wrap gap-2">
           <ChecklistDropdown
             label="Subscription"
-            options={subscriptions.map(s => ({ value: s, label: s }))}
+            options={subscriptions.map(s => ({ value: s, label: subscriptionValueLabel(s) }))}
             selected={new Set(selectedSubs)}
             onToggle={v => toggleList('subscriptions', selectedSubs, v)}
             onClear={() => setConfig('subscriptions', [])}

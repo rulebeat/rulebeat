@@ -1,5 +1,6 @@
 import type { DateWindow } from './date-window';
 import type { ChangedFinding, FindingRow } from './finding-rows';
+import type { FindingPlacement } from './placement';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -29,9 +30,17 @@ export interface Finding {
   resourceId?: string;
   resourceType?: string;
   resourceName?: string;
+  /** Empty for a finding that sits under no subscription (`placement` 'directory' or 'unplaceable'). */
   subscriptionId: string;
   resourceGroup?: string;
   location?: string;
+  /** Where the finding sits. A 'directory' finding is shown and filtered as "Directory" wherever a
+   *  subscription would be (lib/placement.ts). Every stored finding has one; it is absent only on a
+   *  finding built outside the scan path (a stored scan blob, a fixture), which a save places by what
+   *  its kind, subscription and resource group imply (`derivePlacement()`, lib/db/finding-placement.ts). */
+  placement?: FindingPlacement;
+  /** The management group a 'management-group' finding sits at. */
+  managementGroupId?: string;
   title: string;
   description: string;
   evidence: Record<string, unknown>;

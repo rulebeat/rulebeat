@@ -56,6 +56,7 @@ export async function buildTenantContext(
     ...baseCtx,
     queryARG: <TRow = Record<string, unknown>>(kql: string, scope?: import('../types.js').QueryScope) =>
       argClient.queryAll<TRow>(kql, scope),
+    logAnalyticsWorkspaceId: workspaceId,
     graphGet: <TValue = Record<string, unknown>>(path: string) => graphGetAll<TValue>(credential, path),
     queryLogs: <TRow = Record<string, unknown>>(kql: string) =>
       workspaceId

@@ -11,6 +11,7 @@
 import { csvRow } from '@/lib/csv';
 import { findingRows, type FindingRow } from '@/lib/finding-rows';
 import type { Finding } from '@/lib/types';
+import { subscriptionText } from '@/lib/placement';
 
 // The explorer's findings carry lifecycle fields Finding doesn't, exported as extra CSV columns when
 // present, without forcing every caller to have them.
@@ -78,7 +79,7 @@ function csvLine(f: ExportFinding, ev: FindingRow, evidenceKeys: readonly string
     f.resourceName,
     f.resourceGroup ?? '',
     f.location ?? '',
-    f.subscriptionId,
+    subscriptionText(f),
     f.resourceType,
     f.ruleId,
     violation,

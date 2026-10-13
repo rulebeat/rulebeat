@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core/finding';
 import { findingRows, mergeFindingsByFingerprint, type FindingRow } from '../finding-rows';
+import { derivePlacement } from './finding-placement';
 
 /**
  * What a scan keeps of each finding (ADR 0008), and how a stored scan's blob becomes those records.
@@ -21,7 +22,8 @@ import { findingRows, mergeFindingsByFingerprint, type FindingRow } from '../fin
 /** The columns of a record, in the order every insert writes them. */
 export const SCAN_FINDING_COLUMNS = [
   'scan_id', 'fingerprint', 'rule_id', 'severity', 'title', 'kind', 'category',
-  'resource_id', 'resource_name', 'resource_type', 'resource_group', 'subscription_id', 'row_count',
+  'resource_id', 'resource_name', 'resource_type', 'resource_group', 'subscription_id', 'placement', 'management_group_id',
+  'row_count',
 ] as const;
 
 /**
@@ -99,6 +101,8 @@ export interface ScanFindingRecord {
   resource_type: string | null;
   resource_group: string | null;
   subscription_id: string;
+  placement: string;
+  management_group_id: string | null;
   row_count: number;
 }
 
@@ -109,6 +113,9 @@ export interface RecordSource {
   title: string;
   fingerprint: string;
   subscriptionId?: string;
+  /** Where the finding sat. A stored blob predates it, and a record made from one derives it. */
+  placement?: string;
+  managementGroupId?: string;
   kind?: string;
   dimensionKey?: string;
   resourceId?: string;
@@ -131,21 +138,26 @@ export function findingFingerprint(f: Pick<RecordSource, 'ruleId' | 'kind' | 'di
 
 /** One record per finding. `category` is the scan's own category, as the findings table keeps it. */
 export function recordsFromFindings(scanId: string, category: string, findings: readonly RecordSource[]): ScanFindingRecord[] {
-  return findings.map(f => ({
-    scan_id: scanId,
-    fingerprint: f.fingerprint,
-    rule_id: f.ruleId,
-    severity: f.severity,
-    title: f.title,
-    kind: f.kind ?? 'state',
-    category,
-    resource_id: f.resourceId ?? null,
-    resource_name: f.resourceName ?? null,
-    resource_type: f.resourceType ?? null,
-    resource_group: f.resourceGroup ?? null,
-    subscription_id: f.subscriptionId ?? '',
-    row_count: findingRows(f).length,
-  }));
+  return findings.map((f) => {
+    const placed = f.placement ? { placement: f.placement, managementGroupId: f.managementGroupId } : derivePlacement(f);
+    return {
+      scan_id: scanId,
+      fingerprint: f.fingerprint,
+      rule_id: f.ruleId,
+      severity: f.severity,
+      title: f.title,
+      kind: f.kind ?? 'state',
+      category,
+      resource_id: f.resourceId ?? null,
+      resource_name: f.resourceName ?? null,
+      resource_type: f.resourceType ?? null,
+      resource_group: f.resourceGroup ?? null,
+      subscription_id: f.subscriptionId ?? '',
+      placement: placed.placement,
+      management_group_id: placed.managementGroupId ?? null,
+      row_count: findingRows(f).length,
+    };
+  });
 }
 
 /** The values of one record, in `SCAN_FINDING_COLUMNS` order. */
@@ -174,7 +186,12 @@ export function planScanBlob(scanId: string, category: string, blob: string): Bl
     if (f === null || typeof f !== 'object' || !isText(f.ruleId) || !isText(f.severity) || !isText(f.title)) {
       return { ok: false, reason: `finding ${index} has no rule, severity or title` };
     }
-    findings.push({ ...f, ruleId: f.ruleId, severity: f.severity, title: f.title, fingerprint: findingFingerprint({ ...f, ruleId: f.ruleId }) });
+    // A blob has no placement, and what it holds is wrong for two kinds: a Logs finding carries the
+    // subscription it borrowed, and a Graph rule's finding cannot be told here from any other. So a
+    // Logs finding is read as unplaceable with no subscription, and the placement pass that follows
+    // every conversion (lib/db/finding-placement.ts) gives each Graph and Logs record its place.
+    const unplaced = f.kind === 'activity' ? { subscriptionId: '', placement: 'unplaceable' } : {};
+    findings.push({ ...f, ...unplaced, ruleId: f.ruleId, severity: f.severity, title: f.title, fingerprint: findingFingerprint({ ...f, ruleId: f.ruleId }) });
   }
   return { ok: true, records: recordsFromFindings(scanId, category, mergeFindingsByFingerprint(findings)) };
 }

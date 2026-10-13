@@ -11,6 +11,7 @@
  * one group's contents, and one returned column's values.
  */
 import type { RuleKind } from './types';
+import { subscriptionValueLabel } from './placement';
 import { resolveDateWindow } from './date-window';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRecord } from './db/findings';
@@ -222,6 +223,7 @@ export function valueLabeler(
       case 'rule': return ruleNames.get(value) ?? value;
       case 'category': return categoryLabels.get(value) ?? value;
       case 'kind': return KIND_LABEL[value as RuleKind] ?? value;
+      case 'subscription': return subscriptionValueLabel(value);
       default: return value;
     }
   };

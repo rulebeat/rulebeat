@@ -13,6 +13,7 @@ import { SeverityBadge, SeverityChip } from './severity-badge';
 import { ExportButton } from './export-button';
 import { FindingRowsDetail } from './finding-rows-detail';
 import type { Finding, Suppression, Severity } from '@/lib/types';
+import { subscriptionText } from '@/lib/placement';
 import { ExternalLink, ChevronDown, ChevronRight, Copy, Check, EyeOff, Eye, Terminal, X, Sparkles } from 'lucide-react';
 import type { RemediationStepType } from '@/lib/types';
 import { splitLearnMore } from '@/lib/rule-description';
@@ -128,7 +129,7 @@ function FindingRow({
                     <dt className="shrink-0 text-ink-2">Pattern</dt>
                     <dd className="font-mono text-xs text-ink">{finding.dimensionKey}</dd>
                     <dt className="shrink-0 text-ink-2">Subscription</dt>
-                    <dd className="flex items-center gap-1 font-mono text-xs text-ink">{finding.subscriptionId} <CopyButton text={finding.subscriptionId} /></dd>
+                    <dd className="flex items-center gap-1 font-mono text-xs text-ink">{subscriptionText(finding)} <CopyButton text={subscriptionText(finding)} /></dd>
                   </dl>
                 ) : (
                   <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-1.5 text-[13px]">
@@ -147,7 +148,7 @@ function FindingRow({
                       </>
                     )}
                     <dt className="shrink-0 text-ink-2">Subscription</dt>
-                    <dd className="flex items-center gap-1 font-mono text-xs text-ink">{finding.subscriptionId} <CopyButton text={finding.subscriptionId} /></dd>
+                    <dd className="flex items-center gap-1 font-mono text-xs text-ink">{subscriptionText(finding)} <CopyButton text={subscriptionText(finding)} /></dd>
                     {finding.resourceId && (
                       <>
                         <dt className="shrink-0 text-ink-2">Resource ID</dt>

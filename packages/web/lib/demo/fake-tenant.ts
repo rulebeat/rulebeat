@@ -69,6 +69,13 @@ export interface FakeOptions {
    * no Graph access configured" guard fires for a context that violates its own type at runtime.
    */
   omitGraphGet?: boolean;
+  /**
+   * The customer id of the Log Analytics workspace the context says it is configured for, as a real
+   * context built with `logAnalyticsWorkspaceId` does. Only the lookup that places a Logs finding
+   * reads it (`resolveWorkspacePlacement()`), and answers through `rows`; leave it unset for "no
+   * workspace configured", which places a Logs finding nowhere without any query.
+   */
+  logAnalyticsWorkspaceId?: string;
   subscriptionIds?: string[];
   tenantId?: string;
 }
@@ -102,6 +109,7 @@ export function fakeTenantContext(opts: FakeOptions = {}): FakeTenantContext {
   const ctx: FakeTenantContext = {
     tenantId: opts.tenantId ?? DEFAULT_TENANT_ID,
     subscriptionIds: opts.subscriptionIds ?? [DEFAULT_SUBSCRIPTION_ID],
+    logAnalyticsWorkspaceId: opts.logAnalyticsWorkspaceId,
     credential: unusableCredential,
     queries,
     graphRequests,
