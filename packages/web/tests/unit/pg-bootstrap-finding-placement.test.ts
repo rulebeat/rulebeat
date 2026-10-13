@@ -152,6 +152,19 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg places every finding (#271)', () =
     }
   });
 
+  it('never moves a record out of the directory because its rule has been deleted', async () => {
+    await previousReleaseDatabase();
+    await bootstrapPg(pgDb!);
+    expect((await placementOf('scan_findings'))[fp.graph]).toMatchObject({ placement: 'directory' });
+    // Deleting a rule removes its findings and keeps the Run History records its scans saved.
+    await raw(`DELETE FROM rules WHERE id = '${GRAPH_RULE}'`);
+    await raw(`DELETE FROM findings WHERE rule_id = '${GRAPH_RULE}'`);
+
+    await bootstrapPg(pgDb!);
+
+    expect((await placementOf('scan_findings'))[fp.graph]).toMatchObject({ placement: 'directory', subscription_id: '', resource_group: null });
+  });
+
   it('leaves a Logs finding already placed at its workspace as it is', async () => {
     await previousReleaseDatabase();
     await bootstrapPg(pgDb!);

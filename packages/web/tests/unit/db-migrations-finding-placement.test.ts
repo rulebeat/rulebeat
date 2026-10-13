@@ -201,6 +201,24 @@ describe('upgrading to finding placement', () => {
     expect(all(sqlite, placementRead('scan_findings')).map(r => r.fingerprint)).toEqual([fp.managementGroup]);
   });
 
+  it('never moves a record out of the directory because its rule has been deleted', async () => {
+    const { sample, db } = previousReleaseDatabase();
+    db.close();
+    await (await startProductOn(sample.file)).listFindings();
+    closeProductDb?.();
+    closeProductDb = undefined;
+
+    // Deleting a rule removes its findings and keeps the Run History records its scans saved.
+    sqlite = open(sample.file);
+    expect(placementOf(sqlite, 'scan_findings')[fp.graph]).toMatchObject({ placement: 'directory' });
+    sqlite.prepare(`DELETE FROM rules WHERE id = ?`).run(GRAPH_RULE);
+    sqlite.prepare(`DELETE FROM findings WHERE rule_id = ?`).run(GRAPH_RULE);
+
+    runMigrations(sqlite);
+
+    expect(placementOf(sqlite, 'scan_findings')[fp.graph]).toMatchObject({ placement: 'directory', subscription_id: '', resource_group: null });
+  });
+
   it('corrects the rows a returning previous release wrote on the next start', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();

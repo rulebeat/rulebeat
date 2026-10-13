@@ -65,7 +65,9 @@ export interface PlacementRow {
  * The rows the classification may have to change: neither a Graph nor an Activity finding, and not
  * one of the three plain cases that are already right (a subscription and a resource group stored as
  * a `resource`, a subscription alone stored as a `subscription`, no subscription and no management
- * group id stored as `unplaceable`). Every start reads this, so it leaves out what steady state is made
+ * group id stored as `unplaceable`). A record stored as `directory` is never read: only a Graph rule's
+ * own statement below puts a row there, and a record of a rule that has since been deleted is still
+ * a directory record, which no classification of its columns could tell. Every start reads this, so it leaves out what steady state is made
  * of; `classifyArmPlacement()` still decides every row it does return. A superset is harmless, since
  * the plan only emits a change for a row whose stored placement differs from what it classifies to.
  * Plain SQL valid on both backends.
@@ -73,7 +75,7 @@ export interface PlacementRow {
 export function placementRead(table: PlacementTable): string {
   const key = table === 'scan_findings' ? 'scan_id, fingerprint' : 'fingerprint';
   return `SELECT ${key}, resource_id, resource_group, subscription_id, placement, management_group_id FROM ${table}
-    WHERE kind <> 'activity' AND rule_id NOT IN (${GRAPH_RULE_IDS})
+    WHERE kind <> 'activity' AND placement <> 'directory' AND rule_id NOT IN (${GRAPH_RULE_IDS})
       AND NOT (
         (placement = 'resource' AND subscription_id <> '' AND COALESCE(resource_group, '') <> '')
         OR (placement = 'subscription' AND subscription_id <> '' AND COALESCE(resource_group, '') = '')
@@ -103,6 +105,8 @@ export function planFindingPlacement(table: PlacementTable, rows: readonly Place
   // Rows that classify to the same place (and, for a record, sit in the same scan) share a statement.
   const groups = new Map<string, { scanId?: string; placement: string; managementGroupId?: string; fingerprints: string[] }>();
   for (const row of rows) {
+    // The read leaves these out; a caller that hands one in does not move it either.
+    if (row.placement === 'directory') continue;
     const next = classifyArmPlacement({
       subscriptionId: row.subscription_id,
       resourceGroup: row.resource_group,
