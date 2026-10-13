@@ -10,6 +10,7 @@ import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { fakeTenantContext, argRow } from './fake-azure';
+import { EVERYTHING_ACCESS } from './access';
 
 const ARG_KQL = 'resources | where type == "microsoft.compute/virtualmachines"';
 
@@ -46,7 +47,7 @@ export async function scan(seeds: Seed[], hoursFromBase = 0) {
   await seedRules(seeds);
   const category = (await getCategory('identity'))!;
   const seedFor = (kql: string) => seeds.find(s => kql.includes(`"${s.id}"`));
-  const outcome = await runCategoryScan(category, {
+  const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext({
       // A returned column beside the resource's own, so each finding holds one row.
       rows: kql => (seedFor(kql)?.vms ?? []).map(name => argRow({ name, zone: 'a' })),

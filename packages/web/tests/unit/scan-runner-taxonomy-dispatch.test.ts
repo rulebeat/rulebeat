@@ -14,6 +14,7 @@ import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ARG_RULE_ID = 'test-arg-rule-under-identity';
 
@@ -68,7 +69,7 @@ describe("runCategoryScan dispatches by queryBackend, not category.isSpecial (sp
       graphRows: graphAppWithExpiringSecret(),
     });
 
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx,
       ruleIds: [ARG_RULE_ID, 'cred:app-secret-expiring'],
     });
@@ -86,7 +87,7 @@ describe("runCategoryScan dispatches by queryBackend, not category.isSpecial (sp
       graphFailWith: new Error('Graph unavailable'),
     });
 
-    const outcome = await runCategoryScan(category, {
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
       ctx,
       ruleIds: [ARG_RULE_ID, 'cred:app-secret-expiring'],
     });

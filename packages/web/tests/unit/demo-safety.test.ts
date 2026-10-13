@@ -17,6 +17,7 @@ import {
 } from '@/lib/azure-credential';
 import { stampDemoDatabase, resetDemoModeCacheForTests } from '@/lib/demo';
 import { deleteMeta } from '@/lib/db/meta';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const STAMP_KEY = 'demo-mode-v2';
 const ENV_KEYS = [
@@ -87,7 +88,7 @@ describe('the kill switch beats a fully-specified environment credential', () =>
     process.env.AZURE_CLIENT_SECRET = 'not-a-real-secret';
     await enableDemoMode();
 
-    await expect(createTenantContext()).rejects.toThrow(AzureNotConfiguredError);
+    await expect(createTenantContext(EVERYTHING_ACCESS)).rejects.toThrow(AzureNotConfiguredError);
   });
 });
 

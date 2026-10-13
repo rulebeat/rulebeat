@@ -20,6 +20,7 @@ import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/li
 import type { AdvisoriesWidgetData } from '@/lib/advisories-widget';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_SUB_B } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -87,7 +88,7 @@ async function seedActivityFinding(): Promise<void> {
 async function scan(ruleIds: string[] = [PROBLEM, SEC_ADV, REL_ADV], at: Date = NOW): Promise<void> {
   vi.setSystemTime(at);
   for (const id of ['security', 'reliability']) {
-    await runCategoryScan((await getCategory(id))!, { ctx: ctx(), ruleIds });
+    await runCategoryScan((await getCategory(id))!, { access: EVERYTHING_ACCESS, ctx: ctx(), ruleIds });
   }
   vi.setSystemTime(NOW);
 }
@@ -124,7 +125,7 @@ describe('the Advisories widget route', () => {
     secResult = () => secRows().filter(r => r.name !== 'a-gone');
     await scan();
     await seedActivityFinding();
-    const found = await listFindings();
+    const found = await listFindings(EVERYTHING_ACCESS);
     expect(found.some(f => f.kind === 'state')).toBe(true);
     expect(found.some(f => f.kind === 'activity')).toBe(true);
     expect(found.find(f => f.resourceName === 'a-gone')?.status).toBe('fixed');
@@ -172,7 +173,7 @@ describe('the Advisories widget route', () => {
 
   it('shows suppressed Advisories only when the filter asks for them', async () => {
     await scan();
-    const supp = (await listFindings()).find(f => f.resourceName === 'a-supp')!;
+    const supp = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'a-supp')!;
     await addSuppression({
       id: 'aw-sup', fingerprint: supp.fingerprint, resourceId: supp.resourceId,
       reason: 'accepted', suppressedAt: NOW.toISOString(),

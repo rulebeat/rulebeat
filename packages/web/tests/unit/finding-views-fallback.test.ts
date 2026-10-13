@@ -19,6 +19,7 @@ import { emptyView, type View, type ViewFilter } from '@/lib/finding-view';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = 'fallback-rule';
 const QUERY = { tab: 'results', showSuppressed: false } as const;
@@ -36,13 +37,13 @@ beforeAll(async () => {
     scope: JSON.stringify({ level: 'subscription' }), resourceTypes: '[]', conditions: '[]', type: 'custom',
     rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
   }));
-  await runCategoryScan((await getCategory('security'))!, {
+  await runCategoryScan((await getCategory('security'))!, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext({ rows: [
       argRow({ name: 'vm-one', zone: 'a' }), argRow({ name: 'vm-one', zone: 'b' }), argRow({ name: 'vm-two', zone: 'a' }),
     ] }),
     ruleIds: [RULE], now: new Date(),
   });
-  const found = await queryView(make({ filters: [f('resourceName', 'vm-one')] }), QUERY);
+  const found = await queryView(make({ filters: [f('resourceName', 'vm-one')] }), QUERY, EVERYTHING_ACCESS);
   oneFingerprint = found.items[0]!.finding.fingerprint;
   marker = (await getMeta(FINDING_ROWS_COPY_MARKER))!;
 });
@@ -52,7 +53,7 @@ describe('a finding stored without its row count', () => {
   afterAll(async () => { await execRun(db.update(findingsTable).set({ rowCount: 2 }).where(eq(findingsTable.fingerprint, oneFingerprint))); });
 
   it('is counted from its rows', async () => {
-    const response = await queryView(make({ filters: [f('resourceName', 'vm-one')] }), QUERY);
+    const response = await queryView(make({ filters: [f('resourceName', 'vm-one')] }), QUERY, EVERYTHING_ACCESS);
     expect(response.items.map(i => [i.rowCount, i.matchedRowCount, i.rows.map(r => r.zone)])).toEqual([[2, 2, ['a', 'b']]]);
   });
 });
@@ -65,7 +66,7 @@ describe('before the copy into finding_rows has been proven', () => {
   });
 
   it('reads each finding\'s rows from the old columns, and counts them', async () => {
-    const response = await queryView(make({ sort: { field: 'resourceName', dir: 'asc' } }), QUERY);
+    const response = await queryView(make({ sort: { field: 'resourceName', dir: 'asc' } }), QUERY, EVERYTHING_ACCESS);
     expect(response.items.map(i => [i.finding.resourceName, i.rowCount, i.rows.map(r => r.zone)])).toEqual([
       ['vm-one', 2, ['a', 'b']],
       ['vm-two', 1, ['a']],
@@ -73,20 +74,20 @@ describe('before the copy into finding_rows has been proven', () => {
   });
 
   it('filters on a returned column over them', async () => {
-    const response = await queryView(make({ filters: [f('row.zone', 'b')] }), QUERY);
+    const response = await queryView(make({ filters: [f('row.zone', 'b')] }), QUERY, EVERYTHING_ACCESS);
     expect(response.items.map(i => [i.finding.resourceName, i.rowCount, i.matchedRowCount])).toEqual([['vm-one', 2, 1]]);
     // The column list is the catalogue's, written at the scan, so emptying finding_rows leaves it be.
     expect(response.columns).toEqual(['zone']);
   });
 
   it('answers one finding\'s rows, a group, and a column\'s values from them', async () => {
-    const rows = await queryFindingRows(make(), { ...QUERY, fingerprint: oneFingerprint, rowsPage: 1 });
+    const rows = await queryFindingRows(make(), { ...QUERY, fingerprint: oneFingerprint, rowsPage: 1 }, EVERYTHING_ACCESS);
     expect(rows).toMatchObject({ rowCount: 2, matchedRowCount: 2, rows: [expect.objectContaining({ zone: 'a' }), expect.objectContaining({ zone: 'b' })] });
 
-    const group = await queryGroup(make({ groupBy: ['row.zone'] }), { ...QUERY, groupPath: ['a'], groupPage: 1 });
+    const group = await queryGroup(make({ groupBy: ['row.zone'] }), { ...QUERY, groupPath: ['a'], groupPage: 1 }, EVERYTHING_ACCESS);
     expect(group.items.map(i => i.finding.resourceName).sort()).toEqual(['vm-one', 'vm-two']);
 
-    const values = await queryColumnValues(make(), { ...QUERY, column: 'row.zone' });
+    const values = await queryColumnValues(make(), { ...QUERY, column: 'row.zone' }, EVERYTHING_ACCESS);
     expect(values.values).toEqual([{ value: 'a', count: 2 }, { value: 'b', count: 1 }]);
   });
 });
@@ -95,9 +96,9 @@ describe('once the copy has been proven', () => {
   beforeAll(async () => { await setMeta(FINDING_ROWS_COPY_MARKER, marker); });
 
   it('reads the rows from finding_rows, which here holds none', async () => {
-    const response = await queryView(make({ sort: { field: 'resourceName', dir: 'asc' } }), QUERY);
+    const response = await queryView(make({ sort: { field: 'resourceName', dir: 'asc' } }), QUERY, EVERYTHING_ACCESS);
     expect(response.items.map(i => [i.finding.resourceName, i.rowCount, i.rows.length])).toEqual([['vm-one', 2, 0], ['vm-two', 1, 0]]);
-    const values = await queryColumnValues(make(), { ...QUERY, column: 'row.zone' });
+    const values = await queryColumnValues(make(), { ...QUERY, column: 'row.zone' }, EVERYTHING_ACCESS);
     expect(values.values).toEqual([]);
   });
 });

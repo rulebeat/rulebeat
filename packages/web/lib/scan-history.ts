@@ -6,6 +6,7 @@ import { many, run, inTransaction } from './db/exec';
 import { chunk } from './db/chunk';
 import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
+import type { Access } from './access-model';
 
 /** How many scans of a category history keeps (`SCAN_HISTORY_LIMIT`, default 90). */
 export const SCAN_HISTORY_LIMIT = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
@@ -49,7 +50,7 @@ function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>): ScanMeta
 }
 
 /** The history list of a category, newest first. */
-export async function listScanMetas(module: string, limit = 20): Promise<ScanMeta[]> {
+export async function listScanMetas(module: string, access: Access, limit = 20): Promise<ScanMeta[]> {
   return (await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)
@@ -61,7 +62,7 @@ export async function listScanMetas(module: string, limit = 20): Promise<ScanMet
 
 /** All per-category scan rows produced by a single run execution (schedule_runs.id): the
  *  Run History detail drill-down. */
-export async function getScansForRun(runId: string): Promise<ScanMeta[]> {
+export async function getScansForRun(runId: string, access: Access): Promise<ScanMeta[]> {
   return (await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)

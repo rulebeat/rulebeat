@@ -8,7 +8,7 @@ import type { Suppression } from '@/lib/types';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(await loadSuppressions());
+  return NextResponse.json(await loadSuppressions(actor.access));
 }
 
 export async function POST(req: Request) {

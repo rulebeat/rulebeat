@@ -15,6 +15,8 @@ import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
 import { getCurrentUser } from '@/lib/api-auth';
+import { resolveAccess } from '@/lib/access';
+import { NO_ACCESS } from '@/lib/access-model';
 import { can } from '@/lib/rbac';
 import type { Rule, Suppression } from '@/lib/types';
 
@@ -38,9 +40,10 @@ export default async function ScansPage({
   const categories = await listCategories();
   const user = await getCurrentUser();
   const role = user?.role ?? 'viewer';
+  const access = user ? await resolveAccess(user) : NO_ACCESS;
 
   const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
-  const initialSuppressions = await loadSuppressions() as Suppression[];
+  const initialSuppressions = await loadSuppressions(access) as Suppression[];
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
 
   let runDetail: { run: NonNullable<Awaited<ReturnType<typeof getRun>>>; scans: Awaited<ReturnType<typeof getScansForRun>> } | null = null;
@@ -51,7 +54,7 @@ export default async function ScansPage({
   const initialSchedules = activeTab === 'schedules'
     ? await Promise.all((await listSchedules()).map(async s => ({
         ...s,
-        lastRun: await getLatestRun(s.id),
+        lastRun: await getLatestRun(s.id, access),
         notificationLinks: await listLinksForSchedule(s.id),
       })))
     : undefined;
@@ -67,7 +70,7 @@ export default async function ScansPage({
   let ruleFindingCounts: Record<string, number> | undefined;
   if (activeTab === 'rules') {
     ruleFindingCounts = {};
-    for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } })) {
+    for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } }, access)) {
       if (!countsAsAffected(f)) continue;
       ruleFindingCounts[f.ruleId] = (ruleFindingCounts[f.ruleId] ?? 0) + 1;
     }
@@ -79,11 +82,11 @@ export default async function ScansPage({
       // the ids through and never loads either scan. An id that is gone is the screen's to say.
       compareIds = parseCompareIds(compare) ?? undefined;
     } else if (compareCategory) {
-      compareCategoryScans = await listScanMetas(compareCategory, 20);
+      compareCategoryScans = await listScanMetas(compareCategory, access, 20);
     } else if (runId) {
-      const run = await getRun(runId);
+      const run = await getRun(runId, access);
       if (run) {
-        runDetail = { run, scans: await getScansForRun(runId) };
+        runDetail = { run, scans: await getScansForRun(runId, access) };
         // The snapshot reads its own findings from the server a page at a time (ADR 0008), so the page
         // passes the id through and never loads the scan.
         if (scanId) snapshotScanId = scanId;
@@ -110,7 +113,7 @@ export default async function ScansPage({
         initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}
         initialSavedViewId={initialSavedViewId}
-        runs={activeTab === 'history' ? await listAllRuns(50) : undefined}
+        runs={activeTab === 'history' ? await listAllRuns(access, 50) : undefined}
         runDetail={runDetail}
         snapshotScanId={snapshotScanId}
         snapshotQuery={snapshotScanId ? snapshotQueryFromParams(params) : undefined}

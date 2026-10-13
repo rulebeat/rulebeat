@@ -21,6 +21,7 @@ import {
 } from '@/lib/ssrf-guard';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const PROBLEM_RULE = 'notify-problem-rule';
@@ -99,15 +100,15 @@ describe('notifications leave out Advisory findings', () => {
   }
 
   async function fingerprintsOfKind(kind: 'state' | 'advisory'): Promise<string[]> {
-    return (await listFindings({ status: 'active', kinds: [kind] })).map(f => f.fingerprint);
+    return (await listFindings(EVERYTHING_ACCESS, { status: 'active', kinds: [kind] })).map(f => f.fingerprint);
   }
 
   it('sends the Problem finding and leaves the Advisory finding out of the same run', async () => {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1', 'vm-a2'] }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1', 'vm-a2'] }) },
     );
-    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent'));
 
     expect(run.newFindings).toBe(3);
     expect(sentFingerprints()).toEqual([await fingerprintsOfKind('state')]);
@@ -116,18 +117,18 @@ describe('notifications leave out Advisory findings', () => {
   it('opens no outbox entry and sends nothing when the only new findings are Advisories', async () => {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
     );
 
     expect(run.newFindings).toBe(1);
-    expect((await getRun(run.id))!.notifyStatus).toBe('none');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('leaves an Advisory out of a recovered run and still closes it', async () => {
     await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1'] }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1'] }) },
     );
     const problem = await fingerprintsOfKind('state');
     const advisory = await fingerprintsOfKind('advisory');
@@ -140,13 +141,13 @@ describe('notifications leave out Advisory findings', () => {
     expect(await recoverPendingNotifications()).toBe(1);
 
     expect(sentFingerprints()).toEqual([problem]);
-    expect((await getRun(pending.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(pending.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('closes a recovered run that holds only Advisories without sending', async () => {
     await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
     );
     const advisory = await fingerprintsOfKind('advisory');
     const pending = await startRun({ scheduleId, triggeredBy: 'schedule', categories: [CATEGORY] });
@@ -158,6 +159,6 @@ describe('notifications leave out Advisory findings', () => {
     expect(await recoverPendingNotifications()).toBe(1);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await getRun(pending.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(pending.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 });

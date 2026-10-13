@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
   try {
     const { view, tab, showSuppressed } = request.value;
-    const body = await streamExport(openExport(view, { tab, showSuppressed }), format.value);
+    const body = await streamExport(openExport(view, { tab, showSuppressed }, actor.access), format.value);
     return new Response(body, {
       headers: {
         'Content-Type': CONTENT_TYPES[format.value],

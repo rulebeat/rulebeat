@@ -13,6 +13,7 @@ import { makeSample, open } from '../fixtures/upgrade';
 import { openDatabase, runMigrations } from '@/lib/db/migrate';
 import { FINDING_ROWS_COPY_MARKER } from '@/lib/db/finding-rows-copy';
 import { FINGERPRINT_CASE_MARKER } from '@/lib/db/fingerprint-rekey';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = '9a4e7c31-5b2d-4e8f-8c6a-1d3f5b7a9c20';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -94,7 +95,7 @@ describe('upgrading to finding_rows', () => {
 
     const product = await startProductOn(sample.file);
 
-    const found = new Map((await product.listFindings()).map(f => [f.fingerprint, f]));
+    const found = new Map((await product.listFindings(EVERYTHING_ACCESS)).map(f => [f.fingerprint, f]));
     expect(found.get('fp-many')).toMatchObject({
       firstSeenAt: '2026-01-02T03:04:05.000Z',
       timesSeen: 9,
@@ -103,7 +104,7 @@ describe('upgrading to finding_rows', () => {
     });
     expect(found.get('fp-evidence')).toMatchObject({ evidence: { retirement: 'TLS 1.0' }, rows: [{ retirement: 'TLS 1.0' }] });
     expect(found.get('fp-empty')).toMatchObject({ evidence: {}, rows: [] });
-    expect((await product.loadSuppressions()).filter(s => s.fingerprint === 'fp-many')).toEqual([
+    expect((await product.loadSuppressions(EVERYTHING_ACCESS)).filter(s => s.fingerprint === 'fp-many')).toEqual([
       expect.objectContaining({ id: 'sup-1', reason: 'Accepted risk' }),
     ]);
 
@@ -144,7 +145,7 @@ describe('upgrading to finding_rows', () => {
 
     const product = await startProductOn(sample.file);
 
-    const rows = new Map((await product.listFindings()).map(f => [f.fingerprint, f.rows]));
+    const rows = new Map((await product.listFindings(EVERYTHING_ACCESS)).map(f => [f.fingerprint, f.rows]));
     expect(rows.get('fp-rescanned')).toEqual([{ retirement: 'Basic tier' }, { retirement: 'TLS 1.0' }]);
     expect(rows.get('fp-new')).toEqual([{ retirement: 'Classic' }]);
     expect(rows.get('fp-unchanged')).toEqual([{ retirement: 'TLS 1.0', kept: true }]);
@@ -172,7 +173,7 @@ describe('upgrading to finding_rows', () => {
     const product = await startProductOn(sample.file);
 
     expect(error).toHaveBeenCalledWith(expect.stringContaining('could not copy finding rows'), expect.anything());
-    const [finding] = (await product.listFindings()).filter(f => f.fingerprint === 'fp-many');
+    const [finding] = (await product.listFindings(EVERYTHING_ACCESS)).filter(f => f.fingerprint === 'fp-many');
     expect(finding!.rows).toEqual([{ retirement: 'Basic tier' }, { retirement: 'TLS 1.0' }, { retirement: 'Gen1 images' }]);
     sqlite = open(sample.file);
     expect(all(sqlite, `SELECT COUNT(*) AS n FROM finding_rows`)).toEqual([{ n: 0 }]);

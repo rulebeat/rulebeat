@@ -4,6 +4,8 @@ import { executeTarget, type RunTarget } from './run-executor';
 import type { ScheduleRun } from './schedule-runs';
 import { recoverInterruptedRuns, recoverPendingNotifications } from './startup-recovery';
 import { isDemoMode } from './demo';
+import { SYSTEM_ACCESS } from './system-access';
+import type { Access } from './access-model';
 
 const TICK_INTERVAL_MS = 30_000;
 
@@ -94,7 +96,7 @@ export async function runDueSchedules(opts: { now?: Date; ctx?: TenantContext } 
   const due = await listDueSchedules(now.toISOString());
   for (const schedule of due) {
     try {
-      await runOnce(schedule, opts);
+      await runOnce(schedule, SYSTEM_ACCESS, opts);
     } catch {
       // runOnce already records failures in schedule_runs; never let one bad
       // schedule stop the loop from processing the rest.
@@ -104,11 +106,11 @@ export async function runDueSchedules(opts: { now?: Date; ctx?: TenantContext } 
 
 /** Also used by the "Run now" API. If a tick is currently running, wait for it to clear
  *  first so a manual trigger can never overlap with an automatic run. */
-export async function executeSchedule(schedule: Schedule): Promise<void> {
+export async function executeSchedule(schedule: Schedule, access: Access): Promise<void> {
   while (scanLock.busy) await new Promise(r => setTimeout(r, 250));
   scanLock.busy = true;
   try {
-    await runOnce(schedule);
+    await runOnce(schedule, access);
   } finally {
     scanLock.busy = false;
   }
@@ -130,11 +132,11 @@ export async function whileNoScanRuns<T>(fn: () => Promise<T>): Promise<T> {
 /** Ad-hoc "Run Scan" trigger from the Scans page: shares the same scanLock.busy-flag serialization as
  *  scheduled runs so a manual run can never overlap with an automatic one, and goes through the
  *  exact same executeTarget() core so it shows up in Run History identically to a schedule fire. */
-export async function runManualTarget(target: RunTarget): Promise<ScheduleRun> {
+export async function runManualTarget(target: RunTarget, access: Access): Promise<ScheduleRun> {
   while (scanLock.busy) await new Promise(r => setTimeout(r, 250));
   scanLock.busy = true;
   try {
-    return await executeTarget(target, { triggeredBy: 'manual' });
+    return await executeTarget(target, { triggeredBy: 'manual', access });
   } finally {
     scanLock.busy = false;
   }
@@ -150,7 +152,7 @@ export async function runManualTarget(target: RunTarget): Promise<ScheduleRun> {
  * `now` and `ctx` are for tests (and the demo generator's shape of the same idea): a real tick
  * passes neither.
  */
-async function runOnce(schedule: Schedule, opts: { now?: Date; ctx?: TenantContext } = {}): Promise<void> {
+async function runOnce(schedule: Schedule, access: Access, opts: { now?: Date; ctx?: TenantContext } = {}): Promise<void> {
   const startedAt = opts.now ?? new Date();
   const claimedNextRunAt = computeNextRun(schedule, startedAt)?.toISOString() ?? null;
   const claimed = await claimDueSchedule(schedule, claimedNextRunAt, startedAt.toISOString());
@@ -158,7 +160,7 @@ async function runOnce(schedule: Schedule, opts: { now?: Date; ctx?: TenantConte
 
   await executeTarget(
     { targetType: schedule.targetType, targetValues: schedule.targetValues },
-    { triggeredBy: 'schedule', scheduleId: schedule.id, ctx: opts.ctx },
+    { triggeredBy: 'schedule', scheduleId: schedule.id, ctx: opts.ctx, access },
   );
 
   // A scan longer than its own interval must not run again the instant it ends: move on to the

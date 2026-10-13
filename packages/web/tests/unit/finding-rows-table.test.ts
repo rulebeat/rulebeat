@@ -16,6 +16,7 @@ import { deleteFindingsForRule, listFindings } from '@/lib/db/findings';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = 'test-rows-table-rule';
 const KQL = 'resources | where type == "microsoft.compute/virtualmachines"';
@@ -33,7 +34,7 @@ async function insertRule(kql = KQL): Promise<void> {
 }
 
 async function scan(ctxOptions: Parameters<typeof fakeTenantContext>[0], hoursFromBase = 0) {
-  return runCategoryScan((await getCategory('identity'))!, {
+  return runCategoryScan((await getCategory('identity'))!, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext(ctxOptions),
     ruleIds: [RULE],
     now: new Date(Date.UTC(2026, 5, 1, hoursFromBase)),
@@ -72,7 +73,7 @@ describe('a scan writes finding_rows', () => {
 
     expect((await recordsOf(FP_ONE)).map(r => [r.position, r.row.n])).toEqual([[0, 4]]);
     expect(await rowColumns(FP_ONE)).toEqual({ rowCount: 1, rowsScanId: second.summary.id, lastScanId: second.summary.id });
-    expect((await listFindings()).find(f => f.fingerprint === FP_ONE)!.rows.map(r => r.n)).toEqual([4]);
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === FP_ONE)!.rows.map(r => r.n)).toEqual([4]);
   });
 
   it('keeps the records, and marks them current, when the rule was capped', async () => {

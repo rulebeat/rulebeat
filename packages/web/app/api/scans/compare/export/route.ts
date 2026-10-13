@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const { side } = compareQueryFromParams(search);
 
   try {
-    const body = await streamSnapshotExport(openCompareExport(ids[0], ids[1], side), format.value);
+    const body = await streamSnapshotExport(openCompareExport(ids[0], ids[1], side, actor.access), format.value);
     return new Response(body, {
       headers: {
         'Content-Type': CONTENT_TYPES[format.value],

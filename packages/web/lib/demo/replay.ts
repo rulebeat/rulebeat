@@ -1,5 +1,6 @@
 import type { Rule } from '@rulebeat/core';
 import { executeTarget } from '../run-executor';
+import { SYSTEM_ACCESS } from '../system-access';
 import { assertNoQueryFailures, createFakeContext } from './fake-context';
 import type { Estate } from './estate';
 import type { SyntheticApp } from './identity-fixtures';
@@ -49,7 +50,7 @@ export async function replay(opts: ReplayOptions): Promise<Date> {
 
     const run = await executeTarget(
       { targetType: 'all', targetValues: [] },
-      { triggeredBy: 'schedule', scheduleId, ctx, now },
+      { triggeredBy: 'schedule', scheduleId, ctx, now, access: SYSTEM_ACCESS },
     );
 
     if (run.error) {

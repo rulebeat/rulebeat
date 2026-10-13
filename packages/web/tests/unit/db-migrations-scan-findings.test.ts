@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { computeActivityFingerprint, computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { makeSample, open } from '../fixtures/upgrade';
 import { runMigrations } from '@/lib/db/migrate';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = '9a4e7c31-5b2d-4e8f-8c6a-1d3f5b7a9c20';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -120,7 +121,7 @@ describe('upgrading to scan_findings', () => {
     db.close();
 
     const product = await startProductOn(sample.file);
-    await product.listFindings();
+    await product.listFindings(EVERYTHING_ACCESS);
 
     sqlite = open(sample.file);
     const scanOne = recordsOf(sqlite, 'scan-1');
@@ -209,7 +210,7 @@ describe('upgrading to scan_findings', () => {
     const product = await startProductOn(sample.file);
 
     // The app started and still reads.
-    await expect(product.listFindings()).resolves.toEqual(expect.any(Array));
+    await expect(product.listFindings(EVERYTHING_ACCESS)).resolves.toEqual(expect.any(Array));
     const logged = error.mock.calls.map(call => call.map(String).join(' ')).join('\n');
     expect(logged).toContain('scan-broken');
     expect(logged).toContain('scan-wrong-shape');
@@ -305,7 +306,7 @@ describe('upgrading to scan_findings', () => {
     const { runCategoryScan } = await import('@/lib/scan-runner');
     const { getCategory } = await import('@/lib/db/categories');
     const { fakeTenantContext, argRow } = await import('../helpers/fake-azure');
-    const { summary } = await runCategoryScan((await getCategory('identity'))!, {
+    const { summary } = await runCategoryScan((await getCategory('identity'))!, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({
         rows: [{ ...argRow({ name: 'VM-One' }), retirement: 'a' }, { ...argRow({ name: 'vm-two' }), retirement: 'b' }, { ...argRow({ name: 'VM-One' }), retirement: 'c' }],
         logsRows: [{ UserId: 'u1', ResultType: '50126' }, { UserId: 'u1', ResultType: '50057' }],
@@ -473,7 +474,7 @@ describe('emptying the stored findings blobs', () => {
     peek.close();
     await (await import('@/lib/db/findings')).backfillFindings();
     await (await import('@/lib/db/snapshots')).backfillSnapshots();
-    const findings = await product.listFindings();
+    const findings = await product.listFindings(EVERYTHING_ACCESS);
     expect(findings.map(f => f.resourceName).sort()).toEqual(['vm-1', 'vm-2']);
     expect(findings.find(f => f.resourceName === 'vm-2')).toMatchObject({ status: 'fixed' });
     closeProductDb?.();
@@ -485,7 +486,7 @@ describe('emptying the stored findings blobs', () => {
 
     // The next start finds both markers set and empties the blobs, and the history they gave stays.
     const next = await startProductOn(sample.file);
-    expect((await next.listFindings()).map(f => f.resourceName).sort()).toEqual(['vm-1', 'vm-2']);
+    expect((await next.listFindings(EVERYTHING_ACCESS)).map(f => f.resourceName).sort()).toEqual(['vm-1', 'vm-2']);
 
     sqlite = open(sample.file);
     expect(blobs(sqlite)).toEqual([{ id: 'scan-1', findings: '[]' }, { id: 'scan-2', findings: '[]' }]);

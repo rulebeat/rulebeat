@@ -25,7 +25,7 @@ export async function POST() {
 
   let ctx;
   try {
-    ctx = await createTenantContext();
+    ctx = await createTenantContext(actor.access);
   } catch (err) {
     return azureError('Could not connect to Azure to refresh schemas', err);
   }

@@ -3,6 +3,7 @@ import { queryView } from './db/finding-views';
 import { emptyView, type BuiltinField, type View } from './finding-view';
 import type { WidgetFilters } from './dashboard-filters';
 import type { AdvisoriesWidgetData } from './advisories-widget';
+import type { Access } from './access-model';
 
 /** The widget's filter dimensions as the view filters the Advisories tab reads them. */
 function filtersOf(filters: WidgetFilters): View['filters'] {
@@ -28,6 +29,7 @@ function filtersOf(filters: WidgetFilters): View['filters'] {
 export async function queryAdvisoriesWidget(
   filters: WidgetFilters,
   opts: { limit: number },
+  access: Access,
 ): Promise<AdvisoriesWidgetData> {
   const view: View = {
     ...emptyView(),
@@ -36,7 +38,7 @@ export async function queryAdvisoriesWidget(
     pageSize: opts.limit,
   };
   const [page, rules] = await Promise.all([
-    queryView(view, { tab: 'advisories', showSuppressed: filters.includeSuppressed ?? false }),
+    queryView(view, { tab: 'advisories', showSuppressed: filters.includeSuppressed ?? false }, access),
     loadRules(),
   ]);
 

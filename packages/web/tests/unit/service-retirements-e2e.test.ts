@@ -15,6 +15,7 @@ import { buildExplorerData } from '@/lib/explorer-data';
 import { resetDb } from '../helpers/db';
 import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 import { fakeTenantContext, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -73,12 +74,12 @@ async function scan() {
     // Only the rule's own query reads `advisorresources`; the location follow-up gets nothing back.
     rows: kql => (/^\s*advisorresources/i.test(kql) ? advisorAnswer(kql, held) : []),
   });
-  const outcome = await runCategoryScan(category, { ctx, ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
+  const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
   return { ctx, outcome };
 }
 
-const advisories = () => buildExplorerData({ kinds: ['advisory'] });
-const mine = async () => (await listFindings()).filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID);
+const advisories = () => buildExplorerData(EVERYTHING_ACCESS, { kinds: ['advisory'] });
+const mine = async () => (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID);
 
 beforeEach(async () => {
   await resetDb();
@@ -120,7 +121,7 @@ describe('the resource id the rule reports', () => {
 
   it('lets a resource with a mixed-case id get its location from the follow-up query', async () => {
     const category = (await getCategory('reliability'))!;
-    await runCategoryScan(category, { ctx: advisorWithMixedCaseId(), ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: advisorWithMixedCaseId(), ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
     const [finding, ...rest] = await mine();
     expect(rest).toEqual([]);
     expect(finding.location).toBe('westeurope');
@@ -209,7 +210,7 @@ describe('scanning the shipped Service retirements rule', () => {
 
   it('never enters a posture or problem count', async () => {
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['reliability'], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: ['reliability'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
     expect(summary.current.activeFindings).toBe(0);
   });
 });

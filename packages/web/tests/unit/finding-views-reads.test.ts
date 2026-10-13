@@ -18,6 +18,7 @@ import { CHUNK_SIZE } from '@/lib/db/chunk';
 import { emptyView, rowField, type View, type ViewFilter } from '@/lib/finding-view';
 import { rawGateOf } from '@/lib/view-pass';
 import type { Finding } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const events: string[] = [];
 const reads: { params: unknown[] }[] = [];
@@ -77,7 +78,7 @@ const boundFingerprints = () => {
 
 describe('a view that looks at no row value', () => {
   it('reads only the rows of the findings on its page, and binds no more fingerprints than a statement may', async () => {
-    const response = await queryView(make({}), { tab: 'results', showSuppressed: false });
+    const response = await queryView(make({}), { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     expect(response.items.length).toBe(50);
     expect(response.total).toBe(FINDINGS);
@@ -87,7 +88,7 @@ describe('a view that looks at no row value', () => {
   });
 
   it('reads no rows at all for a grouped view, whose answer is headers', async () => {
-    const response = await queryView(make({ groupBy: ['category'] }), { tab: 'results', showSuppressed: false });
+    const response = await queryView(make({ groupBy: ['category'] }), { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     expect(response.grouped?.rowTotal).toBe(FINDINGS * ROWS_EACH);
     expect(parses()).toBe(0);
@@ -100,7 +101,7 @@ describe('a view that filters on a returned column', () => {
   const view = make({ filters: [f('row.zone', 'z1', '')] });
 
   it('parses each chunk of rows as it arrives, before the next chunk is read', async () => {
-    await queryView(view, { tab: 'results', showSuppressed: false });
+    await queryView(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     const reading = events.map((e, i) => (e === 'read' ? i : -1)).filter(i => i >= 0);
     expect(reads.length).toBeGreaterThanOrEqual(3);
@@ -110,7 +111,7 @@ describe('a view that filters on a returned column', () => {
   });
 
   it('parses each candidate row once, then the rows of the page\'s findings again', async () => {
-    const response = await queryView(view, { tab: 'results', showSuppressed: false });
+    const response = await queryView(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     // Every finding is a candidate (no built-in filter), so the stream reads them all once.
     expect(parses()).toBeGreaterThanOrEqual(FINDINGS * ROWS_EACH);
@@ -118,14 +119,14 @@ describe('a view that filters on a returned column', () => {
   });
 
   it('binds no more fingerprints in one read than a statement may', async () => {
-    await queryView(view, { tab: 'results', showSuppressed: false });
+    await queryView(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     expect(Math.max(...reads.map(r => r.params.length))).toBeLessThanOrEqual(CHUNK_SIZE);
   });
 
   it('never reads a finding that fails two built-in filters', async () => {
     const filtered = make({ filters: [f('category', 'security'), f('severity', 'high'), f('row.zone', 'z1')] });
-    await queryView(filtered, { tab: 'results', showSuppressed: false });
+    await queryView(filtered, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     const bound = new Set(boundFingerprints());
     const failsBoth = findings.filter(x => x.category !== 'security' && x.severity !== 'high');
@@ -137,7 +138,7 @@ describe('a view that filters on a returned column', () => {
 
   it('reads only the filtered group\'s findings\' rows when one group is opened', async () => {
     const grouped = make({ groupBy: ['category'], filters: [f('category', 'cost'), f('row.zone', 'z1')] });
-    await queryGroup(grouped, { tab: 'results', showSuppressed: false, groupPath: ['cost'], groupPage: 1 });
+    await queryGroup(grouped, { tab: 'results', showSuppressed: false, groupPath: ['cost'], groupPage: 1 }, EVERYTHING_ACCESS);
 
     const bound = new Set(boundFingerprints());
     expect(findings.filter(x => x.category === 'security' && bound.has(x.fingerprint))).toEqual([]);
@@ -145,7 +146,7 @@ describe('a view that filters on a returned column', () => {
 
   it('reads only the opened group\'s findings\' rows when no built-in filter has already narrowed the view', async () => {
     const grouped = make({ groupBy: ['category'], filters: [f('row.zone', 'z1')] });
-    await queryGroup(grouped, { tab: 'results', showSuppressed: false, groupPath: ['cost'], groupPage: 1 });
+    await queryGroup(grouped, { tab: 'results', showSuppressed: false, groupPath: ['cost'], groupPage: 1 }, EVERYTHING_ACCESS);
 
     const bound = new Set(boundFingerprints());
     expect(bound.size).toBeGreaterThan(0);
@@ -155,7 +156,7 @@ describe('a view that filters on a returned column', () => {
 
 describe('a returned column\'s values', () => {
   it('parses every row of the findings the view lists once, and nothing else', async () => {
-    const response = await queryColumnValues(make({ filters: [f('category', 'security')] }), { tab: 'results', showSuppressed: false, column: 'row.zone' });
+    const response = await queryColumnValues(make({ filters: [f('category', 'security')] }), { tab: 'results', showSuppressed: false, column: 'row.zone' }, EVERYTHING_ACCESS);
 
     expect(response.values.length).toBe(3);
     expect(parses()).toBe(findings.filter(x => x.category === 'security').length * ROWS_EACH);
@@ -165,10 +166,10 @@ describe('a returned column\'s values', () => {
 
 describe('a filter on a plain value', () => {
   it('parses only the rows whose text holds the value, and answers what the full parse answers', async () => {
-    const plain = await queryView(make({ filters: [f('row.zone', 'z1')] }), { tab: 'results', showSuppressed: false });
+    const plain = await queryView(make({ filters: [f('row.zone', 'z1')] }), { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
     const parsedPlain = parses();
     events.length = 0;
-    const full = await queryView(make({ filters: [f('row.zone', 'z1', '')] }), { tab: 'results', showSuppressed: false });
+    const full = await queryView(make({ filters: [f('row.zone', 'z1', '')] }), { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS);
 
     expect(parsedPlain).toBeLessThan(FINDINGS * ROWS_EACH * 0.6);
     expect(plain).toEqual(full);

@@ -18,6 +18,7 @@ import { buildExplorerData } from '@/lib/explorer-data';
 import { resetDb, clearRules, execRaw, columnsOf } from '../helpers/db';
 import { SERVICE_RETIREMENTS_RULE_ID } from '../helpers/catalogue';
 import { fakeTenantContext, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const dataDir = join(resolve(__dirname, '..', '..'), 'data');
 const VM = `/subscriptions/${TEST_SUB_A}/resourcegroups/rg-legacy/providers/microsoft.compute/virtualmachines/vm-one`;
@@ -39,7 +40,7 @@ async function scan() {
         }]
       : []),
   });
-  return runCategoryScan((await getCategory('reliability'))!, { ctx, ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
+  return runCategoryScan((await getCategory('reliability'))!, { access: EVERYTHING_ACCESS, ctx, ruleIds: [SERVICE_RETIREMENTS_RULE_ID] });
 }
 
 describe('a dev database that still has the Deadline and Group columns', () => {
@@ -71,7 +72,7 @@ describe('a dev database that still has the Deadline and Group columns', () => {
     const second = await scan();
     expect(second.summary.incompleteRules).toEqual([]);
 
-    const found = (await listFindings()).filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID);
+    const found = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === SERVICE_RETIREMENTS_RULE_ID);
     expect(found).toHaveLength(1);
     expect(found[0].status).toBe('active');
     expect(found[0].timesSeen).toBe(2);
@@ -79,7 +80,7 @@ describe('a dev database that still has the Deadline and Group columns', () => {
     expect(found[0]).not.toHaveProperty('groupValue');
     expect(found[0].evidence).toMatchObject({ retiringFeature: 'VM image', retirementDate: '2026-09-30' });
 
-    const advisories = (await buildExplorerData({ kinds: ['advisory'] })).findings;
+    const advisories = (await buildExplorerData(EVERYTHING_ACCESS, { kinds: ['advisory'] })).findings;
     expect(advisories.map(f => f.resourceId)).toEqual([VM]);
     const rule = (await loadRules()).find(r => r.id === SERVICE_RETIREMENTS_RULE_ID)!;
     expect(rule).not.toHaveProperty('deadlineField');

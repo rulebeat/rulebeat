@@ -25,10 +25,14 @@
  * (a connection of its own on SQLite, so a slow download never holds up a scan save or another read),
  * and never holds more than a batch (a finding with more rows than a block is read in blocks).
  *
+ * Every reader takes the caller's `Access` (#270). None narrows by it yet: an Access that is not
+ * Everything reads what Everything reads until its route leaves the not-yet-scoped list.
+ *
  * Before the upgrade's copy into finding_rows has been proven, the old row columns are the truth (as
  * in listFindings()), so a view then reads every finding in full and the reference answers it.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import type { Access } from '../access-model';
 import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import {
   categories as categoriesTable, findingRows as findingRowsTable, findings as findingsTable,
@@ -229,7 +233,7 @@ async function readWhole(tx: DbHandle, tab: ViewTab, rules: ReadonlyMap<string, 
 
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */
-export function queryView(view: View, query: ViewQuery): Promise<ViewResponse> {
+export function queryView(view: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);
     if (!(await rowsTableReady(tx))) {
@@ -247,7 +251,7 @@ export function queryView(view: View, query: ViewQuery): Promise<ViewResponse> {
 
 /** One finding's rows that match the view's row filters, a page of them, or null when the tab lists
  *  no finding with that fingerprint. Reads only that finding. */
-export function queryFindingRows(view: View, query: ViewQuery & { fingerprint: string; rowsPage: number }): Promise<FindingRowsResponse | null> {
+export function queryFindingRows(view: View, query: ViewQuery & { fingerprint: string; rowsPage: number }, access: Access): Promise<FindingRowsResponse | null> {
   return inReadTransaction(async (tx) => {
     const where = and(eq(findingsTable.fingerprint, query.fingerprint), inArray(findingsTable.kind, [...TAB_KINDS[query.tab]]));
     const rules = await readRuleDetails(tx);
@@ -283,7 +287,7 @@ async function withRows(tx: DbHandle, row: Parameters<typeof rowToSummary>[0]) {
 }
 
 /** One group's contents: the next level's groups, or the findings of the last level, a page of them. */
-export function queryGroup(view: View, query: ViewQuery & { groupPath: readonly (string | null)[]; groupPage: number }): Promise<GroupResponse> {
+export function queryGroup(view: View, query: ViewQuery & { groupPath: readonly (string | null)[]; groupPage: number }, access: Access): Promise<GroupResponse> {
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);
     const options = { tab: query.tab, catalogueColumns: [], categories, groupPath: query.groupPath, groupPage: query.groupPage };
@@ -307,7 +311,7 @@ export interface FilterOptions {
 /** What the dashboard's filter lists offer: every subscription, resource group and rule that has a
  *  finding on any tab, whatever its status. A view's facets cannot answer this, since they count
  *  one tab's findings under that view's filters and window. Reads no rows. */
-export function queryFilterOptions(): Promise<FilterOptions> {
+export function queryFilterOptions(access: Access): Promise<FilterOptions> {
   return inReadTransaction(async (tx) => {
     const rules = await readRuleDetails(tx);
     const found: Awaited<ReturnType<typeof readSlim>> = [];
@@ -323,7 +327,7 @@ export function queryFilterOptions(): Promise<FilterOptions> {
 }
 
 /** The values one returned column holds, for its filter's option list. */
-export function queryColumnValues(view: View, query: ViewQuery & { column: RowField; q?: string }): Promise<ColumnValuesResponse> {
+export function queryColumnValues(view: View, query: ViewQuery & { column: RowField; q?: string }, access: Access): Promise<ColumnValuesResponse> {
   return inReadTransaction(async (tx) => {
     const { rules, ctx } = await prepare(tx, view, query);
     if (!(await rowsTableReady(tx))) {
@@ -450,6 +454,6 @@ async function exportSource(tx: DbHandle, view: View, query: ViewQuery): Promise
 
 /** The export of a view, to be read inside a snapshot that stays open as long as `use` runs
  *  (lib/export-stream.ts keeps it open for as long as the download reads). */
-export function openExport(view: View, query: ViewQuery): OpenExport {
+export function openExport(view: View, query: ViewQuery, access: Access): OpenExport {
   return use => inSnapshotRead(async tx => use(await exportSource(tx, view, query)));
 }

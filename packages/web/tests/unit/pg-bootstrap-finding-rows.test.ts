@@ -12,6 +12,7 @@ import { bootstrapPg } from '@/lib/db/pg/bootstrap';
 import { listFindings } from '@/lib/db/findings';
 import { addSuppression, loadSuppressions } from '@/lib/suppressions';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const FINGERPRINT = 'pg-rows-fp';
 const EVIDENCE = { retirement: 'Basic tier' };
@@ -34,7 +35,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds findings.evidence_rows to an 
 
     await bootstrapPg(pgDb!);
 
-    const found = (await listFindings()).filter(f => f.fingerprint === FINGERPRINT);
+    const found = (await listFindings(EVERYTHING_ACCESS)).filter(f => f.fingerprint === FINGERPRINT);
     expect(found).toHaveLength(1);
     expect(found[0]).toMatchObject({
       status: 'active',
@@ -43,7 +44,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds findings.evidence_rows to an 
       evidence: EVIDENCE,
       rows: [EVIDENCE],
     });
-    expect((await loadSuppressions()).filter(s => s.fingerprint === FINGERPRINT)).toEqual([
+    expect((await loadSuppressions(EVERYTHING_ACCESS)).filter(s => s.fingerprint === FINGERPRINT)).toEqual([
       expect.objectContaining({ id: 'pg-rows-sup', reason: 'Accepted risk' }),
     ]);
 

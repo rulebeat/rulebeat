@@ -11,6 +11,7 @@ import { resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { emptyView, type View } from '@/lib/finding-view';
 import { queryGroup, queryView } from '@/lib/db/finding-views';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const FIRST = '11111111-1111-1111-1111-111111111111'; // would be named "Zulu"
 const SECOND = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'; // would be named "Alpha"
@@ -30,7 +31,7 @@ const query = { tab: 'results' as const, showSuppressed: false };
 
 describe('groups by subscription', () => {
   it('come in subscription id order, each labelled with its id', async () => {
-    const response = await queryView(grouped(), query);
+    const response = await queryView(grouped(), query, EVERYTHING_ACCESS);
     expect(response.grouped?.groups.map(g => [g.value, g.label, g.findingCount])).toEqual([
       [FIRST, FIRST, 2],
       [SECOND, SECOND, 1],
@@ -38,12 +39,12 @@ describe('groups by subscription', () => {
   });
 
   it('reverse with the group sort, still by id', async () => {
-    const response = await queryView(grouped({ groupSort: { by: 'value', dir: 'desc' } }), query);
+    const response = await queryView(grouped({ groupSort: { by: 'value', dir: 'desc' } }), query, EVERYTHING_ACCESS);
     expect(response.grouped?.groups.map(g => g.value)).toEqual([SECOND, FIRST]);
   });
 
   it('hold the findings of each subscription when opened', async () => {
-    const opened = await queryGroup(grouped(), { ...query, groupPath: [FIRST], groupPage: 1 });
+    const opened = await queryGroup(grouped(), { ...query, groupPath: [FIRST], groupPage: 1 }, EVERYTHING_ACCESS);
     expect(opened.items.map(i => i.finding.resourceName).sort()).toEqual(['vm-b', 'vm-c']);
   });
 });

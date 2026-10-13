@@ -5,6 +5,7 @@ import { many, one, run } from './db/exec';
 import { INSTANCE_ID } from './instance-id';
 import type { ScheduleTargetType } from './db/schedules';
 import { rowKey, type ChangedFinding, type FindingRow } from './finding-rows';
+import type { Access } from './access-model';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
 // now that this table also backs the user-facing Run History list, not just internal bookkeeping.
@@ -248,7 +249,7 @@ export async function recordCategoryProgress(id: string, delta: {
 }
 
 /** Runs for a single schedule (used by the Schedules tab's "last run" column). */
-export async function listRuns(scheduleId: string, limit = 20): Promise<ScheduleRun[]> {
+export async function listRuns(scheduleId: string, access: Access, limit = 20): Promise<ScheduleRun[]> {
   return (await many(db.select().from(scheduleRuns)
     .where(eq(scheduleRuns.scheduleId, scheduleId))
     .orderBy(desc(scheduleRuns.startedAt))
@@ -257,27 +258,27 @@ export async function listRuns(scheduleId: string, limit = 20): Promise<Schedule
 }
 
 /** Every run across every schedule AND manual "Run Scan" executions. The unified Run History. */
-export async function listAllRuns(limit = 50): Promise<ScheduleRun[]> {
+export async function listAllRuns(access: Access, limit = 50): Promise<ScheduleRun[]> {
   return (await many(db.select().from(scheduleRuns)
     .orderBy(desc(scheduleRuns.startedAt))
     .limit(limit)))
     .map(rowToRun);
 }
 
-export async function getRun(id: string): Promise<ScheduleRun | null> {
+export async function getRun(id: string, access: Access): Promise<ScheduleRun | null> {
   const row = await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)));
   return row ? rowToRun(row) : null;
 }
 
-export async function getLatestRun(scheduleId: string): Promise<ScheduleRun | null> {
-  return (await listRuns(scheduleId, 1))[0] ?? null;
+export async function getLatestRun(scheduleId: string, access: Access): Promise<ScheduleRun | null> {
+  return (await listRuns(scheduleId, access, 1))[0] ?? null;
 }
 
 /** Every row still `status: 'running'` whose owner has stopped proving it is alive: a heartbeat
  *  older than `staleBefore`, or none at all (rows from before the column existed, which the
  *  upgrade leaves NULL). A row with a fresh heartbeat belongs to a live process, most likely the
  *  container this one is replacing, and is not an orphan. Feeds `recoverInterruptedRuns()`. */
-export async function listStaleRunningRuns(staleBeforeIso: string): Promise<ScheduleRun[]> {
+export async function listStaleRunningRuns(staleBeforeIso: string, access: Access): Promise<ScheduleRun[]> {
   return (await many(
     db.select().from(scheduleRuns).where(and(
       eq(scheduleRuns.status, 'running'),
@@ -288,7 +289,7 @@ export async function listStaleRunningRuns(staleBeforeIso: string): Promise<Sche
 
 /** Every row whose notification batch is still due, per `notifyDueCondition`. Feeds
  *  `recoverPendingNotifications()`; each row is then claimed individually before dispatch. */
-export async function listNotificationRunsToRecover(staleBeforeIso: string): Promise<ScheduleRun[]> {
+export async function listNotificationRunsToRecover(staleBeforeIso: string, access: Access): Promise<ScheduleRun[]> {
   return (await many(db.select().from(scheduleRuns).where(notifyDueCondition(staleBeforeIso)))).map(rowToRun);
 }
 

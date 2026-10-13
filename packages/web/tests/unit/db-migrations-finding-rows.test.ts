@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { makeSample, open, upgradeInProcess } from '../fixtures/upgrade';
 import { SHAPES } from '../fixtures/db-shapes';
 import { runMigrations } from '@/lib/db/migrate';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = '9a4e7c31-5b2d-4e8f-8c6a-1d3f5b7a9c20';
 const SUB = '00000000-0000-0000-0000-000000000000';
@@ -71,7 +72,7 @@ describe('upgrading to a database with stored rows', () => {
 
     const product = await startProductOn(sample.file);
 
-    const found = (await product.listFindings()).filter(f => f.fingerprint === FINGERPRINT);
+    const found = (await product.listFindings(EVERYTHING_ACCESS)).filter(f => f.fingerprint === FINGERPRINT);
     expect(found).toHaveLength(1);
     expect(found[0]).toMatchObject({
       status: 'active',
@@ -80,7 +81,7 @@ describe('upgrading to a database with stored rows', () => {
       evidence: { retirement: 'Basic tier' },
       rows: [{ retirement: 'Basic tier' }],
     });
-    const suppressions = await product.loadSuppressions();
+    const suppressions = await product.loadSuppressions(EVERYTHING_ACCESS);
     expect(suppressions.filter(s => s.fingerprint === FINGERPRINT)).toEqual([
       expect.objectContaining({ id: 'sup-1', reason: 'Accepted risk' }),
     ]);

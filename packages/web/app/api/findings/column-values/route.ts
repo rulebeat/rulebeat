@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 
   try {
     const { view, tab, showSuppressed } = request.value;
-    return Response.json(await queryColumnValues(view, { tab, showSuppressed, column: column.value, q: params.get('valueQuery') ?? undefined }));
+    return Response.json(await queryColumnValues(view, { tab, showSuppressed, column: column.value, q: params.get('valueQuery') ?? undefined }, actor.access));
   } catch (err) {
     return serverError('Could not load the column values', err);
   }

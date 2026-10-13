@@ -5,10 +5,11 @@ import {
 } from './schema-cache';
 import { getResourceTypeFields, getAllResourceTypes } from '@rulebeat/core';
 import { createTenantContext } from './azure-credential';
+import { SYSTEM_ACCESS } from './system-access';
 
 export async function warmSchemaCache(): Promise<void> {
   try {
-    const ctx = await createTenantContext();
+    const ctx = await createTenantContext(SYSTEM_ACCESS);
 
     // 1. Resource types list (1-day TTL)
     const typesCached = await readResourceTypesCache();

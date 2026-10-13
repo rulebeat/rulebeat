@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   let ctx: TenantContext;
   try {
-    ctx = await createTenantContext();
+    ctx = await createTenantContext(actor.access);
   } catch (err) {
     // Deliberately not surfaced verbatim: a credential failure describes which identity sources
     // were tried and against which tenant, which the person validating a query cannot act on anyway.

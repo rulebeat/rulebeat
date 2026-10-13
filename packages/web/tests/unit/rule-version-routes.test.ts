@@ -25,6 +25,7 @@ import { describeOrigin } from '@/lib/rule-version-markers';
 import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import type { RuleVersionHistory } from '@/lib/types';
 import type { ShippedCatalogue } from '@/lib/shipped-catalogue';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -120,8 +121,8 @@ describe('recorded Rule versions', () => {
         ? [argRow({ name: 'kept' }), argRow({ name: 'dropped' })]
         : [argRow({ name: 'kept' }), argRow({ name: 'new' })],
     });
-    await runCategoryScan(category, { ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
-    const before = await listFindings();
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
+    const before = await listFindings(EVERYTHING_ACCESS);
     const kept = before.find(f => f.resourceName === 'kept')!;
     const suppression = {
       id: 'version-suppression', fingerprint: kept.fingerprint, resourceId: kept.resourceId,
@@ -135,38 +136,38 @@ describe('recorded Rule versions', () => {
     });
     const schedules = await listSchedules();
     const scanHistory = async () => ({
-      scans: await listScanMetas('security', 1000),
+      scans: await listScanMetas('security', EVERYTHING_ACCESS, 1000),
       records: await many(db.select().from(scanFindings).orderBy(asc(scanFindings.scanId), asc(scanFindings.fingerprint))),
     });
     const history = await scanHistory();
     const lastRun = await storedRule();
     expect((await PUT(switchRequest('2.0.0'), params)).status).toBe(200);
-    expect(await listFindings()).toEqual(before);
+    expect(await listFindings(EVERYTHING_ACCESS)).toEqual(before);
     expect(await scanHistory()).toEqual(history);
     expect(await listSchedules()).toEqual(schedules);
     expect(await storedRule()).toMatchObject({ lastRunStatus: lastRun.lastRunStatus, lastRunAt: lastRun.lastRunAt });
 
-    const forward = await runCategoryScan(category, { ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
+    const forward = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
     expect(forward.summary.coverage).toBe('complete');
     expect(forward.newFindings.map(f => f.resourceName)).toEqual(['new']);
-    const findings = await listFindings();
+    const findings = await listFindings(EVERYTHING_ACCESS);
     expect(findings.find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: '2026-09-24T12:00:00.000Z', status: 'active', timesSeen: 2,
     });
     expect(findings.find(f => f.resourceName === 'dropped')).toMatchObject({ status: 'fixed', resolvedAt: '2026-09-25T12:00:00.000Z' });
     expect(findings.find(f => f.resourceName === 'new')).toMatchObject({ status: 'active', firstSeenAt: '2026-09-25T12:00:00.000Z' });
-    expect(await loadSuppressions()).toEqual([suppression]);
+    expect(await loadSuppressions(EVERYTHING_ACCESS)).toEqual([suppression]);
 
     expect((await PUT(switchRequest('1.0.0'), params)).status).toBe(200);
-    await runCategoryScan(category, { ctx, ruleIds: [ID], now: new Date('2026-09-26T12:00:00Z') });
-    const back = await listFindings();
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-26T12:00:00Z') });
+    const back = await listFindings(EVERYTHING_ACCESS);
     expect(back.find(f => f.resourceName === 'kept')).toMatchObject({ fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, timesSeen: 3 });
     expect(back.find(f => f.resourceName === 'dropped')).toMatchObject({ status: 'active', firstSeenAt: '2026-09-24T12:00:00.000Z' });
     expect(back.find(f => f.resourceName === 'new')?.status).toBe('fixed');
-    expect(await loadSuppressions()).toEqual([suppression]);
+    expect(await loadSuppressions(EVERYTHING_ACCESS)).toEqual([suppression]);
     expect((await getFindingEventCounts({
       categories: ['security'], sinceDate: '2026-09-24',
-    })).slice(0, 3)).toEqual([
+    }, EVERYTHING_ACCESS)).slice(0, 3)).toEqual([
       { date: '2026-09-24', created: 2, resolved: 0 },
       { date: '2026-09-25', created: 1, resolved: 1 },
       { date: '2026-09-26', created: 1, resolved: 1 },
@@ -183,22 +184,22 @@ describe('recorded Rule versions', () => {
       rows: query => query === v1.definition.rawKql
         ? [argRow({ name: 'kept' }), argRow({ name: 'dropped' })] : [argRow({ name: 'kept' })],
     });
-    await runCategoryScan(security, { ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
-    const kept = (await listFindings()).find(f => f.resourceName === 'kept')!;
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
+    const kept = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')!;
     expect((await PUT(switchRequest('3.0.0'), params)).status).toBe(200);
-    await runCategoryScan(compliance, { ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
-    expect((await listFindings()).find(f => f.resourceName === 'kept')).toMatchObject({
+    await runCategoryScan(compliance, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, category: 'compliance', status: 'active',
     });
-    expect((await listFindings()).find(f => f.resourceName === 'dropped')).toMatchObject({ category: 'security', status: 'fixed' });
-    expect((await getSnapshots({ categories: ['security'] })).at(-1)?.activeFindings).toBe(0);
-    expect((await getSnapshots({ categories: ['compliance'] })).at(-1)?.activeFindings).toBe(1);
-    expect((await getFindingEventCounts({ categories: ['security'], sinceDate: '2026-09-24' })).slice(0, 2)).toEqual([
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'dropped')).toMatchObject({ category: 'security', status: 'fixed' });
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1)?.activeFindings).toBe(0);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['compliance'] })).at(-1)?.activeFindings).toBe(1);
+    expect((await getFindingEventCounts({ categories: ['security'], sinceDate: '2026-09-24' }, EVERYTHING_ACCESS)).slice(0, 2)).toEqual([
       { date: '2026-09-24', created: 2, resolved: 0 }, { date: '2026-09-25', created: 0, resolved: 1 },
     ]);
     expect((await PUT(switchRequest('1.0.0'), params)).status).toBe(200);
-    await runCategoryScan(security, { ctx, ruleIds: [ID], now: new Date('2026-09-26T12:00:00Z') });
-    expect((await listFindings()).find(f => f.resourceName === 'kept')).toMatchObject({
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-26T12:00:00Z') });
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, category: 'security', status: 'active',
     });
   });
@@ -336,12 +337,12 @@ describe('recorded Rule versions', () => {
 
     const category = (await getCategory('security'))!;
     const before = fakeTenantContext({ rows: [argRow()] });
-    await runCategoryScan(category, { ctx: before, ruleIds: [ID] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: before, ruleIds: [ID] });
     expect(history.currentQuery).toBe(before.queries[0].kql);
 
     expect((await PUT(switchRequest('2.0.0'), params)).status).toBe(200);
     const after = fakeTenantContext({ rows: [argRow()] });
-    await runCategoryScan(category, { ctx: after, ruleIds: [ID] });
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: after, ruleIds: [ID] });
     expect(history.versions[0].query).toBe(after.queries[0].kql);
     expect(after.queries[0].kql).not.toBe(before.queries[0].kql);
     expect((await storedRule()).version).toBe('2.0.0');

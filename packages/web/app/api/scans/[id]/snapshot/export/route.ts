@@ -25,7 +25,7 @@ export async function GET(
   if (!format.ok) return Response.json({ error: format.error }, { status: 400 });
 
   try {
-    const body = await streamSnapshotExport(openSnapshotExport(id, snapshotQueryFromParams(search)), format.value);
+    const body = await streamSnapshotExport(openSnapshotExport(id, snapshotQueryFromParams(search), actor.access), format.value);
     return new Response(body, {
       headers: {
         'Content-Type': CONTENT_TYPES[format.value],

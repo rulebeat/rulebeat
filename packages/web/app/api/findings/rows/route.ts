@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 
   try {
     const { view, tab, showSuppressed } = request.value;
-    const rows = await queryFindingRows(view, { tab, showSuppressed, fingerprint, rowsPage: parsePageParam(params.get('rowsPage')) });
+    const rows = await queryFindingRows(view, { tab, showSuppressed, fingerprint, rowsPage: parsePageParam(params.get('rowsPage')) }, actor.access);
     if (!rows) return Response.json({ error: 'Finding not found.' }, { status: 404 });
     return Response.json(rows);
   } catch (err) {

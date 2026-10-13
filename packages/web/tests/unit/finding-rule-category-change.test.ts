@@ -15,6 +15,7 @@ import { getSnapshots } from '@/lib/db/snapshots';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb, clearRules } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_ID = 'test-rule-category-change';
 const OTHER_RULE_ID = 'test-rule-stays-in-security';
@@ -36,7 +37,7 @@ async function insertRule(id: string): Promise<void> {
 }
 
 async function statusOf(ruleId: string, resourceName: string): Promise<string | undefined> {
-  return (await listFindings()).find(f => f.ruleId === ruleId && f.resourceName === resourceName)?.status;
+  return (await listFindings(EVERYTHING_ACCESS)).find(f => f.ruleId === ruleId && f.resourceName === resourceName)?.status;
 }
 
 describe('a rule whose category changes after it has findings', () => {
@@ -50,12 +51,12 @@ describe('a rule whose category changes after it has findings', () => {
     const security = (await getCategory('security'))!;
     const compliance = (await getCategory('compliance'))!;
 
-    await runCategoryScan(security, {
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' }), argRow({ name: 'vm-2' })] }),
       ruleIds: [RULE_ID],
     });
     await execRun(db.update(rulesTable).set({ category: 'compliance' }).where(eq(rulesTable.id, RULE_ID)));
-    await runCategoryScan(compliance, {
+    await runCategoryScan(compliance, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' })] }),
       ruleIds: [RULE_ID],
     });
@@ -68,23 +69,23 @@ describe('a rule whose category changes after it has findings', () => {
     const security = (await getCategory('security'))!;
     const compliance = (await getCategory('compliance'))!;
 
-    await runCategoryScan(security, {
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' }), argRow({ name: 'vm-2' })] }),
       ruleIds: [RULE_ID],
     });
-    expect((await getSnapshots({ categories: ['security'] }))[0]?.activeFindings).toBe(2);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] }))[0]?.activeFindings).toBe(2);
 
     await execRun(db.update(rulesTable).set({ category: 'compliance' }).where(eq(rulesTable.id, RULE_ID)));
-    await runCategoryScan(compliance, {
+    await runCategoryScan(compliance, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' })] }),
       ruleIds: [RULE_ID],
     });
 
     // vm-2 resolved and vm-1 was re-recorded under compliance, so security holds nothing active.
-    expect((await getSnapshots({ categories: ['security'] }))[0]?.activeFindings).toBe(0);
-    expect((await getSnapshots({ categories: ['compliance'] }))[0]?.activeFindings).toBe(1);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] }))[0]?.activeFindings).toBe(0);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['compliance'] }))[0]?.activeFindings).toBe(1);
 
-    const vm2 = (await listFindings()).find(f => f.resourceName === 'vm-2')!;
+    const vm2 = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'vm-2')!;
     const events = await execMany(db.select().from(findingEventsTable)
       .where(eq(findingEventsTable.fingerprint, vm2.fingerprint)));
     expect(events.map(e => [e.type, e.category]).sort()).toEqual([
@@ -97,11 +98,11 @@ describe('a rule whose category changes after it has findings', () => {
     await insertRule(OTHER_RULE_ID);
     const security = (await getCategory('security'))!;
 
-    await runCategoryScan(security, {
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [argRow({ name: 'vm-1' })] }),
       ruleIds: [RULE_ID, OTHER_RULE_ID],
     });
-    await runCategoryScan(security, {
+    await runCategoryScan(security, { access: EVERYTHING_ACCESS,
       ctx: fakeTenantContext({ rows: [] }),
       ruleIds: [RULE_ID],
     });

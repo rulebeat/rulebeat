@@ -1,6 +1,7 @@
 import { listStaleRunningRuns, listNotificationRunsToRecover, finishRun, staleBefore } from './schedule-runs';
 import { getFindingsByFingerprints } from './db/findings';
 import { dispatchAndMarkSent } from './notifications/dispatch';
+import { SYSTEM_ACCESS } from './system-access';
 
 const RECOVERY_ERROR_MESSAGE =
   'Run did not complete. The server restarted or crashed while this scan was in progress.';
@@ -21,7 +22,7 @@ const RECOVERY_ERROR_MESSAGE =
  * those findings to pass 2 exactly as if a live run had crashed between finishing and dispatching.
  */
 export async function recoverInterruptedRuns(now: Date = new Date()): Promise<number> {
-  const stale = await listStaleRunningRuns(staleBefore(now));
+  const stale = await listStaleRunningRuns(staleBefore(now), SYSTEM_ACCESS);
 
   for (const run of stale) {
     const willNotify = run.triggeredBy === 'schedule'
@@ -63,17 +64,17 @@ export async function recoverInterruptedRuns(now: Date = new Date()): Promise<nu
  * loop on the same row forever.
  */
 export async function recoverPendingNotifications(now: Date = new Date()): Promise<number> {
-  const due = await listNotificationRunsToRecover(staleBefore(now));
+  const due = await listNotificationRunsToRecover(staleBefore(now), SYSTEM_ACCESS);
 
   let recovered = 0;
   for (const run of due) {
     const findings = run.newFindingFingerprints.length > 0
-      ? await getFindingsByFingerprints(run.newFindingFingerprints)
+      ? await getFindingsByFingerprints(run.newFindingFingerprints, SYSTEM_ACCESS)
       : [];
     // A changed finding is resolved the same way, then given back the rows the run recorded for it.
     const addedRows = new Map(run.changedFindings.map(c => [c.fingerprint, c.addedRows]));
     const changed = addedRows.size > 0
-      ? (await getFindingsByFingerprints([...addedRows.keys()]))
+      ? (await getFindingsByFingerprints([...addedRows.keys()], SYSTEM_ACCESS))
         .map(f => ({ ...f, addedRows: addedRows.get(f.fingerprint) ?? [] }))
       : [];
     if (await dispatchAndMarkSent(run, findings, { now, changed })) recovered++;

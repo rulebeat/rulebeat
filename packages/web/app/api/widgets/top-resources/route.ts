@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
   // A no-op today: 'activity' findings are already excluded below by the resourceId check.
-  const findings = (await queryActiveFindings(filters)).filter(countsInFindingTotals);
+  const findings = (await queryActiveFindings(filters, actor.access)).filter(countsInFindingTotals);
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();

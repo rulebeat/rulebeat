@@ -11,6 +11,7 @@ import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { upsertDailySnapshot, getSnapshots } from '@/lib/db/snapshots';
 import { resetDb, clearRules } from '../helpers/db';
 import type { Finding, RuleKind } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const RULE_ACTIVITY = 'test-175-activity-rule';
@@ -105,7 +106,7 @@ describe('computeWidgetSummary (issue #175)', () => {
       findings: [activity, state, future], finishedAt: daysAgo(1),
     });
 
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
     expect(summary.current.activeFindings).toBe(1);
     expect(summary.current.severityCounts.high).toBe(1);
@@ -124,7 +125,7 @@ describe('getFindingEventCounts (issue #175)', () => {
       findings: [activity, state, future], finishedAt: day,
     });
 
-    const counts = await getFindingEventCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getFindingEventCounts({ sinceDate: daysAgo(5).slice(0, 10) }, EVERYTHING_ACCESS);
     const totalCreated = counts.reduce((n, c) => n + c.created, 0);
     expect(totalCreated).toBe(1);
   });
@@ -142,7 +143,7 @@ describe('upsertDailySnapshot (issue #175)', () => {
 
     await upsertDailySnapshot(CATEGORY);
     const today = new Date().toISOString().slice(0, 10);
-    const row = (await getSnapshots({ categories: [CATEGORY] })).find(s => s.date === today);
+    const row = (await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] })).find(s => s.date === today);
 
     expect(row, 'upsertDailySnapshot did not write today\'s row').toBeDefined();
     expect(row!.activeFindings).toBe(1);

@@ -16,7 +16,7 @@ export async function GET() {
 
   const schedules = await Promise.all((await listSchedules()).map(async s => ({
     ...s,
-    lastRun: await getLatestRun(s.id),
+    lastRun: await getLatestRun(s.id, actor.access),
     notificationLinks: await listLinksForSchedule(s.id),
   })));
   return NextResponse.json(schedules);

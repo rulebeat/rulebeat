@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { makeSample, open, upgradeInProcess } from '../fixtures/upgrade';
 import { SHAPES } from '../fixtures/db-shapes';
 import { runMigrations } from '@/lib/db/migrate';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const FINGERPRINT = 'abcdef0123456789';
 
@@ -64,7 +65,7 @@ describe('upgrading to a database that records changed findings', () => {
 
     const product = await startProductOn(sample.file);
 
-    const run = await product.getRun('run-1');
+    const run = await product.getRun('run-1', EVERYTHING_ACCESS);
     expect(run).toMatchObject({
       id: 'run-1', status: 'success', totalFindings: 3, newFindings: 1,
       newFindingFingerprints: [FINGERPRINT], notifyStatus: 'pending', changedFindings: [],
@@ -95,7 +96,7 @@ describe('upgrading to a database that records changed findings', () => {
       changedFindings: [{ fingerprint: FINGERPRINT, addedRows: [{ retirement: 'TLS 1.0' }] }],
     });
 
-    expect(await product.getRun('run-2')).toMatchObject({
+    expect(await product.getRun('run-2', EVERYTHING_ACCESS)).toMatchObject({
       newFindingFingerprints: ['fp-existing'],
       changedFindings: [{ fingerprint: FINGERPRINT, addedRows: [{ retirement: 'TLS 1.0' }] }],
     });
@@ -117,7 +118,7 @@ describe('upgrading to a database that records changed findings', () => {
 
     const product = await startProductOn(sample.file);
 
-    expect((await product.getRun('run-3'))!.changedFindings).toEqual([
+    expect((await product.getRun('run-3', EVERYTHING_ACCESS))!.changedFindings).toEqual([
       { fingerprint: FINGERPRINT, addedRows: [{ retirement: 'TLS 1.0' }] },
     ]);
     // Nothing in the product reads a row event's payload, so this one is checked in the table.
@@ -131,7 +132,7 @@ describe('upgrading to a database that records changed findings', () => {
     const product = await startProductOn(sample.file);
 
     // Every run the upgrade kept reads as having no changed findings.
-    for (const run of await product.listAllRuns(1000)) expect(run.changedFindings).toEqual([]);
+    for (const run of await product.listAllRuns(EVERYTHING_ACCESS, 1000)) expect(run.changedFindings).toEqual([]);
     const db = sqlite = open(sample.file);
     expect(columns(db, 'finding_events')).toContain('row_payload');
     expect(columns(db, 'schedule_runs')).toContain('changed_findings');

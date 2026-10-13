@@ -28,6 +28,7 @@ import {
 import type { Finding, Severity } from '@/lib/types';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const CATEGORY = 'security';
 const PROBLEM_RULE = 'notify-problem-rule';
@@ -126,14 +127,14 @@ describe('notification channels and Advisories', () => {
   async function runScheduled(rowsByRule: Record<string, string[]>) {
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'schedule', scheduleId, ctx: ctxWith(rowsByRule) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWith(rowsByRule) },
     );
-    await vi.waitFor(async () => expect((await getRun(run.id))!.notifyStatus).toBe('sent'));
+    await vi.waitFor(async () => expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent'));
     return run;
   }
 
   async function fingerprintsOf(resourceName: string): Promise<string> {
-    const found = (await listFindings({ status: 'active' })).find(f => f.resourceName === resourceName);
+    const found = (await listFindings(EVERYTHING_ACCESS, { status: 'active' })).find(f => f.resourceName === resourceName);
     return found!.fingerprint;
   }
 
@@ -199,10 +200,10 @@ describe('notification channels and Advisories', () => {
 
       const run = await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
       );
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -213,11 +214,11 @@ describe('notification channels and Advisories', () => {
 
       const run = await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'schedule', scheduleId, ctx: ctxWith({ [ADVISORY_RULE]: ['vm-a1'] }) },
       );
       await deleteLinksForSchedule(otherSchedule);
 
-      expect((await getRun(run.id))!.notifyStatus).toBe('none');
+      expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -238,14 +239,14 @@ describe('notification channels and Advisories', () => {
     async function createAndResolveAdvisory(resourceName: string): Promise<string> {
       await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'manual', ctx: ctxWith({ [ADVISORY_RULE]: [resourceName] }) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({ [ADVISORY_RULE]: [resourceName] }) },
       );
       const fingerprint = await fingerprintsOf(resourceName);
       await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'manual', ctx: ctxWith({}) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({}) },
       );
-      expect((await listFindings({ status: 'fixed' })).map(f => f.fingerprint)).toEqual([fingerprint]);
+      expect((await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).map(f => f.fingerprint)).toEqual([fingerprint]);
       return fingerprint;
     }
 
@@ -289,7 +290,7 @@ describe('notification channels and Advisories', () => {
     it('sends the Advisories to the channel that includes them and the Problems to both', async () => {
       await executeTarget(
         { targetType: 'categories', targetValues: [CATEGORY] },
-        { triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1'] }) },
+        { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: ctxWith({ [PROBLEM_RULE]: ['vm-p'], [ADVISORY_RULE]: ['vm-a1'] }) },
       );
       const problem = await fingerprintsOf('vm-p');
       const advisory = await fingerprintsOf('vm-a1');
@@ -305,7 +306,7 @@ describe('notification channels and Advisories', () => {
       expect(names(sentTo('on')[0]!.advisories!.findings)).toEqual(['vm-a1']);
       expect(names(sentTo('off')[0]!.findings)).toEqual(['vm-p']);
       expect(sentTo('off')[0]!.advisories).toBeUndefined();
-      expect((await getRun(pending.id))!.notifyStatus).toBe('sent');
+      expect((await getRun(pending.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
     });
   });
 
@@ -323,7 +324,7 @@ describe('notification channels and Advisories', () => {
         status: 'success', totalFindings: 1, newFindings: 1,
         newFindingFingerprints: ['fp-burst'], durationMs: 100, notifyStatus: 'pending',
       });
-      return (await getRun(pending.id))!;
+      return (await getRun(pending.id, EVERYTHING_ACCESS))!;
     }
 
     it('arrive in their own section on every channel, linked to the new findings on the Activity tab', async () => {
@@ -365,7 +366,7 @@ describe('notification channels and Advisories', () => {
         newFindingFingerprints: ['fp-activity'], durationMs: 100, notifyStatus: 'pending',
       });
 
-      expect(await dispatchAndMarkSent((await getRun(pending.id))!, [activity])).toBe(true);
+      expect(await dispatchAndMarkSent((await getRun(pending.id, EVERYTHING_ACCESS))!, [activity])).toBe(true);
 
       expect(names(sentTo('on')[0]!.findings)).toEqual(['sign-in-burst']);
       expect(names(sentTo('off')[0]!.findings)).toEqual(['sign-in-burst']);

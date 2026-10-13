@@ -11,6 +11,7 @@ import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core/f
 import { makeSample, open } from '../fixtures/upgrade';
 import { runMigrations } from '@/lib/db/migrate';
 import { placementRead } from '@/lib/db/finding-placement';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const SUB = '00000000-0000-0000-0000-000000000000';
 const ARG_RULE = 'plc-arg-rule';
@@ -130,7 +131,7 @@ describe('upgrading to finding placement', () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
 
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     sqlite = open(sample.file);
 
     for (const table of ['findings', 'scan_findings'] as const) {
@@ -157,7 +158,7 @@ describe('upgrading to finding placement', () => {
     db.close();
 
     const product = await startProductOn(sample.file);
-    const live = await product.listFindings();
+    const live = await product.listFindings(EVERYTHING_ACCESS);
     sqlite = open(sample.file);
 
     expect(all(sqlite, `SELECT ${KEPT} FROM findings ORDER BY fingerprint`)).toEqual(before.findings);
@@ -168,14 +169,14 @@ describe('upgrading to finding placement', () => {
     // The suppression still names a finding that exists, so it still suppresses it.
     const graph = live.find(f => f.fingerprint === fp.graph);
     expect(graph).toMatchObject({ placement: 'directory', subscriptionId: '', firstSeenAt: '2026-01-02T03:04:05.000Z', timesSeen: 7, status: 'fixed' });
-    const suppressed = (await product.loadSuppressions()).filter(product.isActiveSuppression).map(s => s.fingerprint);
+    const suppressed = (await product.loadSuppressions(EVERYTHING_ACCESS)).filter(product.isActiveSuppression).map(s => s.fingerprint);
     expect(suppressed).toEqual([fp.graph]);
   });
 
   it('leaves a second start with nothing to change', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     closeProductDb?.();
     closeProductDb = undefined;
 
@@ -189,7 +190,7 @@ describe('upgrading to finding placement', () => {
   it('reads, on a later start, only the rows that could still change', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     closeProductDb?.();
     closeProductDb = undefined;
 
@@ -204,7 +205,7 @@ describe('upgrading to finding placement', () => {
   it('never moves a record out of the directory because its rule has been deleted', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     closeProductDb?.();
     closeProductDb = undefined;
 
@@ -222,7 +223,7 @@ describe('upgrading to finding placement', () => {
   it('corrects the rows a returning previous release wrote on the next start', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     closeProductDb?.();
     closeProductDb = undefined;
 
@@ -247,7 +248,7 @@ describe('upgrading to finding placement', () => {
   it('leaves a Logs finding already placed at its workspace as it is', async () => {
     const { sample, db } = previousReleaseDatabase();
     db.close();
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     closeProductDb?.();
     closeProductDb = undefined;
 
@@ -274,7 +275,7 @@ describe('upgrading to finding placement', () => {
     ]));
     db.close();
 
-    await (await startProductOn(sample.file)).listFindings();
+    await (await startProductOn(sample.file)).listFindings(EVERYTHING_ACCESS);
     sqlite = open(sample.file);
 
     const records = all(sqlite, `SELECT rule_id, placement, subscription_id, resource_group FROM scan_findings WHERE scan_id = 'plc-blob-scan' ORDER BY rule_id`);

@@ -16,6 +16,7 @@ import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { resetDb, countRows, execRaw } from '../helpers/db';
 import type { Finding } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -191,7 +192,7 @@ describe('deleteRule', () => {
     const ids = (await loadRules()).map(r => r.id);
     expect(ids).not.toContain(doomed.id);
     expect(ids).toContain(survivor.id);
-    const remaining = await listFindings({});
+    const remaining = await listFindings(EVERYTHING_ACCESS, {});
     expect(remaining.map(f => f.ruleId)).toEqual([survivor.id]);
     expect(await countRows('finding_events')).toBe(1);
   });
@@ -230,7 +231,7 @@ describe.skipIf(dbKind === 'pg')('rule delete is one transaction', () => {
     await expect(withFailingEventDelete(() => deleteRule(rule.id))).rejects.toThrow();
 
     expect((await loadRules()).map(r => r.id)).toContain(rule.id);
-    expect((await listFindings({})).map(f => f.ruleId)).toEqual([rule.id]);
+    expect((await listFindings(EVERYTHING_ACCESS, {})).map(f => f.ruleId)).toEqual([rule.id]);
     expect(await countRows('finding_events')).toBe(1);
   });
 
@@ -254,6 +255,6 @@ describe.skipIf(dbKind === 'pg')('rule delete is one transaction', () => {
     });
 
     expect((await loadRules()).map(r => r.id)).toContain(rule.id);
-    expect((await listFindings({})).map(f => f.ruleId)).toEqual([rule.id]);
+    expect((await listFindings(EVERYTHING_ACCESS, {})).map(f => f.ruleId)).toEqual([rule.id]);
   });
 });

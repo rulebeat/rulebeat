@@ -20,6 +20,7 @@ import { executeTarget } from '@/lib/run-executor';
 import { createScanContext } from '@/lib/scan-context';
 import { clearRules, resetDb } from '../helpers/db';
 import { fakeTenantContext } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const PACKS_DIR = join(resolve(__dirname, '..', '..'), 'data', 'packs');
 
@@ -99,7 +100,7 @@ describe('Run now in a Demo', () => {
     await stampDemoDatabase();
     resetDemoModeCacheForTests();
 
-    const ctx = await createScanContext();
+    const ctx = await createScanContext(EVERYTHING_ACCESS);
     expect(typeof (ctx as { unansweredQueries?: unknown }).unansweredQueries).toBe('function');
   });
 
@@ -108,7 +109,7 @@ describe('Run now in a Demo', () => {
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      { triggeredBy: 'manual', ctx: createLiveDemoContext({ packsDir: PACKS_DIR }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: createLiveDemoContext({ packsDir: PACKS_DIR }) },
     );
 
     expect(run.status).toBe('partial');
@@ -121,14 +122,14 @@ describe('Run now in a Demo', () => {
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      { triggeredBy: 'manual', ctx: createLiveDemoContext({ packsDir: PACKS_DIR }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: createLiveDemoContext({ packsDir: PACKS_DIR }) },
     );
 
     // A real install whose rules all fail to run produces the same partial run, so the expected
     // message is whatever the product says there, not a copy of its wording.
     const realInstall = await executeTarget(
       { targetType: 'categories', targetValues: ['security'] },
-      { triggeredBy: 'manual', ctx: fakeTenantContext({ failWith: new Error('boom') }) },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: fakeTenantContext({ failWith: new Error('boom') }) },
     );
 
     expect(run.status).toBe('partial');

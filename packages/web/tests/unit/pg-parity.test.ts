@@ -30,6 +30,7 @@ import {
 } from '@/lib/db/dashboards';
 import type { Finding, Suppression } from '@/lib/types';
 import { resetDb, clearDashboards } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'parity-rule-a';
 const CATEGORY = 'security';
@@ -97,7 +98,7 @@ describe('findings lifecycle parity', () => {
       scanId: 'p1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d1,
     });
     expect(created.created).toEqual([f.fingerprint]);
-    let row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    let row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d1);
@@ -107,7 +108,7 @@ describe('findings lifecycle parity', () => {
     await syncScanFindings({
       scanId: 'p2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: d2,
     });
-    row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.firstSeenAt).toBe(d1);
     expect(row.lastSeenAt).toBe(d2);
@@ -118,7 +119,7 @@ describe('findings lifecycle parity', () => {
       scanId: 'p3', category: CATEGORY, ranRuleIds: [RULE_A], findings: [], finishedAt: d3,
     });
     expect(resolved.resolved).toEqual([f.fingerprint]);
-    row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('fixed');
     expect(row.resolvedAt).toBe(d3);
 
@@ -127,12 +128,12 @@ describe('findings lifecycle parity', () => {
       scanId: 'p4', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(0),
     });
     expect(reactivated.reactivated).toEqual([f.fingerprint]);
-    row = (await listFindings()).find(r => r.fingerprint === f.fingerprint)!;
+    row = (await listFindings(EVERYTHING_ACCESS)).find(r => r.fingerprint === f.fingerprint)!;
     expect(row.status).toBe('active');
     expect(row.resolvedAt).toBeUndefined();
 
     // The event trail recorded each transition, visible through the counts API.
-    const counts = await getFindingEventCounts({ sinceDate: daysAgo(5).slice(0, 10) });
+    const counts = await getFindingEventCounts({ sinceDate: daysAgo(5).slice(0, 10) }, EVERYTHING_ACCESS);
     const totals = { created: 0, resolved: 0 };
     for (const c of counts) {
       totals.created += c.created;
@@ -150,9 +151,9 @@ describe('findings lifecycle parity', () => {
       scanId: 'p1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [a, b], finishedAt: daysAgo(1),
     });
 
-    const rows = await getFindingsByFingerprints([a.fingerprint]);
+    const rows = await getFindingsByFingerprints([a.fingerprint], EVERYTHING_ACCESS);
     expect(rows.map(r => r.fingerprint)).toEqual([a.fingerprint]);
-    expect(await getFindingsByFingerprints([])).toEqual([]);
+    expect(await getFindingsByFingerprints([], EVERYTHING_ACCESS)).toEqual([]);
   });
 
   it('status filter on listFindings matches the lifecycle state', async () => {
@@ -165,9 +166,9 @@ describe('findings lifecycle parity', () => {
       scanId: 'p2', category: CATEGORY, ranRuleIds: [RULE_A], findings: [a], finishedAt: daysAgo(1),
     });
 
-    expect((await listFindings({ status: 'active' })).map(r => r.fingerprint)).toEqual([a.fingerprint]);
-    expect((await listFindings({ status: 'fixed' })).map(r => r.fingerprint)).toEqual([b.fingerprint]);
-    expect(await listFindings()).toHaveLength(2);
+    expect((await listFindings(EVERYTHING_ACCESS, { status: 'active' })).map(r => r.fingerprint)).toEqual([a.fingerprint]);
+    expect((await listFindings(EVERYTHING_ACCESS, { status: 'fixed' })).map(r => r.fingerprint)).toEqual([b.fingerprint]);
+    expect(await listFindings(EVERYTHING_ACCESS)).toHaveLength(2);
   });
 });
 
@@ -264,7 +265,7 @@ describe('suppressions repository parity', () => {
     };
     await saveSuppressions([s1, s2]);
 
-    const loaded = await loadSuppressions();
+    const loaded = await loadSuppressions(EVERYTHING_ACCESS);
     const byId = (xs: Suppression[]) => [...xs].sort((x, y) => x.id.localeCompare(y.id));
     expect(byId(loaded)).toEqual(byId([s1, s2]));
 
@@ -273,6 +274,6 @@ describe('suppressions repository parity', () => {
 
     // saveSuppressions replaces the whole set, so a dropped row really is gone.
     await saveSuppressions([s1]);
-    expect((await loadSuppressions()).map(x => x.id)).toEqual([s1.id]);
+    expect((await loadSuppressions(EVERYTHING_ACCESS)).map(x => x.id)).toEqual([s1.id]);
   });
 });

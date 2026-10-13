@@ -13,6 +13,7 @@ import { FINDING_ROWS_COPY_MARKER } from '@/lib/db/finding-rows-copy';
 import { listFindings } from '@/lib/db/findings';
 import { addSuppression, loadSuppressions } from '@/lib/suppressions';
 import { resetDb } from '../helpers/db';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const ROWS = [{ retirement: 'Basic tier' }, { retirement: 'TLS 1.0' }, { retirement: 'Gen1 images' }];
 
@@ -46,10 +47,10 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg moves finding rows into finding_ro
 
     await bootstrapPg(pgDb!);
 
-    const found = new Map((await listFindings()).map(f => [f.fingerprint, f]));
+    const found = new Map((await listFindings(EVERYTHING_ACCESS)).map(f => [f.fingerprint, f]));
     expect(found.get('pg-fp-many')).toMatchObject({ firstSeenAt: '2026-01-02T03:04:05.000Z', timesSeen: 9, evidence: ROWS[0], rows: ROWS });
     expect(found.get('pg-fp-evidence')).toMatchObject({ rows: [ROWS[0]] });
-    expect((await loadSuppressions()).filter(s => s.fingerprint === 'pg-fp-many')).toEqual([
+    expect((await loadSuppressions(EVERYTHING_ACCESS)).filter(s => s.fingerprint === 'pg-fp-many')).toEqual([
       expect.objectContaining({ id: 'pg-rows-table-sup', reason: 'Accepted risk' }),
     ]);
     expect(await raw(`SELECT fingerprint, position, data FROM finding_rows WHERE fingerprint = 'pg-fp-many' ORDER BY position`)).toEqual(
@@ -71,7 +72,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg moves finding rows into finding_ro
     await raw(`DELETE FROM findings WHERE fingerprint = 'pg-fp-deleted'`);
     await bootstrapPg(pgDb!);
 
-    expect((await listFindings()).find(f => f.fingerprint === 'pg-fp-rescanned')!.rows).toEqual(ROWS);
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.fingerprint === 'pg-fp-rescanned')!.rows).toEqual(ROWS);
     expect(await raw(`SELECT fingerprint FROM finding_rows WHERE fingerprint = 'pg-fp-deleted'`)).toEqual([]);
     expect(await raw(`SELECT row_count, rows_scan_id FROM findings WHERE fingerprint = 'pg-fp-rescanned'`)).toEqual([{ row_count: 3, rows_scan_id: 'scan-2' }]);
   });

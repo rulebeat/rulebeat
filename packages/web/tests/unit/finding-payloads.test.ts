@@ -20,6 +20,7 @@ import { viewUrl } from '@/lib/explorer-session';
 import { emptyView } from '@/lib/finding-view';
 import { clearRules, resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -54,7 +55,7 @@ beforeEach(async () => {
   await insertRule(RULE, 'state');
   await insertRule(ADVISORY, 'advisory');
   const category = (await getCategory('security'))!;
-  await runCategoryScan(category, { ctx: fakeTenantContext({ rows: ROWS }), ruleIds: [RULE, ADVISORY] });
+  await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: fakeTenantContext({ rows: ROWS }), ruleIds: [RULE, ADVISORY] });
   const viewer = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in viewer) throw new Error(viewer.error);
   mockAuth.mockResolvedValue({ user: { uid: viewer.user.id } });
@@ -62,7 +63,7 @@ beforeEach(async () => {
 
 describe('the explorer payload', () => {
   it('carries every row once, with no separate copy of the first', async () => {
-    const [finding] = (await buildExplorerData()).findings.filter(f => f.ruleId === RULE);
+    const [finding] = (await buildExplorerData(EVERYTHING_ACCESS)).findings.filter(f => f.ruleId === RULE);
     expect(finding.fingerprint).toBe(computeFingerprint(RULE, VM_ID));
     expect(finding.rows.map(r => r.retirement)).toEqual(['a', 'b']);
     expect('evidence' in finding).toBe(false);
@@ -71,9 +72,9 @@ describe('the explorer payload', () => {
 
 describe('reads that never look at a row', () => {
   it('list the same findings without parsing the stored row columns', async () => {
-    const withRows = await listFindings();
+    const withRows = await listFindings(EVERYTHING_ACCESS);
     await corruptStoredRows();
-    const summaries = await listFindingSummaries();
+    const summaries = await listFindingSummaries(EVERYTHING_ACCESS);
     expect(summaries.map(f => f.fingerprint).sort()).toEqual(withRows.map(f => f.fingerprint).sort());
     expect(summaries.every(f => !('rows' in f) && !('evidence' in f))).toBe(true);
   });

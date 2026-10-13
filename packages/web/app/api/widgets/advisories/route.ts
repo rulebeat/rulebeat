@@ -15,5 +15,5 @@ export async function GET(req: Request) {
     : ADVISORIES_WIDGET_DEFAULT_LIMIT;
   const filters = parseWidgetFiltersFromSearchParams(searchParams);
 
-  return Response.json(await queryAdvisoriesWidget(filters, { limit }));
+  return Response.json(await queryAdvisoriesWidget(filters, { limit }, actor.access));
 }

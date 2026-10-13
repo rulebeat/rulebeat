@@ -15,6 +15,7 @@ import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
 import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';
+import type { Access } from './access-model';
 
 export interface ScanRunOutcome {
   summary: ScanSummary;
@@ -24,6 +25,8 @@ export interface ScanRunOutcome {
 }
 
 export interface RunScanOptions {
+  /** Who asked for the scan: the Azure context is built from it. A scheduled scan passes SYSTEM_ACCESS. */
+  access: Access;
   triggeredBy?: 'manual' | 'schedule';
   scheduleId?: string;
   /** The schedule_runs execution this category's scan belongs to: links the scan row back to
@@ -41,8 +44,8 @@ export interface RunScanOptions {
   now?: Date;
 }
 
-export async function runCategoryScan(category: Category, opts: RunScanOptions = {}): Promise<ScanRunOutcome> {
-  const ctx = opts.ctx ?? await createScanContext();
+export async function runCategoryScan(category: Category, opts: RunScanOptions): Promise<ScanRunOutcome> {
+  const ctx = opts.ctx ?? await createScanContext(opts.access);
 
   const startedAt = opts.now ?? new Date();
   const findings: Finding[] = [];

@@ -18,6 +18,7 @@ import type { SnapshotItem, SnapshotRecord, SnapshotResponse } from '@/lib/snaps
 import type { OpenSnapshotExport } from '@/lib/snapshot-export';
 import { resetDb } from '../helpers/db';
 import { scan, type Seed } from '../helpers/stored-scans';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const mockRequireRole = vi.fn();
 vi.mock('@/lib/api-auth', () => ({ requireRole: (...args: unknown[]) => mockRequireRole(...args) }));
@@ -98,7 +99,7 @@ describe('openSnapshotExport: batches read by key', () => {
     const { id } = await scan(SHARED);
     const expected = await listedSnapshot(id, ALL);
     expect(expected.length).toBe(120);
-    expectBatches(await batchesOf(openSnapshotExport(id, ALL, { batchSize })), expected, batchSize);
+    expectBatches(await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize })), expected, batchSize);
   });
 
   it.each(BATCH_SIZES)('holds what the route lists at batch size %i across every severity', async (batchSize) => {
@@ -106,13 +107,13 @@ describe('openSnapshotExport: batches read by key', () => {
     const expected = await listedSnapshot(id, ALL);
     expect(expected.length).toBe(MIXED_COUNT);
     expect(new Set(expected.map(r => r.severity))).toEqual(new Set(['critical', 'high', 'medium', 'low', 'info']));
-    expectBatches(await batchesOf(openSnapshotExport(id, ALL, { batchSize })), expected, batchSize);
+    expectBatches(await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize })), expected, batchSize);
   });
 
   it('starts a batch exactly where the severity changes', async () => {
     const { id } = await scan(MIXED);
     // 3 critical records, then 6 high: the first batch ends on the last critical one.
-    const batches = await batchesOf(openSnapshotExport(id, ALL, { batchSize: 3 }));
+    const batches = await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize: 3 }));
     expect(batches[0]!.map(r => r.severity)).toEqual(['critical', 'critical', 'critical']);
     expect(batches[1]!.map(r => r.severity)).toEqual(['high', 'high', 'high']);
   });
@@ -120,7 +121,7 @@ describe('openSnapshotExport: batches read by key', () => {
   it.each([1, MIXED_COUNT])('yields no empty batch and no repeat when the count is a multiple of %i', async (batchSize) => {
     const { id } = await scan(MIXED);
     const expected = await listedSnapshot(id, ALL);
-    const batches = await batchesOf(openSnapshotExport(id, ALL, { batchSize }));
+    const batches = await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize }));
     expect(expected.length % batchSize).toBe(0);
     expectBatches(batches, expected, batchSize);
     expect(new Set(batches.flat().map(r => r.fingerprint)).size).toBe(expected.length);
@@ -129,7 +130,7 @@ describe('openSnapshotExport: batches read by key', () => {
   it('yields no empty batch when the count is a multiple of a batch size that is not 1', async () => {
     const { id } = await scan(SHARED);
     const expected = await listedSnapshot(id, ALL);
-    const batches = await batchesOf(openSnapshotExport(id, ALL, { batchSize: 40 }));
+    const batches = await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize: 40 }));
     expect(batches.map(b => b.length)).toEqual([40, 40, 40]);
     expect(batches.flat()).toEqual(expected);
   });
@@ -140,12 +141,12 @@ describe('openSnapshotExport: batches read by key', () => {
     const expected = await listedSnapshot(id, query);
     expect(expected.length).toBeGreaterThan(1);
     expect(expected.length).toBeLessThan(MIXED_COUNT);
-    expectBatches(await batchesOf(openSnapshotExport(id, query, { batchSize })), expected, batchSize);
+    expectBatches(await batchesOf(openSnapshotExport(id, query, EVERYTHING_ACCESS, { batchSize })), expected, batchSize);
   });
 
   it('yields nothing for a query nothing matches', async () => {
     const { id } = await scan(MIXED);
-    expect(await batchesOf(openSnapshotExport(id, { ...ALL, search: 'no such resource' }, { batchSize: 2 }))).toEqual([]);
+    expect(await batchesOf(openSnapshotExport(id, { ...ALL, search: 'no such resource' }, EVERYTHING_ACCESS, { batchSize: 2 }))).toEqual([]);
   });
 
   it.each(BATCH_SIZES)('exports a record whose severity is not one of the five, last, at batch size %i', async (batchSize) => {
@@ -153,7 +154,7 @@ describe('openSnapshotExport: batches read by key', () => {
     await execRun(db.update(scanFindings).set({ severity: 'unknown' }).where(and(eq(scanFindings.scanId, id), eq(scanFindings.ruleId, 'eb-crit'))));
     const expected = await listedSnapshot(id, ALL);
     expect(expected.slice(-3).map(r => r.severity)).toEqual(['unknown', 'unknown', 'unknown']);
-    expectBatches(await batchesOf(openSnapshotExport(id, ALL, { batchSize })), expected, batchSize);
+    expectBatches(await batchesOf(openSnapshotExport(id, ALL, EVERYTHING_ACCESS, { batchSize })), expected, batchSize);
   });
 });
 
@@ -176,14 +177,14 @@ describe('openCompareExport: batches read by key', () => {
     const expected = await listedCompare(before.id, after.id, side);
     expect(expected.length).toBe({ added: 67, fixed: 15, persisted: 6 }[side]);
     for (const batchSize of [...BATCH_SIZES, expected.length, expected.length + 1]) {
-      expectBatches(await batchesOf(openCompareExport(before.id, after.id, side, { batchSize })), expected, batchSize);
+      expectBatches(await batchesOf(openCompareExport(before.id, after.id, side, EVERYTHING_ACCESS, { batchSize })), expected, batchSize);
     }
   });
 
   it('yields nothing for an empty side', async () => {
     const before = await scan(BEFORE, 0);
     const after = await scan(BEFORE, 1);
-    expect(await batchesOf(openCompareExport(before.id, after.id, 'added', { batchSize: 2 }))).toEqual([]);
+    expect(await batchesOf(openCompareExport(before.id, after.id, 'added', EVERYTHING_ACCESS, { batchSize: 2 }))).toEqual([]);
   });
 
   it('exports a record whose severity is not one of the five, last', async () => {
@@ -192,6 +193,6 @@ describe('openCompareExport: batches read by key', () => {
     await execRun(db.update(scanFindings).set({ severity: 'unknown' }).where(and(eq(scanFindings.scanId, after.id), eq(scanFindings.ruleId, 'eb-crit'))));
     const expected = await listedCompare(before.id, after.id, 'added');
     expect(expected.slice(-3).map(r => r.severity)).toEqual(['unknown', 'unknown', 'unknown']);
-    expectBatches(await batchesOf(openCompareExport(before.id, after.id, 'added', { batchSize: 2 })), expected, 2);
+    expectBatches(await batchesOf(openCompareExport(before.id, after.id, 'added', EVERYTHING_ACCESS, { batchSize: 2 })), expected, 2);
   });
 });

@@ -31,6 +31,7 @@ import { INSTANCE_ID } from '@/lib/instance-id';
 import { resetDb, clearRules, countRows, execRaw } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
 import type { Finding } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_A = 'overlap-rule-a';
 const CATEGORY = 'security';
@@ -164,7 +165,7 @@ describe('a due schedule is claimed before it runs', () => {
     await dueSchedule();
     await runDueSchedules({ ctx: slowCtx(0) });
 
-    const [run] = await listAllRuns();
+    const [run] = await listAllRuns(EVERYTHING_ACCESS);
     expect(run!.ownerId).toBe(INSTANCE_ID);
     expect(run!.heartbeatAt).toBe(run!.startedAt);
   });
@@ -219,7 +220,7 @@ describe('a running row proves it is alive, and only a silent one is reaped', ()
 
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [CATEGORY] },
-      { triggeredBy: 'manual', ctx: slowCtx(80), heartbeatIntervalMs: 10 },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx: slowCtx(80), heartbeatIntervalMs: 10 },
     );
 
     expect(run.status).toBe('success');
@@ -231,7 +232,7 @@ describe('a running row proves it is alive, and only a silent one is reaped', ()
     const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: [CATEGORY] });
 
     expect(await recoverInterruptedRuns()).toBe(0);
-    expect((await getRun(run.id))!.status).toBe('running');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.status).toBe('running');
   });
 
   it('startup recovery reaps a run whose heartbeat is older than the stale window', async () => {
@@ -239,7 +240,7 @@ describe('a running row proves it is alive, and only a silent one is reaped', ()
     await execRaw(`UPDATE schedule_runs SET heartbeat_at = '${iso(-STALE_AFTER_MS - MINUTE_MS)}' WHERE id = '${run.id}'`);
 
     expect(await recoverInterruptedRuns()).toBe(1);
-    const after = (await getRun(run.id))!;
+    const after = (await getRun(run.id, EVERYTHING_ACCESS))!;
     expect(after.status).toBe('error');
     expect(after.error).toBe('Run did not complete. The server restarted or crashed while this scan was in progress.');
   });
@@ -249,7 +250,7 @@ describe('a running row proves it is alive, and only a silent one is reaped', ()
     await execRaw(`UPDATE schedule_runs SET heartbeat_at = NULL, owner_id = NULL WHERE id = '${run.id}'`);
 
     expect(await recoverInterruptedRuns()).toBe(1);
-    expect((await getRun(run.id))!.status).toBe('error');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.status).toBe('error');
   });
 
   it('a stale heartbeat that is refreshed again is no longer stale', async () => {
@@ -292,7 +293,7 @@ describe('a notification batch is sent once, whichever process gets to it', () =
       status: 'success', totalFindings: 1, newFindings: 1,
       newFindingFingerprints: [f.fingerprint], durationMs: 100, notifyStatus: 'pending',
     });
-    return { run: (await getRun(run.id))!, findings: [f] };
+    return { run: (await getRun(run.id, EVERYTHING_ACCESS))!, findings: [f] };
   }
 
   it('two processes dispatching the same pending run at once deliver it once per channel', async () => {
@@ -305,7 +306,7 @@ describe('a notification batch is sent once, whichever process gets to it', () =
 
     expect(results.filter(Boolean)).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('two startup recoveries over the same pending rows deliver each once', async () => {
@@ -323,7 +324,7 @@ describe('a notification batch is sent once, whichever process gets to it', () =
 
     expect(await recoverPendingNotifications()).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect((await getRun(run.id))!.notifyStatus).toBe('sending');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sending');
   });
 
   it('a sending claim older than the stale window is taken over and delivered', async () => {
@@ -333,7 +334,7 @@ describe('a notification batch is sent once, whichever process gets to it', () =
 
     expect(await recoverPendingNotifications()).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect((await getRun(run.id))!.notifyStatus).toBe('sent');
+    expect((await getRun(run.id, EVERYTHING_ACCESS))!.notifyStatus).toBe('sent');
   });
 
   it('a second claim on a row that was just claimed fails', async () => {

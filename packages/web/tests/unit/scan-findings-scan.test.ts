@@ -24,6 +24,7 @@ import { emptySnapshotQuery } from '@/lib/snapshot-query';
 import type { ScanSummary } from '@/lib/types';
 import { countRows, resetDb } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 // The retention limit is read when scan-history is first imported, so it is set before any import.
 const previousLimit = vi.hoisted(() => {
@@ -61,7 +62,7 @@ async function insertRule(id: string, extra: Record<string, unknown> = {}): Prom
 
 async function scan(ruleIds: string[], ctxOptions: Parameters<typeof fakeTenantContext>[0], hoursFromBase = 0, at?: Date) {
   const category = (await getCategory('identity'))!;
-  const outcome = await runCategoryScan(category, {
+  const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS,
     ctx: fakeTenantContext(ctxOptions),
     ruleIds,
     now: at ?? new Date(Date.UTC(2026, 5, 1, hoursFromBase)),
@@ -155,12 +156,12 @@ describe('a scan save', () => {
       expect(row!.findings).toBe('[]');
     }
 
-    const snapshot = await querySnapshot(summary.id, emptySnapshotQuery());
+    const snapshot = await querySnapshot(summary.id, emptySnapshotQuery(), EVERYTHING_ACCESS);
     if (snapshot.status !== 'ok') throw new Error(`the snapshot answered ${snapshot.status}`);
     expect(snapshot.response.total).toBe(2);
     expect(snapshot.response.items.map(i => i.fingerprint).sort()).toEqual(summary.findings.map(f => f.fingerprint).sort());
 
-    const compare = await queryCompare(older.id, summary.id, { side: 'added', page: 1 });
+    const compare = await queryCompare(older.id, summary.id, { side: 'added', page: 1 }, EVERYTHING_ACCESS);
     if (compare.status !== 'ok') throw new Error(`the compare answered ${compare.status}`);
     expect(compare.response.totals).toEqual({ added: 1, fixed: 0, persisted: 1 });
     expect(compare.response.items.map(i => i.resourceName)).toEqual(['vm-two']);
@@ -172,7 +173,7 @@ describe('a scan save', () => {
   it('is not replayed as a scan that found nothing by a backfill that runs after it', async () => {
     await scan([ARG_RULE], { rows: [VM_ONE, VM_TWO] });
     await clearBackfillMarkers();
-    const active = async () => (await listFindings()).filter(f => f.status === 'active').map(f => f.resourceName).sort();
+    const active = async () => (await listFindings(EVERYTHING_ACCESS)).filter(f => f.status === 'active').map(f => f.resourceName).sort();
     expect(await active()).toEqual(['vm-one', 'vm-two']);
     // Without that day's trend row, a replay of the scan would draw it at 100% with nothing active.
     await execRun(db.delete(postureSnapshots));

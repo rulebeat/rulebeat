@@ -37,6 +37,7 @@ import { createFakeContext, assertNoQueryFailures } from '@/lib/demo/fake-contex
 import { replay } from '@/lib/demo/replay';
 import { DEFAULT_SEED, rand01, setGeneratorSeed } from '@/lib/demo/prng';
 import type { RuleFixture } from '@/lib/demo/rule-fixture';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
@@ -576,7 +577,7 @@ describe('a Visitor switching on the held-back rule in a freshly generated Demo'
     const ctx = createLiveDemoContext({ packsDir: join(REAL_DATA_DIR, 'packs') });
     const run = await executeTarget(
       { targetType: 'categories', targetValues: [afterGeneration.category] },
-      { triggeredBy: 'manual', ctx },
+      { access: EVERYTHING_ACCESS, triggeredBy: 'manual', ctx },
     );
 
     expect(run.status).toBe('success');

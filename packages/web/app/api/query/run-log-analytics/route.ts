@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   let ctx: TenantContext;
   try {
-    ctx = await createTenantContext();
+    ctx = await createTenantContext(actor.access);
   } catch (err) {
     return azureError('Could not connect to Azure to run this query', err);
   }

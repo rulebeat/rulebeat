@@ -15,6 +15,7 @@ import { scanFindings } from './tables';
 import { SCAN_FINDING_ORDER } from './scan-findings-copy';
 import { readExisting, readExportBatches, readHeader, toRecord } from './scan-snapshots';
 import { pageBounds } from '../finding-rows';
+import type { Access } from '../access-model';
 import { COMPARE_PAGE_SIZE, type CompareQuery } from '../compare-query';
 import type { CompareErrorCode, CompareResponse, CompareSide, CompareTotals } from '../compare-response';
 import type { SnapshotItem, SnapshotScan } from '../snapshot-response';
@@ -83,7 +84,7 @@ const readPage = (tx: DbHandle, side: CompareSide, pair: ComparedPair, offset: n
   many(tx.select().from(t).where(onSide(side, pair)).orderBy(sql.raw(SCAN_FINDING_ORDER)).limit(limit).offset(offset));
 
 /** Two past scans compared: one page of one side, with the totals of all three. The ids may come in either order. */
-export function queryCompare(idA: string, idB: string, query: CompareQuery): Promise<CompareAnswer> {
+export function queryCompare(idA: string, idB: string, query: CompareQuery, access: Access): Promise<CompareAnswer> {
   return inReadTransaction(async (tx): Promise<CompareAnswer> => {
     const read = await readPair(tx, idA, idB);
     if (read.status !== 'ok') return read;
@@ -129,7 +130,7 @@ export class CompareUnavailable extends Error {
  * `batchSize` at a time. Read inside one snapshot that stays open as long as the download reads
  * (lib/export-stream.ts), so the batches agree with one another and with the totals the screen showed.
  */
-export function openCompareExport(idA: string, idB: string, side: CompareSide, opts: { batchSize?: number } = {}): OpenSnapshotExport {
+export function openCompareExport(idA: string, idB: string, side: CompareSide, access: Access, opts: { batchSize?: number } = {}): OpenSnapshotExport {
   const batchSize = opts.batchSize ?? COMPARE_EXPORT_BATCH;
   return use => inSnapshotRead(async tx => {
     const read = await readPair(tx, idA, idB);

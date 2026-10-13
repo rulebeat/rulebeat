@@ -12,6 +12,7 @@ import { scheduleIncludesAdvisories } from './db/schedule-notification-channels'
 import { isAdvisory, isNotifiable } from './finding-kinds';
 import type { ChangedFinding } from './finding-rows';
 import type { ChangedFindingDetail } from './types';
+import type { Access } from './access-model';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -38,6 +39,9 @@ function groupRuleIdsByCategory(rules: { id: string; category: string }[]): Map<
 export async function executeTarget(
   target: RunTarget,
   opts: {
+    /** Who asked for the run: what the Azure context and the run read are built from. A scheduled
+     *  run passes SYSTEM_ACCESS. */
+    access: Access;
     triggeredBy: RunTriggeredBy;
     scheduleId?: string;
     /** Injected by the demo generator to replay scans against a synthetic estate instead of a real
@@ -78,7 +82,7 @@ export async function executeTarget(
   heartbeat.unref();
 
   try {
-    const ctx = opts.ctx ?? await createScanContext({ runId: run.id });
+    const ctx = opts.ctx ?? await createScanContext(opts.access, { runId: run.id });
     let totalFindings = 0;
     let newFindings = 0;
     const newFingerprints: string[] = [];
@@ -98,7 +102,7 @@ export async function executeTarget(
         const ruleIds = scopedRuleIdsByCategory?.get(categoryId);
         const outcome = await runCategoryScan(category, {
           triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, runId: run.id, ctx, ruleIds,
-          now: opts.now,
+          now: opts.now, access: opts.access,
         });
         totalFindings += outcome.summary.findings.length;
         newFindings += outcome.newFindings.length;
@@ -160,7 +164,7 @@ export async function executeTarget(
     });
 
     if (willNotify) {
-      const finished = (await getRun(run.id))!;
+      const finished = (await getRun(run.id, opts.access))!;
       void dispatchAndMarkSent(finished, allNewFindings, { changed: allChangedFindings }).catch(() => {});
     }
   } catch (err) {
@@ -178,5 +182,5 @@ export async function executeTarget(
     clearInterval(heartbeat);
   }
 
-  return (await getRun(run.id))!;
+  return (await getRun(run.id, opts.access))!;
 }

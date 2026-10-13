@@ -21,6 +21,7 @@ import { describeAadstsError } from '@/lib/entra-errors';
 import { isDemoMode } from '@/lib/demo';
 import { createScanLogger, type ScanLogContext } from '@/lib/server-logger';
 import { resolveLogAnalyticsWorkspaceId } from '@/lib/log-analytics-workspace';
+import type { Access } from '@/lib/access-model';
 
 export { describeAadstsError } from '@/lib/entra-errors';
 
@@ -242,8 +243,11 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * `logContext` (e.g. `{ runId }`) wires a real stdout logger in instead of `buildTenantContext()`'s
  * silent no-op default: every caller gets real logging, callers with no run to attach (onboarding,
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
+ *
+ * `access` is who the context is for. It limits nothing yet: the credential is still the one
+ * install-wide Reader, and the later tickets (#276, #277) narrow what a request may ask of it.
  */
-export async function createTenantContext(logContext?: ScanLogContext): Promise<TenantContext> {
+export async function createTenantContext(access: Access, logContext?: ScanLogContext): Promise<TenantContext> {
   const { credential, tenantId } = await resolveAzureCredential();
   const logAnalyticsWorkspaceId = (await resolveLogAnalyticsWorkspaceId())?.workspaceId;
   return buildTenantContext({ credential, tenantId, log: createScanLogger(logContext), logAnalyticsWorkspaceId });

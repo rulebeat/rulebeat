@@ -14,6 +14,7 @@ import { findingRows as findingRowsTable, findings as findingsTable } from '@/li
 import { queryFindingRows } from '@/lib/db/finding-views';
 import { emptyView, rowField, type View } from '@/lib/finding-view';
 import { pageBounds, pageFindingRows } from '@/lib/finding-rows';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE = 'page-read-rule';
 const NAME = 'vm-page-read';
@@ -26,7 +27,7 @@ beforeEach(async () => {
 });
 
 const ask = (rowsPage: number, view: View = emptyView()) =>
-  queryFindingRows(view, { tab: 'results', showSuppressed: false, fingerprint: FINGERPRINT, rowsPage });
+  queryFindingRows(view, { tab: 'results', showSuppressed: false, fingerprint: FINGERPRINT, rowsPage }, EVERYTHING_ACCESS);
 
 /** Makes the stored rows outside [from, to) unreadable, so a read that parses one throws. */
 async function corruptRowsOutside(from: number, to: number): Promise<void> {
@@ -69,7 +70,7 @@ describe('one page of a finding\'s rows, with no filter on a returned column', (
   it('answers a finding with no rows as one empty page', async () => {
     await storeScan([syntheticFinding('vm-no-rows', [], { ruleId: RULE })], { scanId: 'page-read-empty', finishedAt: new Date().toISOString() });
     const empty = syntheticFinding('vm-no-rows', [], { ruleId: RULE });
-    const response = await queryFindingRows(emptyView(), { tab: 'results', showSuppressed: false, fingerprint: empty.fingerprint, rowsPage: 1 });
+    const response = await queryFindingRows(emptyView(), { tab: 'results', showSuppressed: false, fingerprint: empty.fingerprint, rowsPage: 1 }, EVERYTHING_ACCESS);
     expect(response).toEqual({ fingerprint: empty.fingerprint, rows: [], page: 1, pageCount: 1, matchedRowCount: 0, rowCount: 0, firstIndex: 0 });
   });
 

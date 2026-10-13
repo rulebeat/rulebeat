@@ -14,6 +14,7 @@ import { rules as rulesTable } from '@/lib/db/tables';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb, clearRules } from '../helpers/db';
 import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const RULE_ID = 'test-rule-dup';
 
@@ -52,7 +53,7 @@ describe('runCategoryScan dedupes a rule returning the same resource twice (spec
     const fingerprint = computeFingerprint(RULE_ID, row.id as string);
 
     const ctx = fakeTenantContext({ rows: [row, row] });
-    const outcome = await runCategoryScan(category, { ctx, ruleIds: [RULE_ID] });
+    const outcome = await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: [RULE_ID] });
 
     expect(outcome.summary.findings).toHaveLength(1);
     expect(outcome.summary.findings[0]!.fingerprint).toBe(fingerprint);

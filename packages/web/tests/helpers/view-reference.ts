@@ -13,18 +13,19 @@ import { listFindings } from '@/lib/db/findings';
 import { loadRules } from '@/lib/rules';
 import { isActiveSuppression, loadSuppressions } from '@/lib/suppressions';
 import { TAB_KINDS, decorateFinding, rulesInPlay, type ViewResponseOptions, type ViewTab } from '@/lib/view-response';
+import { EVERYTHING_ACCESS } from './access';
 
 export async function referenceInputs(tab: ViewTab, showSuppressed: boolean) {
   const rules = new Map((await loadRules()).map(r => [r.id, r]));
-  const findings = (await listFindings({ kinds: TAB_KINDS[tab] }))
+  const findings = (await listFindings(EVERYTHING_ACCESS, { kinds: TAB_KINDS[tab] }))
     .map(record => decorateFinding(record, rules.get(record.ruleId)))
     .sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0));
   const options: ViewResponseOptions = {
     tab,
-    catalogueColumns: await listReturnedColumns(rulesInPlay(findings)),
+    catalogueColumns: await listReturnedColumns(EVERYTHING_ACCESS, rulesInPlay(findings)),
     categories: (await listCategories()).map(c => ({ id: c.id, label: c.label, color: c.color })),
   };
-  const suppressedFingerprints = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
+  const suppressedFingerprints = new Set((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint));
   return { findings, options, ctx: { suppressedFingerprints, showSuppressed } };
 }
 

@@ -17,6 +17,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { makeSample, upgradeInProcess } from '../fixtures/upgrade';
 import { ACTIVE_RESOURCE_ID, FIXED_DATES } from '../fixtures/populate';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const sample = makeSample('cron-schedules');
 upgradeInProcess(sample);
@@ -34,9 +35,9 @@ beforeAll(async () => {
 
 describe('TS-25 · rebuilding finding history on upgrade', () => {
   it('25-05 · reconstructs findings from scan history without inventing or losing any', async () => {
-    const before = await findingsRepo.listFindings();
+    const before = await findingsRepo.listFindings(EVERYTHING_ACCESS);
     await findingsRepo.backfillFindings();
-    const after = await findingsRepo.listFindings();
+    const after = await findingsRepo.listFindings(EVERYTHING_ACCESS);
 
     // The sample already has a findings table, so the backfill must reconcile rather than duplicate.
     const resourceIds = after.map(f => f.resourceId);
@@ -46,7 +47,7 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
 
   it('25-05 · a finding that predates the upgrade keeps the age it already had', async () => {
     await findingsRepo.backfillFindings();
-    const existing = (await findingsRepo.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const existing = (await findingsRepo.listFindings(EVERYTHING_ACCESS)).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(existing, 'the pre-existing finding vanished').toBeDefined();
     // The whole point. Rewriting this to the upgrade date would report a months-old, already-triaged
     // violation as if it appeared today.
@@ -59,7 +60,7 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
     // this runs from instrumentation.ts at startup, which means an upgrade could fail to boot over
     // one old record. It must degrade instead, and keep as much of the history as it can.
     await findingsRepo.backfillFindings();
-    const restored = (await findingsRepo.listFindings()).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
+    const restored = (await findingsRepo.listFindings(EVERYTHING_ACCESS)).find(f => f.resourceId === ACTIVE_RESOURCE_ID);
     expect(restored, 'the historical finding was dropped entirely').toBeDefined();
     // Recovered from the resource id rather than left blank, because a finding with no subscription
     // disappears from every subscription-filtered view.
@@ -68,20 +69,20 @@ describe('TS-25 · rebuilding finding history on upgrade', () => {
 
   it('25-11 · running twice changes nothing, and the marker is what stops it', async () => {
     await findingsRepo.backfillFindings();
-    const first = JSON.stringify(await findingsRepo.listFindings());
+    const first = JSON.stringify(await findingsRepo.listFindings(EVERYTHING_ACCESS));
 
     // The marker is set by the first run, so the second is a no-op...
     expect(await meta.getMeta('findings-backfilled-v1') ?? meta.getMeta('findings-backfill-v1')).toBeTruthy();
     await findingsRepo.backfillFindings();
-    expect(JSON.stringify(await findingsRepo.listFindings())).toBe(first);
+    expect(JSON.stringify(await findingsRepo.listFindings(EVERYTHING_ACCESS))).toBe(first);
   });
 });
 
 describe('TS-25 · rebuilding trend history on upgrade', () => {
   it('25-05 · approximating snapshots keeps the history already recorded', async () => {
-    const before = (await snapshotsRepo.getSnapshots({ categories: ['cost'] })).length;
+    const before = (await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] })).length;
     await snapshotsRepo.backfillSnapshots();
-    const after = await snapshotsRepo.getSnapshots({ categories: ['cost'] });
+    const after = await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] });
 
     expect(after.length, 'existing trend history was dropped').toBeGreaterThanOrEqual(before);
     // The fixture's own snapshot row must come through untouched. It is real recorded history, not
@@ -103,8 +104,8 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
 
   it('25-11 · running twice does not double up the trend', async () => {
     await snapshotsRepo.backfillSnapshots();
-    const first = JSON.stringify(await snapshotsRepo.getSnapshots({ categories: ['cost'] }));
+    const first = JSON.stringify(await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] }));
     await snapshotsRepo.backfillSnapshots();
-    expect(JSON.stringify(await snapshotsRepo.getSnapshots({ categories: ['cost'] }))).toBe(first);
+    expect(JSON.stringify(await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] }))).toBe(first);
   });
 });

@@ -10,6 +10,7 @@ import { getPublicUrl } from '@/lib/sign-in-config';
 import { RedirectRefusedError, SsrfGuardError } from '@/lib/ssrf-guard';
 import { claimNotifyDispatch, markNotifySent } from '@/lib/schedule-runs';
 import { loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
+import { SYSTEM_ACCESS } from '@/lib/system-access';
 import { isAdvisory, isDeliverableTo, isNotifiable } from '@/lib/finding-kinds';
 import { isDemoMode } from '@/lib/demo';
 import { buildPayload } from './format';
@@ -206,7 +207,7 @@ export async function dispatchNotifications(
  *  tab and dashboards use (`isActiveSuppression`, so an expired suppression hides nothing). */
 async function withoutSuppressed<T extends Finding>(findings: T[]): Promise<T[]> {
   if (findings.length === 0) return findings;
-  const suppressed = new Set((await loadSuppressions()).filter(isActiveSuppression).map(s => s.fingerprint));
+  const suppressed = new Set((await loadSuppressions(SYSTEM_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint));
   return findings.filter(f => !suppressed.has(f.fingerprint));
 }
 
