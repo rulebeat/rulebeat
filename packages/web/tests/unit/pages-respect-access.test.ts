@@ -13,7 +13,7 @@ import { inTransaction } from '@/lib/db/exec';
 import {
   createPeople, MANAGEMENT_GROUP, MATRIX_TENANT, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
-import { SCOPED_WRITE_REASON } from '@/lib/write-controls';
+import { SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON } from '@/lib/write-controls';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -151,6 +151,19 @@ describe('the pages narrow what they hand to client components', () => {
     const outside = propsOf(await SuppressionsPage(), 'SuppressionsClient');
     expect(outside.initialSuppressions).toEqual([]);
     expect(outside.canEdit).toBe(false);
+  });
+
+  it('Settings: sends the category controls on for an Admin and an Editor on Everything, off with the reason for a scoped Editor, and off with none for a Viewer', async () => {
+    const { default: SettingsPage } = await import('@/app/(app)/settings/page');
+    const read = async (uid: string) => {
+      signIn(uid);
+      const props = propsOf(await SettingsPage(), 'SettingsClient');
+      return { canEditCategories: props.canEditCategories, categoriesOffReason: props.categoriesOffReason };
+    };
+    expect(await read(userIds['Admin']!)).toEqual({ canEditCategories: true, categoriesOffReason: undefined });
+    expect(await read(userIds['Editor on Everything']!)).toEqual({ canEditCategories: true, categoriesOffReason: undefined });
+    expect(await read(scopedEditor)).toEqual({ canEditCategories: false, categoriesOffReason: SCOPED_CATEGORY_REASON });
+    expect(await read(userIds['Viewer on one subscription']!)).toEqual({ canEditCategories: false, categoriesOffReason: undefined });
   });
 
   it('New rule: answers not found for the Editor on one subscription, and shows the form to the Editor on Everything', async () => {

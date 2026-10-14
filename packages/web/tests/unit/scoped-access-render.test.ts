@@ -14,7 +14,9 @@ import { ScansClient } from '@/components/modules/scans-client';
 import { LibraryClient } from '@/app/(app)/library/library-client';
 import { RuleDetailClient } from '@/app/(app)/rules/[id]/rule-detail-client';
 import { OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
-import { SCOPED_WRITE_REASON, type WriteControls } from '@/lib/write-controls';
+import { ThemeProvider } from '@/components/theme/theme-provider';
+import { SettingsClient } from '@/app/(app)/settings/settings-client';
+import { SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, type WriteControls } from '@/lib/write-controls';
 import { emptyView } from '@/lib/finding-view';
 import type { Rule } from '@/lib/types';
 
@@ -146,5 +148,36 @@ describe('the library and schedule controls of a scoped Editor', () => {
     const html = schedules(true);
     expect(html).toContain('New schedule');
     expect(html).toContain('title="Delete schedule"');
+  });
+});
+
+describe('the category controls on the Settings page', () => {
+  const settings = (props: { canEditCategories: boolean; categoriesOffReason?: string; role?: 'viewer' | 'editor' | 'admin' }) =>
+    renderToStaticMarkup(createElement(ThemeProvider, { initialPreference: 'light', children: createElement(SettingsClient, {
+      initialCategories: [{ id: 'security', label: 'Security', isBuiltin: false, sortOrder: 0 }] as never,
+      role: props.role ?? 'editor', canEditCategories: props.canEditCategories, categoriesOffReason: props.categoriesOffReason,
+      initialAzureStatus: null, initialSignInStatus: null, initialChannels: null,
+    }) }));
+
+  it('shows New category, Edit and Delete disabled with the reason, and no read-only banner, for a scoped Editor', () => {
+    const html = settings({ canEditCategories: false, categoriesOffReason: SCOPED_CATEGORY_REASON });
+    expect(html).toContain('New category');
+    // New category, Edit and Delete each carry it as a title; the panel text states it once more.
+    expect(titled(html, SCOPED_CATEGORY_REASON)).toBe(3);
+    expect(html).not.toContain('You can see everything here, but not change it');
+  });
+
+  it('shows a Viewer what a Viewer is shown today: the read-only banner, no category control, no reason', () => {
+    const html = settings({ canEditCategories: false, role: 'viewer' });
+    expect(html).toContain('You can see everything here, but not change it');
+    expect(html).not.toContain('New category');
+    expect(html).not.toContain(SCOPED_CATEGORY_REASON);
+  });
+
+  it('shows an Editor on Everything the working controls', () => {
+    const html = settings({ canEditCategories: true });
+    expect(html).toContain('New category');
+    expect(html).toContain('title="Edit category"');
+    expect(html).not.toContain(SCOPED_CATEGORY_REASON);
   });
 });

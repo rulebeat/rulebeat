@@ -187,6 +187,7 @@ export function SettingsClient({
   initialCategories,
   role,
   canEditCategories,
+  categoriesOffReason,
   initialAzureStatus,
   initialSignInStatus,
   initialChannels,
@@ -196,6 +197,8 @@ export function SettingsClient({
   role: Role;
   /** From `mayAct` on the server: categories are install-wide, so an Editor held at a Scope short of Everything cannot change them. */
   canEditCategories: boolean;
+  /** Why `canEditCategories` is off for someone whose Editor access covers part of the install: the category controls are shown disabled with it. Absent for a Viewer. */
+  categoriesOffReason?: string;
   /** Null unless the viewer is an admin. The server only loads it for `azure:manage`. */
   initialAzureStatus: AzureConnectionStatus | null;
   /** Null unless the viewer is an admin. The server only loads it for `auth:manage`. */
@@ -210,7 +213,7 @@ export function SettingsClient({
   const canManageNotifications = can(role, 'notifications:manage');
   // Derived from what they actually can't do here, not from the role name. A future read-only
   // role would otherwise land on this page with no explanation of why nothing is clickable.
-  const readOnlyHere = !canEditCategories && !canManageAzure && !canManageAuth && !canManageNotifications;
+  const readOnlyHere = !canEditCategories && !categoriesOffReason && !canManageAzure && !canManageAuth && !canManageNotifications;
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -308,14 +311,15 @@ export function SettingsClient({
       <Card>
         <CardHeader>
           <CardTitle>Categories</CardTitle>
-          {!creating && canEditCategories && (
-            <Button size="sm" variant="outline" onClick={() => { setCreating(true); setEditingId(null); }}>
+          {!creating && (canEditCategories || categoriesOffReason) && (
+            <Button size="sm" variant="outline" disabled={!canEditCategories} title={categoriesOffReason} onClick={() => { setCreating(true); setEditingId(null); }}>
               <Plus className="h-3.5 w-3.5" />
               New category
             </Button>
           )}
         </CardHeader>
         <CardContent className="p-0">
+          {categoriesOffReason && <p className="px-6 py-3 text-xs text-ink-2">{categoriesOffReason}</p>}
           {error && <Callout tone="error" className="border-x-0 border-t-0">{error}</Callout>}
           <TableScroll>
             <Table>
@@ -369,17 +373,19 @@ export function SettingsClient({
                       </div>
                     </TableCell>
                     <TableCell shrink>
-                      {canEditCategories && (
+                      {(canEditCategories || categoriesOffReason) && (
                         <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                           <Button
-                            variant="ghost" size="icon-sm" title="Edit category"
+                            variant="ghost" size="icon-sm" title={canEditCategories ? 'Edit category' : categoriesOffReason}
+                            disabled={!canEditCategories}
                             onClick={() => { setEditingId(cat.id); setCreating(false); }}
                           >
                             <Pencil className="size-3.5" />
                           </Button>
                           {!cat.isBuiltin && (
                             <Button
-                              variant="ghost" size="icon-sm" title="Delete category"
+                              variant="ghost" size="icon-sm" title={canEditCategories ? 'Delete category' : categoriesOffReason}
+                              disabled={!canEditCategories}
                               className="hover:text-sev-critical"
                               onClick={() => { void handleDelete(cat); }}
                             >

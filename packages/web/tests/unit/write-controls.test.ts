@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import { accessAllowing, type Role } from '@/lib/rbac';
-import { SCOPED_WRITE_REASON, writeControlsFor } from '@/lib/write-controls';
+import { categoryControlFor, SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, writeControlsFor } from '@/lib/write-controls';
 
 const grants = (...held: [path: string, role: Role][]): Access =>
   buildAccess(held.map(([path, role]) => ({ tenantId: 't', scope: parseScope(path)!, role })), 'manual');
@@ -57,6 +57,30 @@ describe('writeControlsFor', () => {
 
   it('gives a person with no Scope nothing, and no reason', () => {
     expect(writeControlsFor(NO_ACCESS)).toEqual(ALL_OFF);
+  });
+});
+
+describe('categoryControlFor', () => {
+  it('allows an Admin and an Editor on Everything, with no reason', () => {
+    expect(categoryControlFor(everythingAccess('admin'))).toEqual({ allowed: true });
+    expect(categoryControlFor(everythingAccess('editor', 'manual'))).toEqual({ allowed: true });
+  });
+
+  it('turns the controls off for an Editor on one subscription, with the reason', () => {
+    expect(categoryControlFor(grants([SUB, 'editor']))).toEqual({ allowed: false, reason: SCOPED_CATEGORY_REASON });
+    expect(categoryControlFor(grants([SUB, 'editor'], [SUB_TWO, 'viewer'])).reason).toBe(SCOPED_CATEGORY_REASON);
+  });
+
+  it('gives a Viewer, on Everything or a subscription, and a person with no Scope, no reason', () => {
+    expect(categoryControlFor(everythingAccess('viewer', 'manual'))).toEqual({ allowed: false });
+    expect(categoryControlFor(grants([SUB, 'viewer']))).toEqual({ allowed: false });
+    expect(categoryControlFor(NO_ACCESS)).toEqual({ allowed: false });
+  });
+
+  it('says an Admin or an Editor on Everything is needed', () => {
+    expect(SCOPED_CATEGORY_REASON).toContain('categories');
+    expect(SCOPED_CATEGORY_REASON).toContain('Admin');
+    expect(SCOPED_CATEGORY_REASON).toContain('Editor on Everything');
   });
 });
 

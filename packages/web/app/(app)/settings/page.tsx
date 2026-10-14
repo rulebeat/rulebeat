@@ -1,7 +1,8 @@
 import { Header } from '@/components/layout/header';
 import { listCategories } from '@/lib/db/categories';
 import { getPageAccess } from '@/lib/page-access';
-import { can, mayAct } from '@/lib/rbac';
+import { can } from '@/lib/rbac';
+import { categoryControlFor } from '@/lib/write-controls';
 import { getAzureConnectionStatus } from '@/lib/azure-credential';
 import { getSignInStatus } from '@/lib/sign-in-config';
 import { listChannels } from '@/lib/db/notification-channels';
@@ -15,6 +16,7 @@ export default async function SettingsPage() {
   const manageAuth = can(role, 'auth:manage');
   const manageNotifications = can(role, 'notifications:manage');
 
+  const categoryControl = categoryControlFor(access);
   const categories = await listCategories();
   const demo = await isDemoMode();
 
@@ -27,7 +29,8 @@ export default async function SettingsPage() {
         <SettingsClient
           initialCategories={categories}
           role={role}
-          canEditCategories={mayAct(access, 'categories:write')}
+          canEditCategories={categoryControl.allowed}
+          categoriesOffReason={categoryControl.reason}
           initialAzureStatus={manageAzure ? await getAzureConnectionStatus() : null}
           initialSignInStatus={manageAuth ? await getSignInStatus() : null}
           initialChannels={initialChannels}

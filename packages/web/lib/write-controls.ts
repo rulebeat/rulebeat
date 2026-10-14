@@ -29,6 +29,19 @@ export interface WriteControls {
 export const SCOPED_WRITE_REASON =
   'Changing rules and schedules affects the whole install. It needs an Admin, or an Editor on Everything. Your Editor access covers only part of it.';
 
+export const SCOPED_CATEGORY_REASON =
+  'Changing categories affects the whole install. It needs an Admin, or an Editor on Everything. Your Editor access covers only part of it.';
+
+/**
+ * The category controls on the Settings page: `allowed` from `mayAct`, and a `reason` set only when a Role the
+ * person holds allows `categories:write` but none of those Roles is held on Everything. A Viewer gets no reason.
+ */
+export function categoryControlFor(access: Access): { allowed: boolean; reason?: string } {
+  const allowed = mayAct(access, 'categories:write');
+  const heldButScoped = !allowed && access.grants.some(g => can(g.role, 'categories:write'));
+  return { allowed, ...(heldButScoped ? { reason: SCOPED_CATEGORY_REASON } : {}) };
+}
+
 const INSTALL_WIDE_WRITES = ['rules:write', 'rules:delete', 'schedules:write'] as const;
 
 export function writeControlsFor(access: Access): WriteControls {
