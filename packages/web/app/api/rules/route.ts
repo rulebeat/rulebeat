@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { loadRules, loadRule, createRule, copiedOrigin, ruleNameTakenError, resolveKind } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
+import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { createTenantContext } from '@/lib/azure-credential';
 import { validateRuleDefinition } from '@/lib/rule-definition-validation';
 import type { QueryBackend, Rule } from '@rulebeat/core';
@@ -10,7 +11,9 @@ import type { QueryBackend, Rule } from '@rulebeat/core';
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return NextResponse.json(await loadRules());
+  // A person who does not hold Everything is not told the subscriptions or management groups a rule's
+  // scope names beyond the ones they hold; the engine and the scheduler read the rules unnarrowed.
+  return NextResponse.json(narrowRulesScope(await loadRules(), actor.access));
 }
 
 export async function POST(req: Request) {

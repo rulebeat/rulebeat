@@ -5,8 +5,10 @@ import { listCategories } from '@/lib/db/categories';
 import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { describeOrigin } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
-import { getCurrentUser } from '@/lib/api-auth';
+import { getPageAccess } from '@/lib/page-access';
 import { can } from '@/lib/rbac';
+import { narrowRulesScope } from '@/lib/rule-scope-access';
+import { writeControlsFor } from '@/lib/write-controls';
 import { RuleDetailClient } from './rule-detail-client';
 
 export default async function RuleDetailPage({
@@ -19,14 +21,15 @@ export default async function RuleDetailPage({
   const { id } = await params;
   const { edit } = await searchParams;
   const decodedId = decodeURIComponent(id);
-  const allRules = await loadRules();
+  const { user, access } = await getPageAccess();
+  const allRules = narrowRulesScope(await loadRules(), access);
   const rule = allRules.find(r => r.id === decodedId);
   if (!rule) notFound();
 
   const initialEditing = edit === 'true';
   const allTags = allTagsFromRules(allRules);
   const categories = await listCategories();
-  const user = await getCurrentUser();
+  const controls = writeControlsFor(access);
   const versionHistory = rule.type === 'builtin' ? await listRuleVersions(rule.id) : null;
 
   // Only a custom rule with a recorded origin has one, so the table is read for no other rule.
@@ -49,7 +52,8 @@ export default async function RuleDetailPage({
         initialEditing={initialEditing}
         allTags={allTags}
         categories={categories}
-        canAuthor={can(user?.role ?? 'viewer', 'rules:write')}
+        canAuthor={controls.rulesWrite}
+        writeReason={controls.reason}
       />
     </>
   );

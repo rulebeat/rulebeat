@@ -1,7 +1,6 @@
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
-import { queryActiveFindings } from '@/lib/dashboard-data';
-import { countsAsAffected } from '@/lib/finding-kinds';
+import { queryRuleFindingCounts } from '@/lib/db/finding-views';
 import { getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
@@ -14,10 +13,10 @@ import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
-import { getCurrentUser } from '@/lib/api-auth';
-import { resolveAccess } from '@/lib/access';
-import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
-import { can } from '@/lib/rbac';
+import { getPageAccess } from '@/lib/page-access';
+import { holdsNoScope } from '@/lib/access-model';
+import { narrowRulesScope } from '@/lib/rule-scope-access';
+import { writeControlsFor } from '@/lib/write-controls';
 import type { Rule, Suppression } from '@/lib/types';
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
@@ -38,9 +37,9 @@ export default async function ScansPage({
   const initialView = viewFromSearchParams(params);
   const initialSavedViewId = one(params.view);
   const categories = await listCategories();
-  const user = await getCurrentUser();
+  const { user, access } = await getPageAccess();
   const role = user?.role ?? 'viewer';
-  const access = user ? await resolveAccess(user) : NO_ACCESS;
+  const controls = writeControlsFor(access);
 
   const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions(access) as Suppression[];
@@ -60,21 +59,12 @@ export default async function ScansPage({
     : undefined;
   // Load channels for anyone who can edit schedules. The summary type carries no URL so it's
   // safe to send to editors. Admins manage the destinations; editors just assign them.
-  const initialNotificationChannels = activeTab === 'schedules' && can(role, 'schedules:write')
+  const initialNotificationChannels = activeTab === 'schedules' && controls.schedulesWrite
     ? await listChannels()
     : undefined;
 
-  // Rules tab's "N resources affected" column, same group-by-ruleId pattern as
-  // api/widgets/top-rules/route.ts. dateWindow is required by the type but unused for an
-  // active-findings query, so the value here is a harmless placeholder.
-  let ruleFindingCounts: Record<string, number> | undefined;
-  if (activeTab === 'rules') {
-    ruleFindingCounts = {};
-    for (const f of await queryActiveFindings({ dateWindow: { mode: 'relative', days: 7 } }, access)) {
-      if (!countsAsAffected(f)) continue;
-      ruleFindingCounts[f.ruleId] = (ruleFindingCounts[f.ruleId] ?? 0) + 1;
-    }
-  }
+  // Rules tab's "N resources affected" column: the findings inside the person's Scopes, per rule.
+  const ruleFindingCounts = activeTab === 'rules' ? await queryRuleFindingCounts(access) : undefined;
 
   if (activeTab === 'history') {
     if (compare) {
@@ -96,7 +86,7 @@ export default async function ScansPage({
 
   // The Results, Advisories and Activity tabs send no findings: the explorer reads them from the
   // server view as the view changes, starting from `initialView`.
-  const policies = await loadRules() as unknown as Rule[];
+  const policies = narrowRulesScope(await loadRules(), access) as unknown as Rule[];
   const tabEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies)
     : activeTab === 'activity' ? activityEmptyState(policies)
     : undefined;
@@ -122,8 +112,8 @@ export default async function ScansPage({
         compareIds={compareIds}
         compareQuery={compareIds ? compareQueryFromParams(params) : undefined}
         initialSchedules={initialSchedules}
-        canEditSchedules={can(role, 'schedules:write')}
-          notificationChannels={initialNotificationChannels}
+        controls={controls}
+        notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
         tabEmpty={tabEmpty}
         noAccess={holdsNoScope(access)}

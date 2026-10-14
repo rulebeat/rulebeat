@@ -54,6 +54,7 @@ import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
 import { activeRowFilters, applyView, filterValues, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
+import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { isActiveSuppression } from '../suppressions';
 import { subscriptionValue } from '../placement';
 import {
@@ -251,6 +252,28 @@ async function returnedColumns(tx: DbHandle, access: Access, slim: readonly Slim
 }
 
 // ---- The answers ----
+
+/**
+ * The Rules tab's "N resources affected" per rule id: the active findings of a kind that resolves
+ * (`countsAsAffected`) that sit inside `access`, leaving out the ones an active suppression covers. A
+ * person who does not hold Everything is counted only the findings inside their Scopes, so a rule's figure
+ * never tells them about a resource they cannot see.
+ */
+export function queryRuleFindingCounts(access: Access): Promise<Record<string, number>> {
+  return inReadTransaction(async (tx) => {
+    const t = findingsTable;
+    const stored = await many(tx.select({ fingerprint: t.fingerprint, ruleId: t.ruleId }).from(t).where(and(
+      eq(t.status, 'active'), inArray(t.kind, [...RESOLVABLE_KINDS]), accessFilterSql(access),
+    )));
+    const suppressed = await readSuppressedFingerprints(tx);
+    const counts: Record<string, number> = {};
+    for (const f of stored) {
+      if (suppressed.has(f.fingerprint)) continue;
+      counts[f.ruleId] = (counts[f.ruleId] ?? 0) + 1;
+    }
+    return counts;
+  });
+}
 
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */

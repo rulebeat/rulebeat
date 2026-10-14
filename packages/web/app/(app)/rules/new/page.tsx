@@ -3,8 +3,8 @@ import { Header } from '@/components/layout/header';
 import { RuleNewClient } from '@/components/rules/rule-new-client';
 import { loadRules, allTagsFromRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
-import { getCurrentUser } from '@/lib/api-auth';
-import { can } from '@/lib/rbac';
+import { getPageAccess } from '@/lib/page-access';
+import { mayAct } from '@/lib/rbac';
 import { canDuplicateRule } from '@/lib/rule-taxonomy';
 import type { Rule } from '@/lib/types';
 
@@ -16,8 +16,9 @@ export default async function NewRulePage({
   const { copyFrom } = await searchParams;
   // Without this a viewer could reach the form directly and only discover it's off-limits when
   // saving fails with a 403.
-  const user = await getCurrentUser();
-  if (!can(user?.role ?? 'viewer', 'rules:write')) notFound();
+  // A scoped Editor is refused by the route too, so the form is not offered to them.
+  const { access } = await getPageAccess();
+  if (!mayAct(access, 'rules:write')) notFound();
 
   const allRules = await loadRules();
   const allTags = allTagsFromRules(allRules);

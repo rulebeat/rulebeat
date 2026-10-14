@@ -463,13 +463,16 @@ function EditRow({
   );
 }
 
-export function SchedulesTab({ initialSchedules, categories, rules, channels, canEdit }: {
+export function SchedulesTab({ initialSchedules, categories, rules, channels, canEdit, disabledReason }: {
   initialSchedules: ScheduleWithLastRun[];
   categories: Category[];
   rules: Rule[];
   /** Available notification channels (admin-loaded). Empty if viewer has no notifications:manage. */
   channels: NotificationChannelSummary[];
   canEdit: boolean;
+  /** Why the controls are off for someone whose Editor access covers part of the install. They are shown
+   *  disabled with this text. Absent for a Viewer, who sees none, and for anyone who may edit. */
+  disabledReason?: string;
 }) {
   const [schedules, setSchedules] = useState<ScheduleWithLastRun[]>(initialSchedules);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -635,9 +638,9 @@ export function SchedulesTab({ initialSchedules, categories, rules, channels, ca
     <Card>
       <CardHeader>
         <CardTitle>Scheduled Scans</CardTitle>
-        {!creating && canEdit && (
+        {!creating && (canEdit || disabledReason) && (
           <CardAction>
-            <Button size="sm" variant="outline" onClick={() => { setCreating(true); setEditingId(null); }}>
+            <Button size="sm" variant="outline" disabled={!canEdit} title={disabledReason} onClick={() => { setCreating(true); setEditingId(null); }}>
               <Plus className="size-3.5" />
               New schedule
             </Button>
@@ -645,6 +648,7 @@ export function SchedulesTab({ initialSchedules, categories, rules, channels, ca
         )}
       </CardHeader>
       <CardContent className="p-0">
+        {disabledReason && <p className="px-6 py-3 text-xs text-ink-2">{disabledReason}</p>}
         {error && <Callout tone="error" className="border-x-0 border-t-0">{error}</Callout>}
         {schedules.length === 0 && !creating ? (
           <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
@@ -707,25 +711,27 @@ export function SchedulesTab({ initialSchedules, categories, rules, channels, ca
                             checked={s.enabled}
                             disabled={!canEdit}
                             onCheckedChange={() => { void handleToggleEnabled(s); }}
-                            title={canEdit ? (s.enabled ? 'Disable schedule' : 'Enable schedule') : 'Read-only access'}
+                            title={canEdit ? (s.enabled ? 'Disable schedule' : 'Enable schedule') : (disabledReason ?? 'Read-only access')}
                           />
-                          {canEdit && (
+                          {(canEdit || disabledReason) && (
                             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                               <Button
-                                variant="ghost" size="icon-sm" title="Run now"
-                                disabled={runningId === s.id}
+                                variant="ghost" size="icon-sm" title={canEdit ? 'Run now' : disabledReason}
+                                disabled={runningId === s.id || !canEdit}
                                 onClick={() => { void handleRunNow(s); }}
                               >
                                 <Play className="size-3.5" />
                               </Button>
                               <Button
-                                variant="ghost" size="icon-sm" title="Edit schedule"
+                                variant="ghost" size="icon-sm" title={canEdit ? 'Edit schedule' : disabledReason}
+                                disabled={!canEdit}
                                 onClick={() => { setEditingId(s.id); setCreating(false); }}
                               >
                                 <Pencil className="size-3.5" />
                               </Button>
                               <Button
-                                variant="ghost" size="icon-sm" title="Delete schedule"
+                                variant="ghost" size="icon-sm" title={canEdit ? 'Delete schedule' : disabledReason}
+                                disabled={!canEdit}
                                 className="hover:text-sev-critical"
                                 onClick={() => { void handleDelete(s); }}
                               >
