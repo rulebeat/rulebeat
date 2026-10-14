@@ -96,6 +96,7 @@ nav:
       - dashboards.md
       - suppressions.md
       - rbac.md
+      - access.md
       - configure.md
       - security.md
       - troubleshooting.md

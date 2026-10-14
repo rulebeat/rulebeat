@@ -282,8 +282,11 @@ app as described in [configure.md](configure.md#exposing-it-beyond-localhost).
    container claims it first, a notification batch is sent once, and each container's live scan is
    left alone by the other's startup recovery. Two revisions serving traffic for longer than that
    is the multi-replica topology RuleBeat does not support. Under Identity turn on
-   System assigned, then Azure role assignments, Add: scope Subscription, role Reader, once per
-   subscription to scan. RuleBeat picks that identity up with nothing else set. When you want
+   System assigned, then Azure role assignments, Add: scope Management group, the tenant root
+   management group (its id is your tenant id), role Reader. The mirror and the management group tree
+   see only what this identity can read, so the root covers everything at once; scope Subscription, role
+   Reader, once per subscription, still works for a smaller start
+   ([`permissions.md`](permissions.md#2-grant-reader)). RuleBeat picks that identity up with nothing else set. When you want
    Microsoft sign-in, add `AUTH_URL` set to the application URL from the Overview page as a new
    revision, and register the redirect URI under it
    ([Microsoft Entra ID sign-in](configure.md#microsoft-entra-id-sign-in-optional)).
