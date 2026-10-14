@@ -1408,7 +1408,11 @@ describe('the Scope picker (#307)', () => {
 
   it('keeps the search on when Everything is not held, and offers a Scope Everything at a lower Role would not cover', () => {
     expect(render([{ scope: SUB, role: 'viewer' }])).not.toMatch(/<input[^>]*placeholder="Search management groups[^"]*"[^>]*\sdisabled=""/);
-    // An Editor given Everything at Viewer is a different Role from the one a new Scope takes, so Directory stays addable.
-    expect(render([{ scope: '/', role: 'viewer' }], 'editor')).toContain('aria-label="Add Directory"');
+    // An Editor holding Everything at Viewer: Everything shows as held, never as something to add (adding toggled it off),
+    // and the Directory, which Viewer does not cover at the Editor Role, stays addable.
+    const editorHoldingViewerEverything = render([{ scope: '/', role: 'viewer' }], 'editor');
+    expect(editorHoldingViewerEverything).toContain('Held at Viewer');
+    expect(editorHoldingViewerEverything).not.toContain('aria-label="Add Everything"');
+    expect(editorHoldingViewerEverything).toContain('aria-label="Add Directory"');
   });
 });

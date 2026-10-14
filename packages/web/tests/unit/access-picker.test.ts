@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAccess, parseScope, type ManualGrant } from '@/lib/access-model';
 import {
   alsoLinkedNote, canInvite, canInviteMirrored, canPreviewMirror, canUseSignInAccount, EDIT_STOPS_MIRROR_NOTE, previewHeading, replacesManualNote,
-  coveringGrant, demotedWithoutAccessMessage, demoteToMirrored, describeScopePath, editSaveRequest, filterTree, GROUPS_LOAD_FAILED_MESSAGE, grantsOfAccess, heldAt, heldRows, NO_SUBSCRIPTIONS_MESSAGE, nothingMatchedMessage,
+  addGrant, coveringGrant, demotedWithoutAccessMessage, demoteToMirrored, describeScopePath, editSaveRequest, filterTree, GROUPS_LOAD_FAILED_MESSAGE, grantsOfAccess, heldAt, heldRows, NO_SUBSCRIPTIONS_MESSAGE, nothingMatchedMessage, offerStatus,
   managementGroupPathLabel, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes, setEveryRole,
   setGrantRole, shownRole, subscriptionScopePath, toggleGrant,
 } from '@/lib/access-picker';
@@ -253,6 +253,28 @@ describe('the searchable picker (#307)', () => {
 
     it('finds nothing in a tree that does not hold the group or the subscription', () => {
       expect(coveringGrant([{ scope: MG_PATH('mg-prod'), role: 'viewer' }], [], SUB_PATH, 'viewer')).toBeNull();
+    });
+  });
+
+  describe('adding a Scope that is already held', () => {
+    it('leaves a Scope held at a lower Role in the list, with its Role, instead of toggling it off', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }, { scope: '/', role: 'viewer' }];
+      expect(addGrant(held, SUB_PATH, 'editor')).toEqual(held);
+      expect(addGrant(held, SUB_PATH.toUpperCase(), 'viewer')).toEqual(held);
+      expect(addGrant(held, '/', 'editor')).toEqual(held);
+    });
+
+    it('adds a Scope that is not held, at the Role given', () => {
+      expect(addGrant([], SUB_PATH, 'editor')).toEqual([{ scope: SUB_PATH, role: 'editor' }]);
+    });
+
+    it('says a held Scope is held, at its own Role, even when the person is higher; and says what covers a covered one', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }, { scope: MG_PATH('mg-other'), role: 'viewer' }];
+      expect(offerStatus(held, nodes, SUB_PATH, 'editor')).toBe('Held at Viewer');
+      expect(offerStatus(held, nodes, subscriptionScopePath(OTHER), 'viewer', { 'mg-other': 'Other' })).toBe('Covered by Management group Other');
+      // An Editor addition under a Viewer group is real: nothing blocks it.
+      expect(offerStatus(held, nodes, subscriptionScopePath(OTHER), 'editor')).toBeNull();
+      expect(offerStatus([], nodes, SUB_PATH, 'viewer')).toBeNull();
     });
   });
 

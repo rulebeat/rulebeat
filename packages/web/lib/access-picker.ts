@@ -27,6 +27,11 @@ export function toggleGrant(grants: readonly ManualGrant[], path: string, role: 
   return heldAt(grants, path) ? grants.filter(g => !sameScopePath(g.scope, path)) : [...grants, { scope: path, role }];
 }
 
+/** Holds the Scope at `role` unless it is already held, in which case the list is returned as it was. Unlike a toggle, it never removes. */
+export function addGrant(grants: readonly ManualGrant[], path: string, role: GrantRole): ManualGrant[] {
+  return heldAt(grants, path) ? [...grants] : [...grants, { scope: path, role }];
+}
+
 export function setGrantRole(grants: readonly ManualGrant[], path: string, role: GrantRole): ManualGrant[] {
   return grants.map(g => (sameScopePath(g.scope, path) ? { ...g, role } : g));
 }
@@ -188,6 +193,19 @@ export function coveringGrant(
     if (scope.kind === 'managementGroup' && above.includes(lower(managementGroupIdOf(grant.scope)))) return grant;
   }
   return null;
+}
+
+/**
+ * Why an offered Scope cannot be added, or null when it can: it is already held (at whatever Role, which a held
+ * row changes with "Different Role here"), or a held Scope already covers it at the same or a higher Role.
+ */
+export function offerStatus(
+  held: readonly ManualGrant[], nodes: readonly TreeNode[], path: string, role: GrantRole, names: Readonly<Record<string, string>> = {},
+): string | null {
+  const own = heldAt(held, path);
+  if (own) return `Held at ${own.role === 'editor' ? 'Editor' : 'Viewer'}`;
+  const covering = coveringGrant(held, nodes, path, role);
+  return covering ? `Covered by ${describeScopePath(covering.scope, names)}` : null;
 }
 
 /**

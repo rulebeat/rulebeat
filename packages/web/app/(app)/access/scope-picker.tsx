@@ -11,8 +11,9 @@ import { DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, sameScopePath } from '@/li
 import { noGroupsReason, type HierarchyView } from '@/lib/management-group-tree';
 import { ROLE_LABELS } from '@/lib/rbac';
 import {
-  coveringGrant, describeScopePath, GROUPS_LOAD_FAILED_MESSAGE, heldAt, heldRows, KIND_LABELS, namesOf, NO_SUBSCRIPTIONS_MESSAGE,
-  nothingMatchedMessage, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes, setGrantRole, subscriptionScopePath, toggleGrant,
+  addGrant, coveringGrant, describeScopePath, GROUPS_LOAD_FAILED_MESSAGE, heldAt, heldRows, KIND_LABELS, namesOf, NO_SUBSCRIPTIONS_MESSAGE,
+  nothingMatchedMessage, offerStatus, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes,
+  setGrantRole, subscriptionScopePath, toggleGrant,
   type HeldRow, type PickerCatalogue, type ScopeCandidate, type SubscriptionOption,
 } from '@/lib/access-picker';
 import { cn } from '@/lib/utils';
@@ -104,11 +105,12 @@ function HeldScopeRow({ row, personRole, locked, disabled, canLimit, limiting, o
 }
 
 /** One thing a search found, or a quick pick: an Add button, or the reason it cannot be added. */
-function Offer({ title, detail, kind, coveredBy, disabled, onAdd }: {
+function Offer({ title, detail, kind, status, disabled, onAdd }: {
   title: string;
   detail?: string;
   kind: string;
-  coveredBy: string | null;
+  /** Why it cannot be added ("Held at Viewer", "Covered by ..."), or null when it can. */
+  status: string | null;
   disabled?: boolean;
   onAdd: () => void;
 }) {
@@ -121,8 +123,8 @@ function Offer({ title, detail, kind, coveredBy, disabled, onAdd }: {
         </div>
         {detail && <div className="truncate font-mono text-xs text-ink-2" title={detail}>{detail}</div>}
       </div>
-      {coveredBy ? (
-        <span className="shrink-0 text-xs text-ink-2">Covered by {coveredBy}</span>
+      {status ? (
+        <span className="shrink-0 text-xs text-ink-2">{status}</span>
       ) : (
         <Button type="button" size="sm" variant="outline" disabled={disabled} aria-label={`Add ${title}`} onClick={onAdd}>Add</Button>
       )}
@@ -239,11 +241,8 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
     && !(catalogue.nodes ?? []).some(n => n.kind === 'subscription');
   const noGroups = tree.status === 'ready' ? noGroupsReason(tree.view.nodes, tree.view.status) : null;
 
-  const coveredBy = (path: string): string | null => {
-    const covering = coveringGrant(value, catalogue.nodes ?? [], path, defaultRole);
-    return covering ? describeScopePath(covering.scope, names) : null;
-  };
-  const add = (path: string) => onChange(toggleGrant(value, path, defaultRole));
+  const statusOf = (path: string): string | null => offerStatus(value, catalogue.nodes ?? [], path, defaultRole, names);
+  const add = (path: string) => onChange(addGrant(value, path, defaultRole));
 
   const found = searchScopes(query, catalogue);
   const shown = found.slice(0, RESULT_LIMIT);
@@ -328,11 +327,11 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
         <ul className="divide-y divide-border">
           <Offer
             kind="Quick pick" title="Everything" detail="Every subscription, resource group and the Directory"
-            coveredBy={coveredBy(EVERYTHING_SCOPE_PATH)} disabled={disabled} onAdd={() => add(EVERYTHING_SCOPE_PATH)}
+            status={statusOf(EVERYTHING_SCOPE_PATH)} disabled={disabled} onAdd={() => add(EVERYTHING_SCOPE_PATH)}
           />
           <Offer
             kind="Quick pick" title="Directory" detail="Entra ID, and findings that sit in no subscription"
-            coveredBy={coveredBy(DIRECTORY_SCOPE_PATH)} disabled={disabled} onAdd={() => add(DIRECTORY_SCOPE_PATH)}
+            status={statusOf(DIRECTORY_SCOPE_PATH)} disabled={disabled} onAdd={() => add(DIRECTORY_SCOPE_PATH)}
           />
         </ul>
         <Input
@@ -370,7 +369,7 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
                 kind={c.kind === 'managementGroup' ? 'Management group' : 'Subscription'}
                 title={c.name}
                 detail={c.name === c.id ? undefined : c.id}
-                coveredBy={coveredBy(c.path)}
+                status={statusOf(c.path)}
                 disabled={disabled}
                 onAdd={() => { add(c.path); setQuery(''); }}
               />
