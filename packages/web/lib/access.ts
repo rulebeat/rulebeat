@@ -3,7 +3,7 @@ import { listUsers, type AppUser } from '@/lib/db/users';
 import { buildAccess, everythingAccess, parseScope, type Access, type AccessSource, type ScopeGrant, type ScopeKind } from '@/lib/access-model';
 import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
 import { expandManagementGroups, type HierarchyNode } from '@/lib/management-group-tree';
-import { parseOrigins, type MirroredScope } from '@/lib/access-mirror-model';
+import { NEVER_MIRRORED, parseOrigins, type MirrorStatus, type MirroredScope } from '@/lib/access-mirror-model';
 import { isRole, type Role } from '@/lib/rbac';
 
 /**
@@ -96,6 +96,15 @@ export function changedAccessFields(before: AppUserWithAccess | null, after: App
   return changed;
 }
 
+/** The names of the access fields a removal takes away from the person, for the audit entry. Never their values. */
+export function removedAccessFields(before: AppUserWithAccess): string[] {
+  const removed = ['role'];
+  if (before.accessSource !== null) removed.push('accessSource');
+  if (before.role !== 'admin' && before.access.grants.length > 0) removed.push('assignments');
+  if (before.linkedAccount) removed.push('linkedAccount');
+  return removed;
+}
+
 /** One Scope a person holds, as their own access page and the own-access route show it: no tenant id. */
 export interface OwnScope {
   kind: ScopeKind;
@@ -108,13 +117,19 @@ export interface OwnAccess {
   role: Role;
   source: AccessSource | null;
   scopes: OwnScope[];
+  /** How the last refresh of their Linked account went: when it last loaded, when it was last tried, and why it failed. Null unless mirrored. */
+  mirror: MirrorStatus | null;
 }
 
-/** A person's own access, for the page and the route that read it: the Role they hold, where it came from, and each Scope with its Role. */
-export function ownAccessOf(user: Pick<AppUser, 'role'>, access: Access): OwnAccess {
+/**
+ * A person's own access, for the page and the route that read it: the Role they hold, where it came from, each
+ * Scope with its Role, and for a mirrored person the last refresh. Never the Linked account's object id.
+ */
+export function ownAccessOf(user: Pick<AppUser, 'role' | 'mirror'>, access: Access): OwnAccess {
   return {
     role: user.role,
     source: access.source,
     scopes: access.grants.map(g => ({ kind: g.scope.kind, path: g.scope.path, role: g.role })),
+    mirror: access.source === 'mirrored' ? user.mirror ?? NEVER_MIRRORED : null,
   };
 }

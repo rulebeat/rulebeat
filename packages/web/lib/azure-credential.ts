@@ -22,6 +22,8 @@ import { isDemoMode } from '@/lib/demo';
 import { createScanLogger, type ScanLogContext } from '@/lib/server-logger';
 import { resolveLogAnalyticsWorkspaceId } from '@/lib/log-analytics-workspace';
 import type { Access } from '@/lib/access-model';
+import { limitContextToAccess } from '@/lib/access-limited-context';
+import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
 
 export { describeAadstsError } from '@/lib/entra-errors';
 
@@ -244,16 +246,18 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * silent no-op default: every caller gets real logging, callers with no run to attach (onboarding,
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
  *
- * `access` is who the context is for. It limits nothing here: the credential is still the one
- * install-wide Reader, and the limit is applied above this, because every caller that needs one
- * passes its own context in (a test's fake, the Demo's replay). A scan is narrowed in
- * `runCategoryScan()` (`lib/scan-runner.ts`, with `lib/run-scope.ts`), which wraps whatever context
- * it is given. A query a person writes is limited by the route, with `lib/written-query.ts`.
+ * `access` is who the context is for. The credential is still the one install-wide Reader, so for
+ * anyone short of Everything the context is limited to what they hold at any Role
+ * (`limitContextToAccess()`, `lib/access-limited-context.ts`): a request outside it is refused before
+ * it leaves. That is the floor, not the whole limit. A scan is narrowed further to the Role that runs
+ * scans in `runCategoryScan()` (`lib/scan-runner.ts`, with `lib/run-scope.ts`), and a query a person
+ * writes by the route, with `lib/written-query.ts`, since only they know the action.
  */
 export async function createTenantContext(access: Access, logContext?: ScanLogContext): Promise<TenantContext> {
   const { credential, tenantId } = await resolveAzureCredential();
   const logAnalyticsWorkspaceId = (await resolveLogAnalyticsWorkspaceId())?.workspaceId;
-  return buildTenantContext({ credential, tenantId, log: createScanLogger(logContext), logAnalyticsWorkspaceId });
+  const ctx = await buildTenantContext({ credential, tenantId, log: createScanLogger(logContext), logAnalyticsWorkspaceId });
+  return limitContextToAccess(ctx, access, listHierarchyNodes);
 }
 
 export interface AzureConnectionStatus {

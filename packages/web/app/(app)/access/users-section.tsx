@@ -12,10 +12,11 @@ import {
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
 import { describeAccess, EVERYTHING_SCOPE_PATH, type GrantRole, type ManualGrant } from '@/lib/access-model';
-import { canInvite, EDIT_STOPS_MIRROR_NOTE, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
+import { canInvite, canInviteMirrored, canPreviewMirror, EDIT_STOPS_MIRROR_NOTE, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
 import { Plus, Trash2, Check, X, Mail, ShieldCheck, KeyRound } from 'lucide-react';
-import { MirroredAccessRow } from './mirrored-access-form';
+import { MirroredAccessRow, MirrorPreviewList, type MirrorPreview } from './mirrored-access-form';
 import { MirroredDetailRow } from './mirrored-detail';
+import { ManualDetailRow } from './manual-detail';
 import { ScopePicker } from './scope-picker';
 
 const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: ROLE_LABELS[r] }));
@@ -45,16 +46,59 @@ function RoleSelect({
   );
 }
 
+/** What the invite form sends: an Admin with nothing to choose, or a Viewer or Editor with exactly one source. */
+export type InviteRequest =
+  | { email: string; role: 'admin' }
+  | { email: string; role: GrantRole; source: 'manual'; access: ManualGrant[] }
+  | { email: string; role: GrantRole; source: 'mirrored'; objectId: string };
+
 export function InviteRow({ onSave, onCancel, saving }: {
-  onSave: (email: string, role: Role, access: ManualGrant[] | undefined) => void;
+  onSave: (invite: InviteRequest) => void;
   onCancel: () => void;
   saving?: boolean;
 }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('viewer');
-  // Nothing is chosen to start with: an invited Viewer or Editor is given what an Admin picks, never a default.
+  // Nothing is chosen to start with, neither the source nor a Scope: an invited Viewer or Editor is given what
+  // an Admin picks, never a default, so a forgotten step grants nothing.
+  const [mode, setMode] = useState<'manual' | 'mirrored' | null>(null);
   const [grants, setGrants] = useState<ManualGrant[]>([]);
+  const [objectId, setObjectId] = useState('');
+  const [preview, setPreview] = useState<{ objectId: string; found: MirrorPreview } | null>(null);
+  const [reading, setReading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const scoped = role !== 'admin';
+
+  async function runPreview() {
+    const id = objectId.trim();
+    setReading(true);
+    setPreviewError(null);
+    try {
+      const res = await fetch('/api/users/mirror-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectId: id }),
+      });
+      const body = await res.json() as MirrorPreview & { error?: string };
+      if (!res.ok) { setPreviewError(body.error ?? 'Could not read this account.'); return; }
+      setPreview({ objectId: id, found: body });
+    } catch {
+      setPreviewError('Could not reach the RuleBeat server.');
+    } finally { setReading(false); }
+  }
+
+  const ready = !scoped
+    ? email.trim() !== ''
+    : mode === 'manual'
+      ? canInvite(email, grants)
+      : mode === 'mirrored' && canInviteMirrored(email, objectId, preview?.objectId ?? null);
+
+  function send() {
+    const to = email.trim();
+    if (!scoped) onSave({ email: to, role: 'admin' });
+    else if (mode === 'manual') onSave({ email: to, role: role as GrantRole, source: 'manual', access: grants });
+    else if (mode === 'mirrored') onSave({ email: to, role: role as GrantRole, source: 'mirrored', objectId: objectId.trim() });
+  }
 
   return (
     <tr className="border-b border-border bg-surface-sunken last:border-0">
@@ -82,7 +126,9 @@ export function InviteRow({ onSave, onCancel, saving }: {
             />
             <FieldHint>{ROLE_DESCRIPTIONS[role]}</FieldHint>
           </div>
-          {scoped ? (
+          {!scoped && <FieldHint>An Admin has access to everything, so there is no access to choose.</FieldHint>}
+          {scoped && <SourceSwitch mode={mode} onChange={setMode} />}
+          {scoped && mode === 'manual' && (
             <div className="space-y-1.5">
               <Label>Access</Label>
               <ScopePicker value={grants} onChange={setGrants} defaultRole={role as GrantRole} />
@@ -92,15 +138,35 @@ export function InviteRow({ onSave, onCancel, saving }: {
                   : 'Each Scope has its own Role. Change one to make this person an Editor in one place and a Viewer in another.'}
               </FieldHint>
             </div>
-          ) : (
-            <FieldHint>An Admin has access to everything, so there is no access to choose.</FieldHint>
+          )}
+          {scoped && mode === 'mirrored' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-linked-account">Linked account</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="invite-linked-account"
+                  value={objectId}
+                  onChange={e => { setObjectId(e.target.value); setPreview(null); }}
+                  placeholder="Azure object id"
+                  className="font-mono"
+                  disabled={reading}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <Button size="sm" variant="outline" disabled={reading || !canPreviewMirror(objectId)} onClick={() => void runPreview()}>
+                  {reading ? 'Reading Azure' : 'Preview'}
+                </Button>
+              </div>
+              <FieldHint>
+                The object id of the Azure account whose role assignments this person follows, at the Role above.
+                Preview it before adding; adding reads the account again and stores what it finds.
+              </FieldHint>
+              {previewError && <Callout tone="error">{previewError}</Callout>}
+              {preview && <MirrorPreviewList preview={preview.found} email={email.trim() || 'This person'} role={role as GrantRole} />}
+            </div>
           )}
           <div className="flex items-center gap-2 pt-1">
-            <Button
-              size="sm"
-              disabled={saving || (scoped ? !canInvite(email, grants) : !email.trim())}
-              onClick={() => onSave(email.trim(), role, scoped ? grants : undefined)}
-            >
+            <Button size="sm" disabled={saving || reading || !ready} onClick={send}>
               <Check className="size-3.5" />
               Add
             </Button>
@@ -178,7 +244,7 @@ export function demotePromptKey(role: Role): string {
 const SOURCE_LABELS = { manual: 'Manual access', mirrored: 'Mirrored access' } as const;
 
 /** The choice between the two ways of giving a Viewer or Editor access. An Admin has none, so never gets it. */
-function SourceSwitch({ mode, onChange }: { mode: 'manual' | 'mirrored'; onChange: (mode: 'manual' | 'mirrored') => void }) {
+function SourceSwitch({ mode, onChange }: { mode: 'manual' | 'mirrored' | null; onChange: (mode: 'manual' | 'mirrored') => void }) {
   return (
     <div className="space-y-1.5">
       <Label>Access source</Label>
@@ -196,9 +262,11 @@ function SourceSwitch({ mode, onChange }: { mode: 'manual' | 'mirrored'; onChang
         ))}
       </div>
       <FieldHint>
-        {mode === 'manual'
-          ? 'You pick the Scopes, each with its own Role. Nothing in Azure changes them.'
-          : 'One Role, and Scopes that follow the role assignments of a Linked account in Azure.'}
+        {mode === null
+          ? 'Choose one. Until you do, this person is given nothing.'
+          : mode === 'manual'
+            ? 'You pick the Scopes, each with its own Role. Nothing in Azure changes them.'
+            : 'One Role, and Scopes that follow the role assignments of a Linked account in Azure.'}
       </FieldHint>
     </div>
   );
@@ -363,14 +431,14 @@ export function UsersSection({
     } finally { setSaving(false); }
   }
 
-  async function invite(email: string, role: Role, access: ManualGrant[] | undefined) {
+  async function invite(request: InviteRequest) {
     setSaving(true);
     setError(null);
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(access ? { email, role, access } : { email, role }),
+        body: JSON.stringify(request),
       });
       const body = await res.json() as AppUserWithAccess & { error?: string };
       if (!res.ok) { setError(body.error ?? 'Failed to add user'); return; }
@@ -573,6 +641,9 @@ export function UsersSection({
                       onChanged={updated => setUsers(us => us.map(u => u.id === updated.id ? updated : u))}
                     />
                   )}
+                  {user.accessSource !== 'mirrored' && user.role !== 'admin' && editingAccess !== user.id && (
+                    <ManualDetailRow user={user} />
+                  )}
                   <PromptRows
                     user={user}
                     editing={editingAccess === user.id}
@@ -593,7 +664,7 @@ export function UsersSection({
               })}
               {inviting && (
                 <InviteRow
-                  onSave={(email, role, access) => { void invite(email, role, access); }}
+                  onSave={request => { void invite(request); }}
                   onCancel={() => setInviting(false)}
                   saving={saving}
                 />

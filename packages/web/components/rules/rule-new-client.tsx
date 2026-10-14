@@ -31,6 +31,8 @@ interface Props {
   /** A Personal rule: no prefill, the save goes to the personal endpoints, and the scope picker offers only scopeLimit. */
   personal?: boolean;
   scopeLimit?: { subscriptions: string[]; managementGroups: string[] };
+  /** Why a Microsoft Graph rule is unavailable to this person (no Directory Scope), or absent when it is available. */
+  directoryUnavailable?: string;
 }
 
 /**
@@ -39,7 +41,7 @@ interface Props {
  * (spec 037's "Save as rule"): the backend is already implicitly chosen in both cases.
  * Otherwise the picker's choice is threaded into RuleForm as initialQueryBackend.
  */
-export function RuleNewClient({ initial, copyFrom, allTags, categories, personal = false, scopeLimit }: Props) {
+export function RuleNewClient({ initial, copyFrom, allTags, categories, personal = false, scopeLimit, directoryUnavailable }: Props) {
   const router = useRouter();
   const [prefill] = useState(() => initial ?? (personal ? undefined : readQueryPrefill()));
   const [checksConfirmed, setChecksConfirmed] = useState(!!prefill);
@@ -48,6 +50,7 @@ export function RuleNewClient({ initial, copyFrom, allTags, categories, personal
   if (!checksConfirmed) {
     return (
       <ChecksPickerDialog
+        directoryUnavailable={directoryUnavailable}
         onSelect={backend => { setQueryBackend(backend); setChecksConfirmed(true); }}
         onClose={() => router.push(personal ? '/library?section=personal' : '/rules')}
       />

@@ -27,8 +27,15 @@ export async function listReturnedColumnsIn(handle: DbHandle, ruleIds?: readonly
   return [...paths].sort((a, b) => a.localeCompare(b));
 }
 
-/** The distinct paths for `ruleIds` (every rule when omitted), sorted with `localeCompare`. */
+/**
+ * The distinct paths for `ruleIds` (every rule when omitted), sorted with `localeCompare`. The catalogue is
+ * kept across the install, so it names columns of findings outside a person's access: only Everything reads
+ * it. Below Everything a view lists the columns of the rows it shows (`rowLeafPaths`), as `finding-views` does.
+ */
 export function listReturnedColumns(access: Access, ruleIds?: readonly string[]): Promise<string[]> {
+  if (!access.everything) {
+    return Promise.reject(new Error('The column catalogue covers the whole install and is read on Everything only.'));
+  }
   return listReturnedColumnsIn(db, ruleIds);
 }
 

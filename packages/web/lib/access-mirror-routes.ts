@@ -7,6 +7,7 @@ import { getUser, type AppUser } from '@/lib/db/users';
 export const MIRROR_ADMIN_MESSAGE = 'An Admin has access to everything and is never mirrored. Demote them first to choose their access.';
 export const MIRROR_BAD_OBJECT_ID_MESSAGE = 'The Linked account must be an Azure object id, which is a GUID.';
 export const MIRROR_BAD_ROLE_MESSAGE = 'Choose Viewer or Editor for mirrored access.';
+export const INVITE_BOTH_SOURCES_MESSAGE = 'Mirrored access takes a Linked account, not a list of Scopes. Choose one.';
 export const NOT_MIRRORED_MESSAGE =
   'This person has Manual access, so there is no Linked account to refresh. Give them Mirrored access first.';
 export const REFRESH_RACE_MESSAGE =

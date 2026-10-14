@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { createUser, getUser, setManualAccess, setMirroredAccess, type AppUser } from '@/lib/db/users';
+import { createUser, getUser, listUsers, setManualAccess, setMirroredAccess, type AppUser } from '@/lib/db/users';
 import { listAssignmentsFor, listAllAssignments } from '@/lib/db/role-assignments';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { db } from '@/lib/db/client';
@@ -48,6 +48,8 @@ const confirm = await import('@/app/api/users/[id]/mirror/route');
 const refresh = await import('@/app/api/users/[id]/mirror/refresh/route');
 const accessRoute = await import('@/app/api/users/[id]/access/route');
 const userRoute = await import('@/app/api/users/[id]/route');
+const usersRoute = await import('@/app/api/users/route');
+const invitePreview = await import('@/app/api/users/mirror-preview/route');
 
 const LEAK = 'AuthorizationFailed: client 00000000-aaaa-bbbb-cccc-000000000000 over /subscriptions/secret-sub, correlation 11111111-2222';
 const RG_ONE = `${SUB_A}/resourceGroups/rg-one`;
@@ -482,5 +484,65 @@ describe('a thrown Azure error', () => {
       expect(body).not.toContain('correlation');
     }
     expect(bodies.every(b => b.includes('could not be read'))).toBe(true);
+  });
+});
+
+describe('an invite with Mirrored access (#267, story 19)', () => {
+  const invite = (body: Record<string, unknown>) => usersRoute.POST(jsonRequest('POST', { email: 'invited@example.com', ...body }));
+  const invited = async () => (await listUsers()).find(u => u.email === 'invited@example.com');
+
+  it('previews the Scopes the account would give before anyone exists, and writes nothing', async () => {
+    const res = await invitePreview.POST(jsonRequest('POST', { objectId: ACCOUNT }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.scopes.map((s: { scope: string }) => s.scope)).toEqual([MG_EXAMPLE, SUB_A, RG_ONE]);
+    expect(body.alsoLinkedTo).toEqual([]);
+    expect(await invited()).toBeUndefined();
+    expect(await listAllAuditEntries()).toEqual([]);
+  });
+
+  it('creates the person mirrored to the account, at the Role chosen, with the Scopes the server read', async () => {
+    const res = await invite({ role: 'editor', source: 'mirrored', objectId: ACCOUNT });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({ role: 'editor', accessSource: 'mirrored', linkedAccount: { objectId: ACCOUNT } });
+    expect(body.mirror.lastSuccessAt).not.toBeNull();
+    const rows = (await listAssignmentsFor(body.id)).map(r => [r.scope, r.role]).sort();
+    expect(rows).toEqual([[MG_EXAMPLE, 'editor'], [RG_ONE, 'editor'], [SUB_A, 'editor']].sort());
+
+    const [entry] = await auditFor('user.invite');
+    expect(entry!.details).toEqual({ changed: ['role', 'accessSource', 'assignments', 'linkedAccount'] });
+    expect(JSON.stringify(entry)).not.toContain(ACCOUNT);
+    expect(JSON.stringify(entry)).not.toContain(MIRROR_TENANT);
+  });
+
+  it('creates no one when the read fails, and says nothing Azure said', async () => {
+    azure.failWith = new Error(LEAK);
+    const res = await invite({ role: 'viewer', source: 'mirrored', objectId: ACCOUNT });
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain('AuthorizationFailed');
+    expect(await invited()).toBeUndefined();
+    expect(await auditFor('user.invite')).toEqual([]);
+  });
+
+  it('refuses a bad object id, a list of Scopes beside a Linked account, an unknown source and an Admin, creating no one', async () => {
+    for (const body of [
+      { role: 'viewer', source: 'mirrored', objectId: 'not-a-guid' },
+      { role: 'viewer', source: 'mirrored' },
+      { role: 'viewer', source: 'mirrored', objectId: ACCOUNT, access: [{ scope: SUB_A, role: 'viewer' }] },
+      { role: 'viewer', objectId: ACCOUNT, access: [{ scope: SUB_A, role: 'viewer' }] },
+      { role: 'viewer', source: 'automatic', access: [{ scope: SUB_A, role: 'viewer' }] },
+      { role: 'admin', source: 'mirrored', objectId: ACCOUNT },
+    ]) {
+      expect((await invite(body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(await invited()).toBeUndefined();
+    expect(azure.calls).toEqual([]);
+  });
+
+  it.each(['viewer', 'editor'] as const)('refuses the preview to a %s with a 403, without reading Azure', async (who) => {
+    signInAs(await makeUser(`${who}-two@example.com`, who));
+    expect((await invitePreview.POST(jsonRequest('POST', { objectId: ACCOUNT }))).status).toBe(403);
+    expect(azure.calls).toEqual([]);
   });
 });

@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { PersonalRuleResults } from '@/components/rules/personal-rule-results';
 import { ScopeTreePicker } from '@/components/rules/scope-tree-picker';
 import type { CoveredScopeView } from '@/lib/run-scope';
+import { reviewDiff } from '@/lib/library-request-diff';
 import type { Category, LibraryRequestDetail, PersonalRuleResult, Severity } from '@/lib/types';
 
 const SEVERITY_OPTIONS: readonly SelectOption[] = (['critical', 'high', 'medium', 'low', 'info'] as Severity[])
@@ -88,6 +89,8 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
   if (categoryMissing) categoryOptions.push({ value: category, label: `${category} (no longer exists)` });
 
   const scope = { level: definition.scope?.level ?? 'subscription', subscriptions, managementGroups };
+  // Redrawn as the reviewer edits, so the lines are what an approval would write. Falls back to the server's.
+  const diff = reviewDiff(request, { name, category, severity, scope }) ?? request.diff;
   const base = `/api/library-requests/${encodeURIComponent(request.id)}`;
 
   async function send(kind: 'preview' | 'approve' | 'reject', path: string, body: unknown): Promise<unknown | null> {
@@ -190,12 +193,12 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
           )}
         </div>
 
-        {open && isUpdate && target && request.diff && (
+        {open && isUpdate && target && diff && (
           <div className="space-y-2">
             <h2 className="title-grid">Changes to the library rule</h2>
             <p className="text-xs text-ink-2">- Removed from the library rule as it is now. + Added by this request.</p>
             <pre aria-label="Definition line diff" className="bg-surface-sunken p-3 whitespace-pre-wrap break-all text-xs">
-              {request.diff.map((line, index) => (
+              {diff.map((line, index) => (
                 <span key={index} className={`block ${line.kind === 'removed' ? 'text-muted-foreground line-through' : line.kind === 'added' ? 'text-ink font-medium' : 'text-ink-2'}`}>
                   {line.kind === 'removed' ? '- ' : line.kind === 'added' ? '+ ' : '  '}{line.text || '\u00a0'}
                 </span>

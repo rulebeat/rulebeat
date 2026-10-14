@@ -6,7 +6,7 @@ import { azureError } from '@/lib/api-error';
 import { createTenantContext } from '@/lib/azure-credential';
 import { writeAudit } from '@/lib/db/audit';
 import { deletePersonalRule, getPersonalRule, listPersonalRuleResults, updatePersonalRule } from '@/lib/db/personal-rules';
-import { listLibraryRequestsForPersonalRule, withdrawLibraryRequest } from '@/lib/db/library-requests';
+import { listLibraryRequestsForPersonalRule } from '@/lib/db/library-requests';
 import { authorRequestView } from '@/lib/library-request-view';
 import { changedFields } from '@/lib/changed-fields';
 import { limitedContext } from '@/lib/personal-rule-run';
@@ -80,16 +80,15 @@ export async function DELETE(_req: Request, ctx: Params) {
   const existing = await getPersonalRule(id, actor.id);
   if (!existing) return NOT_FOUND();
 
-  // An open request for a rule that is going away is the author's to take back, so it is withdrawn with it.
-  const open = (await listLibraryRequestsForPersonalRule(id, actor.id)).find(request => request.status === 'open');
-  const withdrawn = open ? await withdrawLibraryRequest(open.id, actor.id) : null;
-  if (!(await deletePersonalRule(id, actor.id))) return NOT_FOUND();
-  if (withdrawn?.ok) {
+  // An open request for a rule that is going away is the author's to take back, so the delete withdraws it.
+  const deleted = await deletePersonalRule(id, actor.id);
+  if (!deleted) return NOT_FOUND();
+  for (const requestId of deleted.withdrawnRequestIds) {
     await writeAudit({
       actor,
       action: 'library_request.withdraw',
       entityType: 'library_request',
-      entityId: withdrawn.request.id,
+      entityId: requestId,
       summary: `Withdrew the library request for "${existing.name}" because the Personal rule was deleted`,
       details: { personalRuleId: id, reason: 'rule deleted' },
     });

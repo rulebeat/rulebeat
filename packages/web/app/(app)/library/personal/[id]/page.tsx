@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { listCategories } from '@/lib/db/categories';
 import { listLibraryRequestsForPersonalRule } from '@/lib/db/library-requests';
 import { getPersonalRule, listPersonalRuleResults, listPersonalRules } from '@/lib/db/personal-rules';
-import { authorRequestView } from '@/lib/library-request-view';
+import { alreadyInLibraryMessage, authorRequestView } from '@/lib/library-request-view';
 import { viewCoveredScope, parseCoveredScope } from '@/lib/covered-scope-view';
 import { planPersonalRun } from '@/lib/personal-rule-run';
 import { can, mayAct } from '@/lib/rbac';
@@ -44,7 +44,7 @@ export default async function PersonalRulePage({ params }: { params: Promise<{ i
   // Copy to library is for reviewers only. Off while the rule is already in the library, so a second click cannot add it twice.
   const inLibrary = copiedTo ?? requests.find(r => r.status === 'approved')?.libraryRule ?? null;
   const copyToLibrary = mayAct(access, 'rules:write')
-    ? { reason: inLibrary ? `This rule is already in the library as "${inLibrary.name}".` : null }
+    ? { reason: inLibrary ? alreadyInLibraryMessage(inLibrary.name) : null }
     : null;
 
   // Update requests aim at one custom library rule: the one this rule already made, or the one it was copied from.

@@ -1944,8 +1944,8 @@ const WRITE_CASES: Record<string, WriteCase> = {
 /** The routes that write and are checked by their own `describe`, because what they ask is where a finding sits. */
 const PLACED_WRITES = ['suppressions POST', 'suppressions/[id] DELETE'];
 
-/** The one handler that names a write action and is not in the table, with the ticket that covers it. */
-const WRITE_SWEEP_EXCEPTIONS: Record<string, string> = { 'schedules/[id]/run POST': '#276' };
+/** The one handler that names a write action and is not in the table, with where it is checked instead. */
+const WRITE_SWEEP_EXCEPTIONS: Record<string, string> = { 'schedules/[id]/run POST': 'checked by the schedules/[id]/run case of the matrix above, since it runs rather than writes (#276)' };
 
 const WRITE_VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
@@ -1982,8 +1982,8 @@ describe('every handler that writes is in the write table', () => {
     expect(Object.keys(WRITE_CASES).concat(PLACED_WRITES).filter(handler => !named.includes(handler))).toEqual([]);
   });
 
-  it('names the ticket for the one exception, and no other', () => {
-    expect(WRITE_SWEEP_EXCEPTIONS).toEqual({ 'schedules/[id]/run POST': '#276' });
+  it('says where the one exception is checked, and has no other', () => {
+    expect(WRITE_SWEEP_EXCEPTIONS).toEqual({ 'schedules/[id]/run POST': 'checked by the schedules/[id]/run case of the matrix above, since it runs rather than writes (#276)' });
   });
 
   it('says what a handler missing from the table looks like', () => {

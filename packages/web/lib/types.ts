@@ -454,6 +454,8 @@ export interface LibraryRequestDetail extends LibraryRequestSummary {
   targetChanged?: boolean;
   /** Update requests only: lines from the target as it is now to the sent definition. Empty once the target is gone. */
   diff?: QueryDiffLine[];
+  /** Update requests only: the target as it is now, as the lines a diff reads. Absent once the target is gone. */
+  targetLines?: string;
   /** Update requests only: whether the target is enabled right now, which an approval keeps unless the reviewer sets it. */
   targetEnabled?: boolean;
 }

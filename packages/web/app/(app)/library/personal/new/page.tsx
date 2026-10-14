@@ -8,7 +8,7 @@ import { listCategories } from '@/lib/db/categories';
 import { listPersonalRules } from '@/lib/db/personal-rules';
 import { can } from '@/lib/rbac';
 import { allTagsFromRules } from '@/lib/rules';
-import { mayWriteQueries, queryScopeLimit } from '@/lib/written-query';
+import { mayQueryDirectory, mayWriteQueries, queryScopeLimit } from '@/lib/written-query';
 
 export default async function NewPersonalRulePage() {
   const user = await getCurrentUser();
@@ -16,6 +16,7 @@ export default async function NewPersonalRulePage() {
 
   const access = await resolveAccess(user);
   const mayWrite = mayWriteQueries(access);
+  const directory = mayQueryDirectory(access);
 
   return (
     <>
@@ -30,6 +31,7 @@ export default async function NewPersonalRulePage() {
             allTags={allTagsFromRules(await listPersonalRules(user.id))}
             categories={await listCategories()}
             scopeLimit={queryScopeLimit(access) ?? undefined}
+            directoryUnavailable={directory.ok ? undefined : directory.error}
           />
         ) : (
           <Callout tone="warn">{mayWrite.error}</Callout>

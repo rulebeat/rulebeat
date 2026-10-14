@@ -16,12 +16,35 @@ import {
 
 const ROLE_OPTIONS = (['viewer', 'editor'] as const).map(r => ({ value: r, label: ROLE_LABELS[r] }));
 
-interface Preview {
+export interface MirrorPreview {
   scopes: { scope: string; kind: string; origins: ScopeOrigin[] }[];
   alsoLinkedTo: { id: string; email: string }[];
 }
 
 type Answer<T> = (T & { error?: string }) | { error?: string };
+
+/** What a preview found for an account: its Scopes with the Azure roles behind them, and who else is linked to it. */
+export function MirrorPreviewList({ preview, email, role }: { preview: MirrorPreview; email: string; role: GrantRole }) {
+  const others = alsoLinkedNote(preview.alsoLinkedTo);
+  return (
+    <>
+      <Label>Scopes {email} would get as {ROLE_LABELS[role]}</Label>
+      <p className="text-sm text-ink">{previewHeading(preview.scopes, email)}</p>
+      {preview.scopes.length > 0 && (
+        <ul className="divide-y divide-border bg-surface">
+          {preview.scopes.map(s => (
+            <li key={s.scope} className="px-3 py-2">
+              <div className="text-sm font-medium text-ink">{describeScopePath(s.scope)}</div>
+              <div className="font-mono text-xs text-ink-2">{s.scope}</div>
+              <div className="text-xs text-ink-2">{describeOrigins(s.origins)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {others && <Callout tone="warn">{others}</Callout>}
+    </>
+  );
+}
 
 /**
  * Chooses Mirrored access for one person: one Role and a Linked account. Saving runs the mirror once and shows the
@@ -39,7 +62,7 @@ export function MirroredAccessRow({ user, signInTenantIsAzureTenant, modeSwitch,
 }) {
   const [role, setRole] = useState<GrantRole>(user.role === 'editor' ? 'editor' : 'viewer');
   const [objectId, setObjectId] = useState('');
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<MirrorPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,10 +82,10 @@ export function MirroredAccessRow({ user, signInTenantIsAzureTenant, modeSwitch,
   async function runPreview() {
     setBusy(true);
     setError(null);
-    const answer = await send<Preview>('POST', '/preview', { objectId: objectId.trim() });
+    const answer = await send<MirrorPreview>('POST', '/preview', { objectId: objectId.trim() });
     setBusy(false);
     if (!answer.ok) { setError(answer.body.error ?? 'Could not read this account.'); return; }
-    setPreview(answer.body as Preview);
+    setPreview(answer.body as MirrorPreview);
   }
 
   async function confirm() {
@@ -75,7 +98,6 @@ export function MirroredAccessRow({ user, signInTenantIsAzureTenant, modeSwitch,
   }
 
   const replaces = replacesManualNote(user.access);
-  const others = preview ? alsoLinkedNote(preview.alsoLinkedTo) : null;
 
   return (
     <tr className="border-b border-border bg-surface-sunken last:border-0">
@@ -147,20 +169,7 @@ export function MirroredAccessRow({ user, signInTenantIsAzureTenant, modeSwitch,
           ) : (
             <>
               <div className="space-y-1.5">
-                <Label>Scopes {user.email} would get as {ROLE_LABELS[role]}</Label>
-                <p className="text-sm text-ink">{previewHeading(preview.scopes, user.email)}</p>
-                {preview.scopes.length > 0 && (
-                  <ul className="divide-y divide-border bg-surface">
-                    {preview.scopes.map(s => (
-                      <li key={s.scope} className="px-3 py-2">
-                        <div className="text-sm font-medium text-ink">{describeScopePath(s.scope)}</div>
-                        <div className="font-mono text-xs text-ink-2">{s.scope}</div>
-                        <div className="text-xs text-ink-2">{describeOrigins(s.origins)}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {others && <Callout tone="warn">{others}</Callout>}
+                <MirrorPreviewList preview={preview} email={user.email} role={role} />
                 {replaces && <Callout tone="warn">{replaces}</Callout>}
                 <FieldHint>
                   Confirming reads the account again and stores what it finds. RuleBeat then refreshes it every hour.

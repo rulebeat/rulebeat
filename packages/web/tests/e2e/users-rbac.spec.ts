@@ -10,7 +10,10 @@ test('admin adds a viewer user from Access, then a viewer signs in, sees no muta
   await page.goto(`${ADMIN_URL}/access`);
   await page.getByRole('button', { name: 'Add user' }).click();
   await page.getByLabel('Work email').fill(newUserEmail);
-  // An invited Viewer is given what an Admin picks: nothing is preselected, and Add stays disabled until it is.
+  // An invited Viewer is given what an Admin picks: no source and no Scope is preselected, and Add stays
+  // disabled until both are.
+  await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Manual access' }).click();
   await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
   await page.getByLabel('Give access to Everything').check();
   // exact: true: the accessible name "Add user" otherwise matches this substring search too.

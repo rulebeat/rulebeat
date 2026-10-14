@@ -1,7 +1,8 @@
 import { db } from './client';
 import { personalRules, personalRuleResults, libraryRequests } from './tables';
 import { and, desc, eq } from 'drizzle-orm';
-import { many, one, run, inTransaction, type DbHandle } from './exec';
+import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
+import { LIBRARY_REQUEST_LOCK_KEY, withdrawOpenRequestsOfRuleOn } from './library-request-cleanup';
 import { chunk } from './chunk';
 import type {
   Condition, ConditionGroup, GraphQuery, ModuleCategory, QueryBackend, Rule, RuleKind, RuleScope, Severity,
@@ -170,9 +171,9 @@ export async function listPersonalRules(ownerId: string): Promise<PersonalRule[]
 }
 
 /** Null both for a rule that does not exist and for one that belongs to someone else. */
-export async function getPersonalRule(id: string, ownerId: string): Promise<PersonalRule | null> {
+export async function getPersonalRule(id: string, ownerId: string, handle: DbHandle = db): Promise<PersonalRule | null> {
   const row = await one(
-    db.select().from(personalRules).where(and(eq(personalRules.id, id), eq(personalRules.ownerId, ownerId))),
+    handle.select().from(personalRules).where(and(eq(personalRules.id, id), eq(personalRules.ownerId, ownerId))),
   );
   return row ? rowToRule(row) : null;
 }
@@ -210,19 +211,25 @@ export async function updatePersonalRule(
   return getPersonalRule(id, ownerId);
 }
 
-/** False when the owner has no such rule. The rule and its results go in one transaction. */
-export async function deletePersonalRule(id: string, ownerId: string): Promise<boolean> {
+/**
+ * Null when the owner has no such rule. The rule, its results and its open Library request go in one
+ * transaction: an open request for a rule that is going away is the author's to take back, so it is withdrawn
+ * with it, and the ids withdrawn come back for the audit log.
+ */
+export async function deletePersonalRule(id: string, ownerId: string): Promise<{ withdrawnRequestIds: string[] } | null> {
   return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, LIBRARY_REQUEST_LOCK_KEY);
     const existing = await one(
       tx.select({ id: personalRules.id }).from(personalRules)
         .where(and(eq(personalRules.id, id), eq(personalRules.ownerId, ownerId))),
     );
-    if (!existing) return false;
+    if (!existing) return null;
     await run(tx.delete(personalRuleResults).where(eq(personalRuleResults.personalRuleId, id)));
+    const withdrawnRequestIds = await withdrawOpenRequestsOfRuleOn(tx, id, ownerId);
     // Its Library requests stay as history, without the pointer to a rule that no longer exists (#282).
     await run(tx.update(libraryRequests).set({ personalRuleId: null }).where(eq(libraryRequests.personalRuleId, id)));
     await run(tx.delete(personalRules).where(eq(personalRules.id, id)));
-    return true;
+    return { withdrawnRequestIds };
   });
 }
 

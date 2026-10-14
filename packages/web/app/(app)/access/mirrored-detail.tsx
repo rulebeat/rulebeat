@@ -5,11 +5,20 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import type { AppUserWithAccess } from '@/lib/access';
-import { describeMirrorStatus, describeOrigins } from '@/lib/access-mirror-model';
+import { describeMirrorStatus, describeOrigins, describeOwnMirrorStatus, type MirrorStatus } from '@/lib/access-mirror-model';
 import { describeScopePath } from '@/lib/access-picker';
 import { ROLE_LABELS } from '@/lib/rbac';
 
 const formatTime = (iso: string): string => new Date(iso).toLocaleString();
+
+/**
+ * The last refresh of a Linked account, in the reader's own time: a failure as an error, anything else as a line.
+ * `own` words it for the person themselves, who has no Refresh to press.
+ */
+export function MirrorStatusLine({ status, own = false }: { status: MirrorStatus; own?: boolean }) {
+  const text = (own ? describeOwnMirrorStatus : describeMirrorStatus)(status, formatTime);
+  return status.error ? <Callout tone="error">{text}</Callout> : <p className="text-sm text-ink-2">{text}</p>;
+}
 
 /**
  * What a mirrored person's access is made of, for an Admin: the Linked account, when it was last read, why the
@@ -62,9 +71,7 @@ export function MirroredDetailRow({ user, disabled, onChanged }: {
             </Button>
           </div>
           {error && <Callout tone="error">{error}</Callout>}
-          {status?.error
-            ? <Callout tone="error">{describeMirrorStatus(status, formatTime)}</Callout>
-            : <p className="text-sm text-ink-2">{status ? describeMirrorStatus(status, formatTime) : ''}</p>}
+          {status && <MirrorStatusLine status={status} />}
           {user.mirroredScopes.length === 0 ? (
             <p className="text-sm text-ink-2">
               The Linked account holds no Azure role assignments RuleBeat can see, so this person sees no findings.

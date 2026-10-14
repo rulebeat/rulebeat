@@ -236,4 +236,32 @@ describe('upgrading to role assignments', () => {
     expect(await product.requireRole('read')).not.toBeInstanceOf(NextResponse);
     expect((await product.listUsers()).find(u => u.id === ID.viewer)?.accessSource).toBe('manual');
   });
+
+  it('lets an upgraded Viewer read every finding through the findings route, and a person narrowed to no Scope none (#267)', async () => {
+    const { sample, db } = previousReleaseDatabase();
+    db.close();
+    await startProductOn(sample.file);
+    const { loadRules } = await import('@/lib/rules');
+    const { storeScan, syntheticFinding } = await import('../helpers/synthetic-findings');
+    const { emptyView, viewToSearchParams } = await import('@/lib/finding-view');
+    const { deleteAssignmentsOn } = await import('@/lib/db/role-assignments');
+    const { db: productDb } = await import('@/lib/db/client');
+    const viewRoute = await import('@/app/api/findings/view/route');
+    const ruleId = (await loadRules()).find(r => r.queryBackend === 'resource-graph')!.id;
+    await storeScan([
+      syntheticFinding('vm-one', [{}], { ruleId, subscriptionId: 'sub-1' }),
+      syntheticFinding('vm-two', [{}], { ruleId, subscriptionId: 'sub-2' }),
+    ], { scanId: 'scan-after-upgrade', finishedAt: '2026-01-04T00:00:00.000Z' });
+    const names = async (uid: string) => {
+      mockAuth.mockResolvedValue({ user: { uid } });
+      const res = await viewRoute.GET(new Request(`http://localhost/api/findings/view?${viewToSearchParams(emptyView(), { tab: 'results' })}`));
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { items: { finding: { resourceName: string } }[] }).items.map(i => i.finding.resourceName).sort();
+    };
+
+    expect(await names(ID.viewer)).toEqual(['vm-one', 'vm-two']);
+    expect(await names(ID.pendingEditor)).toEqual(['vm-one', 'vm-two']);
+    await deleteAssignmentsOn(productDb, ID.withOid);
+    expect(await names(ID.withOid)).toEqual([]);
+  });
 });

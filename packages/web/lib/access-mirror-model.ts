@@ -192,6 +192,12 @@ export function describeMirrorStatus(status: MirrorStatus, format: (iso: string)
   return 'Not refreshed yet. Use Refresh to read the Linked account from Azure.';
 }
 
+/** What a mirrored person is told about the last refresh of their own access: the same facts, with nothing for them to press. */
+export function describeOwnMirrorStatus(status: MirrorStatus, format: (iso: string) => string): string {
+  if (!status.error && !status.lastSuccessAt) return 'Not read from Azure yet. RuleBeat reads your Linked account every hour.';
+  return describeMirrorStatus(status, format);
+}
+
 /** What the person is told about their own access when the Linked account gives them no Scope. */
 export const MIRRORED_NO_SCOPE_MESSAGE =
   'Your Linked account holds no Azure role assignments RuleBeat can see, so no findings are listed for you. Ask an Admin to check the account that is linked.';
