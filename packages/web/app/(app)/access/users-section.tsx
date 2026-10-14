@@ -12,7 +12,9 @@ import {
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
 import { describeAccess, EVERYTHING_SCOPE_PATH, type GrantRole, type ManualGrant } from '@/lib/access-model';
-import { canInvite, canInviteMirrored, canPreviewMirror, EDIT_STOPS_MIRROR_NOTE, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
+import {
+  canInvite, canInviteMirrored, canPreviewMirror, EDIT_STOPS_MIRROR_NOTE, editSaveRequest, grantsOfAccess, setEveryRole, shownRole,
+} from '@/lib/access-picker';
 import { Plus, Trash2, Check, X, Mail, ShieldCheck, KeyRound } from 'lucide-react';
 import { MirroredAccessRow, MirrorPreviewList, type MirrorPreview } from './mirrored-access-form';
 import { MirroredDetailRow } from './mirrored-detail';
@@ -135,7 +137,7 @@ export function InviteRow({ onSave, onCancel, saving }: {
               <FieldHint>
                 {grants.length === 0
                   ? 'Choose at least one. They see only the findings inside what you choose, and can act only there.'
-                  : 'Each Scope has its own Role. Change one to make this person an Editor in one place and a Viewer in another.'}
+                  : 'Each Scope takes the Role above. Choose "Different Role here" on a row to give that Scope another.'}
               </FieldHint>
             </div>
           )}
@@ -287,6 +289,7 @@ function EditAccessRow({ user, saving, signInTenantIsAzureTenant, onSaveAccess, 
 }) {
   const [mode, setMode] = useState<'manual' | 'mirrored'>('manual');
   const modeSwitch = <SourceSwitch mode={mode} onChange={setMode} />;
+  const initial = grantsOfAccess(user.access);
   if (mode === 'mirrored') {
     return (
       <MirroredAccessRow
@@ -301,14 +304,62 @@ function EditAccessRow({ user, saving, signInTenantIsAzureTenant, onSaveAccess, 
   return (
     <AccessPromptRow
       heading={`What ${user.email} can access`}
-      hint="Each Scope has its own Role. Saving replaces everything this person had."
+      hint={'Each Scope takes their Role until you choose "Different Role here" on it. Saving replaces everything this person had.'}
       notice={user.accessSource === 'mirrored' ? EDIT_STOPS_MIRROR_NOTE : undefined}
       modeSwitch={modeSwitch}
-      initial={grantsOfAccess(user.access)}
+      initial={initial}
       defaultRole={user.role as GrantRole}
       confirmLabel="Save access"
       saving={saving}
-      onConfirm={onSaveAccess}
+      onConfirm={grants => {
+        // A list nobody changed is not sent: the route would refuse a held management group the tree no longer has.
+        const request = editSaveRequest(initial, grants, user.accessSource);
+        if (request) onSaveAccess(request); else onCancel();
+      }}
+      onCancel={onCancel}
+    />
+  );
+}
+
+/**
+ * Demote for one Admin: what they keep, as Manual access picked by hand (Everything is preselected) or as Mirrored
+ * access from a Linked account. It opens on Manual access, like Edit.
+ */
+function DemoteAccessRow({ user, role, saving, signInTenantIsAzureTenant, onDemote, onDemoted, onMirrored, onCancel }: {
+  user: AppUserWithAccess;
+  role: Role;
+  saving: boolean;
+  signInTenantIsAzureTenant: boolean;
+  onDemote: (role: Role, access: ManualGrant[]) => void;
+  onDemoted: (user: AppUserWithAccess) => void;
+  onMirrored: (user: AppUserWithAccess) => void;
+  onCancel: () => void;
+}) {
+  const [mode, setMode] = useState<'manual' | 'mirrored'>('manual');
+  const modeSwitch = <SourceSwitch mode={mode} onChange={setMode} />;
+  if (mode === 'mirrored') {
+    return (
+      <MirroredAccessRow
+        user={user}
+        signInTenantIsAzureTenant={signInTenantIsAzureTenant}
+        modeSwitch={modeSwitch}
+        demoteTo={role as GrantRole}
+        onSaved={onMirrored}
+        onDemoted={onDemoted}
+        onCancel={onCancel}
+      />
+    );
+  }
+  return (
+    <AccessPromptRow
+      heading={`What ${user.email} can access as ${ROLE_LABELS[role]}`}
+      hint="An Admin holds everything, so the access they keep after this is chosen here. Everything is preselected: remove it to choose narrower access."
+      modeSwitch={modeSwitch}
+      initial={[{ scope: EVERYTHING_SCOPE_PATH, role: role as GrantRole }]}
+      defaultRole={role as GrantRole}
+      confirmLabel={`Make ${ROLE_LABELS[role]}`}
+      saving={saving}
+      onConfirm={access => onDemote(role, access)}
       onCancel={onCancel}
     />
   );
@@ -318,7 +369,7 @@ function EditAccessRow({ user, saving, signInTenantIsAzureTenant, onSaveAccess, 
  *  when that changes. */
 export function PromptRows({
   user, editing, demotingTo, saving, signInTenantIsAzureTenant = false, onSaveAccess, onMirrored = () => undefined,
-  onDemote, onCancelEdit, onCancelDemote,
+  onDemoted = () => undefined, onDemote, onCancelEdit, onCancelDemote,
 }: {
   user: AppUserWithAccess;
   editing: boolean;
@@ -328,6 +379,8 @@ export function PromptRows({
   signInTenantIsAzureTenant?: boolean;
   onSaveAccess: (grants: ManualGrant[]) => void;
   onMirrored?: (user: AppUserWithAccess) => void;
+  /** An Admin was demoted but their Mirrored access was not saved: the row as the demote left it. */
+  onDemoted?: (user: AppUserWithAccess) => void;
   onDemote: (role: Role, access: ManualGrant[]) => void;
   onCancelEdit: () => void;
   onCancelDemote: () => void;
@@ -346,15 +399,15 @@ export function PromptRows({
         />
       )}
       {demotingTo && (
-        <AccessPromptRow
+        <DemoteAccessRow
           key={demotePromptKey(demotingTo)}
-          heading={`What ${user.email} can access as ${ROLE_LABELS[demotingTo]}`}
-          hint="An Admin holds everything, so the access they keep after this is chosen here. Everything is preselected."
-          initial={[{ scope: EVERYTHING_SCOPE_PATH, role: demotingTo as GrantRole }]}
-          defaultRole={demotingTo as GrantRole}
-          confirmLabel={`Make ${ROLE_LABELS[demotingTo]}`}
+          user={user}
+          role={demotingTo}
           saving={saving}
-          onConfirm={access => onDemote(demotingTo, access)}
+          signInTenantIsAzureTenant={signInTenantIsAzureTenant}
+          onDemote={onDemote}
+          onDemoted={onDemoted}
+          onMirrored={onMirrored}
           onCancel={onCancelDemote}
         />
       )}
@@ -379,6 +432,7 @@ export function UsersSection({
   const [saving, setSaving] = useState(false);
   const [passwordBusyFor, setPasswordBusyFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const adminCount = users.filter(u => u.role === 'admin').length;
   // The API refuses this too: the disabled control just explains why before the click.
@@ -386,6 +440,11 @@ export function UsersSection({
 
   /** A Role change. Demoting an Admin first asks what they are to access, so it opens that prompt instead. */
   function changeRole(user: AppUserWithAccess, role: Role) {
+    if (user.role === 'admin' && role === 'admin') {
+      // Back to Admin while the demote panel is open: nothing changes, so the panel closes.
+      setDemoting(null);
+      return;
+    }
     if (user.role === 'admin' && role !== 'admin') {
       setError(null);
       setEditingAccess(null);
@@ -426,6 +485,7 @@ export function UsersSection({
       if (!res.ok) { setError(body.error ?? 'Failed to change access'); return; }
       setUsers(us => us.map(u => u.id === user.id ? body : u));
       setEditingAccess(null);
+      setDemoting(null);
     } catch {
       setError('Could not reach the RuleBeat server.');
     } finally { setSaving(false); }
@@ -508,6 +568,11 @@ export function UsersSection({
     } finally { setPasswordBusyFor(null); }
   }
 
+  const needle = search.trim().toLowerCase();
+  const shown = needle === ''
+    ? users
+    : users.filter(u => u.email.toLowerCase().includes(needle) || (u.name ?? '').toLowerCase().includes(needle));
+
   return (
     <Card>
       <CardHeader>
@@ -521,6 +586,17 @@ export function UsersSection({
       </CardHeader>
       <CardContent className="p-0">
         {error && <Callout tone="error" className="border-x-0 border-t-0">{error}</Callout>}
+        <div className="px-5 py-3">
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or email"
+            aria-label="Search users"
+            className="max-w-sm"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
 
         <TableScroll>
           <Table>
@@ -536,16 +612,16 @@ export function UsersSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map(user => {
+              {shown.map(user => {
                 const isLastAdmin = user.role === 'admin' && adminCount === 1;
                 return (
                   <Fragment key={user.id}>
                   <TableRow className="group transition-colors hover:bg-surface-hover">
                     <TableCell>
-                      <div className="font-medium text-ink">{user.name ?? user.email}</div>
-                      {user.name && <div className="text-xs text-ink">{user.email}</div>}
+                      <div className="max-w-64 truncate font-medium text-ink" title={user.name ?? user.email}>{user.name ?? user.email}</div>
+                      {user.name && <div className="max-w-64 truncate text-xs text-ink" title={user.email}>{user.email}</div>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {user.oid ? (
                         <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
                           <span className="size-2 shrink-0 bg-ink-muted" />
@@ -562,7 +638,7 @@ export function UsersSection({
                     </TableCell>
                     <TableCell shrink>
                       <RoleSelect
-                        value={user.role}
+                        value={shownRole(user, demoting)}
                         disabled={saving || isLastAdmin}
                         title={isLastAdmin ? lastAdminNote : undefined}
                         onChange={r => changeRole(user, r)}
@@ -653,9 +729,15 @@ export function UsersSection({
                     onMirrored={updated => {
                       setUsers(us => us.map(u => u.id === updated.id ? updated : u));
                       setEditingAccess(null);
+                      setDemoting(null);
                     }}
+                    onDemoted={updated => setUsers(us => us.map(u => u.id === updated.id ? updated : u))}
                     onSaveAccess={grants => { void saveAccess(user, grants); }}
-                    onDemote={(role, access) => { void sendRole(user, { role, access }); }}
+                    onDemote={(role, access) => {
+                      // Someone already demoted by a Mirrored attempt that failed is no Admin now: their access is set, not their Role.
+                      if (user.role === 'admin') void sendRole(user, { role, access });
+                      else void saveAccess(user, access);
+                    }}
                     onCancelEdit={() => setEditingAccess(null)}
                     onCancelDemote={() => setDemoting(null)}
                   />
@@ -674,6 +756,9 @@ export function UsersSection({
                   <ShieldCheck className="mx-auto mb-2 size-5 text-ink-faint" />
                   No one has signed in yet.
                 </TableEmpty>
+              )}
+              {users.length > 0 && shown.length === 0 && (
+                <TableEmpty colSpan={7}>No one matches “{search.trim()}”. Search by part of a name or an email.</TableEmpty>
               )}
             </TableBody>
           </Table>

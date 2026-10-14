@@ -7,9 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { buildAccess, parseScope, type ManualGrant } from '@/lib/access-model';
 import {
   alsoLinkedNote, canInvite, canInviteMirrored, canPreviewMirror, canUseSignInAccount, EDIT_STOPS_MIRROR_NOTE, previewHeading, replacesManualNote,
-  describeScopePath, grantsOfAccess, heldAt, resourceGroupScopePath, resourceGroupsHeld, setEveryRole, setGrantRole,
-  pickerGroups, subscriptionScopePath, subscriptionsNamed, toggleGrant,
+  addGrant, coveringGrant, demotedWithoutAccessMessage, demoteToMirrored, describeScopePath, editSaveRequest, filterTree, GROUPS_LOAD_FAILED_MESSAGE, grantsOfAccess, heldAt, heldRows, NO_SUBSCRIPTIONS_MESSAGE, nothingMatchedMessage, offerStatus,
+  managementGroupPathLabel, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes, setEveryRole,
+  setGrantRole, shownRole, subscriptionScopePath, toggleGrant,
 } from '@/lib/access-picker';
+import type { AppUserWithAccess } from '@/lib/access';
 
 import {
   describeMirrorStatus, describeOrigin, describeOrigins, MIRROR_FAILED_MESSAGE, mirrorError, NEVER_MIRRORED, parseOrigins, serializeOrigins,
@@ -53,7 +55,7 @@ describe('reading a person\'s access into the picker', () => {
     ]);
   });
 
-  it('finds the resource groups held in one subscription and the subscriptions a list names', () => {
+  it('finds the resource groups held in one subscription', () => {
     const list: ManualGrant[] = [
       { scope: resourceGroupScopePath(SUB, 'rg-one'), role: 'viewer' },
       { scope: resourceGroupScopePath(SUB.toUpperCase(), 'rg-two'), role: 'viewer' },
@@ -63,7 +65,6 @@ describe('reading a person\'s access into the picker', () => {
     ];
     expect(resourceGroupsHeld(list, SUB)).toEqual(['rg-one', 'rg-two']);
     expect(resourceGroupsHeld(list, OTHER)).toEqual(['rg-one']);
-    expect(subscriptionsNamed(list)).toEqual([SUB, OTHER]);
   });
 });
 
@@ -87,58 +88,337 @@ describe('who can be invited', () => {
   });
 });
 
-describe('the management groups the picker lists (#273)', () => {
-  const T = 'tenant-one';
+describe('the searchable picker (#307)', () => {
+  const ROOT = 'tenant-root';
+  const MG_PATH = (id: string) => `/providers/Microsoft.Management/managementGroups/${id}`;
+  const SUB_PATH = subscriptionScopePath(SUB);
+  const SANDBOX = '00000000-0000-0000-0000-00000000000c';
   const node = (id: string, name: string, parentId: string | null, kind: 'managementGroup' | 'subscription' = 'managementGroup') => ({ id, kind, name, parentId });
-  const loaded = { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null };
-  const view = {
-    nodes: [node(T, 'Root', null), node('mg-b', 'Beta', T), node('mg-a', 'Alpha', T), node('mg-a-child', 'Under alpha', 'mg-a'), node('sub-1', 'One', 'mg-a', 'subscription')],
-    status: loaded,
-  };
+  const nodes = [
+    node(ROOT, 'Tenant Root Group', null),
+    node('mg-enterprise', 'Enterprise', ROOT),
+    node('mg-prod', 'Production', 'mg-enterprise'),
+    node('mg-other', 'Other', ROOT),
+    node(SUB, 'Prod subscription', 'mg-prod', 'subscription'),
+    node(OTHER, 'Loose subscription', 'mg-other', 'subscription'),
+  ];
+  const catalogue = { nodes, subscriptions: [{ id: SUB, name: 'Production workloads' }, { id: SANDBOX, name: 'Sandbox' }] };
 
-  it('lists every management group in tree order with its depth, and no subscription', () => {
-    const { groups, reason } = pickerGroups(view, []);
-    expect(groups.map(g => [g.id, g.name, g.depth, g.missing])).toEqual([
-      [T, 'Root', 0, false], ['mg-a', 'Alpha', 1, false], ['mg-a-child', 'Under alpha', 2, false], ['mg-b', 'Beta', 1, false],
-    ]);
-    expect(groups[1]!.path).toBe('/providers/Microsoft.Management/managementGroups/mg-a');
-    expect(reason).toBeNull();
+  describe('searchScopes', () => {
+    it('finds management groups and subscriptions by display name, in any casing', () => {
+      expect(searchScopes('ENTERPRISE', catalogue).map(c => c.id)).toEqual(['mg-enterprise']);
+      expect(searchScopes('sand', catalogue).map(c => [c.kind, c.name])).toEqual([['subscription', 'Sandbox']]);
+    });
+
+    it('finds them by id, a subscription by its id in any casing', () => {
+      expect(searchScopes('mg-prod', catalogue).map(c => c.id)).toEqual(['mg-prod']);
+      expect(searchScopes(SANDBOX.toUpperCase(), catalogue).map(c => c.path)).toEqual([subscriptionScopePath(SANDBOX)]);
+    });
+
+    it('lists groups before subscriptions, and a subscription both lists know once, under the name Azure gave it', () => {
+      const found = searchScopes('prod', catalogue);
+      expect(found.map(c => [c.kind, c.name])).toEqual([['managementGroup', 'Production'], ['subscription', 'Production workloads']]);
+      expect(found[0]!.path).toBe(MG_PATH('mg-prod'));
+    });
+
+    it('matches nothing for a blank query and for a query nothing contains', () => {
+      expect(searchScopes('', catalogue)).toEqual([]);
+      expect(searchScopes('   ', catalogue)).toEqual([]);
+      expect(searchScopes('no-such-name', catalogue)).toEqual([]);
+    });
+
+    it('searches what has loaded: no tree, or no subscription list, is not an error', () => {
+      expect(searchScopes('sand', { nodes: null, subscriptions: catalogue.subscriptions }).map(c => c.name)).toEqual(['Sandbox']);
+      expect(searchScopes('enterprise', { nodes: catalogue.nodes, subscriptions: null }).map(c => c.name)).toEqual(['Enterprise']);
+    });
   });
 
-  it('lists a held group the tree does not have after the others, so it can be removed', () => {
-    const held: ManualGrant[] = [
-      { scope: '/providers/Microsoft.Management/managementGroups/mg-gone', role: 'editor' },
-      { scope: '/providers/Microsoft.Management/managementGroups/MG-A', role: 'viewer' },
-      { scope: '/subscriptions/00000000-0000-0000-0000-00000000000a', role: 'viewer' },
-    ];
-    const { groups } = pickerGroups(view, held);
-    expect(groups.map(g => [g.id, g.missing])).toEqual([
-      [T, false], ['mg-a', false], ['mg-a-child', false], ['mg-b', false], ['mg-gone', true],
-    ]);
-    expect(groups.at(-1)!.path).toBe(held[0]!.scope);
+  describe('the empty states of Add access', () => {
+    it('says why in three different sentences: nothing matched, groups could not load, no subscriptions', () => {
+      const matched = nothingMatchedMessage('zzz');
+      expect(matched).toContain('“zzz”');
+      expect(new Set([matched, GROUPS_LOAD_FAILED_MESSAGE, NO_SUBSCRIPTIONS_MESSAGE]).size).toBe(3);
+      expect(GROUPS_LOAD_FAILED_MESSAGE).toContain('could not be loaded');
+      expect(NO_SUBSCRIPTIONS_MESSAGE).toContain('No subscriptions were found');
+      expect(matched).not.toContain('could not be loaded');
+      expect(matched).not.toContain('were found');
+    });
   });
 
-  it('lists a held group when there is no tree at all, and still says why the tree is empty', () => {
-    const held: ManualGrant[] = [{ scope: '/providers/Microsoft.Management/managementGroups/mg-gone', role: 'viewer' }];
-    const { groups, reason } = pickerGroups({ nodes: [], status: { lastSuccessAt: null, lastAttemptAt: null, error: null } }, held);
-    expect(groups.map(g => [g.id, g.missing])).toEqual([['mg-gone', true]]);
-    expect(reason).toMatch(/has not been loaded yet/);
+  describe('filterTree', () => {
+    it('keeps each match with every group above it, and nothing else', () => {
+      const names = (found: { id: string }[]) => found.map(n => n.id).sort();
+      expect(names(filterTree(nodes, 'Production'))).toEqual(['mg-enterprise', 'mg-prod', ROOT]);
+      expect(names(filterTree(nodes, 'loose'))).toEqual(['mg-other', OTHER, ROOT].sort());
+    });
+
+    it('matches by id in any casing, and a subscription is kept under its group', () => {
+      const names = filterTree(nodes, SUB.toUpperCase()).map(n => n.id).sort();
+      expect(names).toEqual(['mg-enterprise', 'mg-prod', ROOT, SUB].sort());
+    });
+
+    it('keeps the whole tree for a blank filter and nothing for one that matches nothing', () => {
+      expect(filterTree(nodes, '  ')).toHaveLength(nodes.length);
+      expect(filterTree(nodes, 'no-such-name')).toEqual([]);
+    });
   });
 
-  it('says why it lists none: never refreshed, the last refresh failed, or Azure is not connected', () => {
-    const reasons = [
-      pickerGroups({ nodes: [], status: { lastSuccessAt: null, lastAttemptAt: null, error: null } }, []).reason,
-      pickerGroups({ nodes: [], status: { lastSuccessAt: null, lastAttemptAt: 'A', error: { code: 'failed', message: 'x' } } }, []).reason,
-      pickerGroups({ nodes: [], status: { lastSuccessAt: null, lastAttemptAt: 'A', error: { code: 'azure_not_configured', message: 'x' } } }, []).reason,
-    ];
-    expect(reasons.every(r => typeof r === 'string' && r.length > 0)).toBe(true);
-    expect(new Set(reasons).size).toBe(3);
+  describe('shownRole', () => {
+    it('shows the pending Role while the demote panel is open on that person, and the stored Role otherwise', () => {
+      const admin = { id: 'u-1', role: 'admin' };
+      expect(shownRole(admin, { id: 'u-1', role: 'editor' })).toBe('editor');
+      expect(shownRole(admin, { id: 'u-2', role: 'editor' })).toBe('admin');
+      expect(shownRole(admin, null)).toBe('admin');
+    });
   });
 
-  it('names a management group by its display name when it has one', () => {
+  describe('searchResourceGroups', () => {
+    it('keeps the resource groups that contain the query, in any casing, and all of them for a blank one', () => {
+      const names = ['rg-web', 'RG-data', 'shared'];
+      expect(searchResourceGroups(names, 'RG-')).toEqual(['RG-data', 'rg-web']);
+      expect(searchResourceGroups(names, '')).toEqual(['RG-data', 'rg-web', 'shared']);
+      expect(searchResourceGroups(names, 'zzz')).toEqual([]);
+    });
+  });
+
+  describe('managementGroupPathLabel', () => {
+    it('reads root first, joined by an arrow', () => {
+      expect(managementGroupPathLabel(nodes, 'mg-enterprise')).toBe('Tenant Root Group › Enterprise');
+      expect(managementGroupPathLabel(nodes, 'mg-prod')).toBe('Tenant Root Group › Enterprise › Production');
+      expect(managementGroupPathLabel(nodes, ROOT)).toBe('Tenant Root Group');
+    });
+
+    it('keeps a deep path short, and is just the id for a group the tree lacks', () => {
+      const deep = [node('a', 'A', null), node('b', 'B', 'a'), node('c', 'C', 'b'), node('d', 'D', 'c'), node('e', 'E', 'd')];
+      expect(managementGroupPathLabel(deep, 'e')).toBe('A › … › D › E');
+      expect(managementGroupPathLabel(nodes, 'mg-gone')).toBe('mg-gone');
+    });
+
+    it('ends on a tree that loops', () => {
+      const loop = [node('x', 'X', 'y'), node('y', 'Y', 'x')];
+      expect(managementGroupPathLabel(loop, 'x')).toBe('Y › X');
+    });
+  });
+
+  describe('coveringGrant', () => {
+    const RG_PATH = resourceGroupScopePath(SUB, 'rg-one');
+    const cover = (held: ManualGrant[], path: string, role: 'viewer' | 'editor' = 'viewer') => coveringGrant(held, nodes, path, role)?.scope ?? null;
+
+    it('has Everything cover every Scope, the Directory included', () => {
+      const held: ManualGrant[] = [{ scope: '/', role: 'viewer' }];
+      for (const path of [MG_PATH('mg-prod'), SUB_PATH, RG_PATH, '@directory']) expect(cover(held, path), path).toBe('/');
+    });
+
+    it('has a management group cover the groups below it, the subscriptions under them and their resource groups', () => {
+      const held: ManualGrant[] = [{ scope: MG_PATH('mg-enterprise'), role: 'viewer' }];
+      expect(cover(held, MG_PATH('mg-prod'))).toBe(MG_PATH('mg-enterprise'));
+      expect(cover(held, SUB_PATH)).toBe(MG_PATH('mg-enterprise'));
+      expect(cover(held, RG_PATH)).toBe(MG_PATH('mg-enterprise'));
+    });
+
+    it('has a management group cover nothing above it, beside it, or the Directory', () => {
+      const held: ManualGrant[] = [{ scope: MG_PATH('mg-prod'), role: 'viewer' }];
+      expect(cover(held, MG_PATH('mg-enterprise'))).toBeNull();
+      expect(cover(held, MG_PATH('mg-other'))).toBeNull();
+      expect(cover(held, subscriptionScopePath(OTHER))).toBeNull();
+      expect(cover(held, '@directory')).toBeNull();
+      expect(cover(held, '/')).toBeNull();
+    });
+
+    it('has a subscription cover its resource groups and no other', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH.toUpperCase(), role: 'viewer' }];
+      expect(cover(held, RG_PATH)).toBe(SUB_PATH.toUpperCase());
+      expect(cover(held, resourceGroupScopePath(OTHER, 'rg-one'))).toBeNull();
+      expect(cover(held, subscriptionScopePath(OTHER))).toBeNull();
+    });
+
+    it('covers the Directory by Everything alone', () => {
+      expect(cover([{ scope: MG_PATH(ROOT), role: 'editor' }, { scope: SUB_PATH, role: 'editor' }], '@directory')).toBeNull();
+      expect(cover([{ scope: '/', role: 'viewer' }], '@directory')).toBe('/');
+    });
+
+    it('covers a Scope only at the same or a higher Role, Editor above Viewer', () => {
+      const viewerGroup: ManualGrant[] = [{ scope: MG_PATH('mg-enterprise'), role: 'viewer' }];
+      const editorGroup: ManualGrant[] = [{ scope: MG_PATH('mg-enterprise'), role: 'editor' }];
+      expect(cover(viewerGroup, SUB_PATH, 'viewer')).not.toBeNull();
+      expect(cover(editorGroup, SUB_PATH, 'viewer')).not.toBeNull();
+      expect(cover(editorGroup, SUB_PATH, 'editor')).not.toBeNull();
+      // An Editor on a subscription while a Viewer on a group above it is a real addition.
+      expect(cover(viewerGroup, SUB_PATH, 'editor')).toBeNull();
+    });
+
+    it('counts the same Scope, in any casing, as covered', () => {
+      expect(cover([{ scope: SUB_PATH.toUpperCase(), role: 'editor' }], SUB_PATH)).toBe(SUB_PATH.toUpperCase());
+    });
+
+    it('finds nothing in a tree that does not hold the group or the subscription', () => {
+      expect(coveringGrant([{ scope: MG_PATH('mg-prod'), role: 'viewer' }], [], SUB_PATH, 'viewer')).toBeNull();
+    });
+  });
+
+  describe('adding a Scope that is already held', () => {
+    it('leaves a Scope held at a lower Role in the list, with its Role, instead of toggling it off', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }, { scope: '/', role: 'viewer' }];
+      expect(addGrant(held, SUB_PATH, 'editor')).toEqual(held);
+      expect(addGrant(held, SUB_PATH.toUpperCase(), 'viewer')).toEqual(held);
+      expect(addGrant(held, '/', 'editor')).toEqual(held);
+    });
+
+    it('adds a Scope that is not held, at the Role given', () => {
+      expect(addGrant([], SUB_PATH, 'editor')).toEqual([{ scope: SUB_PATH, role: 'editor' }]);
+    });
+
+    it('says a held Scope is held, at its own Role, even when the person is higher; and says what covers a covered one', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }, { scope: MG_PATH('mg-other'), role: 'viewer' }];
+      expect(offerStatus(held, nodes, SUB_PATH, 'editor')).toBe('Held at Viewer');
+      expect(offerStatus(held, nodes, subscriptionScopePath(OTHER), 'viewer', { 'mg-other': 'Other' })).toBe('Covered by Management group Other');
+      // An Editor addition under a Viewer group is real: nothing blocks it.
+      expect(offerStatus(held, nodes, subscriptionScopePath(OTHER), 'editor')).toBeNull();
+      expect(offerStatus([], nodes, SUB_PATH, 'viewer')).toBeNull();
+    });
+  });
+
+  describe('roleLocked', () => {
+    it('locks a Scope held at the person\'s Role, and unlocks it when the Admin asks for a different one', () => {
+      const grant: ManualGrant = { scope: SUB_PATH, role: 'viewer' };
+      expect(roleLocked(grant, 'viewer', new Set())).toBe(true);
+      expect(roleLocked(grant, 'viewer', new Set([SUB_PATH.toLowerCase()]))).toBe(false);
+    });
+
+    it('loads a Scope saved at another Role unlocked, so its Role is shown as it is', () => {
+      expect(roleLocked({ scope: SUB_PATH, role: 'editor' }, 'viewer', new Set())).toBe(false);
+    });
+  });
+
+  describe('heldRows', () => {
+    it('lists every held Scope with its kind, name, short path and Role, in the list\'s own order', () => {
+      const held: ManualGrant[] = [
+        { scope: MG_PATH('mg-prod'), role: 'viewer' },
+        { scope: SUB_PATH, role: 'editor' },
+        { scope: resourceGroupScopePath(SUB, 'rg-one'), role: 'viewer' },
+        { scope: '@directory', role: 'viewer' },
+        { scope: '/', role: 'viewer' },
+      ];
+      expect(heldRows(held, catalogue).map(r => [r.kind, r.label, r.detail, r.role])).toEqual([
+        ['managementGroup', 'Production', 'Tenant Root Group › Enterprise › Production', 'viewer'],
+        ['subscription', 'Production workloads', SUB, 'editor'],
+        ['resourceGroup', 'rg-one', 'in Production workloads', 'viewer'],
+        ['directory', 'Directory', expect.stringContaining('Entra ID'), 'viewer'],
+        ['everything', 'Everything', expect.stringContaining('Every subscription'), 'viewer'],
+      ]);
+    });
+
+    it('keeps a held management group the tree no longer has, marked as not in it', () => {
+      const held: ManualGrant[] = [{ scope: MG_PATH('mg-gone'), role: 'editor' }, { scope: MG_PATH('mg-prod'), role: 'viewer' }];
+      const rows = heldRows(held, catalogue);
+      expect(rows.map(r => [r.label, r.missing])).toEqual([['mg-gone', true], ['Production', false]]);
+      expect(rows[0]!.detail).toMatch(/Not in the tree/);
+    });
+
+    it('does not call a group missing while the tree has not loaded', () => {
+      const [row] = heldRows([{ scope: MG_PATH('mg-prod'), role: 'viewer' }], { nodes: null, subscriptions: null });
+      expect(row).toMatchObject({ label: 'mg-prod', missing: false });
+    });
+
+    it('names a subscription by its id when no list gave a name', () => {
+      const [row] = heldRows([{ scope: subscriptionScopePath(OTHER), role: 'viewer' }], { nodes: [], subscriptions: [] });
+      expect(row).toMatchObject({ label: OTHER, detail: null });
+    });
+  });
+
+  describe('an Edit that changed nothing', () => {
+    const access = buildAccess([
+      { tenantId: 't', scope: parseScope(MG_PATH('mg-gone'))!, role: 'editor' },
+      { tenantId: 't', scope: parseScope(SUB_PATH)!, role: 'viewer' },
+    ], 'manual');
+
+    it('lists the group missing from the tree, so the list it starts from is the list it would save', () => {
+      const initial = grantsOfAccess(access);
+      expect(heldRows(initial, catalogue).map(r => r.path)).toEqual(initial.map(g => g.scope));
+    });
+
+    it('sends nothing for an unchanged Manual list, whatever the order or casing', () => {
+      const initial = grantsOfAccess(access);
+      expect(editSaveRequest(initial, initial, 'manual')).toBeNull();
+      expect(editSaveRequest(initial, [...initial].reverse().map(g => ({ ...g, scope: g.scope.toUpperCase() })), 'manual')).toBeNull();
+    });
+
+    it('sends the list once a Scope, a Role or the length differs', () => {
+      const initial = grantsOfAccess(access);
+      expect(editSaveRequest(initial, initial.slice(1), 'manual')).toEqual(initial.slice(1));
+      expect(editSaveRequest(initial, setGrantRole(initial, SUB_PATH, 'editor'), 'manual')).toHaveLength(2);
+      expect(editSaveRequest(initial, [...initial, { scope: '@directory', role: 'viewer' }], 'manual')).toHaveLength(3);
+    });
+
+    it('always sends for a mirrored person, since saving is what turns them manual', () => {
+      const initial = grantsOfAccess(access);
+      expect(editSaveRequest(initial, initial, 'mirrored')).toEqual(initial);
+    });
+  });
+
+  describe('demoteToMirrored', () => {
+    const OBJECT = '00000000-0000-0000-0000-0000000000c1';
+    const answer = (ok: boolean, body: unknown) => ({ ok, json: async () => body });
+    const user = { id: 'u-1', email: 'second@example.com', role: 'editor' } as unknown as AppUserWithAccess;
+    const mirrored = { ...user, accessSource: 'mirrored' } as unknown as AppUserWithAccess;
+
+    it('demotes with no Scopes first, then mirrors, and never sends Everything', async () => {
+      const calls: [string, string, unknown][] = [];
+      const result = await demoteToMirrored({ userId: 'u-1', role: 'editor', objectId: OBJECT }, async (url, init) => {
+        calls.push([init.method, url, JSON.parse(init.body)]);
+        return answer(true, calls.length === 1 ? user : mirrored);
+      });
+      expect(calls).toEqual([
+        ['PUT', '/api/users/u-1', { role: 'editor', access: [] }],
+        ['PUT', '/api/users/u-1/mirror', { objectId: OBJECT, role: 'editor' }],
+      ]);
+      expect(result).toEqual({ ok: true, user: mirrored });
+    });
+
+    it('stops at a failed demote without trying to mirror', async () => {
+      const urls: string[] = [];
+      const result = await demoteToMirrored({ userId: 'u-1', role: 'viewer', objectId: OBJECT }, async url => {
+        urls.push(url);
+        return answer(false, { error: 'This is the only admin.' });
+      });
+      expect(urls).toEqual(['/api/users/u-1']);
+      expect(result).toEqual({ ok: false, stage: 'demote', error: 'This is the only admin.' });
+    });
+
+    it('hands back the demoted row when the mirror fails, so the page can show who holds nothing', async () => {
+      let n = 0;
+      const result = await demoteToMirrored({ userId: 'u-1', role: 'editor', objectId: OBJECT }, async () =>
+        (++n === 1 ? answer(true, user) : answer(false, { error: 'Azure is not connected.' })));
+      expect(result).toEqual({ ok: false, stage: 'mirror', error: 'Azure is not connected.', user });
+    });
+
+    it('skips the demote on a retry, since a second demote of a non-Admin that carries access is refused', async () => {
+      const urls: string[] = [];
+      const result = await demoteToMirrored({ userId: 'u-1', role: 'editor', objectId: OBJECT, demoted: user }, async url => {
+        urls.push(url);
+        return answer(true, mirrored);
+      });
+      expect(urls).toEqual(['/api/users/u-1/mirror']);
+      expect(result.ok).toBe(true);
+    });
+
+    it('reports a request that could not be sent as a failure of that step', async () => {
+      const result = await demoteToMirrored({ userId: 'u-1', role: 'editor', objectId: OBJECT }, async () => { throw new Error('offline'); });
+      expect(result).toEqual({ ok: false, stage: 'demote', error: 'Could not reach the RuleBeat server.' });
+    });
+  });
+
+  it('says in plain words that the person was demoted and holds no access', () => {
+    const text = demotedWithoutAccessMessage('second@example.com', 'editor', 'Azure is not connected');
+    expect(text).toContain('second@example.com was demoted to Editor and now holds no access');
+    expect(text).toContain('not saved: Azure is not connected. Try again');
+  });
+
+  it('names a management group by its display name when it has one, whatever the casing', () => {
     const path = '/providers/Microsoft.Management/managementGroups/mg-a';
     expect(describeScopePath(path)).toBe('Management group mg-a');
     expect(describeScopePath(path, { 'mg-a': 'Alpha' })).toBe('Management group Alpha');
+    expect(describeScopePath(path.replace('mg-a', 'MG-A'), { 'mg-a': 'Alpha' })).toBe('Management group Alpha');
   });
 });
 

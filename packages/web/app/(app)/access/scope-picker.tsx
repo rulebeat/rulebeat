@@ -1,14 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { fetchJson } from '@/lib/fetch-json';
 import type { GrantRole, ManualGrant } from '@/lib/access-model';
-import { DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH } from '@/lib/access-model';
-import type { HierarchyView } from '@/lib/management-group-tree';
+import { DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, sameScopePath } from '@/lib/access-model';
+import { noGroupsReason, type HierarchyView } from '@/lib/management-group-tree';
+import { ROLE_LABELS } from '@/lib/rbac';
 import {
-  heldAt, pickerGroups, resourceGroupScopePath, resourceGroupsHeld, setGrantRole, subscriptionScopePath, subscriptionsNamed, toggleGrant,
+  addGrant, coveringGrant, describeScopePath, GROUPS_LOAD_FAILED_MESSAGE, heldAt, heldRows, KIND_LABELS, namesOf, NO_SUBSCRIPTIONS_MESSAGE,
+  nothingMatchedMessage, offerStatus, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes,
+  setGrantRole, subscriptionScopePath, toggleGrant,
+  type HeldRow, type PickerCatalogue, type ScopeCandidate, type SubscriptionOption,
 } from '@/lib/access-picker';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +23,8 @@ const ROLE_OPTIONS = [
   { value: 'editor', label: 'Editor' },
 ];
 
-interface SubscriptionOption { id: string; name: string }
+/** How many matches the search lists. A longer list is read by typing more, not by scrolling a box. */
+const RESULT_LIMIT = 8;
 
 type TreeState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; view: HierarchyView };
 
@@ -43,93 +50,175 @@ function RoleAt({ value, onChange, disabled, label }: {
   );
 }
 
-/** One Scope: a box to hold it, its name, and the Role at it once it is held. */
-function ScopeRow({ label, detail, held, onToggle, onRole, disabled, depth = 0, lead }: {
-  label: string;
-  detail?: string;
-  held: ManualGrant | undefined;
-  onToggle: () => void;
-  onRole: (role: GrantRole) => void;
+const linkButton = 'text-xs font-medium text-ink underline underline-offset-2 hover:no-underline disabled:opacity-60';
+
+/** One held Scope: what it is, the Role at it, and the controls that change or remove it. */
+function HeldScopeRow({ row, personRole, locked, disabled, canLimit, limiting, onRemove, onUnlock, onRelock, onRole, onLimit }: {
+  row: HeldRow;
+  personRole: GrantRole;
+  locked: boolean;
   disabled?: boolean;
-  depth?: number;
-  lead?: React.ReactNode;
+  canLimit: boolean;
+  limiting: boolean;
+  onRemove: () => void;
+  onUnlock: () => void;
+  onRelock: () => void;
+  onRole: (role: GrantRole) => void;
+  onLimit: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 py-1.5 pr-3" style={{ paddingLeft: `${12 + depth * 20}px` }}>
-      <span className="flex size-5 shrink-0 items-center justify-center">{lead}</span>
-      <input
-        type="checkbox"
-        checked={Boolean(held)}
+    <li className="flex items-center gap-3 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="label-grid shrink-0">{KIND_LABELS[row.kind]}</span>
+          <span className="min-w-0 truncate text-sm font-medium text-ink" title={row.label}>{row.label}</span>
+        </div>
+        {row.detail && (
+          <div className={cn('truncate text-xs text-ink-2', row.kind === 'subscription' && 'font-mono')} title={row.detail}>{row.detail}</div>
+        )}
+        {canLimit && (
+          <button type="button" disabled={disabled} aria-expanded={limiting} onClick={onLimit} className={cn(linkButton, 'mt-1')}>
+            Limit to resource groups
+          </button>
+        )}
+      </div>
+      {locked ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-sm text-ink">{ROLE_LABELS[row.role]}</span>
+          <button type="button" disabled={disabled} onClick={onUnlock} className={linkButton}>Different Role here</button>
+        </div>
+      ) : (
+        <div className="flex shrink-0 items-center gap-2">
+          <RoleAt value={row.role} onChange={onRole} disabled={disabled} label={row.label} />
+          <button type="button" disabled={disabled} onClick={onRelock} className={linkButton}>Use {ROLE_LABELS[personRole]}</button>
+        </div>
+      )}
+      <Button
+        type="button" variant="ghost" size="icon-sm" disabled={disabled}
+        aria-label={`Remove ${row.label}`} title={`Remove ${row.label}`}
+        onClick={onRemove}
+      >
+        <X className="size-3.5" />
+      </Button>
+    </li>
+  );
+}
+
+/** One thing a search found, or a quick pick: an Add button, or the reason it cannot be added. */
+function Offer({ title, detail, kind, status, disabled, onAdd }: {
+  title: string;
+  detail?: string;
+  kind: string;
+  /** Why it cannot be added ("Held at Viewer", "Covered by ..."), or null when it can. */
+  status: string | null;
+  disabled?: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-3 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="label-grid shrink-0">{kind}</span>
+          <span className="min-w-0 truncate text-sm font-medium text-ink" title={title}>{title}</span>
+        </div>
+        {detail && <div className="truncate font-mono text-xs text-ink-2" title={detail}>{detail}</div>}
+      </div>
+      {status ? (
+        <span className="shrink-0 text-xs text-ink-2">{status}</span>
+      ) : (
+        <Button type="button" size="sm" variant="outline" disabled={disabled} aria-label={`Add ${title}`} onClick={onAdd}>Add</Button>
+      )}
+    </li>
+  );
+}
+
+/** The resource groups of one subscription, searchable. Choosing one narrows the subscription to it. */
+function ResourceGroupPanel({ subscription, state, held, value, nodes, defaultRole, disabled, onPick, onDone }: {
+  subscription: SubscriptionOption;
+  state: GroupsState | undefined;
+  held: readonly string[];
+  value: readonly ManualGrant[];
+  nodes: PickerCatalogue['nodes'];
+  defaultRole: GrantRole;
+  disabled?: boolean;
+  onPick: (name: string) => void;
+  onDone: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const listed = state?.status === 'ready' ? state.names : [];
+  const names = [...listed, ...held.filter(h => !listed.some(n => n.toLowerCase() === h.toLowerCase()))];
+  const found = searchResourceGroups(names, query);
+  const subscriptionPath = subscriptionScopePath(subscription.id);
+  const others = value.filter(g => !sameScopePath(g.scope, subscriptionPath));
+  return (
+    <div className="space-y-2 px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <Label>Resource groups in {subscription.name}</Label>
+        <Button type="button" size="sm" variant="outline" onClick={onDone}>Done</Button>
+      </div>
+      <p className="text-xs text-ink-2">Choosing a resource group replaces the whole subscription with that resource group.</p>
+      <Input
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Search resource groups"
+        aria-label={`Search the resource groups of ${subscription.name}`}
         disabled={disabled}
-        onChange={onToggle}
-        aria-label={`Give access to ${label}`}
-        className="size-3.5 shrink-0 accent-ink"
+        autoComplete="off"
+        spellCheck={false}
       />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-ink">{label}</span>
-        {detail && <span className="block truncate font-mono text-xs text-ink-2">{detail}</span>}
-      </span>
-      {held && <RoleAt value={held.role as GrantRole} onChange={onRole} disabled={disabled} label={label} />}
+      {state?.status === 'loading' && <p className="text-xs text-ink-2">Loading resource groups</p>}
+      {state?.status === 'error' && (
+        <p className="text-xs text-ink-2">The resource groups of this subscription could not be loaded. Try again, or check the server logs.</p>
+      )}
+      {state?.status === 'ready' && names.length === 0 && <p className="text-xs text-ink-2">This subscription has no resource groups.</p>}
+      {names.length > 0 && found.length === 0 && <p className="text-xs text-ink-2">No resource group in this subscription matched “{query.trim()}”.</p>}
+      {found.length > 0 && (
+        <ul className="divide-y divide-border">
+          {found.slice(0, RESULT_LIMIT).map(name => {
+            const path = resourceGroupScopePath(subscription.id, name);
+            const isHeld = Boolean(heldAt(value, path));
+            const covering = isHeld ? null : coveringGrant(others, nodes ?? [], path, defaultRole);
+            return (
+              <li key={name} className="flex items-center gap-3 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{name}</span>
+                {covering ? (
+                  <span className="shrink-0 text-xs text-ink-2">Covered by {describeScopePath(covering.scope)}</span>
+                ) : (
+                  <Button type="button" size="sm" variant="outline" disabled={disabled} aria-pressed={isHeld} aria-label={`${isHeld ? 'Remove' : 'Add'} ${name}`} onClick={() => onPick(name)}>
+                    {isHeld ? 'Added' : 'Add'}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {found.length > RESULT_LIMIT && <p className="text-xs text-ink-2">Showing {RESULT_LIMIT} of {found.length}. Type more to narrow the list.</p>}
     </div>
   );
 }
 
-function ResourceGroupRows({ subscriptionId, state, value, onChange, defaultRole, disabled }: {
-  subscriptionId: string;
-  state: GroupsState | undefined;
-  value: readonly ManualGrant[];
-  onChange: (next: ManualGrant[]) => void;
-  defaultRole: GrantRole;
-  disabled?: boolean;
-}) {
-  const held = resourceGroupsHeld(value, subscriptionId);
-  const listed = state?.status === 'ready' ? state.names : [];
-  const names = [...listed, ...held.filter(h => !listed.some(n => n.toLowerCase() === h.toLowerCase()))]
-    .sort((a, b) => a.localeCompare(b));
-  return (
-    <>
-      {state?.status === 'loading' && <p className="py-1.5 pl-16 text-xs text-ink-2">Loading resource groups</p>}
-      {state?.status === 'error' && (
-        <p className="py-1.5 pl-16 text-xs text-ink-2">The resource groups of this subscription could not be loaded. Try again, or check the server logs.</p>
-      )}
-      {state?.status === 'ready' && names.length === 0 && (
-        <p className="py-1.5 pl-16 text-xs text-ink-2">This subscription has no resource groups.</p>
-      )}
-      {names.map(name => {
-        const path = resourceGroupScopePath(subscriptionId, name);
-        return (
-          <ScopeRow
-            key={name}
-            depth={2}
-            label={name}
-            held={heldAt(value, path)}
-            disabled={disabled}
-            onToggle={() => onChange(toggleGrant(value, path, defaultRole))}
-            onRole={role => onChange(setGrantRole(value, path, role))}
-          />
-        );
-      })}
-    </>
-  );
-}
-
 /**
- * Chooses the Scopes someone is given, each with its own Role: Everything, the Directory, subscriptions
- * management groups from RuleBeat's copy of the tree, subscriptions and, inside a subscription, resource
- * groups. Nothing is held until it is chosen, so a new list starts empty. A management group the person holds
- * that the tree no longer has is still listed, so it can be removed.
+ * Chooses the Scopes someone is given. It lists only what they hold, each row with its kind, name, Role and a
+ * remove control; a new Scope is found with "Add access", a search over management groups and subscriptions, and
+ * Everything and the Directory are always offered. A Scope already covered by one held at the same or a higher
+ * Role is refused with the reason, and a new one takes the person's Role until "Different Role here" is chosen.
+ * A held management group the loaded tree no longer has stays listed, so it can be removed.
  */
 export function ScopePicker({ value, onChange, defaultRole, disabled }: {
   value: readonly ManualGrant[];
   onChange: (next: ManualGrant[]) => void;
-  /** The Role a Scope is given when it is first chosen. */
+  /** The person's Role: what a Scope is given when it is first added. */
   defaultRole: GrantRole;
   disabled?: boolean;
 }) {
+  const searchId = useId();
   const [subscriptions, setSubscriptions] = useState<SubscriptionOption[] | 'failed' | null>(null);
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [groups, setGroups] = useState<Record<string, GroupsState>>({});
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
+  const [query, setQuery] = useState('');
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+  const [limiting, setLimiting] = useState<SubscriptionOption | null>(null);
+  const [groups, setGroups] = useState<Record<string, GroupsState>>({});
 
   useEffect(() => {
     let live = true;
@@ -142,6 +231,23 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
     return () => { live = false; };
   }, []);
 
+  const catalogue: PickerCatalogue = {
+    nodes: tree.status === 'ready' ? tree.view.nodes : null,
+    subscriptions: Array.isArray(subscriptions) ? subscriptions : null,
+  };
+  const names = namesOf(catalogue);
+  const everythingHeld = Boolean(heldAt(value, EVERYTHING_SCOPE_PATH));
+  const noSubscriptions = Array.isArray(subscriptions) && subscriptions.length === 0
+    && !(catalogue.nodes ?? []).some(n => n.kind === 'subscription');
+  const noGroups = tree.status === 'ready' ? noGroupsReason(tree.view.nodes, tree.view.status) : null;
+
+  const statusOf = (path: string): string | null => offerStatus(value, catalogue.nodes ?? [], path, defaultRole, names);
+  const add = (path: string) => onChange(addGrant(value, path, defaultRole));
+
+  const found = searchScopes(query, catalogue);
+  const shown = found.slice(0, RESULT_LIMIT);
+  const asking = query.trim() !== '';
+
   function loadGroups(subscriptionId: string) {
     const key = subscriptionId.toLowerCase();
     setGroups(g => ({ ...g, [key]: { status: 'loading' } }));
@@ -153,101 +259,127 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
     });
   }
 
-  function toggleOpen(subscriptionId: string) {
-    const key = subscriptionId.toLowerCase();
-    const opening = !open.has(key);
-    setOpen(o => { const next = new Set(o); if (opening) next.add(key); else next.delete(key); return next; });
-    if (opening && groups[key]?.status !== 'ready') loadGroups(subscriptionId);
+  function limitTo(row: HeldRow) {
+    const id = row.path.split('/')[2]!;
+    setLimiting({ id, name: row.label });
+    if (groups[id.toLowerCase()]?.status !== 'ready') loadGroups(id);
   }
 
-  const listed = Array.isArray(subscriptions) ? subscriptions : [];
-  const extra = subscriptionsNamed(value)
-    .filter(id => !listed.some(s => s.id.toLowerCase() === id.toLowerCase()))
-    .map(id => ({ id, name: id }));
-  const rows = [...listed, ...extra];
+  /** Takes the rows of a subscription's whole Scope for those of the resource group chosen in it. */
+  function pickGroup(subscription: SubscriptionOption, name: string) {
+    const path = resourceGroupScopePath(subscription.id, name);
+    if (heldAt(value, path)) { onChange(toggleGrant(value, path, defaultRole)); return; }
+    const whole = heldAt(value, subscriptionScopePath(subscription.id));
+    const rest = value.filter(g => !sameScopePath(g.scope, subscriptionScopePath(subscription.id)));
+    onChange([...rest, { scope: path, role: whole?.role ?? defaultRole }]);
+  }
 
-  const { groups: mgRows, reason: noGroups } = tree.status === 'ready' ? pickerGroups(tree.view, value) : { groups: [], reason: null };
+  const lockKey = (path: string) => path.toLowerCase();
+  const rows = heldRows(value, catalogue);
 
   return (
-    <div className={cn('bg-surface-sunken py-1', disabled && 'opacity-60')}>
-      <ScopeRow
-        label="Everything"
-        detail="Every subscription, resource group and the Directory, including anything added later"
-        held={heldAt(value, EVERYTHING_SCOPE_PATH)}
-        disabled={disabled}
-        onToggle={() => onChange(toggleGrant(value, EVERYTHING_SCOPE_PATH, defaultRole))}
-        onRole={role => onChange(setGrantRole(value, EVERYTHING_SCOPE_PATH, role))}
-      />
-      <ScopeRow
-        label="Directory"
-        detail="Entra ID: app registrations, users and the other findings that sit in no subscription"
-        held={heldAt(value, DIRECTORY_SCOPE_PATH)}
-        disabled={disabled}
-        onToggle={() => onChange(toggleGrant(value, DIRECTORY_SCOPE_PATH, defaultRole))}
-        onRole={role => onChange(setGrantRole(value, DIRECTORY_SCOPE_PATH, role))}
-      />
-      {tree.status === 'loading' && <p className="px-3 py-1.5 text-xs text-ink-2">Loading management groups</p>}
-      {tree.status === 'error' && (
-        <p className="px-3 py-1.5 text-xs text-ink-2">Management groups could not be loaded, so none can be chosen. Check the server logs.</p>
-      )}
-      {noGroups && <p className="px-3 py-1.5 text-xs text-ink-2">{noGroups}</p>}
-      {mgRows.map(g => (
-        <ScopeRow
-          key={`mg:${g.path.toLowerCase()}`}
-          depth={g.depth}
-          label={g.name}
-          detail={g.missing ? 'Not in the tree RuleBeat has loaded. Remove it, or refresh the tree.' : `Management group ${g.id}`}
-          held={heldAt(value, g.path)}
-          disabled={disabled}
-          onToggle={() => onChange(toggleGrant(value, g.path, defaultRole))}
-          onRole={role => onChange(setGrantRole(value, g.path, role))}
-        />
-      ))}
-      {subscriptions === null && <p className="px-3 py-1.5 text-xs text-ink-2">Loading subscriptions</p>}
-      {subscriptions === 'failed' && (
-        <p className="px-3 py-1.5 text-xs text-ink-2">Subscriptions could not be loaded, so none can be chosen. Check the server logs.</p>
-      )}
-      {Array.isArray(subscriptions) && rows.length === 0 && (
-        <p className="px-3 py-1.5 text-xs text-ink-2">No subscriptions were found. Connect Azure in Settings to choose a subscription or a resource group.</p>
-      )}
-      {rows.map(sub => {
-        const path = subscriptionScopePath(sub.id);
-        const isOpen = open.has(sub.id.toLowerCase());
-        return (
-          <div key={sub.id}>
-            <ScopeRow
-              label={sub.name}
-              detail={sub.name === sub.id ? undefined : sub.id}
-              held={heldAt(value, path)}
-              disabled={disabled}
-              onToggle={() => onChange(toggleGrant(value, path, defaultRole))}
-              onRole={role => onChange(setGrantRole(value, path, role))}
-              lead={(
-                <button
-                  type="button"
-                  onClick={() => toggleOpen(sub.id)}
-                  aria-expanded={isOpen}
-                  aria-label={`${isOpen ? 'Hide' : 'Show'} the resource groups of ${sub.name}`}
-                  disabled={disabled}
-                  className="flex size-5 items-center justify-center text-ink-2 hover:text-ink"
-                >
-                  {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                </button>
-              )}
-            />
-            {isOpen && (
-              <ResourceGroupRows
-                subscriptionId={sub.id}
-                state={groups[sub.id.toLowerCase()]}
-                value={value}
-                onChange={onChange}
-                defaultRole={defaultRole}
+    <div className={cn('space-y-3', disabled && 'opacity-60')}>
+      <div className="bg-surface">
+        {rows.length === 0 ? (
+          <p className="px-3 py-3 text-sm text-ink-2">Nothing is held yet. Add access below.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {rows.map(row => (
+              <HeldScopeRow
+                key={lockKey(row.path)}
+                row={row}
+                personRole={defaultRole}
+                locked={roleLocked({ scope: row.path, role: row.role }, defaultRole, unlocked)}
                 disabled={disabled}
+                canLimit={row.kind === 'subscription'}
+                limiting={limiting !== null && sameScopePath(subscriptionScopePath(limiting.id), row.path)}
+                onRemove={() => onChange(toggleGrant(value, row.path, defaultRole))}
+                onUnlock={() => setUnlocked(u => new Set(u).add(lockKey(row.path)))}
+                onRelock={() => {
+                  setUnlocked(u => { const next = new Set(u); next.delete(lockKey(row.path)); return next; });
+                  onChange(setGrantRole(value, row.path, defaultRole));
+                }}
+                onRole={role => onChange(setGrantRole(value, row.path, role))}
+                onLimit={() => limitTo(row)}
               />
-            )}
+            ))}
+          </ul>
+        )}
+        {limiting && (
+          <div className="border-t border-border">
+            <ResourceGroupPanel
+              subscription={limiting}
+              state={groups[limiting.id.toLowerCase()]}
+              held={resourceGroupsHeld(value, limiting.id)}
+              value={value}
+              nodes={catalogue.nodes}
+              defaultRole={defaultRole}
+              disabled={disabled}
+              onPick={name => pickGroup(limiting, name)}
+              onDone={() => setLimiting(null)}
+            />
           </div>
-        );
-      })}
+        )}
+      </div>
+
+      <div className="space-y-2 bg-surface px-3 py-3">
+        <Label htmlFor={searchId}>Add access</Label>
+        <ul className="divide-y divide-border">
+          <Offer
+            kind="Quick pick" title="Everything" detail="Every subscription, resource group and the Directory"
+            status={statusOf(EVERYTHING_SCOPE_PATH)} disabled={disabled} onAdd={() => add(EVERYTHING_SCOPE_PATH)}
+          />
+          <Offer
+            kind="Quick pick" title="Directory" detail="Entra ID, and findings that sit in no subscription"
+            status={statusOf(DIRECTORY_SCOPE_PATH)} disabled={disabled} onAdd={() => add(DIRECTORY_SCOPE_PATH)}
+          />
+        </ul>
+        <Input
+          id={searchId}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search management groups and subscriptions by name or id"
+          disabled={disabled || everythingHeld}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {everythingHeld && (
+          <p className="text-xs text-ink-2">Everything is held, so every Scope is already covered. Remove Everything to give narrower access.</p>
+        )}
+        {tree.status === 'loading' && <p className="text-xs text-ink-2">Loading management groups</p>}
+        {tree.status === 'error' && (
+          <p className="text-xs text-ink-2">{GROUPS_LOAD_FAILED_MESSAGE}</p>
+        )}
+        {noGroups && <p className="text-xs text-ink-2">{noGroups}</p>}
+        {subscriptions === null && <p className="text-xs text-ink-2">Loading subscriptions</p>}
+        {subscriptions === 'failed' && (
+          <p className="text-xs text-ink-2">Subscriptions could not be loaded, so none can be chosen. Check the server logs.</p>
+        )}
+        {noSubscriptions && (
+          <p className="text-xs text-ink-2">{NO_SUBSCRIPTIONS_MESSAGE}</p>
+        )}
+        {!everythingHeld && asking && found.length === 0 && (
+          <p className="text-xs text-ink-2">{nothingMatchedMessage(query)}</p>
+        )}
+        {!everythingHeld && shown.length > 0 && (
+          <ul className="divide-y divide-border">
+            {shown.map((c: ScopeCandidate) => (
+              <Offer
+                key={`${c.kind}:${c.id.toLowerCase()}`}
+                kind={c.kind === 'managementGroup' ? 'Management group' : 'Subscription'}
+                title={c.name}
+                detail={c.name === c.id ? undefined : c.id}
+                status={statusOf(c.path)}
+                disabled={disabled}
+                onAdd={() => { add(c.path); setQuery(''); }}
+              />
+            ))}
+          </ul>
+        )}
+        {!everythingHeld && found.length > RESULT_LIMIT && (
+          <p className="text-xs text-ink-2">Showing {RESULT_LIMIT} of {found.length}. Type more to narrow the list.</p>
+        )}
+      </div>
     </div>
   );
 }
