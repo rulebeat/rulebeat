@@ -5,6 +5,7 @@
  * hostnames below exist in DNS, so only a connection to the address the resolver returned can
  * reach the server.
  */
+import { EVERYTHING_COVERED_VIEW } from '@/lib/run-scope';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -373,6 +374,8 @@ function makeRun(scheduleId: string): ScheduleRun {
     totalFindings: 1, newFindings: 1, newFindingFingerprints: [], error: null, durationMs: null,
     notifyStatus: 'pending', notifyClaimedAt: null, heartbeatAt: null, ownerId: null,
     changedFindings: [],
+    coveredScope: EVERYTHING_COVERED_VIEW,
+    countsUnavailable: false,
   };
 }
 

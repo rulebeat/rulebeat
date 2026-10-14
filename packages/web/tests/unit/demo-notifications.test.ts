@@ -3,6 +3,7 @@
  * suppressed, and "Send test" answers without contacting anything, whatever URL or SMTP host a
  * Visitor typed. `fetch` and nodemailer are spied on so "never contacted" is observed, not assumed.
  */
+import { EVERYTHING_COVERED_VIEW } from '@/lib/run-scope';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { db } from '@/lib/db/client';
@@ -36,6 +37,8 @@ const RUN: ScheduleRun = {
   totalFindings: 1, newFindings: 1, newFindingFingerprints: [], error: null, durationMs: null,
   notifyStatus: 'pending', notifyClaimedAt: null, heartbeatAt: null, ownerId: null,
   changedFindings: [],
+  coveredScope: EVERYTHING_COVERED_VIEW,
+  countsUnavailable: false,
 };
 
 const FINDING: Finding = {

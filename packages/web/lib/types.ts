@@ -1,6 +1,7 @@
 import type { DateWindow } from './date-window';
 import type { ChangedFinding, FindingRow } from './finding-rows';
 import type { FindingPlacement } from './placement';
+import type { CoveredScopeView } from './run-scope';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -99,6 +100,10 @@ export interface ScanMeta {
   triggeredBy?: 'manual' | 'schedule';
   coverage: 'complete' | 'partial';
   incompleteRules: IncompleteRule[];
+  /** What the run covered (#276), as the reader may be told it. Rows from before the column read as Everything. */
+  coveredScope: CoveredScopeView;
+  /** True for a reader below Everything when this scan has no stored findings to count their severities from. `counts` reads 0 then and must not be shown as 0. */
+  countsUnavailable: boolean;
 }
 
 export interface Suppression {

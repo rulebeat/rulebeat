@@ -154,6 +154,27 @@ successful rule may mark its old findings fixed, and a run with any non-success 
 [`how-it-works.md`](how-it-works.md#one-outcome-per-rule), and what "X of Y passing" counts is in
 [`posture.md`](posture.md).
 
+### What a run covered
+
+Every run records the Scope it covered. An Admin's run, a scheduled run and every run from before this
+was recorded covered **Everything**. An Editor whose access is smaller than Everything can press Run now,
+and that run covers only the overlap of each shared rule's own scope and the Editor's access: the rule's
+query is sent to those subscriptions and management groups and nowhere else, a rule that shares nothing
+with their access is not run, and the findings it returns outside their Scopes (a resource group cannot
+limit a Resource Graph request, so the whole subscription is asked) are dropped before they are stored.
+The run marks findings fixed only inside what it covered. A finding in another team's subscription stays
+open until a run that covers it, such as an Admin's run or the next scheduled run, checks it again, and a
+rule that failed or was capped marks nothing fixed anywhere.
+
+Run History shows each run's Scope beside it: **Everything**, or the Scopes it covered. A Scope the
+reader's own access does not reach reads "Outside your access" in place of its name or id.
+
+A Viewer or Editor whose access is smaller than Everything sees every run in the list, but its numbers
+are theirs: the total, the new findings and the severity counts are counted again from the findings of
+the run that sit inside their Scopes, and "scanned" lists only the subscriptions they hold. An Admin's
+numbers are the run's own. A run with no stored findings to count from, saved by an earlier version,
+says its counts are unavailable instead of showing 0.
+
 ### A past run's findings
 
 Open a run, then one of its category scans, to see the findings that scan returned, as they were
@@ -168,6 +189,9 @@ match anywhere in the text, whatever the case). The severity and rule menus show
 each value has under the other filters. The export button downloads every matching finding, not just
 the page on screen, as CSV or JSON, with the same column headers as the table. A large export is
 streamed, so it starts at once and never builds the whole file in memory.
+
+A person whose access is smaller than Everything is listed, counted and offered filter values for only
+the findings of the run that sit inside their Scopes, and the export holds the same findings.
 
 A past run keeps each finding as it was found, not its rows or its status. A finding that still
 exists links to the live finding on its own tab (Results, Advisories or Activity), where its rows
@@ -194,6 +218,12 @@ at a time. Each row shows the finding's severity, the rule's name, the resource 
 group, and a link to the live finding on its own tab. A finding that has since been cleared shows
 "No longer exists" instead of the link. The table does not have the Type or Rows columns that a
 single run's table has.
+
+Two runs that covered different Scopes cannot be compared: what the wider run covered and the narrower
+one did not would read as fixed or added when nothing changed. Run History answers "These two runs covered
+different scopes. Compare two runs that covered the same scope.", and the picker offers only runs that
+covered the same Scope as the first one you pick. For a person whose access is smaller than Everything,
+all three tiles and the table count only findings inside their access, in both runs.
 
 The export button downloads every finding on the side you are looking at, not just the page on
 screen, as CSV or JSON, with the same columns as a single run's export. It is streamed, so a large

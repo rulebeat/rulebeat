@@ -243,6 +243,44 @@ export function wholeSubscriptionIds(access: Pick<Access, 'grants' | 'management
   return [...ids];
 }
 
+/**
+ * Everything an `Access` reaches, in the shape both readers of it need: the SQL condition
+ * (`lib/db/access-filter.ts`) and the in-memory test of a finding a scan has just read
+ * (`lib/run-scope.ts`). One derivation, so the two cannot disagree. Ids and names are lowercase.
+ *
+ *  - `subscriptions`: whole subscriptions, held directly or under a management group Scope.
+ *  - `resourceGroups`: resource group names by their subscription.
+ *  - `managementGroups`: every management group at or below a management group Scope, by the expansion.
+ */
+export interface AccessReach {
+  everything: boolean;
+  directory: boolean;
+  subscriptions: Set<string>;
+  resourceGroups: Map<string, Set<string>>;
+  managementGroups: Set<string>;
+}
+
+export function accessReach(access: Pick<Access, 'grants' | 'managementGroups' | 'everything' | 'directory'>): AccessReach {
+  const subscriptions = new Set<string>();
+  const managementGroups = new Set<string>();
+  const resourceGroups = new Map<string, Set<string>>();
+  for (const { scope } of access.grants) {
+    const parts = scope.path.split('/');
+    if (scope.kind === 'subscription') subscriptions.add(parts[2]!.toLowerCase());
+    else if (scope.kind === 'resourceGroup') {
+      const sub = parts[2]!.toLowerCase();
+      const groups = resourceGroups.get(sub) ?? new Set<string>();
+      groups.add(parts[4]!.toLowerCase());
+      resourceGroups.set(sub, groups);
+    }
+  }
+  for (const expansion of access.managementGroups) {
+    for (const id of expansion.subscriptions) subscriptions.add(id.toLowerCase());
+    for (const id of expansion.groups) managementGroups.add(id.toLowerCase());
+  }
+  return { everything: access.everything, directory: access.directory, subscriptions, resourceGroups, managementGroups };
+}
+
 /** The text the Access page shows for one person's access. */
 export function describeAccess(access: Access): string {
   const sourceSuffix = access.source ? `, ${access.source}` : '';

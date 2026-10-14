@@ -51,6 +51,10 @@ export const COMPARE_ERRORS = {
     status: 400,
     body: { code: 'different-categories', error: 'These two runs are of different categories. Compare two runs of the same category.' },
   },
+  'different-scopes': {
+    status: 400,
+    body: { code: 'different-scopes', error: 'These two runs covered different scopes. Compare two runs that covered the same scope.' },
+  },
   'bad-request': {
     status: 400,
     body: { code: 'bad-request', error: 'A compare needs the ids of two runs, written as one id, two dots and another.' },

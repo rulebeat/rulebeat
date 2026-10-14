@@ -16,7 +16,7 @@ import { createDashboard, deleteDashboard, listDashboards } from '@/lib/db/dashb
 import { emptyView, viewToSearchParams } from '@/lib/finding-view';
 import { saveScanResult } from '@/lib/scan-history';
 import { addSuppression } from '@/lib/suppressions';
-import { finishRun, startRun } from '@/lib/schedule-runs';
+import { finishRun, recordCategoryProgress, startRun } from '@/lib/schedule-runs';
 import type { Role } from '@/lib/rbac';
 import type { Finding, ScanSummary } from '@/lib/types';
 import { emptySeverityCounts } from '@/lib/severity';
@@ -90,8 +90,13 @@ export async function createPeople(): Promise<Record<string, string>> {
 
 export interface MatrixSeed {
   scanIds: [string, string];
+  /** A third scan of the same category that covered subscription one only, for the compare refusal and the picker. */
+  scopedScanId: string;
   scheduleId: string;
+  /** The run of Everything: it produced the second scan. */
   runId: string;
+  /** The earlier run of the same schedule that covered subscription one only: it produced `scopedScanId`. */
+  scopedRunId: string;
   suppressedFingerprint: string;
   /** Every stored finding's fingerprint, by the name it was seeded with. */
   fingerprints: Record<string, string>;
@@ -135,6 +140,11 @@ function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSum
  *    `subscription-level`, `management-group-level`, `directory-app` and `unplaceable-thing`.
  *  - Advisories: `advisory-one` (subscription one, `rg-one`) and `advisory-other-sub` (subscription two).
  *  - Activity: `workspace-user` (a workspace in subscription one, `rg-one`).
+ *
+ * Run History (#276): the schedule has two runs. The later one covered Everything, produced the second scan
+ * (all ten findings) and stored 10 findings with 3 of them new (`vm-one`, `vm-other-sub`, `directory-app`).
+ * The earlier one covered subscription one only, produced a third scan holding the five findings in subscription
+ * one, and stored 5 with none new. The first scan is not part of any run.
  */
 export async function seedMatrix(): Promise<MatrixSeed> {
   await refreshFrom(matrixHierarchy());
@@ -152,17 +162,49 @@ export async function seedMatrix(): Promise<MatrixSeed> {
     syntheticFinding('advisory-other-sub', [{ zone: 'a' }], { ruleId: ADVISORY_RULE, category: CATEGORY, kind: 'advisory', subscriptionId: SUB_TWO, resourceGroup: RG_ONE }),
   ];
 
+  const created = await createSchedule({
+    name: 'Matrix schedule', targetType: 'all', targetValues: [], recurrenceType: 'daily', interval: 1,
+    daysOfWeek: null, dayOfMonth: null, startAt: '2026-06-01T00:00:00.000Z', endType: 'never', endDate: null,
+  });
+  if ('error' in created) throw new Error(created.error);
+  const byName = (name: string) => all.find(f => (f.resourceName ?? f.dimensionKey) === name)!;
+  // The earlier run covered subscription one only. The later one covered Everything and is the schedule's latest.
+  const subscriptionOne = [{ tenantId: MATRIX_TENANT, path: SCOPE_SUBSCRIPTION }];
+  const scopedRun = await startRun({
+    scheduleId: created.schedule.id, triggeredBy: 'schedule', categories: [CATEGORY], coveredScope: subscriptionOne, now: new Date('2026-06-01T12:00:00.000Z'),
+  });
+  const run = await startRun({ scheduleId: created.schedule.id, triggeredBy: 'schedule', categories: [CATEGORY], now: new Date('2026-06-02T00:00:00.000Z') });
+
   const scanIds: [string, string] = ['00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2'];
+  const scopedScanId = '00000000-0000-0000-0000-0000000000a3';
   const first = all.slice(0, 5);
   const stored: [string, string, Finding[]][] = [
     [scanIds[0], '2026-06-01T00:00:00.000Z', first],
     [scanIds[1], '2026-06-02T00:00:00.000Z', all],
   ];
   for (const [id, finishedAt, findings] of stored) {
-    await saveScanResult(CATEGORY, summaryOf(id, finishedAt, findings), { id });
+    await saveScanResult(CATEGORY, summaryOf(id, finishedAt, findings), { id, ...(id === scanIds[1] ? { runId: run.id } : {}) });
     await syncScanFindings({ scanId: id, category: CATEGORY, ranRuleIds: [RULE, ADVISORY_RULE], findings, finishedAt });
     if (finishedAt.startsWith(SNAPSHOT_DAYS[0])) await upsertDailySnapshot(CATEGORY, new Date(finishedAt));
   }
+
+  // The scan the earlier run produced: the findings in subscription one, never synced, since a run that covered
+  // less than Everything leaves the rest of the findings table as it was.
+  const insideSubscriptionOne = all.filter(f => f.subscriptionId.toLowerCase() === SUB_ONE && f.placement !== 'directory' && f.placement !== 'management-group' && f.placement !== 'unplaceable');
+  await saveScanResult(CATEGORY, summaryOf(scopedScanId, '2026-06-01T12:00:00.000Z', insideSubscriptionOne), {
+    id: scopedScanId, runId: scopedRun.id, coveredScope: subscriptionOne,
+  });
+  await recordCategoryProgress(scopedRun.id, { totalFindings: insideSubscriptionOne.length, newFindings: 0, newFindingFingerprints: [] });
+  await finishRun(scopedRun.id, {
+    status: 'success', totalFindings: insideSubscriptionOne.length, newFindings: 0, newFindingFingerprints: [], durationMs: 1000,
+    now: new Date('2026-06-01T12:01:00.000Z'),
+  });
+  const newFingerprints = ['vm-one', 'vm-other-sub', 'directory-app'].map(name => byName(name).fingerprint);
+  await recordCategoryProgress(run.id, { totalFindings: all.length, newFindings: newFingerprints.length, newFindingFingerprints: newFingerprints });
+  await finishRun(run.id, {
+    status: 'success', totalFindings: all.length, newFindings: newFingerprints.length,
+    newFindingFingerprints: newFingerprints, durationMs: 1000, now: new Date('2026-06-02T00:01:00.000Z'),
+  });
 
   const suppressedFingerprint = all[1]!.fingerprint;
   await addSuppression({
@@ -190,17 +232,6 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   });
   if (!dashboard.ok) throw new Error(dashboard.reason);
 
-  const created = await createSchedule({
-    name: 'Matrix schedule', targetType: 'all', targetValues: [], recurrenceType: 'daily', interval: 1,
-    daysOfWeek: null, dayOfMonth: null, startAt: '2026-06-01T00:00:00.000Z', endType: 'never', endDate: null,
-  });
-  if ('error' in created) throw new Error(created.error);
-  const run = await startRun({ scheduleId: created.schedule.id, triggeredBy: 'schedule', categories: [CATEGORY], now: new Date('2026-06-02T00:00:00.000Z') });
-  await finishRun(run.id, {
-    status: 'success', totalFindings: all.length, newFindings: 0, newFindingFingerprints: [], durationMs: 1000,
-    now: new Date('2026-06-02T00:01:00.000Z'),
-  });
-
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
-  return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };
+  return { scanIds, scopedScanId, scheduleId: created.schedule.id, runId: run.id, scopedRunId: scopedRun.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };
 }

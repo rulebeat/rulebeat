@@ -11,6 +11,7 @@
 import { and, count, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { many, one, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import { findings as findingsTable, scanFindings, scans as scansTable } from './tables';
+import { accessFilterSql } from './access-filter';
 import { SCAN_FINDING_ORDER, SCAN_FINDING_RANKS, SCAN_FINDING_RANK_ORDER, scanFindingsAfter } from './scan-findings-copy';
 import { pageBounds } from '../finding-rows';
 import type { Access } from '../access-model';
@@ -33,9 +34,10 @@ const t = scanFindings;
 /** `text` as the body of a LIKE pattern that matches it literally. */
 export const escapeLike = (text: string): string => text.replace(/[\\%_]/g, c => `\\${c}`);
 
-/** Findings of this scan, narrowed by the filters a facet is not lifting. */
-function matching(scanId: string, query: SnapshotQuery, lift?: 'severity' | 'rule'): SQL {
-  const conditions: (SQL | undefined)[] = [eq(t.scanId, scanId)];
+/** Findings of this scan inside the person's access, narrowed by the filters a facet is not lifting. The access
+ *  limits the page, the total and the facets alike: a record outside it is not listed, counted or offered as a value. */
+function matching(scanId: string, query: SnapshotQuery, access: Access, lift?: 'severity' | 'rule'): SQL {
+  const conditions: (SQL | undefined)[] = [eq(t.scanId, scanId), accessFilterSql(access, t)];
   if (query.severity.length > 0 && lift !== 'severity') conditions.push(inArray(t.severity, query.severity));
   if (query.rule.length > 0 && lift !== 'rule') conditions.push(inArray(t.ruleId, query.rule));
   const needle = query.search.trim().toLowerCase();
@@ -48,19 +50,19 @@ function matching(scanId: string, query: SnapshotQuery, lift?: 'severity' | 'rul
   return and(...conditions)!;
 }
 
-export async function readHeader(tx: DbHandle, scanId: string): Promise<{ scan: SnapshotScan; hasRecords: boolean } | null> {
-  const row = await one(tx.select({ id: scansTable.id, module: scansTable.module, startedAt: scansTable.startedAt, hasRecords: scansTable.hasRecords })
+export async function readHeader(tx: DbHandle, scanId: string): Promise<{ scan: SnapshotScan; hasRecords: boolean; coveredScope: string | null } | null> {
+  const row = await one(tx.select({ id: scansTable.id, module: scansTable.module, startedAt: scansTable.startedAt, hasRecords: scansTable.hasRecords, coveredScope: scansTable.coveredScope })
     .from(scansTable).where(eq(scansTable.id, scanId)));
-  return row ? { scan: { id: row.id, category: row.module, startedAt: row.startedAt }, hasRecords: row.hasRecords === 1 } : null;
+  return row ? { scan: { id: row.id, category: row.module, startedAt: row.startedAt }, hasRecords: row.hasRecords === 1, coveredScope: row.coveredScope ?? null } : null;
 }
 
-async function readTotal(tx: DbHandle, scanId: string, query: SnapshotQuery): Promise<number> {
-  const row = await one(tx.select({ n: count() }).from(t).where(matching(scanId, query)));
+async function readTotal(tx: DbHandle, scanId: string, query: SnapshotQuery, access: Access): Promise<number> {
+  const row = await one(tx.select({ n: count() }).from(t).where(matching(scanId, query, access)));
   return Number(row?.n ?? 0);
 }
 
-async function readPage(tx: DbHandle, scanId: string, query: SnapshotQuery, offset: number) {
-  return many(tx.select().from(t).where(matching(scanId, query))
+async function readPage(tx: DbHandle, scanId: string, query: SnapshotQuery, access: Access, offset: number) {
+  return many(tx.select().from(t).where(matching(scanId, query, access))
     .orderBy(sql.raw(SCAN_FINDING_ORDER)).limit(SNAPSHOT_PAGE_SIZE).offset(offset));
 }
 
@@ -72,9 +74,9 @@ export async function readExisting(tx: DbHandle, fingerprints: readonly string[]
   return new Set(rows.map(r => r.fingerprint));
 }
 
-async function readSeverityFacet(tx: DbHandle, scanId: string, query: SnapshotQuery): Promise<SnapshotFacetValue[]> {
+async function readSeverityFacet(tx: DbHandle, scanId: string, query: SnapshotQuery, access: Access): Promise<SnapshotFacetValue[]> {
   const rows = await many(tx.select({ value: t.severity, n: count() }).from(t)
-    .where(matching(scanId, query, 'severity')).groupBy(t.severity));
+    .where(matching(scanId, query, access, 'severity')).groupBy(t.severity));
   return rows
     .map(r => ({ value: r.value, label: r.value, count: Number(r.n) }))
     .sort((a, b) => rank(a.value) - rank(b.value));
@@ -84,9 +86,9 @@ const rank = (severity: string) => {
   return at === -1 ? SEVERITY_ORDER.length : at;
 };
 
-async function readRuleFacet(tx: DbHandle, scanId: string, query: SnapshotQuery): Promise<SnapshotFacetValue[]> {
+async function readRuleFacet(tx: DbHandle, scanId: string, query: SnapshotQuery, access: Access): Promise<SnapshotFacetValue[]> {
   const rows = await many(tx.select({ value: t.ruleId, label: sql<string>`MIN(${t.title})`, n: count() }).from(t)
-    .where(matching(scanId, query, 'rule')).groupBy(t.ruleId));
+    .where(matching(scanId, query, access, 'rule')).groupBy(t.ruleId));
   return rows
     .map(r => ({ value: r.value, label: r.label, count: Number(r.n) }))
     .sort((a, b) => a.label.localeCompare(b.label) || (a.value < b.value ? -1 : 1));
@@ -149,7 +151,7 @@ export function openSnapshotExport(scanId: string, query: SnapshotQuery, access:
     if (!header) throw new SnapshotUnavailable('not-found');
     if (!header.hasRecords) throw new SnapshotUnavailable('no-records');
     return use({
-      batches: () => readExportBatches(tx, matching(scanId, query), batchSize),
+      batches: () => readExportBatches(tx, matching(scanId, query, access), batchSize),
     });
   });
 }
@@ -161,9 +163,9 @@ export function querySnapshot(scanId: string, query: SnapshotQuery, access: Acce
     if (!header) return { status: 'not-found' };
     if (!header.hasRecords) return { status: 'no-records', scan: header.scan };
 
-    const total = await readTotal(tx, scanId, query);
+    const total = await readTotal(tx, scanId, query, access);
     const bounds = pageBounds(total, query.page, SNAPSHOT_PAGE_SIZE);
-    const stored = await readPage(tx, scanId, query, bounds.firstIndex);
+    const stored = await readPage(tx, scanId, query, access, bounds.firstIndex);
     const existing = await readExisting(tx, stored.map(r => r.fingerprint));
     return {
       status: 'ok',
@@ -178,7 +180,7 @@ export function querySnapshot(scanId: string, query: SnapshotQuery, access: Acce
           exists: existing.has(r.fingerprint),
           tab: tabForKind(r.kind as RuleKind),
         })),
-        facets: { severity: await readSeverityFacet(tx, scanId, query), rule: await readRuleFacet(tx, scanId, query) },
+        facets: { severity: await readSeverityFacet(tx, scanId, query, access), rule: await readRuleFacet(tx, scanId, query, access) },
       },
     };
   });

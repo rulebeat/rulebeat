@@ -76,6 +76,7 @@ export const scans = pgTable('scans', {
   runId: text('run_id'),
   coverage: text('coverage').notNull().default('complete'),
   incompleteRules: text('incomplete_rules').notNull().default('[]'),
+  coveredScope: text('covered_scope'),
   hasRecords: integer('has_records').notNull().default(0),
 });
 
@@ -381,6 +382,7 @@ export const scheduleRuns = pgTable('schedule_runs', {
   heartbeatAt: text('heartbeat_at'),
   ownerId: text('owner_id'),
   changedFindings: text('changed_findings'),
+  coveredScope: text('covered_scope'),
 });
 
 export const notificationDeliveries = pgTable('notification_deliveries', {

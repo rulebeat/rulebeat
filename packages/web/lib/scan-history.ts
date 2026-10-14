@@ -6,7 +6,10 @@ import { many, run, inTransaction } from './db/exec';
 import { chunk } from './db/chunk';
 import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
-import type { Access } from './access-model';
+import { accessReach, wholeSubscriptionIds, type Access } from './access-model';
+import { EVERYTHING_COVERED, type CoveredEntry } from './run-scope';
+import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './covered-scope-view';
+import { recountScans } from './db/run-recount';
 
 /** How many scans of a category history keeps (`SCAN_HISTORY_LIMIT`, default 90). */
 export const SCAN_HISTORY_LIMIT = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
@@ -29,9 +32,11 @@ const SCAN_META_COLUMNS = {
   triggeredBy: scansTable.triggeredBy,
   coverage: scansTable.coverage,
   incompleteRules: scansTable.incompleteRules,
+  hasRecords: scansTable.hasRecords,
+  coveredScope: scansTable.coveredScope,
 };
 
-function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>): ScanMeta {
+function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>, access: Access): ScanMeta {
   return {
     id: row.id,
     module: row.module,
@@ -46,35 +51,63 @@ function rowToScanMeta(row: Pick<Row, keyof typeof SCAN_META_COLUMNS>): ScanMeta
     incompleteRules: row.incompleteRules
       ? (JSON.parse(row.incompleteRules) as ScanMeta['incompleteRules'])
       : [],
+    coveredScope: viewCoveredScope(parseCoveredScope(row.coveredScope), access),
+    countsUnavailable: false,
   };
+}
+
+/**
+ * What a reader below Everything may see of scans: the severity counts counted again from the scan's own
+ * records inside their access, never the counts the scan stored, and only the subscriptions they hold.
+ * A scan with no records has nothing to count from, so its counts are marked unavailable instead of 0.
+ * An Everything reader gets the scans as stored.
+ */
+async function narrowScans(metas: ScanMeta[], rows: Pick<Row, 'id' | 'hasRecords'>[], access: Access): Promise<ScanMeta[]> {
+  if (access.everything || metas.length === 0) return metas;
+  const recounts = await recountScans(rows.map(r => ({ id: r.id, hasRecords: r.hasRecords === 1 })), access);
+  const reach = accessReach(access);
+  const held = new Set([...wholeSubscriptionIds(access), ...reach.resourceGroups.keys()]);
+  return metas.map(meta => {
+    const counts = recounts.get(meta.id);
+    return {
+      ...meta,
+      counts: counts ?? meta.counts,
+      countsUnavailable: counts === undefined,
+      subscriptionsScanned: meta.subscriptionsScanned.filter(id => held.has(id.toLowerCase())),
+    };
+  });
 }
 
 /** The history list of a category, newest first. */
 export async function listScanMetas(module: string, access: Access, limit = 20): Promise<ScanMeta[]> {
-  return (await many(db
+  const rows = await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)
     .where(eq(scansTable.module, module))
     .orderBy(desc(scansTable.startedAt))
-    .limit(limit)))
-    .map(rowToScanMeta);
+    .limit(limit));
+  return narrowScans(rows.map(row => rowToScanMeta(row, access)), rows, access);
 }
 
 /** All per-category scan rows produced by a single run execution (schedule_runs.id): the
  *  Run History detail drill-down. */
 export async function getScansForRun(runId: string, access: Access): Promise<ScanMeta[]> {
-  return (await many(db
+  const rows = await many(db
     .select(SCAN_META_COLUMNS)
     .from(scansTable)
     .where(eq(scansTable.runId, runId))
-    .orderBy(desc(scansTable.startedAt))))
-    .map(rowToScanMeta);
+    .orderBy(desc(scansTable.startedAt)));
+  return narrowScans(rows.map(row => rowToScanMeta(row, access)), rows, access);
 }
 
 export async function saveScanResult(
   module: string,
   summary: ScanSummary,
-  opts: { triggeredBy?: 'manual' | 'schedule'; scheduleId?: string; id?: string; runId?: string } = {},
+  opts: {
+    triggeredBy?: 'manual' | 'schedule'; scheduleId?: string; id?: string; runId?: string;
+    /** The Scope the run covered (#276). Omitted is Everything. */
+    coveredScope?: readonly CoveredEntry[];
+  } = {},
 ): Promise<void> {
   const id = opts.id ?? crypto.randomUUID();
   // ADR 0008: the scan row and its records are one write. If the records cannot be stored the scan is
@@ -94,6 +127,7 @@ export async function saveScanResult(
       triggeredBy: opts.triggeredBy ?? 'manual',
       scheduleId: opts.scheduleId ?? null,
       runId: opts.runId ?? null,
+      coveredScope: serializeCoveredScope(opts.coveredScope ?? EVERYTHING_COVERED),
       coverage: summary.coverage,
       incompleteRules: JSON.stringify(summary.incompleteRules),
       hasRecords: 1,

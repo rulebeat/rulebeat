@@ -4,6 +4,7 @@
  * Driven through both routes over scans stored by runCategoryScan(), so parity is between what the screen
  * is shown and what the file holds for one query string.
  */
+import { everythingAccess } from '@/lib/access-model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
@@ -69,7 +70,7 @@ function parseCsv(text: string): string[][] {
 
 beforeEach(async () => {
   await resetDb();
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: everythingAccess('admin') });
 });
 
 describe('GET /api/scans/[id]/snapshot/export: JSON', () => {

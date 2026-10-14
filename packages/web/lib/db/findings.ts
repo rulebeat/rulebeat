@@ -62,6 +62,10 @@ export interface SyncScanFindingsOptions {
   /** Skips finding_events rows: used by the history backfill so replaying old scans doesn't
    *  fabricate a created→resolved audit trail for transitions nobody actually observed live. */
   silent?: boolean;
+  /** What the run covered, as an `Access` cut down to the Scopes that may run a scan (`coveredAccess()`,
+   *  lib/run-scope.ts). The resolve step marks fixed only the findings inside it: a run that covered
+   *  less than Everything never resolves another team's findings. Omitted is Everything. */
+  covered?: Access;
 }
 
 const EVENT_RETENTION_DAYS = 180;
@@ -263,7 +267,8 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
 /** syncScanFindings() plus the categories it touched, for the scan path that has to refresh their
  *  snapshots once the transaction has committed. */
 export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): Promise<DetailedSyncResult> {
-  const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent } = opts;
+  const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent, covered } = opts;
+  const insideCovered = covered ? accessFilterSql(covered) : undefined;
   const findings = mergeFindingsByFingerprint(rawFindings);
   const created: string[] = [];
   const reactivated: string[] = [];
@@ -414,6 +419,7 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
             inArray(findingsTable.ruleId, ruleChunk),
             eq(findingsTable.status, 'active'),
             inArray(findingsTable.kind, [...RESOLVABLE_KINDS]),
+            insideCovered,
           )),
       );
       const toResolve = staleActive.filter(r => !seenSet.has(r.fingerprint));
