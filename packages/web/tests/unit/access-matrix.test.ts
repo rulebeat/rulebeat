@@ -1115,14 +1115,15 @@ const KNOWN_FIELDS = ['name', 'properties.hardwareProfile.vmSize'];
 interface AzureReply { status: number; body: unknown; requests: number }
 
 /** Calls a route over a fresh fake Azure and reports what came back and how many requests the fake was sent. */
-async function azureReply(
-  send: () => Promise<Response>, reduce: (body: any) => unknown = body => body, opts: Parameters<typeof fakeTenantContext>[0] = {},
+async function azureReply<Body = unknown>(
+  send: () => Promise<Response>, reduce: (body: Body) => unknown = body => body, opts: Parameters<typeof fakeTenantContext>[0] = {},
 ): Promise<AzureReply> {
   fakeCtx = fakeTenantContext(opts);
   const res = await send();
+  const body = await res.json() as Body;
   return {
     status: res.status,
-    body: res.status === 200 ? reduce(await res.json()) : await res.json(),
+    body: res.status === 200 ? reduce(body) : body,
     requests: fakeCtx.queries.length + fakeCtx.graphRequests.length + fakeCtx.logsQueries.length,
   };
 }
