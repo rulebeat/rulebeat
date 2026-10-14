@@ -38,10 +38,38 @@ never both, so a refresh never has to decide which list wins.
 
 ### Manual access
 
-The Admin picks Scopes by hand, each with its own Role. Choose them on the **Access** page when adding
-someone, with **Edit** beside a person, or when demoting an Admin, where Everything is preselected.
-Adding a Viewer or Editor needs at least one Scope. Manual access is the only way to give Everything or
-the Directory. The Access list shows each Scope and its Role under the person.
+The Admin picks Scopes by hand. Choose them on the **Access** page when adding someone, with **Edit**
+beside a person, or when demoting an Admin, where Everything is preselected. Adding a Viewer or Editor
+needs at least one Scope. Manual access is the only way to give Everything or the Directory. The Access
+list shows each Scope and its Role under the person.
+
+The picker lists only the Scopes the person holds, never the whole tree. Each row shows the kind of
+Scope, its name, the Role at it and a remove control. A management group also shows its short path,
+such as "Tenant Root Group › mg-enterprise", read from RuleBeat's copy of the tree. A Scope held for a
+management group the tree no longer has stays in the list, marked as not in the tree, so it can be
+removed; an Edit that changes nothing sends nothing, so it never trips over that group.
+
+- **Add access** searches management groups and subscriptions by name or id, in any casing.
+  Everything and the Directory are always offered. While Everything is held the search is switched off,
+  with the reason beside it.
+- **Covered Scopes are refused.** A Scope that a held Scope already contains, at the same or a higher
+  Role, shows "Covered by" the Scope that contains it and is not added. Everything covers all. A
+  management group covers the groups below it, the subscriptions under any of them and those
+  subscriptions' resource groups. A subscription covers its resource groups. Only Everything covers the
+  Directory. A higher Role at a narrower Scope is still a real addition: Editor on a subscription while
+  holding Viewer on a management group above it.
+- **A new Scope takes the person's Role.** To give one Scope another Role, choose **Different Role
+  here** on its row. A Scope saved with a Role other than the person's opens already unlocked, with
+  that Role unchanged.
+- **Limit to resource groups** on a held subscription opens a searchable list of that subscription's
+  resource groups. Choosing one replaces the whole subscription with that resource group.
+
+When an Admin is demoted, the choice between Manual access and Mirrored access is offered as it is for
+anyone else. Mirrored access shows the Scopes of the Linked account first, then demotes the person with
+no Scopes and links the account. The demote comes first because Mirrored access is never given to an
+Admin, and it is never done with Everything, so a failure leaves the person with nothing rather than
+everything. If reading the account fails after the demote, the page says the person was demoted and
+holds no access, and the form can be tried again.
 
 ### Mirrored access
 
@@ -57,7 +85,8 @@ with its own Reader credential and turns them into Scopes.
 - The Azure role never decides the RuleBeat Role. Azure Contributor means "can change Azure
   resources"; RuleBeat Editor means "can write rules, schedules and suppressions". The Admin chooses the Role.
 
-Choose Mirrored access when adding someone, or with **Edit** beside a person. Adding someone asks for
+Choose Mirrored access when adding someone, with **Edit** beside a person, or when demoting an Admin
+(see Manual access above for the order of steps). Adding someone asks for
 Mirrored or Manual with neither chosen, and shows the Scopes the account would give before the invite
 is sent. On **Edit**, saving shows the Scopes the account would give, and the Manual Scopes they hold
 that would be replaced, before **Confirm**. "Use their sign-in account" fills the object id for a person who signed
@@ -81,6 +110,17 @@ on. Switching back to mirrored replaces the Manual list after a confirmation.
 
 For the mirror and the management group tree to see anything, the Reader credential has to be able to
 read it. Grant Reader at the tenant root management group: see [Azure permissions](permissions.md#2-grant-reader).
+
+## The management group tree
+
+The **Management groups** card on the Access page shows when RuleBeat last read its copy of the tree,
+and **Refresh** reads it again. The tree itself is collapsed until **Show tree** is chosen. Open, it
+lists every group with the subscriptions under it, and a filter by name or id keeps each match under
+its parents. A failed refresh shows its error on the card whether the tree is open or not, and the tree
+it kept shows when the tree is open.
+
+The users table above it has a search by name or email. It scrolls sideways inside its panel when the
+window is narrow, and a long email is cut short with the full address shown on hover.
 
 ## Where a finding sits
 

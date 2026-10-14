@@ -19,6 +19,7 @@ import { listUsersWithAccess, type AppUserWithAccess, type OwnAccess } from '@/l
 import { describeAccess } from '@/lib/access-model';
 import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
+import { ScopePicker } from '@/app/(app)/access/scope-picker';
 import { MirroredAccessRow } from '@/app/(app)/access/mirrored-access-form';
 import type { MirroredScope } from '@/lib/access-mirror-model';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
@@ -27,7 +28,12 @@ import { hashPassword } from '@/lib/password';
 import type { Role } from '@/lib/rbac';
 import { resetDb } from '../helpers/db';
 import { ManagementGroupsSection } from '@/app/(app)/access/management-groups-section';
-import { grantsOfAccess } from '@/lib/access-picker';
+import {
+  demotedWithoutAccessMessage, demoteToMirrored, editSaveRequest, grantsOfAccess, heldRows, type DemoteFetch,
+} from '@/lib/access-picker';
+import {
+  fakeRoleAssignments, ACCOUNT, MG_EXAMPLE as MIRROR_MG, SUB_A as MIRROR_SUB, type FakeRoleAssignments,
+} from '../helpers/fake-role-assignments';
 import { refreshManagementGroupHierarchy } from '@/lib/management-group-hierarchy';
 import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 
@@ -57,12 +63,25 @@ vi.mock('@/lib/db/local-accounts', async (importOriginal) => {
 });
 const { listUserIdsWithPassword } = await import('@/lib/db/local-accounts');
 
+// Everything of the mirror but the Azure read is real: it runs over whatever `azure` holds, and never waits for real.
+let azure: FakeRoleAssignments;
+vi.mock('@/lib/access-mirror', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/access-mirror')>();
+  const deps = () => ({ read: azure.read, wait: async () => undefined });
+  return {
+    ...actual,
+    mirrorAccount: (objectId: string) => actual.mirrorAccount(objectId, deps()),
+    refreshMirroredUser: (user: AppUser) => actual.refreshMirroredUser(user, deps()),
+  };
+});
+
 const { default: AccessPage } = await import('@/app/(app)/access/page');
 const usersRoute = await import('@/app/api/users/route');
 const userRoute = await import('@/app/api/users/[id]/route');
 const accessRoute = await import('@/app/api/users/[id]/access/route');
 const ownAccessRoute = await import('@/app/api/access/route');
 const passwordRoute = await import('@/app/api/users/[id]/password/route');
+const mirrorRoute = await import('@/app/api/users/[id]/mirror/route');
 
 async function makeUser(email: string, role: Role): Promise<AppUser> {
   const result = await createUser({ email, role });
@@ -114,6 +133,7 @@ beforeEach(async () => {
   mockTenant.mockResolvedValue(TENANT);
   vi.mocked(listUserIdsWithPassword).mockClear();
   vi.mocked(listUsersWithAccess).mockClear();
+  azure = fakeRoleAssignments({ assignments: [{ objectId: ACCOUNT, scope: MIRROR_SUB, role: 'Reader' }, { objectId: ACCOUNT, scope: MIRROR_MG, role: 'Contributor' }] });
   admin = await makeUser('admin@example.com', 'admin');
   target = await makeUser('target@example.com', 'viewer');
 });
@@ -677,6 +697,7 @@ describe('the invite form', () => {
     expect(html).not.toContain('Choose at least one');
     expect(html).not.toContain('invite-linked-account');
     expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked/);
+    expect(html).not.toContain('Add access');
     expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Add<\/button>/);
   });
 });
@@ -700,17 +721,58 @@ describe("the prompts under a person's row", () => {
     return found;
   }
 
+  /** What a person's open prompts render as, in a table the way the page puts them. */
+  function promptMarkup(user: AppUserWithAccess, open: { editing?: boolean; demotingTo?: Role | null }): string {
+    return renderToStaticMarkup(createElement('table', null, createElement('tbody', null, PromptRows({
+      user, editing: open.editing ?? false, demotingTo: open.demotingTo ?? null, saving: false,
+      onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
+    }))));
+  }
+
   it('restarts the demote prompt at the Role picked, so the button and the list never disagree', async () => {
     const second = await makeUser('second@example.com', 'admin');
     const person = (await listUsersWithAccess()).find(u => u.id === second.id)!;
     const [asViewer] = promptsOf(person, { demotingTo: 'viewer' });
     const [asEditor] = promptsOf(person, { demotingTo: 'editor' });
-    expect(asViewer!.props.confirmLabel).toBe('Make Viewer');
-    expect(asViewer!.props.initial).toEqual([{ scope: '/', role: 'viewer' }]);
-    expect(asEditor!.props.confirmLabel).toBe('Make Editor');
-    expect(asEditor!.props.initial).toEqual([{ scope: '/', role: 'editor' }]);
+    expect(asViewer!.props.role).toBe('viewer');
+    expect(asEditor!.props.role).toBe('editor');
+    expect(promptMarkup(person, { demotingTo: 'viewer' })).toContain('Make Viewer');
+    expect(promptMarkup(person, { demotingTo: 'editor' })).toContain('Make Editor');
+    // Everything is preselected at the Role picked, and listed as held.
+    expect(promptMarkup(person, { demotingTo: 'editor' })).toContain('Remove Everything');
     // The prompt keeps its list in its own state, so only a different key makes it start again.
     expect(asEditor!.key).not.toBe(asViewer!.key);
+  });
+
+  it('offers Manual access and Mirrored access when demoting an Admin, as Edit does (#307)', async () => {
+    const second = await makeUser('second@example.com', 'admin');
+    const person = (await listUsersWithAccess()).find(u => u.id === second.id)!;
+    const html = promptMarkup(person, { demotingTo: 'viewer' });
+    expect(html).toContain('Access source');
+    expect(html).toContain('Manual access');
+    expect(html).toContain('Mirrored access');
+    expect(html).toContain('aria-pressed="true"');
+  });
+
+  it('lists only what the person holds in Edit: no tree, no checkbox for every group and subscription (#307)', async () => {
+    await inTransaction(tx => replaceAssignmentsOn(tx, target.id, [{ tenantId: TENANT, scope: SUB, role: 'viewer' }]));
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const html = promptMarkup(person, { editing: true });
+    expect(html).toContain('Remove ' + SUB.split('/')[2]);
+    expect(html).toContain('Limit to resource groups');
+    expect(html).toContain('Add access');
+    expect(html).not.toMatch(/type="checkbox"/);
+  });
+
+  it('lists a held management group the tree no longer has, in the Edit it opens (#307)', async () => {
+    signInAs(admin);
+    const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
+    await refreshFrom(fake);
+    await accessRoute.PUT(jsonRequest('PUT', { access: [grant(MG, 'viewer')] }), params(target.id));
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
+    await refreshFrom(fake);
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    expect(promptMarkup(person, { editing: true })).toContain('Remove mg-example');
   });
 
   it("restarts the Edit prompt when the person's Role or Scopes change under it", async () => {
@@ -841,8 +903,41 @@ describe('the management groups card (#273)', () => {
     { id: 'mg-example', kind: 'managementGroup' as const, name: 'Example group', parentId: TENANT },
     { id: '00000000-0000-0000-0000-00000000000a', kind: 'subscription' as const, name: 'Subscription A', parentId: 'mg-example' },
   ];
-  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial']) =>
-    renderToStaticMarkup(createElement(ManagementGroupsSection, { initial }));
+  /** The card as the page renders it, collapsed, unless the test opens it. */
+  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial'], initiallyOpen?: boolean) =>
+    renderToStaticMarkup(createElement(ManagementGroupsSection, initiallyOpen === undefined ? { initial } : { initial, initiallyOpen }));
+  const LOADED = { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null };
+  const FAILED = {
+    lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
+    error: { code: 'failed' as const, message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
+  };
+
+  it('starts collapsed: the status line, Refresh and Show tree, and no tree (#307)', () => {
+    const html = render({ nodes, status: LOADED });
+    expect(html).toContain('Last refreshed');
+    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
+    expect(html).toMatch(/aria-expanded="false"[^>]*>(?:(?!<\/button>)[\s\S])*Show tree<\/button>/);
+    expect(html).not.toContain('Tenant Root Group');
+    expect(html).not.toContain('Example group');
+    expect(html).not.toContain('Filter the management group tree');
+  });
+
+  it('opens on Show tree, with a filter over the tree (#307)', () => {
+    const html = render({ nodes, status: LOADED }, true);
+    expect(html).toContain('Hide tree');
+    expect(html).toContain('Filter the management group tree');
+    expect(html).toContain('Subscription A');
+  });
+
+  it('shows a failed refresh even while collapsed, and the tree it kept once opened (#307)', () => {
+    const collapsed = render({ nodes, status: FAILED });
+    expect(collapsed).toContain('The last refresh failed');
+    expect(collapsed).toContain('Check the RuleBeat server logs');
+    expect(collapsed).not.toContain('Example group');
+    const open = render({ nodes, status: FAILED }, true);
+    expect(open).toContain('Check the RuleBeat server logs');
+    expect(open).toContain('Example group');
+  });
 
   it('hands an Admin the stored tree and status, and no one else', async () => {
     const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
@@ -861,7 +956,7 @@ describe('the management groups card (#273)', () => {
   });
 
   it('shows the tree with each group and the subscriptions under it, when it was read, and a Refresh button', () => {
-    const html = render({ nodes, status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
+    const html = render({ nodes, status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } }, true);
     expect(html).toContain('Management groups');
     expect(html.indexOf('Tenant Root Group')).toBeLessThan(html.indexOf('Example group'));
     expect(html.indexOf('Example group')).toBeLessThan(html.indexOf('Subscription A'));
@@ -877,7 +972,7 @@ describe('the management groups card (#273)', () => {
         lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
         error: { code: 'failed', message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
       },
-    });
+    }, true);
     expect(html).toContain('The last refresh failed');
     expect(html).toContain('The tree shown is the last one that loaded');
     expect(html).toContain('Check the RuleBeat server logs');
@@ -1103,5 +1198,217 @@ describe('Mirrored access on the page (#278)', () => {
       expect((propsWith(await AccessPage(), 'own').own as OwnAccess).mirror).toBeNull();
       expect(((await (await ownAccessRoute.GET()).json()) as OwnAccess).mirror).toBeNull();
     });
+  });
+});
+
+describe('demoting an Admin to Mirrored access (#307)', () => {
+  const LEAK = 'AuthorizationFailed: client 00000000-aaaa-bbbb-cccc-000000000000 over /subscriptions/secret-sub';
+  let second: AppUser;
+
+  beforeEach(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    signInAs(admin);
+    second = await makeUser('second@example.com', 'admin');
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  const rowsOf = async (id: string) => (await listAssignmentsFor(id)).map(r => [r.tenantId, r.scope, r.role]).sort();
+
+  /** The page's own requests, answered by the real route handlers. `between` sees the stored rows after each answer. */
+  function viaRoutes(between: (url: string, rows: unknown[][]) => void = () => undefined): DemoteFetch {
+    return async (url, init) => {
+      const id = decodeURIComponent(url.split('/')[3]!);
+      const request = new Request(`http://localhost${url}`, { method: init.method, headers: init.headers, body: init.body });
+      const res = url.endsWith('/mirror') ? await mirrorRoute.PUT(request, params(id)) : await userRoute.PUT(request, params(id));
+      between(url, await rowsOf(id));
+      return res;
+    };
+  }
+
+  it('demotes with no Scopes, then mirrors: the person ends Mirrored at the chosen Role with the account Scopes', async () => {
+    const seen: [string, unknown[][]][] = [];
+    const result = await demoteToMirrored({ userId: second.id, role: 'editor', objectId: ACCOUNT }, viaRoutes((url, rows) => seen.push([url, rows])));
+
+    expect(result.ok).toBe(true);
+    // Between the two steps the person held nothing: never Everything, which would fail open.
+    expect(seen[0]).toEqual([`/api/users/${second.id}`, []]);
+    const stored = (await getUser(second.id))!;
+    expect(stored.role).toBe('editor');
+    expect(stored.accessSource).toBe('mirrored');
+    expect(await rowsOf(second.id)).toEqual(sorted([[TENANT, MIRROR_MG, 'editor'], [TENANT, MIRROR_SUB, 'editor']]));
+    if (result.ok) {
+      expect(result.user.role).toBe('editor');
+      expect(result.user.accessSource).toBe('mirrored');
+    }
+  });
+
+  it('leaves the person demoted with no access when the mirror step fails, and says so in plain words', async () => {
+    azure.failWith = new Error(LEAK);
+    const result = await demoteToMirrored({ userId: second.id, role: 'viewer', objectId: ACCOUNT }, viaRoutes());
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.stage !== 'mirror') throw new Error('expected the mirror step to fail');
+    // The row the page shows is the demote answer: a Viewer who holds nothing.
+    expect(result.user.role).toBe('viewer');
+    expect(result.user.access.grants).toEqual([]);
+    expect(result.user.access.everything).toBe(false);
+    // And so is what is stored: no assignments at all, not Everything.
+    expect(await rowsOf(second.id)).toEqual([]);
+    expect((await getUser(second.id))!.accessSource).toBe('manual');
+    const message = demotedWithoutAccessMessage(second.email, 'viewer', result.error);
+    expect(message).toContain('second@example.com was demoted to Viewer and now holds no access');
+    expect(message).not.toContain(LEAK);
+    expect(message).not.toContain('secret-sub');
+  });
+
+  it('mirrors on a retry without demoting again, which the route would refuse for someone who is no Admin now', async () => {
+    azure.failWith = new Error(LEAK);
+    const failed = await demoteToMirrored({ userId: second.id, role: 'editor', objectId: ACCOUNT }, viaRoutes());
+    if (failed.ok || failed.stage !== 'mirror') throw new Error('expected the mirror step to fail');
+
+    azure.failWith = null;
+    const urls: string[] = [];
+    const retry = await demoteToMirrored({ userId: second.id, role: 'editor', objectId: ACCOUNT, demoted: failed.user }, async (url, init) => {
+      urls.push(url);
+      return viaRoutes()(url, init);
+    });
+    expect(urls).toEqual([`/api/users/${second.id}/mirror`]);
+    expect(retry.ok).toBe(true);
+    expect((await getUser(second.id))!.accessSource).toBe('mirrored');
+    expect(await rowsOf(second.id)).toEqual(sorted([[TENANT, MIRROR_MG, 'editor'], [TENANT, MIRROR_SUB, 'editor']]));
+  });
+
+  it('is why the demote comes first: the mirror route refuses an Admin', async () => {
+    const res = await mirrorRoute.PUT(jsonRequest('PUT', { objectId: ACCOUNT, role: 'viewer' }), params(second.id));
+    expect(res.status).toBe(400);
+    expect((await getUser(second.id))!.role).toBe('admin');
+  });
+
+  it('stops at a refused demote and mirrors nothing', async () => {
+    // The only Admin cannot be demoted, so the demote step answers an error and no mirror is attempted.
+    await userRoute.PUT(jsonRequest('PUT', { role: 'viewer', access: [grant('/', 'viewer')] }), params(second.id));
+    const urls: string[] = [];
+    const result = await demoteToMirrored({ userId: admin.id, role: 'viewer', objectId: ACCOUNT }, async (url, init) => {
+      urls.push(url);
+      return viaRoutes()(url, init);
+    });
+    expect(result).toMatchObject({ ok: false, stage: 'demote' });
+    expect(urls).toEqual([`/api/users/${admin.id}`]);
+    expect((await getUser(admin.id))!.role).toBe('admin');
+  });
+});
+
+describe('saving an Edit that changed nothing (#307)', () => {
+  const put = (id: string, body: unknown) => accessRoute.PUT(jsonRequest('PUT', body), params(id));
+  const rowsOf = async (id: string) => (await listAssignmentsFor(id)).map(r => [r.tenantId, r.scope, r.role]).sort();
+
+  it('sends no request, so a held management group that left the tree leaves the stored assignments as they were', async () => {
+    signInAs(admin);
+    const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
+    await refreshFrom(fake);
+    expect((await put(target.id, { access: [grant(MG, 'viewer'), grant(SUB, 'editor'), grant('@directory', 'viewer')] })).status).toBe(200);
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
+    await refreshFrom(fake);
+    const before = await rowsOf(target.id);
+
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const initial = grantsOfAccess(person.access);
+    // The group is still in the list the Edit starts from, marked as not in the tree, and never dropped.
+    const listed = heldRows(initial, { nodes: fake.nodes, subscriptions: [] });
+    expect(listed.map(r => r.path)).toEqual(initial.map(g => g.scope));
+    expect(listed.find(r => r.path === MG)).toMatchObject({ missing: true });
+
+    const request = editSaveRequest(initial, initial, person.accessSource);
+    expect(request).toBeNull();
+    // Sent as it is, the route would refuse with the unknown group message: the page must not surface it.
+    const refused = await put(target.id, { access: initial });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toBe(UNKNOWN_MANAGEMENT_GROUP_MESSAGE);
+    expect(await rowsOf(target.id)).toEqual(before);
+  });
+
+  it('sends the list once something changed, and removing the missing group is what lets it save', async () => {
+    signInAs(admin);
+    const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
+    await refreshFrom(fake);
+    await put(target.id, { access: [grant(MG, 'viewer'), grant(SUB, 'viewer')] });
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
+    await refreshFrom(fake);
+
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const initial = grantsOfAccess(person.access);
+    const request = editSaveRequest(initial, initial.filter(g => g.scope !== MG), person.accessSource);
+    expect(request).toEqual([grant(SUB, 'viewer')]);
+    expect((await put(target.id, { access: request })).status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, SUB, 'viewer']]);
+  });
+});
+
+describe('the users table (#307)', () => {
+  const LONG = 'a-very-long-address-for-a-person-with-a-long-name@subdomain.example-company-name.example.com';
+  const html = async () => {
+    await makeUser(LONG, 'viewer');
+    const users = await listUsersWithAccess();
+    return renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
+  };
+
+  it('has a search by name or email', async () => {
+    expect(await html()).toContain('aria-label="Search users"');
+  });
+
+  it('keeps Status on one line and cuts a long email short with the whole address on hover', async () => {
+    const markup = await html();
+    expect(markup).toMatch(/<td[^>]*whitespace-nowrap[^>]*>(?:(?!<\/td>)[\s\S])*Never signed in/);
+    expect(markup).toMatch(new RegExp(`<div[^>]*truncate[^>]*title="${LONG}"`));
+  });
+
+  it('scrolls sideways inside its panel, never vertically', async () => {
+    const markup = await html();
+    expect(markup).toMatch(/data-slot="table-scroll"[^>]*class="[^"]*scroll-x/);
+    expect(markup).not.toMatch(/max-h-/);
+  });
+});
+
+describe('the Scope picker (#307)', () => {
+  const render = (value: { scope: string; role: 'viewer' | 'editor' }[], role: 'viewer' | 'editor' = 'viewer') =>
+    renderToStaticMarkup(createElement(ScopePicker, { value, onChange: () => undefined, defaultRole: role }));
+
+  it('renders no tree: no checkbox, only what is held, with Everything and the Directory offered', () => {
+    const html = render([{ scope: SUB, role: 'viewer' }]);
+    expect(html).not.toMatch(/type="checkbox"/);
+    expect(html).toContain('Add access');
+    expect(html).toContain('aria-label="Add Everything"');
+    expect(html).toContain('aria-label="Add Directory"');
+    expect(html).toContain('aria-label="Remove 00000000-0000-0000-0000-00000000000a"');
+    expect(html).toContain('Limit to resource groups');
+  });
+
+  it('says nothing is held yet for an empty list', () => {
+    expect(render([])).toContain('Nothing is held yet');
+  });
+
+  it('shows a Scope at the person\'s Role as locked, and one at another Role with its own Role control', () => {
+    const locked = render([{ scope: SUB, role: 'viewer' }]);
+    expect(locked).toContain('Different Role here');
+    expect(locked).not.toContain('Role at ');
+    const unlocked = render([{ scope: SUB, role: 'editor' }]);
+    expect(unlocked).toContain('Role at ');
+    expect(unlocked).toContain('Use Viewer');
+    expect(unlocked).not.toContain('Different Role here');
+  });
+
+  it('switches the search off while Everything is held, says why, and covers the Directory by it', () => {
+    const html = render([{ scope: '/', role: 'viewer' }]);
+    expect(html).toMatch(/<input[^>]*placeholder="Search management groups[^"]*"[^>]*\sdisabled=""/);
+    expect(html).toContain('Everything is held, so every Scope is already covered');
+    expect(html).toContain('Covered by Everything');
+    expect(html).not.toContain('aria-label="Add Directory"');
+  });
+
+  it('keeps the search on when Everything is not held, and offers a Scope Everything at a lower Role would not cover', () => {
+    expect(render([{ scope: SUB, role: 'viewer' }])).not.toMatch(/<input[^>]*placeholder="Search management groups[^"]*"[^>]*\sdisabled=""/);
+    // An Editor given Everything at Viewer is a different Role from the one a new Scope takes, so Directory stays addable.
+    expect(render([{ scope: '/', role: 'viewer' }], 'editor')).toContain('aria-label="Add Directory"');
   });
 });
