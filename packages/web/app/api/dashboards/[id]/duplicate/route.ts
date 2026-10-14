@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { duplicateDashboard } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
+import { markedDashboard } from '@/lib/outside-access';
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('dashboards:write');
@@ -19,5 +20,5 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     details: { copiedFrom: id },
   });
 
-  return Response.json(copy, { status: 201 });
+  return Response.json(markedDashboard(actor.access, copy), { status: 201 });
 }

@@ -3,7 +3,7 @@ import { queryView } from './db/finding-views';
 import { emptyView, type BuiltinField, type View } from './finding-view';
 import type { WidgetFilters } from './dashboard-filters';
 import type { AdvisoriesWidgetData } from './advisories-widget';
-import { everythingAccess, type Access } from './access-model';
+import type { Access } from './access-model';
 
 /** The widget's filter dimensions as the view filters the Advisories tab reads them. */
 function filtersOf(filters: WidgetFilters): View['filters'] {
@@ -38,9 +38,7 @@ export async function queryAdvisoriesWidget(
     pageSize: opts.limit,
   };
   const [page, rules] = await Promise.all([
-    // Not narrowed yet: the dashboards are narrowed together in #274, so the widget still reads
-    // every finding. The tab itself narrows by the caller's access.
-    queryView(view, { tab: 'advisories', showSuppressed: filters.includeSuppressed ?? false }, everythingAccess('admin')),
+    queryView(view, { tab: 'advisories', showSuppressed: filters.includeSuppressed ?? false }, access),
     loadRules(),
   ]);
 

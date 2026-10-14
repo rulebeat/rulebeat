@@ -5,7 +5,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
-  ChevronDown, Save, MoreHorizontal, Star,
+  ChevronDown, Save, MoreHorizontal, Star, Lock,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -32,13 +32,18 @@ import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widg
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
-import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
+import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
+import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
 
-interface Props { dashboard: Dashboard }
+interface Props {
+  dashboard: Dashboard;
+  /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
+  outsideAccess: OutsideAccess;
+}
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
    the conversion backwards, from a measured pixel height to a row span. */
@@ -56,16 +61,26 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
   widget: WidgetDef;
   filters: WidgetFilters;
   filtered: boolean;
   refreshKey: number;
   editMode: boolean;
+  outsideAccess: OutsideAccess;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
-  const inner = (() => {
+  // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
+  // empty read would turn into a 100% posture or "No violations found".
+  const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
+  const inner = accessReason ? (
+    <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
+      <Lock className="size-5 text-ink-2" aria-hidden="true" />
+      <p className="text-sm font-semibold text-ink">{accessReason.title}</p>
+      <p className="max-w-xs text-xs text-ink-2">{accessReason.detail}</p>
+    </div>
+  ) : (() => {
     switch (widget.type) {
       case 'stat-card':
         return <StatCardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
@@ -105,7 +120,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, onRem
   );
 }
 
-export function DashboardGridClient({ dashboard: initial }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -538,6 +553,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
         dateWindow={dateWindow}
         onFiltersChange={setDashFilters}
         onDateWindowChange={setDateWindow}
+        outsideAccess={outsideAccess}
       />
 
       {/* Edit mode banner */}
@@ -578,6 +594,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
                   refreshKey={refreshKey}
                   editMode={editMode}
+                  outsideAccess={outsideAccess}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />
@@ -591,6 +608,7 @@ export function DashboardGridClient({ dashboard: initial }: Props) {
       {configuringWidget && (
         <WidgetConfigPanel
           widget={configuringWidget}
+          outsideAccess={outsideAccess}
           onClose={() => setConfiguringWidget(null)}
           onSave={updated => { updateWidget(updated); setConfiguringWidget(null); }}
         />

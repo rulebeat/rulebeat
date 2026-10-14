@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
+import { markedDashboard } from '@/lib/outside-access';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -11,7 +12,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const { id } = await params;
   const d = await getDashboard(id);
   if (!d) return Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(d);
+  return Response.json(markedDashboard(actor.access, d));
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,7 +29,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
     // isDefault-only request: return the (now-updated) dashboard without touching other fields.
-    return Response.json(await getDashboard(id));
+    const updated = await getDashboard(id);
+    return Response.json(updated && markedDashboard(actor.access, updated));
   }
 
   const before = await getDashboard(id);
@@ -55,7 +57,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  return Response.json(result.dashboard);
+  return Response.json(markedDashboard(actor.access, result.dashboard));
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

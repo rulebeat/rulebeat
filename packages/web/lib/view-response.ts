@@ -12,6 +12,7 @@
  */
 import type { RuleKind } from './types';
 import { subscriptionValueLabel } from './placement';
+import { NOTHING_OUTSIDE, type OutsideAccess } from './outside-access';
 import { resolveDateWindow } from './date-window';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRecord } from './db/findings';
@@ -149,6 +150,9 @@ export interface ViewResponse {
   lastScanAt?: string;
   policyOptions: { id: string; name: string; category: string }[];
   categories: ExplorerCategory[];
+  /** The view's own subscription and resource group filter values outside the caller's access (#274).
+   *  The filter itself is unchanged. Empty from the pure builders, set by the read that knows the caller. */
+  outsideAccess: OutsideAccess;
 }
 
 export interface FindingRowsResponse {
@@ -299,6 +303,7 @@ export function buildViewResponse(
     lastScanAt: lastScanAtOf(findings),
     policyOptions: policyOptionsOf(findings),
     categories: opts.categories,
+    outsideAccess: NOTHING_OUTSIDE,
   };
 }
 

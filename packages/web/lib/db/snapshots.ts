@@ -1,4 +1,4 @@
-import { eq, and, inArray, gte, lte, lt, desc } from 'drizzle-orm';
+import { eq, and, inArray, gte, lte, lt, desc, sql, type SQL } from 'drizzle-orm';
 import { db } from './client';
 import { postureSnapshots as snapshotsTable, findings as findingsTable } from './tables';
 import { many, run } from './exec';
@@ -6,7 +6,7 @@ import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { SYSTEM_ACCESS } from '../system-access';
-import type { Access } from '../access-model';
+import { wholeSubscriptionIds, type Access } from '../access-model';
 import { loadStoredScanBlobs } from './scan-blob-history';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
 import { getMeta, setMeta } from './meta';
@@ -150,9 +150,15 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
 
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
- *  subscription's own trend history instead. */
+ *  subscription's own trend history instead.
+ *
+ *  Anyone who does not hold Everything is never given the aggregate row, which counts every finding
+ *  on the install, and gets a subscription's row only for one they hold whole (#274). A resource
+ *  group Scope holds no whole subscription, so it reads nothing here. */
 export async function getSnapshots(access: Access, opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
-  const conditions = [eq(snapshotsTable.subscriptionId, opts.subscriptionId ?? '')];
+  const subscription = subscriptionCondition(access, opts.subscriptionId);
+  if (!subscription) return [];
+  const conditions = [subscription];
   if (opts.categories && opts.categories.length > 0) conditions.push(inArray(snapshotsTable.category, opts.categories));
   if (opts.sinceDate) conditions.push(gte(snapshotsTable.date, opts.sinceDate));
 
@@ -161,14 +167,26 @@ export async function getSnapshots(access: Access, opts: { categories?: string[]
   return rows.map(rowToSnapshot);
 }
 
+/** The condition on a snapshot's subscription for one person, or null when they may read none of it.
+ *  Everything reads exactly what it asked for. Anyone else reads a subscription held whole, compared
+ *  without regard to case, and never the aggregate. */
+function subscriptionCondition(access: Access, subscriptionId: string | undefined): SQL | null {
+  if (access.everything) return eq(snapshotsTable.subscriptionId, subscriptionId ?? '');
+  if (!subscriptionId || !wholeSubscriptionIds(access).includes(subscriptionId.toLowerCase())) return null;
+  return sql`lower(${snapshotsTable.subscriptionId}) = ${subscriptionId.toLowerCase()}`;
+}
+
 /** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
- *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline. */
+ *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline.
+ *  Narrowed like `getSnapshots`. */
 export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
+  const subscription = subscriptionCondition(access, subscriptionId);
+  if (!subscription) return [];
   const rows = await many(db.select().from(snapshotsTable)
     .where(and(
       inArray(snapshotsTable.category, categories),
-      eq(snapshotsTable.subscriptionId, subscriptionId ?? ''),
+      subscription,
       lte(snapshotsTable.date, onOrBefore),
     ))
     .orderBy(desc(snapshotsTable.date)));
@@ -181,6 +199,24 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
     out.push(rowToSnapshot(row));
   }
   return out;
+}
+
+/** When each category's install-wide snapshot was last written, on or before `onOrBefore`. Only the
+ *  time: a time is the same for everyone and carries no count, so a person on less than Everything
+ *  can be told when a category was last scanned without being handed an aggregate number. */
+export async function getLastSnapshotTimes(categories: string[], onOrBefore: string): Promise<Map<string, string>> {
+  const times = new Map<string, string>();
+  if (categories.length === 0) return times;
+  const rows = await many(db.select({ category: snapshotsTable.category, updatedAt: snapshotsTable.updatedAt })
+    .from(snapshotsTable)
+    .where(and(
+      inArray(snapshotsTable.category, categories),
+      eq(snapshotsTable.subscriptionId, ''),
+      lte(snapshotsTable.date, onOrBefore),
+    ))
+    .orderBy(desc(snapshotsTable.date)));
+  for (const row of rows) if (!times.has(row.category)) times.set(row.category, row.updatedAt);
+  return times;
 }
 
 // --- one-time backfill from existing scan-blob history ---
