@@ -5,6 +5,7 @@ import { azureError, safeErrorMessage } from '@/lib/api-error';
 import { extractAzureErrorMessage, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { checkRowsHaveIdentity } from '@/lib/rule-identity-check';
+import { resourceGraphScope } from '@/lib/written-query';
 
 type Row = { id: string; name: string; type: string; resourceGroup: string; subscriptionId: string };
 
@@ -33,6 +34,9 @@ export async function POST(req: Request) {
   const { kql } = parsed;
   if (!kql?.trim()) return NextResponse.json({ error: 'kql is required' }, { status: 400 });
 
+  const limited = resourceGraphScope(actor.access, undefined);
+  if (!limited.ok) return NextResponse.json({ error: limited.error }, { status: 403 });
+
   let ctx: TenantContext;
   try {
     ctx = await createTenantContext(actor.access);
@@ -50,7 +54,7 @@ export async function POST(req: Request) {
     : `${kql.trim()}\n| take 5`;
 
   try {
-    const rows = await ctx.queryARG<Row>(limitedKql);
+    const rows = await ctx.queryARG<Row>(limitedKql, limited.scope);
     const identity = checkRowsHaveIdentity(rows);
     if (!identity.valid) {
       return NextResponse.json({

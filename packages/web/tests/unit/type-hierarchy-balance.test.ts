@@ -187,9 +187,9 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
  */
 const TYPE_FLOOR_ALLOWLIST = new Set([
   'components/rules/scope-tree-picker.tsx:15',
-  'components/rules/scope-tree-picker.tsx:258',
-  'components/rules/scope-tree-picker.tsx:262',
-  'components/rules/scope-tree-picker.tsx:305',
+  'components/rules/scope-tree-picker.tsx:277',
+  'components/rules/scope-tree-picker.tsx:281',
+  'components/rules/scope-tree-picker.tsx:326',
   'components/rules/visual-query-builder.tsx:140',
   'components/rules/visual-query-builder.tsx:165',
   'components/rules/visual-query-builder.tsx:251',

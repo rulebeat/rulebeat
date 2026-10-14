@@ -8,6 +8,7 @@ import { recordQueryRun } from '@/lib/db/query-runs';
 import { buildGraphPath, extractAzureErrorMessage, GraphTruncatedError, type GraphQuery, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { validateGraphQueryShape } from '@/lib/graph-rule-validation';
+import { mayQueryDirectory } from '@/lib/written-query';
 
 // This route's own display cap on the JSON payload: distinct from Azure's own truncation signal.
 const RESPONSE_ROW_CAP = 500;
@@ -38,6 +39,9 @@ export async function POST(req: Request) {
   // rule authoring's own validate-graph route doesn't already allow.
   const shapeError = validateGraphQueryShape(graphQuery);
   if (shapeError) return NextResponse.json({ error: shapeError }, { status: 400 });
+
+  const directory = mayQueryDirectory(actor.access);
+  if (!directory.ok) return NextResponse.json({ error: directory.error }, { status: 403 });
 
   let ctx: TenantContext;
   try {
