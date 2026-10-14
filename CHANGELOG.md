@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-14
+
 ### Added
 
 - An Editor who holds a subscription or a management group can write a Personal rule: a rule that only its author sees and runs, from a new Personal tab in the Library. It uses the same form as any rule, on the Resource Graph or Microsoft Graph backend, and its scope picker offers only what the person holds. Run now sends Resource Graph only the overlap of the rule's scope and the subscriptions and management groups the author holds at that moment, and replaces the rule's stored latest results. Those results show only on the rule's own page, with the last run time and the Scope it covered, and count nowhere shared: not in Results, Advisories, Activity, Run History, exports, dashboards, saved views, suppressions or posture. A person who loses some access keeps their rules and runs them over what they still hold; a person demoted to Viewer keeps them read-only; removing a person deletes their Personal rules and results. Each run adds one audit entry that names the rule and the covered Scope. Two new tables hold the rules and their results, and nothing existing changes, so going back to 0.10.1 loses nothing but those two tables' content.
@@ -443,7 +445,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/rulebeat/rulebeat/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/rulebeat/rulebeat/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/rulebeat/rulebeat/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/rulebeat/rulebeat/compare/v0.8.0...v0.9.0
