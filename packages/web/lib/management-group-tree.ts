@@ -143,7 +143,8 @@ export interface OrderedNode<T extends TreeNode = TreeNode> {
 /**
  * The nodes in tree order: each group, then what is under it, groups before subscriptions at every level
  * and each by display name. A node whose parent is not in the list is a root, so a tree is never lost for
- * want of its top. The walk keeps what it has visited, so a loop ends too.
+ * want of its top. The walk keeps what it has visited, so a loop ends too, and a loop no root reaches is
+ * still listed, once each.
  */
 export function orderedTree<T extends TreeNode>(nodes: readonly T[]): OrderedNode<T>[] {
   const byParent = new Map<string, T[]>();
@@ -170,6 +171,8 @@ export function orderedTree<T extends TreeNode>(nodes: readonly T[]): OrderedNod
     }
   };
   for (const root of roots.sort(compare)) walk(root, 0);
+  // What no root reaches (a loop with no top) is still listed, from its first node by name.
+  for (const node of [...nodes].sort(compare)) walk(node, 0);
   return out;
 }
 

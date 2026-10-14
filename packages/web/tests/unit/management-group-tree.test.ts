@@ -80,9 +80,14 @@ describe('orderedTree', () => {
     expect(orderedTree([s('sub-1', 'One', 'mg-gone'), g('mg-a', 'Alpha', null)]).map(o => [o.node.id, o.depth])).toEqual([['mg-a', 0], ['sub-1', 0]]);
   });
 
-  it('ends on a loop, listing each node once', () => {
-    const loop = [g('mg-a', 'A', 'mg-b'), g('mg-b', 'B', 'mg-a')];
-    expect(orderedTree(loop).length).toBeLessThanOrEqual(2);
+  it('lists a loop that no root reaches, each node once, from its first node by name', () => {
+    const loop = [g('mg-b', 'B', 'mg-a'), g('mg-a', 'A', 'mg-b'), s('sub-1', 'One', 'mg-b')];
+    expect(orderedTree(loop).map(o => [o.node.id, o.depth])).toEqual([['mg-a', 0], ['mg-b', 1], ['sub-1', 2]]);
+  });
+
+  it('lists a node once when its id comes twice under different parents', () => {
+    const twice = [g('mg-a', 'A', null), g('mg-b', 'B', null), s('sub-1', 'One', 'mg-a'), s('SUB-1', 'One again', 'mg-b')];
+    expect(orderedTree(twice).map(o => [o.node.id, o.depth])).toEqual([['mg-a', 0], ['sub-1', 1], ['mg-b', 0]]);
   });
 
   it('lists only the groups for the picker', () => {
