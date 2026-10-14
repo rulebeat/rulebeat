@@ -245,7 +245,8 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
  *
  * `access` is who the context is for. It limits nothing yet: the credential is still the one
- * install-wide Reader, and the later tickets (#276, #277) narrow what a request may ask of it.
+ * install-wide Reader, and #276 narrows what a scan may ask of it. A query a person writes is
+ * limited above this, by the route, with `lib/written-query.ts`.
  */
 export async function createTenantContext(access: Access, logContext?: ScanLogContext): Promise<TenantContext> {
   const { credential, tenantId } = await resolveAzureCredential();

@@ -5,8 +5,9 @@ import { azureError, safeErrorMessage } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { touchSavedQueryLastRun } from '@/lib/db/saved-queries';
 import { recordQueryRun } from '@/lib/db/query-runs';
-import { LogAnalyticsNotConfiguredError, LogAnalyticsTruncatedError, type LogAnalyticsQuery, type TenantContext } from '@rulebeat/core';
+import { LogAnalyticsNotConfiguredError, LogAnalyticsTruncatedError, resolveWorkspacePlacement, type LogAnalyticsQuery, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
+import { mayQueryWorkspace, mayWriteQueries, needsWorkspaceLookup } from '@/lib/written-query';
 
 // This route's own display cap on the JSON payload: distinct from Azure's own truncation signal.
 const RESPONSE_ROW_CAP = 500;
@@ -23,11 +24,19 @@ export async function POST(req: Request) {
   // matters once a query becomes a rule, asked for at the existing "Save as rule" step instead.
   if (!logsQuery?.kql?.trim()) return NextResponse.json({ error: 'logsQuery.kql is required' }, { status: 400 });
 
+  const writer = mayWriteQueries(actor.access);
+  if (!writer.ok) return NextResponse.json({ error: writer.error }, { status: 403 });
+
   let ctx: TenantContext;
   try {
     ctx = await createTenantContext(actor.access);
   } catch (err) {
     return azureError('Could not connect to Azure to run this query', err);
+  }
+
+  if (needsWorkspaceLookup(actor.access)) {
+    const workspace = mayQueryWorkspace(actor.access, await resolveWorkspacePlacement(ctx));
+    if (!workspace.ok) return NextResponse.json({ error: workspace.error }, { status: 403 });
   }
 
   try {

@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { azureError, safeErrorMessage } from '@/lib/api-error';
-import { LogAnalyticsNotConfiguredError, LogAnalyticsTruncatedError, type LogAnalyticsQuery, type TenantContext } from '@rulebeat/core';
+import { LogAnalyticsNotConfiguredError, LogAnalyticsTruncatedError, resolveWorkspacePlacement, type LogAnalyticsQuery, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { validateLogAnalyticsQueryShape } from '@/lib/log-analytics-rule-validation';
+import { mayQueryWorkspace, mayWriteQueries, needsWorkspaceLookup } from '@/lib/written-query';
 
 export async function POST(req: Request) {
   const actor = await requireRole('rules:validate');
@@ -18,6 +19,9 @@ export async function POST(req: Request) {
   const shapeError = validateLogAnalyticsQueryShape(logsQuery);
   if (shapeError) return NextResponse.json({ error: shapeError }, { status: 400 });
 
+  const writer = mayWriteQueries(actor.access);
+  if (!writer.ok) return NextResponse.json({ error: writer.error }, { status: 403 });
+
   let ctx: TenantContext;
   try {
     ctx = await createTenantContext(actor.access);
@@ -25,6 +29,11 @@ export async function POST(req: Request) {
     // Deliberately not surfaced verbatim: a credential failure describes which identity sources
     // were tried and against which tenant, which the person validating a query cannot act on anyway.
     return azureError('Could not connect to Azure to validate this query', err);
+  }
+
+  if (needsWorkspaceLookup(actor.access)) {
+    const workspace = mayQueryWorkspace(actor.access, await resolveWorkspacePlacement(ctx));
+    if (!workspace.ok) return NextResponse.json({ error: workspace.error }, { status: 403 });
   }
 
   try {
