@@ -11,7 +11,7 @@ import { countRows, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import {
-  createPersonalRule, getPersonalRule, listPersonalRules, replacePersonalRuleResults, updatePersonalRule,
+  createPersonalRule, deletePersonalRule, getPersonalRule, listPersonalRules, replacePersonalRuleResults, updatePersonalRule,
   type PersonalRule, type PersonalRuleDefinition,
 } from '@/lib/db/personal-rules';
 import {
@@ -25,6 +25,8 @@ import { EVERYTHING_ACCESS } from '../helpers/access';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_TENANT_ID, type FakeTenantContext } from '../helpers/fake-azure';
 import { COPY_TO_LIBRARY_REASON } from '@/lib/library-request-view';
+import { reviewDiff } from '@/lib/library-request-diff';
+import type { LibraryRequestDetail } from '@/lib/types';
 import type { Role } from '@/lib/rbac';
 
 const mockAuth = vi.fn();
@@ -602,6 +604,21 @@ describe('copying straight to the library', () => {
     expect((await loadRules()).length).toBe(rulesBefore);
     expect((await getPersonalRule(second.id, cast.admin))!.libraryRuleId).toBeUndefined();
   });
+
+  it('answers 409 for a rule already in the library, renamed since, and writes no second rule (#267)', async () => {
+    const mine = await createPersonalRule(cast.admin, definition('Copied once'));
+    as(cast.admin);
+    const first = await bodyOf<{ id: string }>(await copyToLibrary(mine.id));
+    await updatePersonalRule(mine.id, cast.admin, definition('Copied once, renamed'));
+    const rulesBefore = (await loadRules()).length;
+
+    const res = await copyToLibrary(mine.id);
+
+    expect(res.status).toBe(409);
+    expect((await bodyOf<{ error: string }>(res)).error).toBe('This rule is already in the library as "Copied once".');
+    expect((await loadRules()).length).toBe(rulesBefore);
+    expect((await getPersonalRule(mine.id, cast.admin))!.libraryRuleId).toBe(first.id);
+  });
 });
 
 describe('deleting', () => {
@@ -618,6 +635,16 @@ describe('deleting', () => {
     expect(await getLibraryRequest(rejected)).toMatchObject({ status: 'rejected', personalRuleId: undefined });
     expect(await auditActions()).toContain('library_request.withdraw');
     expect(await listPersonalRules(cast.author)).toEqual([]);
+  });
+
+  it('a Personal rule withdraws its open request in the same transaction as the delete (#267)', async () => {
+    const open = await sendRequest();
+
+    const deleted = await deletePersonalRule(cast.rule.id, cast.author);
+
+    expect(deleted).toEqual({ withdrawnRequestIds: [open] });
+    expect(await getLibraryRequest(open)).toMatchObject({ status: 'withdrawn', personalRuleId: undefined });
+    expect(await deletePersonalRule(cast.rule.id, cast.author)).toBeNull();
   });
 
   it('the library rule clears the link on the Personal rule, which stays', async () => {
@@ -868,6 +895,25 @@ describe('update requests', () => {
       expect(detail.diff).toContainEqual({ kind: 'added', text: NEW_KQL });
       expect(detail.diff).toContainEqual({ kind: 'removed', text: KQL });
       expect(detail.diff).toContainEqual({ kind: 'same', text: 'Category: security' });
+    });
+
+    it('redraws the diff with the reviewer\'s edits, ending on exactly what approving them writes (#267, story 111)', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source, { rawKql: NEW_KQL, severity: 'low' }), source);
+      const detail = await readDetail(id) as LibraryRequestDetail;
+      const edits = { name: 'Renamed by the reviewer', category: 'security', severity: 'medium' as const, scope: detail.definition.scope };
+
+      const lines = reviewDiff(detail, edits)!;
+      expect(lines).toContainEqual({ kind: 'added', text: 'Name: Renamed by the reviewer' });
+      expect(lines).toContainEqual({ kind: 'removed', text: 'Severity: high' });
+      expect(lines).toContainEqual({ kind: 'added', text: 'Severity: medium' });
+      expect(lines).not.toContainEqual({ kind: 'added', text: 'Severity: low' });
+      expect(reviewDiff(detail, { ...edits, name: detail.definition.name, severity: detail.definition.severity })).toEqual(detail.diff);
+
+      as(cast.admin);
+      expect((await approve(id, edits)).ok).toBe(true);
+      const after = lines.filter(line => line.kind !== 'removed').map(line => line.text).join('\n');
+      expect((await readDetail(id) as LibraryRequestDetail).targetLines).toBe(after);
     });
 
     it('says the target changed once it is edited, and diffs against the edited rule', async () => {

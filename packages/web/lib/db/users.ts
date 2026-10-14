@@ -129,10 +129,14 @@ const NO_MIRROR = {
  * Creates a person. A Viewer or Editor holds what `access` says: Manual access an Admin chose, and the
  * Role they hold is the highest among its rows. With no `access` they start with Everything at `role`,
  * which is what a caller that has nothing to ask (a test, the Demo) gets; the invite route never leaves
- * it out. An Admin holds Everything without a row and has no source.
+ * it out. `mirrored` instead gives them Mirrored access in the same transaction: the Linked account, the
+ * Scopes its first read found, at `role`. An Admin holds Everything without a row and has no source.
  */
 export async function createUser(
-  data: { email: string; role: Role; oid?: string; name?: string; access?: readonly AssignmentInput[] },
+  data: {
+    email: string; role: Role; oid?: string; name?: string; access?: readonly AssignmentInput[];
+    mirrored?: { tenantId: string; objectId: string; scopes: readonly MirroredScope[]; at: string };
+  },
 ): Promise<{ user: AppUser } | { error: string }> {
   const email = data.email.trim().toLowerCase();
   if (!email) return { error: 'Email is required.' };
@@ -140,7 +144,8 @@ export async function createUser(
   if (await getUserByEmail(email)) return { error: `${email} already has a role assigned.` };
 
   const id = globalThis.crypto.randomUUID();
-  const role = data.role !== 'admin' && data.access ? highestRole(data.access) : data.role;
+  const mirrored = data.role !== 'admin' ? data.mirrored : undefined;
+  const role = data.role !== 'admin' && data.access && !mirrored ? highestRole(data.access) : data.role;
   await inTransaction(async (tx) => {
     await run(tx.insert(users).values({
       id,
@@ -148,12 +153,20 @@ export async function createUser(
       oid: data.oid ?? null,
       name: data.name ?? null,
       role,
-      accessSource: data.role === 'admin' ? null : 'manual',
+      accessSource: data.role === 'admin' ? null : mirrored ? 'mirrored' : 'manual',
       createdAt: new Date().toISOString(),
       lastSeenAt: data.oid ? new Date().toISOString() : null,
+      ...(mirrored ? {
+        linkedTenantId: mirrored.tenantId,
+        linkedObjectId: mirrored.objectId,
+        mirrorLastSuccessAt: mirrored.at,
+        mirrorLastAttemptAt: mirrored.at,
+        mirrorError: null,
+      } : {}),
     }));
     if (data.role === 'admin') return;
-    if (data.access) await replaceAssignmentsOn(tx, id, data.access);
+    if (mirrored) await replaceAssignmentsOn(tx, id, mirroredRows(role as GrantRole, mirrored.tenantId, mirrored.scopes));
+    else if (data.access) await replaceAssignmentsOn(tx, id, data.access);
     else await replaceWithEverythingOn(tx, id, data.role);
   });
 

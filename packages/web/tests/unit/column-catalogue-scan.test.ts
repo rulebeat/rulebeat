@@ -20,7 +20,8 @@ import { deleteMeta, getMeta, setMeta } from '@/lib/db/meta';
 import { rowLeafPaths } from '@/lib/finding-view';
 import { runCategoryScan } from '@/lib/scan-runner';
 import { resetDb } from '../helpers/db';
-import { fakeTenantContext, argRow } from '../helpers/fake-azure';
+import { fakeTenantContext, argRow, TEST_SUB_A, TEST_TENANT_ID } from '../helpers/fake-azure';
+import { buildAccess } from '@/lib/access-model';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
 const rowReads: { params: unknown[] }[] = [];
@@ -111,6 +112,12 @@ describe('a scan builds the column catalogue', () => {
     expect(await listReturnedColumns(EVERYTHING_ACCESS)).toEqual(['a', 'b']);
     expect(await listReturnedColumns(EVERYTHING_ACCESS, [])).toEqual([]);
     expect(await listReturnedColumns(EVERYTHING_ACCESS, ['no-such-rule'])).toEqual([]);
+  });
+
+  it('is read on Everything only, since it names columns of findings outside anyone narrower (#267)', async () => {
+    await scan([RULE_A], { [KQL_A]: [{ ...argRow({ name: 'vm-one' }), a: 1 }] });
+    const scoped = buildAccess([{ tenantId: TEST_TENANT_ID, scope: { kind: 'subscription', path: `/subscriptions/${TEST_SUB_A}` }, role: 'viewer' }], 'manual');
+    await expect(listReturnedColumns(scoped, [RULE_A])).rejects.toThrow('read on Everything only');
   });
 
   it('keeps the paths when the rule was capped, rebuilding them from the rows still stored', async () => {

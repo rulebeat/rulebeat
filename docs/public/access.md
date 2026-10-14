@@ -41,7 +41,7 @@ never both, so a refresh never has to decide which list wins.
 The Admin picks Scopes by hand, each with its own Role. Choose them on the **Access** page when adding
 someone, with **Edit** beside a person, or when demoting an Admin, where Everything is preselected.
 Adding a Viewer or Editor needs at least one Scope. Manual access is the only way to give Everything or
-the Directory.
+the Directory. The Access list shows each Scope and its Role under the person.
 
 ### Mirrored access
 
@@ -57,8 +57,10 @@ with its own Reader credential and turns them into Scopes.
 - The Azure role never decides the RuleBeat Role. Azure Contributor means "can change Azure
   resources"; RuleBeat Editor means "can write rules, schedules and suppressions". The Admin chooses the Role.
 
-Saving shows the Scopes the account would give, and the Manual Scopes they hold that would be
-replaced, before **Confirm**. "Use their sign-in account" fills the object id for a person who signed
+Choose Mirrored access when adding someone, or with **Edit** beside a person. Adding someone asks for
+Mirrored or Manual with neither chosen, and shows the Scopes the account would give before the invite
+is sent. On **Edit**, saving shows the Scopes the account would give, and the Manual Scopes they hold
+that would be replaced, before **Confirm**. "Use their sign-in account" fills the object id for a person who signed
 in with Entra, when sign-in uses the same tenant as the Azure connection.
 
 **When it refreshes.** About once an hour, after the management group tree is read; in the background
@@ -67,7 +69,7 @@ beside each mirrored person. Automatic refreshes write no audit entry.
 
 **When a refresh fails.** The last Scopes are kept, a stable reason is recorded (never Azure's own
 text), and the Access page says the refresh failed, when, and that the Scopes shown are the last ones
-that loaded.
+that loaded. The person sees the same on their own access, with the time of the last successful refresh.
 
 **When there are no assignments.** A refresh that succeeds and finds none gives the person no Scope.
 They see a message that they have been given no access and to ask an Admin, in place of "No findings
@@ -113,7 +115,9 @@ An Editor whose Scopes fall short of Everything works inside them.
 
 A person whose access is only resource groups cannot write a query or a Personal rule, because
 Resource Graph cannot limit a request to a resource group. They still see findings, suppress them and
-run shared rules, whose rows are filtered to their resource groups.
+run shared rules, whose rows are filtered to their resource groups. A person whose access does not
+include the Directory cannot query Microsoft Graph: the option is switched off on the Query page and
+in the new rule picker, with the reason beside it.
 
 ## Where RuleBeat shows more than Azure
 
@@ -130,12 +134,12 @@ RuleBeat is a compliance tool, and the smallest unit it reports on is a resource
   Entra, and the Azure API RuleBeat reads does not show it. A person whose only access is of that kind
   mirrors as empty until they activate it. Give them Manual access, which covers it.
 - **A removed Azure role disappears at the next successful refresh.** That comes on top of Azure's own
-  propagation delay, so a person can keep a Scope for up to about an hour plus the time Azure takes
-  to report the removal. Press **Refresh** beside the person to read it at once. A failed refresh
+  propagation delay (Azure can take up to 10 minutes to apply a role change, and longer at a
+  management group), so a person can keep a Scope for up to about an hour plus that time. Press **Refresh** beside the person to read it at once. A failed refresh
   keeps the old Scopes.
 
 ## The audit log
 
 Adding someone, changing their access, promoting, demoting, confirming a mirror, refreshing by hand,
-switching to Manual and changing a Role each write one entry that names the fields changed and none
-of their values: never an object id, a tenant id or a Scope.
+switching to Manual, changing a Role and removing someone each write one entry that names the fields
+changed and none of their values: never an object id, a tenant id or a Scope.

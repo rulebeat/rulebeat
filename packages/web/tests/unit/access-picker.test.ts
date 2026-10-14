@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAccess, parseScope, type ManualGrant } from '@/lib/access-model';
 import {
-  alsoLinkedNote, canInvite, canPreviewMirror, canUseSignInAccount, EDIT_STOPS_MIRROR_NOTE, previewHeading, replacesManualNote,
+  alsoLinkedNote, canInvite, canInviteMirrored, canPreviewMirror, canUseSignInAccount, EDIT_STOPS_MIRROR_NOTE, previewHeading, replacesManualNote,
   describeScopePath, grantsOfAccess, heldAt, resourceGroupScopePath, resourceGroupsHeld, setEveryRole, setGrantRole,
   pickerGroups, subscriptionScopePath, subscriptionsNamed, toggleGrant,
 } from '@/lib/access-picker';
@@ -164,6 +164,17 @@ describe('Mirrored access in the picker (#278)', () => {
       expect(canPreviewMirror(OBJECT_ID)).toBe(true);
       expect(canPreviewMirror(`  ${OBJECT_ID.toUpperCase()}  `)).toBe(true);
       for (const typed of ['', ' ', 'not-a-guid', `${OBJECT_ID}0`, OBJECT_ID.slice(1)]) expect(canPreviewMirror(typed), typed).toBe(false);
+    });
+  });
+
+  describe('canInviteMirrored', () => {
+    it('needs an email and a preview of the very account in the field', () => {
+      expect(canInviteMirrored('a@example.com', OBJECT_ID, OBJECT_ID)).toBe(true);
+      expect(canInviteMirrored('a@example.com', ` ${OBJECT_ID} `, OBJECT_ID)).toBe(true);
+      expect(canInviteMirrored('a@example.com', OBJECT_ID, null)).toBe(false);
+      expect(canInviteMirrored(' ', OBJECT_ID, OBJECT_ID)).toBe(false);
+      expect(canInviteMirrored('a@example.com', 'not-a-guid', 'not-a-guid')).toBe(false);
+      expect(canInviteMirrored('a@example.com', OBJECT_ID, OBJECT_ID.replace(/.$/, '9'))).toBe(false);
     });
   });
 

@@ -170,7 +170,7 @@ describe('the Access page', () => {
 
     it('shows no control at all', () => {
       const html = renderToStaticMarkup(createElement(OwnAccessSection, {
-        own: { role, source: 'manual', scopes: [{ kind: 'subscription', path: SUB, role }] },
+        own: { role, source: 'manual', scopes: [{ kind: 'subscription', path: SUB, role }], mirror: null },
       }));
       expect(html).not.toMatch(/<(button|input|select|textarea|a )/);
     });
@@ -209,7 +209,7 @@ describe('the own-access route', () => {
     const res = await ownAccessRoute.GET();
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ role, source: 'manual', scopes: [{ kind: 'resourceGroup', path: RG, role }] });
+    expect(JSON.parse(text)).toEqual({ role, source: 'manual', scopes: [{ kind: 'resourceGroup', path: RG, role }], mirror: null });
     expect(text).not.toContain(TENANT);
     expect(text).not.toContain('target@example.com');
   });
@@ -217,7 +217,7 @@ describe('the own-access route', () => {
   it('answers an admin with Everything and no source', async () => {
     signInAs(admin);
     expect(await (await ownAccessRoute.GET()).json()).toEqual({
-      role: 'admin', source: null, scopes: [{ kind: 'everything', path: '/', role: 'admin' }],
+      role: 'admin', source: null, scopes: [{ kind: 'everything', path: '/', role: 'admin' }], mirror: null,
     });
   });
 
@@ -319,7 +319,10 @@ describe('access in the page and the routes (#269)', () => {
     );
     expect(html).toContain('>Access</th>');
     expect(html.match(/Everything, manual/g)).toHaveLength(2);
-    expect(html.match(/>Everything</g)).toHaveLength(1);
+    // The Access column: the Admin alone reads a bare "Everything".
+    expect(html.match(/<span>Everything<\/span>/g)).toHaveLength(1);
+    // The two manual people each list their one Scope below their row (#267, story 2); the Admin lists none.
+    expect(html.match(/<span class="text-sm text-ink">Everything<\/span>/g)).toHaveLength(2);
   });
 
   it('reads a short non-blank label for a person who holds no Scope', async () => {
@@ -389,6 +392,26 @@ describe('access in the page and the routes (#269)', () => {
     for (const entry of await listAllAuditEntries()) {
       const text = JSON.stringify(entry.details ?? {});
       expect(text, entry.action).not.toMatch(/viewer|editor|admin|\/subscriptions|0000/);
+    }
+  });
+
+  it('writes the names of the access fields a removal takes away into its audit entry (#267, story 25)', async () => {
+    await userRoute.DELETE(jsonRequest('DELETE', {}), params(target.id));
+    expect((await lastAudit('user.remove'))?.details).toEqual({ changed: ['role', 'accessSource', 'assignments'] });
+
+    const mirrored = await makeUser('mirrored@example.com', 'viewer');
+    await setMirroredAccess(mirrored.id, {
+      role: 'viewer', tenantId: TENANT, objectId: '00000000-0000-0000-0000-0000000000c1', scopes: [{ scope: SUB, origins: [] }], at: '2026-06-02T00:00:00.000Z',
+    });
+    await userRoute.DELETE(jsonRequest('DELETE', {}), params(mirrored.id));
+    expect((await lastAudit('user.remove'))?.details).toEqual({ changed: ['role', 'accessSource', 'assignments', 'linkedAccount'] });
+
+    const second = await makeUser('second-admin@example.com', 'admin');
+    await userRoute.DELETE(jsonRequest('DELETE', {}), params(second.id));
+    expect((await lastAudit('user.remove'))?.details).toEqual({ changed: ['role'] });
+
+    for (const entry of (await listAllAuditEntries()).filter(e => e.action === 'user.remove')) {
+      expect(JSON.stringify(entry.details ?? {})).not.toMatch(/viewer|editor|admin|\/subscriptions|0000/);
     }
   });
 });
@@ -643,10 +666,16 @@ describe('Manual access (#272)', () => {
 });
 
 describe('the invite form', () => {
-  it('has no Scope chosen and cannot be submitted until one is', () => {
+  it('has neither source nor Scope chosen, and cannot be submitted until one is (#267, story 19)', () => {
     const html = renderToStaticMarkup(createElement('table', null, createElement('tbody', null,
       createElement(InviteRow, { onSave: () => undefined, onCancel: () => undefined }))));
-    expect(html).toContain('Choose at least one');
+    expect(html).toContain('Manual access');
+    expect(html).toContain('Mirrored access');
+    expect(html).toContain('Until you do, this person is given nothing');
+    expect(html).not.toContain('aria-pressed="true"');
+    // No Scope list and no Linked account field until a source is picked.
+    expect(html).not.toContain('Choose at least one');
+    expect(html).not.toContain('invite-linked-account');
     expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Add<\/button>/);
   });
@@ -1000,6 +1029,32 @@ describe('Mirrored access on the page (#278)', () => {
     });
   });
 
+  describe('a person with Manual access, in the list (#267, story 2)', () => {
+    const render = (users: AppUserWithAccess[]) =>
+      renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
+    const listed = async (id: string) => (await listUsersWithAccess()).filter(u => u.id === id);
+    const scopeRows = (html: string) => [...html.matchAll(/<li[^>]*>((?:(?!<\/li>)[\s\S])*)<\/li>/g)].map(m => m[1]!.replace(/<[^>]+>/g, '|'));
+
+    it('lists each Scope with the Role at it, without opening Edit', async () => {
+      await setManualAccess(target.id, [
+        { tenantId: TENANT, scope: SUB, role: 'viewer' },
+        { tenantId: TENANT, scope: `${OTHER_SUB}/resourceGroups/rg-two`, role: 'editor' },
+      ]);
+      const rows = scopeRows(render(await listed(target.id)));
+      expect(rows).toHaveLength(2);
+      expect(rows.find(r => r.includes(`|${SUB}|`))).toContain('|Viewer|');
+      expect(rows.find(r => r.includes(`${OTHER_SUB}/resourceGroups/rg-two`))).toContain('|Editor|');
+      expect(rows.find(r => r.includes(`${OTHER_SUB}/resourceGroups/rg-two`))).toContain('rg-two in 00000000-0000-0000-0000-00000000000b');
+    });
+
+    it('has no Scope list for a person given nothing, or for an Admin', async () => {
+      await setManualAccess(target.id, []);
+      const html = render([...await listed(target.id), ...await listed(admin.id)]);
+      expect(html).toContain('No access, manual');
+      expect(scopeRows(html)).toEqual([]);
+    });
+  });
+
   describe('a mirrored person with no Scope, in their own access', () => {
     it('is told the Linked account holds no Azure role assignments RuleBeat can see, not that they have been given no access', async () => {
       const person = await makeUser('mirrored@example.com', 'viewer');
@@ -1014,9 +1069,39 @@ describe('Mirrored access on the page (#278)', () => {
     });
 
     it('still tells a manual person with no Scope they have been given no access', async () => {
-      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own: { role: 'viewer', source: 'manual', scopes: [] } }));
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own: { role: 'viewer', source: 'manual', scopes: [], mirror: null } }));
       expect(html).toContain('You have been given no access');
       expect(html).not.toContain('Linked account');
+    });
+  });
+
+  describe('the last refresh, in their own access (#267, story 7)', () => {
+    it('tells a mirrored person when their access last loaded and why the last refresh failed, without the object id', async () => {
+      const person = await mirroredPerson('mirrored@example.com', [{ scope: SUB, origins: [] }], { code: 'failed', at: '2026-06-03T00:00:00.000Z' });
+      signInAs((await getUser(person.id))!);
+
+      const own = propsWith(await AccessPage(), 'own').own as OwnAccess;
+      expect(own.mirror).toMatchObject({ lastSuccessAt: AT, lastAttemptAt: '2026-06-03T00:00:00.000Z', error: { code: 'failed' } });
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own }));
+      expect(html).toContain('The last refresh failed');
+      expect(html).toContain('The Scopes shown are the last ones that loaded');
+
+      const body = await (await ownAccessRoute.GET()).json() as OwnAccess;
+      expect(body.mirror).toEqual(own.mirror);
+      expect(JSON.stringify(body)).not.toContain(ACCOUNT);
+    });
+
+    it('says when it last loaded after a refresh that worked', async () => {
+      const person = await mirroredPerson('mirrored@example.com', [{ scope: SUB, origins: [] }]);
+      signInAs((await getUser(person.id))!);
+      const own = propsWith(await AccessPage(), 'own').own as OwnAccess;
+      expect(renderToStaticMarkup(createElement(OwnAccessSection, { own }))).toContain('Last refreshed');
+    });
+
+    it('carries no refresh status for a manual person', async () => {
+      signInAs(target);
+      expect((propsWith(await AccessPage(), 'own').own as OwnAccess).mirror).toBeNull();
+      expect(((await (await ownAccessRoute.GET()).json()) as OwnAccess).mirror).toBeNull();
     });
   });
 });

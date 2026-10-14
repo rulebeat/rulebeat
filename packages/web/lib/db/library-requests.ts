@@ -2,11 +2,12 @@ import { db } from './client';
 import { libraryRequests } from './tables';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock } from './exec';
+import { LIBRARY_REQUEST_LOCK_KEY } from './library-request-cleanup';
 import type { Rule, RuleScope, Severity } from '@rulebeat/core';
 import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges } from '@/lib/rules';
 import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import {
-  definitionOfPersonalRule, setPersonalRuleLibraryRule, type PersonalRule, type PersonalRuleDefinition,
+  definitionOfPersonalRule, getPersonalRule, setPersonalRuleLibraryRule, type PersonalRule, type PersonalRuleDefinition,
 } from './personal-rules';
 
 /**
@@ -43,8 +44,6 @@ export interface LibraryRequest {
 
 type Row = typeof libraryRequests.$inferSelect;
 
-/** Taken by every change of a request's status, so two reviewers (or a reviewer and the author) cannot both close it. A no-op on SQLite. */
-const LIBRARY_REQUEST_LOCK_KEY = 7194826034;
 
 function parseDefinition(raw: string): PersonalRuleDefinition {
   return JSON.parse(raw) as PersonalRuleDefinition;
@@ -317,16 +316,22 @@ export function withdrawLibraryRequest(id: string, authorId: string): Promise<Cl
 
 export type CopyToLibraryResult =
   | { ok: true; rule: Rule }
-  | { ok: false; reason: 'name-taken' };
+  | { ok: false; reason: 'name-taken' }
+  | { ok: false; reason: 'in-library'; libraryRuleName: string };
 
 /**
  * A reviewer copies their own Personal rule straight into the library, with no request. The rule gets a
  * new id and no request id, starts disabled, and the Personal rule is pointed at it. One transaction,
- * the name checked under the same lock as `createRule()`.
+ * the name checked under the same lock as `createRule()`. A Personal rule already in the library (a copy
+ * or an approved request made a rule that still exists) is refused, read again under the lock, so two
+ * clicks cannot add it twice.
  */
 export async function copyPersonalRuleToLibrary(rule: PersonalRule): Promise<CopyToLibraryResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
+    const current = await getPersonalRule(rule.id, rule.ownerId, tx);
+    const existing = current?.libraryRuleId ? await loadRuleWithDefinition(current.libraryRuleId, tx) : null;
+    if (existing) return { ok: false, reason: 'in-library', libraryRuleName: existing.rule.name };
     const inserted = await insertRuleOn(tx, libraryRuleFrom(definitionOfPersonalRule(rule), false));
     if (!inserted.ok) return inserted;
     await setPersonalRuleLibraryRule(rule.id, rule.ownerId, inserted.rule.id, tx);

@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { getUser, updateUserRole, deleteUser } from '@/lib/db/users';
 import type { AssignmentInput } from '@/lib/db/role-assignments';
-import { withAccess, changedAccessFields } from '@/lib/access';
+import { withAccess, changedAccessFields, removedAccessFields } from '@/lib/access';
 import { parseManualAccess } from '@/lib/access-model';
 import { assignmentsFor } from '@/lib/manual-access';
 import { writeAudit } from '@/lib/db/audit';
@@ -74,7 +74,9 @@ export async function DELETE(
   if (actor instanceof NextResponse) return actor;
 
   const { id } = await params;
-  const before = await getUser(id);
+  const stored = await getUser(id);
+  // Read before the delete: the assignments go with the person.
+  const before = stored ? await withAccess(stored) : null;
   const result = await deleteUser(id);
   if (result === 'notfound') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (result === 'last-admin') {
@@ -87,6 +89,7 @@ export async function DELETE(
     entityType: 'user',
     entityId: id,
     summary: `Removed ${before?.email ?? id} (was ${before?.role ?? 'unknown'})`,
+    ...(before ? { details: { changed: removedAccessFields(before) } } : {}),
   });
   // The person's open Library requests were withdrawn in the same transaction as their removal.
   if (result.withdrawnRequests > 0) {

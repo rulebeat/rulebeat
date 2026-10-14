@@ -98,6 +98,8 @@ interface QueryPageProps {
   noSubscription?: boolean;
   /** For anyone without Everything, exactly the subscriptions and management groups they hold. */
   limitTo?: { subscriptions: string[]; managementGroups: string[] };
+  /** Why Microsoft Graph is unavailable to this person (no Directory Scope), or absent when it is available. */
+  directoryUnavailable?: string;
 }
 
 export function QueryPageClient({ noSubscription, ...rest }: QueryPageProps) {
@@ -105,7 +107,7 @@ export function QueryPageClient({ noSubscription, ...rest }: QueryPageProps) {
   return <QueryEditor {...rest} />;
 }
 
-function QueryEditor({ defaultCategoryId, limitTo }: Omit<QueryPageProps, 'noSubscription'>) {
+function QueryEditor({ defaultCategoryId, limitTo, directoryUnavailable }: Omit<QueryPageProps, 'noSubscription'>) {
   const router = useRouter();
 
   const [backend, setBackend] = useState<QueryBackend>('resource-graph');
@@ -357,24 +359,28 @@ function QueryEditor({ defaultCategoryId, limitTo }: Omit<QueryPageProps, 'noSub
   }
 
   const canRun = backend === 'resource-graph' ? !!argKql.trim()
-    : backend === 'microsoft-graph' ? true
+    : backend === 'microsoft-graph' ? !directoryUnavailable
     : !!logsKql.trim();
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-6">
         {/* Backend switcher */}
-        <div className="flex gap-2">
-          {BACKEND_OPTIONS.map(opt => (
-            <Button
-              key={opt.value}
-              type="button"
-              variant={backend === opt.value ? 'default' : 'outline'}
-              onClick={() => switchBackend(opt.value)}
-            >
-              {opt.label}
-            </Button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {BACKEND_OPTIONS.map(opt => (
+              <Button
+                key={opt.value}
+                type="button"
+                variant={backend === opt.value ? 'default' : 'outline'}
+                disabled={opt.value === 'microsoft-graph' && !!directoryUnavailable}
+                onClick={() => switchBackend(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          {directoryUnavailable && <p className="text-xs text-ink-2">{directoryUnavailable}</p>}
         </div>
 
         {backend === 'resource-graph' && (

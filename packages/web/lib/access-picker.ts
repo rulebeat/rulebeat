@@ -126,6 +126,14 @@ export function canPreviewMirror(objectId: string): boolean {
   return parseObjectId(objectId) !== null;
 }
 
+/**
+ * Whether an invite with Mirrored access can be sent: an email, and a preview of the account in the field now.
+ * Changing the object id after a preview needs a new one, so the Admin always adds what they last saw.
+ */
+export function canInviteMirrored(email: string, objectId: string, previewedId: string | null): boolean {
+  return email.trim() !== '' && canPreviewMirror(objectId) && previewedId === objectId.trim();
+}
+
 /** What Edit says over a mirrored person's Scopes: saving them turns the person manual. */
 export const EDIT_STOPS_MIRROR_NOTE =
   'This person has Mirrored access. Saving here stops the mirror: the Scopes below stay as they are and become Manual access.';

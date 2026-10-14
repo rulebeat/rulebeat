@@ -145,6 +145,7 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['users/[id]/mirror/route.ts', 'users:manage'],
     ['users/[id]/mirror/preview/route.ts', 'users:manage'],
     ['users/[id]/mirror/refresh/route.ts', 'users:manage'],
+    ['users/mirror-preview/route.ts', 'users:manage'],
     ['account/password/route.ts', 'account:self'],
     ['settings/sign-in/route.ts', 'auth:manage'],
     ['settings/sign-in/test/route.ts', 'auth:manage'],

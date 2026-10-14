@@ -6,7 +6,7 @@
  * covering the workspace's resource group.
  *
  * Pure, no DB or Node imports, like `lib/rbac.ts`, so the routes and the Query page share one
- * definition. It sits above `createTenantContext`, which still limits nothing (#276).
+ * definition. It sits above `createTenantContext`, whose limit is only the floor: what the person holds at any Role.
  *
  * Only a Scope held at a Role that allows the action counts, asked through `can()` and `mayAct()`,
  * never by comparing a role name.

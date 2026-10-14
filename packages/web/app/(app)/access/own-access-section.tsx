@@ -6,6 +6,7 @@ import type { OwnAccess } from '@/lib/access';
 import { MIRRORED_NO_SCOPE_MESSAGE } from '@/lib/access-mirror-model';
 import { describeScopePath } from '@/lib/access-picker';
 import { ROLE_LABELS } from '@/lib/rbac';
+import { MirrorStatusLine } from './mirrored-detail';
 
 /** Where a person's access came from, in words. A person who holds nothing has no source to name. */
 function sourceText(own: OwnAccess): string {
@@ -37,6 +38,11 @@ export function OwnAccessSection({ own }: { own: OwnAccess }) {
           You are a {ROLE_LABELS[own.role]}. {sourceText(own)}. You see the findings inside the scopes below, and
           only an Admin can change them.
         </p>
+        {own.mirror && (
+          <div className="px-6 pb-3">
+            <MirrorStatusLine status={own.mirror} own />
+          </div>
+        )}
         <TableScroll>
           <Table>
             <TableHeader>

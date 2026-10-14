@@ -64,7 +64,7 @@ export function backWaysUsed(source: string): string[] {
 /** An `Access` built in the file rather than handed down. */
 export const BUILDS_ACCESS = /\b(?:everythingAccess|buildAccess)\s*\(/;
 
-/** The two Admin-only settings routes that test a credential or a workspace nobody has saved yet. They
+/** The three Admin-only settings routes that test a credential or a workspace nobody has saved yet. They
  *  have no person's access to build a context from: what they verify is whatever was typed. */
 const ALLOWED: Record<string, string> = {
   'api/settings/azure-connection/test/route.ts': 'tests a typed, unsaved credential before it is saved',

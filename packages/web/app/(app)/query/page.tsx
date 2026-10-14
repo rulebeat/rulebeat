@@ -6,7 +6,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS } from '@/lib/access-model';
 import { can } from '@/lib/rbac';
-import { queryScopeLimit, writesNoQueries } from '@/lib/written-query';
+import { mayQueryDirectory, queryScopeLimit, writesNoQueries } from '@/lib/written-query';
 
 export default async function QueryPage() {
   const user = await getCurrentUser();
@@ -15,6 +15,7 @@ export default async function QueryPage() {
   const access = user ? await resolveAccess(user) : NO_ACCESS;
   const categories = await listCategories();
   const defaultCategoryId = categories[0]?.id ?? '';
+  const directory = mayQueryDirectory(access);
 
   return (
     <>
@@ -27,6 +28,7 @@ export default async function QueryPage() {
           defaultCategoryId={defaultCategoryId}
           noSubscription={writesNoQueries(access)}
           limitTo={queryScopeLimit(access) ?? undefined}
+          directoryUnavailable={directory.ok ? undefined : directory.error}
         />
       </main>
     </>

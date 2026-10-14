@@ -7,6 +7,8 @@ import type { QueryBackend } from '@/lib/types';
 interface Props {
   onSelect: (backend: QueryBackend) => void;
   onClose: () => void;
+  /** Why Directory objects are unavailable to this person (no Directory Scope): the option is shown disabled with it. */
+  directoryUnavailable?: string;
 }
 
 const OPTIONS = [
@@ -36,9 +38,10 @@ const OPTIONS = [
 /**
  * Shown before RuleForm on the /rules/new path (spec 029). Resource Graph and Directory objects
  * (Microsoft Graph) are authorable; Log Analytics is paused (spec 038) pending multi-workspace
- * targeting and a GUI builder: it only supports one tenant-wide workspace today.
+ * targeting and a GUI builder: it only supports one tenant-wide workspace today. Directory objects
+ * are disabled, with the reason, for someone without the Directory Scope.
  */
-export function ChecksPickerDialog({ onSelect, onClose }: Props) {
+export function ChecksPickerDialog({ onSelect, onClose, directoryUnavailable }: Props) {
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
       <DialogPortal>
@@ -54,14 +57,16 @@ export function ChecksPickerDialog({ onSelect, onClose }: Props) {
             <div className="space-y-2 px-5 py-5">
               {OPTIONS.map(opt => {
                 const Icon = opt.icon;
+                const reason = opt.id === 'microsoft-graph' ? directoryUnavailable : undefined;
+                const enabled = opt.enabled && !reason;
                 return (
                   <button
                     key={opt.id}
                     type="button"
-                    disabled={!opt.enabled}
-                    onClick={() => { if (opt.enabled) onSelect(opt.id); }}
+                    disabled={!enabled}
+                    onClick={() => { if (enabled) onSelect(opt.id); }}
                     className={
-                      opt.enabled
+                      enabled
                         ? 'flex w-full items-start gap-3 border border-rule-strong bg-surface px-3.5 py-3 text-left transition-colors hover:bg-surface-hover'
                         : 'flex w-full cursor-not-allowed items-start gap-3 border border-transparent bg-surface-sunken px-3.5 py-3 text-left opacity-60'
                     }
@@ -75,6 +80,7 @@ export function ChecksPickerDialog({ onSelect, onClose }: Props) {
                         )}
                       </div>
                       <p className="mt-0.5 text-xs leading-relaxed text-ink-2">{opt.description}</p>
+                      {reason && <p className="mt-1 text-xs leading-relaxed text-ink">{reason}</p>}
                     </div>
                   </button>
                 );

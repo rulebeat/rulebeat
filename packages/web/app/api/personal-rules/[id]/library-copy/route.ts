@@ -4,7 +4,7 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { copyPersonalRuleToLibrary } from '@/lib/db/library-requests';
 import { definitionOfPersonalRule, getPersonalRule } from '@/lib/db/personal-rules';
-import { categoryError, copyToLibraryBlockedReason } from '@/lib/library-request-view';
+import { alreadyInLibraryMessage, categoryError, copyToLibraryBlockedReason } from '@/lib/library-request-view';
 import { NOT_FOUND } from '@/lib/personal-rule-request';
 import { ruleNameTakenError } from '@/lib/rules';
 
@@ -31,7 +31,12 @@ export async function POST(_req: Request, { params }: Params) {
     if (missingCategory) return NextResponse.json({ error: missingCategory }, { status: 400 });
 
     const result = await copyPersonalRuleToLibrary(rule);
-    if (!result.ok) return NextResponse.json(ruleNameTakenError(rule.name), { status: 409 });
+    if (!result.ok) {
+      const body = result.reason === 'in-library'
+        ? { error: alreadyInLibraryMessage(result.libraryRuleName) }
+        : ruleNameTakenError(rule.name);
+      return NextResponse.json(body, { status: 409 });
+    }
 
     await writeAudit({
       actor,

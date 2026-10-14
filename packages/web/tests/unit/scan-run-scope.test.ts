@@ -217,6 +217,18 @@ describe('what a scoped Editor sends Azure', () => {
     expect([after.lastRunStatus, after.lastRunAt]).toEqual([before.lastRunStatus, before.lastRunAt]);
   });
 
+  it('leaves the install-wide last-run status of a rule it did run alone, success or failure', async () => {
+    await runAs('Admin', [RULES.wide.id]);
+    const before = (await loadRules()).find(r => r.id === RULES.wide.id)!;
+    expect(before.lastRunStatus).toBe('success');
+
+    await runAs('Editor on subscription A', [RULES.wide.id]);
+    await runAs('Editor on subscription A', [RULES.wide.id], fakeAzure(ROWS, { failWith: new Error('throttled') }));
+
+    const after = (await loadRules()).find(r => r.id === RULES.wide.id)!;
+    expect([after.lastRunStatus, after.lastRunAt]).toEqual([before.lastRunStatus, before.lastRunAt]);
+  });
+
   it('sends a rule on a management group above a held group, and one beneath it, the right entries', async () => {
     const group = fakeAzure();
     await runAs('Editor on the management group', REQUEST_RULES.map(k => RULES[k].id), group);

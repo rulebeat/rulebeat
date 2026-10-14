@@ -215,11 +215,15 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
   // Persist what this scan actually observed about each rule it ran, so a future "zero findings"
   // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status
   // since every rule sharing an outcome gets the same UPDATE; rules outside this scan's scope
-  // (disabled, or excluded by a targeted run) are never touched.
-  await setRulesLastRunStatus(successRuleIds, 'success', summary.finishedAt);
-  for (const status of ['failed', 'capped', 'invalid'] as const) {
-    const ids = incompleteRules.filter(r => r.status === status).map(r => r.ruleId);
-    await setRulesLastRunStatus(ids, status, summary.finishedAt);
+  // (disabled, or excluded by a targeted run) are never touched. The status is the rule's across the
+  // install, so only a run covering Everything writes it: a scoped run's success says nothing about the
+  // rest of the tenant, and its failure is in its own Run History.
+  if (!scoped) {
+    await setRulesLastRunStatus(successRuleIds, 'success', summary.finishedAt);
+    for (const status of ['failed', 'capped', 'invalid'] as const) {
+      const ids = incompleteRules.filter(r => r.status === status).map(r => r.ruleId);
+      await setRulesLastRunStatus(ids, status, summary.finishedAt);
+    }
   }
 
   // After the sync's transaction has committed. A rule moved to another category leaves findings
