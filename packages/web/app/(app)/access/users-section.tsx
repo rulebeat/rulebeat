@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
@@ -12,8 +12,10 @@ import {
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
 import { describeAccess, EVERYTHING_SCOPE_PATH, type GrantRole, type ManualGrant } from '@/lib/access-model';
-import { canInvite, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
+import { canInvite, EDIT_STOPS_MIRROR_NOTE, grantsOfAccess, setEveryRole } from '@/lib/access-picker';
 import { Plus, Trash2, Check, X, Mail, ShieldCheck, KeyRound } from 'lucide-react';
+import { MirroredAccessRow } from './mirrored-access-form';
+import { MirroredDetailRow } from './mirrored-detail';
 import { ScopePicker } from './scope-picker';
 
 const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: ROLE_LABELS[r] }));
@@ -114,9 +116,13 @@ export function InviteRow({ onSave, onCancel, saving }: {
 }
 
 /** Chooses what one existing person can access: an edit of their Manual access, or what a demoted Admin is given. */
-function AccessPromptRow({ heading, hint, initial, defaultRole, confirmLabel, onConfirm, onCancel, saving }: {
+function AccessPromptRow({ heading, hint, notice, modeSwitch, initial, defaultRole, confirmLabel, onConfirm, onCancel, saving }: {
   heading: string;
   hint: string;
+  /** Said above the list, for a state the Admin should know before changing it. */
+  notice?: string;
+  /** The Manual access / Mirrored access choice, drawn above the list by the row that owns it. */
+  modeSwitch?: ReactNode;
   initial: ManualGrant[];
   defaultRole: GrantRole;
   confirmLabel: string;
@@ -129,6 +135,8 @@ function AccessPromptRow({ heading, hint, initial, defaultRole, confirmLabel, on
     <tr className="border-b border-border bg-surface-sunken last:border-0">
       <td colSpan={7} className="px-3 py-4">
         <div className="flex max-w-2xl flex-col gap-3">
+          {modeSwitch}
+          {notice && <Callout tone="warn">{notice}</Callout>}
           <div className="space-y-1.5">
             <Label>{heading}</Label>
             <ScopePicker value={grants} onChange={setGrants} defaultRole={defaultRole} disabled={saving} />
@@ -167,14 +175,91 @@ export function demotePromptKey(role: Role): string {
   return `demote:${role}`;
 }
 
+const SOURCE_LABELS = { manual: 'Manual access', mirrored: 'Mirrored access' } as const;
+
+/** The choice between the two ways of giving a Viewer or Editor access. An Admin has none, so never gets it. */
+function SourceSwitch({ mode, onChange }: { mode: 'manual' | 'mirrored'; onChange: (mode: 'manual' | 'mirrored') => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Access source</Label>
+      <div className="flex items-center gap-2">
+        {(['manual', 'mirrored'] as const).map(m => (
+          <Button
+            key={m}
+            size="sm"
+            variant={mode === m ? 'default' : 'outline'}
+            aria-pressed={mode === m}
+            onClick={() => onChange(m)}
+          >
+            {SOURCE_LABELS[m]}
+          </Button>
+        ))}
+      </div>
+      <FieldHint>
+        {mode === 'manual'
+          ? 'You pick the Scopes, each with its own Role. Nothing in Azure changes them.'
+          : 'One Role, and Scopes that follow the role assignments of a Linked account in Azure.'}
+      </FieldHint>
+    </div>
+  );
+}
+
+/**
+ * Edit for one Viewer or Editor: Manual access, picked by hand, or Mirrored access from a Linked account. It
+ * opens on Manual access, so editing a mirrored person says that saving turns them manual, with the Scopes
+ * they have now.
+ */
+function EditAccessRow({ user, saving, signInTenantIsAzureTenant, onSaveAccess, onMirrored, onCancel }: {
+  user: AppUserWithAccess;
+  saving: boolean;
+  signInTenantIsAzureTenant: boolean;
+  onSaveAccess: (grants: ManualGrant[]) => void;
+  onMirrored: (user: AppUserWithAccess) => void;
+  onCancel: () => void;
+}) {
+  const [mode, setMode] = useState<'manual' | 'mirrored'>('manual');
+  const modeSwitch = <SourceSwitch mode={mode} onChange={setMode} />;
+  if (mode === 'mirrored') {
+    return (
+      <MirroredAccessRow
+        user={user}
+        signInTenantIsAzureTenant={signInTenantIsAzureTenant}
+        modeSwitch={modeSwitch}
+        onSaved={onMirrored}
+        onCancel={onCancel}
+      />
+    );
+  }
+  return (
+    <AccessPromptRow
+      heading={`What ${user.email} can access`}
+      hint="Each Scope has its own Role. Saving replaces everything this person had."
+      notice={user.accessSource === 'mirrored' ? EDIT_STOPS_MIRROR_NOTE : undefined}
+      modeSwitch={modeSwitch}
+      initial={grantsOfAccess(user.access)}
+      defaultRole={user.role as GrantRole}
+      confirmLabel="Save access"
+      saving={saving}
+      onConfirm={onSaveAccess}
+      onCancel={onCancel}
+    />
+  );
+}
+
 /** The prompts that can open under one person's row, each keyed by what it was opened on so it remounts
  *  when that changes. */
-export function PromptRows({ user, editing, demotingTo, saving, onSaveAccess, onDemote, onCancelEdit, onCancelDemote }: {
+export function PromptRows({
+  user, editing, demotingTo, saving, signInTenantIsAzureTenant = false, onSaveAccess, onMirrored = () => undefined,
+  onDemote, onCancelEdit, onCancelDemote,
+}: {
   user: AppUserWithAccess;
   editing: boolean;
   demotingTo: Role | null;
   saving: boolean;
+  /** Whether the sign-in tenant is the Azure connection's, so "Use their sign-in account" means the same account. */
+  signInTenantIsAzureTenant?: boolean;
   onSaveAccess: (grants: ManualGrant[]) => void;
+  onMirrored?: (user: AppUserWithAccess) => void;
   onDemote: (role: Role, access: ManualGrant[]) => void;
   onCancelEdit: () => void;
   onCancelDemote: () => void;
@@ -182,15 +267,13 @@ export function PromptRows({ user, editing, demotingTo, saving, onSaveAccess, on
   return (
     <>
       {editing && user.role !== 'admin' && (
-        <AccessPromptRow
+        <EditAccessRow
           key={editPromptKey(user)}
-          heading={`What ${user.email} can access`}
-          hint="Each Scope has its own Role. Saving replaces everything this person had."
-          initial={grantsOfAccess(user.access)}
-          defaultRole={user.role as GrantRole}
-          confirmLabel="Save access"
+          user={user}
           saving={saving}
-          onConfirm={onSaveAccess}
+          signInTenantIsAzureTenant={signInTenantIsAzureTenant}
+          onSaveAccess={onSaveAccess}
+          onMirrored={onMirrored}
           onCancel={onCancelEdit}
         />
       )}
@@ -212,11 +295,13 @@ export function PromptRows({ user, editing, demotingTo, saving, onSaveAccess, on
 }
 
 export function UsersSection({
-  initialUsers, initialUsersWithPassword, currentUserId,
+  initialUsers, initialUsersWithPassword, currentUserId, signInTenantIsAzureTenant = false,
 }: {
   initialUsers: AppUserWithAccess[];
   initialUsersWithPassword: string[];
   currentUserId: string;
+  /** Whether the sign-in tenant is the Azure connection's, so a person's sign-in account can be linked in one click. */
+  signInTenantIsAzureTenant?: boolean;
 }) {
   const [users, setUsers] = useState<AppUserWithAccess[]>(initialUsers);
   const [usersWithPassword, setUsersWithPassword] = useState<Set<string>>(new Set(initialUsersWithPassword));
@@ -481,11 +566,23 @@ export function UsersSection({
                       </div>
                     </TableCell>
                   </TableRow>
+                  {user.accessSource === 'mirrored' && user.role !== 'admin' && (
+                    <MirroredDetailRow
+                      user={user}
+                      disabled={saving}
+                      onChanged={updated => setUsers(us => us.map(u => u.id === updated.id ? updated : u))}
+                    />
+                  )}
                   <PromptRows
                     user={user}
                     editing={editingAccess === user.id}
                     demotingTo={demoting?.id === user.id ? demoting.role : null}
                     saving={saving}
+                    signInTenantIsAzureTenant={signInTenantIsAzureTenant}
+                    onMirrored={updated => {
+                      setUsers(us => us.map(u => u.id === updated.id ? updated : u));
+                      setEditingAccess(null);
+                    }}
                     onSaveAccess={grants => { void saveAccess(user, grants); }}
                     onDemote={(role, access) => { void sendRole(user, { role, access }); }}
                     onCancelEdit={() => setEditingAccess(null)}

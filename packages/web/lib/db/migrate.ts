@@ -1245,6 +1245,14 @@ export function runMigrations(sqlite: Database.Database): void {
   // upgrade below sets it.
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN access_source TEXT`); } catch { /* already exists */ }
 
+  // #278: Mirrored access. Every column is nullable and nothing is backfilled: nobody is mirrored by the
+  // upgrade, and an existing row keeps exactly what it held. Each is its own statement so one that already
+  // exists does not stop the rest.
+  for (const column of ['linked_tenant_id', 'linked_object_id', 'mirror_last_success_at', 'mirror_last_attempt_at', 'mirror_error']) {
+    try { sqlite.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`); } catch { /* already exists */ }
+  }
+  try { sqlite.exec(`ALTER TABLE role_assignments ADD COLUMN origin TEXT`); } catch { /* already exists */ }
+
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);
   // After the rekey, so the rows are copied under the fingerprints the findings end up with.

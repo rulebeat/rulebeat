@@ -153,6 +153,11 @@ export const users = pgTable('users', {
   // RETIRED: nothing reads or writes it. The column stays because 0.10.1 selects it by name.
   scope: text('scope'),
   accessSource: text('access_source'),
+  linkedTenantId: text('linked_tenant_id'),
+  linkedObjectId: text('linked_object_id'),
+  mirrorLastSuccessAt: text('mirror_last_success_at'),
+  mirrorLastAttemptAt: text('mirror_last_attempt_at'),
+  mirrorError: text('mirror_error'),
   sessionEpoch: integer('session_epoch').notNull().default(0),
   createdAt: text('created_at').notNull(),
   lastSeenAt: text('last_seen_at'),
@@ -163,6 +168,7 @@ export const roleAssignments = pgTable('role_assignments', {
   tenantId: text('tenant_id').notNull(),
   scope: text('scope').notNull(),
   role: text('role').notNull(),
+  origin: text('origin'),
 }, (table) => ({
   pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
 }));

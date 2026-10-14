@@ -52,7 +52,7 @@ export const IS_ACCESS_ARGUMENT = /^\s*(?:\w+\.)?access\b/;
 /** Ways to Azure that do not go through `createTenantContext(access)`. */
 export const BACK_WAYS = [
   'buildTenantContext', 'ResourceGraphClient', 'createScanContext',
-  'queryLogAnalyticsWorkspace', 'listAccessibleSubscriptions',
+  'queryLogAnalyticsWorkspace', 'listAccessibleSubscriptions', 'RoleAssignmentsClient',
   'getAzureCredential', 'getAzureToken', 'resolveAzureCredential', 'credentialFromClientSecret',
   'verifyAzureCredential', 'verifyLogAnalyticsWorkspace',
 ] as const;

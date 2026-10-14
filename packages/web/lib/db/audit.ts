@@ -13,7 +13,7 @@ export type AuditAction =
   | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate'
   | 'view.create' | 'view.rename' | 'view.update' | 'view.delete'
   | 'scan.run'
-  | 'user.invite' | 'user.invite_claimed' | 'user.role_change' | 'user.access_change' | 'user.remove' | 'user.default_role_change'
+  | 'user.invite' | 'user.invite_claimed' | 'user.role_change' | 'user.access_change' | 'user.mirror_set' | 'user.mirror_refresh' | 'user.remove' | 'user.default_role_change'
   | 'user.password_set' | 'user.password_reset' | 'user.password_removed'
   | 'azure_connection.save' | 'azure_connection.delete' | 'azure_connection.test'
   | 'log_analytics_workspace.save' | 'log_analytics_workspace.delete'

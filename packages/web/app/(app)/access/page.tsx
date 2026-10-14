@@ -6,8 +6,24 @@ import { listUsersWithAccess, ownAccessOf, resolveAccess } from '@/lib/access';
 import { listUserIdsWithPassword } from '@/lib/db/local-accounts';
 import { isDemoMode } from '@/lib/demo';
 import { hierarchyResponse } from '@/lib/management-group-response';
+import { getArmTenantId } from '@/lib/arm';
+import { resolveSignInConfig } from '@/lib/sign-in-config';
 import { AccessClient } from './access-client';
 import { OwnAccessSection } from './own-access-section';
+
+/**
+ * Whether people sign in through the same tenant the Azure connection reads. Only then does the object id RuleBeat
+ * holds for someone who signed in with Entra name the same account in Azure, so "Use their sign-in account" is
+ * offered. No sign-in configuration, or no Azure connection, is no.
+ */
+async function signInTenantIsAzureTenant(): Promise<boolean> {
+  try {
+    const [signIn, azureTenantId] = await Promise.all([resolveSignInConfig(), getArmTenantId()]);
+    return signIn !== null && signIn.tenantId.toLowerCase() === azureTenantId.toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 export default async function AccessPage() {
   const user = await getCurrentUser();
@@ -37,6 +53,7 @@ export default async function AccessPage() {
           initialUsersWithPassword={await listUserIdsWithPassword()}
           currentUserId={user.id}
           initialHierarchy={await hierarchyResponse()}
+          signInTenantIsAzureTenant={await signInTenantIsAzureTenant()}
           demo={await isDemoMode()}
         />
       </main>

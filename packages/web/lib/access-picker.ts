@@ -9,6 +9,7 @@ import {
   DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, parseScope, sameScopePath, type Access, type GrantRole, type ManualGrant,
 } from './access-model';
 import { noGroupsReason, orderedGroups, type HierarchyView } from './management-group-tree';
+import { parseObjectId, type ScopeOrigin } from './access-mirror-model';
 
 export const subscriptionScopePath = (subscriptionId: string): string => `/subscriptions/${subscriptionId}`;
 export const managementGroupScopePath = (id: string): string => `/providers/Microsoft.Management/managementGroups/${id}`;
@@ -108,4 +109,51 @@ export function describeScopePath(path: string, names: Readonly<Record<string, s
 /** Whether a list can be sent as an invite: an invited Viewer or Editor must be given something. */
 export function canInvite(email: string, grants: readonly ManualGrant[]): boolean {
   return email.trim() !== '' && grants.length > 0;
+}
+
+/**
+ * Whether "Use their sign-in account" is offered: the person has signed in with Entra, so RuleBeat holds an
+ * object id for them, and the sign-in tenant is the one the Azure connection reads, so that id means the same
+ * account there. It only ever fills the field: it is never the default, so a separate admin account is a
+ * deliberate choice and a forgotten step grants nothing.
+ */
+export function canUseSignInAccount(user: { oid: string | null; role: string }, signInTenantIsAzureTenant: boolean): boolean {
+  return signInTenantIsAzureTenant && user.role !== 'admin' && typeof user.oid === 'string' && user.oid !== '';
+}
+
+/** Whether what was typed in the Linked account field is an object id the routes will take. */
+export function canPreviewMirror(objectId: string): boolean {
+  return parseObjectId(objectId) !== null;
+}
+
+/** What Edit says over a mirrored person's Scopes: saving them turns the person manual. */
+export const EDIT_STOPS_MIRROR_NOTE =
+  'This person has Mirrored access. Saving here stops the mirror: the Scopes below stay as they are and become Manual access.';
+
+/** One Scope of a preview, as the routes answer it. */
+export interface PreviewedScope {
+  scope: string;
+  origins: readonly ScopeOrigin[];
+}
+
+/** What the page says over the previewed Scopes, or in place of them when there are none. */
+export function previewHeading(scopes: readonly PreviewedScope[], email: string): string {
+  if (scopes.length === 0) {
+    return `This account holds no role assignments RuleBeat can see, so ${email} would see no findings.`;
+  }
+  return `${email} would get ${scopes.length} ${scopes.length === 1 ? 'Scope' : 'Scopes'}.`;
+}
+
+/** The sentence that tells an Admin their hand-made Scopes are about to be replaced, or null when there are none. */
+export function replacesManualNote(access: Pick<Access, 'grants' | 'source'>): string | null {
+  if (access.source !== 'manual' || access.grants.length === 0) return null;
+  const n = access.grants.length;
+  return `Their ${n} Manual ${n === 1 ? 'Scope' : 'Scopes'} will be replaced.`;
+}
+
+/** The sentence that names the others already linked to an account, or null when no one is. */
+export function alsoLinkedNote(people: readonly { email: string }[]): string | null {
+  if (people.length === 0) return null;
+  const names = people.map(p => p.email).join(', ');
+  return `${names} ${people.length === 1 ? 'is' : 'are'} already linked to this account. Two people on one account see the same findings.`;
 }

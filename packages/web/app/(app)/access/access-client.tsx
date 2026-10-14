@@ -11,6 +11,7 @@ export function AccessClient({
   initialUsersWithPassword,
   currentUserId,
   initialHierarchy,
+  signInTenantIsAzureTenant = false,
   demo = false,
 }: {
   initialUsers: AppUserWithAccess[];
@@ -18,6 +19,8 @@ export function AccessClient({
   currentUserId: string;
   /** RuleBeat's copy of the management group tree and how its last refresh went. */
   initialHierarchy: HierarchyView;
+  /** Whether the sign-in tenant is the Azure connection's: "Use their sign-in account" is offered only then. */
+  signInTenantIsAzureTenant?: boolean;
   /** A Demo: the Users lock message shows and every control inside is disabled. */
   demo?: boolean;
 }) {
@@ -28,6 +31,7 @@ export function AccessClient({
           initialUsers={initialUsers}
           initialUsersWithPassword={initialUsersWithPassword}
           currentUserId={currentUserId}
+          signInTenantIsAzureTenant={signInTenantIsAzureTenant}
         />
         <ManagementGroupsSection initial={initialHierarchy} />
       </LockedSurface>

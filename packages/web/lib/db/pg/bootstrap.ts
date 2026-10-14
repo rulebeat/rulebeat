@@ -183,19 +183,31 @@ CREATE TABLE IF NOT EXISTS users (
   scope TEXT,
   session_epoch INTEGER NOT NULL DEFAULT 0,
   access_source TEXT,
+  linked_tenant_id TEXT,
+  linked_object_id TEXT,
+  mirror_last_success_at TEXT,
+  mirror_last_attempt_at TEXT,
+  mirror_error TEXT,
   created_at TEXT NOT NULL,
   last_seen_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_users_oid ON users(oid);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS access_source TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS linked_tenant_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS linked_object_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_last_success_at TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_last_attempt_at TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_error TEXT;
 
 CREATE TABLE IF NOT EXISTS role_assignments (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   tenant_id TEXT NOT NULL,
   scope TEXT NOT NULL,
   role TEXT NOT NULL,
+  origin TEXT,
   PRIMARY KEY (user_id, tenant_id, scope)
 );
+ALTER TABLE role_assignments ADD COLUMN IF NOT EXISTS origin TEXT;
 
 CREATE TABLE IF NOT EXISTS management_group_hierarchy (
   tenant_id TEXT NOT NULL,

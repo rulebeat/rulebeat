@@ -3,6 +3,7 @@ import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
 import type { OwnAccess } from '@/lib/access';
+import { MIRRORED_NO_SCOPE_MESSAGE } from '@/lib/access-mirror-model';
 import { describeScopePath } from '@/lib/access-picker';
 import { ROLE_LABELS } from '@/lib/rbac';
 
@@ -60,7 +61,9 @@ export function OwnAccessSection({ own }: { own: OwnAccess }) {
               ))}
               {own.scopes.length === 0 && (
                 <TableEmpty colSpan={3}>
-                  You have been given no access, so no findings are listed for you. Ask an Admin to give you access.
+                  {own.source === 'mirrored'
+                    ? MIRRORED_NO_SCOPE_MESSAGE
+                    : 'You have been given no access, so no findings are listed for you. Ask an Admin to give you access.'}
                 </TableEmpty>
               )}
             </TableBody>
