@@ -136,7 +136,7 @@ export async function setRulesLastRunStatus(ids: string[], status: RuleExecution
  * still-open one, so every write that calls this takes `pgAdvisoryXactLock()` first (a no-op on
  * SQLite) to serialize the two backends the same way.
  */
-const RULE_NAME_LOCK_KEY = 7194826033;
+export const RULE_NAME_LOCK_KEY = 7194826033;
 
 export async function isNameTaken(name: string, excludeId?: string, handle: DbHandle = db): Promise<boolean> {
   return (await findNameConflict(name, excludeId, handle)) !== undefined;
@@ -156,15 +156,24 @@ export type CreateRuleResult =
   | { ok: true; rule: Rule }
   | { ok: false; reason: 'name-taken' };
 
+/**
+ * The name check and the insert of `createRule()`, on a transaction the caller already holds, for a
+ * write that must commit together with another (a Library request's approval, #282). The caller has
+ * taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first.
+ */
+export async function insertRuleOn(tx: DbHandle, rule: Rule): Promise<CreateRuleResult> {
+  if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
+  await run(tx.insert(rulesTable).values(ruleToRow(rule)));
+  // The stored row, not the input: a field the table has no column for is not echoed back.
+  const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
+  return { ok: true, rule: rowToRule(stored!) };
+}
+
 /** Inserts one rule. Touches no other row, so it cannot disturb a concurrent edit or scan write. */
 export async function createRule(rule: Rule): Promise<CreateRuleResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
-    if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
-    await run(tx.insert(rulesTable).values(ruleToRow(rule)));
-    // The stored row, not the input: a field the table has no column for is not echoed back.
-    const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
-    return { ok: true, rule: rowToRule(stored!) };
+    return insertRuleOn(tx, rule);
   });
 }
 
@@ -174,7 +183,7 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
  * out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
  */
 export type RuleChanges = Partial<Omit<Rule,
-  'id' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion'>>;
+  'id' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion' | 'libraryRequestId'>>;
 
 // The columns `updateRule()` will write, by the Rule field that feeds each. `kind` is resolved from
 // `queryBackend` and the kind asked for; the run-outcome and version columns are never in here, on purpose.
@@ -280,6 +289,8 @@ export async function deleteRule(id: string): Promise<boolean> {
     await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
     // A Personal rule copied from this one stays, without the link back to it (#281).
     await run(tx.update(personalRules).set({ sourceRuleId: null }).where(eq(personalRules.sourceRuleId, id)));
+    // A Personal rule that became this one stays too, without the link forward to it (#282).
+    await run(tx.update(personalRules).set({ libraryRuleId: null }).where(eq(personalRules.libraryRuleId, id)));
     return removeFindingRowsForRule(tx, id);
   });
   if (!outcome) return false;
@@ -385,6 +396,7 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
       enabled: false,
       version: undefined,
       retiredAt: undefined,
+      libraryRequestId: undefined,
       ...copiedOrigin(original),
     };
 
@@ -448,6 +460,7 @@ function rowToRule(row: Row): Rule {
     retiredAt: row.retiredAt ?? undefined,
     originRuleId: row.originRuleId ?? undefined,
     originVersion: row.originVersion ?? undefined,
+    libraryRequestId: row.libraryRequestId ?? undefined,
     lastRunStatus: (row.lastRunStatus as RuleExecutionStatus | null) ?? undefined,
     lastRunAt: row.lastRunAt ?? undefined,
   };
@@ -482,6 +495,7 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     retiredAt: r.retiredAt ?? null,
     originRuleId: r.originRuleId ?? null,
     originVersion: r.originVersion ?? null,
+    libraryRequestId: r.libraryRequestId ?? null,
     lastRunStatus: r.lastRunStatus ?? null,
     lastRunAt: r.lastRunAt ?? null,
   };

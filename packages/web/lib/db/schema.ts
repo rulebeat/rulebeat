@@ -29,6 +29,7 @@ export const rules = sqliteTable('rules', {
   retiredAt: text('retired_at'),              // ISO timestamp; set when no pack ships this built-in any more (it keeps running)
   originRuleId: text('origin_rule_id'),       // custom rule only: the shipped rule it was made from (same id when converted in place)
   originVersion: text('origin_version'),      // custom rule only: the shipped version it was made from
+  libraryRequestId: text('library_request_id'), // custom rule only: the Library request it was approved from (#282); null for every other rule
 });
 
 /** Every definition of a shipped rule this install has seen, one row per (rule, version). */
@@ -542,7 +543,25 @@ export const personalRules = sqliteTable('personal_rules', {
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null
   lastRunCoveredScope: text('last_run_covered_scope'), // JSON: { tenantId, path }[], what the latest run covered
     sourceRuleId: text('source_rule_id'),       // id of the shared rule this was copied from (#281); null once that rule is deleted
+    libraryRuleId: text('library_rule_id'),     // id of the library rule this became (#282); null until approved or copied, and once that rule is deleted
   });
+
+// A request to copy a Personal rule into the library (#282, ADR 0011). `definition` is a JSON snapshot of
+// the Personal rule taken at send time, so a later edit of the rule never changes what a reviewer reads.
+// `personal_rule_id` is null once the Personal rule is gone. No SQL-level FK, like every other table here.
+export const libraryRequests = sqliteTable('library_requests', {
+  id: text('id').primaryKey(),
+  personalRuleId: text('personal_rule_id'),
+  authorId: text('author_id').notNull(),
+  definition: text('definition').notNull(),   // JSON: PersonalRuleDefinition
+  status: text('status').notNull(),           // 'open' | 'approved' | 'rejected' | 'withdrawn'
+  createdAt: text('created_at').notNull(),
+  reviewedBy: text('reviewed_by'),            // user id of the reviewer who approved or rejected it
+  reviewedAt: text('reviewed_at'),
+  rejectionReason: text('rejection_reason'),
+  resubmitsRequestId: text('resubmits_request_id'), // the rejected request this one sends again
+  libraryRuleId: text('library_rule_id'),     // the library rule an approval created
+});
 
 // The latest run of a Personal rule, one row per finding. A run replaces every row of its rule. Never
 // joined to `findings`, `finding_events`, `scans` or `posture_snapshots`: it counts nowhere shared.

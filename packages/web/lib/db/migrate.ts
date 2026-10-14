@@ -603,6 +603,22 @@ export function runMigrations(sqlite: Database.Database): void {
       PRIMARY KEY (personal_rule_id, ordinal)
     );
 
+    CREATE TABLE IF NOT EXISTS library_requests (
+      id TEXT PRIMARY KEY,
+      personal_rule_id TEXT,
+      author_id TEXT NOT NULL,
+      definition TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      rejection_reason TEXT,
+      resubmits_request_id TEXT,
+      library_rule_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_requests_status ON library_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_library_requests_personal_rule ON library_requests(personal_rule_id);
+
     CREATE TABLE IF NOT EXISTS saved_views (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -1213,6 +1229,15 @@ export function runMigrations(sqlite: Database.Database): void {
     try {
       renameInPersonalRules = sqlite.prepare(`UPDATE personal_rules SET source_rule_id = ? WHERE source_rule_id = ?`);
     } catch { /* no column yet */ }
+    // The library rule a Personal rule became, and the one a request created (#282): both follow the id.
+    let renameLibraryRuleInPersonalRules: Database.Statement | undefined;
+    let renameLibraryRuleInRequests: Database.Statement | undefined;
+    try {
+      renameLibraryRuleInPersonalRules = sqlite.prepare(`UPDATE personal_rules SET library_rule_id = ? WHERE library_rule_id = ?`);
+    } catch { /* no column yet */ }
+    try {
+      renameLibraryRuleInRequests = sqlite.prepare(`UPDATE library_requests SET library_rule_id = ? WHERE library_rule_id = ?`);
+    } catch { /* no table yet */ }
 
     for (const [oldId, newId] of pairs) {
       try {
@@ -1243,6 +1268,8 @@ export function runMigrations(sqlite: Database.Database): void {
         copyCatalogue?.run(newId, oldId);
         dropCatalogue?.run(oldId);
         renameInPersonalRules?.run(newId, oldId);
+        renameLibraryRuleInPersonalRules?.run(newId, oldId);
+        renameLibraryRuleInRequests?.run(newId, oldId);
       } catch { /* ignore this pair, continue with the rest */ }
     }
   }
@@ -1311,6 +1338,11 @@ export function runMigrations(sqlite: Database.Database): void {
   // #281: the shared rule a Personal rule was copied from. Nullable, nothing backfilled: every
   // existing Personal rule was written by hand.
   try { sqlite.exec(`ALTER TABLE personal_rules ADD COLUMN source_rule_id TEXT`); } catch { /* already exists */ }
+
+  // #282: the library rule a Personal rule became, and the Library request a shared rule was approved
+  // from. Both nullable, nothing backfilled: no existing rule came from a request.
+  try { sqlite.exec(`ALTER TABLE personal_rules ADD COLUMN library_rule_id TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN library_request_id TEXT`); } catch { /* already exists */ }
 
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);

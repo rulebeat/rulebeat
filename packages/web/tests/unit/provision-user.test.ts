@@ -64,7 +64,7 @@ describe('provisionUser: deny by default', () => {
     if ('error' in removed) throw new Error(removed.error);
 
     const before = await deleteUser(removed.user.id);
-    expect(before).toBe(true);
+    expect(before).toEqual({ withdrawnRequests: 0 });
 
     const result = await provisionUser({ oid: 'oid-removed', email: 'removed@example.com' });
 

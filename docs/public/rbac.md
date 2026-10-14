@@ -36,7 +36,9 @@ install shares, so it needs Everything. See [Run history](scans-and-schedules.md
 
 A Personal rule is the one rule an Editor can write without changing what the install shares: only its
 author sees it, and only its author runs it, by hand. Another person's Personal rule reads as not found
-for everyone, an Admin included. See [Personal rules](personal-rules.md).
+for everyone, an Admin included. A Personal rule reaches the library through a Library request, which an
+Admin or an Editor on Everything approves or rejects; both use `rules:write`, so an Editor on a smaller
+Scope cannot. See [Personal rules](personal-rules.md).
 
 Every account, viewer included, can change its own password. That sits outside the ladder: it is
 not something one role grants another.

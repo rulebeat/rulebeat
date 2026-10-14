@@ -52,7 +52,7 @@ Everything else is reference you can come back to.
 |---|---|
 | [Authoring rules](authoring-rules.md) | Scope, conditions, operators, raw KQL, round-tripping, provenance. |
 | [Directory rules](directory-rules.md) | Rules that read Microsoft Graph: object types, OData filters, expiring items. |
-| [Personal rules](personal-rules.md) | Rules only their author sees and runs, what a run covers, and what happens when access changes. |
+| [Personal rules](personal-rules.md) | Rules only their author sees and runs, what a run covers, how to send one to the library and review it, and what happens when access changes. |
 | [Demo mode](demo-mode.md) | Running RuleBeat against synthetic data with no Azure access at all. |
 | [FAQ](faq.md) | How RuleBeat relates to Azure Policy, Defender and Advisor, and what people ask before installing. |
 

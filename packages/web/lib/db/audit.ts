@@ -26,13 +26,14 @@ export type AuditAction =
   | 'onboarding.skip' | 'onboarding.complete'
   | 'schema_cache.refresh' | 'management_groups.refresh'
   | 'query.run' | 'query.save' | 'query.delete'
-  | 'personal_rule.create' | 'personal_rule.update' | 'personal_rule.delete' | 'personal_rule.run' | 'personal_rule.copy';
+  | 'personal_rule.create' | 'personal_rule.update' | 'personal_rule.delete' | 'personal_rule.run' | 'personal_rule.copy' | 'personal_rule.library_copy'
+  | 'library_request.create' | 'library_request.approve' | 'library_request.reject' | 'library_request.withdraw' | 'library_request.preview';
 
 export type AuditEntityType =
   | 'rule' | 'suppression' | 'schedule' | 'category' | 'dashboard' | 'scan' | 'user' | 'auth'
   | 'azure_connection' | 'log_analytics_workspace' | 'local_account' | 'sign_in_config'
   | 'notification_channel' | 'onboarding' | 'schema_cache' | 'management_group_hierarchy' | 'query' | 'saved_view'
-  | 'personal_rule';
+  | 'personal_rule' | 'library_request';
 
 export interface AuditEntry {
   id: string;

@@ -88,6 +88,17 @@ export async function DELETE(
     entityId: id,
     summary: `Removed ${before?.email ?? id} (was ${before?.role ?? 'unknown'})`,
   });
+  // The person's open Library requests were withdrawn in the same transaction as their removal.
+  if (result.withdrawnRequests > 0) {
+    await writeAudit({
+      actor,
+      action: 'library_request.withdraw',
+      entityType: 'library_request',
+      entityId: id,
+      summary: `Withdrew ${result.withdrawnRequests} open Library ${result.withdrawnRequests === 1 ? 'request' : 'requests'} because ${before?.email ?? id} was removed`,
+      details: { withdrawn: result.withdrawnRequests, reason: 'author removed' },
+    });
+  }
 
   return NextResponse.json({ success: true });
 }

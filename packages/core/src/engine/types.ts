@@ -325,6 +325,8 @@ export interface Rule {
   originRuleId?: string;
   /** Custom rule only: the shipped version it was made from. */
   originVersion?: string;
+  /** Custom rule only: the Library request this rule was approved from. Set once, by the approval; never by a request or an edit. */
+  libraryRequestId?: string;
 }
 
 // ── Per-rule execution outcome ────────────────────────────────────────────────

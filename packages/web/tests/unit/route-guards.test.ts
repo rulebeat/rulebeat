@@ -181,6 +181,17 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['personal-rules/[id]/run/route.ts', 'rules:personal'],
     // Copying a shared rule to Personal creates a Personal rule, so it needs the Personal rule action (#281).
     ['rules/[id]/personal-copy/route.ts', 'rules:personal'],
+    // A Library request (#282) is sent, withdrawn and copied by its author with the Personal rule action; a
+    // reviewer reads, previews, approves and rejects with the install-wide library write action, which a
+    // Viewer and an Editor held at less than Everything do not pass.
+    ['personal-rules/[id]/library-request/route.ts', 'rules:personal'],
+    ['personal-rules/[id]/library-copy/route.ts', 'rules:personal'],
+    ['library-requests/[id]/withdraw/route.ts', 'rules:personal'],
+    ['library-requests/route.ts', 'rules:write'],
+    ['library-requests/[id]/route.ts', 'rules:write'],
+    ['library-requests/[id]/preview/route.ts', 'rules:write'],
+    ['library-requests/[id]/approve/route.ts', 'rules:write'],
+    ['library-requests/[id]/reject/route.ts', 'rules:write'],
   ];
 
   for (const [route, action] of PINNED) {

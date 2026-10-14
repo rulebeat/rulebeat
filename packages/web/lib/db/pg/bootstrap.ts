@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS rules (
   version TEXT,
   retired_at TEXT,
   origin_rule_id TEXT,
-  origin_version TEXT
+  origin_version TEXT,
+  library_request_id TEXT
 );
 -- Applies to was removed; drop its columns from a database bootstrapped while it existed.
 ALTER TABLE rules DROP COLUMN IF EXISTS applies_to;
@@ -75,6 +76,8 @@ ALTER TABLE rules ADD COLUMN IF NOT EXISTS version TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS retired_at TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_rule_id TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_version TEXT;
+-- The Library request a rule was approved from (#282), for a database bootstrapped before it shipped.
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS library_request_id TEXT;
 
 CREATE TABLE IF NOT EXISTS rule_versions (
   rule_id TEXT NOT NULL,
@@ -526,10 +529,13 @@ CREATE TABLE IF NOT EXISTS personal_rules (
   last_run_at TEXT,
   last_run_status TEXT,
   last_run_covered_scope TEXT,
-  source_rule_id TEXT
+  source_rule_id TEXT,
+  library_rule_id TEXT
 );
 -- The shared rule a Personal rule was copied from (#281), for a database bootstrapped by the #280 build.
 ALTER TABLE personal_rules ADD COLUMN IF NOT EXISTS source_rule_id TEXT;
+-- The library rule a Personal rule became (#282), for a database bootstrapped before it shipped.
+ALTER TABLE personal_rules ADD COLUMN IF NOT EXISTS library_rule_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_personal_rules_owner ON personal_rules(owner_id);
 
 CREATE TABLE IF NOT EXISTS personal_rule_results (
@@ -546,6 +552,22 @@ CREATE TABLE IF NOT EXISTS personal_rule_results (
   rows TEXT NOT NULL,
   PRIMARY KEY (personal_rule_id, ordinal)
 );
+
+CREATE TABLE IF NOT EXISTS library_requests (
+  id TEXT PRIMARY KEY,
+  personal_rule_id TEXT,
+  author_id TEXT NOT NULL,
+  definition TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  rejection_reason TEXT,
+  resubmits_request_id TEXT,
+  library_rule_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_library_requests_status ON library_requests(status);
+CREATE INDEX IF NOT EXISTS idx_library_requests_personal_rule ON library_requests(personal_rule_id);
 
 CREATE TABLE IF NOT EXISTS saved_views (
   id TEXT PRIMARY KEY,

@@ -47,6 +47,7 @@ export const rules = pgTable('rules', {
   retiredAt: text('retired_at'),
   originRuleId: text('origin_rule_id'),
   originVersion: text('origin_version'),
+  libraryRequestId: text('library_request_id'),
 });
 
 export const ruleVersions = pgTable('rule_versions', {
@@ -460,6 +461,21 @@ export const personalRules = pgTable('personal_rules', {
   lastRunStatus: text('last_run_status'),
   lastRunCoveredScope: text('last_run_covered_scope'),
   sourceRuleId: text('source_rule_id'),
+  libraryRuleId: text('library_rule_id'),
+});
+
+export const libraryRequests = pgTable('library_requests', {
+  id: text('id').primaryKey(),
+  personalRuleId: text('personal_rule_id'),
+  authorId: text('author_id').notNull(),
+  definition: text('definition').notNull(),
+  status: text('status').notNull(),
+  createdAt: text('created_at').notNull(),
+  reviewedBy: text('reviewed_by'),
+  reviewedAt: text('reviewed_at'),
+  rejectionReason: text('rejection_reason'),
+  resubmitsRequestId: text('resubmits_request_id'),
+  libraryRuleId: text('library_rule_id'),
 });
 
 export const personalRuleResults = pgTable('personal_rule_results', {

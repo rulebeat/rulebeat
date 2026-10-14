@@ -101,7 +101,7 @@ describe('the rule page', () => {
 describe('the Personal rule page', () => {
   const page = (source: { id: string; name: string } | null) => renderToStaticMarkup(createElement(PersonalRuleClient, {
     rule: { ...ruleOn('resource-graph'), id: 'personal-1' }, source, updatedAt: '2026-01-01T00:00:00.000Z', results: [], lastRunCovered: null,
-    allTags: [], categories: [], canWrite: true, runBlockedReason: null,
+    allTags: [], categories: [], canWrite: true, runBlockedReason: null, requests: [], copiedTo: null, copyToLibrary: null,
   }));
 
   it('says which shared rule it was copied from, linking to it', () => {

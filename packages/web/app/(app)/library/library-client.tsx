@@ -22,10 +22,11 @@ import { matchesRuleSearch } from '@/lib/rule-filters';
 import { PACK_LABELS } from '@/lib/pack-labels';
 import { retiredMessage, versionLabel } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
-import type { Category, PersonalCopyReasons, Rule, RuleKind } from '@/lib/types';
+import type { Category, LibraryRequestSummary, PersonalCopyReasons, Rule, RuleKind } from '@/lib/types';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import { isExternalPack, type PackManifestEntry } from './pack-manifest';
 import { PersonalRulesTab } from './personal-rules-tab';
+import { RequestsTab } from './requests-tab';
 import { CopyToPersonalButton } from '@/components/rules/copy-to-personal-button';
 
 // ---- Constants ----
@@ -44,7 +45,7 @@ const PACK_META: Record<string, { fullName: string; summary: string; docsUrl: st
   },
 };
 
-type NavSection = 'all' | `pack:${string}` | 'community' | 'gallery' | 'custom' | 'personal';
+type NavSection = 'all' | `pack:${string}` | 'community' | 'gallery' | 'custom' | 'personal' | 'requests';
 
 const SIDEBAR_RAIL_WIDTH = 40;
 const SIDEBAR_EXPANDED_WIDTH = 208;
@@ -213,7 +214,7 @@ function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record
 
 // ---- Main component ----
 
-export function LibraryClient({ initialRules, personalRules, personalWriteBlockedReason, personalCopyReasons, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, canAuthor, canDelete, writeReason }: { initialRules: Rule[]; personalRules: Rule[]; personalWriteBlockedReason: string | null; personalCopyReasons: PersonalCopyReasons; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; canAuthor: boolean; canDelete: boolean; writeReason?: string }) {
+export function LibraryClient({ initialRules, personalRules, personalWriteBlockedReason, personalCopyReasons, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, canAuthor, canDelete, writeReason, requests = null }: { initialRules: Rule[]; personalRules: Rule[]; personalWriteBlockedReason: string | null; personalCopyReasons: PersonalCopyReasons; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; canAuthor: boolean; canDelete: boolean; writeReason?: string; /** The open Library requests, for a reviewer only (#282). Null hides the Requests section and its count. */ requests?: LibraryRequestSummary[] | null }) {
   // Set only for someone whose Editor access covers part of the install: the write controls are shown
   // off with this reason rather than hidden, so they do not fail with a 403 on click.
   const authorOffReason = canAuthor ? undefined : writeReason;
@@ -222,7 +223,8 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
   const [rules, setRules] = useState<Rule[]>(initialRules);
   const [error, setError] = useState<string | null>(null);
   const initialTag = initialSection?.startsWith('tag:') ? initialSection.slice(4) : undefined;
-  const initialNav = (initialSection && !initialSection.startsWith('tag:'))
+  // A section a person has no access to (Requests, for anyone but a reviewer) opens as All rules.
+  const initialNav = (initialSection && !initialSection.startsWith('tag:') && (initialSection !== 'requests' || requests !== null))
     ? (initialSection as NavSection)
     : 'all';
   const [nav, setNavRaw] = useState<NavSection>(initialNav);
@@ -402,6 +404,7 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
 
   const isGallery       = nav === 'gallery';
   const isPersonal      = nav === 'personal';
+  const isRequests      = nav === 'requests' && requests !== null;
   const isCommunityEmpty = nav === 'community' && counts.community === 0;
   const isCustomEmpty   = nav === 'custom'    && counts.custom    === 0;
 
@@ -479,6 +482,11 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
                 <NavItem active={isPersonal} count={personalRules.length} onClick={() => setNav('personal')}>
                   Personal
                 </NavItem>
+                {requests !== null && (
+                  <NavItem active={isRequests} count={requests.length} onClick={() => setNav('requests')}>
+                    Requests
+                  </NavItem>
+                )}
               </div>
             </>
           )}
@@ -496,7 +504,7 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
         )}
 
         {/* Toolbar */}
-        {!isPersonal && (<>
+        {!isPersonal && !isRequests && (<>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
@@ -547,6 +555,9 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
                 {/* Gallery stub */}
                 {isPersonal ? (
                   <PersonalRulesTab rules={personalRules} categories={categories} writeBlockedReason={personalWriteBlockedReason} />
+
+                ) : isRequests ? (
+                  <RequestsTab requests={requests ?? []} categories={categories} />
 
                 ) : isGallery ? (
           <EmptySection

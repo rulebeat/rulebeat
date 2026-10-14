@@ -13,6 +13,7 @@ import {
 } from '@/lib/db/users';
 import { createSavedQuery, listSavedQueries } from '@/lib/db/saved-queries';
 import { recordQueryRun, listQueryRuns } from '@/lib/db/query-runs';
+import { createLibraryRequest, getLibraryRequest, rejectLibraryRequest } from '@/lib/db/library-requests';
 import {
   createPersonalRule, listPersonalRuleResults, listPersonalRules, replacePersonalRuleResults,
   type PersonalRuleDefinition,
@@ -87,7 +88,7 @@ describe('updateUserRole: concurrent last-admin demotions', () => {
     const demoteRefused = demote !== null && 'error' in demote;
     const demoteSucceeded = demote !== null && 'user' in demote;
     const refused = demoteRefused || del === 'last-admin';
-    const succeeded = demoteSucceeded || del === true;
+    const succeeded = demoteSucceeded || (typeof del === 'object');
     expect(refused).toBe(true);
     expect(succeeded).toBe(true);
   });
@@ -103,7 +104,7 @@ describe('deleteUser: concurrent last-admin deletions', () => {
     expect(await countAdmins()).toBe(1);
     const results = [resA, resB];
     expect(results.filter(r => r === 'last-admin')).toHaveLength(1);
-    expect(results.filter(r => r === true)).toHaveLength(1);
+    expect(results.filter(r => typeof r === 'object')).toHaveLength(1);
   });
 });
 
@@ -133,6 +134,8 @@ describe('deleteUser: atomicity of its three deletes', () => {
         ownerId: owner.id,
       });
       const personal = await seedPersonalRule(owner.id);
+      const sent = await createLibraryRequest(personal, owner.id);
+      if (!sent.ok) throw new Error(sent.reason);
 
       const triggerName = 'trg_block_delete_for_test';
       await execRaw(`
@@ -153,6 +156,7 @@ describe('deleteUser: atomicity of its three deletes', () => {
         expect(await listQueryRuns(owner.id)).toHaveLength(1);
         expect(await listPersonalRules(owner.id)).toHaveLength(1);
         expect(await listPersonalRuleResults(personal.id, owner.id)).toHaveLength(1);
+        expect((await getLibraryRequest(sent.request.id))).toMatchObject({ status: 'open', personalRuleId: personal.id });
       } finally {
         await execRaw(`DROP TRIGGER IF EXISTS ${triggerName}`);
       }
@@ -167,7 +171,7 @@ describe('deleteUser: Personal rules go with their owner', () => {
     const ownerRule = await seedPersonalRule(owner.id, 'Owner rule');
     const otherRule = await seedPersonalRule(other.id, 'Other rule');
 
-    expect(await deleteUser(owner.id)).toBe(true);
+    expect(await deleteUser(owner.id)).toEqual({ withdrawnRequests: 0 });
 
     expect(await listPersonalRules(owner.id)).toEqual([]);
     expect(await countRows('personal_rules')).toBe(1);
@@ -175,5 +179,36 @@ describe('deleteUser: Personal rules go with their owner', () => {
     expect(await listPersonalRuleResults(ownerRule.id, owner.id)).toEqual([]);
     expect((await listPersonalRules(other.id)).map(r => r.id)).toEqual([otherRule.id]);
     expect(await listPersonalRuleResults(otherRule.id, other.id)).toHaveLength(1);
+  });
+});
+
+describe('deleteUser: open Library requests are withdrawn with their author', () => {
+  async function sentBy(authorId: string, name: string) {
+    const rule = await seedPersonalRule(authorId, name);
+    const made = await createLibraryRequest(rule, authorId);
+    if (!made.ok) throw new Error(made.reason);
+    return made.request;
+  }
+
+  it('withdraws every open request of the person, counts them, and leaves closed ones and other people\'s untouched', async () => {
+    const reviewer = await makeUser('request-reviewer@example.com', 'admin');
+    const author = await makeUser('request-author@example.com', 'editor');
+    const other = await makeUser('request-other@example.com', 'editor');
+    const open = await sentBy(author.id, 'Open one');
+    const rejected = await sentBy(author.id, 'Rejected one');
+    await rejectLibraryRequest(rejected.id, reviewer.id, 'Not yet.');
+    const othersOpen = await sentBy(other.id, 'Someone else\'s');
+
+    expect(await deleteUser(author.id)).toEqual({ withdrawnRequests: 1 });
+
+    expect(await getLibraryRequest(open.id)).toMatchObject({ status: 'withdrawn', authorId: author.id, personalRuleId: undefined });
+    expect(await getLibraryRequest(rejected.id)).toMatchObject({ status: 'rejected', rejectionReason: 'Not yet.', personalRuleId: undefined });
+    expect(await getLibraryRequest(othersOpen.id)).toMatchObject({ status: 'open', personalRuleId: othersOpen.personalRuleId });
+    expect(await countRows('personal_rules')).toBe(1);
+  });
+
+  it('reports none withdrawn for a person with no open request', async () => {
+    const author = await makeUser('request-none@example.com', 'editor');
+    expect(await deleteUser(author.id)).toEqual({ withdrawnRequests: 0 });
   });
 });

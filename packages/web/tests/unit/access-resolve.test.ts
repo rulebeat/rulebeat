@@ -120,7 +120,7 @@ describe('writes keep the rows and the Role together', () => {
 
   it('removes the rows with the person', async () => {
     const user = await make('person@example.com', 'viewer');
-    expect(await deleteUser(user.id)).toBe(true);
+    expect(await deleteUser(user.id)).toEqual({ withdrawnRequests: 0 });
     expect(await listAssignmentsFor(user.id)).toEqual([]);
   });
 });
