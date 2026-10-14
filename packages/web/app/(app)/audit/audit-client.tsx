@@ -12,7 +12,7 @@ import type { AuditEntry, AuditEntityType } from '@/lib/db/audit';
 import {
   ChevronDown, ChevronRight, ChevronLeft, ScrollText, Download,
   FileCode, EyeOff, CalendarClock, Folder, LayoutDashboard, Radar, Users, LogIn, Cloud, KeyRound,
-  ShieldCheck, Bell, Compass, Database, Search, Terminal, Bookmark,
+  ShieldCheck, Bell, Compass, Database, Network, Search, Terminal, Bookmark,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -34,6 +34,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
   notification_channel: Bell,
   onboarding: Compass,
   schema_cache: Database,
+  management_group_hierarchy: Network,
   query: Terminal,
   saved_view: Bookmark,
 };

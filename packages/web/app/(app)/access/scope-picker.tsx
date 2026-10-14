@@ -6,8 +6,9 @@ import { Select } from '@/components/ui/select';
 import { fetchJson } from '@/lib/fetch-json';
 import type { GrantRole, ManualGrant } from '@/lib/access-model';
 import { DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH } from '@/lib/access-model';
+import type { HierarchyView } from '@/lib/management-group-tree';
 import {
-  heldAt, resourceGroupScopePath, resourceGroupsHeld, setGrantRole, subscriptionScopePath, subscriptionsNamed, toggleGrant,
+  heldAt, pickerGroups, resourceGroupScopePath, resourceGroupsHeld, setGrantRole, subscriptionScopePath, subscriptionsNamed, toggleGrant,
 } from '@/lib/access-picker';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,8 @@ const ROLE_OPTIONS = [
 ];
 
 interface SubscriptionOption { id: string; name: string }
+
+type TreeState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; view: HierarchyView };
 
 type GroupsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; names: string[] };
 
@@ -112,8 +115,9 @@ function ResourceGroupRows({ subscriptionId, state, value, onChange, defaultRole
 
 /**
  * Chooses the Scopes someone is given, each with its own Role: Everything, the Directory, subscriptions
- * and, inside a subscription, resource groups. Management groups are not offered: they cover nothing
- * until the hierarchy cache exists. Nothing is held until it is chosen, so a new list starts empty.
+ * management groups from RuleBeat's copy of the tree, subscriptions and, inside a subscription, resource
+ * groups. Nothing is held until it is chosen, so a new list starts empty. A management group the person holds
+ * that the tree no longer has is still listed, so it can be removed.
  */
 export function ScopePicker({ value, onChange, defaultRole, disabled }: {
   value: readonly ManualGrant[];
@@ -125,11 +129,15 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
   const [subscriptions, setSubscriptions] = useState<SubscriptionOption[] | 'failed' | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [groups, setGroups] = useState<Record<string, GroupsState>>({});
+  const [tree, setTree] = useState<TreeState>({ status: 'loading' });
 
   useEffect(() => {
     let live = true;
     void fetchJson<SubscriptionOption[]>('/api/azure/subscriptions').then(result => {
       if (live) setSubscriptions(result.ok ? result.data : 'failed');
+    });
+    void fetchJson<HierarchyView>('/api/access/management-groups').then(result => {
+      if (live) setTree(result.ok ? { status: 'ready', view: result.data } : { status: 'error' });
     });
     return () => { live = false; };
   }, []);
@@ -158,6 +166,8 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
     .map(id => ({ id, name: id }));
   const rows = [...listed, ...extra];
 
+  const { groups: mgRows, reason: noGroups } = tree.status === 'ready' ? pickerGroups(tree.view, value) : { groups: [], reason: null };
+
   return (
     <div className={cn('bg-surface-sunken py-1', disabled && 'opacity-60')}>
       <ScopeRow
@@ -176,6 +186,23 @@ export function ScopePicker({ value, onChange, defaultRole, disabled }: {
         onToggle={() => onChange(toggleGrant(value, DIRECTORY_SCOPE_PATH, defaultRole))}
         onRole={role => onChange(setGrantRole(value, DIRECTORY_SCOPE_PATH, role))}
       />
+      {tree.status === 'loading' && <p className="px-3 py-1.5 text-xs text-ink-2">Loading management groups</p>}
+      {tree.status === 'error' && (
+        <p className="px-3 py-1.5 text-xs text-ink-2">Management groups could not be loaded, so none can be chosen. Check the server logs.</p>
+      )}
+      {noGroups && <p className="px-3 py-1.5 text-xs text-ink-2">{noGroups}</p>}
+      {mgRows.map(g => (
+        <ScopeRow
+          key={`mg:${g.path.toLowerCase()}`}
+          depth={g.depth}
+          label={g.name}
+          detail={g.missing ? 'Not in the tree RuleBeat has loaded. Remove it, or refresh the tree.' : `Management group ${g.id}`}
+          held={heldAt(value, g.path)}
+          disabled={disabled}
+          onToggle={() => onChange(toggleGrant(value, g.path, defaultRole))}
+          onRole={role => onChange(setGrantRole(value, g.path, role))}
+        />
+      ))}
       {subscriptions === null && <p className="px-3 py-1.5 text-xs text-ink-2">Loading subscriptions</p>}
       {subscriptions === 'failed' && (
         <p className="px-3 py-1.5 text-xs text-ink-2">Subscriptions could not be loaded, so none can be chosen. Check the server logs.</p>

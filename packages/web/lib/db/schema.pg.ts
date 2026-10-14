@@ -167,6 +167,16 @@ export const roleAssignments = pgTable('role_assignments', {
   pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
 }));
 
+export const managementGroupHierarchy = pgTable('management_group_hierarchy', {
+  tenantId: text('tenant_id').notNull(),
+  kind: text('kind').notNull(),
+  nodeId: text('node_id').notNull(),
+  displayName: text('display_name').notNull(),
+  parentId: text('parent_id'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.kind, table.nodeId] }),
+}));
+
 export const azureCredentials = pgTable('azure_credentials', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

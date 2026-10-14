@@ -118,7 +118,8 @@ export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
   'schedules/[id]/runs': stored(async seed => getWith(`/api/schedules/${seed.scheduleId}/runs`, await import('@/app/api/schedules/[id]/runs/route'), seed.scheduleId), '#276'),
 
 
-  'azure/subscriptions/[id]/resource-groups': azure('#273'),
+  // Admin-only, and a list of one subscription's resource groups for the Scope picker: this ticket does not narrow it.
+  'azure/subscriptions/[id]/resource-groups': azure('#284'),
 
   'schemas': azure('#284'),
   'resources/types': azure('#284'),
@@ -142,14 +143,16 @@ const namesOf = (seed: MatrixSeed, items: { fingerprint: string }[]): string[] =
 type ByTab = Record<ViewTab, unknown>;
 
 /**
- * What each person gets, by what they hold: Everything (the Admin and the Editor), one subscription, one
- * resource group, the Directory, and nothing (the management group Viewer, whose Scope covers nothing until
- * #273, and the person with no Scope).
+ * What each person gets, by what they hold: Everything (the Admin and the Editor), the management group
+ * (both subscriptions under it, and what sits at the group), one subscription, one resource group, the
+ * Directory, and nothing (the person with no Scope).
  */
-const byPerson = (everything: ByTab, subscription: ByTab, resourceGroup: ByTab, directory: ByTab, nothing: ByTab): Record<string, ByTab> => ({
+const byPerson = (
+  everything: ByTab, managementGroup: ByTab, subscription: ByTab, resourceGroup: ByTab, directory: ByTab, nothing: ByTab,
+): Record<string, ByTab> => ({
   'Admin': everything,
   'Editor on Everything': everything,
-  'Viewer on the management group': nothing,
+  'Viewer on the management group': managementGroup,
   'Viewer on one subscription': subscription,
   'Viewer on one resource group': resourceGroup,
   'Directory only': directory,
@@ -201,6 +204,24 @@ const viewEntry: Matrix = {
       activity: {
         names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
         columns: ['otherSubColumn', 'zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+    },
+    // Both subscriptions under the group, and the finding placed at the group itself. vm-two is suppressed, so it
+    // counts toward suppressedCount and is not listed. The subscription facet has no entry for the group-level
+    // finding, which sits in no subscription.
+    {
+      results: {
+        names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], total: 4, tilesTotal: 4,
+        subscriptions: [[SUB_ONE, 2], [SUB_TWO, 1]], ruleRows: [['matrix-rule', 4]],
+        columns: ['otherSubColumn', 'zone'], suppressedCount: 1, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: {
+        names: ['advisory-one', 'advisory-other-sub'], total: 2, tilesTotal: 2, subscriptions: [[SUB_ONE, 1], [SUB_TWO, 1]],
+        ruleRows: [['matrix-advisory-rule', 2]], columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-advisory-rule'],
+      },
+      activity: {
+        names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
       },
     },
     {
@@ -268,6 +289,11 @@ const group: Matrix = {
       activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
     },
     {
+      results: { headers: [['security', 4]], names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], total: 4, groupCount: 4 },
+      advisories: { headers: [['security', 2]], names: ['advisory-one', 'advisory-other-sub'], total: 2, groupCount: 2 },
+      activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
+    },
+    {
       results: { headers: [['security', 2]], names: ['subscription-level', 'vm-one'], total: 2, groupCount: 2 },
       advisories: { headers: [['security', 1]], names: ['advisory-one'], total: 1, groupCount: 1 },
       activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
@@ -306,6 +332,11 @@ const columnValues: Matrix = {
       activity: { zone: [['a', 1]], otherSubColumn: [] },
     },
     {
+      results: { zone: [['a', 4]], otherSubColumn: [['x', 1]] },
+      advisories: { zone: [['a', 2]], otherSubColumn: [] },
+      activity: { zone: [['a', 1]], otherSubColumn: [] },
+    },
+    {
       results: { zone: [['a', 2]], otherSubColumn: [] },
       advisories: { zone: [['a', 1]], otherSubColumn: [] },
       activity: { zone: [['a', 1]], otherSubColumn: [] },
@@ -340,6 +371,11 @@ const exported: Matrix = {
   expected: byPerson(
     {
       results: { names: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
+      advisories: { names: ['advisory-one', 'advisory-other-sub'], rowKeys: ['zone'] },
+      activity: { names: ['workspace-user'], rowKeys: ['zone'] },
+    },
+    {
+      results: { names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
       advisories: { names: ['advisory-one', 'advisory-other-sub'], rowKeys: ['zone'] },
       activity: { names: ['workspace-user'], rowKeys: ['zone'] },
     },
@@ -384,6 +420,11 @@ const rows: Matrix = {
   },
   expected: byPerson(
     { results: opens('results', STORED_BY_TAB.results), advisories: opens('advisories', STORED_BY_TAB.advisories), activity: opens('activity', STORED_BY_TAB.activity) },
+    {
+      results: opens('results', ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub', 'vm-two']),
+      advisories: opens('advisories', ['advisory-one', 'advisory-other-sub']),
+      activity: opens('activity', ['workspace-user']),
+    },
     { results: opens('results', ['subscription-level', 'vm-one', 'vm-two']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
     { results: opens('results', ['vm-one']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
     { results: opens('results', ['directory-app']), advisories: opens('advisories', []), activity: opens('activity', []) },

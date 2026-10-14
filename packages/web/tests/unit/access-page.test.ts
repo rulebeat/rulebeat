@@ -20,10 +20,14 @@ import { describeAccess } from '@/lib/access-model';
 import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
-import { NO_AZURE_CONNECTION_MESSAGE } from '@/lib/manual-access';
+import { NO_AZURE_CONNECTION_MESSAGE, UNKNOWN_MANAGEMENT_GROUP_MESSAGE } from '@/lib/manual-access';
 import { hashPassword } from '@/lib/password';
 import type { Role } from '@/lib/rbac';
 import { resetDb } from '../helpers/db';
+import { ManagementGroupsSection } from '@/app/(app)/access/management-groups-section';
+import { grantsOfAccess } from '@/lib/access-picker';
+import { refreshManagementGroupHierarchy } from '@/lib/management-group-hierarchy';
+import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 
 const TENANT = '00000000-0000-0000-0000-0000000000f0';
 const SUB = '/subscriptions/00000000-0000-0000-0000-00000000000a';
@@ -479,9 +483,9 @@ describe('Manual access (#272)', () => {
 
   describe('refuses, with a 400 and a stable message', () => {
     const refusals: [string, unknown, string][] = [
-      ['a path that is not a Scope', [grant('not-a-scope', 'viewer')], 'A scope must be Everything, the Directory, a subscription or a resource group.'],
-      ['a resource-level path', [grant(`${RG}/providers/Microsoft.Compute/virtualMachines/vm-one`, 'viewer')], 'A scope must be Everything, the Directory, a subscription or a resource group.'],
-      ['a management group path', [grant(MG, 'viewer')], 'Management group scopes are not available yet.'],
+      ['a path that is not a Scope', [grant('not-a-scope', 'viewer')], 'A scope must be Everything, the Directory, a management group, a subscription or a resource group.'],
+      ['a resource-level path', [grant(`${RG}/providers/Microsoft.Compute/virtualMachines/vm-one`, 'viewer')], 'A scope must be Everything, the Directory, a management group, a subscription or a resource group.'],
+      ['a management group the loaded tree does not hold', [grant(MG, 'viewer')], UNKNOWN_MANAGEMENT_GROUP_MESSAGE],
       ['the Admin Role on a row', [{ scope: SUB, role: 'admin' }], 'The Admin Role cannot be given at a scope.'],
       ['a Role that does not exist', [{ scope: SUB, role: 'owner' }], 'Choose Viewer or Editor for each scope.'],
       ['a body that is not a list', { access: 'everything' }, 'Access must be a list of scopes.'],
@@ -692,5 +696,178 @@ describe("the prompts under a person's row", () => {
     const person = (await listUsersWithAccess()).find(u => u.id === admin.id)!;
     expect(promptsOf(person, {})).toEqual([]);
     expect(promptsOf(person, { editing: true })).toEqual([]);
+  });
+});
+
+describe('Management group Scopes (#273)', () => {
+  const put = (id: string, body: unknown) => accessRoute.PUT(jsonRequest('PUT', body), params(id));
+  const rowsOf = async (id: string) => (await listAssignmentsFor(id)).map(r => [r.tenantId, r.scope, r.role]).sort();
+  const SUB_A = '00000000-0000-0000-0000-00000000000a';
+  let fake: ReturnType<typeof fakeHierarchy>;
+
+  beforeEach(async () => {
+    signInAs(admin);
+    fake = fakeHierarchy([
+      group(TENANT, 'Tenant Root Group', null),
+      group('mg-example', 'Example group', TENANT),
+      subscription(SUB_A, 'Subscription A', 'mg-example'),
+    ]);
+    await refreshFrom(fake);
+  });
+
+  it('is accepted through the access route, stored as sent under the tenant the server resolved', async () => {
+    const res = await put(target.id, { access: [{ scope: MG, role: 'editor', tenantId: 'from-the-body' }] });
+    expect(res.status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, MG, 'editor']]);
+    expect(await getUser(target.id)).toMatchObject({ role: 'editor', accessSource: 'manual' });
+  });
+
+  it('is stored in the casing it was sent in, and found in the tree whatever the casing', async () => {
+    const sent = MG.replace('mg-example', 'MG-Example');
+    expect((await put(target.id, { access: [grant(sent, 'viewer')] })).status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, sent, 'viewer']]);
+  });
+
+  it('reads back as the group itself in the grants, with what sits under it kept apart', async () => {
+    await put(target.id, { access: [grant(MG, 'viewer')] });
+    const back = await (await accessRoute.GET(getRequest(), params(target.id))).json() as AppUserWithAccess;
+    expect(back.access.grants.map(g => [g.scope.kind, g.scope.path])).toEqual([['managementGroup', MG]]);
+    expect(back.access.managementGroups).toEqual([expect.objectContaining({ path: MG, groups: ['mg-example'], subscriptions: [SUB_A] })]);
+  });
+
+  it('is refused with a 400 and a message that names no path when the loaded tree does not hold the group', async () => {
+    const res = await put(target.id, { access: [grant('/providers/Microsoft.Management/managementGroups/mg-unknown', 'viewer')] });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({ error: UNKNOWN_MANAGEMENT_GROUP_MESSAGE });
+    expect(JSON.stringify(body)).not.toMatch(/mg-unknown|managementGroups/);
+    expect(await rowsOf(target.id)).toEqual([['', '/', 'viewer']]);
+  });
+
+  it('is refused when only another tenant\'s tree holds the group', async () => {
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example', null, '00000000-0000-0000-0000-0000000000e1')];
+    await refreshFrom(fake);
+    expect((await put(target.id, { access: [grant(MG, 'viewer')] })).status).toBe(400);
+  });
+
+  it('is refused when no tree has loaded, as after a first refresh that failed', async () => {
+    await resetDb();
+    admin = await makeUser('admin@example.com', 'admin');
+    target = await makeUser('target@example.com', 'viewer');
+    signInAs(admin);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fake.failWith = new Error('boom');
+    await refreshManagementGroupHierarchy({ read: fake.read });
+    expect((await put(target.id, { access: [grant(MG, 'viewer')] })).status).toBe(400);
+    quiet.mockRestore();
+  });
+
+  it('can be given in an invite and when demoting an Admin', async () => {
+    const invited = await usersRoute.POST(jsonRequest('POST', { email: 'invited@example.com', role: 'viewer', access: [grant(MG, 'viewer')] }));
+    expect(invited.status).toBe(201);
+    expect(await rowsOf(((await invited.json()) as AppUserWithAccess).id)).toEqual([[TENANT, MG, 'viewer']]);
+
+    const second = await makeUser('second@example.com', 'admin');
+    const demoted = await userRoute.PUT(jsonRequest('PUT', { role: 'editor', access: [grant(MG, 'editor'), grant(SUB, 'viewer')] }), params(second.id));
+    expect(demoted.status).toBe(200);
+    expect(await rowsOf(second.id)).toEqual(sorted([[TENANT, MG, 'editor'], [TENANT, SUB, 'viewer']]));
+  });
+
+  it('survives an Edit that is saved without a change: the list the picker starts from holds the group', async () => {
+    await put(target.id, { access: [grant(MG, 'editor'), grant(SUB, 'viewer'), grant('@directory', 'viewer')] });
+    const rowsBefore = await rowsOf(target.id);
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const resaved = await put(target.id, { access: grantsOfAccess(person.access) });
+    expect(resaved.status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual(rowsBefore);
+  });
+
+  it('stays in what the picker starts from after it leaves the tree, and the save is refused until it is removed', async () => {
+    await put(target.id, { access: [grant(MG, 'viewer'), grant(SUB, 'viewer')] });
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
+    await refreshFrom(fake);
+
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    expect(grantsOfAccess(person.access).map(g => g.scope)).toContain(MG);
+    expect((await put(target.id, { access: grantsOfAccess(person.access) })).status).toBe(400);
+    expect((await put(target.id, { access: [grant(SUB, 'viewer')] })).status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, SUB, 'viewer']]);
+  });
+
+  it('writes an audit entry that holds field names only, never the group', async () => {
+    await put(target.id, { access: [grant(MG, 'editor')] });
+    const entries = (await listAllAuditEntries()).filter(e => e.action === 'user.access_change');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.details).toEqual({ changed: ['role', 'assignments'] });
+    expect(JSON.stringify(entries[0])).not.toMatch(/mg-example|managementGroups/);
+  });
+});
+
+describe('the management groups card (#273)', () => {
+  const NEVER = { lastSuccessAt: null, lastAttemptAt: null, error: null };
+  const nodes = [
+    { id: TENANT, kind: 'managementGroup' as const, name: 'Tenant Root Group', parentId: null },
+    { id: 'mg-example', kind: 'managementGroup' as const, name: 'Example group', parentId: TENANT },
+    { id: '00000000-0000-0000-0000-00000000000a', kind: 'subscription' as const, name: 'Subscription A', parentId: 'mg-example' },
+  ];
+  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial']) =>
+    renderToStaticMarkup(createElement(ManagementGroupsSection, { initial }));
+
+  it('hands an Admin the stored tree and status, and no one else', async () => {
+    const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
+    await refreshFrom(fake, new Date('2026-06-02T00:00:00.000Z'));
+
+    signInAs(admin);
+    const view = propsWith(await AccessPage(), 'initialHierarchy').initialHierarchy as { nodes: { id: string }[]; status: unknown };
+    expect(view.nodes.map(n => n.id).sort()).toEqual([TENANT, 'mg-example'].sort());
+    expect(view.status).toEqual({ lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null });
+
+    for (const role of ['viewer', 'editor'] as const) {
+      signInAs(await makeUser(`${role}@example.com`, role));
+      const page = await AccessPage();
+      expect(() => propsWith(page, 'initialHierarchy')).toThrow('initialHierarchy not rendered');
+    }
+  });
+
+  it('shows the tree with each group and the subscriptions under it, when it was read, and a Refresh button', () => {
+    const html = render({ nodes, status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
+    expect(html).toContain('Management groups');
+    expect(html.indexOf('Tenant Root Group')).toBeLessThan(html.indexOf('Example group'));
+    expect(html.indexOf('Example group')).toBeLessThan(html.indexOf('Subscription A'));
+    expect(html).toMatch(/Last refreshed /);
+    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
+    expect(html).not.toContain('failed');
+  });
+
+  it('says the refresh failed, when, and that the tree shown is the last one that loaded', () => {
+    const html = render({
+      nodes,
+      status: {
+        lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
+        error: { code: 'failed', message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
+      },
+    });
+    expect(html).toContain('The last refresh failed');
+    expect(html).toContain('The tree shown is the last one that loaded');
+    expect(html).toContain('Check the RuleBeat server logs');
+    expect(html).toContain('Example group');
+  });
+
+  it('says why there is no tree, never the copy of an empty one', () => {
+    const never = render({ nodes: [], status: NEVER });
+    expect(never).toContain('has not been loaded yet');
+    expect(never).toContain('Nothing has been read yet');
+    const notConnected = render({
+      nodes: [],
+      status: {
+        lastSuccessAt: null, lastAttemptAt: '2026-06-02T00:00:00.000Z',
+        error: { code: 'azure_not_configured', message: 'Azure is not connected, so the management group tree could not be read.' },
+      },
+    });
+    expect(notConnected).toContain('no tree has loaded yet');
+    expect(notConnected).toContain('Azure is not connected');
+    expect(notConnected).not.toContain('Azure returned no management groups');
+    const empty = render({ nodes: [], status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
+    expect(empty).toContain('Azure returned no management groups');
   });
 });

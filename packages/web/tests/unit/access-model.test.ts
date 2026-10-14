@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  grantCovers, type ScopeGrant,
   buildAccess, collapseGrants, describeAccess, everythingAccess, highestRole, MAX_MANUAL_GRANTS, parseManualAccess, parseScope, sameScopePath, scopeCovers,
   DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID,
 } from '@/lib/access-model';
@@ -130,9 +131,8 @@ describe('parseManualAccess (#272)', () => {
     const refused = (input: unknown) => (parseManualAccess(input) as { ok: false; error: string }).error;
     expect(refused('/')).toBe('Access must be a list of scopes.');
     expect(refused([{ scope: `${rg}/providers/Microsoft.Compute/virtualMachines/vm-1`, role: 'viewer' }]))
-      .toBe('A scope must be Everything, the Directory, a subscription or a resource group.');
-    expect(refused([{ scope: 'not a scope', role: 'viewer' }])).toBe('A scope must be Everything, the Directory, a subscription or a resource group.');
-    expect(refused([{ scope: MG, role: 'viewer' }])).toBe('Management group scopes are not available yet.');
+      .toBe('A scope must be Everything, the Directory, a management group, a subscription or a resource group.');
+    expect(refused([{ scope: 'not a scope', role: 'viewer' }])).toBe('A scope must be Everything, the Directory, a management group, a subscription or a resource group.');
     expect(refused([{ scope: SUB, role: 'admin' }])).toBe('The Admin Role cannot be given at a scope.');
     expect(refused([{ scope: SUB, role: 'owner' }])).toBe('Choose Viewer or Editor for each scope.');
     expect(refused([{ scope: SUB }])).toBe('Each scope needs a path and a Role.');
@@ -162,5 +162,67 @@ describe('highestRole and collapseGrants (#272)', () => {
   it('keeps one entry a Scope and the first casing', () => {
     expect(collapseGrants([{ scope: '/A', role: 'viewer' as const }, { scope: '/a', role: 'editor' as const }, { scope: '/b', role: 'viewer' as const }]))
       .toEqual([{ scope: '/A', role: 'editor' }, { scope: '/b', role: 'viewer' }]);
+  });
+});
+
+describe('a management group Scope (#273)', () => {
+  const T = 'tenant-one';
+  const grantOf = (path: string, role: 'viewer' | 'editor' = 'viewer'): ScopeGrant => ({ tenantId: T, scope: parseScope(path)!, role });
+  const SUB_IN = '/subscriptions/00000000-0000-0000-0000-00000000000a';
+  const expansion = (role: 'viewer' | 'editor' = 'viewer') => ({
+    tenantId: T, path: MG, role, groups: ['mg-platform', 'mg-child'], subscriptions: ['00000000-0000-0000-0000-00000000000a'],
+  });
+
+  it('is accepted by parseManualAccess, with its path as sent', () => {
+    expect(parseManualAccess([{ scope: MG, role: 'editor' }])).toEqual({ ok: true, grants: [{ scope: MG, role: 'editor' }] });
+    expect(parseManualAccess([{ scope: MG.toUpperCase().replace('/PROVIDERS', '/providers'), role: 'viewer' }]).ok).toBe(true);
+  });
+
+  it('is held once, at the higher Role, when listed twice in different cases', () => {
+    const result = parseManualAccess([{ scope: MG, role: 'viewer' }, { scope: MG.toLowerCase(), role: 'editor' }]);
+    expect(result).toEqual({ ok: true, grants: [{ scope: MG, role: 'editor' }] });
+  });
+
+  it('builds an Access that keeps the stored grant and carries its expansion beside it', () => {
+    const access = buildAccess([grantOf(MG)], 'manual', [expansion()]);
+    expect(access.grants.map(g => g.scope.path)).toEqual([MG]);
+    expect(access.managementGroups).toEqual([expansion()]);
+    expect(buildAccess([grantOf(MG)], 'manual').managementGroups).toEqual([]);
+    expect(everythingAccess('admin').managementGroups).toEqual([]);
+  });
+
+  describe('grantCovers', () => {
+    const access = buildAccess([grantOf(MG, 'editor')], 'manual', [expansion('editor')]);
+    const covers = (path: string) => grantCovers(access, access.grants[0]!, parseScope(path)!);
+
+    it('covers a subscription under it, a resource group in that subscription, and itself and a group beneath it', () => {
+      expect(covers(SUB_IN)).toBe(true);
+      expect(covers(`${SUB_IN}/resourceGroups/rg-app`)).toBe(true);
+      expect(covers(MG)).toBe(true);
+      expect(covers('/providers/Microsoft.Management/managementGroups/mg-child')).toBe(true);
+    });
+
+    it('does not cover a subscription outside it, a group above it, the Directory, or Everything', () => {
+      expect(covers('/subscriptions/00000000-0000-0000-0000-00000000000b')).toBe(false);
+      expect(covers('/providers/Microsoft.Management/managementGroups/mg-above')).toBe(false);
+      expect(covers('@directory')).toBe(false);
+      expect(covers('/')).toBe(false);
+    });
+
+    it('compares ids without regard to case', () => {
+      expect(covers('/SUBSCRIPTIONS/00000000-0000-0000-0000-00000000000A/RESOURCEGROUPS/Rg')).toBe(true);
+      expect(covers('/providers/microsoft.management/managementgroups/MG-CHILD')).toBe(true);
+    });
+
+    it('takes the expansion of this grant and no other: a different Role or tenant is a different grant', () => {
+      const other = buildAccess([{ ...grantOf(MG, 'viewer'), tenantId: 'tenant-two' }], 'manual', [expansion('viewer')]);
+      expect(grantCovers(other, other.grants[0]!, parseScope(SUB_IN)!)).toBe(false);
+    });
+
+    it('still lets every other kind of grant decide by its Scope alone', () => {
+      const sub = buildAccess([grantOf(SUB_IN)], 'manual');
+      expect(grantCovers(sub, sub.grants[0]!, parseScope(`${SUB_IN}/resourceGroups/rg-app`)!)).toBe(true);
+      expect(grantCovers(sub, sub.grants[0]!, parseScope(MG)!)).toBe(false);
+    });
   });
 });

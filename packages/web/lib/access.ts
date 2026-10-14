@@ -1,6 +1,8 @@
 import { listAssignmentsFor, listAllAssignments, type RoleAssignment } from '@/lib/db/role-assignments';
 import { listUsers, type AppUser } from '@/lib/db/users';
 import { buildAccess, everythingAccess, parseScope, type Access, type AccessSource, type ScopeGrant, type ScopeKind } from '@/lib/access-model';
+import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
+import { expandManagementGroups, type HierarchyNode } from '@/lib/management-group-tree';
 import { isRole, type Role } from '@/lib/rbac';
 
 /** A person together with the Access they resolve to: what the user routes and the Access page carry. */
@@ -11,10 +13,15 @@ export type AppUserWithAccess = AppUser & { access: Access };
  * reading any: an Admin is never scoped, so a stale row left by a rollback means nothing. For
  * anyone else a row that is not a Scope, or whose Role is not a Viewer or Editor, is ignored
  * (fail closed), and a person with no usable row holds nothing.
+ *
+ * `hierarchy` is RuleBeat's copy of the management group tree, and is what each management group grant is
+ * expanded against. The grants stay as stored; the expansion is derived from them and from the tree as it is
+ * now, so a subscription moved under a group is covered with no change to anyone's rows.
  */
 export function accessFromAssignments(
   user: Pick<AppUser, 'role' | 'accessSource'>,
   rows: readonly RoleAssignment[],
+  hierarchy: readonly HierarchyNode[] = [],
 ): Access {
   if (user.role === 'admin') return everythingAccess('admin');
   const grants: ScopeGrant[] = [];
@@ -23,13 +30,17 @@ export function accessFromAssignments(
     if (!scope || !isRole(row.role) || row.role === 'admin') continue;
     grants.push({ tenantId: row.tenantId, scope, role: row.role });
   }
-  return buildAccess(grants, user.accessSource);
+  return buildAccess(grants, user.accessSource, expandManagementGroups(grants, hierarchy));
 }
 
-/** Resolves one person's Access, once per request. */
+const holdsManagementGroup = (rows: readonly RoleAssignment[]): boolean =>
+  rows.some(r => parseScope(r.scope)?.kind === 'managementGroup');
+
+/** Resolves one person's Access, once per request. The tree is read once, and only for someone who holds a management group. */
 export async function resolveAccess(user: Pick<AppUser, 'id' | 'role' | 'accessSource'>): Promise<Access> {
   if (user.role === 'admin') return everythingAccess('admin');
-  return accessFromAssignments(user, await listAssignmentsFor(user.id));
+  const rows = await listAssignmentsFor(user.id);
+  return accessFromAssignments(user, rows, holdsManagementGroup(rows) ? await listHierarchyNodes() : []);
 }
 
 export async function withAccess(user: AppUser): Promise<AppUserWithAccess> {
@@ -39,9 +50,10 @@ export async function withAccess(user: AppUser): Promise<AppUserWithAccess> {
 /** Everyone, with their Access, from one read of the assignment rows. */
 export async function listUsersWithAccess(): Promise<AppUserWithAccess[]> {
   const [users, rows] = await Promise.all([listUsers(), listAllAssignments()]);
+  const hierarchy = holdsManagementGroup(rows) ? await listHierarchyNodes() : [];
   return users.map(user => ({
     ...user,
-    access: accessFromAssignments(user, rows.filter(r => r.userId === user.id)),
+    access: accessFromAssignments(user, rows.filter(r => r.userId === user.id), hierarchy),
   }));
 }
 

@@ -17,6 +17,7 @@ import type { Role } from '@/lib/rbac';
 import type { Finding, ScanSummary } from '@/lib/types';
 import { emptySeverityCounts } from '@/lib/severity';
 import { syntheticFinding } from './synthetic-findings';
+import { fakeHierarchy, group, refreshFrom, subscription, type FakeHierarchy } from './fake-hierarchy';
 
 export const MATRIX_TENANT = '00000000-0000-0000-0000-0000000000f0';
 export const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
@@ -32,6 +33,19 @@ export const SCOPE_MANAGEMENT_GROUP = `/providers/Microsoft.Management/managemen
 export const SCOPE_SUBSCRIPTION = `/subscriptions/${SUB_ONE}`;
 export const SCOPE_RESOURCE_GROUP = `/subscriptions/${SUB_ONE}/resourceGroups/${RG_ONE}`;
 export const SCOPE_DIRECTORY = '@directory';
+
+/**
+ * The tree Azure would answer with: the tenant root group, `mg-example` under it, and both subscriptions
+ * under `mg-example`. A test that moves a subscription changes `nodes` on this and refreshes again.
+ */
+export function matrixHierarchy(): FakeHierarchy {
+  return fakeHierarchy([
+    group(MATRIX_TENANT, 'Tenant Root Group', null, MATRIX_TENANT),
+    group(MANAGEMENT_GROUP, 'Example group', MATRIX_TENANT, MATRIX_TENANT),
+    subscription(SUB_ONE, 'Subscription one', MANAGEMENT_GROUP, MATRIX_TENANT),
+    subscription(SUB_TWO, 'Subscription two', MANAGEMENT_GROUP, MATRIX_TENANT),
+  ]);
+}
 
 export interface PersonSpec {
   name: string;
@@ -96,8 +110,9 @@ function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSum
 }
 
 /**
- * Two subscriptions under one management group and a finding at each placement, two scans of one category,
- * one suppression, one schedule and one run. By tab:
+ * Two subscriptions under one management group (read into RuleBeat's copy of the tree by the real refresh,
+ * from `matrixHierarchy()`) and a finding at each placement, two scans of one category, one suppression,
+ * one schedule and one run. By tab:
  *
  *  - Results: `vm-one` (subscription one, `rg-one`), `vm-two` (subscription one, `rg-two`, suppressed),
  *    `vm-other-sub` (subscription two, also `rg-one`, with a column no other finding returns),
@@ -106,6 +121,7 @@ function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSum
  *  - Activity: `workspace-user` (a workspace in subscription one, `rg-one`).
  */
 export async function seedMatrix(): Promise<MatrixSeed> {
+  await refreshFrom(matrixHierarchy());
   const at = { ruleId: RULE, category: CATEGORY };
   const all: Finding[] = [
     syntheticFinding('vm-one', [{ zone: 'a' }], { ...at, subscriptionId: SUB_ONE, resourceGroup: RG_ONE }),

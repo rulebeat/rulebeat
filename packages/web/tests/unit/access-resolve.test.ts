@@ -4,7 +4,9 @@
  * row never widens anyone's access. The writes (invite, promote, demote, remove) keep the rows and
  * the Role together.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as hierarchyRepo from '@/lib/db/management-group-hierarchy';
+import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 import { resetDb } from '../helpers/db';
 import { createUser, deleteUser, updateUserRole, getUser, type AppUser } from '@/lib/db/users';
 import { deleteAssignmentsOn, grantAssignmentOn, listAssignmentsFor } from '@/lib/db/role-assignments';
@@ -146,5 +148,72 @@ describe('listUsersWithAccess and changedAccessFields', () => {
     expect(changedAccessFields(before, after)).toEqual(['role', 'assignments']);
     expect(changedAccessFields(after, after)).toEqual([]);
     expect(JSON.stringify(changedAccessFields(before, after))).not.toMatch(/editor|viewer|\/|0000/);
+  });
+});
+
+describe('resolveAccess for a management group (#273)', () => {
+  /** The fake tree's nodes belong to the tenant the grants in this file are stored under. */
+  const inTenant = <T extends { tenantId: string }>(node: T): T => ({ ...node, tenantId: TENANT });
+
+  const GROUP = '/providers/Microsoft.Management/managementGroups/mg-example';
+  const SUB_IN = '00000000-0000-0000-0000-00000000000a';
+
+  async function holder(): Promise<AppUser> {
+    const person = await make('holder@example.com', 'viewer');
+    await inTransaction(async tx => {
+      await deleteAssignmentsOn(tx, person.id);
+      await grantAssignmentOn(tx, person.id, TENANT, GROUP, 'editor');
+      await grantAssignmentOn(tx, person.id, TENANT, SUB, 'viewer');
+    });
+    return (await getUser(person.id))!;
+  }
+
+  it('keeps the stored grants as they are and fills in what the group expands to, in the grant\'s Role', async () => {
+    const fake = fakeHierarchy([
+      inTenant(group(TENANT, 'Root', null)), inTenant(group('mg-example', 'Example', TENANT)), inTenant(group('mg-child', 'Child', 'mg-example')),
+      inTenant(subscription(SUB_IN, 'In', 'mg-child')),
+    ]);
+    await refreshFrom(fake);
+
+    const access = await resolveAccess(await holder());
+
+    expect(access.grants.map(g => [g.scope.kind, g.scope.path, g.role]).sort()).toEqual([
+      ['managementGroup', GROUP, 'editor'], ['subscription', SUB, 'viewer'],
+    ]);
+    expect(access.managementGroups).toEqual([{ tenantId: TENANT, path: GROUP, role: 'editor', groups: ['mg-example', 'mg-child'], subscriptions: [SUB_IN] }]);
+  });
+
+  it('expands to nothing while no tree has been read, and still keeps the grant', async () => {
+    const access = await resolveAccess(await holder());
+    expect(access.grants.map(g => g.scope.kind).sort()).toEqual(['managementGroup', 'subscription']);
+    expect(access.managementGroups).toEqual([{ tenantId: TENANT, path: GROUP, role: 'editor', groups: [], subscriptions: [] }]);
+  });
+
+  it('reads the tree for someone who holds a management group, and for no one else', async () => {
+    const listHierarchy = vi.spyOn(hierarchyRepo, 'listHierarchyNodes');
+    await resolveAccess(await holder());
+    expect(listHierarchy).toHaveBeenCalledTimes(1);
+
+    listHierarchy.mockClear();
+    const plain = await make('plain@example.com', 'editor');
+    await resolveAccess((await getUser(plain.id))!);
+    await resolveAccess(await make('admin@example.com', 'admin'));
+    expect(listHierarchy).not.toHaveBeenCalled();
+    listHierarchy.mockRestore();
+  });
+
+  it('gives everyone listed the same expansion from one read of the tree', async () => {
+    await refreshFrom(fakeHierarchy([inTenant(group(TENANT, 'Root', null)), inTenant(group('mg-example', 'Example', TENANT)), inTenant(subscription(SUB_IN, 'In', 'mg-example'))]));
+    const person = await holder();
+    const listed = (await listUsersWithAccess()).find(u => u.id === person.id)!;
+    expect(listed.access.managementGroups).toEqual([expect.objectContaining({ subscriptions: [SUB_IN] })]);
+    expect(listed.access.grants.map(g => g.scope.kind).sort()).toEqual(['managementGroup', 'subscription']);
+  });
+
+  it('leaves the audit field names as they were: moving a subscription is not a change to anyone\'s access', async () => {
+    const person = await holder();
+    const before = await withAccess(person);
+    await refreshFrom(fakeHierarchy([inTenant(group(TENANT, 'Root', null)), inTenant(group('mg-example', 'Example', TENANT)), inTenant(subscription(SUB_IN, 'In', 'mg-example'))]));
+    expect(changedAccessFields(before, await withAccess(person))).toEqual([]);
   });
 });
