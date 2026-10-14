@@ -69,21 +69,52 @@ export interface ScopeGrant {
   role: Role;
 }
 
+/** The id of the management group a management group path names: its last segment, as written. */
+export function managementGroupIdOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+/**
+ * What one management group grant covers, read from RuleBeat's copy of the tree when the Access was
+ * resolved (#273): the group itself and every subscription and group at or below it, in the grant's
+ * tenant only. A group the tree does not hold under that tenant covers nothing. Ids are lowercase,
+ * because they are only ever compared. The grant stays in `Access.grants` as stored; this is derived
+ * from it and never written back.
+ */
+export interface ManagementGroupExpansion {
+  tenantId: string;
+  /** The grant's Scope path as stored. */
+  path: string;
+  role: Role;
+  /** The group itself and every group beneath it. */
+  groups: string[];
+  /** Every subscription under any of those groups. */
+  subscriptions: string[];
+}
+
 /**
  * What one person may do and where: the Role at each Scope, flags for the two Scopes the rest of
  * the product asks about first, and where the grants came from. `source` is null for an Admin, who
  * is never scoped and has no source.
  */
 export interface Access {
+  /** The rows as stored. A management group is one entry here, whatever sits under it. */
   grants: ScopeGrant[];
+  /** What each management group grant covers now, derived from the hierarchy cache. */
+  managementGroups: ManagementGroupExpansion[];
   everything: boolean;
   directory: boolean;
   source: AccessSource | null;
 }
 
-export function buildAccess(grants: ScopeGrant[], source: AccessSource | null): Access {
+export function buildAccess(
+  grants: ScopeGrant[],
+  source: AccessSource | null,
+  managementGroups: ManagementGroupExpansion[] = [],
+): Access {
   return {
     grants,
+    managementGroups,
     everything: grants.some(g => g.scope.kind === 'everything'),
     directory: grants.some(g => g.scope.kind === 'directory'),
     source,
@@ -96,6 +127,7 @@ export function buildAccess(grants: ScopeGrant[], source: AccessSource | null): 
  */
 export const NO_ACCESS: Access = Object.freeze({
   grants: Object.freeze([]) as unknown as ScopeGrant[],
+  managementGroups: Object.freeze([]) as unknown as ManagementGroupExpansion[],
   everything: false,
   directory: false,
   source: null,
@@ -110,8 +142,9 @@ export function everythingAccess(role: Role, source: AccessSource | null = null)
 }
 
 /**
- * Whether a grant's Scope contains a placement. Everything contains all of them. A management
- * group contains only itself here: expanding it to what sits under it needs the hierarchy cache.
+ * Whether a grant's Scope contains a placement, from the Scope alone. Everything contains all of them. A
+ * management group contains only itself here: what sits under it is in the hierarchy cache, which a bare
+ * Scope does not carry. `grantCovers` is the one that reads it.
  */
 export function scopeCovers(grant: Scope, placement: Scope): boolean {
   if (grant.kind === 'everything') return true;
@@ -119,6 +152,22 @@ export function scopeCovers(grant: Scope, placement: Scope): boolean {
   const p = placement.path.toLowerCase();
   if (g === p) return true;
   return grant.kind === 'subscription' && placement.kind === 'resourceGroup' && p.startsWith(`${g}/`);
+}
+
+/**
+ * Whether one grant's Scope contains a placement, a management group grant included: it covers a
+ * subscription or a resource group in a subscription under it, and itself and any group beneath it, by
+ * the expansion `access` carries. A management group grant with no expansion covers nothing: it fails closed.
+ */
+export function grantCovers(access: Pick<Access, 'managementGroups'>, grant: ScopeGrant, placement: Scope): boolean {
+  if (grant.scope.kind !== 'managementGroup') return scopeCovers(grant.scope, placement);
+  const expansion = access.managementGroups.find(e =>
+    e.tenantId === grant.tenantId && e.role === grant.role && sameScopePath(e.path, grant.scope.path));
+  if (!expansion) return false;
+  const parts = placement.path.toLowerCase().split('/');
+  if (placement.kind === 'subscription' || placement.kind === 'resourceGroup') return expansion.subscriptions.includes(parts[2]!);
+  if (placement.kind === 'managementGroup') return expansion.groups.includes(parts[parts.length - 1]!);
+  return false;
 }
 
 /** One Scope an Admin hands someone, as the request carries it: a path and a Role, no tenant id. */
@@ -151,8 +200,8 @@ export type ManualAccessResult = { ok: true; grants: ManualGrant[] } | { ok: fal
 
 /**
  * Reads the list of Scopes an Admin chose, or says why it cannot be stored. The messages are what the
- * route returns, so they are stable and name no path. A management group is refused until the hierarchy
- * cache can say what sits under one (#273): a row for it would cover nothing and look like it did.
+ * route returns, so they are stable and name no path. Whether a management group is one RuleBeat's copy
+ * of the tree holds is not decided here: it needs the database, so `assignmentsFor` does.
  */
 export function parseManualAccess(input: unknown): ManualAccessResult {
   if (!Array.isArray(input)) return { ok: false, error: 'Access must be a list of scopes.' };
@@ -166,8 +215,7 @@ export function parseManualAccess(input: unknown): ManualAccessResult {
     if (entry.role === 'admin') return { ok: false, error: 'The Admin Role cannot be given at a scope.' };
     if (entry.role !== 'viewer' && entry.role !== 'editor') return { ok: false, error: 'Choose Viewer or Editor for each scope.' };
     const scope = parseScope(entry.scope);
-    if (!scope) return { ok: false, error: 'A scope must be Everything, the Directory, a subscription or a resource group.' };
-    if (scope.kind === 'managementGroup') return { ok: false, error: 'Management group scopes are not available yet.' };
+    if (!scope) return { ok: false, error: 'A scope must be Everything, the Directory, a management group, a subscription or a resource group.' };
     grants.push({ scope: entry.scope, role: entry.role });
   }
   return { ok: true, grants: collapseGrants(grants) };

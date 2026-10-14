@@ -35,6 +35,7 @@ export const schedules = pick('schedules');
 export const meta = pick('meta');
 export const users = pick('users');
 export const roleAssignments = pick('roleAssignments');
+export const managementGroupHierarchy = pick('managementGroupHierarchy');
 export const azureCredentials = pick('azureCredentials');
 export const logAnalyticsWorkspaces = pick('logAnalyticsWorkspaces');
 export const localAccounts = pick('localAccounts');

@@ -5,6 +5,7 @@ import { can } from '@/lib/rbac';
 import { listUsersWithAccess, ownAccessOf, resolveAccess } from '@/lib/access';
 import { listUserIdsWithPassword } from '@/lib/db/local-accounts';
 import { isDemoMode } from '@/lib/demo';
+import { hierarchyResponse } from '@/lib/management-group-response';
 import { AccessClient } from './access-client';
 import { OwnAccessSection } from './own-access-section';
 
@@ -35,6 +36,7 @@ export default async function AccessPage() {
           initialUsers={await listUsersWithAccess()}
           initialUsersWithPassword={await listUserIdsWithPassword()}
           currentUserId={user.id}
+          initialHierarchy={await hierarchyResponse()}
           demo={await isDemoMode()}
         />
       </main>

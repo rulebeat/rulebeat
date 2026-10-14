@@ -424,6 +424,15 @@ export function runMigrations(sqlite: Database.Database): void {
       PRIMARY KEY (user_id, tenant_id, scope)
     );
 
+    CREATE TABLE IF NOT EXISTS management_group_hierarchy (
+      tenant_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      parent_id TEXT,
+      PRIMARY KEY (tenant_id, kind, node_id)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id TEXT PRIMARY KEY,
       actor_id TEXT NOT NULL,

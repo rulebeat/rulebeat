@@ -169,6 +169,21 @@ export const roleAssignments = sqliteTable('role_assignments', {
   pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
 }));
 
+// RuleBeat's own copy of the management group tree (#273): one row per group or subscription, with the
+// group it sits under, so a management group Scope can be expanded to what is beneath it without asking
+// Azure per request. `kind` is 'managementGroup' or 'subscription'; `parent_id` is null for the tenant root
+// group. Ids are stored in the casing Azure returned and compared case-insensitively. A refresh replaces
+// every row at once, and when its status is recorded is kept in `meta`.
+export const managementGroupHierarchy = sqliteTable('management_group_hierarchy', {
+  tenantId: text('tenant_id').notNull(),
+  kind: text('kind').notNull(),
+  nodeId: text('node_id').notNull(),
+  displayName: text('display_name').notNull(),
+  parentId: text('parent_id'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.kind, table.nodeId] }),
+}));
+
 // The Azure service principal RuleBeat scans with, when it was entered in the UI rather than
 // supplied as an environment variable. Modelled as a table rather than a handful of `meta` keys so
 // that scanning more than one tenant later is a new row, not a migration. The same shape Prowler

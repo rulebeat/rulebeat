@@ -8,8 +8,10 @@
 import {
   DIRECTORY_SCOPE_PATH, EVERYTHING_SCOPE_PATH, parseScope, sameScopePath, type Access, type GrantRole, type ManualGrant,
 } from './access-model';
+import { noGroupsReason, orderedGroups, type HierarchyView } from './management-group-tree';
 
 export const subscriptionScopePath = (subscriptionId: string): string => `/subscriptions/${subscriptionId}`;
+export const managementGroupScopePath = (id: string): string => `/providers/Microsoft.Management/managementGroups/${id}`;
 export const resourceGroupScopePath = (subscriptionId: string, name: string): string =>
   `/subscriptions/${subscriptionId}/resourceGroups/${name}`;
 
@@ -31,15 +33,43 @@ export function setEveryRole(grants: readonly ManualGrant[], role: GrantRole): M
   return grants.map(g => ({ ...g, role }));
 }
 
-/** The Scopes a person holds as the picker edits them. A management group is left out: it cannot be
- *  chosen yet, and saving the list without it is what the route would require anyway. */
+/** The Scopes a person holds as the picker edits them, a management group included: saving the list
+ *  replaces what they hold, so a group left out here would be removed by an Edit that changed nothing. */
 export function grantsOfAccess(access: Pick<Access, 'grants'>): ManualGrant[] {
   const out: ManualGrant[] = [];
   for (const g of access.grants) {
-    if (g.scope.kind === 'managementGroup' || g.role === 'admin') continue;
+    if (g.role === 'admin') continue;
     out.push({ scope: g.scope.path, role: g.role });
   }
   return out;
+}
+
+/** One management group the picker lists. `missing` is a group the person holds that RuleBeat's tree no longer has. */
+export interface PickerGroup {
+  path: string;
+  /** The display name, or for a missing group its id. */
+  name: string;
+  id: string;
+  depth: number;
+  missing: boolean;
+}
+
+/**
+ * The management groups the Scope picker lists, and why it lists none when it has none to offer. Every group
+ * of the tree comes in tree order, each choosable; a group already held that the tree lacks follows them, so
+ * it can be removed. The reason is about the tree, so it is given even when a missing group is listed.
+ */
+export function pickerGroups(view: HierarchyView, held: readonly ManualGrant[]): { groups: PickerGroup[]; reason: string | null } {
+  const groups: PickerGroup[] = orderedGroups(view.nodes).map(({ node, depth }) => ({
+    path: managementGroupScopePath(node.id), name: node.name, id: node.id, depth, missing: false,
+  }));
+  for (const grant of held) {
+    if (parseScope(grant.scope)?.kind !== 'managementGroup') continue;
+    if (groups.some(g => sameScopePath(g.path, grant.scope))) continue;
+    const id = grant.scope.slice(grant.scope.lastIndexOf('/') + 1);
+    groups.push({ path: grant.scope, name: id, id, depth: 0, missing: true });
+  }
+  return { groups, reason: noGroupsReason(view.nodes, view.status) };
 }
 
 /** The resource groups held inside one subscription, by name, in the order they were chosen. */
@@ -60,7 +90,7 @@ export function subscriptionsNamed(grants: readonly ManualGrant[]): string[] {
   return [...ids.values()];
 }
 
-/** What a Scope is called on screen. `names` maps a subscription id to its display name. */
+/** What a Scope is called on screen. `names` maps a subscription id or a management group id to its display name. */
 export function describeScopePath(path: string, names: Readonly<Record<string, string>> = {}): string {
   if (path === EVERYTHING_SCOPE_PATH) return 'Everything';
   if (path.toLowerCase() === DIRECTORY_SCOPE_PATH) return 'Directory';
@@ -68,7 +98,10 @@ export function describeScopePath(path: string, names: Readonly<Record<string, s
   const parts = path.split('/');
   if (scope?.kind === 'subscription') return names[parts[2]!] ?? parts[2]!;
   if (scope?.kind === 'resourceGroup') return `${parts[4]!} in ${names[parts[2]!] ?? parts[2]!}`;
-  if (scope?.kind === 'managementGroup') return `Management group ${parts[parts.length - 1]!}`;
+  if (scope?.kind === 'managementGroup') {
+    const id = parts[parts.length - 1]!;
+    return `Management group ${names[id] ?? id}`;
+  }
   return path;
 }
 

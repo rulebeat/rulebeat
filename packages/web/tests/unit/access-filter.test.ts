@@ -43,3 +43,54 @@ describe('a Scope covers a finding whose stored ids differ from it only in case'
     expect(await listed(viewerAt('/subscriptions/bbbbbbbb-0000-0000-0000-00000000000b'))).toEqual([]);
   });
 });
+
+describe('a management group Scope, by what its expansion holds (#273)', () => {
+  const GROUP = '/providers/Microsoft.Management/managementGroups/mg-example';
+  const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
+  const SUB_TWO = '00000000-0000-0000-0000-00000000000b';
+
+  const holding = (groups: string[], subscriptions: string[], extra: string[] = []): Access => {
+    const grants = [GROUP, ...extra].map(path => ({ tenantId: 't', scope: parseScope(path)!, role: 'viewer' as const }));
+    return buildAccess(grants, 'manual', [{ tenantId: 't', path: GROUP, role: 'viewer', groups, subscriptions }]);
+  };
+
+  beforeAll(async () => {
+    await resetDb();
+    await storeScan([
+      syntheticFinding('vm-one', [{ zone: 'a' }], { ruleId: 'mg-rule', subscriptionId: SUB_ONE, resourceGroup: 'rg-a' }),
+      syntheticFinding('vm-two', [{ zone: 'a' }], { ruleId: 'mg-rule', subscriptionId: SUB_TWO, resourceGroup: 'rg-a' }),
+      syntheticFinding('sub-level-two', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'subscription', subscriptionId: SUB_TWO }),
+      syntheticFinding('at-example', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'management-group', managementGroupId: 'mg-example' }),
+      syntheticFinding('at-child', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'management-group', managementGroupId: 'MG-Child' }),
+      syntheticFinding('at-above', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'management-group', managementGroupId: 'mg-above' }),
+      syntheticFinding('directory-app', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'directory' }),
+      syntheticFinding('unplaceable-thing', [{ zone: 'a' }], { ruleId: 'mg-rule', placement: 'unplaceable' }),
+    ], { scanId: '00000000-0000-0000-0000-0000000000c2', finishedAt: '2026-06-01T00:00:00.000Z' });
+  });
+
+  it('covers the subscriptions it lists, with their resources and subscription-level findings, and the groups it lists', async () => {
+    expect(await listed(holding(['mg-example', 'mg-child'], [SUB_ONE, SUB_TWO])))
+      .toEqual(['at-child', 'at-example', 'sub-level-two', 'vm-one', 'vm-two']);
+  });
+
+  it('covers only the subscriptions and groups the expansion lists', async () => {
+    expect(await listed(holding(['mg-example'], [SUB_ONE]))).toEqual(['at-example', 'vm-one']);
+  });
+
+  it('never covers the Directory, a finding RuleBeat could not place, or a group the expansion does not list', async () => {
+    const seen = await listed(holding(['mg-example', 'mg-child'], [SUB_ONE, SUB_TWO]));
+    for (const name of ['directory-app', 'unplaceable-thing', 'at-above']) expect(seen, name).not.toContain(name);
+  });
+
+  it('compares the ids it lists with the stored ones without regard to case', async () => {
+    expect(await listed(holding(['MG-EXAMPLE', 'Mg-Child'], [SUB_ONE.toUpperCase()]))).toEqual(['at-child', 'at-example', 'vm-one']);
+  });
+
+  it('covers nothing when the expansion is empty, as for a group the tree does not hold', async () => {
+    expect(await listed(holding([], []))).toEqual([]);
+  });
+
+  it('adds up with the other Scopes a person holds', async () => {
+    expect(await listed(holding(['mg-example'], [SUB_ONE], ['@directory']))).toEqual(['at-example', 'directory-app', 'vm-one']);
+  });
+});

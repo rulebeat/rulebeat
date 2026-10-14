@@ -103,6 +103,12 @@ table log_analytics_workspaces
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   created_by TEXT
+table management_group_hierarchy
+  tenant_id TEXT NOT NULL PK(1)
+  kind TEXT NOT NULL PK(2)
+  node_id TEXT NOT NULL PK(3)
+  display_name TEXT NOT NULL
+  parent_id TEXT
 table meta
   key TEXT PK(1)
   value TEXT NOT NULL
@@ -359,6 +365,7 @@ finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
+management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
@@ -543,6 +550,12 @@ table log_analytics_workspaces
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   created_by TEXT
+table management_group_hierarchy
+  tenant_id TEXT NOT NULL PK(1)
+  kind TEXT NOT NULL PK(2)
+  node_id TEXT NOT NULL PK(3)
+  display_name TEXT NOT NULL
+  parent_id TEXT
 table meta
   key TEXT PK(1)
   value TEXT NOT NULL
@@ -799,6 +812,7 @@ finding_rows: 0
 findings: 0
 local_accounts: 1
 log_analytics_workspaces: 0
+management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
@@ -970,6 +984,12 @@ table log_analytics_workspaces
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   created_by TEXT
+table management_group_hierarchy
+  tenant_id TEXT NOT NULL PK(1)
+  kind TEXT NOT NULL PK(2)
+  node_id TEXT NOT NULL PK(3)
+  display_name TEXT NOT NULL
+  parent_id TEXT
 table meta
   key TEXT PK(1)
   value TEXT NOT NULL
@@ -1226,6 +1246,7 @@ finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
+management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
@@ -1406,6 +1427,12 @@ table log_analytics_workspaces
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   created_by TEXT
+table management_group_hierarchy
+  tenant_id TEXT NOT NULL PK(1)
+  kind TEXT NOT NULL PK(2)
+  node_id TEXT NOT NULL PK(3)
+  display_name TEXT NOT NULL
+  parent_id TEXT
 table meta
   key TEXT PK(1)
   value TEXT NOT NULL
@@ -1662,6 +1689,7 @@ finding_rows: 0
 findings: 0
 local_accounts: 1
 log_analytics_workspaces: 0
+management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
@@ -1843,6 +1871,12 @@ table log_analytics_workspaces
   created_at TEXT NOT NULL
   updated_at TEXT NOT NULL
   created_by TEXT
+table management_group_hierarchy
+  tenant_id TEXT NOT NULL PK(1)
+  kind TEXT NOT NULL PK(2)
+  node_id TEXT NOT NULL PK(3)
+  display_name TEXT NOT NULL
+  parent_id TEXT
 table meta
   key TEXT PK(1)
   value TEXT NOT NULL
@@ -2099,6 +2133,7 @@ finding_rows: 0
 findings: 2
 local_accounts: 1
 log_analytics_workspaces: 0
+management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
