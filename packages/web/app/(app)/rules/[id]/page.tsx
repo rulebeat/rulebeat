@@ -7,6 +7,7 @@ import { describeOrigin } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
 import { getPageAccess } from '@/lib/page-access';
 import { can } from '@/lib/rbac';
+import { personalCopyReasons } from '@/lib/personal-rule-request';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
 import { RuleDetailClient } from './rule-detail-client';
@@ -54,6 +55,7 @@ export default async function RuleDetailPage({
         categories={categories}
         canAuthor={controls.rulesWrite}
         writeReason={controls.reason}
+        personalCopyReasons={personalCopyReasons(user?.role, access)}
       />
     </>
   );

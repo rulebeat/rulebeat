@@ -22,10 +22,11 @@ import { matchesRuleSearch } from '@/lib/rule-filters';
 import { PACK_LABELS } from '@/lib/pack-labels';
 import { retiredMessage, versionLabel } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
-import type { Category, Rule, RuleKind } from '@/lib/types';
+import type { Category, PersonalCopyReasons, Rule, RuleKind } from '@/lib/types';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import { isExternalPack, type PackManifestEntry } from './pack-manifest';
 import { PersonalRulesTab } from './personal-rules-tab';
+import { CopyToPersonalButton } from '@/components/rules/copy-to-personal-button';
 
 // ---- Constants ----
 
@@ -212,7 +213,7 @@ function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record
 
 // ---- Main component ----
 
-export function LibraryClient({ initialRules, personalRules, personalWriteBlockedReason, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, canAuthor, canDelete, writeReason }: { initialRules: Rule[]; personalRules: Rule[]; personalWriteBlockedReason: string | null; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; canAuthor: boolean; canDelete: boolean; writeReason?: string }) {
+export function LibraryClient({ initialRules, personalRules, personalWriteBlockedReason, personalCopyReasons, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, canAuthor, canDelete, writeReason }: { initialRules: Rule[]; personalRules: Rule[]; personalWriteBlockedReason: string | null; personalCopyReasons: PersonalCopyReasons; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; canAuthor: boolean; canDelete: boolean; writeReason?: string }) {
   // Set only for someone whose Editor access covers part of the install: the write controls are shown
   // off with this reason rather than hidden, so they do not fail with a 403 on click.
   const authorOffReason = canAuthor ? undefined : writeReason;
@@ -825,6 +826,12 @@ export function LibraryClient({ initialRules, personalRules, personalWriteBlocke
                             <Copy className="size-3.5" />
                           </Button>
                         )}
+                        <CopyToPersonalButton
+                          iconOnly
+                          ruleId={rule.id}
+                          blockedReason={personalCopyReasons[rule.queryBackend ?? 'resource-graph']}
+                          onError={setError}
+                        />
                         {(canDelete || deleteOffReason) && rule.type !== 'builtin' && (
                           <Button
                             variant="ghost" size="icon-sm"

@@ -29,6 +29,8 @@ export interface PersonalRule extends Rule {
   updatedAt: string;
   /** JSON of the `{ tenantId, path }` entries the latest run covered; absent until a run. */
   lastRunCoveredScope?: string;
+  /** The shared rule this was copied from, while that rule still exists. Set only at creation. */
+  sourceRuleId?: string;
 }
 
 /** One finding of the latest run. */
@@ -98,6 +100,7 @@ function rowToRule(row: Row): PersonalRule {
     lastRunAt: row.lastRunAt ?? undefined,
     lastRunStatus: (row.lastRunStatus as PersonalRunStatus | null) ?? undefined,
     lastRunCoveredScope: row.lastRunCoveredScope ?? undefined,
+    sourceRuleId: row.sourceRuleId ?? undefined,
   };
 }
 
@@ -137,7 +140,10 @@ export async function getPersonalRule(id: string, ownerId: string): Promise<Pers
   return row ? rowToRule(row) : null;
 }
 
-export async function createPersonalRule(ownerId: string, def: PersonalRuleDefinition): Promise<PersonalRule> {
+/** `sourceRuleId` is not part of the definition a request may set: only the copy route passes it. */
+export async function createPersonalRule(
+  ownerId: string, def: PersonalRuleDefinition, sourceRuleId?: string,
+): Promise<PersonalRule> {
   const id = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
   await run(db.insert(personalRules).values({
@@ -149,6 +155,7 @@ export async function createPersonalRule(ownerId: string, def: PersonalRuleDefin
     lastRunAt: null,
     lastRunStatus: null,
     lastRunCoveredScope: null,
+    sourceRuleId: sourceRuleId ?? null,
   }));
   return (await getPersonalRule(id, ownerId))!;
 }

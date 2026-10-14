@@ -24,7 +24,9 @@ afterEach(async () => {
   else process.env.AUTH_URL = original;
 });
 
-describe('syncAuthUrlMirror', () => {
+// Each case re-imports sign-in-config (next-auth, core, the database layer), which takes seconds
+// when the whole suite is running, so the default 5s is not enough.
+describe('syncAuthUrlMirror', { timeout: 30_000 }, () => {
   it('mirrors a saved URL when the operator set no AUTH_URL', async () => {
     const { syncAuthUrlMirror } = await loadWithEnv(undefined);
     syncAuthUrlMirror('https://first.example.com');

@@ -18,7 +18,7 @@ import { ThemeProvider } from '@/components/theme/theme-provider';
 import { SettingsClient } from '@/app/(app)/settings/settings-client';
 import { SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, type WriteControls } from '@/lib/write-controls';
 import { emptyView } from '@/lib/finding-view';
-import type { Rule } from '@/lib/types';
+import type { PersonalCopyReasons, Rule } from '@/lib/types';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => undefined, replace: () => undefined, refresh: () => undefined }),
@@ -36,6 +36,8 @@ const RULE = {
   type: 'custom', kind: 'state', queryBackend: 'resource-graph', scope: { level: 'subscription', subscriptions: [SUB], outsideAccess: 2 },
   resourceTypes: [], conditions: [], rawKql: 'resources | project id', tags: [],
 } as unknown as Rule;
+
+const NO_COPY_BLOCK: PersonalCopyReasons = { 'resource-graph': null, 'microsoft-graph': null, 'log-analytics': null };
 
 const SCOPED_EDITOR: WriteControls = { rulesWrite: false, rulesDelete: false, schedulesWrite: false, suppress: true, reason: SCOPED_WRITE_REASON };
 const VIEWER: WriteControls = { rulesWrite: false, rulesDelete: false, schedulesWrite: false, suppress: false };
@@ -65,7 +67,7 @@ describe('a hidden scope entry', () => {
 
 describe('the library and schedule controls of a scoped Editor', () => {
   const library = (controls: WriteControls) => renderToStaticMarkup(createElement(LibraryClient, {
-    initialRules: [RULE], personalRules: [], personalWriteBlockedReason: null, newerVersions: {}, packManifest: {}, categories: [], initialSidebarPinned: true,
+    initialRules: [RULE], personalRules: [], personalWriteBlockedReason: null, personalCopyReasons: NO_COPY_BLOCK, newerVersions: {}, packManifest: {}, categories: [], initialSidebarPinned: true,
     canAuthor: controls.rulesWrite, canDelete: controls.rulesDelete, writeReason: controls.reason,
   }));
 
@@ -93,7 +95,7 @@ describe('the library and schedule controls of a scoped Editor', () => {
   });
 
   it('shows the rule page\'s Edit and Duplicate disabled, with the reason', () => {
-    const html = renderToStaticMarkup(createElement(RuleDetailClient, { rule: RULE, canAuthor: false, canVersion: false, writeReason: SCOPED_WRITE_REASON }));
+    const html = renderToStaticMarkup(createElement(RuleDetailClient, { rule: RULE, canAuthor: false, canVersion: false, writeReason: SCOPED_WRITE_REASON, personalCopyReasons: NO_COPY_BLOCK }));
     expect(titled(html, SCOPED_WRITE_REASON)).toBeGreaterThanOrEqual(3);
     expect(html).toContain('disabled=""');
   });

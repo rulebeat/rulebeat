@@ -7,7 +7,7 @@
  * `limitedContext()` is the one place that limit is put on a context. The run and the save-time
  * probes both go through it, since the probes also reach Azure.
  */
-import { runGraphRules, runRules, type QueryScope, type Rule, type RuleRunEvent, type Finding as CoreFinding, type TenantContext } from '@rulebeat/core';
+import { runGraphRules, runRules, type QueryScope, type Rule, type RuleRunEvent, type RuleScope, type Finding as CoreFinding, type TenantContext } from '@rulebeat/core';
 import { DIRECTORY_SCOPE_PATH, EVERYTHING_TENANT_ID, type Access } from '@/lib/access-model';
 import { can } from '@/lib/rbac';
 import {
@@ -110,6 +110,36 @@ export function planPersonalRun(rule: Pick<Rule, 'queryBackend' | 'scope'>, acce
     covered.push({ tenantId: g.tenantId, path: g.scope.path });
   }
   return { ok: true, scope, covered };
+}
+
+/**
+ * The scope a copy of a shared rule starts with (#281): the entries of the source's scope that
+ * equal a subscription or management group the author holds, ignoring case and stored in the held
+ * casing. Whoever holds Everything keeps the source's entries as they are. An empty list means "all
+ * of the author's access", exactly as the Personal rule form reads it, so an empty result is never
+ * expanded into a list. Matching entry by entry (not through management group expansion)
+ * keeps the stored scope identical to what `planPersonalRun()` will send. `outsideAccess` is never
+ * stored: it is a count for a viewer of a shared rule.
+ */
+export function copyScopeFor(source: RuleScope | undefined, access: Access): RuleScope {
+  const level = source?.level ?? 'subscription';
+  const limit = queryScopeLimit(access);
+  if (limit === null) {
+    return {
+      level,
+      ...(source?.subscriptions ? { subscriptions: [...source.subscriptions] } : {}),
+      ...(source?.managementGroups ? { managementGroups: [...source.managementGroups] } : {}),
+    };
+  }
+  const keep = (held: string[], asked: string[] | undefined): string[] => {
+    const wanted = new Set((asked ?? []).map(s => s.toLowerCase()));
+    return held.filter(id => wanted.has(id.toLowerCase()));
+  };
+  return {
+    level,
+    subscriptions: keep(limit.subscriptions, source?.subscriptions),
+    managementGroups: keep(limit.managementGroups, source?.managementGroups),
+  };
 }
 
 export interface PersonalRunResult {

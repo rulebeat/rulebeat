@@ -179,6 +179,8 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['personal-rules/[id]/route.ts', 'read'],
     ['personal-rules/[id]/route.ts', 'rules:personal'],
     ['personal-rules/[id]/run/route.ts', 'rules:personal'],
+    // Copying a shared rule to Personal creates a Personal rule, so it needs the Personal rule action (#281).
+    ['rules/[id]/personal-copy/route.ts', 'rules:personal'],
   ];
 
   for (const [route, action] of PINNED) {

@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
-import { rules as rulesTable, ruleVersions } from './db/tables';
+import { rules as rulesTable, ruleVersions, personalRules } from './db/tables';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
@@ -278,6 +278,8 @@ export async function deleteRule(id: string): Promise<boolean> {
     const existing = await one(tx.select({ id: rulesTable.id }).from(rulesTable).where(eq(rulesTable.id, id)));
     if (!existing) return null;
     await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
+    // A Personal rule copied from this one stays, without the link back to it (#281).
+    await run(tx.update(personalRules).set({ sourceRuleId: null }).where(eq(personalRules.sourceRuleId, id)));
     return removeFindingRowsForRule(tx, id);
   });
   if (!outcome) return false;

@@ -26,7 +26,7 @@ export type AuditAction =
   | 'onboarding.skip' | 'onboarding.complete'
   | 'schema_cache.refresh' | 'management_groups.refresh'
   | 'query.run' | 'query.save' | 'query.delete'
-  | 'personal_rule.create' | 'personal_rule.update' | 'personal_rule.delete' | 'personal_rule.run';
+  | 'personal_rule.create' | 'personal_rule.update' | 'personal_rule.delete' | 'personal_rule.run' | 'personal_rule.copy';
 
 export type AuditEntityType =
   | 'rule' | 'suppression' | 'schedule' | 'category' | 'dashboard' | 'scan' | 'user' | 'auth'

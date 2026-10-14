@@ -2,13 +2,34 @@ import { NextResponse } from 'next/server';
 import type { QueryBackend, Rule } from '@rulebeat/core';
 import type { Access } from '@/lib/access-model';
 import { resolveKind } from '@/lib/rules';
-import { mayQueryDirectory, mayWriteQueries } from '@/lib/written-query';
+import { can, type Role } from '@/lib/rbac';
+import { LOGS_PAUSED_MESSAGE } from '@/lib/personal-rule-run';
+import { NEEDS_SUBSCRIPTION_MESSAGE, mayQueryDirectory, mayWriteQueries } from '@/lib/written-query';
 import type { PersonalRuleDefinition } from '@/lib/db/personal-rules';
 
 /** Only these two backends can be written as a Personal rule: Logs authoring is paused. */
 export const PERSONAL_BACKENDS: readonly QueryBackend[] = ['resource-graph', 'microsoft-graph'];
 
 export const NOT_FOUND = () => NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+/** Why this person cannot write Personal rules at all, or null. Computed on the server for a disabled control. */
+export function personalWriteBlockedReason(role: Role | undefined, access: Access): string | null {
+  if (!role || !can(role, 'rules:personal')) {
+    return 'Personal rules are written by Editors. You can read the ones you already have.';
+  }
+  return mayWriteQueries(access).ok ? null : NEEDS_SUBSCRIPTION_MESSAGE;
+}
+
+/** Per backend, why Copy to personal is off for this person (the same refusals `refuseWrite` gives), or null. */
+export function personalCopyReasons(role: Role | undefined, access: Access): Record<QueryBackend, string | null> {
+  const general = personalWriteBlockedReason(role, access);
+  const directory = mayQueryDirectory(access);
+  return {
+    'resource-graph': general,
+    'microsoft-graph': general ?? (directory.ok ? null : directory.error),
+    'log-analytics': general ?? LOGS_PAUSED_MESSAGE,
+  };
+}
 
 /**
  * The refusal a person who may not write or run a rule on this backend gets, or null. A Viewer never

@@ -41,4 +41,29 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds the Personal rule tables to a
     expect(await getPersonalRule(made.id, author.user.id)).toEqual(before);
     expect(await listPersonalRuleResults(made.id, author.user.id)).toHaveLength(1);
   });
+
+  it('adds source_rule_id to a personal_rules table without it, keeping its rules and results (issue #281)', async () => {
+    await dbReady;
+    await resetDb();
+    await bootstrapPg(pgDb!);
+    const author = await createUser({ email: 'author@example.com', role: 'editor' });
+    if ('error' in author) throw new Error(author.error);
+    const made = await createPersonalRule(author.user.id, {
+      name: 'My VM check', description: '', category: 'reliability', severity: 'medium', queryBackend: 'resource-graph', kind: 'state',
+      scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: 'resources | project id',
+    });
+    await replacePersonalRuleResults(made.id, author.user.id, {
+      status: 'success', ranAt: '2026-01-02T03:04:05.000Z', coveredScope: '[]',
+      results: [{ resourceId: '/subscriptions/x/resourceGroups/rg/a', resourceName: 'a', severity: 'medium', title: 'check', rows: [{ id: 'a' }] }],
+    });
+    const before = await getPersonalRule(made.id, author.user.id);
+    await pgDb!.execute(sql.raw('ALTER TABLE personal_rules DROP COLUMN source_rule_id'));
+
+    await bootstrapPg(pgDb!);
+    const columns = await pgDb!.execute(sql.raw(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'personal_rules' AND column_name = 'source_rule_id'`));
+    expect(columns.rows).toHaveLength(1);
+    expect(await getPersonalRule(made.id, author.user.id)).toEqual(before);
+    expect(await listPersonalRuleResults(made.id, author.user.id)).toHaveLength(1);
+  });
 });

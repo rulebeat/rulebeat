@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, Lock, Pencil, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,9 +24,11 @@ interface Props {
   /** Why Run is unavailable right now, or null when it is available. */
   runBlockedReason: string | null;
   scopeLimit?: { subscriptions: string[]; managementGroups: string[] };
+  /** The shared rule this was copied from, while it still exists; null otherwise. */
+  source: { id: string; name: string } | null;
 }
 
-export function PersonalRuleClient({ rule, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
+export function PersonalRuleClient({ rule, source, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -124,6 +127,14 @@ export function PersonalRuleClient({ rule, updatedAt, results, lastRunCovered, a
           </div>
         </div>
 
+        {source && (
+          <p className="text-xs text-ink-2">
+            Copied from{' '}
+            <Link href={`/rules/${encodeURIComponent(source.id)}`} className="font-medium text-ink underline underline-offset-2">
+              {source.name}
+            </Link>
+          </p>
+        )}
         {runBlockedReason && <Callout tone="warn">{`Run is unavailable: ${runBlockedReason}`}</Callout>}
         {error && <Callout tone="error">{error}</Callout>}
       </div>

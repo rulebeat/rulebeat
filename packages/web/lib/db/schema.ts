@@ -541,7 +541,8 @@ export const personalRules = sqliteTable('personal_rules', {
   lastRunAt: text('last_run_at'),             // ISO timestamp of the latest run; null = never run
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null
   lastRunCoveredScope: text('last_run_covered_scope'), // JSON: { tenantId, path }[], what the latest run covered
-});
+    sourceRuleId: text('source_rule_id'),       // id of the shared rule this was copied from (#281); null once that rule is deleted
+  });
 
 // The latest run of a Personal rule, one row per finding. A run replaces every row of its rule. Never
 // joined to `findings`, `finding_events`, `scans` or `posture_snapshots`: it counts nowhere shared.

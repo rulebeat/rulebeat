@@ -8,7 +8,7 @@ import { viewCoveredScope, parseCoveredScope } from '@/lib/covered-scope-view';
 import { planPersonalRun } from '@/lib/personal-rule-run';
 import { can } from '@/lib/rbac';
 import { splitLearnMore } from '@/lib/rule-description';
-import { allTagsFromRules } from '@/lib/rules';
+import { allTagsFromRules, loadRule } from '@/lib/rules';
 import { queryScopeLimit } from '@/lib/written-query';
 import { PersonalRuleClient } from './personal-rule-client';
 
@@ -30,13 +30,17 @@ export default async function PersonalRulePage({ params }: { params: Promise<{ i
 
   const results = await listPersonalRuleResults(rule.id, user.id);
   const covered = rule.lastRunAt ? viewCoveredScope(parseCoveredScope(rule.lastRunCoveredScope), access) : null;
-  const { lastRunCoveredScope: _stored, ...shown } = rule;
+  const { lastRunCoveredScope: _stored, sourceRuleId, ...shown } = rule;
+  // The link shows only while the shared rule still exists. Deleting it clears sourceRuleId already, so a
+  // missing row here is a race that reads the same as no link.
+  const source = sourceRuleId ? await loadRule(sourceRuleId) : null;
 
   return (
     <>
       <Header title={rule.name} description={splitLearnMore(rule.description).text || undefined} />
       <PersonalRuleClient
         rule={shown}
+        source={source ? { id: source.id, name: source.name } : null}
         updatedAt={rule.updatedAt}
         results={results}
         lastRunCovered={covered}

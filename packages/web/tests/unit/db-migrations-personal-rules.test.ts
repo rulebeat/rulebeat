@@ -102,4 +102,47 @@ describe('upgrading to a database with Personal rules', () => {
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ resourceId: '/subscriptions/x/resourceGroups/rg/a', resourceName: 'a', rows: [{ id: 'a' }] });
   });
+
+  it('adds source_rule_id to a personal_rules table from the first build, keeping its rules and their results', async () => {
+    const sample = makeSample('current');
+    const first = await startProductOn(sample.file);
+    const author = await first.users.createUser({ email: 'author@example.com', role: 'editor' });
+    if ('error' in author) throw new Error(author.error);
+    const made = await first.personal.createPersonalRule(author.user.id, DEFINITION);
+    await first.personal.replacePersonalRuleResults(made.id, author.user.id, {
+      status: 'success',
+      ranAt: '2026-01-02T03:04:05.000Z',
+      coveredScope: '[]',
+      results: [{ resourceId: '/subscriptions/x/resourceGroups/rg/a', resourceName: 'a', severity: 'medium', title: 'check', rows: [{ id: 'a' }] }],
+    });
+    first.stop();
+
+    const old = open(sample.file);
+    old.exec(`ALTER TABLE personal_rules DROP COLUMN source_rule_id`);
+    expect(all(old, `PRAGMA table_info(personal_rules)`).map(c => c.name)).not.toContain('source_rule_id');
+    old.close();
+
+    const second = await startProductOn(sample.file);
+    const rule = await second.personal.getPersonalRule(made.id, author.user.id);
+    expect(rule).toMatchObject({ name: 'My VM check', rawKql: KQL, lastRunAt: '2026-01-02T03:04:05.000Z', lastRunStatus: 'success' });
+    expect(rule!.sourceRuleId).toBeUndefined();
+    expect(await second.personal.listPersonalRuleResults(made.id, author.user.id)).toHaveLength(1);
+    second.stop();
+
+    sqlite = open(sample.file);
+    expect(all(sqlite, `PRAGMA table_info(personal_rules)`).map(c => c.name)).toContain('source_rule_id');
+    expect(all(sqlite, `SELECT source_rule_id FROM personal_rules WHERE id = ?`, made.id)).toEqual([{ source_rule_id: null }]);
+  });
+
+  it('keeps the link to a source rule across a restart', async () => {
+    const sample = makeSample('current');
+    const first = await startProductOn(sample.file);
+    const author = await first.users.createUser({ email: 'author@example.com', role: 'editor' });
+    if ('error' in author) throw new Error(author.error);
+    const made = await first.personal.createPersonalRule(author.user.id, DEFINITION, RULE);
+    first.stop();
+
+    const second = await startProductOn(sample.file);
+    expect((await second.personal.getPersonalRule(made.id, author.user.id))!.sourceRuleId).toBe(RULE);
+  });
 });

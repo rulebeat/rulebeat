@@ -169,6 +169,7 @@ table personal_rules
   last_run_at TEXT
   last_run_status TEXT
   last_run_covered_scope TEXT
+  source_rule_id TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -662,6 +663,7 @@ table personal_rules
   last_run_at TEXT
   last_run_status TEXT
   last_run_covered_scope TEXT
+  source_rule_id TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -1142,6 +1144,7 @@ table personal_rules
   last_run_at TEXT
   last_run_status TEXT
   last_run_covered_scope TEXT
+  source_rule_id TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -1631,6 +1634,7 @@ table personal_rules
   last_run_at TEXT
   last_run_status TEXT
   last_run_covered_scope TEXT
+  source_rule_id TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -2121,6 +2125,7 @@ table personal_rules
   last_run_at TEXT
   last_run_status TEXT
   last_run_covered_scope TEXT
+  source_rule_id TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
