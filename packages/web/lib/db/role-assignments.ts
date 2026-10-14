@@ -5,6 +5,7 @@ import { many, run, type DbHandle } from './exec';
 import {
   EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID, collapseGrants, parseScope, type Scope,
 } from '@/lib/access-model';
+import { serializeOrigins, type ScopeOrigin } from '@/lib/access-mirror-model';
 import type { Role } from '@/lib/rbac';
 
 /** One stored row: a Role held at a Scope path, as written. */
@@ -13,6 +14,8 @@ export interface RoleAssignment {
   tenantId: string;
   scope: string;
   role: string;
+  /** Mirrored access only: the Azure roles that gave this Scope, as JSON. Null for Manual access. */
+  origin?: string | null;
 }
 
 export async function listAssignmentsFor(userId: string): Promise<RoleAssignment[]> {
@@ -41,6 +44,8 @@ export interface AssignmentInput {
   tenantId: string;
   scope: string;
   role: Role;
+  /** Mirrored access only: why Azure gave this Scope. Manual access leaves it out, and nothing is stored. */
+  origins?: readonly ScopeOrigin[];
 }
 
 /**
@@ -52,7 +57,9 @@ export async function replaceAssignmentsOn(tx: DbHandle, userId: string, inputs:
   await deleteAssignmentsOn(tx, userId);
   const kept = collapseGrants(inputs.filter(i => parseScope(i.scope) !== null));
   for (const row of kept) {
-    await run(tx.insert(roleAssignments).values({ userId, tenantId: row.tenantId, scope: row.scope, role: row.role }));
+    await run(tx.insert(roleAssignments).values({
+      userId, tenantId: row.tenantId, scope: row.scope, role: row.role, origin: serializeOrigins(row.origins),
+    }));
   }
 }
 

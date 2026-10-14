@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as hierarchyRepo from '@/lib/db/management-group-hierarchy';
 import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 import { resetDb } from '../helpers/db';
-import { createUser, deleteUser, updateUserRole, getUser, type AppUser } from '@/lib/db/users';
+import { createUser, deleteUser, updateUserRole, getUser, setManualAccess, setMirroredAccess, type AppUser } from '@/lib/db/users';
 import { deleteAssignmentsOn, grantAssignmentOn, listAssignmentsFor } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { accessFromAssignments, changedAccessFields, listUsersWithAccess, resolveAccess, withAccess } from '@/lib/access';
@@ -81,7 +81,7 @@ describe('writes keep the rows and the Role together', () => {
     for (const role of ['viewer', 'editor'] as const) {
       const user = await make(`${role}@example.com`, role);
       expect(user.accessSource).toBe('manual');
-      expect(await listAssignmentsFor(user.id)).toEqual([{ userId: user.id, tenantId: '', scope: '/', role }]);
+      expect(await listAssignmentsFor(user.id)).toEqual([{ userId: user.id, tenantId: '', scope: '/', role, origin: null }]);
     }
   });
 
@@ -113,7 +113,7 @@ describe('writes keep the rows and the Role together', () => {
     const other = await make('other@example.com', 'admin');
     const admin = await make('admin@example.com', 'admin');
     await updateUserRole(admin.id, 'viewer');
-    expect(await listAssignmentsFor(admin.id)).toEqual([{ userId: admin.id, tenantId: '', scope: '/', role: 'viewer' }]);
+    expect(await listAssignmentsFor(admin.id)).toEqual([{ userId: admin.id, tenantId: '', scope: '/', role: 'viewer', origin: null }]);
     expect((await getUser(admin.id))!.accessSource).toBe('manual');
     expect(other.role).toBe('admin');
   });
@@ -148,6 +148,28 @@ describe('listUsersWithAccess and changedAccessFields', () => {
     expect(changedAccessFields(before, after)).toEqual(['role', 'assignments']);
     expect(changedAccessFields(after, after)).toEqual([]);
     expect(JSON.stringify(changedAccessFields(before, after))).not.toMatch(/editor|viewer|\/|0000/);
+  });
+
+  it('names linkedAccount when a Linked account is set, changed or cleared, and never carries the id', async () => {
+    const OBJECT = '00000000-0000-0000-0000-0000000000c1';
+    const OTHER = '00000000-0000-0000-0000-0000000000c2';
+    const viewer = await make('viewer@example.com', 'viewer');
+    const manual = await withAccess(viewer);
+
+    await setMirroredAccess(viewer.id, { role: 'viewer', tenantId: TENANT, objectId: OBJECT, scopes: [], at: '2026-06-02T00:00:00.000Z' });
+    const mirrored = await withAccess((await getUser(viewer.id))!);
+    expect(changedAccessFields(manual, mirrored)).toEqual(['accessSource', 'assignments', 'linkedAccount']);
+    expect(changedAccessFields(mirrored, mirrored)).toEqual([]);
+
+    await setMirroredAccess(viewer.id, { role: 'viewer', tenantId: TENANT, objectId: OTHER, scopes: [], at: '2026-06-02T00:00:00.000Z' });
+    const relinked = await withAccess((await getUser(viewer.id))!);
+    expect(changedAccessFields(mirrored, relinked)).toEqual(['linkedAccount']);
+
+    await setManualAccess(viewer.id, [{ tenantId: TENANT, scope: SUB, role: 'viewer' }]);
+    const turnedManual = await withAccess((await getUser(viewer.id))!);
+    const fields = changedAccessFields(relinked, turnedManual);
+    expect(fields).toEqual(['accessSource', 'assignments', 'linkedAccount']);
+    expect(JSON.stringify(fields)).not.toMatch(/0000|\//);
   });
 });
 

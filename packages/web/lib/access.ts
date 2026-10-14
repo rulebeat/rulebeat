@@ -3,10 +3,23 @@ import { listUsers, type AppUser } from '@/lib/db/users';
 import { buildAccess, everythingAccess, parseScope, type Access, type AccessSource, type ScopeGrant, type ScopeKind } from '@/lib/access-model';
 import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
 import { expandManagementGroups, type HierarchyNode } from '@/lib/management-group-tree';
+import { parseOrigins, type MirroredScope } from '@/lib/access-mirror-model';
 import { isRole, type Role } from '@/lib/rbac';
 
-/** A person together with the Access they resolve to: what the user routes and the Access page carry. */
-export type AppUserWithAccess = AppUser & { access: Access };
+/**
+ * A person together with the Access they resolve to: what the user routes and the Access page carry.
+ * `mirroredScopes` is why each Scope of a mirrored person is held (the Azure roles that gave it), kept apart
+ * from `Access`, which findings reads take and which has no use for provenance. Empty for anyone else.
+ */
+export type AppUserWithAccess = AppUser & { access: Access; mirroredScopes: MirroredScope[] };
+
+/** The Scopes a mirrored person holds with the Azure roles that gave them. Nobody else has any. */
+export function mirroredScopesOf(user: Pick<AppUser, 'role' | 'accessSource'>, rows: readonly RoleAssignment[]): MirroredScope[] {
+  if (user.role === 'admin' || user.accessSource !== 'mirrored') return [];
+  return rows
+    .filter(row => parseScope(row.scope) !== null)
+    .map(row => ({ scope: row.scope, origins: parseOrigins(row.origin) }));
+}
 
 /**
  * Builds a person's Access from the rows they hold. An Admin resolves to Everything without
@@ -44,7 +57,13 @@ export async function resolveAccess(user: Pick<AppUser, 'id' | 'role' | 'accessS
 }
 
 export async function withAccess(user: AppUser): Promise<AppUserWithAccess> {
-  return { ...user, access: await resolveAccess(user) };
+  if (user.role === 'admin') return { ...user, access: everythingAccess('admin'), mirroredScopes: [] };
+  const rows = await listAssignmentsFor(user.id);
+  return {
+    ...user,
+    access: accessFromAssignments(user, rows, holdsManagementGroup(rows) ? await listHierarchyNodes() : []),
+    mirroredScopes: mirroredScopesOf(user, rows),
+  };
 }
 
 /** Everyone, with their Access, from one read of the assignment rows. */
@@ -54,6 +73,7 @@ export async function listUsersWithAccess(): Promise<AppUserWithAccess[]> {
   return users.map(user => ({
     ...user,
     access: accessFromAssignments(user, rows.filter(r => r.userId === user.id), hierarchy),
+    mirroredScopes: mirroredScopesOf(user, rows.filter(r => r.userId === user.id)),
   }));
 }
 
@@ -71,6 +91,8 @@ export function changedAccessFields(before: AppUserWithAccess | null, after: App
   if (before?.role !== after.role) changed.push('role');
   if ((before?.accessSource ?? null) !== after.accessSource) changed.push('accessSource');
   if (JSON.stringify(stored(before)) !== JSON.stringify(stored(after))) changed.push('assignments');
+  const linked = (u: AppUserWithAccess | null) => (u?.linkedAccount ? `${u.linkedAccount.tenantId}|${u.linkedAccount.objectId}` : null);
+  if (linked(before) !== linked(after)) changed.push('linkedAccount');
   return changed;
 }
 

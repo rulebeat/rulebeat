@@ -9,8 +9,8 @@
  */
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createUser, getUser, listUsers, setManualAccess, type AppUser } from '@/lib/db/users';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createUser, getUser, listUsers, recordMirrorFailure, setManualAccess, setMirroredAccess, type AppUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { deleteAssignmentsOn, listAssignmentsFor, replaceAssignmentsOn } from '@/lib/db/role-assignments';
@@ -19,6 +19,8 @@ import { listUsersWithAccess, type AppUserWithAccess, type OwnAccess } from '@/l
 import { describeAccess } from '@/lib/access-model';
 import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
+import { MirroredAccessRow } from '@/app/(app)/access/mirrored-access-form';
+import type { MirroredScope } from '@/lib/access-mirror-model';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { NO_AZURE_CONNECTION_MESSAGE, UNKNOWN_MANAGEMENT_GROUP_MESSAGE } from '@/lib/manual-access';
 import { hashPassword } from '@/lib/password';
@@ -246,7 +248,7 @@ describe.each(['viewer', 'editor'] as const)('the user routes for a %s', (role) 
     expect((await accessRoute.GET(getRequest(), params(target.id))).status).toBe(403);
     const write = await accessRoute.PUT(jsonRequest('PUT', { access: [grant('@directory', 'viewer')] }), params(target.id));
     expect(write.status).toBe(403);
-    expect(await listAssignmentsFor(target.id)).toEqual([{ userId: target.id, tenantId: '', scope: '/', role: 'viewer' }]);
+    expect(await listAssignmentsFor(target.id)).toEqual([{ userId: target.id, tenantId: '', scope: '/', role: 'viewer', origin: null }]);
   });
 
   it('refuses a person\'s own Manual access too: only an Admin changes it', async () => {
@@ -354,7 +356,7 @@ describe('access in the page and the routes (#269)', () => {
     for (const role of ['viewer', 'editor'] as const) {
       const res = await usersRoute.POST(jsonRequest('POST', { email: `${role}-new@example.com`, role, access: [grant('/', role)] }));
       const created = await res.json() as AppUserWithAccess;
-      expect(await listAssignmentsFor(created.id), role).toEqual([{ userId: created.id, tenantId: '', scope: '/', role }]);
+      expect(await listAssignmentsFor(created.id), role).toEqual([{ userId: created.id, tenantId: '', scope: '/', role, origin: null }]);
     }
     const created = await (await usersRoute.POST(jsonRequest('POST', { email: 'admin-new@example.com', role: 'admin' }))).json() as AppUserWithAccess;
     expect(await listAssignmentsFor(created.id)).toEqual([]);
@@ -591,7 +593,7 @@ describe('Manual access (#272)', () => {
     it('with Everything, which the page preselects, gives that Everything row at the new Role', async () => {
       const res = await userRoute.PUT(jsonRequest('PUT', { role: 'editor', access: [grant('/', 'editor')] }), params(second.id));
       expect(res.status).toBe(200);
-      expect(await listAssignmentsFor(second.id)).toEqual([{ userId: second.id, tenantId: '', scope: '/', role: 'editor' }]);
+      expect(await listAssignmentsFor(second.id)).toEqual([{ userId: second.id, tenantId: '', scope: '/', role: 'editor', origin: null }]);
       expect((await getUser(second.id))).toMatchObject({ role: 'editor', accessSource: 'manual' });
     });
 
@@ -869,5 +871,152 @@ describe('the management groups card (#273)', () => {
     expect(notConnected).not.toContain('Azure returned no management groups');
     const empty = render({ nodes: [], status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
     expect(empty).toContain('Azure returned no management groups');
+  });
+});
+
+describe('Mirrored access on the page (#278)', () => {
+  const ACCOUNT = '00000000-0000-0000-0000-0000000000c1';
+  const AT = '2026-06-02T00:00:00.000Z';
+
+  async function mirroredPerson(email: string, scopes: MirroredScope[], status?: { code: 'failed'; at: string }): Promise<AppUserWithAccess> {
+    const person = await makeUser(email, 'viewer');
+    await setMirroredAccess(person.id, { role: 'viewer', tenantId: TENANT, objectId: ACCOUNT, scopes, at: AT });
+    if (status) await recordMirrorFailure(person.id, { objectId: ACCOUNT, code: status.code, at: status.at });
+    return (await listUsersWithAccess()).find(u => u.id === person.id)!;
+  }
+
+  const inTable = (node: ReactElement) => renderToStaticMarkup(createElement('table', null, createElement('tbody', null, node)));
+
+  describe('whether the sign-in tenant is the Azure connection tenant', () => {
+    beforeEach(() => {
+      signInAs(admin);
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_ID', 'client-id-example');
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_SECRET', 'client-secret-example');
+    });
+    afterEach(() => { vi.unstubAllEnvs(); });
+
+    it('is passed down as true when both are the same tenant, whatever the casing', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT.toUpperCase());
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(true);
+    });
+
+    it('is passed down as false when sign-in is another tenant', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', '00000000-0000-0000-0000-0000000000f1');
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+
+    it('is passed down as false when Azure is not connected', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT);
+      mockTenant.mockRejectedValue(new AzureNotConfiguredError('RuleBeat has no Azure credential to scan with.'));
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+
+    it('is passed down as false when sign-in is not configured', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_ID', '');
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+  });
+
+  describe('the Mirrored access form', () => {
+    const form = (user: AppUserWithAccess, signInTenantIsAzureTenant: boolean) =>
+      inTable(createElement(MirroredAccessRow, { user, signInTenantIsAzureTenant, onSaved: () => undefined, onCancel: () => undefined }));
+
+    it('asks for a Role and a Linked account, and the object id field starts empty with Save disabled', async () => {
+      const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const html = form(person, true);
+      expect(html).toContain('Linked account');
+      expect(html).toMatch(/<input[^>]*value=""/);
+      expect(html).not.toContain(ACCOUNT);
+      expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Save<\/button>/);
+    });
+
+    it('offers "Use their sign-in account" only for a person with an oid when the sign-in tenant is the Azure tenant', async () => {
+      const without = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const withOid = { ...without, oid: ACCOUNT };
+      expect(form(withOid, true)).toContain('Use their sign-in account');
+      expect(form(withOid, false)).not.toContain('Use their sign-in account');
+      expect(form(without, true)).not.toContain('Use their sign-in account');
+    });
+
+    it('never fills the field itself, even when the button is offered', async () => {
+      const person = { ...(await listUsersWithAccess()).find(u => u.id === target.id)!, oid: ACCOUNT };
+      const html = form(person, true);
+      expect(html).toMatch(/<input[^>]*value=""/);
+      expect(html).not.toContain(`value="${ACCOUNT}"`);
+    });
+  });
+
+  describe('a mirrored person', () => {
+    const SCOPES: MirroredScope[] = [
+      { scope: SUB, origins: [{ roleName: 'Reader', throughGroup: false, eligible: false }] },
+      { scope: RG, origins: [{ roleName: 'Contributor', throughGroup: true, eligible: false }, { roleName: 'Owner', throughGroup: false, eligible: true }] },
+    ];
+    const render = (users: AppUserWithAccess[]) =>
+      renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
+
+    it('has a Refresh button, the last successful refresh, and each Scope with its Azure role and "through a group" where recorded', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', SCOPES)]);
+      expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
+      expect(html).toContain('Last refreshed');
+      expect(html).toContain(ACCOUNT);
+      expect(html).toContain('Reader');
+      expect(html).toContain('Contributor (through a group)');
+      expect(html).toContain('Owner (eligible)');
+      expect(html).toContain('2 scopes, mirrored');
+      expect(html).not.toContain('The last refresh failed');
+    });
+
+    it('says the last refresh failed, when, and that the Scopes shown are the last ones that loaded, in words of its own', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', SCOPES, { code: 'failed', at: '2026-06-03T00:00:00.000Z' })]);
+      expect(html).toContain('The last refresh failed');
+      expect(html).toContain('The Scopes shown are the last ones that loaded');
+      expect(html).toContain('Check the RuleBeat server logs');
+      expect(html).toContain('Contributor (through a group)');
+    });
+
+    it('says the Linked account holds no role assignments, in place of an empty list, when it gives no Scope', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', [])]);
+      expect(html).toContain('holds no Azure role assignments RuleBeat can see');
+      expect(html).toContain('No access, mirrored');
+    });
+
+    it('shows no refresh or Linked account for a person with Manual access', async () => {
+      const html = render((await listUsersWithAccess()).filter(u => u.id === target.id));
+      expect(html).not.toContain('Linked account');
+      expect(html).not.toMatch(/Refresh<\/button>/);
+    });
+
+    it('says, when Edit is opened on them, that saving stops the mirror, and says nothing of the kind for a manual person', async () => {
+      const mirrored = await mirroredPerson('mirrored@example.com', SCOPES);
+      const manual = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const open = (user: AppUserWithAccess) => inTable(createElement(PromptRows, {
+        user, editing: true, demotingTo: null, saving: false,
+        onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
+      }));
+      expect(open(mirrored)).toContain('Saving here stops the mirror');
+      expect(open(manual)).not.toContain('stops the mirror');
+      expect(open(mirrored)).toContain('Manual access');
+      expect(open(mirrored)).toContain('Mirrored access');
+    });
+  });
+
+  describe('a mirrored person with no Scope, in their own access', () => {
+    it('is told the Linked account holds no Azure role assignments RuleBeat can see, not that they have been given no access', async () => {
+      const person = await makeUser('mirrored@example.com', 'viewer');
+      await setMirroredAccess(person.id, { role: 'viewer', tenantId: TENANT, objectId: ACCOUNT, scopes: [], at: AT });
+      signInAs(person);
+
+      const own = propsWith(await AccessPage(), 'own').own as OwnAccess;
+      expect(own).toMatchObject({ source: 'mirrored', scopes: [] });
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own }));
+      expect(html).toContain('Linked account holds no Azure role assignments RuleBeat can see');
+      expect(html).not.toContain('You have been given no access');
+    });
+
+    it('still tells a manual person with no Scope they have been given no access', async () => {
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own: { role: 'viewer', source: 'manual', scopes: [] } }));
+      expect(html).toContain('You have been given no access');
+      expect(html).not.toContain('Linked account');
+    });
   });
 });

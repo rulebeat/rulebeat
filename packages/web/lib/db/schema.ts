@@ -149,6 +149,14 @@ export const users = sqliteTable('users', {
   // for a row no start of this release has seen yet (the upgrade's marker). It sits on the person
   // because a person narrowed to no Scope still has a source.
   accessSource: text('access_source'),
+  // Mirrored access (#278): the account whose Azure role assignments this person's Scopes follow, the tenant
+  // it was read in, when the last refresh worked, when one was last tried, and a stable code for why the last
+  // try failed. All null for a person with Manual access and for an Admin. The code, never Azure's text.
+  linkedTenantId: text('linked_tenant_id'),
+  linkedObjectId: text('linked_object_id'),
+  mirrorLastSuccessAt: text('mirror_last_success_at'),
+  mirrorLastAttemptAt: text('mirror_last_attempt_at'),
+  mirrorError: text('mirror_error'),
   // Bumped by any local-password mutation (self-service change, admin set/reset/remove) to
   // invalidate every outstanding JWT for this account: see spec 020. A token's `epoch` claim must
   // match this value or getCurrentUser() treats the session as signed out.
@@ -165,6 +173,8 @@ export const roleAssignments = sqliteTable('role_assignments', {
   tenantId: text('tenant_id').notNull(),
   scope: text('scope').notNull(),
   role: text('role').notNull(),
+  // Mirrored access only (#278): the Azure roles that gave this Scope, as JSON. Null for Manual access.
+  origin: text('origin'),
 }, (table) => ({
   pk: primaryKey({ columns: [table.userId, table.tenantId, table.scope] }),
 }));
