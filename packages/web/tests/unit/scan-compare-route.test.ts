@@ -4,6 +4,7 @@
  * and fake Azure, and checked against the fingerprints the database itself holds, so the sides, their
  * totals, their order and their paging are asserted from the stored records and not from the code under test.
  */
+import { everythingAccess } from '@/lib/access-model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
@@ -59,8 +60,15 @@ const AFTER: Seed[] = [
 
 beforeEach(async () => {
   await resetDb();
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: everythingAccess('admin') });
 });
+
+const SCOPE_A = JSON.stringify([{ tenantId: 't', path: '/subscriptions/00000000-0000-0000-0000-00000000000a' }, { tenantId: 't', path: '/providers/Microsoft.Management/managementGroups/mg-one' }]);
+const SCOPE_A_SHUFFLED = JSON.stringify([{ tenantId: 't', path: '/PROVIDERS/MICROSOFT.MANAGEMENT/MANAGEMENTGROUPS/MG-ONE' }, { tenantId: 't', path: '/SUBSCRIPTIONS/00000000-0000-0000-0000-00000000000A' }]);
+const SCOPE_B = JSON.stringify([{ tenantId: 't', path: '/subscriptions/00000000-0000-0000-0000-00000000000b' }]);
+const EVERYTHING = JSON.stringify([{ tenantId: '', path: '/' }]);
+const coveredBy = (id: string, coveredScope: string | null) =>
+  execRun(db.update(scansTable).set({ coveredScope }).where(eq(scansTable.id, id)));
 
 describe('GET /api/scans/compare: the sides and their totals', () => {
   it('lists each side with the fingerprints the stored records give, and all three totals beside it', async () => {
@@ -224,6 +232,43 @@ describe('GET /api/scans/compare: what it refuses', () => {
     const res = await get(`compare=${before.id}..${after.id}`);
     expect(res.status).toBe(COMPARE_ERRORS['different-categories'].status);
     expect(await res.json()).toEqual(COMPARE_ERRORS['different-categories'].body);
+  });
+
+  it('answers two scans that covered different Scopes with its own code and a 400, whichever order they come in', async () => {
+    const before = await scan(BEFORE, 0);
+    const after = await scan(AFTER, 1);
+    await coveredBy(before.id, SCOPE_A);
+    await coveredBy(after.id, SCOPE_B);
+    for (const ids of [`${before.id}..${after.id}`, `${after.id}..${before.id}`]) {
+      const res = await get(`compare=${ids}`);
+      expect(res.status).toBe(COMPARE_ERRORS['different-scopes'].status);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        code: 'different-scopes',
+        error: 'These two runs covered different scopes. Compare two runs that covered the same scope.',
+      });
+    }
+  });
+
+  it('answers a run of one Scope against a run of Everything as different scopes, and not as a compare', async () => {
+    const before = await scan(BEFORE, 0);
+    const after = await scan(AFTER, 1);
+    await coveredBy(before.id, SCOPE_A);
+    const res = await get(`compare=${before.id}..${after.id}`);
+    expect(res.status).toBe(400);
+    expect((await res.json() as { code: string }).code).toBe('different-scopes');
+  });
+
+  it('compares two runs that covered the same Scopes, in another order and another case, and NULL as Everything', async () => {
+    const before = await scan(BEFORE, 0);
+    const after = await scan(AFTER, 1);
+    await coveredBy(before.id, SCOPE_A);
+    await coveredBy(after.id, SCOPE_A_SHUFFLED);
+    expect((await compare(before.id, after.id)).totals).toEqual({ added: 1, fixed: 2, persisted: 2 });
+
+    await coveredBy(before.id, null);
+    await coveredBy(after.id, EVERYTHING);
+    expect((await compare(before.id, after.id)).totals).toEqual({ added: 1, fixed: 2, persisted: 2 });
   });
 
   it.each([0, 1])('answers a scan whose records are not available as such, never as everything added or fixed (scan %i)', async (which) => {

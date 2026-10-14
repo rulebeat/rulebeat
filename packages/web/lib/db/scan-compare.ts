@@ -8,14 +8,21 @@
  * sides are a filtered, ordered, paged read of one scan's records, so they use the snapshot's own order
  * (`SCAN_FINDING_ORDER`, served by `idx_scan_findings_order` for one `scan_id`), and the other scan is
  * looked up by its primary key, `(scan_id, fingerprint)`. The database does the matching on both backends.
+ *
+ * Both scans are read as the person's access sees them: a record outside it is on no side and in no total,
+ * on the other scan's side of the match too, so a compare says nothing about a finding they cannot read.
+ * Two runs that covered different Scopes are not compared at all: what one did not cover would read as Fixed.
  */
-import { and, count, eq, sql, type SQL } from 'drizzle-orm';
+import { aliasedTable, and, count, eq, sql, type SQL } from 'drizzle-orm';
 import { many, one, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import { scanFindings } from './tables';
+import { accessFilterSql } from './access-filter';
 import { SCAN_FINDING_ORDER } from './scan-findings-copy';
 import { readExisting, readExportBatches, readHeader, toRecord } from './scan-snapshots';
 import { pageBounds } from '../finding-rows';
 import type { Access } from '../access-model';
+import { sameCoveredScope } from '../run-scope';
+import { parseCoveredScope } from '../covered-scope-view';
 import { COMPARE_PAGE_SIZE, type CompareQuery } from '../compare-query';
 import type { CompareErrorCode, CompareResponse, CompareSide, CompareTotals } from '../compare-response';
 import type { SnapshotItem, SnapshotScan } from '../snapshot-response';
@@ -47,22 +54,30 @@ async function readPair(tx: DbHandle, idA: string, idB: string): Promise<PairRea
   const b = await readHeader(tx, idB);
   if (!a || !b) return { status: 'not-found' };
   if (a.scan.category !== b.scan.category) return { status: 'different-categories' };
+  if (!sameCoveredScope(parseCoveredScope(a.coveredScope), parseCoveredScope(b.coveredScope))) return { status: 'different-scopes' };
   if (!a.hasRecords) return { status: 'no-records', scan: a.scan };
   if (!b.hasRecords) return { status: 'no-records', scan: b.scan };
   const aFirst = startedAtMs(a.scan) < startedAtMs(b.scan) || (startedAtMs(a.scan) === startedAtMs(b.scan) && a.scan.id <= b.scan.id);
   return { status: 'ok', pair: aFirst ? { older: a.scan, newer: b.scan } : { older: b.scan, newer: a.scan } };
 }
 
-/** Whether `fingerprint` of the outer record has a record in `otherScanId`, by the primary key. */
-const inScan = (otherScanId: string, present: boolean): SQL =>
-  sql`${sql.raw(present ? '' : 'NOT ')}EXISTS (SELECT 1 FROM scan_findings o WHERE o.scan_id = ${otherScanId} AND o.fingerprint = ${t.fingerprint})`;
+const other = aliasedTable(t, 'o');
+
+/** Whether `fingerprint` of the outer record has a record in `otherScanId` inside the access, by the primary key. */
+const inScan = (otherScanId: string, present: boolean, access: Access): SQL => {
+  const visible = accessFilterSql(access, other);
+  return sql`${sql.raw(present ? '' : 'NOT ')}EXISTS (SELECT 1 FROM scan_findings o WHERE o.scan_id = ${otherScanId} AND o.fingerprint = ${t.fingerprint}${visible ? sql` AND ${visible}` : sql``})`;
+};
+
+/** One scan's records inside the access. */
+const ofScan = (scanId: string, access: Access): SQL => and(eq(t.scanId, scanId), accessFilterSql(access, t))!;
 
 /** The records on one side of the compare. */
-function onSide(side: CompareSide, { older, newer }: ComparedPair): SQL {
+function onSide(side: CompareSide, { older, newer }: ComparedPair, access: Access): SQL {
   switch (side) {
-    case 'added': return and(eq(t.scanId, newer.id), inScan(older.id, false))!;
-    case 'fixed': return and(eq(t.scanId, older.id), inScan(newer.id, false))!;
-    case 'persisted': return and(eq(t.scanId, newer.id), inScan(older.id, true))!;
+    case 'added': return and(ofScan(newer.id, access), inScan(older.id, false, access))!;
+    case 'fixed': return and(ofScan(older.id, access), inScan(newer.id, false, access))!;
+    case 'persisted': return and(ofScan(newer.id, access), inScan(older.id, true, access))!;
   }
 }
 
@@ -72,16 +87,16 @@ async function readCount(tx: DbHandle, where: SQL): Promise<number> {
 }
 
 /** All three totals: the persisted ones are counted by matching, the others are what is left of each scan. */
-async function readTotals(tx: DbHandle, pair: ComparedPair): Promise<CompareTotals> {
-  const persisted = await readCount(tx, onSide('persisted', pair));
-  const newer = await readCount(tx, eq(t.scanId, pair.newer.id));
-  const older = pair.older.id === pair.newer.id ? newer : await readCount(tx, eq(t.scanId, pair.older.id));
+async function readTotals(tx: DbHandle, pair: ComparedPair, access: Access): Promise<CompareTotals> {
+  const persisted = await readCount(tx, onSide('persisted', pair, access));
+  const newer = await readCount(tx, ofScan(pair.newer.id, access));
+  const older = pair.older.id === pair.newer.id ? newer : await readCount(tx, ofScan(pair.older.id, access));
   return { added: newer - persisted, fixed: older - persisted, persisted };
 }
 
 /** The side's own scan: a persisted finding is listed as the newer scan recorded it. */
-const readPage = (tx: DbHandle, side: CompareSide, pair: ComparedPair, offset: number, limit: number) =>
-  many(tx.select().from(t).where(onSide(side, pair)).orderBy(sql.raw(SCAN_FINDING_ORDER)).limit(limit).offset(offset));
+const readPage = (tx: DbHandle, side: CompareSide, pair: ComparedPair, access: Access, offset: number, limit: number) =>
+  many(tx.select().from(t).where(onSide(side, pair, access)).orderBy(sql.raw(SCAN_FINDING_ORDER)).limit(limit).offset(offset));
 
 /** Two past scans compared: one page of one side, with the totals of all three. The ids may come in either order. */
 export function queryCompare(idA: string, idB: string, query: CompareQuery, access: Access): Promise<CompareAnswer> {
@@ -90,9 +105,9 @@ export function queryCompare(idA: string, idB: string, query: CompareQuery, acce
     if (read.status !== 'ok') return read;
     const { pair } = read;
 
-    const totals = await readTotals(tx, pair);
+    const totals = await readTotals(tx, pair, access);
     const bounds = pageBounds(totals[query.side], query.page, COMPARE_PAGE_SIZE);
-    const stored = await readPage(tx, query.side, pair, bounds.firstIndex, COMPARE_PAGE_SIZE);
+    const stored = await readPage(tx, query.side, pair, access, bounds.firstIndex, COMPARE_PAGE_SIZE);
     const existing = await readExisting(tx, stored.map(r => r.fingerprint));
     return {
       status: 'ok',
@@ -120,8 +135,11 @@ export const COMPARE_EXPORT_BATCH = 500;
 /** An export of a compare that has nothing to list. Thrown before the first byte, so the route can still
  *  answer it with a status. */
 export class CompareUnavailable extends Error {
-  constructor(readonly code: 'not-found' | 'no-records' | 'different-categories') {
-    super(code === 'not-found' ? 'A run was not found.' : code === 'no-records' ? 'A run has no stored findings.' : 'The runs are of different categories.');
+  constructor(readonly code: 'not-found' | 'no-records' | 'different-categories' | 'different-scopes') {
+    super(code === 'not-found' ? 'A run was not found.'
+      : code === 'no-records' ? 'A run has no stored findings.'
+      : code === 'different-scopes' ? 'The runs covered different scopes.'
+      : 'The runs are of different categories.');
   }
 }
 
@@ -137,7 +155,7 @@ export function openCompareExport(idA: string, idB: string, side: CompareSide, a
     if (read.status !== 'ok') throw new CompareUnavailable(read.status);
     const { pair } = read;
     return use({
-      batches: () => readExportBatches(tx, onSide(side, pair), batchSize),
+      batches: () => readExportBatches(tx, onSide(side, pair, access), batchSize),
     });
   });
 }

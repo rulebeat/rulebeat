@@ -1,3 +1,4 @@
+import { EVERYTHING_COVERED_VIEW } from '@/lib/run-scope';
 import { NextResponse } from 'next/server';
 import { parseOptionalJsonBody } from '@/lib/api-body';
 import { requireRole } from '@/lib/api-auth';
@@ -61,6 +62,8 @@ const SAMPLE_RUN = {
   heartbeatAt: null,
   ownerId: null,
   changedFindings: [],
+  coveredScope: EVERYTHING_COVERED_VIEW,
+  countsUnavailable: false,
 };
 
 export async function POST(req: Request) {

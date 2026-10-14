@@ -6,7 +6,8 @@
  * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see: #272 did so for the five
  * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
  * #277 did so for the eight routes that send a query a person wrote to Azure, and #274 for the six widget
- * routes, the two dashboard routes and the two saved view routes. #277's routes call a fake Azure
+ * routes, the two dashboard routes and the two saved view routes, and #276 for the eight Run History and Run now
+ * routes. #277's routes call a fake Azure
  * rather than read the seed, so their probes report the status, the error and the scope the fake was sent,
  * and run in their own `describe` over their own database. #275 did so for `suppressions` and for the three
  * Azure pickers: `suppressions` reads the seed, and the pickers call a fake ARM, so they run in their own
@@ -145,24 +146,12 @@ const get = (url: string, route: { GET(req: Request, ctx?: never): Promise<Respo
 const getWith = (url: string, route: { GET(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> }, id: string) =>
   route.GET(new Request(`http://localhost${url}`), { params: Promise.resolve({ id }) });
 
-const view = viewToSearchParams(emptyView(), { tab: 'results' }).toString();
-const exportOf = (format: string) => `${view}&format=${format}`;
 
 const stored = (probe: Probe, ticket: string): NotYetScoped => ({ ticket, probe });
 const azure = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'calls Azure, which a test never does' });
 const byHand = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'listed by hand: it reads no findings-derived data and does not take the actor\'s access yet' });
 
 export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
-
-  'scans/run': stored(async () => get('/api/scans/run', await import('@/app/api/scans/run/route')), '#276'),
-  'scans/[id]/snapshot': stored(async seed => getWith(`/api/scans/${seed.scanIds[1]}/snapshot`, await import('@/app/api/scans/[id]/snapshot/route'), seed.scanIds[1]), '#276'),
-  'scans/[id]/snapshot/export': stored(async seed => getWith(`/api/scans/${seed.scanIds[1]}/snapshot/export?format=json`, await import('@/app/api/scans/[id]/snapshot/export/route'), seed.scanIds[1]), '#276'),
-  'scans/compare': stored(async seed => get(`/api/scans/compare?compare=${seed.scanIds[0]}..${seed.scanIds[1]}`, await import('@/app/api/scans/compare/route')), '#276'),
-  'scans/compare/export': stored(async seed => get(`/api/scans/compare/export?compare=${seed.scanIds[0]}..${seed.scanIds[1]}&format=json`, await import('@/app/api/scans/compare/export/route')), '#276'),
-  'schedules': stored(async () => get('/api/schedules', await import('@/app/api/schedules/route')), '#276'),
-  'schedules/[id]/run': azure('#276'),
-  'schedules/[id]/runs': stored(async seed => getWith(`/api/schedules/${seed.scheduleId}/runs`, await import('@/app/api/schedules/[id]/runs/route'), seed.scheduleId), '#276'),
-
 
   // Admin-only, and a list of one subscription's resource groups for the Scope picker: this ticket does not narrow it.
   'azure/subscriptions/[id]/resource-groups': azure('#284'),
@@ -739,6 +728,149 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 }
 
+/**
+ * #276: Run History. The seed's schedule has two runs. The later covered Everything, produced the second scan
+ * (all ten findings) and stored 10 findings with 3 new (`vm-one`, `vm-other-sub`, `directory-app`). The earlier
+ * covered subscription one only and produced a third scan holding that subscription's five findings. Every number
+ * below is counted by hand from the seed, for what each person's access reaches: never the 10 and 3 the run stored.
+ *
+ * Findings by placement: `vm-one`, `vm-two`, `subscription-level`, `workspace-user` and `advisory-one` are in
+ * subscription one; `vm-other-sub` and `advisory-other-sub` in subscription two; `management-group-level` sits at
+ * the group; `directory-app` in the Directory; `unplaceable-thing` nowhere.
+ */
+const OUTSIDE = 'Outside your access';
+type RunBody = { totalFindings: number; newFindings: number; countsUnavailable: boolean; coveredScope: { entries: { label: string }[] } };
+const runNumbers = (r: RunBody) =>
+  ({ total: r.totalFindings, new: r.newFindings, unavailable: r.countsUnavailable, scope: r.coveredScope.entries.map(e => e.label) });
+const EVERYTHING_RUN = (total: number, added: number) => ({ total, new: added, unavailable: false, scope: ['Everything'] });
+const SUBSCRIPTION_ONE_RUN = (total: number, scope: string) => ({ total, new: 0, unavailable: false, scope: [scope] });
+
+type Who = 'everything' | 'managementGroup' | 'subscription' | 'resourceGroup' | 'directory' | 'nothing';
+const WHO: readonly Who[] = ['everything', 'managementGroup', 'subscription', 'resourceGroup', 'directory', 'nothing'];
+
+// What each person gets of the later run (Everything) and the earlier one (subscription one).
+const LATER_RUN: Record<Who, unknown> = {
+  everything: EVERYTHING_RUN(10, 3), managementGroup: EVERYTHING_RUN(8, 2), subscription: EVERYTHING_RUN(5, 1),
+  resourceGroup: EVERYTHING_RUN(3, 1), directory: EVERYTHING_RUN(1, 1), nothing: EVERYTHING_RUN(0, 0),
+};
+const EARLIER_RUN: Record<Who, unknown> = {
+  everything: SUBSCRIPTION_ONE_RUN(5, SCOPE_SUBSCRIPTION), managementGroup: SUBSCRIPTION_ONE_RUN(5, SCOPE_SUBSCRIPTION),
+  subscription: SUBSCRIPTION_ONE_RUN(5, SCOPE_SUBSCRIPTION), resourceGroup: SUBSCRIPTION_ONE_RUN(3, OUTSIDE),
+  directory: SUBSCRIPTION_ONE_RUN(0, OUTSIDE), nothing: SUBSCRIPTION_ONE_RUN(0, OUTSIDE),
+};
+const perPerson = (by: Record<Who, unknown>): Matrix['expected'] =>
+  byPerson(same(by.everything), same(by.managementGroup), same(by.subscription), same(by.resourceGroup), same(by.directory), same(by.nothing));
+
+const ALL_NAMES = [
+  'advisory-one', 'advisory-other-sub', 'directory-app', 'management-group-level', 'subscription-level',
+  'unplaceable-thing', 'vm-one', 'vm-other-sub', 'vm-two', 'workspace-user',
+];
+const SNAPSHOT_NAMES: Record<Who, string[]> = {
+  everything: ALL_NAMES,
+  managementGroup: ALL_NAMES.filter(n => !['directory-app', 'unplaceable-thing'].includes(n)),
+  subscription: ['advisory-one', 'subscription-level', 'vm-one', 'vm-two', 'workspace-user'],
+  resourceGroup: ['advisory-one', 'vm-one', 'workspace-user'],
+  directory: ['directory-app'],
+  nothing: [],
+};
+// Every seeded finding is High, so the severity facet is one value; the rules are the matrix rule and the advisory one.
+const SNAPSHOT_FACETS: Record<Who, { severity: [string, number][]; rule: [string, number][] }> = {
+  everything: { severity: [['high', 10]], rule: [['matrix-advisory-rule', 2], ['matrix-rule', 8]] },
+  managementGroup: { severity: [['high', 8]], rule: [['matrix-advisory-rule', 2], ['matrix-rule', 6]] },
+  subscription: { severity: [['high', 5]], rule: [['matrix-advisory-rule', 1], ['matrix-rule', 4]] },
+  resourceGroup: { severity: [['high', 3]], rule: [['matrix-advisory-rule', 1], ['matrix-rule', 2]] },
+  directory: { severity: [['high', 1]], rule: [['matrix-rule', 1]] },
+  nothing: { severity: [], rule: [] },
+};
+
+// The first scan (five findings) against the second (all ten), each as the person sees it.
+const COMPARE: Record<Who, { totals: { added: number; fixed: number; persisted: number }; added: string[] }> = {
+  everything: { totals: { added: 5, fixed: 0, persisted: 5 }, added: ['advisory-one', 'advisory-other-sub', 'directory-app', 'unplaceable-thing', 'workspace-user'] },
+  managementGroup: { totals: { added: 3, fixed: 0, persisted: 5 }, added: ['advisory-one', 'advisory-other-sub', 'workspace-user'] },
+  subscription: { totals: { added: 2, fixed: 0, persisted: 3 }, added: ['advisory-one', 'workspace-user'] },
+  resourceGroup: { totals: { added: 2, fixed: 0, persisted: 1 }, added: ['advisory-one', 'workspace-user'] },
+  directory: { totals: { added: 1, fixed: 0, persisted: 0 }, added: ['directory-app'] },
+  nothing: { totals: { added: 0, fixed: 0, persisted: 0 }, added: [] },
+};
+
+const byWho = <T,>(make: (who: Who) => T): Record<Who, T> => Object.fromEntries(WHO.map(who => [who, make(who)])) as Record<Who, T>;
+
+function runHistoryMatrix(): Record<string, Matrix> {
+  const scansRun: Matrix = {
+    probe: async () => runNumbers(((await BODY(await get('/api/scans/run', await import('@/app/api/scans/run/route')))) as { run: RunBody }).run),
+    expected: perPerson(LATER_RUN),
+  };
+
+  const scheduleRuns: Matrix = {
+    probe: async seed => ((await BODY(await getWith('/api/schedules/x/runs', await import('@/app/api/schedules/[id]/runs/route'), seed.scheduleId))) as RunBody[]).map(runNumbers),
+    expected: perPerson(byWho(who => [LATER_RUN[who], EARLIER_RUN[who]])),
+  };
+
+  const schedules: Matrix = {
+    probe: async seed => {
+      const list = await BODY(await get('/api/schedules', await import('@/app/api/schedules/route'))) as { id: string; lastRun: RunBody | null }[];
+      return runNumbers(list.find(s => s.id === seed.scheduleId)!.lastRun!);
+    },
+    expected: perPerson(LATER_RUN),
+  };
+
+  const snapshot: Matrix = {
+    probe: async seed => {
+      const body = await BODY(await getWith(`/api/scans/${seed.scanIds[1]}/snapshot`, await import('@/app/api/scans/[id]/snapshot/route'), seed.scanIds[1])) as {
+        total: number; items: { fingerprint: string }[]; facets: { severity: { value: string; count: number }[]; rule: { value: string; count: number }[] };
+      };
+      return {
+        names: namesOf(seed, body.items), total: body.total,
+        severity: body.facets.severity.map(f => [f.value, f.count]), rule: body.facets.rule.map(f => [f.value, f.count]),
+      };
+    },
+    expected: perPerson(byWho(who => ({ names: SNAPSHOT_NAMES[who], total: SNAPSHOT_NAMES[who].length, ...SNAPSHOT_FACETS[who] }))),
+  };
+
+  const snapshotExport: Matrix = {
+    probe: async seed => namesOf(seed, await BODY(await getWith(
+      `/api/scans/${seed.scanIds[1]}/snapshot/export?format=json`, await import('@/app/api/scans/[id]/snapshot/export/route'), seed.scanIds[1],
+    )) as { fingerprint: string }[]),
+    expected: perPerson(SNAPSHOT_NAMES),
+  };
+
+  const compare: Matrix = {
+    probe: async seed => {
+      const body = await BODY(await get(`/api/scans/compare?compare=${seed.scanIds[0]}..${seed.scanIds[1]}`, await import('@/app/api/scans/compare/route'))) as {
+        totals: unknown; items: { fingerprint: string }[];
+      };
+      return { totals: body.totals, added: namesOf(seed, body.items) };
+    },
+    expected: perPerson(COMPARE),
+  };
+
+  const compareExport: Matrix = {
+    probe: async seed => namesOf(seed, await BODY(await get(
+      `/api/scans/compare/export?compare=${seed.scanIds[0]}..${seed.scanIds[1]}&format=json`, await import('@/app/api/scans/compare/export/route'),
+    )) as { fingerprint: string }[]),
+    expected: perPerson(byWho(who => COMPARE[who].added)),
+  };
+
+  // Running a schedule changes the install for everyone, so it needs Everything. The probe names a schedule that
+  // does not exist, so a person who is let through gets the handler's 404 and nothing runs against the seed; the
+  // others get the guard's 403. Either way nothing reaches Azure.
+  const scheduleRun: Matrix = {
+    probe: async () => {
+      fakeCtx = fakeTenantContext();
+      const res = await (await import('@/app/api/schedules/[id]/run/route')).POST(
+        new Request('http://localhost/api/schedules/none/run', { method: 'POST' }), { params: Promise.resolve({ id: 'no-such-schedule' }) });
+      return { status: res.status, requests: fakeCtx.queries.length + fakeCtx.graphRequests.length + fakeCtx.logsQueries.length };
+    },
+    expected: perPerson(byWho(who => ({ status: who === 'everything' ? 404 : 403, requests: 0 }))),
+  };
+
+  return {
+    'scans/run': scansRun, 'schedules/[id]/runs': scheduleRuns, 'schedules': schedules,
+    'scans/[id]/snapshot': snapshot, 'scans/[id]/snapshot/export': snapshotExport,
+    'scans/compare': compare, 'scans/compare/export': compareExport, 'schedules/[id]/run': scheduleRun,
+  };
+}
+
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
   'suppressions': suppressionsList,
@@ -750,6 +882,7 @@ const FINDINGS_MATRIX: Record<string, Matrix> = {
   'findings/export': exported,
   'findings/rows': rows,
   ...dashboardMatrix(),
+  ...runHistoryMatrix(),
 };
 
 // #277: the routes that send a query a person wrote to Azure. Every one asks `rules:validate` or
@@ -1030,10 +1163,10 @@ describe('every person reads what the Admin reads', () => {
   });
 
   it('runs every stored-data GET, and finds the seeded data in the Admin\'s answers', () => {
-    expect(probed.length).toBeGreaterThanOrEqual(7);
-    expect(adminBodies['schedules/[id]/runs']).toContain(seed.runId);
-    expect(adminBodies['scans/[id]/snapshot']).toContain('vm-other-sub');
-    expect(adminBodies['scans/compare']).toContain('directory-app');
+    // The Run History routes moved to MATRIX (#276) and `suppressions` with the pickers (#275), where each person's
+    // numbers are written by hand. What is left on `NOT_YET_SCOPED` calls Azure, which a test never does, so nothing
+    // here is probed any more: a stored-data GET added to the list must come with a probe and be seen here.
+    expect(probed.map(([name]) => name)).toEqual([]);
   });
 
   for (const person of PEOPLE.map(p => p.name).filter(n => n !== 'Admin')) {
@@ -1130,6 +1263,40 @@ describe('the findings routes show each person only what their Scopes cover', ()
       expect(view.total, person).toBe(0);
       expect(view.items, person).toEqual([]);
     }
+  });
+
+  it('refuses a compare of two scans that covered different Scopes for every person, from both routes', async () => {
+    const compare = await import('@/app/api/scans/compare/route');
+    const exportRoute = await import('@/app/api/scans/compare/export/route');
+    const ids = `compare=${seed.scanIds[1]}..${seed.scopedScanId}`;
+    for (const person of PEOPLE.map(p => p.name)) {
+      mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+      for (const res of [
+        await compare.GET(new Request(`http://localhost/api/scans/compare?${ids}`)),
+        await exportRoute.GET(new Request(`http://localhost/api/scans/compare/export?${ids}&format=json`)),
+      ]) {
+        expect([person, res.status, await res.json()]).toEqual([person, 400, {
+          code: 'different-scopes',
+          error: 'These two runs covered different scopes. Compare two runs that covered the same scope.',
+        }]);
+      }
+    }
+  });
+
+  it('lists each scan in the picker with the Scope it covered, and gives two scans of one Scope one key', async () => {
+    const history = await import('@/lib/scan-history');
+    const { listScanMetas } = history;
+    const { buildAccess, parseScope } = await import('@/lib/access-model');
+    const viewer = buildAccess([{ tenantId: MATRIX_TENANT, scope: parseScope(SCOPE_RESOURCE_GROUP)!, role: 'viewer' }], 'manual');
+    const metas = await listScanMetas('security', viewer, 10);
+    const label = (id: string) => metas.find(m => m.id === id)!.coveredScope.entries.map(e => e.label);
+    expect(label(seed.scanIds[0])).toEqual(['Everything']);
+    expect(label(seed.scanIds[1])).toEqual(['Everything']);
+    // Subscription one is wider than this person's resource group, so it reads as outside their access.
+    expect(label(seed.scopedScanId)).toEqual(['Outside your access']);
+    const keys = new Map(metas.map(m => [m.id, m.coveredScope.key]));
+    expect(keys.get(seed.scanIds[0])).toBe(keys.get(seed.scanIds[1]));
+    expect(keys.get(seed.scopedScanId)).not.toBe(keys.get(seed.scanIds[1]));
   });
 
   it('answers a finding outside the Scopes with the body of one that does not exist', async () => {

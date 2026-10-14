@@ -534,6 +534,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
           )}
         </div>
         <p className="-mt-2 text-xs text-ink-muted">Type, Kind, Category, Severity and Status are filterable from the funnel icon in their column header below.</p>
+        {(authorOffReason || deleteOffReason) && <p className="text-xs text-ink-2">{authorOffReason ?? deleteOffReason}</p>}
 
         {/* Gallery stub */}
         {isGallery ? (

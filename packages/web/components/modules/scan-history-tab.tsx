@@ -12,6 +12,7 @@ import { RunStatusDot } from '@/components/scans/run-status-dot';
 import { SnapshotScreen } from '@/components/scans/snapshot-screen';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { CompareScreen } from '@/components/scans/compare-screen';
+import { COUNTS_UNAVAILABLE_MESSAGE, CoveredScopeLabel } from '@/components/scans/covered-scope-label';
 import { describeTarget } from '@/lib/target-describe';
 import { emptyCompareQuery, type CompareQuery } from '@/lib/compare-query';
 import { emptySnapshotQuery, type SnapshotQuery } from '@/lib/snapshot-query';
@@ -61,6 +62,10 @@ export function ScanHistoryTab({
   // drift from the props once they change.
   const pickedCategory = compareCategorySlug ?? '';
   const [pickedScans, setPickedScans] = useState<Set<string>>(new Set());
+  // Two runs that covered different Scopes cannot be compared (what one did not cover would read as
+  // Fixed), so once a scan is picked the picker offers only the ones that covered the same Scope.
+  const firstPicked = [...pickedScans][0];
+  const pickedScope = (compareCategoryScans ?? []).find(scan => scan.id === firstPicked)?.coveredScope.key;
 
   // Reset-on-external-prop-change, not derivable render state.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -111,9 +116,16 @@ export function ScanHistoryTab({
           <p className="py-10 text-center text-sm text-ink-muted">Not enough scan history for this category yet.</p>
         ) : (
           <>
+            {pickedScope !== undefined && scans.some(scan => scan.coveredScope.key !== pickedScope) && (
+              <p className="border-b border-border px-6 py-3 text-sm text-ink-2" role="status">
+                Only scans that covered the same scope as the first one you picked can be compared with it.
+              </p>
+            )}
             <div className="divide-y divide-border">
-              {scans.map(scan => (
-                <label key={scan.id} className="flex items-center gap-3 px-6 py-3 hover:bg-surface-hover cursor-pointer">
+              {scans.map(scan => {
+                const otherScope = pickedScope !== undefined && scan.coveredScope.key !== pickedScope;
+                return (
+                <label key={scan.id} className={`flex items-center gap-3 px-6 py-3 ${otherScope ? 'opacity-50' : 'hover:bg-surface-hover cursor-pointer'}`}>
                   <input
                     type="checkbox"
                     checked={pickedScans.has(scan.id)}
@@ -124,18 +136,22 @@ export function ScanHistoryTab({
                       next.add(scan.id);
                       return next;
                     })}
-                    disabled={!pickedScans.has(scan.id) && pickedScans.size >= 2}
+                    disabled={otherScope || (!pickedScans.has(scan.id) && pickedScans.size >= 2)}
                     className="size-3.5 shrink-0 accent-ink"
                   />
                   <Activity className="size-4 text-ink-muted" />
                   <span className="text-sm text-ink">{formatDate(scan.startedAt)}</span>
+                  <CoveredScopeLabel scope={scan.coveredScope} />
                   <div className="flex gap-1.5 ml-auto">
-                    {SEVERITY_ORDER.filter(s => scan.counts[s] > 0).map(s => (
-                      <Badge key={s} variant="outline" className="text-xs">{scan.counts[s]} {s}</Badge>
-                    ))}
+                    {scan.countsUnavailable
+                      ? <span className="text-xs text-ink-2" title={COUNTS_UNAVAILABLE_MESSAGE}>Counts unavailable</span>
+                      : SEVERITY_ORDER.filter(s => scan.counts[s] > 0).map(s => (
+                        <Badge key={s} variant="outline" className="text-xs">{scan.counts[s]} {s}</Badge>
+                      ))}
                   </div>
                 </label>
-              ))}
+                );
+              })}
             </div>
             <div className="px-6 py-3 border-t border-border flex items-center justify-between">
               <span className="text-xs text-ink-muted">{pickedScans.size} of 2 selected</span>
@@ -168,7 +184,10 @@ export function ScanHistoryTab({
           <div className="px-6 py-4 space-y-1 border-b border-border text-sm">
             <p className="text-ink">Started {formatDate(run.startedAt)}</p>
             <p className="text-ink">Target: {describeTarget({ targetType: run.targetType ?? 'categories', targetValues: run.targetValues.length ? run.targetValues : run.categories }, categoryById, ruleById)}</p>
-            <p className="text-ink">{run.totalFindings} total findings · {run.newFindings} new</p>
+            <p className="flex flex-wrap items-center gap-2 text-ink">Scope covered: <CoveredScopeLabel scope={run.coveredScope} /></p>
+            {run.countsUnavailable
+              ? <p className="text-ink-2">{COUNTS_UNAVAILABLE_MESSAGE}</p>
+              : <p className="text-ink">{run.totalFindings} total findings · {run.newFindings} new</p>}
           </div>
           <div className="divide-y divide-border">
             {scans.map(scan => (
@@ -182,10 +201,15 @@ export function ScanHistoryTab({
                     <CategoryBadge id={scan.module} categories={categories} />
                     {scan.coverage === 'partial' && <Badge variant="warning" className="text-xs">Partial</Badge>}
                   </div>
-                  <div className="flex gap-1.5">
-                    {SEVERITY_ORDER.filter(s => scan.counts[s] > 0).map(s => (
-                      <Badge key={s} variant="outline" className="text-xs">{scan.counts[s]} {s}</Badge>
-                    ))}
+                  <div className="flex items-center gap-3">
+                    <CoveredScopeLabel scope={scan.coveredScope} />
+                    <div className="flex gap-1.5">
+                      {scan.countsUnavailable
+                        ? <span className="text-xs text-ink-2" title={COUNTS_UNAVAILABLE_MESSAGE}>Counts unavailable</span>
+                        : SEVERITY_ORDER.filter(s => scan.counts[s] > 0).map(s => (
+                          <Badge key={s} variant="outline" className="text-xs">{scan.counts[s]} {s}</Badge>
+                        ))}
+                    </div>
                   </div>
                 </Link>
                 {scan.coverage === 'partial' && (
@@ -264,8 +288,11 @@ export function ScanHistoryTab({
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                <span className="numeral-grid text-sm font-medium text-ink">{run.totalFindings} findings</span>
-                {run.newFindings > 0 && <Badge variant="destructive" className="text-xs">+{run.newFindings} new</Badge>}
+                <CoveredScopeLabel scope={run.coveredScope} />
+                {run.countsUnavailable
+                  ? <span className="text-sm text-ink-2" title={COUNTS_UNAVAILABLE_MESSAGE}>Counts unavailable</span>
+                  : <span className="numeral-grid text-sm font-medium text-ink">{run.totalFindings} findings</span>}
+                {!run.countsUnavailable && run.newFindings > 0 && <Badge variant="destructive" className="text-xs">+{run.newFindings} new</Badge>}
               </div>
             </Link>
             {run.error && (run.status === 'partial' || run.status === 'error') && (

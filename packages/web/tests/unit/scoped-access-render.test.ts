@@ -74,6 +74,8 @@ describe('the library and schedule controls of a scoped Editor', () => {
     expect(html).toContain('New rule');
     expect(titled(html, SCOPED_WRITE_REASON)).toBe(3);
     expect(html).not.toContain('title="Duplicate as Custom"');
+    // A disabled button takes no pointer events, so its title never shows: the reason is also text on the page.
+    expect(html.replace(/ title="[^"]*"/g, '')).toContain(SCOPED_WRITE_REASON);
   });
 
   it('shows a Viewer what a Viewer is shown today: no write control and no reason', () => {

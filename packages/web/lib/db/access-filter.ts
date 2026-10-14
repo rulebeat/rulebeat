@@ -1,9 +1,13 @@
 import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { findings as findingsTable } from './tables';
-import type { Access } from '../access-model';
+import { findings as findingsTable, scanFindings } from './tables';
+import { accessReach, type Access } from '../access-model';
+
+/** The two tables that hold where a finding sits: the live `findings` and a scan's `scan_findings` records. */
+export type PlacedTable = typeof findingsTable | typeof scanFindings;
 
 /**
- * The condition a person's access puts on the `findings` table, or undefined when it puts none
+ * The condition a person's access puts on the `findings` table (or on a scan's `scan_findings` records,
+ * which hold the same four placement columns), or undefined when it puts none
  * (Everything). A finding is seen when its placement sits inside a Scope the person holds:
  *
  *  - `resource` and `workspace`: under a subscription Scope on its subscription, or a resource group
@@ -23,27 +27,9 @@ import type { Access } from '../access-model';
  * compare case-insensitively. A person who holds no usable Scope gets an explicit false: `or()` of
  * nothing is `undefined`, which `and()` would drop, and that would read as no filter at all.
  */
-export function accessFilterSql(access: Access): SQL | undefined {
+export function accessFilterSql(access: Access, t: PlacedTable = findingsTable): SQL | undefined {
   if (access.everything) return undefined;
-  const t = findingsTable;
-  const subscriptions = new Set<string>();
-  const managementGroups = new Set<string>();
-  const resourceGroups = new Map<string, Set<string>>();
-  let directory = false;
-  for (const { scope } of access.grants) {
-    const parts = scope.path.split('/');
-    if (scope.kind === 'subscription') subscriptions.add(parts[2]!.toLowerCase());
-    else if (scope.kind === 'resourceGroup') {
-      const sub = parts[2]!.toLowerCase();
-      const groups = resourceGroups.get(sub) ?? new Set<string>();
-      groups.add(parts[4]!.toLowerCase());
-      resourceGroups.set(sub, groups);
-    } else if (scope.kind === 'directory') directory = true;
-  }
-  for (const expansion of access.managementGroups) {
-    for (const id of expansion.subscriptions) subscriptions.add(id.toLowerCase());
-    for (const id of expansion.groups) managementGroups.add(id.toLowerCase());
-  }
+  const { subscriptions, managementGroups, resourceGroups, directory } = accessReach(access);
 
   const lowerSubscription = sql`lower(${t.subscriptionId})`;
   const lowerGroup = sql`lower(${t.resourceGroup})`;

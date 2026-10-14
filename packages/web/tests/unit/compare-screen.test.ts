@@ -154,7 +154,7 @@ describe('which screen the compare shows', () => {
     expect(compareScreenOf({ status: 'failed', message: 'x', query: null })).toBe('unavailable');
   });
 
-  it.each(['not-found', 'no-records', 'different-categories', 'bad-request'] as const)('is %s for the server\'s own refusal', code => {
+  it.each(['not-found', 'no-records', 'different-categories', 'different-scopes', 'bad-request'] as const)('is %s for the server\'s own refusal', code => {
     expect(compareScreenOf({ status: code, message: COMPARE_ERRORS[code].body.error, query: null })).toBe(code);
   });
 

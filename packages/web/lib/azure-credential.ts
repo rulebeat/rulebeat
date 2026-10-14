@@ -244,9 +244,11 @@ export async function getAzureToken(scope = 'https://management.azure.com/.defau
  * silent no-op default: every caller gets real logging, callers with no run to attach (onboarding,
  * preflight, schema routes, KQL validation) just don't have a `runId` on their lines.
  *
- * `access` is who the context is for. It limits nothing yet: the credential is still the one
- * install-wide Reader, and #276 narrows what a scan may ask of it. A query a person writes is
- * limited above this, by the route, with `lib/written-query.ts`.
+ * `access` is who the context is for. It limits nothing here: the credential is still the one
+ * install-wide Reader, and the limit is applied above this, because every caller that needs one
+ * passes its own context in (a test's fake, the Demo's replay). A scan is narrowed in
+ * `runCategoryScan()` (`lib/scan-runner.ts`, with `lib/run-scope.ts`), which wraps whatever context
+ * it is given. A query a person writes is limited by the route, with `lib/written-query.ts`.
  */
 export async function createTenantContext(access: Access, logContext?: ScanLogContext): Promise<TenantContext> {
   const { credential, tenantId } = await resolveAzureCredential();

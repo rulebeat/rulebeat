@@ -5,6 +5,7 @@
  * repeated, and that every batch but the last is full. Driven through the two export functions over
  * scans stored by runCategoryScan().
  */
+import { everythingAccess } from '@/lib/access-model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
@@ -91,7 +92,7 @@ const MIXED_COUNT = 19;
 
 beforeEach(async () => {
   await resetDb();
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: everythingAccess('admin') });
 });
 
 describe('openSnapshotExport: batches read by key', () => {

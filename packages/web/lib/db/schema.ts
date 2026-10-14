@@ -59,6 +59,7 @@ export const scans = sqliteTable('scans', {
   runId: text('run_id'), // links back to schedule_runs.id (the execution that produced this category's scan)
   coverage: text('coverage').notNull().default('complete'), // 'complete' | 'partial'
   incompleteRules: text('incomplete_rules').notNull().default('[]'), // JSON: IncompleteRule[]
+  coveredScope: text('covered_scope'), // JSON: { tenantId, path }[], what the run covered (#276); null reads as Everything
   hasRecords: integer('has_records').notNull().default(0), // 1 once scan_findings holds this scan's records (ADR 0008); a release that does not know the column saves 0, so its scans convert on the next start
 });
 
@@ -451,6 +452,7 @@ export const scheduleRuns = sqliteTable('schedule_runs', {
   heartbeatAt: text('heartbeat_at'),          // last proof of life from the process running this row
   ownerId: text('owner_id'),                  // lib/instance-id.ts's per-process id
   changedFindings: text('changed_findings'),  // JSON: { fingerprint, addedRows }[] (#193); null on rows from before the column existed
+  coveredScope: text('covered_scope'),        // JSON: { tenantId, path }[], what the run covered (#276); null reads as Everything
 });
 
 // One row per delivery attempt sequence (a channel's final outcome for a single run, after retries
