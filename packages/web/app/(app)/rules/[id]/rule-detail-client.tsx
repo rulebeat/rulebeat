@@ -4,11 +4,14 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Lock, Copy, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Callout } from '@/components/ui/callout';
+import { CopyToPersonalButton } from '@/components/rules/copy-to-personal-button';
+import { cn } from '@/lib/utils';
 import { RuleForm } from '@/components/rules/rule-form';
 import { RuleOrigin } from '@/components/rules/rule-origin';
 import type { OriginNote } from '@/lib/rule-version-markers';
 import { canDuplicateRule } from '@/lib/rule-taxonomy';
-import type { Category, Rule, RuleVersionHistory } from '@/lib/types';
+import type { Category, PersonalCopyReasons, Rule, RuleVersionHistory } from '@/lib/types';
 
 interface Props {
   rule: Rule;
@@ -25,10 +28,14 @@ interface Props {
   writeReason?: string;
   canVersion: boolean;
   versionHistory?: RuleVersionHistory;
+  /** Why Copy to personal is off for each backend, worked out on the server; null where it is available. */
+  personalCopyReasons: PersonalCopyReasons;
 }
 
-export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor, writeReason, canVersion, versionHistory }: Props) {
+export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor, writeReason, canVersion, versionHistory, personalCopyReasons }: Props) {
   const offReason = canAuthor ? undefined : writeReason;
+  const copyBlockedReason = personalCopyReasons[rule.queryBackend ?? 'resource-graph'];
+  const [copyError, setCopyError] = useState<string | null>(null);
   const router = useRouter();
   const isBuiltin = rule.type === 'builtin';
   const canDuplicate = canDuplicateRule(rule);
@@ -101,8 +108,17 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
             Duplicate
           </Button>
         )}
+        <div className={cn('flex items-center gap-2', !(canDuplicate && (canAuthor || offReason)) && 'ml-auto')}>
+          <CopyToPersonalButton
+            ruleId={rule.id}
+            blockedReason={copyBlockedReason}
+            onError={setCopyError}
+          />
+        </div>
       </div>
       {offReason && <p className="max-w-[1600px] mx-auto text-xs text-ink-2">{offReason}</p>}
+      {copyBlockedReason && <p className="max-w-[1600px] mx-auto text-xs text-ink-2">{`Copy to personal is unavailable: ${copyBlockedReason}`}</p>}
+      {copyError && <div className="max-w-[1600px] mx-auto"><Callout tone="error">{copyError}</Callout></div>}
 
       {origin && (
         <div className="max-w-[1600px] mx-auto">

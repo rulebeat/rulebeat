@@ -43,6 +43,23 @@ A Personal rule's results are not in Results, Advisories, Activity, Run History,
 comparisons, exports, dashboards, saved views, suppressions or posture, and they are not part of any
 rule count.
 
+## Copy a library rule
+
+Every rule in the Library, built-in or custom, has a **Copy to personal** action, on its row and on its
+page. It makes a new Personal rule with the same name, description, category, severity, tags and query,
+and opens it. Anyone who can write a Personal rule can use it; for anyone else the control is
+disabled and says why. A Log Analytics rule cannot be copied, and a Microsoft Graph rule needs the
+Directory (or Everything).
+
+- The copy starts with no results and no run. Nothing is added to Results, Run History, findings or
+  posture, and the shared rule is not changed.
+- The copy's scope is cut down to what you hold. Entries of the shared rule's scope that are not a
+  subscription or management group you hold are left out. If nothing is left, the scope is empty,
+  which means all of the subscriptions and management groups you hold.
+- The rule's page says "Copied from" and links to the shared rule. The link goes away when that
+  shared rule is deleted; the copy stays.
+- The copy is yours to rename, edit and delete. Editing it never changes the shared rule.
+
 ## When your access changes
 
 | What happens to you | What happens to your Personal rules |
@@ -54,5 +71,5 @@ rule count.
 
 ## The audit log
 
-Each run adds one entry that names the rule and the Scope it covered. Creating, editing and deleting a
-Personal rule are logged too. An entry never holds the query or any result.
+Each run adds one entry that names the rule and the Scope it covered. Creating, editing, deleting and
+copying a Personal rule are logged too. An entry never holds the query or any result.

@@ -525,8 +525,11 @@ CREATE TABLE IF NOT EXISTS personal_rules (
   updated_at TEXT NOT NULL,
   last_run_at TEXT,
   last_run_status TEXT,
-  last_run_covered_scope TEXT
+  last_run_covered_scope TEXT,
+  source_rule_id TEXT
 );
+-- The shared rule a Personal rule was copied from (#281), for a database bootstrapped by the #280 build.
+ALTER TABLE personal_rules ADD COLUMN IF NOT EXISTS source_rule_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_personal_rules_owner ON personal_rules(owner_id);
 
 CREATE TABLE IF NOT EXISTS personal_rule_results (

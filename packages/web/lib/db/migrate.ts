@@ -583,7 +583,8 @@ export function runMigrations(sqlite: Database.Database): void {
       updated_at TEXT NOT NULL,
       last_run_at TEXT,
       last_run_status TEXT,
-      last_run_covered_scope TEXT
+      last_run_covered_scope TEXT,
+      source_rule_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_personal_rules_owner ON personal_rules(owner_id);
 
@@ -1206,6 +1207,12 @@ export function runMigrations(sqlite: Database.Database): void {
       copyCatalogue = sqlite.prepare(`INSERT OR IGNORE INTO column_catalogue (rule_id, path) SELECT ?, path FROM column_catalogue WHERE rule_id = ?`);
       dropCatalogue = sqlite.prepare(`DELETE FROM column_catalogue WHERE rule_id = ?`);
     } catch { /* no table yet */ }
+    // A Personal rule copied from a shared rule keeps pointing at it (#281). The column is added further
+    // down, so a database from before it has nothing to rewrite.
+    let renameInPersonalRules: Database.Statement | undefined;
+    try {
+      renameInPersonalRules = sqlite.prepare(`UPDATE personal_rules SET source_rule_id = ? WHERE source_rule_id = ?`);
+    } catch { /* no column yet */ }
 
     for (const [oldId, newId] of pairs) {
       try {
@@ -1235,6 +1242,7 @@ export function runMigrations(sqlite: Database.Database): void {
         renameInScanFindings.run(newId, oldId);
         copyCatalogue?.run(newId, oldId);
         dropCatalogue?.run(oldId);
+        renameInPersonalRules?.run(newId, oldId);
       } catch { /* ignore this pair, continue with the rest */ }
     }
   }
@@ -1299,6 +1307,10 @@ export function runMigrations(sqlite: Database.Database): void {
     try { sqlite.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`); } catch { /* already exists */ }
   }
   try { sqlite.exec(`ALTER TABLE role_assignments ADD COLUMN origin TEXT`); } catch { /* already exists */ }
+
+  // #281: the shared rule a Personal rule was copied from. Nullable, nothing backfilled: every
+  // existing Personal rule was written by hand.
+  try { sqlite.exec(`ALTER TABLE personal_rules ADD COLUMN source_rule_id TEXT`); } catch { /* already exists */ }
 
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);

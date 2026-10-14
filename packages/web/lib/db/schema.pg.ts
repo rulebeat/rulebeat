@@ -459,6 +459,7 @@ export const personalRules = pgTable('personal_rules', {
   lastRunAt: text('last_run_at'),
   lastRunStatus: text('last_run_status'),
   lastRunCoveredScope: text('last_run_covered_scope'),
+  sourceRuleId: text('source_rule_id'),
 });
 
 export const personalRuleResults = pgTable('personal_rule_results', {

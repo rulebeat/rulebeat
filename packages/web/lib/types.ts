@@ -312,6 +312,9 @@ export type RuleType = 'builtin' | 'community' | 'custom';
 // What system a rule's detection logic queries against: see RULE-MODEL-PROGRAM.md and spec 029.
 export type QueryBackend = 'resource-graph' | 'microsoft-graph' | 'log-analytics';
 
+/** Why Copy to personal is unavailable for a shared rule on each backend, or null when it is available. */
+export type PersonalCopyReasons = Record<QueryBackend, string | null>;
+
 // Resolved from queryBackend plus the kind an author asked for; see resolveKind() in lib/rules.ts.
 // 'state' is the code name for a Problem rule.
 export type RuleKind = 'state' | 'activity' | 'advisory';

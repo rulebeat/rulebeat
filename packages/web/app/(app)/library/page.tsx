@@ -6,10 +6,9 @@ import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { newerVersionsByRule } from '@/lib/rule-version-markers';
 import { getPageAccess } from '@/lib/page-access';
 import { listPersonalRules } from '@/lib/db/personal-rules';
-import { can } from '@/lib/rbac';
+import { personalCopyReasons, personalWriteBlockedReason as personalWriteBlockedReasonFor } from '@/lib/personal-rule-request';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
-import { NEEDS_SUBSCRIPTION_MESSAGE, mayWriteQueries } from '@/lib/written-query';
 import { LibraryClient } from './library-client';
 import type { Rule } from '@/lib/types';
 import packManifestJson from '@/data/packs/pack-manifest.json';
@@ -29,9 +28,8 @@ export default async function LibraryPage({
   const initialSidebarPinned = cookieStore.get('sidebar:library')?.value !== 'false';
   // Only the signed-in person's own Personal rules are read, so no one else's can reach the page.
   const personalRules = user ? (await listPersonalRules(user.id)).map(({ lastRunCoveredScope: _scope, ...rule }) => rule) as unknown as Rule[] : [];
-  const personalWriteBlockedReason = !user || !can(user.role, 'rules:personal')
-    ? 'Personal rules are written by Editors. You can read the ones you already have.'
-    : mayWriteQueries(access).ok ? null : NEEDS_SUBSCRIPTION_MESSAGE;
+  const personalWriteBlockedReason = personalWriteBlockedReasonFor(user?.role, access);
+  const copyReasons = personalCopyReasons(user?.role, access);
   const controls = writeControlsFor(access);
   return (
     <>
@@ -41,6 +39,7 @@ export default async function LibraryPage({
           initialRules={rules}
           personalRules={personalRules}
           personalWriteBlockedReason={personalWriteBlockedReason}
+          personalCopyReasons={copyReasons}
           newerVersions={newerVersions}
           initialSection={section}
           packManifest={packManifestJson as Record<string, PackManifestEntry>}

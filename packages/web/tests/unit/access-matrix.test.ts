@@ -23,7 +23,7 @@ import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, getUser } from '@/lib/db/users';
-import { loadRules, saveRules } from '@/lib/rules';
+import { createRule, loadRule, loadRules, saveRules } from '@/lib/rules';
 import { createCategory, listCategories } from '@/lib/db/categories';
 import { createSchedule, listSchedules } from '@/lib/db/schedules';
 import { countAuditEntries, listAuditEntries } from '@/lib/db/audit';
@@ -1013,6 +1013,22 @@ async function personalReply(send: () => Promise<Response>): Promise<PersonalRep
 const NOT_FOUND_REPLY: PersonalReply = { status: 404, body: { error: 'Not found' } };
 const FORBIDDEN_REPLY: PersonalReply = { status: 403, body: { error: 'Forbidden' } };
 
+// #281: copying a shared rule to Personal. The source is scoped to both seed subscriptions. The Admin and the
+// Editor on Everything hold every entry, so the copy keeps the whole scope; the five Viewers hold no
+// `rules:personal`, so the guard refuses them before the source is read.
+const COPY_SOURCE_ID = 'matrix-copy-source';
+const COPY_SOURCE_SCOPE = { level: 'subscription', subscriptions: [SUB_ONE, SUB_TWO] };
+
+async function copyReply(): Promise<PersonalReply> {
+  if (!(await loadRule(COPY_SOURCE_ID))) {
+    await createRule({ ...ruleBody('matrix copy source'), id: COPY_SOURCE_ID, scope: COPY_SOURCE_SCOPE } as unknown as Rule);
+  }
+  const res = await (await import('@/app/api/rules/[id]/personal-copy/route')).POST(
+    sendJson(`/api/rules/${COPY_SOURCE_ID}/personal-copy`, 'POST', {}), { params: Promise.resolve({ id: COPY_SOURCE_ID }) });
+  const body = await res.json() as { error?: string; sourceRuleId?: string; scope?: unknown };
+  return { status: res.status, body: res.status === 201 ? { sourceRuleId: body.sourceRuleId, scope: body.scope } : body };
+}
+
 const PERSONAL_MATRIX: Record<string, Matrix> = {
   'personal-rules': {
     probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/route')).GET()),
@@ -1022,6 +1038,18 @@ const PERSONAL_MATRIX: Record<string, Matrix> = {
     probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/[id]/route')).GET(
       new Request(`http://localhost/api/personal-rules/${personalRuleId}`), { params: Promise.resolve({ id: personalRuleId }) })),
     expected: byPerson(...Array(6).fill(same(NOT_FOUND_REPLY)) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  },
+  'rules/[id]/personal-copy': {
+    probe: async () => copyReply(),
+    expected: {
+      'Admin': same({ status: 201, body: { sourceRuleId: COPY_SOURCE_ID, scope: COPY_SOURCE_SCOPE } }),
+      'Editor on Everything': same({ status: 201, body: { sourceRuleId: COPY_SOURCE_ID, scope: COPY_SOURCE_SCOPE } }),
+      'Viewer on the management group': same(FORBIDDEN_REPLY),
+      'Viewer on one subscription': same(FORBIDDEN_REPLY),
+      'Viewer on one resource group': same(FORBIDDEN_REPLY),
+      'Directory only': same(FORBIDDEN_REPLY),
+      'No Scope': same(FORBIDDEN_REPLY),
+    },
   },
   'personal-rules/[id]/run': {
     probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/[id]/run/route')).POST(
@@ -1409,8 +1437,8 @@ describe('the Personal rule routes answer every stranger the same', () => {
     await seedPersonalRule();
   });
 
-  it('holds an expectation for each of the three routes', () => {
-    expect(Object.keys(PERSONAL_MATRIX).sort()).toEqual(['personal-rules', 'personal-rules/[id]', 'personal-rules/[id]/run']);
+  it('holds an expectation for each of the four routes', () => {
+    expect(Object.keys(PERSONAL_MATRIX).sort()).toEqual(['personal-rules', 'personal-rules/[id]', 'personal-rules/[id]/run', 'rules/[id]/personal-copy']);
   });
 
   for (const [route, entry] of Object.entries(PERSONAL_MATRIX)) {
@@ -1448,7 +1476,7 @@ describe('a Personal rule and its results appear in no shared response', () => {
           if (entry.probe) seen.push(`${person} ${name} ${await (await entry.probe(seed)).text()}`);
         }
         for (const [name, entry] of Object.entries(MATRIX)) {
-          if (name.startsWith('personal-rules')) continue;
+          if (name in PERSONAL_MATRIX) continue;
           for (const tab of VIEW_TABS) seen.push(`${person} ${name} ${tab} ${JSON.stringify(await entry.probe(seed, tab))}`);
         }
       }
