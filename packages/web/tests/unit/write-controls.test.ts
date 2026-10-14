@@ -34,7 +34,7 @@ describe('writeControlsFor', () => {
   it('says an Admin or an Editor on Everything is needed, without an em dash', () => {
     expect(SCOPED_WRITE_REASON).toContain('Admin');
     expect(SCOPED_WRITE_REASON).toContain('Editor on Everything');
-    expect(SCOPED_WRITE_REASON).not.toContain('—');
+    expect(SCOPED_WRITE_REASON).not.toContain(String.fromCharCode(0x2014));
   });
 
   it('gives a Viewer on one subscription no control and no reason, as a Viewer has today', () => {
