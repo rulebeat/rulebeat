@@ -70,7 +70,7 @@ export const compareSideLabel = (side: CompareSide) => TILES[side].label.toLower
 // ---- The screen ----
 
 export type CompareScreen =
-  | 'loading' | 'unavailable' | 'not-found' | 'no-records' | 'different-categories' | 'bad-request' | 'empty-side' | 'rows';
+  | 'loading' | 'unavailable' | 'not-found' | 'no-records' | 'different-categories' | 'different-scopes' | 'bad-request' | 'empty-side' | 'rows';
 
 /** The answer on screen: the last one while the next is on its way, and after a failed read, so the tiles
  *  stay on screen to change the request. */
@@ -93,10 +93,10 @@ export const compareCardQuery = (data: CompareResponse): CompareQuery => ({ side
 /** The file the card's export is saved as: the side the card lists. */
 export const compareExportFileName = (data: CompareResponse): string => `compare-${data.side}`;
 
-/** Which of the eight screens the compare shows. */
+/** Which of the nine screens the compare shows. */
 export function compareScreenOf(state: CompareState): CompareScreen {
   if (state.status === 'failed') return 'unavailable';
-  if (state.status === 'not-found' || state.status === 'no-records' || state.status === 'different-categories' || state.status === 'bad-request') {
+  if (state.status === 'not-found' || state.status === 'no-records' || state.status === 'different-categories' || state.status === 'different-scopes' || state.status === 'bad-request') {
     return state.status;
   }
   const data = compareDataOf(state);

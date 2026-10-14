@@ -30,6 +30,7 @@ const FAMILY = [
   'lib/db/column-catalogue.ts',
   'lib/scan-history.ts',
   'lib/schedule-runs.ts',
+  'lib/db/run-recount.ts',
   'lib/suppressions.ts',
   'lib/dashboard-data.ts',
   'lib/advisories-widget-data.ts',

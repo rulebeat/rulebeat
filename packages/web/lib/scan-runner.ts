@@ -2,9 +2,11 @@ import {
   runRules,
   runGraphRules,
   runLawRules,
+  resolveWorkspacePlacement,
   computeFingerprint,
   computeActivityFingerprint,
   type Finding as CoreFinding,
+  type QueryScope,
   type RuleRunEvent,
   type TenantContext,
 } from '@rulebeat/core';
@@ -16,6 +18,31 @@ import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';
 import type { Access } from './access-model';
+import { listHierarchyNodes } from './db/management-group-hierarchy';
+import type { HierarchyNode } from './management-group-tree';
+import {
+  coveredAccess, coveredScopeOf, coversDirectory, coversWorkspace, insideCovered, scopeForRule, subscriptionsAskedFor,
+  type RequestScope,
+} from './run-scope';
+
+/**
+ * The context a scoped run asks Azure through: every Resource Graph request, the rule's own query and
+ * the enrichment follow-up alike, goes out with only the overlap of its scope and the Scopes the run
+ * covers (#276). The KQL is never touched. A request that shares nothing with them is refused, never
+ * sent empty, since Resource Graph's client reads an empty scope as every subscription. Everything else
+ * on the context is the caller's own.
+ */
+function narrowContext(ctx: TenantContext, covered: Access, hierarchy: readonly HierarchyNode[], asked: RequestScope[]): TenantContext {
+  return {
+    ...ctx,
+    queryARG: async <TRow = Record<string, unknown>>(kql: string, scope?: QueryScope) => {
+      const narrowed = scopeForRule(scope, covered, hierarchy);
+      if (!narrowed) throw new Error('This request does not overlap the access of the person who started the run, so it was not sent.');
+      asked.push(narrowed);
+      return ctx.queryARG<TRow>(kql, narrowed);
+    },
+  };
+}
 
 export interface ScanRunOutcome {
   summary: ScanSummary;
@@ -45,7 +72,7 @@ export interface RunScanOptions {
 }
 
 export async function runCategoryScan(category: Category, opts: RunScanOptions): Promise<ScanRunOutcome> {
-  const ctx = opts.ctx ?? await createScanContext(opts.access);
+  const baseCtx = opts.ctx ?? await createScanContext(opts.access);
 
   const startedAt = opts.now ?? new Date();
   const findings: Finding[] = [];
@@ -55,6 +82,31 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
   if (opts.ruleIds) {
     const allowed = new Set(opts.ruleIds);
     enabledRules = enabledRules.filter(r => allowed.has(r.id));
+  }
+
+  // What this run covers: Everything for an Admin and the scheduler, otherwise the Scopes the runner
+  // holds at a Role that runs scans (#276). Below Everything the shared rules run only where their own
+  // scope and the covered Scope overlap, and a rule with no overlap is left out whole: no request, no
+  // outcome, no count, and its last-run status and prior findings are untouched.
+  const coveredEntries = coveredScopeOf(opts.access);
+  const covered = coveredAccess(opts.access);
+  const scoped = !covered.everything;
+  const askedScopes: RequestScope[] = [];
+  let hierarchy: HierarchyNode[] = [];
+  let ctx = baseCtx;
+  if (scoped) {
+    // The tree is read when a rule names a management group, or the runner holds one (the subscriptions under it are listed as scanned).
+    if (covered.managementGroups.length > 0 || enabledRules.some(r => r.scope.managementGroups?.length)) hierarchy = await listHierarchyNodes();
+    ctx = narrowContext(baseCtx, covered, hierarchy, askedScopes);
+    const lawPlacement = enabledRules.some(r => r.queryBackend === 'log-analytics')
+      ? await resolveWorkspacePlacement(ctx) : null;
+    enabledRules = enabledRules.filter(r => {
+      if (r.queryBackend === 'microsoft-graph') return coversDirectory(covered);
+      if (r.queryBackend === 'log-analytics') return coversWorkspace(covered, lawPlacement);
+      return scopeForRule(r.scope, covered, hierarchy) !== null;
+    });
+    // The lookup above is a request of its own: it is not part of what the run scanned.
+    askedScopes.length = 0;
   }
   const totalRules = enabledRules.length;
   const ruleNames = new Map(enabledRules.map(r => [r.id, r.name]));
@@ -118,7 +170,11 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
   // node pools of one cluster) is one finding holding all of them, in query order, so it counts as
   // one sighting everywhere: the saved scan blob, Run History, notification counts, and the
   // findings lifecycle table.
-  const mergedFindings = mergeFindingsByFingerprint(findings);
+  // A run below Everything keeps only the findings inside what it covered. Its request can reach more than
+  // that (Resource Graph cannot be limited to a resource group), and what it did not cover is not its to
+  // store, count or resolve.
+  const inside = scoped ? insideCovered(covered) : null;
+  const mergedFindings = mergeFindingsByFingerprint(inside ? findings.filter(inside) : findings);
   const counts = emptySeverityCounts();
   for (const f of mergedFindings) counts[f.severity]++;
   mergedFindings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
@@ -130,7 +186,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
-    subscriptionsScanned: ctx.subscriptionIds,
+    subscriptionsScanned: scoped ? subscriptionsAskedFor(askedScopes, hierarchy) : ctx.subscriptionIds,
     findings: mergedFindings,
     counts,
     totalRules,
@@ -139,7 +195,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
     incompleteRules,
   };
 
-  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId });
+  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId, coveredScope: coveredEntries });
 
   const { created, reactivated, changed, affectedCategories } = await syncScanFindingsDetailed({
     scanId,
@@ -147,6 +203,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
     ranRuleIds,
     findings: mergedFindings,
     finishedAt: summary.finishedAt,
+    covered: scoped ? covered : undefined,
   });
   const newFingerprints = new Set([...created, ...reactivated]);
   const newFindings = mergedFindings.filter(f => newFingerprints.has(f.fingerprint));

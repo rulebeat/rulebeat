@@ -3,9 +3,13 @@ import { db } from './db/client';
 import { scheduleRuns } from './db/tables';
 import { many, one, run } from './db/exec';
 import { INSTANCE_ID } from './instance-id';
+import { SYSTEM_ACCESS } from './system-access';
 import type { ScheduleTargetType } from './db/schedules';
 import { rowKey, type ChangedFinding, type FindingRow } from './finding-rows';
 import type { Access } from './access-model';
+import { EVERYTHING_COVERED, type CoveredEntry, type CoveredScopeView } from './run-scope';
+import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './covered-scope-view';
+import { recountRuns } from './db/run-recount';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
 // now that this table also backs the user-facing Run History list, not just internal bookkeeping.
@@ -54,6 +58,12 @@ export interface ScheduleRun {
   /** Findings that gained rows in this run (#193), each with the rows added: the outbox for the
    *  "Changed" section of a notification, kept so a restart can still send it. Empty when none. */
   changedFindings: ChangedFinding[];
+  /** What the run covered (#276), as the reader may be told it: Everything, or the Scopes it covered, each
+   *  one outside the reader's own access reading "Outside your access". Rows from before the column read as Everything. */
+  coveredScope: CoveredScopeView;
+  /** True when the counts above could not be made for a reader below Everything, because a scan of the
+   *  run has no stored findings to recount them from. The counts read 0 then, and must not be shown as 0. */
+  countsUnavailable: boolean;
 }
 
 /** Folds changed-finding records by fingerprint, so a rule moved between categories or a replayed
@@ -81,7 +91,7 @@ function parseChanged(value: string | null): ChangedFinding[] {
 
 type Row = typeof scheduleRuns.$inferSelect;
 
-function rowToRun(row: Row): ScheduleRun {
+function rowToRun(row: Row, access: Access): ScheduleRun {
   return {
     id: row.id,
     scheduleId: row.scheduleId,
@@ -102,7 +112,36 @@ function rowToRun(row: Row): ScheduleRun {
     heartbeatAt: row.heartbeatAt ?? null,
     ownerId: row.ownerId ?? null,
     changedFindings: parseChanged(row.changedFindings),
+    coveredScope: viewCoveredScope(parseCoveredScope(row.coveredScope), access),
+    countsUnavailable: false,
   };
+}
+
+/**
+ * What a reader below Everything may see of runs: the totals, new findings and changed findings counted
+ * again from the records of the run's scans inside their access, never the totals the run stored. An
+ * Everything reader gets the runs as stored.
+ */
+async function narrowRuns(runs: ScheduleRun[], access: Access): Promise<ScheduleRun[]> {
+  if (access.everything || runs.length === 0) return runs;
+  const recounts = await recountRuns(runs.map(r => ({
+    id: r.id,
+    status: r.status,
+    totalFindings: r.totalFindings,
+    newFindingFingerprints: r.newFindingFingerprints,
+    changedFingerprints: r.changedFindings.map(c => c.fingerprint),
+  })), access);
+  return runs.map(r => {
+    const recount = recounts.get(r.id)!;
+    return {
+      ...r,
+      totalFindings: recount.totalFindings,
+      newFindings: recount.newFindings,
+      newFindingFingerprints: recount.newFindingFingerprints,
+      changedFindings: r.changedFindings.filter(c => recount.changedFingerprints.has(c.fingerprint)),
+      countsUnavailable: recount.unavailable,
+    };
+  });
 }
 
 export interface StartRunOptions {
@@ -111,6 +150,8 @@ export interface StartRunOptions {
   categories: string[];
   targetType?: ScheduleTargetType;
   targetValues?: string[];
+  /** The Scope the run covers (#276). Omitted is Everything: a scheduled run and an Admin's run. */
+  coveredScope?: readonly CoveredEntry[];
   /** Injected by the demo generator to stamp a replayed run at its simulated date. */
   now?: Date;
 }
@@ -139,11 +180,13 @@ export async function startRun(opts: StartRunOptions): Promise<ScheduleRun> {
     // The first heartbeat is the start itself, so a row is never 'running' with no proof of life.
     heartbeatAt: startedAt,
     ownerId: INSTANCE_ID,
+    coveredScope: serializeCoveredScope(opts.coveredScope ?? EVERYTHING_COVERED),
   }));
 
   await pruneOldRuns(opts.scheduleId);
 
-  return rowToRun((await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id))))!);
+  // What the starter is told is read as the system: nobody is narrowed here, and every caller reads again.
+  return rowToRun((await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id))))!, SYSTEM_ACCESS);
 }
 
 export async function finishRun(id: string, patch: {
@@ -250,24 +293,24 @@ export async function recordCategoryProgress(id: string, delta: {
 
 /** Runs for a single schedule (used by the Schedules tab's "last run" column). */
 export async function listRuns(scheduleId: string, access: Access, limit = 20): Promise<ScheduleRun[]> {
-  return (await many(db.select().from(scheduleRuns)
+  return narrowRuns((await many(db.select().from(scheduleRuns)
     .where(eq(scheduleRuns.scheduleId, scheduleId))
     .orderBy(desc(scheduleRuns.startedAt))
     .limit(limit)))
-    .map(rowToRun);
+    .map(row => rowToRun(row, access)), access);
 }
 
 /** Every run across every schedule AND manual "Run Scan" executions. The unified Run History. */
 export async function listAllRuns(access: Access, limit = 50): Promise<ScheduleRun[]> {
-  return (await many(db.select().from(scheduleRuns)
+  return narrowRuns((await many(db.select().from(scheduleRuns)
     .orderBy(desc(scheduleRuns.startedAt))
     .limit(limit)))
-    .map(rowToRun);
+    .map(row => rowToRun(row, access)), access);
 }
 
 export async function getRun(id: string, access: Access): Promise<ScheduleRun | null> {
   const row = await one(db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)));
-  return row ? rowToRun(row) : null;
+  return row ? (await narrowRuns([rowToRun(row, access)], access))[0]! : null;
 }
 
 export async function getLatestRun(scheduleId: string, access: Access): Promise<ScheduleRun | null> {
@@ -284,13 +327,13 @@ export async function listStaleRunningRuns(staleBeforeIso: string, access: Acces
       eq(scheduleRuns.status, 'running'),
       or(isNull(scheduleRuns.heartbeatAt), lt(scheduleRuns.heartbeatAt, staleBeforeIso)),
     )),
-  )).map(rowToRun);
+  )).map(row => rowToRun(row, access));
 }
 
 /** Every row whose notification batch is still due, per `notifyDueCondition`. Feeds
  *  `recoverPendingNotifications()`; each row is then claimed individually before dispatch. */
 export async function listNotificationRunsToRecover(staleBeforeIso: string, access: Access): Promise<ScheduleRun[]> {
-  return (await many(db.select().from(scheduleRuns).where(notifyDueCondition(staleBeforeIso)))).map(rowToRun);
+  return (await many(db.select().from(scheduleRuns).where(notifyDueCondition(staleBeforeIso)))).map(row => rowToRun(row, access));
 }
 
 async function pruneOldRuns(scheduleId: string): Promise<void> {

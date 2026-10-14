@@ -91,7 +91,7 @@ export function CompareScreen({
 
   const data = compareDataOf(state);
   const screen = compareScreenOf(state);
-  const refused = state.status === 'not-found' || state.status === 'no-records' || state.status === 'different-categories' || state.status === 'bad-request';
+  const refused = state.status === 'not-found' || state.status === 'no-records' || state.status === 'different-categories' || state.status === 'different-scopes' || state.status === 'bad-request';
   const tiles = compareTiles(data?.totals, query.side);
 
   return (

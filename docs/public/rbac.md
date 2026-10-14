@@ -22,6 +22,16 @@ so on) rather than a role rank, so this table is the single place the mapping li
 | Manage sign-in configuration (local policy, Microsoft Entra ID) | | | ✅ |
 | Manage notification channels | | | ✅ |
 
+An Editor whose access is smaller than Everything can still run a scan, and the run covers only what
+they can see. Each shared rule is sent to the overlap of its own scope and the Editor's subscriptions
+and management groups (the subscriptions that hold their resource groups count too), and a rule with
+no overlap is not run at all: it is not counted and it does not make the run partial. A Microsoft Graph
+rule runs only for someone who holds the Directory, and a Log Analytics rule only when their access
+covers the resource group of the workspace. Findings outside the Scopes the Editor holds are dropped
+before they are stored, and the run marks findings fixed only inside what it covered, so it never
+resolves another team's findings. Running a schedule from the Schedules tab changes what the whole
+install shares, so it needs Everything. See [Run history](scans-and-schedules.md#run-history).
+
 Every account, viewer included, can change its own password. That sits outside the ladder: it is
 not something one role grants another.
 

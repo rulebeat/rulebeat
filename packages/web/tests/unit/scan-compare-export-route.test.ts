@@ -4,6 +4,7 @@
  * routes over scans stored by runCategoryScan(), so parity is between what the screen is shown and what
  * the file holds for one query string.
  */
+import { everythingAccess } from '@/lib/access-model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
@@ -70,7 +71,7 @@ function parseCsv(text: string): string[][] {
 
 beforeEach(async () => {
   await resetDb();
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: everythingAccess('admin') });
 });
 
 describe('GET /api/scans/compare/export: JSON', () => {
@@ -189,6 +190,16 @@ describe('GET /api/scans/compare/export: what it refuses', () => {
     const res = await exportOf(`compare=${before.id}..${after.id}`);
     expect(res.status).toBe(COMPARE_ERRORS['different-categories'].status);
     expect(await res.json()).toEqual(COMPARE_ERRORS['different-categories'].body);
+  });
+
+  it('answers two scans that covered different Scopes with the 400 the compare route gives, not a file', async () => {
+    const before = await scan(BEFORE, 0);
+    const after = await scan(AFTER, 1);
+    await execRun(db.update(scansTable).set({ coveredScope: JSON.stringify([{ tenantId: 't', path: '/subscriptions/00000000-0000-0000-0000-00000000000a' }]) }).where(eq(scansTable.id, before.id)));
+    const res = await exportOf(`compare=${before.id}..${after.id}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual(COMPARE_ERRORS['different-scopes'].body);
+    expect(res.headers.get('Content-Disposition')).toBeNull();
   });
 
   it('answers a scan whose records were never stored with the 409 the compare route gives, not a file of everything', async () => {

@@ -6,6 +6,7 @@
  * Fake timers stand in for the real 2s/8s backoff delays so this suite runs in milliseconds, not
  * seconds; vi.advanceTimersByTimeAsync lets the awaited sleep() inside sendWithRetry resolve.
  */
+import { EVERYTHING_COVERED_VIEW } from '@/lib/run-scope';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dispatchNotifications } from '@/lib/notifications/dispatch';
 import { createChannel, deleteChannel } from '@/lib/db/notification-channels';
@@ -36,6 +37,8 @@ function makeRun(scheduleId: string): ScheduleRun {
     heartbeatAt: null,
     ownerId: null,
     changedFindings: [],
+    coveredScope: EVERYTHING_COVERED_VIEW,
+    countsUnavailable: false,
   };
 }
 

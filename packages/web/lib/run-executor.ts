@@ -13,6 +13,7 @@ import { isAdvisory, isNotifiable } from './finding-kinds';
 import type { ChangedFinding } from './finding-rows';
 import type { ChangedFindingDetail } from './types';
 import type { Access } from './access-model';
+import { coveredScopeOf } from './run-scope';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -66,6 +67,9 @@ export async function executeTarget(
     categories: categoryIds,
     targetType: target.targetType,
     targetValues: target.targetValues,
+    // What the run covers (#276): Everything for an Admin and the scheduler, otherwise the Scopes the
+    // person holds at a Role that runs scans. runCategoryScan narrows each category's request to it.
+    coveredScope: coveredScopeOf(opts.access),
     now: opts.now,
   });
   const started = opts.now?.getTime() ?? Date.now();

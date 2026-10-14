@@ -7,6 +7,7 @@
  * Titles are lower-case ASCII throughout: SQLite sorts text by bytes and Postgres by locale, and the
  * contract under test is the order of the ranks, titles and fingerprints, not the collation.
  */
+import { everythingAccess } from '@/lib/access-model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { computeFingerprint } from '@rulebeat/core';
@@ -52,7 +53,7 @@ const MIXED: Seed[] = [
 
 beforeEach(async () => {
   await resetDb();
-  mockRequireRole.mockResolvedValue({ id: 'viewer' });
+  mockRequireRole.mockResolvedValue({ id: 'viewer', access: everythingAccess('admin') });
 });
 
 describe('GET /api/scans/[id]/snapshot: the page', () => {

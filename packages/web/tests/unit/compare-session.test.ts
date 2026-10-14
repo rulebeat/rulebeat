@@ -118,7 +118,7 @@ describe('the compare feed', () => {
   });
 
   describe('a read that does not give a list', () => {
-    it.each(['not-found', 'no-records', 'different-categories', 'bad-request'] as const)('is the server\'s own %s, in its own words', async code => {
+    it.each(['not-found', 'no-records', 'different-categories', 'different-scopes', 'bad-request'] as const)('is the server\'s own %s, in its own words', async code => {
       const { status, body } = COMPARE_ERRORS[code];
       const feed = new CompareFeed(async () => json(body, status));
       feed.request(IDS, query());
