@@ -104,7 +104,15 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   the stored rows, so moving a subscription changes what a person sees and no row. A failed refresh
   keeps the last tree and the page says so.
   `access-matrix.test.ts` holds each narrowed route in `MATRIX`, with what each person gets written by
-  hand, and keeps every other route on `NOT_YET_SCOPED` until the ticket that narrows it. An Admin
+  hand, and keeps every other route on `NOT_YET_SCOPED` until the ticket that narrows it. Suppressions, the rule list and
+  the Azure pickers follow the same Scopes: `loadSuppressions(access)` returns only suppressions on findings inside them, and
+  suppressing or unsuppressing needs a Role that allows `suppressions:write` at a Scope containing the finding
+  (`accessAllowing()` feeds `accessFilterSql`; a refusal answers 404 like an unknown id). A rule's KQL is the same for everyone,
+  but `lib/rule-scope-access.ts` drops the subscription and management group entries a person does not hold from its scope
+  (`scope.outsideAccess` counts them, the UI says "Outside your access"), and `lib/held-scopes.ts` limits `azure/subscriptions`,
+  `azure/management-groups` and `azure/scope-tree` to what they hold. Library, rule, schedule and category writes are install-wide (an Admin, or an Editor on Everything), so a scoped
+  Editor gets them disabled with a reason from `writeControlsFor(access)` (`lib/write-controls.ts`), computed on the server
+  from `mayAct()`. An Admin
   sets a Viewer's or Editor's Manual access (`PUT /api/users/[id]/access`, the invite, and demoting an
   Admin); the tenant id on a row is resolved on the server (`lib/manual-access.ts`), never read from
   the request. Page and sidebar gating stays on `can(user.role, action)`; every Role has the Access

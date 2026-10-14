@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getArmToken, getArmTenantId, armFetch } from '@/lib/arm';
+import { heldScopes, limitHierarchy } from '@/lib/held-scopes';
 
 export interface ScopeTreeNode {
   id: string;
@@ -54,11 +55,13 @@ export async function GET() {
       token,
     );
 
-    const tree: ScopeTree = {
-      tenantId,
-      tenantName: data.properties?.displayName ?? 'Tenant Root Group',
-      children: mapChildren(data.properties?.children ?? []),
-    };
+    const children = mapChildren(data.properties?.children ?? []);
+    const held = heldScopes(actor.access);
+    // Anyone but a person on Everything gets what they hold at the top level and nothing around it: no
+    // ancestor, no sibling, and neither the tenant id nor the name of the tenant root.
+    const tree: ScopeTree = held.everything
+      ? { tenantId, tenantName: data.properties?.displayName ?? 'Tenant Root Group', children }
+      : { tenantId: '', tenantName: '', children: limitHierarchy(children, held) };
 
     return NextResponse.json(tree);
   } catch (err) {

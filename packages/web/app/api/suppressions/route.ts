@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadSuppressions, addSuppression } from '@/lib/suppressions';
+import { loadSuppressions, addSuppression, mayActOnFingerprint } from '@/lib/suppressions';
 import { writeAudit } from '@/lib/db/audit';
 import type { Suppression } from '@/lib/types';
 
@@ -19,6 +19,12 @@ export async function POST(req: Request) {
   if (body instanceof NextResponse) return body;
   if (!body.fingerprint || !body.reason) {
     return NextResponse.json({ error: 'fingerprint and reason are required' }, { status: 400 });
+  }
+
+  // A finding outside every Scope where the person holds a Role that allows this reads as one that does
+  // not exist, so a refusal never tells them it is there.
+  if (!(await mayActOnFingerprint(actor.access, 'suppressions:write', body.fingerprint))) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
   const suppression: Suppression = {

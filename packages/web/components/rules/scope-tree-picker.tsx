@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import type { ScopeTree, ScopeTreeNode } from '@/app/api/azure/scope-tree/route';
 import { toggleInSet } from '@/lib/toggle-set';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
 /* The three scope kinds are told apart by shape and letter, not by colour.
@@ -21,6 +22,8 @@ interface ScopeTreePickerProps {
   onNamesReady?: (names: Record<string, string>) => void;
   /** When set, the control offers exactly these and never reads the tenant's hierarchy. Leaving it empty means all of them. */
   limitTo?: { subscriptions: string[]; managementGroups: string[] };
+  /** How many entries of the rule's scope the person does not hold. Each shows as one "Outside your access" chip that cannot be removed. */
+  outsideAccess?: number;
 }
 
 /** The tree a limited control offers: exactly what the person holds, flat, with no read of the tenant's own hierarchy. */
@@ -35,7 +38,7 @@ export function limitedScopeTree(limitTo: { subscriptions: string[]; managementG
   };
 }
 
-export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onNamesReady, limitTo }: ScopeTreePickerProps) {
+export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onNamesReady, limitTo, outsideAccess = 0 }: ScopeTreePickerProps) {
   const [fetchedTree, setTree] = useState<ScopeTree | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -312,7 +315,7 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
         onClick={() => setOpen(o => !o)}
         className="flex min-h-9 w-full cursor-pointer flex-wrap items-center gap-1 border border-rule-strong bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-hover"
       >
-        {chips.length === 0 && (
+        {chips.length === 0 && outsideAccess === 0 && (
           <span className="flex-1 text-xs text-ink-muted">
             {limitTo ? 'All of your subscriptions and management groups' : 'All subscriptions (entire tenant)'}
           </span>
@@ -334,6 +337,14 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
             >
               <X className="size-3" />
             </button>
+          </span>
+        ))}
+        {Array.from({ length: outsideAccess }, (_, i) => (
+          <span
+            key={`outside-${i}`}
+            className="inline-flex max-w-[220px] items-center gap-1 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-2"
+          >
+            <span className="truncate">{OUTSIDE_ACCESS_LABEL}</span>
           </span>
         ))}
         <ChevronDown className={cn('ml-auto size-3.5 shrink-0 text-ink-muted transition-transform', open && 'rotate-180')} />

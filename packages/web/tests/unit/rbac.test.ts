@@ -26,6 +26,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'rules:validate',
     'scans:run',
     'schedules:write',
+    'categories:write',
     'suppressions:write',
     'dashboards:write',
     'views:write',
@@ -88,8 +89,8 @@ describe('TS-04 · role escalation is impossible through the model itself', () =
     expect(granted.sort()).toEqual(['account:self', 'read']);
   });
 
-  it('04-11 · an editor may not manage categories, users or the audit log', async () => {
-    expect(can('editor', 'categories:write')).toBe(false);
+  it('04-11 · an editor may not manage users or the audit log, and may manage categories (install-wide, #275)', async () => {
+    expect(can('editor', 'categories:write')).toBe(true);
     expect(can('editor', 'users:manage')).toBe(false);
     expect(can('editor', 'audit:read')).toBe(false);
   });
@@ -139,8 +140,8 @@ describe('every role is presentable in the UI', () => {
 
 describe('action classes (#269)', () => {
   const EXPECTED_CLASS: Record<string, string[]> = {
-    'install-administration': ['rules:version', 'categories:write', 'users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'],
-    'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
+    'install-administration': ['rules:version', 'users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'],
+    'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
     placed: ['suppressions:write'],
     scoped: ['read', 'rules:validate', 'scans:run'],
     outside: ['account:self'],
@@ -171,6 +172,9 @@ describe('mayAct: may this access do this action (#269)', () => {
     ['editor on Everything, install-wide', everything('editor'), 'rules:write', true],
     ['viewer on Everything, install-wide', everything('viewer'), 'rules:write', false],
     ['editor on a subscription, install-wide', onSubscription('editor'), 'rules:write', false],
+    ['editor on Everything, categories', everything('editor'), 'categories:write', true],
+    ['editor on a subscription, categories', onSubscription('editor'), 'categories:write', false],
+    ['viewer on Everything, categories', everything('viewer'), 'categories:write', false],
     ['editor on a subscription, schemas', onSubscription('editor'), 'schemas:refresh', false],
     ['editor on a subscription, scoped', onSubscription('editor'), 'scans:run', true],
     ['viewer on a subscription, scoped', onSubscription('viewer'), 'scans:run', false],

@@ -192,6 +192,6 @@ _Avoid_: pull request, promotion, submission
 
 **Install administration**:
 Running the RuleBeat install itself: people and their Access, sign-in, the Azure connection,
-notifications, the audit log, categories and rule versions. Only an Admin does it, and it has no
+notifications, the audit log and rule versions. Only an Admin does it, and it has no
 Scope.
 _Avoid_: tenant admin, global admin
