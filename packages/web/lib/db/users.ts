@@ -64,6 +64,12 @@ export async function listUsers(): Promise<AppUser[]> {
   return rows.map(rowToUser);
 }
 
+/** Everyone on Mirrored access, ordered by email. An Admin never is: their access source is cleared. */
+export async function listMirroredUsers(): Promise<AppUser[]> {
+  const rows = await many(db.select().from(users).where(eq(users.accessSource, 'mirrored')).orderBy(asc(users.email)));
+  return rows.map(rowToUser);
+}
+
 export async function getUserByOid(oid: string): Promise<AppUser | null> {
   const row = await one(db.select().from(users).where(eq(users.oid, oid)));
   return row ? rowToUser(row) : null;

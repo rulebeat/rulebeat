@@ -78,6 +78,11 @@ export async function buildAuthConfig(): Promise<NextAuthConfig> {
           // point of spec 020's invalidation mechanism.
           const { getUser } = await import('@/lib/db/users');
           token.epoch = (await getUser(user.id))?.sessionEpoch ?? 0;
+          // Started, not awaited: a slow or failing read must never hold up or fail the sign-in.
+          const userId = user.id;
+          void import('@/lib/access-mirror-refresh')
+            .then(m => m.startSignInMirrorRefresh(userId))
+            .catch(err => console.error('[RuleBeat] Could not start the sign-in refresh of Mirrored access:', err));
         }
         return token;
       },

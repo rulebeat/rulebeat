@@ -9,6 +9,8 @@ import type { Access } from './access-model';
 import { getHierarchyStatus } from './db/management-group-hierarchy';
 import { refreshManagementGroupHierarchy, type HierarchyReader } from './management-group-hierarchy';
 import { refreshDue } from './management-group-tree';
+import type { RoleAssignmentReader } from './access-mirror';
+import { refreshMirrorsIfDue } from './access-mirror-refresh';
 
 const TICK_INTERVAL_MS = 30_000;
 
@@ -62,7 +64,9 @@ export function getSchedulerStatus(): {
 }
 
 /** One tick of the scheduler. Exported so a test can drive it with `now`, a tenant context and a hierarchy reader; a real tick passes none. */
-export async function tickOnce(opts: { now?: Date; ctx?: TenantContext; read?: HierarchyReader } = {}): Promise<void> {
+export async function tickOnce(opts: {
+  now?: Date; ctx?: TenantContext; read?: HierarchyReader; mirrorRead?: RoleAssignmentReader; mirrorWait?: (ms: number) => Promise<void>;
+} = {}): Promise<void> {
   schedulerGlobals().__rulebeatSchedulerLastTickAt = new Date().toISOString();
   if (scanLock.busy) return;
   scanLock.busy = true;
@@ -70,6 +74,8 @@ export async function tickOnce(opts: { now?: Date; ctx?: TenantContext; read?: H
     await sweepStaleWork();
     await runDueSchedules(opts);
     await refreshHierarchyIfDue(opts);
+    // After the tree, so a person's management group Scopes expand against the tree this tick refreshed.
+    await refreshMirrorsIfDue({ now: opts.now, read: opts.mirrorRead, wait: opts.mirrorWait });
   } finally {
     scanLock.busy = false;
   }
