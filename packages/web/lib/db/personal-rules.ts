@@ -1,7 +1,7 @@
 import { db } from './client';
-import { personalRules, personalRuleResults } from './tables';
+import { personalRules, personalRuleResults, libraryRequests } from './tables';
 import { and, desc, eq } from 'drizzle-orm';
-import { many, one, run, inTransaction } from './exec';
+import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { chunk } from './chunk';
 import type {
   Condition, ConditionGroup, GraphQuery, ModuleCategory, QueryBackend, Rule, RuleKind, RuleScope, Severity,
@@ -31,6 +31,8 @@ export interface PersonalRule extends Rule {
   lastRunCoveredScope?: string;
   /** The shared rule this was copied from, while that rule still exists. Set only at creation. */
   sourceRuleId?: string;
+  /** The library rule this became, by an approved Library request or a direct copy (#282), while that rule still exists. */
+  libraryRuleId?: string;
 }
 
 /** One finding of the latest run. */
@@ -101,7 +103,42 @@ function rowToRule(row: Row): PersonalRule {
     lastRunStatus: (row.lastRunStatus as PersonalRunStatus | null) ?? undefined,
     lastRunCoveredScope: row.lastRunCoveredScope ?? undefined,
     sourceRuleId: row.sourceRuleId ?? undefined,
+    libraryRuleId: row.libraryRuleId ?? undefined,
   };
+}
+
+/** The definition fields of a Personal rule and no others: what a Library request snapshots. */
+export function definitionOfPersonalRule(rule: PersonalRule): PersonalRuleDefinition {
+  return {
+    name: rule.name,
+    description: rule.description,
+    category: rule.category,
+    severity: rule.severity,
+    queryBackend: rule.queryBackend ?? 'resource-graph',
+    kind: rule.kind ?? 'state',
+    tags: rule.tags,
+    scope: rule.scope,
+    resourceTypes: rule.resourceTypes,
+    conditions: rule.conditions,
+    conditionGroups: rule.conditionGroups,
+    projectColumns: rule.projectColumns,
+    rawKql: rule.rawKql,
+    visualQuery: rule.visualQuery,
+    graphQuery: rule.graphQuery,
+  };
+}
+
+/** Records the library rule a Personal rule became. False when the owner has no such rule. */
+export async function setPersonalRuleLibraryRule(
+  id: string, ownerId: string, libraryRuleId: string, handle: DbHandle = db,
+): Promise<boolean> {
+  const existing = await one(
+    handle.select({ id: personalRules.id }).from(personalRules)
+      .where(and(eq(personalRules.id, id), eq(personalRules.ownerId, ownerId))),
+  );
+  if (!existing) return false;
+  await run(handle.update(personalRules).set({ libraryRuleId }).where(eq(personalRules.id, id)));
+  return true;
 }
 
 function definitionColumns(def: PersonalRuleDefinition) {
@@ -182,6 +219,8 @@ export async function deletePersonalRule(id: string, ownerId: string): Promise<b
     );
     if (!existing) return false;
     await run(tx.delete(personalRuleResults).where(eq(personalRuleResults.personalRuleId, id)));
+    // Its Library requests stay as history, without the pointer to a rule that no longer exists (#282).
+    await run(tx.update(libraryRequests).set({ personalRuleId: null }).where(eq(libraryRequests.personalRuleId, id)));
     await run(tx.delete(personalRules).where(eq(personalRules.id, id)));
     return true;
   });

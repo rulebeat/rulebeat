@@ -40,6 +40,7 @@ const CLEARABLE = [
   'query_runs',
   'personal_rule_results',
   'personal_rules',
+  'library_requests',
   'saved_views',
 ] as const;
 

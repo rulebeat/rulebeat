@@ -210,7 +210,7 @@ describe('users repository parity', () => {
     // With a second admin present, deletion goes through.
     const second = await createUser({ email: 'second@example.com', role: 'admin' });
     if ('error' in second) throw new Error(second.error);
-    expect(await deleteUser(admin.id)).toBe(true);
+    expect(await deleteUser(admin.id)).toEqual({ withdrawnRequests: 0 });
     expect((await listUsers()).map(u => u.email)).toEqual(['second@example.com']);
   });
 });

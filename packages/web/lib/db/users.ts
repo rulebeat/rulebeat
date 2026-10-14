@@ -8,6 +8,7 @@ import { highestRole, isAccessSource, parseScope, type AccessSource, type GrantR
 import {
   isMirrorErrorCode, mirrorError, type MirrorErrorCode, type MirrorStatus, type MirroredScope,
 } from '@/lib/access-mirror-model';
+import { detachRequestsOfAuthorOn, withdrawOpenRequestsOn } from './library-request-cleanup';
 import {
   deleteAssignmentsOn, replaceAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn, type AssignmentInput,
 } from './role-assignments';
@@ -314,7 +315,7 @@ export async function listUsersLinkedTo(objectId: string, exceptId?: string): Pr
  * part-way through the deletes rolls every one of them back instead of leaving the user row gone
  * but their saved queries or run history still present, or vice versa.
  */
-export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'last-admin'> {
+export async function deleteUser(id: string): Promise<{ withdrawnRequests: number } | 'notfound' | 'last-admin'> {
   return inTransaction(async (tx) => {
     const existing = await getUserOn(tx, id);
     if (!existing) return 'notfound';
@@ -336,9 +337,13 @@ export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'la
       tx.select({ id: personalRules.id }).from(personalRules).where(eq(personalRules.ownerId, id)),
     )));
     await run(tx.delete(personalRules).where(eq(personalRules.ownerId, id)));
+    // Their open Library requests (#282) are withdrawn, so none waits for a reviewer on a person who is gone.
+    // Closed ones stay as history, no longer pointing at a Personal rule. The caller audits the count.
+    const withdrawnRequests = await withdrawOpenRequestsOn(tx, id);
+    await detachRequestsOfAuthorOn(tx, id);
     await deleteAssignmentsOn(tx, id);
     await run(tx.delete(users).where(eq(users.id, id)));
-    return true;
+    return { withdrawnRequests };
   });
 }
 

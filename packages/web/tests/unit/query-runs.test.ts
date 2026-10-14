@@ -111,7 +111,7 @@ describe('GET /api/query/runs (spec 037 follow-up)', () => {
 
       // Not 'admin': await deleteUser() refuses to remove the last admin (see require-role-matrix.test.ts).
       const deleted = await deleteUser(ownerId);
-      expect(deleted).toBe(true);
+      expect(deleted).toEqual({ withdrawnRequests: 0 });
       expect(await listQueryRuns(ownerId)).toHaveLength(0);
     });
   });

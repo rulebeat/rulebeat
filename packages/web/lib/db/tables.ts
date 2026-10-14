@@ -55,6 +55,7 @@ export const savedQueries = pick('savedQueries');
 export const queryRuns = pick('queryRuns');
 export const personalRules = pick('personalRules');
 export const personalRuleResults = pick('personalRuleResults');
+export const libraryRequests = pick('libraryRequests');
 export const savedViews = pick('savedViews');
 
 /**

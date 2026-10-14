@@ -6,6 +6,9 @@ import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { newerVersionsByRule } from '@/lib/rule-version-markers';
 import { getPageAccess } from '@/lib/page-access';
 import { listPersonalRules } from '@/lib/db/personal-rules';
+import { listOpenLibraryRequests } from '@/lib/db/library-requests';
+import { requestSummary } from '@/lib/library-request-view';
+import { mayAct } from '@/lib/rbac';
 import { personalCopyReasons, personalWriteBlockedReason as personalWriteBlockedReasonFor } from '@/lib/personal-rule-request';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
@@ -31,6 +34,11 @@ export default async function LibraryPage({
   const personalWriteBlockedReason = personalWriteBlockedReasonFor(user?.role, access);
   const copyReasons = personalCopyReasons(user?.role, access);
   const controls = writeControlsFor(access);
+  // The open Library requests go to a reviewer (rules:write, install-wide) and to no one else: for anyone
+  // else the list is never read, so neither the Requests section nor its count reaches the page.
+  const requests = mayAct(access, 'rules:write')
+    ? await Promise.all((await listOpenLibraryRequests()).map(requestSummary))
+    : null;
   return (
     <>
       <Header title="Library" description="Search, filter, and manage the rules that power your scans: built-in packs, community contributions, and your own custom checks" />
@@ -42,6 +50,7 @@ export default async function LibraryPage({
           personalCopyReasons={copyReasons}
           newerVersions={newerVersions}
           initialSection={section}
+          requests={requests}
           packManifest={packManifestJson as Record<string, PackManifestEntry>}
           categories={categories}
           initialSidebarPinned={initialSidebarPinned}

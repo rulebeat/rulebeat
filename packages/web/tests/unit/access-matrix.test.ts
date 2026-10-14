@@ -35,6 +35,7 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
+import { createLibraryRequest } from '@/lib/db/library-requests';
 import {
   createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
   SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
@@ -1015,7 +1016,65 @@ async function copyReply(): Promise<PersonalReply> {
   return { status: res.status, body: res.status === 201 ? { sourceRuleId: body.sourceRuleId, scope: body.scope } : body };
 }
 
+// #282: the Library request routes a reviewer uses. Each probe sends an open request made for the call, since
+// an approval or a rejection closes it. A reviewer is an Admin or an Editor on Everything; the five Viewers hold
+// no `rules:write`, so the guard refuses them before the request is read. Direct copy needs the Personal rule
+// to be the caller's own, and the seeded one is a stranger's, so a reviewer is told "not found".
+let requestCounter = 0;
+
+/** A new open request, sent by a new author for a new Personal rule. Returns the request id. */
+async function seedOpenRequest(): Promise<string> {
+  const n = ++requestCounter;
+  const author = await createUser({ email: `request-author-${n}@example.com`, role: 'editor' });
+  if ('error' in author) throw new Error(author.error);
+  const rule = await createPersonalRule(author.user.id, {
+    name: `matrix request rule ${n}`, description: '', category: 'security', severity: 'high', queryBackend: 'resource-graph', kind: 'state',
+    scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: MATRIX_KQL,
+  });
+  const made = await createLibraryRequest(rule, author.user.id);
+  if (!made.ok) throw new Error(made.reason);
+  return made.request.id;
+}
+
+async function requestReply(route: 'preview' | 'approve'): Promise<PersonalReply> {
+  fakeCtx = fakeTenantContext();
+  const id = await seedOpenRequest();
+  const params = { params: Promise.resolve({ id }) };
+  const res = route === 'approve'
+    ? await (await import('@/app/api/library-requests/[id]/approve/route')).POST(
+      sendJson(`/api/library-requests/${id}/approve`, 'POST', { name: `matrix approved rule ${requestCounter}` }), params)
+    : await (await import('@/app/api/library-requests/[id]/preview/route')).POST(
+      sendJson(`/api/library-requests/${id}/preview`, 'POST', {}), params);
+  const json = await res.json() as { status?: string; results?: unknown[]; request?: { status: string }; rule?: { type: string } };
+  if (res.status === 200) return { status: 200, body: { status: json.status, results: json.results?.length } };
+  if (res.status === 201) return { status: 201, body: { request: json.request?.status, type: json.rule?.type } };
+  return { status: res.status, body: json };
+}
+
+const REVIEWER_ONLY = (reviewer: PersonalReply): Record<string, ByTab> => ({
+  'Admin': same(reviewer),
+  'Editor on Everything': same(reviewer),
+  'Viewer on the management group': same(FORBIDDEN_REPLY),
+  'Viewer on one subscription': same(FORBIDDEN_REPLY),
+  'Viewer on one resource group': same(FORBIDDEN_REPLY),
+  'Directory only': same(FORBIDDEN_REPLY),
+  'No Scope': same(FORBIDDEN_REPLY),
+});
+
 const PERSONAL_MATRIX: Record<string, Matrix> = {
+  'library-requests/[id]/preview': {
+    probe: async () => requestReply('preview'),
+    expected: REVIEWER_ONLY({ status: 200, body: { status: 'success', results: 0 } }),
+  },
+  'library-requests/[id]/approve': {
+    probe: async () => requestReply('approve'),
+    expected: REVIEWER_ONLY({ status: 201, body: { request: 'approved', type: 'custom' } }),
+  },
+  'personal-rules/[id]/library-copy': {
+    probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/[id]/library-copy/route')).POST(
+      new Request(`http://localhost/api/personal-rules/${personalRuleId}/library-copy`, { method: 'POST' }), { params: Promise.resolve({ id: personalRuleId }) })),
+    expected: REVIEWER_ONLY(NOT_FOUND_REPLY),
+  },
   'personal-rules': {
     probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/route')).GET()),
     expected: byPerson(...Array(6).fill(same({ status: 200, body: [] })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
@@ -1464,8 +1523,11 @@ describe('the Personal rule routes answer every stranger the same', () => {
     await seedPersonalRule();
   });
 
-  it('holds an expectation for each of the four routes', () => {
-    expect(Object.keys(PERSONAL_MATRIX).sort()).toEqual(['personal-rules', 'personal-rules/[id]', 'personal-rules/[id]/run', 'rules/[id]/personal-copy']);
+  it('holds an expectation for each of the seven routes', () => {
+    expect(Object.keys(PERSONAL_MATRIX).sort()).toEqual([
+      'library-requests/[id]/approve', 'library-requests/[id]/preview', 'personal-rules', 'personal-rules/[id]', 'personal-rules/[id]/library-copy',
+      'personal-rules/[id]/run', 'rules/[id]/personal-copy',
+    ]);
   });
 
   for (const [route, entry] of Object.entries(PERSONAL_MATRIX)) {
@@ -1752,6 +1814,10 @@ async function freshSchedule(): Promise<string> {
   return created.schedule.id;
 }
 
+async function freshRequest(): Promise<string> {
+  return seedOpenRequest();
+}
+
 async function freshCategory(): Promise<string> {
   const created = await createCategory({ label: nextName('category') });
   if ('error' in created) throw new Error(created.error);
@@ -1819,6 +1885,39 @@ const WRITE_CASES: Record<string, WriteCase> = {
     prepare: async () => {
       const id = await freshSchedule();
       return () => import('@/app/api/schedules/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/schedules/${id}`, { method: 'DELETE' }), ctxFor({ id })));
+    },
+  },
+  // Library requests (#282) are read and decided by a reviewer: an Admin or an Editor on Everything.
+  'library-requests GET': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => () => import('@/app/api/library-requests/route').then(r => r.GET()),
+  },
+  'library-requests/[id] GET': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRequest();
+      return () => import('@/app/api/library-requests/[id]/route').then(r => r.GET(new Request(`http://localhost/api/library-requests/${id}`), ctxFor({ id })));
+    },
+  },
+  'library-requests/[id]/preview POST': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRequest();
+      return () => import('@/app/api/library-requests/[id]/preview/route').then(r => r.POST(sendJson(`/api/library-requests/${id}/preview`, 'POST', {}), ctxFor({ id })));
+    },
+  },
+  'library-requests/[id]/approve POST': {
+    action: 'rules:write', admin: 201, everything: 201,
+    prepare: async () => {
+      const id = await freshRequest();
+      return () => import('@/app/api/library-requests/[id]/approve/route').then(r => r.POST(sendJson(`/api/library-requests/${id}/approve`, 'POST', { name: nextName('approved rule') }), ctxFor({ id })));
+    },
+  },
+  'library-requests/[id]/reject POST': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRequest();
+      return () => import('@/app/api/library-requests/[id]/reject/route').then(r => r.POST(sendJson(`/api/library-requests/${id}/reject`, 'POST', { reason: 'Narrow the scope first.' }), ctxFor({ id })));
     },
   },
   // Categories are install-wide (ADR 0011): an Admin or an Editor on Everything, and no Editor held at a narrower Scope.
@@ -1921,7 +2020,8 @@ describe('a scoped Editor is refused every library and schedule write, and an Ed
 
   it('has a case for every route in the brief', () => {
     expect(Object.keys(WRITE_CASES).sort()).toEqual([
-      'categories POST', 'categories/[id] DELETE', 'categories/[id] PUT', 'rules POST', 'rules/[id] DELETE', 'rules/[id] PUT',
+      'categories POST', 'categories/[id] DELETE', 'categories/[id] PUT', 'library-requests GET', 'library-requests/[id] GET',
+      'library-requests/[id]/approve POST', 'library-requests/[id]/preview POST', 'library-requests/[id]/reject POST', 'rules POST', 'rules/[id] DELETE', 'rules/[id] PUT',
       'rules/[id]/duplicate POST', 'rules/[id]/findings DELETE', 'rules/bulk PATCH', 'schedules POST', 'schedules/[id] DELETE', 'schedules/[id] PUT',
     ]);
   });

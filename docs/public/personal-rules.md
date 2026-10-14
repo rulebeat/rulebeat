@@ -60,6 +60,43 @@ Directory (or Everything).
   shared rule is deleted; the copy stays.
 - The copy is yours to rename, edit and delete. Editing it never changes the shared rule.
 
+## Send a rule to the library
+
+A Personal rule reaches the library only through a **Library request**, because the library is shared by
+everyone and is written by an Admin or an Editor on Everything. On the rule's page, **Send to library**
+makes a request that holds a copy of the rule as it is when you send it. Edit the rule afterwards and the
+request does not change.
+
+- A rule has one open request at a time. The page says when it was sent and that a reviewer has not
+  decided yet. **Withdraw** takes it back until they do.
+- When a reviewer **rejects** it, the page shows their reason. Edit the rule and use **Resubmit** to send
+  it again, or leave it as a Personal rule.
+- When a reviewer **approves** it, the page links to the new library rule. Your Personal rule stays as it
+  was, and the library rule is a separate rule: editing one never changes the other.
+- Deleting a Personal rule withdraws its open request. Removing a person withdraws all of theirs.
+
+### Reviewing requests
+
+An Admin, or an Editor on Everything, sees a **Requests** section in the Library with the number of open
+requests. Nobody else sees the section or the count. Open a request to read what was sent: the
+definition, the query it runs, the scope and who sent it.
+
+- **Preview** runs the query once at your own access, limited to the subscriptions and management
+  groups you hold, and shows what it finds. It stores nothing: no finding, scan, Personal rule result
+  or last-run time changes.
+- **Approve** adds the rule to the library as a new custom rule. Before approving you can change its
+  name, category, severity, scope and starting state; everything else is what the author sent. The new
+  rule starts disabled unless you turn it on. A name that matches another library rule, ignoring case,
+  is refused and the request stays open.
+- **Reject** needs a reason, which the author reads on their rule.
+
+A reviewer can also use **Copy to library** on their own Personal rule to add it straight to the library
+with no request. The copy starts disabled. This asks Admins and Editors on Everything the same as
+approving does; anyone else is refused, and sends a request instead.
+
+Each request, approval, rejection, withdrawal, preview and copy adds one audit entry that names the rule.
+An entry never holds the query or the reason a reviewer gave.
+
 ## When your access changes
 
 | What happens to you | What happens to your Personal rules |
@@ -67,9 +104,9 @@ Directory (or Everything).
 | You lose some Scopes | You keep them. A run covers only what you still hold. |
 | You hold no subscription or management group | You keep them. Run is disabled, with the reason. |
 | You are demoted to Viewer | You keep them and can read them and their last results. You cannot edit, delete or run them. |
-| You are removed | They are deleted with their results, together with your private saved queries. |
+| You are removed | They are deleted with their results, together with your private saved queries. Your open Library requests are withdrawn. |
 
 ## The audit log
 
 Each run adds one entry that names the rule and the Scope it covered. Creating, editing, deleting and
-copying a Personal rule are logged too. An entry never holds the query or any result.
+copying a Personal rule are logged too, as are the Library request steps above. An entry never holds the query or any result.

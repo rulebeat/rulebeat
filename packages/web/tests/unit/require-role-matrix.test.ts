@@ -69,7 +69,7 @@ describe('await requireRole() with a session pointing at a deleted user', () => 
     expect(await requireRole('read')).not.toBeInstanceOf(NextResponse);
 
     const deleted = await deleteUser(user.id);
-    expect(deleted).toBe(true);
+    expect(deleted).toEqual({ withdrawnRequests: 0 });
 
     const result = await requireRole('read');
     expect(result).toBeInstanceOf(NextResponse);

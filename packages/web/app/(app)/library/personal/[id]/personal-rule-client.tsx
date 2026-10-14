@@ -9,7 +9,8 @@ import { Callout } from '@/components/ui/callout';
 import { PersonalRuleResults } from '@/components/rules/personal-rule-results';
 import { RuleForm } from '@/components/rules/rule-form';
 import type { CoveredScopeView } from '@/lib/run-scope';
-import type { Category, PersonalRuleResult, Rule } from '@/lib/types';
+import { LibraryRequestPanel } from './library-request-panel';
+import type { AuthorLibraryRequest, Category, PersonalRuleResult, Rule } from '@/lib/types';
 
 interface Props {
   rule: Rule;
@@ -26,9 +27,15 @@ interface Props {
   scopeLimit?: { subscriptions: string[]; managementGroups: string[] };
   /** The shared rule this was copied from, while it still exists; null otherwise. */
   source: { id: string; name: string } | null;
+  /** This rule's Library requests, newest first. */
+  requests: AuthorLibraryRequest[];
+  /** The library rule a direct copy made, while it still exists. */
+  copiedTo: { id: string; name: string } | null;
+  /** Set for a reviewer only; `reason` is why Copy to library is off, or null. */
+  copyToLibrary: { reason: string | null } | null;
 }
 
-export function PersonalRuleClient({ rule, source, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
+export function PersonalRuleClient({ rule, source, requests, copiedTo, copyToLibrary, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -135,6 +142,14 @@ export function PersonalRuleClient({ rule, source, updatedAt, results, lastRunCo
             </Link>
           </p>
         )}
+        <LibraryRequestPanel
+          personalRuleId={rule.id}
+          requests={requests}
+          copiedTo={copiedTo}
+          canWrite={canWrite}
+          dirty={dirty}
+          copyToLibrary={copyToLibrary}
+        />
         {runBlockedReason && <Callout tone="warn">{`Run is unavailable: ${runBlockedReason}`}</Callout>}
         {error && <Callout tone="error">{error}</Callout>}
       </div>

@@ -390,6 +390,8 @@ export interface Rule {
   originRuleId?: string;
   /** Custom rule only: the shipped version it was made from. */
   originVersion?: string;
+  /** Custom rule only: the Library request this rule was approved from. */
+  libraryRequestId?: string;
 }
 
 /** One finding of a Personal rule's latest run, as the rule's own page shows it. Mirrors `PersonalRuleResult` in lib/db/personal-rules.ts. */
@@ -403,6 +405,42 @@ export interface PersonalRuleResult {
   severity: Severity;
   title: string;
   rows: FindingRow[];
+}
+
+export type LibraryRequestStatus = 'open' | 'approved' | 'rejected' | 'withdrawn';
+
+/** A Library request as its author sees it on the Personal rule. Mirrors `AuthorRequestView` in lib/library-request-view.ts. */
+export interface AuthorLibraryRequest {
+  id: string;
+  status: LibraryRequestStatus;
+  createdAt: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  resubmitsRequestId?: string;
+  /** The library rule this request created, while that rule still exists. */
+  libraryRule?: { id: string; name: string };
+}
+
+/** One line of the open requests a reviewer sees. Mirrors `RequestSummary` in lib/library-request-view.ts. */
+export interface LibraryRequestSummary {
+  id: string;
+  name: string;
+  category: string;
+  severity: Severity;
+  queryBackend: QueryBackend;
+  createdAt: string;
+  author: { id: string; label: string };
+  isResubmission: boolean;
+}
+
+/** A request as a reviewer reads it. Mirrors `RequestDetail` in lib/library-request-view.ts. */
+export interface LibraryRequestDetail extends LibraryRequestSummary {
+  status: LibraryRequestStatus;
+  description: string;
+  /** The query as the rule would run it; null for a Microsoft Graph rule, which has a graph query instead. */
+  kql: string | null;
+  definition: Pick<Rule, 'name' | 'description' | 'category' | 'severity' | 'queryBackend' | 'kind' | 'tags' | 'scope' | 'resourceTypes' | 'conditions' | 'graphQuery'>;
+  resubmitsRequestId?: string;
 }
 
 export interface RuleVersionDefinition {
