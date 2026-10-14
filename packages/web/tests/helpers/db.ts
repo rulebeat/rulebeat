@@ -38,6 +38,8 @@ const CLEARABLE = [
   'sso_providers',
   'saved_queries',
   'query_runs',
+  'personal_rule_results',
+  'personal_rules',
   'saved_views',
 ] as const;
 

@@ -1,6 +1,6 @@
 import { db } from './client';
-import { users, savedQueries, queryRuns } from './tables';
-import { eq, and, asc, count, sql } from 'drizzle-orm';
+import { users, savedQueries, queryRuns, personalRules, personalRuleResults } from './tables';
+import { eq, and, asc, count, sql, inArray } from 'drizzle-orm';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { dbKind } from './backend';
 import { isRole, type Role } from '@/lib/rbac';
@@ -330,6 +330,12 @@ export async function deleteUser(id: string): Promise<boolean | 'notfound' | 'la
     // Run history (spec 037 follow-up) has no shared visibility at all: it's always fully personal,
     // so every row goes, not just a 'private' subset.
     await run(tx.delete(queryRuns).where(eq(queryRuns.ownerId, id)));
+    // Personal rules (#280) and their stored results are the author's alone: both go with them.
+    await run(tx.delete(personalRuleResults).where(inArray(
+      personalRuleResults.personalRuleId,
+      tx.select({ id: personalRules.id }).from(personalRules).where(eq(personalRules.ownerId, id)),
+    )));
+    await run(tx.delete(personalRules).where(eq(personalRules.ownerId, id)));
     await deleteAssignmentsOn(tx, id);
     await run(tx.delete(users).where(eq(users.id, id)));
     return true;

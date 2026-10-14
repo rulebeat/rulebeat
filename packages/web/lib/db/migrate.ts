@@ -561,6 +561,47 @@ export function runMigrations(sqlite: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_query_runs_owner ON query_runs(owner_id, ran_at DESC);
 
+    CREATE TABLE IF NOT EXISTS personal_rules (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      resource_types TEXT NOT NULL,
+      conditions TEXT NOT NULL,
+      condition_groups TEXT,
+      project_columns TEXT,
+      raw_kql TEXT,
+      query_backend TEXT NOT NULL,
+      graph_query TEXT,
+      kind TEXT NOT NULL DEFAULT 'state',
+      tags TEXT,
+      visual_query TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_run_at TEXT,
+      last_run_status TEXT,
+      last_run_covered_scope TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_personal_rules_owner ON personal_rules(owner_id);
+
+    CREATE TABLE IF NOT EXISTS personal_rule_results (
+      personal_rule_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      resource_id TEXT,
+      resource_name TEXT,
+      resource_type TEXT,
+      subscription_id TEXT,
+      resource_group TEXT,
+      location TEXT,
+      severity TEXT NOT NULL,
+      title TEXT NOT NULL,
+      rows TEXT NOT NULL,
+      PRIMARY KEY (personal_rule_id, ordinal)
+    );
+
     CREATE TABLE IF NOT EXISTS saved_views (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

@@ -25,12 +25,14 @@ export type AuditAction =
   | 'notification_channel.test'
   | 'onboarding.skip' | 'onboarding.complete'
   | 'schema_cache.refresh' | 'management_groups.refresh'
-  | 'query.run' | 'query.save' | 'query.delete';
+  | 'query.run' | 'query.save' | 'query.delete'
+  | 'personal_rule.create' | 'personal_rule.update' | 'personal_rule.delete' | 'personal_rule.run';
 
 export type AuditEntityType =
   | 'rule' | 'suppression' | 'schedule' | 'category' | 'dashboard' | 'scan' | 'user' | 'auth'
   | 'azure_connection' | 'log_analytics_workspace' | 'local_account' | 'sign_in_config'
-  | 'notification_channel' | 'onboarding' | 'schema_cache' | 'management_group_hierarchy' | 'query' | 'saved_view';
+  | 'notification_channel' | 'onboarding' | 'schema_cache' | 'management_group_hierarchy' | 'query' | 'saved_view'
+  | 'personal_rule';
 
 export interface AuditEntry {
   id: string;

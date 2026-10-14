@@ -65,7 +65,7 @@ describe('a hidden scope entry', () => {
 
 describe('the library and schedule controls of a scoped Editor', () => {
   const library = (controls: WriteControls) => renderToStaticMarkup(createElement(LibraryClient, {
-    initialRules: [RULE], newerVersions: {}, packManifest: {}, categories: [], initialSidebarPinned: true,
+    initialRules: [RULE], personalRules: [], personalWriteBlockedReason: null, newerVersions: {}, packManifest: {}, categories: [], initialSidebarPinned: true,
     canAuthor: controls.rulesWrite, canDelete: controls.rulesDelete, writeReason: controls.reason,
   }));
 

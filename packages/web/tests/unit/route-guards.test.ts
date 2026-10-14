@@ -172,6 +172,13 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['scans/[id]/snapshot/export/route.ts', 'read'],
     ['scans/compare/route.ts', 'read'],
     ['scans/compare/export/route.ts', 'read'],
+    // A Personal rule is its author's alone (#280): the list and the read name `read` and then check the
+    // owner, so a removed person loses them at once, and a write or a run needs the Personal rule action.
+    ['personal-rules/route.ts', 'read'],
+    ['personal-rules/route.ts', 'rules:personal'],
+    ['personal-rules/[id]/route.ts', 'read'],
+    ['personal-rules/[id]/route.ts', 'rules:personal'],
+    ['personal-rules/[id]/run/route.ts', 'rules:personal'],
   ];
 
   for (const [route, action] of PINNED) {

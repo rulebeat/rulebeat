@@ -24,6 +24,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'rules:write',
     'rules:delete',
     'rules:validate',
+    'rules:personal',
     'scans:run',
     'schedules:write',
     'categories:write',
@@ -38,6 +39,7 @@ const EXPECTED: Record<Role, Action[]> = {
     'rules:write',
     'rules:delete',
     'rules:validate',
+    'rules:personal',
     'scans:run',
     'schedules:write',
     'suppressions:write',
@@ -143,7 +145,7 @@ describe('action classes (#269)', () => {
     'install-administration': ['rules:version', 'users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'],
     'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
     placed: ['suppressions:write'],
-    scoped: ['read', 'rules:validate', 'scans:run'],
+    scoped: ['read', 'rules:validate', 'rules:personal', 'scans:run'],
     outside: ['account:self'],
   };
 

@@ -389,6 +389,19 @@ export interface Rule {
   originVersion?: string;
 }
 
+/** One finding of a Personal rule's latest run, as the rule's own page shows it. Mirrors `PersonalRuleResult` in lib/db/personal-rules.ts. */
+export interface PersonalRuleResult {
+  resourceId?: string;
+  resourceName?: string;
+  resourceType?: string;
+  subscriptionId?: string;
+  resourceGroup?: string;
+  location?: string;
+  severity: Severity;
+  title: string;
+  rows: FindingRow[];
+}
+
 export interface RuleVersionDefinition {
   name: string;
   description: string;

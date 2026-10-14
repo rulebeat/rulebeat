@@ -514,6 +514,53 @@ export const queryRuns = sqliteTable('query_runs', {
   ranAt: text('ran_at').notNull(),
 });
 
+// A Personal rule (#280, ADR 0011): a rule only its author sees and runs, by hand. Its own table, not
+// a column on `rules`, so every shared read of rules (the scan runner, the Library, counts, schedules)
+// and the shared name check never meet it. Every read and write names the owner. `deleteUser()` removes
+// the owner's rows with their results. No SQL-level FK, like every other table here.
+export const personalRules = sqliteTable('personal_rules', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  category: text('category').notNull(),
+  severity: text('severity').notNull(),
+  scope: text('scope').notNull(),             // JSON: RuleScope
+  resourceTypes: text('resource_types').notNull(), // JSON: string[]
+  conditions: text('conditions').notNull(),   // JSON: Condition[]
+  conditionGroups: text('condition_groups'),  // JSON: ConditionGroup[] | null
+  projectColumns: text('project_columns'),    // JSON: string[] | null
+  rawKql: text('raw_kql'),
+  queryBackend: text('query_backend').notNull(), // 'resource-graph' | 'microsoft-graph'
+  graphQuery: text('graph_query'),            // JSON: GraphQuery | null
+  kind: text('kind').notNull().default('state'), // 'state' | 'advisory'
+  tags: text('tags'),                         // JSON: string[] | null
+  visualQuery: text('visual_query'),          // JSON: VisualQuery | null
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  lastRunAt: text('last_run_at'),             // ISO timestamp of the latest run; null = never run
+  lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null
+  lastRunCoveredScope: text('last_run_covered_scope'), // JSON: { tenantId, path }[], what the latest run covered
+});
+
+// The latest run of a Personal rule, one row per finding. A run replaces every row of its rule. Never
+// joined to `findings`, `finding_events`, `scans` or `posture_snapshots`: it counts nowhere shared.
+export const personalRuleResults = sqliteTable('personal_rule_results', {
+  personalRuleId: text('personal_rule_id').notNull(),
+  ordinal: integer('ordinal').notNull(),    // order the run returned the finding in
+  resourceId: text('resource_id'),
+  resourceName: text('resource_name'),
+  resourceType: text('resource_type'),
+  subscriptionId: text('subscription_id'),
+  resourceGroup: text('resource_group'),
+  location: text('location'),
+  severity: text('severity').notNull(),
+  title: text('title').notNull(),
+  rows: text('rows').notNull(),               // JSON: Record<string, unknown>[], the rows the query returned for the resource
+}, (table) => ({
+  pk: primaryKey({ columns: [table.personalRuleId, table.ordinal] }),
+}));
+
 // A View kept under a name and shared with everyone on the install (ADR 0006). It stores the tab it
 // opens on and the View's own query string exactly as `viewToSearchParams` writes it, so whatever
 // the URL carries is saved without this table knowing the View's shape. The name is unique

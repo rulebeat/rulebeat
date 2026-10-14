@@ -37,6 +37,7 @@ import { fakeTenantContext, type FakeTenantContext } from '../helpers/fake-azure
 import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
+import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
 import {
   createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
   SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
@@ -977,6 +978,66 @@ const WRITTEN_QUERY_MATRIX: Record<string, Matrix> = {
   },
 };
 
+// #280: the Personal rule routes. The one seeded Personal rule belongs to an author who is none of the
+// seven people, so every one of them is a stranger to it: the list is empty, and the id answers 404 for the
+// Admin and the Editor on Everything alike. The five Viewers hold no `rules:personal`, so a run is refused
+// by the guard before the rule is looked up.
+const PERSONAL_SECRET_NAME = 'personal-secret-vm';
+const PERSONAL_SECRET_RULE = 'personal secret rule';
+const PERSONAL_SECRET_ID = `/subscriptions/${SUB_ONE}/resourceGroups/rg-personal-secret/providers/Microsoft.Compute/virtualMachines/${PERSONAL_SECRET_NAME}`;
+let personalRuleId = '';
+
+/** One Personal rule with a stored result, owned by someone outside the seven. */
+async function seedPersonalRule(): Promise<void> {
+  const author = await createUser({ email: 'personal-author@example.com', role: 'editor' });
+  if ('error' in author) throw new Error(author.error);
+  const rule = await createPersonalRule(author.user.id, {
+    name: PERSONAL_SECRET_RULE, description: '', category: 'security', severity: 'high', queryBackend: 'resource-graph', kind: 'state',
+    scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: MATRIX_KQL,
+  });
+  await replacePersonalRuleResults(rule.id, author.user.id, {
+    status: 'success', ranAt: DATE, coveredScope: '[]',
+    results: [{ resourceId: PERSONAL_SECRET_ID, resourceName: PERSONAL_SECRET_NAME, severity: 'high', title: PERSONAL_SECRET_RULE, rows: [{ id: PERSONAL_SECRET_ID }] }],
+  });
+  personalRuleId = rule.id;
+}
+
+interface PersonalReply { status: number; body: unknown }
+
+async function personalReply(send: () => Promise<Response>): Promise<PersonalReply> {
+  fakeCtx = fakeTenantContext();
+  const res = await send();
+  return { status: res.status, body: await res.json() };
+}
+
+const NOT_FOUND_REPLY: PersonalReply = { status: 404, body: { error: 'Not found' } };
+const FORBIDDEN_REPLY: PersonalReply = { status: 403, body: { error: 'Forbidden' } };
+
+const PERSONAL_MATRIX: Record<string, Matrix> = {
+  'personal-rules': {
+    probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/route')).GET()),
+    expected: byPerson(...Array(6).fill(same({ status: 200, body: [] })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  },
+  'personal-rules/[id]': {
+    probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/[id]/route')).GET(
+      new Request(`http://localhost/api/personal-rules/${personalRuleId}`), { params: Promise.resolve({ id: personalRuleId }) })),
+    expected: byPerson(...Array(6).fill(same(NOT_FOUND_REPLY)) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  },
+  'personal-rules/[id]/run': {
+    probe: async () => personalReply(async () => (await import('@/app/api/personal-rules/[id]/run/route')).POST(
+      new Request(`http://localhost/api/personal-rules/${personalRuleId}/run`, { method: 'POST' }), { params: Promise.resolve({ id: personalRuleId }) })),
+    expected: {
+      'Admin': same(NOT_FOUND_REPLY),
+      'Editor on Everything': same(NOT_FOUND_REPLY),
+      'Viewer on the management group': same(FORBIDDEN_REPLY),
+      'Viewer on one subscription': same(FORBIDDEN_REPLY),
+      'Viewer on one resource group': same(FORBIDDEN_REPLY),
+      'Directory only': same(FORBIDDEN_REPLY),
+      'No Scope': same(FORBIDDEN_REPLY),
+    },
+  },
+};
+
 // #275: the three Azure pickers. The fake ARM lists both seed subscriptions under the seed management group, and a
 // sibling group with nothing under it. A person who does not hold Everything is told only what they hold: the
 // Viewer on one resource group is told of that group's subscription, and nothing else.
@@ -1058,7 +1119,7 @@ const RULE_VERSIONS: Matrix = {
 
 /** Every route that narrows what a person sees or sends. */
 export const MATRIX: Record<string, Matrix> = {
-  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
+  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, ...PERSONAL_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
 };
 
 export interface ListProblems {
@@ -1337,6 +1398,78 @@ describe('the routes that send a written query give each person what their Scope
       }
     }
   }
+});
+
+describe('the Personal rule routes answer every stranger the same', () => {
+  const userIds: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await seedPersonalRule();
+  });
+
+  it('holds an expectation for each of the three routes', () => {
+    expect(Object.keys(PERSONAL_MATRIX).sort()).toEqual(['personal-rules', 'personal-rules/[id]', 'personal-rules/[id]/run']);
+  });
+
+  for (const [route, entry] of Object.entries(PERSONAL_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      it(`${route}: ${person}`, async () => {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        expect(await entry.probe({} as MatrixSeed, 'results')).toEqual(entry.expected[person]!.results);
+      });
+    }
+  }
+});
+
+describe('a Personal rule and its results appear in no shared response', () => {
+  const userIds: Record<string, string> = {};
+  const seen: string[] = [];
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    const seed = await seedMatrix();
+    await saveRules([{ ...ruleBody('matrix written rule saved'), id: MATRIX_RULE_ID } as unknown as Rule]);
+    await refreshFrom(matrixHierarchy());
+    await seedScopedRule();
+    await seedPersonalRule();
+
+    // Every body a probe reads goes through Response.json() or text(), so recording those sees them all, on top of what each probe reports.
+    const readJson = Response.prototype.json;
+    const readText = Response.prototype.text;
+    Response.prototype.json = async function (this: Response) { const value = await readJson.call(this); seen.push(JSON.stringify(value)); return value; };
+    Response.prototype.text = async function (this: Response) { const value = await readText.call(this); seen.push(value); return value; };
+    try {
+      for (const person of PEOPLE.map(p => p.name)) {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        for (const [name, entry] of Object.entries(NOT_YET_SCOPED)) {
+          if (entry.probe) seen.push(`${person} ${name} ${await (await entry.probe(seed)).text()}`);
+        }
+        for (const [name, entry] of Object.entries(MATRIX)) {
+          if (name.startsWith('personal-rules')) continue;
+          for (const tab of VIEW_TABS) seen.push(`${person} ${name} ${tab} ${JSON.stringify(await entry.probe(seed, tab))}`);
+        }
+      }
+    } finally {
+      Response.prototype.json = readJson;
+      Response.prototype.text = readText;
+    }
+  });
+
+  it('read every probe for every person', () => {
+    expect(seen.length).toBeGreaterThan(PEOPLE.length * Object.keys(MATRIX).length);
+  });
+
+  it('never carry the rule, its resource id or its name', () => {
+    for (const text of seen) {
+      expect(text).not.toContain(PERSONAL_SECRET_NAME);
+      expect(text).not.toContain(PERSONAL_SECRET_RULE);
+      expect(text).not.toContain('rg-personal-secret');
+      expect(text).not.toContain(personalRuleId);
+    }
+  });
 });
 
 describe('the Azure pickers tell each person only what they hold', () => {

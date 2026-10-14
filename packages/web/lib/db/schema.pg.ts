@@ -436,6 +436,47 @@ export const queryRuns = pgTable('query_runs', {
   ranAt: text('ran_at').notNull(),
 });
 
+export const personalRules = pgTable('personal_rules', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  category: text('category').notNull(),
+  severity: text('severity').notNull(),
+  scope: text('scope').notNull(),
+  resourceTypes: text('resource_types').notNull(),
+  conditions: text('conditions').notNull(),
+  conditionGroups: text('condition_groups'),
+  projectColumns: text('project_columns'),
+  rawKql: text('raw_kql'),
+  queryBackend: text('query_backend').notNull(),
+  graphQuery: text('graph_query'),
+  kind: text('kind').notNull().default('state'),
+  tags: text('tags'),
+  visualQuery: text('visual_query'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  lastRunAt: text('last_run_at'),
+  lastRunStatus: text('last_run_status'),
+  lastRunCoveredScope: text('last_run_covered_scope'),
+});
+
+export const personalRuleResults = pgTable('personal_rule_results', {
+  personalRuleId: text('personal_rule_id').notNull(),
+  ordinal: integer('ordinal').notNull(),
+  resourceId: text('resource_id'),
+  resourceName: text('resource_name'),
+  resourceType: text('resource_type'),
+  subscriptionId: text('subscription_id'),
+  resourceGroup: text('resource_group'),
+  location: text('location'),
+  severity: text('severity').notNull(),
+  title: text('title').notNull(),
+  rows: text('rows').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.personalRuleId, table.ordinal] }),
+}));
+
 export const savedViews = pgTable('saved_views', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

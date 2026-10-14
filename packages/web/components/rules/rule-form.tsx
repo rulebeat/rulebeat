@@ -167,13 +167,18 @@ interface RuleFormProps {
    * render so it always closes over the latest field values, never a stale one.
    */
   saveHandleRef?: React.MutableRefObject<(() => void) | null>;
+  /** A Personal rule: the save goes to the personal endpoints, and there is no enabled switch (it never runs on a schedule). */
+  personal?: boolean;
+  /** The subscriptions and management groups the scope picker offers; unset offers the whole tenant. */
+  scopeLimit?: { subscriptions: string[]; managementGroups: string[] };
 }
 
 export function RuleForm({
   initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, writeReason, initialQueryBackend, copyFrom,
-  versionHistory, canVersion = false,
+  versionHistory, canVersion = false, personal = false, scopeLimit,
   onDirtyChange, onSavingChange, saveHandleRef,
 }: RuleFormProps) {
+  const rulesApi = personal ? '/api/personal-rules' : '/api/rules';
   // Every category, plus the rule's own category if it's not (or no longer) in the DB list, so old
   // rules with orphaned category values (e.g. legacy 'networking'/'operations') stay selectable.
   // Category no longer implies backend (spec 029). A custom rule can be filed under any category.
@@ -202,11 +207,12 @@ export function RuleForm({
   // sub-classification of type: 'builtin' and is shown as a locked tag chip instead, same as
   // the Library table's Tags column.
   const typeChip = useMemo(() => {
+    if (personal) return { label: 'Personal', icon: 'lock' as const };
     if (!initial?.type) return null;
     if (initial.type === 'builtin') return { label: 'Built-in', icon: 'lock' as const };
     if (initial.type === 'community') return { label: 'Community', icon: 'sparkles' as const };
     return { label: 'Custom', icon: undefined };
-  }, [initial?.type]);
+  }, [initial?.type, personal]);
 
   // What this rule checks against: orthogonal to Origin above. For an existing rule this comes
   // from initial.queryBackend; for a brand-new one it's whatever ChecksPickerDialog captured before
@@ -537,11 +543,11 @@ export function RuleForm({
     };
     try {
       const res = initial?.id
-        ? await fetch(`/api/rules/${encodeURIComponent(initial.id)}`, {
+        ? await fetch(`${rulesApi}/${encodeURIComponent(initial.id)}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...payload, id: initial.id }),
         })
-        : await fetch('/api/rules', {
+        : await fetch(rulesApi, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(copyFrom ? { ...payload, copyFrom } : payload),
         });
@@ -555,6 +561,10 @@ export function RuleForm({
         // Editing an existing rule: stay on the page (matches Duplicate/Cancel, which never
         // navigate either) and just pick up anything the save changed server-side.
         router.refresh();
+      } else if (personal) {
+        // A new Personal rule opens on its own page, where Run is.
+        const created = await res.json() as { id: string };
+        router.replace(`/library/personal/${encodeURIComponent(created.id)}`);
       } else {
         // Same reasoning as the edit branch above: the Library page a plain back-navigation lands
         // on can be served from Next's router cache, predating this rule's creation.
@@ -591,15 +601,17 @@ export function RuleForm({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Rule Details</CardTitle>
-              <label className="flex items-center gap-2 shrink-0">
-                <Switch
-                  checked={enabled}
-                  onCheckedChange={setEnabled}
-                  disabled={operationalReadOnly}
-                  title={operationalReadOnly ? (writeReason ?? 'Read-only access') : enabled ? 'Disable rule' : 'Enable rule'}
-                />
-                <span className="text-xs text-ink-2">Enabled</span>
-              </label>
+              {!personal && (
+                <label className="flex items-center gap-2 shrink-0">
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={setEnabled}
+                    disabled={operationalReadOnly}
+                    title={operationalReadOnly ? (writeReason ?? 'Read-only access') : enabled ? 'Disable rule' : 'Enable rule'}
+                  />
+                  <span className="text-xs text-ink-2">Enabled</span>
+                </label>
+              )}
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -902,11 +914,16 @@ export function RuleForm({
                       guiSet(setScopeManagementGroups)(mgs);
                     }}
                     onNamesReady={setScopeNames}
+                    limitTo={scopeLimit}
                     outsideAccess={outsideAccess}
                   />
                 </div>
                 {!isReadOnly && (
-                  <p className="text-xs text-ink-muted">Leave at &quot;Entire tenant&quot; to scan all subscriptions your credentials can access.</p>
+                  <p className="text-xs text-ink-muted">
+                    {scopeLimit
+                      ? 'Leave at "All of yours" to cover every subscription and management group you hold.'
+                      : 'Leave at "Entire tenant" to scan all subscriptions your credentials can access.'}
+                  </p>
                 )}
                 {!isReadOnly && (() => {
                   // A load that failed is the only state here worth colouring. "Loaded 412 fields"
@@ -1056,7 +1073,7 @@ export function RuleForm({
             This bar would otherwise duplicate it. */}
         {!saveHandleRef && (!isReadOnly || !operationalReadOnly) && (
           <Button onClick={save} disabled={saving || (!!initial?.id && !dirty)}>
-            {saving ? 'Saving…' : initial?.id ? 'Save changes' : 'Create Rule'}
+            {saving ? 'Saving…' : initial?.id ? 'Save changes' : personal ? 'Create personal rule' : 'Create Rule'}
           </Button>
         )}
         <Button variant="ghost" onClick={() => router.back()}>

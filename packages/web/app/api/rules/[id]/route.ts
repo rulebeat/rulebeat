@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { loadRules, updateRule, deleteRule, validateRuleName, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
+import { loadRules, updateRule, deleteRule, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { changedFields } from '@/lib/changed-fields';
 import { createTenantContext } from '@/lib/azure-credential';
-import { probeRuleIdentitySample } from '@/lib/rule-identity-check';
-import { validateGraphQueryShape, probeGraphQuerySample } from '@/lib/graph-rule-validation';
-import { validateLogAnalyticsQueryShape, probeLogAnalyticsQuerySample } from '@/lib/log-analytics-rule-validation';
+import { validateRuleDefinition } from '@/lib/rule-definition-validation';
 import { sameValue } from '@/lib/rule-versions';
-import { hasCompilableFilter } from '@rulebeat/core/kql';
 import type { Rule, RuleKind } from '@rulebeat/core';
 
 const BUILTIN_QUERY_LOCKED_ERROR =
@@ -94,69 +91,12 @@ export async function PUT(
   const body = await parseJsonBody<Rule>(req);
   if (body instanceof NextResponse) return body;
 
-  if ('appliesTo' in body) {
-    return NextResponse.json({ error: APPLIES_TO_REMOVED_ERROR }, { status: 400 });
-  }
-
-  const nameError = validateRuleName(body.name);
-  if (nameError) {
-    return NextResponse.json({ error: nameError }, { status: 400 });
-  }
-
-  // RB-RM-004: same server-side guard as POST: see that route for the reasoning.
-  if (body.visualQuery && !hasCompilableFilter(body.visualQuery)) {
-    return NextResponse.json({
-      error: 'The rule has no condition that compiles to a filter. It would match every resource in scope. Add at least one real condition.',
-    }, { status: 400 });
-  }
-
   // queryBackend can't change via edit (preserved from existing below), so existing.queryBackend is
-  // the authoritative backend for this rule, same allowlist/structural/probe validation as POST.
-  if (existing.queryBackend === 'microsoft-graph') {
-    if (!body.graphQuery) {
-      return NextResponse.json({ error: 'A Directory rule needs a Microsoft Graph query.' }, { status: 400 });
-    }
-    const shapeError = validateGraphQueryShape(body.graphQuery);
-    if (shapeError) {
-      return NextResponse.json({ error: shapeError }, { status: 400 });
-    }
-    try {
-      const ctx = await createTenantContext(actor.access);
-      await probeGraphQuerySample(body.graphQuery, ctx);
-    } catch (err) {
-      console.error('[RuleBeat] rule-save Graph probe could not connect to Azure, allowing save:', err);
-    }
-  }
-
-  if (existing.queryBackend === 'log-analytics') {
-    if (!body.logsQuery) {
-      return NextResponse.json({ error: 'A Log Analytics rule needs a query.' }, { status: 400 });
-    }
-    const shapeError = validateLogAnalyticsQueryShape(body.logsQuery);
-    if (shapeError) {
-      return NextResponse.json({ error: shapeError }, { status: 400 });
-    }
-    try {
-      const ctx = await createTenantContext(actor.access);
-      await probeLogAnalyticsQuerySample(body.logsQuery, ctx);
-    } catch (err) {
-      console.error('[RuleBeat] rule-save Log Analytics probe could not connect to Azure, allowing save:', err);
-    }
-  }
-
-  if (body.rawKql) {
-    try {
-      const ctx = await createTenantContext(actor.access);
-      const probe = await probeRuleIdentitySample(body.rawKql, ctx);
-      if (probe.blocked) {
-        return NextResponse.json({
-          error: `${probe.invalidCount} of ${probe.sampleSize} sampled row(s) have no resource id. Project id explicitly in the query`,
-        }, { status: 400 });
-      }
-    } catch (err) {
-      console.error('[RuleBeat] rule-save identity probe could not connect to Azure, allowing save:', err);
-    }
-  }
+  // the authoritative backend for this rule: same structural and probe validation as POST.
+  const checked = await validateRuleDefinition(body, existing.queryBackend ?? 'resource-graph', {
+    createContext: () => createTenantContext(actor.access),
+  });
+  if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
 
   // The form sends the whole editable definition, so every editable field is named here and one the
   // payload omits is cleared, as before. Type/pack/queryBackend are left out so they cannot be
