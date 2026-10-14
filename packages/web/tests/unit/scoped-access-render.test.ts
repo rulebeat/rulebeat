@@ -4,7 +4,7 @@
  * a hidden scope entry reads "Outside your access" once per entry, and a control that is off carries the
  * reason instead of being missing or failing with a 403 on click.
  */
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ScopeTreePicker } from '@/components/rules/scope-tree-picker';
@@ -153,11 +153,11 @@ describe('the library and schedule controls of a scoped Editor', () => {
 
 describe('the category controls on the Settings page', () => {
   const settings = (props: { canEditCategories: boolean; categoriesOffReason?: string; role?: 'viewer' | 'editor' | 'admin' }) =>
-    renderToStaticMarkup(createElement(ThemeProvider, { initialPreference: 'light', children: createElement(SettingsClient, {
+    renderToStaticMarkup(createElement(ThemeProvider, { initialPreference: 'light' } as ComponentProps<typeof ThemeProvider>, createElement(SettingsClient, {
       initialCategories: [{ id: 'security', label: 'Security', isBuiltin: false, sortOrder: 0 }] as never,
       role: props.role ?? 'editor', canEditCategories: props.canEditCategories, categoriesOffReason: props.categoriesOffReason,
       initialAzureStatus: null, initialSignInStatus: null, initialChannels: null,
-    }) }));
+    })));
 
   it('shows New category, Edit and Delete disabled with the reason, and no read-only banner, for a scoped Editor', () => {
     const html = settings({ canEditCategories: false, categoriesOffReason: SCOPED_CATEGORY_REASON });
