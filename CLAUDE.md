@@ -75,8 +75,9 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   local identity. Never uses the user's OAuth token, never holds write credentials.
   `createTenantContext(access)` is what every scan/schema/KQL path calls: it takes the `Access`
   `requireRole` returned, and `app/` has no other way to Azure
-  (`tenant-context-takes-access.test.ts`; the two settings routes that test an unsaved credential or
-  workspace are the written exceptions).
+  (`tenant-context-takes-access.test.ts`; the three settings routes that check an unsaved credential
+  or workspace, the connection test, the connection save and the workspace save, are the written
+  exceptions).
 - **Route protection:** `proxy.ts` (Next.js 16's rename of `middleware.ts`) guards all routes except
   `/signin`, `/api/auth/*`, `/api/health` and a few static brand images. It also stamps the security
   headers (CSP, plus HSTS over HTTPS) on every response it sees and refuses a write request whose `Origin` is not an
