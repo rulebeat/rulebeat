@@ -10,6 +10,10 @@ import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignment
 import { inTransaction } from '@/lib/db/exec';
 import { createSchedule } from '@/lib/db/schedules';
 import { syncScanFindings } from '@/lib/db/findings';
+import { upsertDailySnapshot } from '@/lib/db/snapshots';
+import { createSavedView } from '@/lib/db/saved-views';
+import { createDashboard, deleteDashboard, listDashboards } from '@/lib/db/dashboards';
+import { emptyView, viewToSearchParams } from '@/lib/finding-view';
 import { saveScanResult } from '@/lib/scan-history';
 import { addSuppression } from '@/lib/suppressions';
 import { finishRun, startRun } from '@/lib/schedule-runs';
@@ -26,6 +30,7 @@ export const MANAGEMENT_GROUP = 'mg-example';
 const RG_ONE = 'rg-one';
 const RG_TWO = 'rg-two';
 const RULE = 'matrix-rule';
+const DASHBOARD_NAME = 'Subscription two dashboard';
 const ADVISORY_RULE = 'matrix-advisory-rule';
 const CATEGORY = 'security';
 
@@ -90,7 +95,18 @@ export interface MatrixSeed {
   suppressedFingerprint: string;
   /** Every stored finding's fingerprint, by the name it was seeded with. */
   fingerprints: Record<string, string>;
+  /** A saved view filtered to subscription two. */
+  savedViewId: string;
+  /** A dashboard filtered to subscription two, with one widget that overrides the resource group. */
+  dashboardId: string;
 }
+
+/** The day each of the two stored snapshots is for, written by the real `upsertDailySnapshot`. */
+export const SNAPSHOT_DAYS = ['2026-06-01', '2026-06-02'] as const;
+/** A clock reading after both snapshot days, for a probe that reads a rolling window. */
+export const MATRIX_NOW = '2026-06-10T12:00:00.000Z';
+/** The resource group the seeded dashboard's widget overrides. */
+export const WIDGET_RESOURCE_GROUP = RG_TWO;
 
 function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSummary {
   return {
@@ -145,6 +161,7 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   for (const [id, finishedAt, findings] of stored) {
     await saveScanResult(CATEGORY, summaryOf(id, finishedAt, findings), { id });
     await syncScanFindings({ scanId: id, category: CATEGORY, ranRuleIds: [RULE, ADVISORY_RULE], findings, finishedAt });
+    if (finishedAt.startsWith(SNAPSHOT_DAYS[0])) await upsertDailySnapshot(CATEGORY, new Date(finishedAt));
   }
 
   const suppressedFingerprint = all[1]!.fingerprint;
@@ -155,6 +172,23 @@ export async function seedMatrix(): Promise<MatrixSeed> {
     reason: 'accepted for the matrix',
     suppressedAt: '2026-06-02T00:00:00.000Z',
   });
+  await upsertDailySnapshot(CATEGORY, new Date(stored[1]![1]));
+
+  const view = await createSavedView({
+    name: 'Subscription two only', tab: 'results',
+    query: viewToSearchParams({ ...emptyView(), filters: [{ field: 'subscription', values: [SUB_TWO] }] }).toString(),
+  }, null);
+  if (!view.ok) throw new Error(view.reason);
+  // resetDb keeps the seeded dashboards table, so a second seeding replaces the one it wrote before.
+  for (const existing of await listDashboards()) if (existing.name === DASHBOARD_NAME) await deleteDashboard(existing.id);
+  const dashboard = await createDashboard({
+    name: DASHBOARD_NAME,
+    config: {
+      filters: { subscriptions: [SUB_TWO] },
+      widgets: [{ id: 'matrix-widget', type: 'stat-card', title: 'Findings', x: 0, y: 0, w: 4, h: 2, config: { resourceGroups: [WIDGET_RESOURCE_GROUP] } }],
+    },
+  });
+  if (!dashboard.ok) throw new Error(dashboard.reason);
 
   const created = await createSchedule({
     name: 'Matrix schedule', targetType: 'all', targetValues: [], recurrenceType: 'daily', interval: 1,
@@ -168,5 +202,5 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   });
 
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
-  return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint, fingerprints };
+  return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };
 }

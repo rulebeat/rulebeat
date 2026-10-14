@@ -226,6 +226,23 @@ export function holdsNoScope(access: Access): boolean {
   return access.grants.length === 0;
 }
 
+/**
+ * The subscriptions a person holds whole, lowercase and without repeats: a subscription Scope, and every
+ * subscription under a management group Scope by the expansion `access` carries. A resource group Scope
+ * holds part of a subscription, so it is not one. Everything holds every subscription, which a list cannot
+ * name, so callers ask `access.everything` first.
+ */
+export function wholeSubscriptionIds(access: Pick<Access, 'grants' | 'managementGroups'>): string[] {
+  const ids = new Set<string>();
+  for (const { scope } of access.grants) {
+    if (scope.kind === 'subscription') ids.add(scope.path.split('/')[2]!.toLowerCase());
+  }
+  for (const expansion of access.managementGroups) {
+    for (const id of expansion.subscriptions) ids.add(id.toLowerCase());
+  }
+  return [...ids];
+}
+
 /** The text the Access page shows for one person's access. */
 export function describeAccess(access: Access): string {
   const sourceSuffix = access.source ? `, ${access.source}` : '';
