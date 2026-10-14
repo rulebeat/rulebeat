@@ -7,6 +7,7 @@ import { touchSavedQueryLastRun } from '@/lib/db/saved-queries';
 import { recordQueryRun } from '@/lib/db/query-runs';
 import { extractAzureErrorMessage, ResourceGraphTruncatedError, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
+import { resourceGraphScope } from '@/lib/written-query';
 import type { RuleScope } from '@/lib/types';
 
 // This route's own display cap on the JSON payload: distinct from Azure's own `resultTruncated`
@@ -36,6 +37,10 @@ export async function POST(req: Request) {
   const { kql, scope, savedQueryId } = parsed;
   if (!kql?.trim()) return NextResponse.json({ error: 'kql is required' }, { status: 400 });
 
+  // The query reaches Azure only inside what the person holds. Its text and rows are never touched.
+  const limited = resourceGraphScope(actor.access, scope);
+  if (!limited.ok) return NextResponse.json({ error: limited.error }, { status: 403 });
+
   let ctx: TenantContext;
   try {
     ctx = await createTenantContext(actor.access);
@@ -44,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const rows = await ctx.queryARG<Record<string, unknown>>(kql, scope);
+    const rows = await ctx.queryARG<Record<string, unknown>>(kql, limited.scope);
     const capped = rows.length > RESPONSE_ROW_CAP;
     const sample = capped ? rows.slice(0, RESPONSE_ROW_CAP) : rows;
 

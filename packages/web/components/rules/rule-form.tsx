@@ -336,7 +336,7 @@ export function RuleForm({
 
   // ── Validation state ────────────────────────────────────────────────────────
   const [validating, setValidating] = useState(false);
-  const [validateResult, setValidateResult] = useState<ValidateResult | { error: string } | null>(null);
+  const [validateResult, setValidateResult] = useState<ValidateResult | { error: string; refused?: boolean } | null>(null);
 
   const specificTypes = resourceTypes.split(',').map(t => t.trim()).filter(t => t && t !== '*');
   const allFields = [...new Set([...ARG_BASE_FIELDS, ...fields])];
@@ -418,7 +418,7 @@ export function RuleForm({
         body: JSON.stringify({ kql: kqlText }),
       });
       const data = await res.json() as ValidateResult | { error: string };
-      setValidateResult(data);
+      setValidateResult(res.status === 403 && 'error' in data ? { error: data.error, refused: true } : data);
     } catch (e) {
       setValidateResult({ error: String(e) });
     } finally { setValidating(false); }
@@ -816,9 +816,15 @@ export function RuleForm({
 
               {validateResult && (
                 'error' in validateResult ? (
-                  <Callout tone="error" title="Query error">
-                    <p className="font-mono">{validateResult.error}</p>
-                  </Callout>
+                  validateResult.refused ? (
+                    <Callout tone="warn" title="You cannot run this query">
+                      <p>{validateResult.error}</p>
+                    </Callout>
+                  ) : (
+                    <Callout tone="error" title="Query error">
+                      <p className="font-mono">{validateResult.error}</p>
+                    </Callout>
+                  )
                 ) : (
                   <CalloutPanel
                     tone="success"

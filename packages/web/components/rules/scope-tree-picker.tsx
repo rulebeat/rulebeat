@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import type { ScopeTree, ScopeTreeNode } from '@/app/api/azure/scope-tree/route';
@@ -19,10 +19,24 @@ interface ScopeTreePickerProps {
   managementGroups: string[];
   onChange: (value: { subscriptions: string[]; managementGroups: string[] }) => void;
   onNamesReady?: (names: Record<string, string>) => void;
+  /** When set, the control offers exactly these and never reads the tenant's hierarchy. Leaving it empty means all of them. */
+  limitTo?: { subscriptions: string[]; managementGroups: string[] };
 }
 
-export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onNamesReady }: ScopeTreePickerProps) {
-  const [tree, setTree] = useState<ScopeTree | null>(null);
+/** The tree a limited control offers: exactly what the person holds, flat, with no read of the tenant's own hierarchy. */
+export function limitedScopeTree(limitTo: { subscriptions: string[]; managementGroups: string[] }): ScopeTree {
+  return {
+    tenantId: '',
+    tenantName: '',
+    children: [
+      ...limitTo.managementGroups.map(id => ({ id, name: id, type: 'managementGroup' as const })),
+      ...limitTo.subscriptions.map(id => ({ id, name: id, type: 'subscription' as const })),
+    ],
+  };
+}
+
+export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onNamesReady, limitTo }: ScopeTreePickerProps) {
+  const [fetchedTree, setTree] = useState<ScopeTree | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -33,6 +47,9 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
   const anchorRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const limitedTree = useMemo<ScopeTree | null>(() => limitTo ? limitedScopeTree(limitTo) : null, [limitTo]);
+  const tree = limitedTree ?? fetchedTree;
 
   useEffect(() => {
     if (!open || tree) return;
@@ -213,7 +230,7 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
           ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search management groups or subscriptions…"
+          placeholder={limitTo ? 'Search your subscriptions or management groups…' : 'Search management groups or subscriptions…'}
           className="w-full bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
         />
       </div>
@@ -245,8 +262,10 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
               </div>
               <span className={cn(MARKER, 'size-3.5 bg-surface-sunken')}>T</span>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-ink">Entire tenant</p>
-                <p className="truncate text-xs text-ink">{tree.tenantName} · all subscriptions</p>
+                <p className="text-xs font-medium text-ink">{limitTo ? 'All of yours' : 'Entire tenant'}</p>
+                <p className="truncate text-xs text-ink">
+                  {limitTo ? 'Every subscription and management group you hold' : `${tree.tenantName} · all subscriptions`}
+                </p>
               </div>
             </button>
 
@@ -294,7 +313,9 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
         className="flex min-h-9 w-full cursor-pointer flex-wrap items-center gap-1 border border-rule-strong bg-surface px-2.5 py-1.5 transition-colors hover:bg-surface-hover"
       >
         {chips.length === 0 && (
-          <span className="flex-1 text-xs text-ink-muted">All subscriptions (entire tenant)</span>
+          <span className="flex-1 text-xs text-ink-muted">
+            {limitTo ? 'All of your subscriptions and management groups' : 'All subscriptions (entire tenant)'}
+          </span>
         )}
         {chips.map(chip => (
           <span

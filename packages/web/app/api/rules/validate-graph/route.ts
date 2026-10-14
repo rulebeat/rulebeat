@@ -5,6 +5,7 @@ import { azureError, safeErrorMessage } from '@/lib/api-error';
 import { buildGraphPath, extractAzureErrorMessage, GraphTruncatedError, type GraphQuery, type TenantContext } from '@rulebeat/core';
 import { createTenantContext } from '@/lib/azure-credential';
 import { validateGraphQueryShape } from '@/lib/graph-rule-validation';
+import { mayQueryDirectory } from '@/lib/written-query';
 
 type GraphRow = { id?: string; displayName?: string };
 
@@ -34,6 +35,9 @@ export async function POST(req: Request) {
 
   const shapeError = validateGraphQueryShape(graphQuery);
   if (shapeError) return NextResponse.json({ error: shapeError }, { status: 400 });
+
+  const directory = mayQueryDirectory(actor.access);
+  if (!directory.ok) return NextResponse.json({ error: directory.error }, { status: 403 });
 
   let ctx: TenantContext;
   try {

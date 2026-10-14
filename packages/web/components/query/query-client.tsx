@@ -18,6 +18,7 @@ import type { VisualQuery } from '@/lib/kql';
 import { ResultTable } from '@/components/query/result-table';
 import { QueryExportButton } from '@/components/query/query-export-button';
 import { SaveQueryDialog } from '@/components/query/save-query-dialog';
+import { QueryUnavailableState } from '@/components/query/query-unavailable-state';
 import { buildRuleFromQuery } from '@/lib/query-to-rule';
 import type {
   GraphQuery, LogAnalyticsQuery, QueryBackend, QueryRun, QueryVisibility, RuleScope, SavedQuery,
@@ -91,7 +92,20 @@ function formatWhen(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function QueryPageClient({ defaultCategoryId }: { defaultCategoryId: string }) {
+interface QueryPageProps {
+  defaultCategoryId: string;
+  /** The person's access is only resource groups: the editor is replaced by an explanation. */
+  noSubscription?: boolean;
+  /** For anyone without Everything, exactly the subscriptions and management groups they hold. */
+  limitTo?: { subscriptions: string[]; managementGroups: string[] };
+}
+
+export function QueryPageClient({ noSubscription, ...rest }: QueryPageProps) {
+  if (noSubscription) return <QueryUnavailableState />;
+  return <QueryEditor {...rest} />;
+}
+
+function QueryEditor({ defaultCategoryId, limitTo }: Omit<QueryPageProps, 'noSubscription'>) {
   const router = useRouter();
 
   const [backend, setBackend] = useState<QueryBackend>('resource-graph');
@@ -389,6 +403,7 @@ export function QueryPageClient({ defaultCategoryId }: { defaultCategoryId: stri
                     subscriptions={scopeSubscriptions}
                     managementGroups={scopeManagementGroups}
                     onChange={updateScope}
+                    limitTo={limitTo}
                   />
                 </div>
               </CardContent>

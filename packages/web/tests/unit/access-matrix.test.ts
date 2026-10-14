@@ -5,6 +5,9 @@
  * every person must get a 200 whose body equals the Admin's from it. A ticket that narrows a route moves it
  * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see: #272 did so for the five
  * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
+ * #277 did so for the eight routes that send a query a person wrote to Azure. They call a fake Azure
+ * rather than read the seed, so their probes report the status, the error and the scope the fake was sent,
+ * and run in their own `describe` over their own database.
  *
  * The lists are checked against the route files on disk, the way `route-guards.test.ts` checks guards:
  * a route that uses the actor's access must be in exactly one of the two lists, and an entry must name a
@@ -15,6 +18,9 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
+import { saveRules } from '@/lib/rules';
+import { fakeTenantContext, type FakeTenantContext } from '../helpers/fake-azure';
+import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import {
@@ -26,6 +32,12 @@ import { VIEW_TABS, type ViewTab } from '@/lib/view-response';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
+
+let fakeCtx: FakeTenantContext;
+vi.mock('@/lib/azure-credential', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/azure-credential')>('@/lib/azure-credential');
+  return { ...actual, createTenantContext: () => Promise.resolve(fakeCtx) };
+});
 
 const API_DIR = path.resolve(__dirname, '../../app/api');
 
@@ -105,14 +117,6 @@ export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
   'schedules/[id]/run': azure('#276'),
   'schedules/[id]/runs': stored(async seed => getWith(`/api/schedules/${seed.scheduleId}/runs`, await import('@/app/api/schedules/[id]/runs/route'), seed.scheduleId), '#276'),
 
-  'query/run-resource-graph': azure('#277'),
-  'query/run-microsoft-graph': azure('#277'),
-  'query/run-log-analytics': azure('#277'),
-  'rules/validate-kql': azure('#277'),
-  'rules/validate-graph': azure('#277'),
-  'rules/validate-logs': azure('#277'),
-  'rules': azure('#277'),
-  'rules/[id]': azure('#277'),
 
   // Admin-only, and a list of one subscription's resource groups for the Scope picker: this ticket does not narrow it.
   'azure/subscriptions/[id]/resource-groups': azure('#284'),
@@ -446,7 +450,7 @@ const ownAccess: Matrix = {
 };
 
 /** Routes that narrow what a person sees, and what each person gets from them. */
-export const MATRIX: Record<string, Matrix> = {
+const FINDINGS_MATRIX: Record<string, Matrix> = {
   'access': ownAccess,
   'findings/view': viewEntry,
   'findings/group': group,
@@ -454,6 +458,101 @@ export const MATRIX: Record<string, Matrix> = {
   'findings/export': exported,
   'findings/rows': rows,
 };
+
+// #277: the routes that send a query a person wrote to Azure. Every one asks `rules:validate` or
+// `rules:write`, which the five Viewers do not hold, so each is refused by the guard, before anything
+// reaches Azure. The Admin and the Editor on Everything send an unlimited request: no scope at all.
+const MATRIX_RULE_ID = 'matrix-written-rule';
+const MATRIX_KQL = 'resources | project id';
+
+interface WrittenReply { status: number; error: string | undefined; scope: unknown; requests: number }
+
+/** Calls a route over a fresh fake Azure and reports what came back and what the fake was asked. */
+async function writtenReply(send: () => Promise<Response>): Promise<WrittenReply> {
+  fakeCtx = fakeTenantContext({ logsRows: [{ user: 'a@example.com' }] });
+  const res = await send();
+  const body = await res.json() as { error?: string };
+  return {
+    status: res.status,
+    error: body.error,
+    scope: fakeCtx.queries[0]?.scope,
+    requests: fakeCtx.queries.length + fakeCtx.graphRequests.length + fakeCtx.logsQueries.length,
+  };
+}
+
+const sendJson = (url: string, method: string, body: unknown): Request =>
+  new Request(`http://localhost${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+const FORBIDDEN: WrittenReply = { status: 403, error: 'Forbidden', scope: undefined, requests: 0 };
+
+/** The Admin and the Editor on Everything get `answered`; the five Viewers get the guard's 403. */
+const writtenExpectation = (status: number, requests: number): Matrix['expected'] => {
+  const unlimited = same({ status, error: undefined, scope: undefined, requests });
+  const refused = same(FORBIDDEN);
+  return {
+    'Admin': unlimited,
+    'Editor on Everything': unlimited,
+    'Viewer on the management group': refused,
+    'Viewer on one subscription': refused,
+    'Viewer on one resource group': refused,
+    'Directory only': refused,
+    'No Scope': refused,
+  };
+};
+
+let createdRules = 0;
+const ruleBody = (name: string) => ({
+  name, description: 'a rule', category: 'security', severity: 'medium', enabled: true, type: 'custom',
+  scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: MATRIX_KQL,
+});
+
+const WRITTEN_QUERY_MATRIX: Record<string, Matrix> = {
+  'query/run-resource-graph': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/query/run-resource-graph/route')).POST(
+      sendJson('/api/query/run-resource-graph', 'POST', { kql: MATRIX_KQL }))),
+    expected: writtenExpectation(200, 1),
+  },
+  'query/run-microsoft-graph': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/query/run-microsoft-graph/route')).POST(
+      sendJson('/api/query/run-microsoft-graph', 'POST', { graphQuery: { path: 'users' } }))),
+    expected: writtenExpectation(200, 1),
+  },
+  'query/run-log-analytics': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/query/run-log-analytics/route')).POST(
+      sendJson('/api/query/run-log-analytics', 'POST', { logsQuery: { kql: 'SigninLogs' } }))),
+    expected: writtenExpectation(200, 1),
+  },
+  'rules/validate-kql': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/rules/validate-kql/route')).POST(
+      sendJson('/api/rules/validate-kql', 'POST', { kql: MATRIX_KQL }))),
+    expected: writtenExpectation(200, 1),
+  },
+  'rules/validate-graph': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/rules/validate-graph/route')).POST(
+      sendJson('/api/rules/validate-graph', 'POST', { graphQuery: { path: 'users' } }))),
+    expected: writtenExpectation(200, 1),
+  },
+  'rules/validate-logs': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/rules/validate-logs/route')).POST(
+      sendJson('/api/rules/validate-logs', 'POST', { logsQuery: { kql: 'SigninLogs', timeWindowDays: 30 } }))),
+    expected: writtenExpectation(200, 1),
+  },
+  // Saving needs `rules:write`, which only Everything holds, so the save-time probe is unchanged.
+  'rules': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/rules/route')).POST(
+      sendJson('/api/rules', 'POST', ruleBody(`matrix written rule ${++createdRules}`)))),
+    expected: writtenExpectation(201, 1),
+  },
+  'rules/[id]': {
+    probe: async () => writtenReply(async () => (await import('@/app/api/rules/[id]/route')).PUT(
+      sendJson(`/api/rules/${MATRIX_RULE_ID}`, 'PUT', ruleBody('matrix written rule saved')),
+      { params: Promise.resolve({ id: MATRIX_RULE_ID }) })),
+    expected: writtenExpectation(200, 1),
+  },
+};
+
+/** Every route that narrows what a person sees or sends. */
+export const MATRIX: Record<string, Matrix> = { ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX };
 
 export interface ListProblems {
   unlisted: string[];
@@ -592,7 +691,7 @@ describe('the findings routes show each person only what their Scopes cover', ()
     }
   });
 
-  for (const [route, entry] of Object.entries(MATRIX)) {
+  for (const [route, entry] of Object.entries(FINDINGS_MATRIX)) {
     for (const person of PEOPLE.map(p => p.name)) {
       for (const tab of VIEW_TABS) {
         it(`${route}: ${person}, ${tab} tab`, async () => {
@@ -646,4 +745,32 @@ describe('the findings routes show each person only what their Scopes cover', ()
     expect(unknown.status).toBe(404);
     expect(await outside.text()).toBe(await unknown.text());
   });
+});
+
+describe('the routes that send a written query give each person what their Scopes allow', () => {
+  const userIds: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await saveRules([{ ...ruleBody('matrix written rule saved'), id: MATRIX_RULE_ID } as unknown as Rule]);
+  });
+
+  it('holds an expectation for each of the eight routes', () => {
+    expect(Object.keys(WRITTEN_QUERY_MATRIX).sort()).toEqual([
+      'query/run-log-analytics', 'query/run-microsoft-graph', 'query/run-resource-graph', 'rules', 'rules/[id]',
+      'rules/validate-graph', 'rules/validate-kql', 'rules/validate-logs',
+    ]);
+  });
+
+  for (const [route, entry] of Object.entries(WRITTEN_QUERY_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      for (const tab of VIEW_TABS) {
+        it(`${route}: ${person}, ${tab} tab`, async () => {
+          mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+          expect(await entry.probe({} as MatrixSeed, tab)).toEqual(entry.expected[person]![tab]);
+        });
+      }
+    }
+  }
 });
