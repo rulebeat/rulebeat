@@ -212,37 +212,46 @@ export type UpdateRuleResult =
 export async function updateRule(id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
-    const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
-    if (!current) return { ok: false, reason: 'not-found' };
-
-    if (changes.name !== undefined) {
-      const renamed = changes.name.trim().toLowerCase() !== current.name.trim().toLowerCase();
-      if (renamed && await isNameTaken(changes.name, id, tx)) return { ok: false, reason: 'name-taken' };
-    }
-
-    // ruleToRow() does the JSON encoding and the derivation of `kind`; its output is only used to
-    // pick the columns the caller named.
-    const merged: Rule = { ...rowToRule(current), ...changes };
-    // A kind the caller left out (or set to undefined) is not a request to reset it to a Problem.
-    if (changes.kind === undefined) merged.kind = rowToRule(current).kind;
-    const row: Record<string, unknown> = ruleToRow(merged);
-    const set: Record<string, unknown> = {};
-    // An undefined here is a required column the caller left blank; there is nothing to write for it.
-    for (const field of UPDATABLE_FIELDS) {
-      if (field in changes && row[field] !== undefined) set[field] = row[field];
-    }
-    if ('queryBackend' in changes || 'kind' in changes) set.kind = row.kind;
-
-    if (Object.keys(set).length > 0) {
-      await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
-    }
-
-    const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
-    // Always present: this same transaction just confirmed the row exists and only this process
-    // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
-    // isn't reachable through any caller `updateRule()` has today.
-    return { ok: true, rule: rowToRule(stored!) };
+    return updateRuleOn(tx, id, changes);
   });
+}
+
+/**
+ * The read, name check and write of `updateRule()`, on a transaction the caller already holds, for a
+ * write that must commit together with another (a Library update request's approval, #283). The caller
+ * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first.
+ */
+export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
+  const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+  if (!current) return { ok: false, reason: 'not-found' };
+
+  if (changes.name !== undefined) {
+    const renamed = changes.name.trim().toLowerCase() !== current.name.trim().toLowerCase();
+    if (renamed && await isNameTaken(changes.name, id, tx)) return { ok: false, reason: 'name-taken' };
+  }
+
+  // ruleToRow() does the JSON encoding and the derivation of `kind`; its output is only used to
+  // pick the columns the caller named.
+  const merged: Rule = { ...rowToRule(current), ...changes };
+  // A kind the caller left out (or set to undefined) is not a request to reset it to a Problem.
+  if (changes.kind === undefined) merged.kind = rowToRule(current).kind;
+  const row: Record<string, unknown> = ruleToRow(merged);
+  const set: Record<string, unknown> = {};
+  // An undefined here is a required column the caller left blank; there is nothing to write for it.
+  for (const field of UPDATABLE_FIELDS) {
+    if (field in changes && row[field] !== undefined) set[field] = row[field];
+  }
+  if ('queryBackend' in changes || 'kind' in changes) set.kind = row.kind;
+
+  if (Object.keys(set).length > 0) {
+    await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
+  }
+
+  const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+  // Always present: this same transaction just confirmed the row exists and only this process
+  // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
+  // isn't reachable through any caller `updateRule()` has today.
+  return { ok: true, rule: rowToRule(stored!) };
 }
 
 export type SwitchRuleVersionResult =
@@ -291,6 +300,9 @@ export async function deleteRule(id: string): Promise<boolean> {
     await run(tx.update(personalRules).set({ sourceRuleId: null }).where(eq(personalRules.sourceRuleId, id)));
     // A Personal rule that became this one stays too, without the link forward to it (#282).
     await run(tx.update(personalRules).set({ libraryRuleId: null }).where(eq(personalRules.libraryRuleId, id)));
+    // An open update request aimed at this rule keeps its target id on purpose (#283): clearing it would
+    // turn the request into a new-rule request. Approving it answers 'target-gone' and the review page
+    // says the rule no longer exists.
     return removeFindingRowsForRule(tx, id);
   });
   if (!outcome) return false;
@@ -349,6 +361,12 @@ export function validateRuleName(name: unknown): string | null {
 export async function loadRule(id: string): Promise<Rule | null> {
   const row = await one(db.select().from(rulesTable).where(eq(rulesTable.id, id)));
   return row ? rowToRule(row) : null;
+}
+
+/** A rule with its definition as stored, for comparing against a snapshot (#283). Null when the rule is gone. */
+export async function loadRuleWithDefinition(id: string, handle: DbHandle = db): Promise<{ rule: Rule; definition: RuleDefinition } | null> {
+  const row = await one(handle.select().from(rulesTable).where(eq(rulesTable.id, id)));
+  return row ? { rule: rowToRule(row), definition: definitionOfRow(row) } : null;
 }
 
 /**

@@ -49,6 +49,28 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds Library requests to an existi
     expect(await getPersonalRule(made.id, author.user.id)).toEqual(before);
   });
 
+  it('adds the update-request target columns to a database without them, keeping a request and its snapshot (#283)', async () => {
+    await dbReady;
+    await resetDb();
+    await bootstrapPg(pgDb!);
+    const author = await createUser({ email: 'author@example.com', role: 'editor' });
+    if ('error' in author) throw new Error(author.error);
+    const made = await createPersonalRule(author.user.id, {
+      name: 'Pg target column rule', description: '', category: 'reliability', severity: 'medium', queryBackend: 'resource-graph', kind: 'state',
+      scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: 'resources | project id',
+    });
+    const sent = await createLibraryRequest(made, author.user.id);
+    if (!sent.ok) throw new Error(sent.reason);
+    const before = await getLibraryRequest(sent.request.id);
+
+    await pgDb!.execute(sql.raw('ALTER TABLE library_requests DROP COLUMN target_rule_id'));
+    await pgDb!.execute(sql.raw('ALTER TABLE library_requests DROP COLUMN target_definition'));
+    await bootstrapPg(pgDb!);
+
+    expect(await columnsOf('library_requests')).toEqual(expect.arrayContaining(['target_rule_id', 'target_definition']));
+    expect(await getLibraryRequest(sent.request.id)).toEqual(before);
+  });
+
   it('sends, approves and reads back a request on Postgres, in one transaction', async () => {
     await dbReady;
     await resetDb();

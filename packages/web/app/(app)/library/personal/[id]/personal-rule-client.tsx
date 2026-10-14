@@ -33,9 +33,13 @@ interface Props {
   copiedTo: { id: string; name: string } | null;
   /** Set for a reviewer only; `reason` is why Copy to library is off, or null. */
   copyToLibrary: { reason: string | null } | null;
+  /** The custom library rules this one can be sent to as an update: its own library rule, and the rule it was copied from when that is custom. */
+  updateTargets?: { id: string; name: string }[];
+  /** Why this rule can only be sent as a new rule (its source is a built-in), or null. */
+  newOnlyReason?: string | null;
 }
 
-export function PersonalRuleClient({ rule, source, requests, copiedTo, copyToLibrary, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
+export function PersonalRuleClient({ rule, source, requests, copiedTo, copyToLibrary, updateTargets, newOnlyReason, updatedAt, results, lastRunCovered, allTags, categories, canWrite, runBlockedReason, scopeLimit }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -149,6 +153,8 @@ export function PersonalRuleClient({ rule, source, requests, copiedTo, copyToLib
           canWrite={canWrite}
           dirty={dirty}
           copyToLibrary={copyToLibrary}
+          updateTargets={updateTargets}
+          newOnlyReason={newOnlyReason}
         />
         {runBlockedReason && <Callout tone="warn">{`Run is unavailable: ${runBlockedReason}`}</Callout>}
         {error && <Callout tone="error">{error}</Callout>}

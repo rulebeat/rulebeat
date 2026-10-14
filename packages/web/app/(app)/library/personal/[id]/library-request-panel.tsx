@@ -20,6 +20,10 @@ interface Props {
   dirty: boolean;
   /** Present for a reviewer only. `reason` is why the copy is off right now, worked out on the server; null when it is on. */
   copyToLibrary: { reason: string | null } | null;
+  /** The custom library rules this rule can be sent to as an update. */
+  updateTargets?: { id: string; name: string }[];
+  /** Why this rule can only go as a new rule, or null. */
+  newOnlyReason?: string | null;
 }
 
 function formatDate(iso: string) {
@@ -41,7 +45,7 @@ function LibraryRuleLink({ rule }: { rule: { id: string; name: string } }) {
  * do with it, and, for a reviewer, a direct copy that needs no request. The status is the server's;
  * every control posts to a route and refreshes the page.
  */
-export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWrite, dirty, copyToLibrary }: Props) {
+export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWrite, dirty, copyToLibrary, updateTargets = [], newOnlyReason = null }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<'send' | 'withdraw' | 'copy' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +55,8 @@ export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWri
   // A new request is offered when there is none open, and the last one did not put the rule in the library.
   const canSend = canWrite && latest?.status !== 'open' && latest?.status !== 'rejected' && !approvedRule;
   const canResubmit = canWrite && latest?.status === 'rejected';
+  // An update goes to a library rule that already exists, so it stays on offer after an approval.
+  const canSendUpdate = canWrite && latest?.status !== 'open' && updateTargets.length > 0;
 
   async function post(kind: 'send' | 'withdraw' | 'copy', url: string, body?: unknown, after?: (json: { id?: string }) => void) {
     setBusy(kind);
@@ -75,7 +81,8 @@ export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWri
   }
 
   const sendUrl = `/api/personal-rules/${encodeURIComponent(personalRuleId)}/library-request`;
-  const send = (resubmits?: string) => post('send', sendUrl, resubmits ? { resubmits } : undefined);
+  const send = (resubmits?: string, updates?: string) =>
+    post('send', sendUrl, resubmits || updates ? { ...(resubmits ? { resubmits } : {}), ...(updates ? { updates } : {}) } : undefined);
   const withdraw = (requestId: string) => post('withdraw', `/api/library-requests/${encodeURIComponent(requestId)}/withdraw`);
   const copy = () => {
     if (!confirm('Add this rule to the library now? It starts disabled, and everyone on the install will see it.')) return;
@@ -96,9 +103,15 @@ export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWri
         {canSend && (
           <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1.5" disabled={busy !== null || dirty} title={sendBlocked} onClick={() => { void send(); }}>
             {busy === 'send' ? spinner : <Send className="h-3 w-3" />}
-            Send to library
+            {updateTargets.length > 0 ? 'Send as new rule' : 'Send to library'}
           </Button>
         )}
+        {canSendUpdate && updateTargets.map(target => (
+          <Button key={target.id} size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1.5" disabled={busy !== null || dirty} title={sendBlocked} onClick={() => { void send(undefined, target.id); }}>
+            {busy === 'send' ? spinner : <Send className="h-3 w-3" />}
+            {`Send as update to ${target.name}`}
+          </Button>
+        ))}
         {canResubmit && latest && (
           <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1.5" disabled={busy !== null || dirty} title={sendBlocked} onClick={() => { void send(latest.id); }}>
             {busy === 'send' ? spinner : <Send className="h-3 w-3" />}
@@ -119,8 +132,9 @@ export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWri
         )}
       </div>
 
+      {canWrite && newOnlyReason && latest?.status !== 'open' && <p className="text-xs text-ink-2">{newOnlyReason}</p>}
       {latest?.status === 'open' && (
-        <Callout tone="info">{`Sent to the library on ${formatDate(latest.createdAt)}. A reviewer has not decided yet. You can withdraw it until they do.`}</Callout>
+        <Callout tone="info">{`Sent to the library${latest.isUpdate ? ` as an update to ${latest.target ? `"${latest.target.name}"` : 'a library rule that is gone'}` : ''} on ${formatDate(latest.createdAt)}. A reviewer has not decided yet. You can withdraw it until they do.`}</Callout>
       )}
       {latest?.status === 'rejected' && (
         <Callout tone="warn">
@@ -132,9 +146,13 @@ export function LibraryRequestPanel({ personalRuleId, requests, copiedTo, canWri
       )}
       {latest?.status === 'approved' && (
         <Callout tone="success">
-          {approvedRule
-            ? <>Added to the library as <LibraryRuleLink rule={approvedRule} />. This personal rule stays as it was.</>
-            : 'Approved and added to the library. That library rule has since been deleted, so you can send this rule again.'}
+          {latest.isUpdate
+            ? (approvedRule
+              ? <>Sent as an update to <LibraryRuleLink rule={approvedRule} />, and approved. This personal rule stays as it was.</>
+              : 'Approved as an update to a library rule that has since been deleted, so you can send this rule again.')
+            : approvedRule
+              ? <>Added to the library as <LibraryRuleLink rule={approvedRule} />. This personal rule stays as it was.</>
+              : 'Approved and added to the library. That library rule has since been deleted, so you can send this rule again.'}
         </Callout>
       )}
       {!approvedRule && copiedTo && (

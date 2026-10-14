@@ -561,6 +561,8 @@ export const libraryRequests = sqliteTable('library_requests', {
   rejectionReason: text('rejection_reason'),
   resubmitsRequestId: text('resubmits_request_id'), // the rejected request this one sends again
   libraryRuleId: text('library_rule_id'),     // the library rule an approval created
+  targetRuleId: text('target_rule_id'),       // the custom library rule an update request edits in place (#283); null for a new-rule request
+  targetDefinition: text('target_definition'), // JSON: RuleDefinition of the target when the request was sent (#283)
 });
 
 // The latest run of a Personal rule, one row per finding. A run replaces every row of its rule. Never

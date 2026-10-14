@@ -7,7 +7,7 @@
  * Every id is fake: zero GUIDs and example.com.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { countRows, resetDb } from '../helpers/db';
+import { countRows, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import {
@@ -17,7 +17,12 @@ import {
 import {
   approveLibraryRequest, createLibraryRequest, getLibraryRequest, listLibraryRequestsForPersonalRule, rejectLibraryRequest,
 } from '@/lib/db/library-requests';
-import { loadRule, loadRules } from '@/lib/rules';
+import { createRule, deleteRule, loadRule, loadRules } from '@/lib/rules';
+import type { Rule } from '@rulebeat/core';
+import { listFindings } from '@/lib/db/findings';
+import { addSuppression, loadSuppressions } from '@/lib/suppressions';
+import { EVERYTHING_ACCESS } from '../helpers/access';
+import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { argRow, fakeTenantContext, TEST_SUB_A, TEST_TENANT_ID, type FakeTenantContext } from '../helpers/fake-azure';
 import { COPY_TO_LIBRARY_REASON } from '@/lib/library-request-view';
 import type { Role } from '@/lib/rbac';
@@ -45,6 +50,7 @@ const listRoute = await import('@/app/api/library-requests/route');
 const viewRoute = await import('@/app/api/library-requests/[id]/route');
 const previewRoute = await import('@/app/api/library-requests/[id]/preview/route');
 const approveRoute = await import('@/app/api/library-requests/[id]/approve/route');
+const rulesItem = await import('@/app/api/rules/[id]/route');
 const rejectRoute = await import('@/app/api/library-requests/[id]/reject/route');
 const withdrawRoute = await import('@/app/api/library-requests/[id]/withdraw/route');
 const usersItem = await import('@/app/api/users/[id]/route');
@@ -714,5 +720,391 @@ describe('the repository holds the rules even when a route is bypassed', () => {
 
     expect(await createLibraryRequest(cast.rule, cast.author, theirs.request.id)).toEqual({ ok: false, reason: 'resubmit-not-found' });
     expect(await createLibraryRequest(cast.rule, cast.stranger, theirs.request.id)).toMatchObject({ ok: true });
+  });
+});
+
+describe('update requests', () => {
+  const NEW_KQL = `${KQL} | where location == "westeurope"`;
+  let ruleCounter = 0;
+
+  /** A custom library rule, as the library holds one: a unique name, since library rules outlive resetDb(). */
+  async function libraryRule(overrides: Record<string, unknown> = {}): Promise<Rule> {
+    const made = await createRule({
+      id: `update-target-${++ruleCounter}-${castCounter}`, type: 'custom', name: `Library VM rule ${castCounter}-${ruleCounter}`,
+      description: 'Flags virtual machines', category: 'security', severity: 'high', enabled: false, queryBackend: 'resource-graph', kind: 'state',
+      scope: { level: 'subscription', subscriptions: [TEST_SUB_A] }, resourceTypes: [], conditions: [], rawKql: KQL,
+      ...overrides,
+    } as unknown as Rule);
+    if (!made.ok) throw new Error(made.reason);
+    return made.rule;
+  }
+
+  /** A Personal rule copied from `source`, as the Copy to personal route leaves it. */
+  const copyOf = (source: Rule, overrides: Partial<PersonalRuleDefinition> = {}) =>
+    createPersonalRule(cast.author, definition(`Copy of ${source.name}`, overrides), source.id);
+
+  /** The Personal rule is sent as an update to its custom source, and the answer is the request id. */
+  async function sendUpdate(personal: PersonalRule, target: Rule, extra: Record<string, unknown> = {}): Promise<string> {
+    return sendRequest(personal, cast.author, { updates: target.id, ...extra });
+  }
+
+  const readDetail = async (id: string) => {
+    as(cast.reviewer);
+    const res = await view(id);
+    expect(res.status).toBe(200);
+    return bodyOf<{
+      target?: { id: string; name: string } | null; targetChanged?: boolean; diff?: { kind: string; text: string }[]; isUpdate?: boolean;
+    }>(res);
+  };
+
+  const putTarget = async (target: Rule, changes: Record<string, unknown>) => {
+    as(cast.admin);
+    const res = await rulesItem.PUT(jsonRequest('PUT', {
+      name: target.name, description: target.description, category: target.category, severity: target.severity,
+      enabled: target.enabled, scope: target.scope, resourceTypes: [], conditions: [], rawKql: target.rawKql, ...changes,
+    }), idParams(target.id));
+    expect(res.status).toBe(200);
+  };
+
+  describe('choosing the target', () => {
+    it('records the library rule the Personal rule made, and a snapshot of its definition', async () => {
+      const first = await sendRequest();
+      as(cast.admin);
+      const { rule } = await bodyOf<{ rule: { id: string } }>(await approve(first, { name: `Made by ${first}` }));
+      const second = await sendRequest(cast.rule, cast.author, { updates: rule.id });
+
+      expect(await getLibraryRequest(second)).toMatchObject({
+        status: 'open', targetRuleId: rule.id,
+        targetDefinition: { name: `Made by ${first}`, category: 'security', severity: 'high', rawKql: KQL },
+      });
+    });
+
+    it('records a custom source rule as the target', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source);
+      const id = await sendUpdate(personal, source);
+      expect(await getLibraryRequest(id)).toMatchObject({
+        status: 'open', targetRuleId: source.id, targetDefinition: { name: source.name, rawKql: KQL },
+      });
+      expect(await getLibraryRequest(id)).toMatchObject({ definition: { name: personal.name } });
+    });
+
+    it('answers 400 for a built-in target and writes no request', async () => {
+      const builtin = (await loadRules()).find(r => r.type === 'builtin' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
+      const personal = await copyOf(builtin);
+      as(cast.author);
+      const res = await send(personal.id, { updates: builtin.id });
+      expect(res.status).toBe(400);
+      expect((await bodyOf<{ error: string }>(res)).error).toContain('can only be sent as a new rule');
+      expect(await countRows('library_requests')).toBe(0);
+    });
+
+    it('answers 404 for a rule that is neither the library rule nor the source of this one, and writes no request', async () => {
+      const unrelated = await libraryRule();
+      as(cast.author);
+      expect((await send(cast.rule.id, { updates: unrelated.id })).status).toBe(404);
+      expect((await send(cast.rule.id, { updates: '00000000-0000-0000-0000-0000000000ff' })).status).toBe(404);
+      expect(await countRows('library_requests')).toBe(0);
+    });
+
+    it('answers 400 for an updates that is not an id', async () => {
+      as(cast.author);
+      expect((await send(cast.rule.id, { updates: 12 })).status).toBe(400);
+      expect((await send(cast.rule.id, { updates: '' })).status).toBe(400);
+      expect(await countRows('library_requests')).toBe(0);
+    });
+
+    it('answers 400 for a target on another query backend', async () => {
+      const graph = await libraryRule({ queryBackend: 'microsoft-graph', rawKql: undefined, graphQuery: { path: 'users', filter: 'accountEnabled eq false' } });
+      const personal = await copyOf(graph);
+      as(cast.author);
+      expect((await send(personal.id, { updates: graph.id })).status).toBe(400);
+      expect(await countRows('library_requests')).toBe(0);
+    });
+
+    it('keeps the target when a rejected update request is sent again', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source);
+      const first = await sendUpdate(personal, source);
+      as(cast.admin);
+      await reject(first, { reason: 'Try again.' });
+
+      const second = await sendRequest(personal, cast.author, { resubmits: first });
+      expect(await getLibraryRequest(second)).toMatchObject({ resubmitsRequestId: first, targetRuleId: source.id, targetDefinition: { name: source.name } });
+    });
+
+    it('can be sent again as an update after an earlier request was approved', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source);
+      const first = await sendUpdate(personal, source);
+      as(cast.admin);
+      expect((await approve(first)).status).toBe(201);
+      const second = await sendUpdate(personal, source);
+      expect(second).not.toBe(first);
+    });
+
+    it('audits the send once, with the target id and no query', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source);
+      const id = await sendUpdate(personal, source);
+      const sends = (await listAllAuditEntries()).filter(e => e.action === 'library_request.create');
+      expect(sends).toHaveLength(1);
+      expect(sends[0]).toMatchObject({ entityId: id, details: { targetRuleId: source.id, update: true } });
+      expect(JSON.stringify(sends[0])).not.toContain('virtualmachines');
+    });
+  });
+
+  describe('what the reviewer reads', () => {
+    it('shows the target, a line diff against it, and no change flag while the target is as it was', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source, { rawKql: NEW_KQL, severity: 'low' });
+      const id = await sendUpdate(personal, source);
+
+      const detail = await readDetail(id);
+      expect(detail.target).toEqual({ id: source.id, name: source.name });
+      expect(detail.targetChanged).toBe(false);
+      expect(detail.diff).toContainEqual({ kind: 'removed', text: 'Severity: high' });
+      expect(detail.diff).toContainEqual({ kind: 'added', text: 'Severity: low' });
+      expect(detail.diff).toContainEqual({ kind: 'added', text: NEW_KQL });
+      expect(detail.diff).toContainEqual({ kind: 'removed', text: KQL });
+      expect(detail.diff).toContainEqual({ kind: 'same', text: 'Category: security' });
+    });
+
+    it('says the target changed once it is edited, and diffs against the edited rule', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source, { rawKql: NEW_KQL });
+      const id = await sendUpdate(personal, source);
+      await putTarget(source, { description: 'Edited by someone else' });
+
+      const detail = await readDetail(id);
+      expect(detail.targetChanged).toBe(true);
+      expect(detail.diff).toContainEqual({ kind: 'removed', text: 'Description: Edited by someone else' });
+      expect(detail.diff).toContainEqual({ kind: 'added', text: 'Description: Flags virtual machines' });
+    });
+
+    it('flags a change to the query alone', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source), source);
+      await putTarget(source, { rawKql: NEW_KQL });
+      expect((await readDetail(id)).targetChanged).toBe(true);
+    });
+
+    it('has no target, no diff and no flag on a new-rule request', async () => {
+      const detail = await readDetail(await sendRequest());
+      expect(detail.target).toBeUndefined();
+      expect(detail.diff).toBeUndefined();
+      expect(detail.targetChanged).toBeUndefined();
+    });
+
+    it('lists the request with its target, and names the target to the author', async () => {
+      const source = await libraryRule();
+      const personal = await copyOf(source);
+      const id = await sendUpdate(personal, source);
+
+      as(cast.reviewer);
+      const listed = await bodyOf<{ requests: { id: string; isUpdate?: boolean; target?: { id: string; name: string } | null }[] }>(await list());
+      expect(listed.requests.find(r => r.id === id)).toMatchObject({ isUpdate: true, target: { id: source.id, name: source.name } });
+
+      as(cast.author);
+      const read = await bodyOf<{ libraryRequests: { id: string; isUpdate?: boolean; target?: { id: string; name: string } | null }[] }>(await readPersonal(personal.id));
+      expect(read.libraryRequests[0]).toMatchObject({ id, isUpdate: true, target: { id: source.id, name: source.name } });
+    });
+
+    it('reads target as null once the rule is gone, and no flag or diff', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source), source);
+      await deleteRule(source.id);
+
+      const detail = await readDetail(id);
+      expect(detail.target).toBeNull();
+      expect(detail.targetChanged).toBe(false);
+      expect(detail.diff).toEqual([]);
+    });
+  });
+
+  describe('approving', () => {
+    it('edits the target in place: same id, same rule count, the reviewed definition', async () => {
+      const source = await libraryRule({ enabled: true });
+      const personal = await copyOf(source, { rawKql: NEW_KQL, severity: 'low', description: 'A better description' });
+      const id = await sendUpdate(personal, source);
+      const count = (await loadRules()).length;
+
+      as(cast.reviewer);
+      const res = await approve(id, { name: `${source.name} renamed`, category: 'cost' });
+      expect(res.status).toBe(201);
+      expect((await bodyOf<{ rule: { id: string } }>(res)).rule.id).toBe(source.id);
+
+      expect((await loadRules()).length).toBe(count);
+      expect(await loadRule(source.id)).toMatchObject({
+        id: source.id, type: 'custom', name: `${source.name} renamed`, category: 'cost', severity: 'low', rawKql: NEW_KQL,
+        description: 'A better description', queryBackend: 'resource-graph',
+      });
+      expect(await getLibraryRequest(id)).toMatchObject({ status: 'approved', reviewedBy: cast.reviewer, libraryRuleId: source.id });
+      expect((await getPersonalRule(personal.id, cast.author))!.libraryRuleId).toBe(source.id);
+    });
+
+    it('keeps the target\'s enabled state unless the reviewer sets it', async () => {
+      const on = await libraryRule({ enabled: true });
+      const off = await libraryRule({ enabled: false });
+      const onRequest = await sendUpdate(await copyOf(on), on);
+      const offRequest = await sendUpdate(await copyOf(off), off);
+
+      as(cast.admin);
+      expect((await approve(onRequest)).status).toBe(201);
+      expect((await approve(offRequest, { enabled: true })).status).toBe(201);
+      expect((await loadRule(on.id))!.enabled).toBe(true);
+      expect((await loadRule(off.id))!.enabled).toBe(true);
+    });
+
+    it('lets the reviewer turn the target off', async () => {
+      const on = await libraryRule({ enabled: true });
+      const id = await sendUpdate(await copyOf(on), on);
+      as(cast.admin);
+      expect((await approve(id, { enabled: false })).status).toBe(201);
+      expect((await loadRule(on.id))!.enabled).toBe(false);
+    });
+
+    it('leaves what a request cannot write as it was: type, pack, backend, request id and run outcome', async () => {
+      const source = await libraryRule({ libraryRequestId: 'earlier-request', lastRunStatus: 'success', lastRunAt: '2026-01-01T00:00:00.000Z' });
+      const id = await sendUpdate(await copyOf(source), source);
+      as(cast.admin);
+      await approve(id, { type: 'builtin', pack: 'aprl-v2', libraryRequestId: id, queryBackend: 'microsoft-graph' });
+      expect(await loadRule(source.id)).toMatchObject({
+        type: 'custom', queryBackend: 'resource-graph', libraryRequestId: 'earlier-request', lastRunStatus: 'success', lastRunAt: '2026-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('answers 409 for a name that clashes in another case, changes nothing and leaves the request open', async () => {
+      const source = await libraryRule();
+      const other = await libraryRule();
+      const id = await sendUpdate(await copyOf(source, { rawKql: NEW_KQL }), source);
+      const before = JSON.stringify(await loadRule(source.id));
+      const count = (await loadRules()).length;
+
+      as(cast.admin);
+      const res = await approve(id, { name: other.name.toUpperCase() });
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(await loadRule(source.id))).toBe(before);
+      expect((await loadRules()).length).toBe(count);
+      expect((await getLibraryRequest(id))!.status).toBe('open');
+      expect((await getPersonalRule((await getLibraryRequest(id))!.personalRuleId!, cast.author))!.libraryRuleId).toBeUndefined();
+    });
+
+    it('may keep the target\'s own name, in another case', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source), source);
+      as(cast.admin);
+      expect((await approve(id, { name: source.name.toUpperCase() })).status).toBe(201);
+      expect((await loadRule(source.id))!.name).toBe(source.name.toUpperCase());
+    });
+
+    it('answers 409 when the target was deleted, and creates no rule', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source), source);
+      await deleteRule(source.id);
+      const count = (await loadRules()).length;
+
+      as(cast.admin);
+      const res = await approve(id);
+      expect(res.status).toBe(409);
+      expect((await bodyOf<{ error: string }>(res)).error).toContain('no longer exists');
+      expect((await loadRules()).length).toBe(count);
+      expect((await getLibraryRequest(id))!.status).toBe('open');
+    });
+
+    it('answers 409 when the target is not a custom rule, even if a request was forced onto it', async () => {
+      const builtin = (await loadRules()).find(r => r.type === 'builtin' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
+      const personal = await copyOf(builtin);
+      const created = await createLibraryRequest(personal, cast.author);
+      if (!created.ok) throw new Error(created.reason);
+      await execRaw(`UPDATE library_requests SET target_rule_id = '${builtin.id.replace(/'/g, "''")}' WHERE id = '${created.request.id}'`);
+      const before = JSON.stringify(await loadRule(builtin.id));
+
+      as(cast.admin);
+      expect((await approve(created.request.id)).status).toBe(409);
+      expect(JSON.stringify(await loadRule(builtin.id))).toBe(before);
+      expect((await getLibraryRequest(created.request.id))!.status).toBe('open');
+    });
+
+    it('refuses to create a request for a built-in target in the repository too', async () => {
+      const builtin = (await loadRules()).find(r => r.type === 'builtin' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
+      expect(await createLibraryRequest(await copyOf(builtin), cast.author, undefined, builtin.id)).toEqual({ ok: false, reason: 'target-not-custom' });
+    });
+
+    it('refuses in the approving transaction when the target is a built-in or gone, even with the route bypassed', async () => {
+      const builtin = (await loadRules()).find(r => r.type === 'builtin' && (r.queryBackend ?? 'resource-graph') === 'resource-graph')!;
+      const forced = await createLibraryRequest(await copyOf(builtin), cast.author);
+      if (!forced.ok) throw new Error(forced.reason);
+      await execRaw(`UPDATE library_requests SET target_rule_id = '${builtin.id.replace(/'/g, "''")}' WHERE id = '${forced.request.id}'`);
+      const before = JSON.stringify(await loadRule(builtin.id));
+      expect(await approveLibraryRequest(forced.request.id, cast.reviewer, {})).toEqual({ ok: false, reason: 'not-custom' });
+      expect(JSON.stringify(await loadRule(builtin.id))).toBe(before);
+
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source), source);
+      await deleteRule(source.id);
+      const count = (await loadRules()).length;
+      expect(await approveLibraryRequest(id, cast.reviewer, {})).toEqual({ ok: false, reason: 'target-gone' });
+      expect((await loadRules()).length).toBe(count);
+      expect((await getLibraryRequest(id))!.status).toBe('open');
+    });
+
+    it('keeps the findings, their first-seen ages and the suppressions of the target', async () => {
+      const source = await libraryRule();
+      const finding = syntheticFinding('vm-update-1', [{ name: 'vm-update-1' }], { ruleId: source.id });
+      const suppressed = syntheticFinding('vm-update-2', [{ name: 'vm-update-2' }], { ruleId: source.id });
+      await storeScan([finding, suppressed], { scanId: 'scan-before', finishedAt: '2026-01-01T00:00:00.000Z' });
+      await addSuppression({
+        id: '00000000-0000-0000-0000-0000000000aa', fingerprint: suppressed.fingerprint, resourceId: suppressed.resourceId,
+        reason: 'Known', suppressedAt: '2026-01-02T00:00:00.000Z',
+      });
+      const snapshot = async () => ({
+        findings: (await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === source.id).map(f => ({ id: f.fingerprint, firstSeenAt: f.firstSeenAt, status: f.status })).sort((a, b) => a.id.localeCompare(b.id)),
+        suppressions: await loadSuppressions(EVERYTHING_ACCESS),
+      });
+      const before = await snapshot();
+      expect(before.findings).toHaveLength(2);
+      expect(before.findings.every(f => f.firstSeenAt === '2026-01-01T00:00:00.000Z')).toBe(true);
+      expect(before.suppressions).toHaveLength(1);
+
+      const id = await sendUpdate(await copyOf(source, { rawKql: NEW_KQL, severity: 'low' }), source);
+      as(cast.admin);
+      expect((await approve(id)).status).toBe(201);
+
+      expect(await snapshot()).toEqual(before);
+      expect(await loadRule(source.id)).toMatchObject({ severity: 'low', rawKql: NEW_KQL });
+    });
+
+    it('audits the approval once as an update, with field names and ids and never the query', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source, { rawKql: NEW_KQL, severity: 'low' }), source);
+      as(cast.admin);
+      await approve(id, { name: `${source.name} v2` });
+
+      const approvals = (await listAllAuditEntries()).filter(e => e.action === 'library_request.approve');
+      expect(approvals).toHaveLength(1);
+      const entry = approvals[0]!;
+      expect(entry).toMatchObject({ entityId: id, details: { libraryRuleId: source.id, targetRuleId: source.id, update: true } });
+      expect(entry.summary).toContain('as an update to');
+      expect((entry.details as { changed: string[] }).changed).toEqual(expect.arrayContaining(['name', 'severity', 'rawKql']));
+      expect(JSON.stringify(entry)).not.toContain('westeurope');
+      expect(JSON.stringify(entry)).not.toContain('virtualmachines');
+    });
+
+    it('refuses a Viewer and an Editor held at a smaller Scope with 403, and changes nothing', async () => {
+      const source = await libraryRule();
+      const id = await sendUpdate(await copyOf(source, { rawKql: NEW_KQL }), source);
+      const before = JSON.stringify(await loadRule(source.id));
+      const audits = (await listAllAuditEntries()).length;
+
+      for (const refused of [cast.viewer, cast.scoped]) {
+        as(refused);
+        expect((await approve(id)).status).toBe(403);
+        expect((await view(id)).status).toBe(403);
+      }
+      expect(JSON.stringify(await loadRule(source.id))).toBe(before);
+      expect((await getLibraryRequest(id))!.status).toBe('open');
+      expect((await listAllAuditEntries()).length).toBe(audits);
+    });
   });
 });

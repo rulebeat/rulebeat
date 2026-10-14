@@ -47,6 +47,19 @@ export default async function PersonalRulePage({ params }: { params: Promise<{ i
     ? { reason: inLibrary ? `This rule is already in the library as "${inLibrary.name}".` : null }
     : null;
 
+  // Update requests aim at one custom library rule: the one this rule already made, or the one it was copied from.
+  // A copy of a built-in can only go as a new rule, and a rule on another query backend cannot be edited into this one.
+  const updateTargets: { id: string; name: string }[] = [];
+  for (const candidate of [copied, source]) {
+    if (candidate && candidate.type === 'custom' && candidate.queryBackend === rule.queryBackend
+      && !updateTargets.some(t => t.id === candidate.id)) {
+      updateTargets.push({ id: candidate.id, name: candidate.name });
+    }
+  }
+  const newOnlyReason = source && source.type !== 'custom' && updateTargets.length === 0
+    ? 'A copy of a built-in rule can only be sent as a new rule. A built-in changes only with a new version.'
+    : null;
+
   return (
     <>
       <Header title={rule.name} description={splitLearnMore(rule.description).text || undefined} />
@@ -56,6 +69,8 @@ export default async function PersonalRulePage({ params }: { params: Promise<{ i
         requests={requests}
         copiedTo={copiedTo}
         copyToLibrary={copyToLibrary}
+        updateTargets={updateTargets}
+        newOnlyReason={newOnlyReason}
         updatedAt={rule.updatedAt}
         results={results}
         lastRunCovered={covered}

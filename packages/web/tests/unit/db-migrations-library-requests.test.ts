@@ -95,7 +95,7 @@ describe('upgrading to a database with Library requests', () => {
 
     expect(columns(db, 'library_requests')).toEqual([
       'id', 'personal_rule_id', 'author_id', 'definition', 'status', 'created_at', 'reviewed_by', 'reviewed_at',
-      'rejection_reason', 'resubmits_request_id', 'library_rule_id',
+      'rejection_reason', 'resubmits_request_id', 'library_rule_id', 'target_rule_id', 'target_definition',
     ]);
     expect(columns(db, 'rules')).toContain('library_request_id');
     expect(columns(db, 'personal_rules')).toContain('library_rule_id');
@@ -126,6 +126,75 @@ describe('upgrading to a database with Library requests', () => {
     });
     expect(await second.rules.loadRule(approved.rule.id)).toMatchObject({ name: 'Sent to the library', rawKql: KQL, libraryRequestId: sent.request.id, enabled: true });
     expect((await second.personal.getPersonalRule(personal.id, author.user.id))!.libraryRuleId).toBe(approved.rule.id);
+  });
+});
+
+describe('upgrading from a database that has Library requests but no update targets (#283)', () => {
+  it('adds the two target columns and keeps every request with its fields', async () => {
+    const sample = makeSample('current');
+    const db = open(sample.file);
+    runMigrations(db);
+    db.exec(`ALTER TABLE library_requests DROP COLUMN target_rule_id; ALTER TABLE library_requests DROP COLUMN target_definition;`);
+    db.prepare(`
+      INSERT INTO library_requests (id, personal_rule_id, author_id, definition, status, created_at, reviewed_by, reviewed_at, rejection_reason, resubmits_request_id, library_rule_id)
+      VALUES ('request-open', 'personal-1', 'author-1', '{"name":"Open one"}', 'open', '2026-01-01T00:00:00.000Z', NULL, NULL, NULL, NULL, NULL),
+             ('request-rejected', 'personal-1', 'author-1', '{"name":"Rejected one"}', 'rejected', '2026-01-02T00:00:00.000Z', 'reviewer-1', '2026-01-03T00:00:00.000Z', 'Not now', 'request-open', NULL),
+             ('request-approved', 'personal-2', 'author-1', '{"name":"Approved one"}', 'approved', '2026-01-04T00:00:00.000Z', 'reviewer-1', '2026-01-05T00:00:00.000Z', NULL, NULL, ?)
+    `).run(RULE);
+    expect(columns(db, 'library_requests')).not.toContain('target_rule_id');
+    expect(columns(db, 'library_requests')).not.toContain('target_definition');
+    const before = all(db, `SELECT * FROM library_requests ORDER BY id`);
+
+    runMigrations(db);
+
+    expect(columns(db, 'library_requests')).toEqual(expect.arrayContaining(['target_rule_id', 'target_definition']));
+    expect(all(db, `SELECT * FROM library_requests ORDER BY id`)).toEqual(before.map(row => ({ ...row, target_rule_id: null, target_definition: null })));
+    db.close();
+  });
+
+  it('reads an old request as a new-rule request, and stores a target and its snapshot across a restart', async () => {
+    const sample = makeSample('current');
+    const first = await startProductOn(sample.file);
+    const author = await first.users.createUser({ email: 'author@example.com', role: 'editor' });
+    const reviewer = await first.users.createUser({ email: 'reviewer@example.com', role: 'admin' });
+    if ('error' in author || 'error' in reviewer) throw new Error('could not create users');
+    const personal = await first.personal.createPersonalRule(author.user.id, DEFINITION);
+    const sent = await first.requests.createLibraryRequest(personal, author.user.id);
+    if (!sent.ok) throw new Error(sent.reason);
+    const approved = await first.requests.approveLibraryRequest(sent.request.id, reviewer.user.id, {});
+    if (!approved.ok) throw new Error(approved.reason);
+    const update = await first.requests.createLibraryRequest(personal, author.user.id, undefined, approved.rule.id);
+    if (!update.ok) throw new Error(update.reason);
+    first.stop();
+
+    const second = await startProductOn(sample.file);
+    expect((await second.requests.getLibraryRequest(sent.request.id))!.targetRuleId).toBeUndefined();
+    expect(await second.requests.getLibraryRequest(update.request.id)).toMatchObject({
+      status: 'open', targetRuleId: approved.rule.id, targetDefinition: { name: 'Sent to the library', rawKql: KQL },
+    });
+  });
+
+  it('rewrites target_rule_id when the rule id is renamed, and leaves other targets as they were', async () => {
+    const sample = makeSample('current');
+    const db = open(sample.file);
+    runMigrations(db);
+    db.prepare(`DELETE FROM rules WHERE id IN (?, ?)`).run(OLD_ID, NEW_ID);
+    insertRule(db, OLD_ID, 'Old-format rule');
+    db.prepare(`
+      INSERT INTO library_requests (id, personal_rule_id, author_id, definition, status, created_at, target_rule_id, target_definition)
+      VALUES ('update-renamed', 'personal-1', 'author-1', '{}', 'open', '2026-01-01T00:00:00.000Z', ?, '{"name":"Old-format rule"}'),
+             ('update-kept', 'personal-2', 'author-1', '{}', 'open', '2026-01-01T00:00:00.000Z', ?, '{"name":"Other"}'),
+             ('new-rule', 'personal-3', 'author-1', '{}', 'open', '2026-01-01T00:00:00.000Z', NULL, NULL)
+    `).run(OLD_ID, RULE);
+
+    runMigrations(db);
+
+    expect(all(db, `SELECT id, target_rule_id, target_definition FROM library_requests ORDER BY id`)).toEqual([
+      { id: 'new-rule', target_rule_id: null, target_definition: null },
+      { id: 'update-kept', target_rule_id: RULE, target_definition: '{"name":"Other"}' },
+      { id: 'update-renamed', target_rule_id: NEW_ID, target_definition: '{"name":"Old-format rule"}' },
+    ]);
+    db.close();
   });
 });
 
