@@ -2,6 +2,11 @@ import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getDashboard, listDashboards } from '@/lib/db/dashboards';
 import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
+import { NoAccessState } from '@/components/findings/no-access-state';
+import { getCurrentUser } from '@/lib/api-auth';
+import { resolveAccess } from '@/lib/access';
+import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
+import { markDashboardConfig } from '@/lib/outside-access';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props { params: Promise<{ id: string }> }
@@ -15,6 +20,8 @@ export default async function DashboardPage({ params }: Props) {
   const dashboard = await getDashboard(id);
   if (!dashboard) notFound();
   const dashboards = await listDashboards();
+  const user = await getCurrentUser();
+  const access = user ? await resolveAccess(user) : NO_ACCESS;
 
   return (
     <>
@@ -22,7 +29,9 @@ export default async function DashboardPage({ params }: Props) {
       <div className="flex-1 min-h-0 flex flex-col">
         <DashboardTabs dashboards={dashboards} activeId={dashboard.id} />
         <div className="flex-1 min-h-0">
-          <DashboardGridClient dashboard={dashboard} />
+          {holdsNoScope(access)
+            ? <NoAccessState />
+            : <DashboardGridClient dashboard={dashboard} outsideAccess={markDashboardConfig(access, dashboard.config)} />}
         </div>
       </div>
     </>

@@ -96,6 +96,13 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   (`findings/view|rows|group|column-values|export`, `lib/db/finding-views.ts`) narrow by it in SQL
   (`lib/db/access-filter.ts`): a finding is seen when its placement sits inside a Scope the person
   holds, and a column list for anyone but Everything comes from the rows of the findings they see.
+  A management group Scope covers the subscriptions under it at any depth and the findings placed at
+  it or at a group beneath it. RuleBeat reads that from its own copy of the management group tree
+  (`lib/management-group-hierarchy.ts`, the `management_group_hierarchy` table, refreshed hourly by the
+  scheduler and on demand from the Access page): `resolveAccess()` expands each held group into
+  `Access.managementGroups` once per request and the filter stays synchronous. `Access.grants` stays
+  the stored rows, so moving a subscription changes what a person sees and no row. A failed refresh
+  keeps the last tree and the page says so.
   `access-matrix.test.ts` holds each narrowed route in `MATRIX`, with what each person gets written by
   hand, and keeps every other route on `NOT_YET_SCOPED` until the ticket that narrows it. Suppressions, the rule list and
   the Azure pickers follow the same Scopes: `loadSuppressions(access)` returns only suppressions on findings inside them, and

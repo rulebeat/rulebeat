@@ -5,10 +5,9 @@
  * A Scope is stored as a path; the lists here are the ids inside it. A subscription is held when a
  * subscription Scope names it, or when a resource group Scope sits inside it (the person sees the
  * subscription to reach the group, as the Access page's picker does). A management group is held when
- * a management group Scope names it. Ids compare without regard to case, as Azure does.
- *
- * A management group Scope covers nothing below it until the hierarchy cache exists (#273), so a
- * subscription under a held group is not held through it.
+ * a management group Scope names it. A management group Scope also holds what sits under it, by the
+ * expansion `access` carries from RuleBeat's copy of the tree (#273): every subscription and group beneath
+ * it. Ids compare without regard to case, as Azure does.
  */
 import type { Access } from './access-model';
 
@@ -33,6 +32,10 @@ export function heldScopes(access: Access): HeldScopes {
       if (id && !managementGroups.has(id.toLowerCase())) managementGroups.set(id.toLowerCase(), id);
     }
   }
+  for (const expansion of access.managementGroups) {
+    for (const id of expansion.subscriptions) if (!subscriptions.has(id.toLowerCase())) subscriptions.set(id.toLowerCase(), id);
+    for (const id of expansion.groups) if (!managementGroups.has(id.toLowerCase())) managementGroups.set(id.toLowerCase(), id);
+  }
   return { everything: access.everything, subscriptions: [...subscriptions.values()], managementGroups: [...managementGroups.values()] };
 }
 
@@ -50,22 +53,20 @@ export interface HierarchyNode {
 
 /**
  * What a person who does not hold Everything is shown of the hierarchy: each held management group
- * with all that sits under it, and each held subscription, every one at the top level. No ancestor and
- * no sibling of a held entry is kept, so neither their names nor the tenant root's are sent.
+ * with all that sits under it, and each held subscription, every one at the top level. An entry already
+ * inside a kept group is not listed a second time. No ancestor and no sibling of a held entry is kept, so
+ * neither their names nor the tenant root's are sent.
  */
 export function limitHierarchy<N extends HierarchyNode>(nodes: readonly N[], held: HeldScopes): N[] {
   const kept: N[] = [];
-  const walk = (level: readonly N[]): void => {
+  const walk = (level: readonly N[], covered: boolean): void => {
     for (const node of level) {
-      if (node.type === 'subscription') {
-        if (holdsSubscription(held, node.id)) kept.push(node);
-        continue;
-      }
-      if (holdsManagementGroup(held, node.id)) kept.push(node);
-      // A held subscription or group below an unheld or held group is found either way.
-      walk((node.children ?? []) as N[]);
+      const keep = !covered && (node.type === 'subscription' ? holdsSubscription(held, node.id) : holdsManagementGroup(held, node.id));
+      if (keep) kept.push(node);
+      // What sits under a kept group is already in it; what sits under any other group may still be held.
+      if (node.type === 'managementGroup') walk((node.children ?? []) as N[], covered || keep);
     }
   };
-  walk(nodes);
+  walk(nodes, false);
   return kept;
 }

@@ -16,7 +16,7 @@ import { HelpCircle, Copy, Check, Play, ExternalLink, Lock, Sparkles } from 'luc
 import { FieldCombobox } from './field-combobox';
 import { ResourceTypeInput } from './resource-type-input';
 import { ScopeTreePicker } from './scope-tree-picker';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { TagPicker } from './tag-picker';
 import type { LockedTag } from './tag-picker';
 import { PACK_LABELS } from '@/lib/pack-labels';

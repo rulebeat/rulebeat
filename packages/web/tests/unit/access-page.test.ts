@@ -9,8 +9,8 @@
  */
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createUser, getUser, listUsers, setManualAccess, type AppUser } from '@/lib/db/users';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createUser, getUser, listUsers, recordMirrorFailure, setManualAccess, setMirroredAccess, type AppUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { deleteAssignmentsOn, listAssignmentsFor, replaceAssignmentsOn } from '@/lib/db/role-assignments';
@@ -19,11 +19,17 @@ import { listUsersWithAccess, type AppUserWithAccess, type OwnAccess } from '@/l
 import { describeAccess } from '@/lib/access-model';
 import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
+import { MirroredAccessRow } from '@/app/(app)/access/mirrored-access-form';
+import type { MirroredScope } from '@/lib/access-mirror-model';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
-import { NO_AZURE_CONNECTION_MESSAGE } from '@/lib/manual-access';
+import { NO_AZURE_CONNECTION_MESSAGE, UNKNOWN_MANAGEMENT_GROUP_MESSAGE } from '@/lib/manual-access';
 import { hashPassword } from '@/lib/password';
 import type { Role } from '@/lib/rbac';
 import { resetDb } from '../helpers/db';
+import { ManagementGroupsSection } from '@/app/(app)/access/management-groups-section';
+import { grantsOfAccess } from '@/lib/access-picker';
+import { refreshManagementGroupHierarchy } from '@/lib/management-group-hierarchy';
+import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 
 const TENANT = '00000000-0000-0000-0000-0000000000f0';
 const SUB = '/subscriptions/00000000-0000-0000-0000-00000000000a';
@@ -242,7 +248,7 @@ describe.each(['viewer', 'editor'] as const)('the user routes for a %s', (role) 
     expect((await accessRoute.GET(getRequest(), params(target.id))).status).toBe(403);
     const write = await accessRoute.PUT(jsonRequest('PUT', { access: [grant('@directory', 'viewer')] }), params(target.id));
     expect(write.status).toBe(403);
-    expect(await listAssignmentsFor(target.id)).toEqual([{ userId: target.id, tenantId: '', scope: '/', role: 'viewer' }]);
+    expect(await listAssignmentsFor(target.id)).toEqual([{ userId: target.id, tenantId: '', scope: '/', role: 'viewer', origin: null }]);
   });
 
   it('refuses a person\'s own Manual access too: only an Admin changes it', async () => {
@@ -350,7 +356,7 @@ describe('access in the page and the routes (#269)', () => {
     for (const role of ['viewer', 'editor'] as const) {
       const res = await usersRoute.POST(jsonRequest('POST', { email: `${role}-new@example.com`, role, access: [grant('/', role)] }));
       const created = await res.json() as AppUserWithAccess;
-      expect(await listAssignmentsFor(created.id), role).toEqual([{ userId: created.id, tenantId: '', scope: '/', role }]);
+      expect(await listAssignmentsFor(created.id), role).toEqual([{ userId: created.id, tenantId: '', scope: '/', role, origin: null }]);
     }
     const created = await (await usersRoute.POST(jsonRequest('POST', { email: 'admin-new@example.com', role: 'admin' }))).json() as AppUserWithAccess;
     expect(await listAssignmentsFor(created.id)).toEqual([]);
@@ -479,9 +485,9 @@ describe('Manual access (#272)', () => {
 
   describe('refuses, with a 400 and a stable message', () => {
     const refusals: [string, unknown, string][] = [
-      ['a path that is not a Scope', [grant('not-a-scope', 'viewer')], 'A scope must be Everything, the Directory, a subscription or a resource group.'],
-      ['a resource-level path', [grant(`${RG}/providers/Microsoft.Compute/virtualMachines/vm-one`, 'viewer')], 'A scope must be Everything, the Directory, a subscription or a resource group.'],
-      ['a management group path', [grant(MG, 'viewer')], 'Management group scopes are not available yet.'],
+      ['a path that is not a Scope', [grant('not-a-scope', 'viewer')], 'A scope must be Everything, the Directory, a management group, a subscription or a resource group.'],
+      ['a resource-level path', [grant(`${RG}/providers/Microsoft.Compute/virtualMachines/vm-one`, 'viewer')], 'A scope must be Everything, the Directory, a management group, a subscription or a resource group.'],
+      ['a management group the loaded tree does not hold', [grant(MG, 'viewer')], UNKNOWN_MANAGEMENT_GROUP_MESSAGE],
       ['the Admin Role on a row', [{ scope: SUB, role: 'admin' }], 'The Admin Role cannot be given at a scope.'],
       ['a Role that does not exist', [{ scope: SUB, role: 'owner' }], 'Choose Viewer or Editor for each scope.'],
       ['a body that is not a list', { access: 'everything' }, 'Access must be a list of scopes.'],
@@ -587,7 +593,7 @@ describe('Manual access (#272)', () => {
     it('with Everything, which the page preselects, gives that Everything row at the new Role', async () => {
       const res = await userRoute.PUT(jsonRequest('PUT', { role: 'editor', access: [grant('/', 'editor')] }), params(second.id));
       expect(res.status).toBe(200);
-      expect(await listAssignmentsFor(second.id)).toEqual([{ userId: second.id, tenantId: '', scope: '/', role: 'editor' }]);
+      expect(await listAssignmentsFor(second.id)).toEqual([{ userId: second.id, tenantId: '', scope: '/', role: 'editor', origin: null }]);
       expect((await getUser(second.id))).toMatchObject({ role: 'editor', accessSource: 'manual' });
     });
 
@@ -692,5 +698,325 @@ describe("the prompts under a person's row", () => {
     const person = (await listUsersWithAccess()).find(u => u.id === admin.id)!;
     expect(promptsOf(person, {})).toEqual([]);
     expect(promptsOf(person, { editing: true })).toEqual([]);
+  });
+});
+
+describe('Management group Scopes (#273)', () => {
+  const put = (id: string, body: unknown) => accessRoute.PUT(jsonRequest('PUT', body), params(id));
+  const rowsOf = async (id: string) => (await listAssignmentsFor(id)).map(r => [r.tenantId, r.scope, r.role]).sort();
+  const SUB_A = '00000000-0000-0000-0000-00000000000a';
+  let fake: ReturnType<typeof fakeHierarchy>;
+
+  beforeEach(async () => {
+    signInAs(admin);
+    fake = fakeHierarchy([
+      group(TENANT, 'Tenant Root Group', null),
+      group('mg-example', 'Example group', TENANT),
+      subscription(SUB_A, 'Subscription A', 'mg-example'),
+    ]);
+    await refreshFrom(fake);
+  });
+
+  it('is accepted through the access route, stored as sent under the tenant the server resolved', async () => {
+    const res = await put(target.id, { access: [{ scope: MG, role: 'editor', tenantId: 'from-the-body' }] });
+    expect(res.status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, MG, 'editor']]);
+    expect(await getUser(target.id)).toMatchObject({ role: 'editor', accessSource: 'manual' });
+  });
+
+  it('is stored in the casing it was sent in, and found in the tree whatever the casing', async () => {
+    const sent = MG.replace('mg-example', 'MG-Example');
+    expect((await put(target.id, { access: [grant(sent, 'viewer')] })).status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, sent, 'viewer']]);
+  });
+
+  it('reads back as the group itself in the grants, with what sits under it kept apart', async () => {
+    await put(target.id, { access: [grant(MG, 'viewer')] });
+    const back = await (await accessRoute.GET(getRequest(), params(target.id))).json() as AppUserWithAccess;
+    expect(back.access.grants.map(g => [g.scope.kind, g.scope.path])).toEqual([['managementGroup', MG]]);
+    expect(back.access.managementGroups).toEqual([expect.objectContaining({ path: MG, groups: ['mg-example'], subscriptions: [SUB_A] })]);
+  });
+
+  it('is refused with a 400 and a message that names no path when the loaded tree does not hold the group', async () => {
+    const res = await put(target.id, { access: [grant('/providers/Microsoft.Management/managementGroups/mg-unknown', 'viewer')] });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({ error: UNKNOWN_MANAGEMENT_GROUP_MESSAGE });
+    expect(JSON.stringify(body)).not.toMatch(/mg-unknown|managementGroups/);
+    expect(await rowsOf(target.id)).toEqual([['', '/', 'viewer']]);
+  });
+
+  it('is refused when only another tenant\'s tree holds the group', async () => {
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example', null, '00000000-0000-0000-0000-0000000000e1')];
+    await refreshFrom(fake);
+    expect((await put(target.id, { access: [grant(MG, 'viewer')] })).status).toBe(400);
+  });
+
+  it('is refused when no tree has loaded, as after a first refresh that failed', async () => {
+    await resetDb();
+    admin = await makeUser('admin@example.com', 'admin');
+    target = await makeUser('target@example.com', 'viewer');
+    signInAs(admin);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fake.failWith = new Error('boom');
+    await refreshManagementGroupHierarchy({ read: fake.read });
+    expect((await put(target.id, { access: [grant(MG, 'viewer')] })).status).toBe(400);
+    quiet.mockRestore();
+  });
+
+  it('can be given in an invite and when demoting an Admin', async () => {
+    const invited = await usersRoute.POST(jsonRequest('POST', { email: 'invited@example.com', role: 'viewer', access: [grant(MG, 'viewer')] }));
+    expect(invited.status).toBe(201);
+    expect(await rowsOf(((await invited.json()) as AppUserWithAccess).id)).toEqual([[TENANT, MG, 'viewer']]);
+
+    const second = await makeUser('second@example.com', 'admin');
+    const demoted = await userRoute.PUT(jsonRequest('PUT', { role: 'editor', access: [grant(MG, 'editor'), grant(SUB, 'viewer')] }), params(second.id));
+    expect(demoted.status).toBe(200);
+    expect(await rowsOf(second.id)).toEqual(sorted([[TENANT, MG, 'editor'], [TENANT, SUB, 'viewer']]));
+  });
+
+  it('survives an Edit that is saved without a change: the list the picker starts from holds the group', async () => {
+    await put(target.id, { access: [grant(MG, 'editor'), grant(SUB, 'viewer'), grant('@directory', 'viewer')] });
+    const rowsBefore = await rowsOf(target.id);
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    const resaved = await put(target.id, { access: grantsOfAccess(person.access) });
+    expect(resaved.status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual(rowsBefore);
+  });
+
+  it('stays in what the picker starts from after it leaves the tree, and the save is refused until it is removed', async () => {
+    await put(target.id, { access: [grant(MG, 'viewer'), grant(SUB, 'viewer')] });
+    fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
+    await refreshFrom(fake);
+
+    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+    expect(grantsOfAccess(person.access).map(g => g.scope)).toContain(MG);
+    expect((await put(target.id, { access: grantsOfAccess(person.access) })).status).toBe(400);
+    expect((await put(target.id, { access: [grant(SUB, 'viewer')] })).status).toBe(200);
+    expect(await rowsOf(target.id)).toEqual([[TENANT, SUB, 'viewer']]);
+  });
+
+  it('writes an audit entry that holds field names only, never the group', async () => {
+    await put(target.id, { access: [grant(MG, 'editor')] });
+    const entries = (await listAllAuditEntries()).filter(e => e.action === 'user.access_change');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.details).toEqual({ changed: ['role', 'assignments'] });
+    expect(JSON.stringify(entries[0])).not.toMatch(/mg-example|managementGroups/);
+  });
+});
+
+describe('the management groups card (#273)', () => {
+  const NEVER = { lastSuccessAt: null, lastAttemptAt: null, error: null };
+  const nodes = [
+    { id: TENANT, kind: 'managementGroup' as const, name: 'Tenant Root Group', parentId: null },
+    { id: 'mg-example', kind: 'managementGroup' as const, name: 'Example group', parentId: TENANT },
+    { id: '00000000-0000-0000-0000-00000000000a', kind: 'subscription' as const, name: 'Subscription A', parentId: 'mg-example' },
+  ];
+  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial']) =>
+    renderToStaticMarkup(createElement(ManagementGroupsSection, { initial }));
+
+  it('hands an Admin the stored tree and status, and no one else', async () => {
+    const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
+    await refreshFrom(fake, new Date('2026-06-02T00:00:00.000Z'));
+
+    signInAs(admin);
+    const view = propsWith(await AccessPage(), 'initialHierarchy').initialHierarchy as { nodes: { id: string }[]; status: unknown };
+    expect(view.nodes.map(n => n.id).sort()).toEqual([TENANT, 'mg-example'].sort());
+    expect(view.status).toEqual({ lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null });
+
+    for (const role of ['viewer', 'editor'] as const) {
+      signInAs(await makeUser(`${role}@example.com`, role));
+      const page = await AccessPage();
+      expect(() => propsWith(page, 'initialHierarchy')).toThrow('initialHierarchy not rendered');
+    }
+  });
+
+  it('shows the tree with each group and the subscriptions under it, when it was read, and a Refresh button', () => {
+    const html = render({ nodes, status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
+    expect(html).toContain('Management groups');
+    expect(html.indexOf('Tenant Root Group')).toBeLessThan(html.indexOf('Example group'));
+    expect(html.indexOf('Example group')).toBeLessThan(html.indexOf('Subscription A'));
+    expect(html).toMatch(/Last refreshed /);
+    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
+    expect(html).not.toContain('failed');
+  });
+
+  it('says the refresh failed, when, and that the tree shown is the last one that loaded', () => {
+    const html = render({
+      nodes,
+      status: {
+        lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
+        error: { code: 'failed', message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
+      },
+    });
+    expect(html).toContain('The last refresh failed');
+    expect(html).toContain('The tree shown is the last one that loaded');
+    expect(html).toContain('Check the RuleBeat server logs');
+    expect(html).toContain('Example group');
+  });
+
+  it('says why there is no tree, never the copy of an empty one', () => {
+    const never = render({ nodes: [], status: NEVER });
+    expect(never).toContain('has not been loaded yet');
+    expect(never).toContain('Nothing has been read yet');
+    const notConnected = render({
+      nodes: [],
+      status: {
+        lastSuccessAt: null, lastAttemptAt: '2026-06-02T00:00:00.000Z',
+        error: { code: 'azure_not_configured', message: 'Azure is not connected, so the management group tree could not be read.' },
+      },
+    });
+    expect(notConnected).toContain('no tree has loaded yet');
+    expect(notConnected).toContain('Azure is not connected');
+    expect(notConnected).not.toContain('Azure returned no management groups');
+    const empty = render({ nodes: [], status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } });
+    expect(empty).toContain('Azure returned no management groups');
+  });
+});
+
+describe('Mirrored access on the page (#278)', () => {
+  const ACCOUNT = '00000000-0000-0000-0000-0000000000c1';
+  const AT = '2026-06-02T00:00:00.000Z';
+
+  async function mirroredPerson(email: string, scopes: MirroredScope[], status?: { code: 'failed'; at: string }): Promise<AppUserWithAccess> {
+    const person = await makeUser(email, 'viewer');
+    await setMirroredAccess(person.id, { role: 'viewer', tenantId: TENANT, objectId: ACCOUNT, scopes, at: AT });
+    if (status) await recordMirrorFailure(person.id, { objectId: ACCOUNT, code: status.code, at: status.at });
+    return (await listUsersWithAccess()).find(u => u.id === person.id)!;
+  }
+
+  const inTable = (node: ReactElement) => renderToStaticMarkup(createElement('table', null, createElement('tbody', null, node)));
+
+  describe('whether the sign-in tenant is the Azure connection tenant', () => {
+    beforeEach(() => {
+      signInAs(admin);
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_ID', 'client-id-example');
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_SECRET', 'client-secret-example');
+    });
+    afterEach(() => { vi.unstubAllEnvs(); });
+
+    it('is passed down as true when both are the same tenant, whatever the casing', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT.toUpperCase());
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(true);
+    });
+
+    it('is passed down as false when sign-in is another tenant', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', '00000000-0000-0000-0000-0000000000f1');
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+
+    it('is passed down as false when Azure is not connected', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT);
+      mockTenant.mockRejectedValue(new AzureNotConfiguredError('RuleBeat has no Azure credential to scan with.'));
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+
+    it('is passed down as false when sign-in is not configured', async () => {
+      vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_ID', '');
+      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+    });
+  });
+
+  describe('the Mirrored access form', () => {
+    const form = (user: AppUserWithAccess, signInTenantIsAzureTenant: boolean) =>
+      inTable(createElement(MirroredAccessRow, { user, signInTenantIsAzureTenant, onSaved: () => undefined, onCancel: () => undefined }));
+
+    it('asks for a Role and a Linked account, and the object id field starts empty with Save disabled', async () => {
+      const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const html = form(person, true);
+      expect(html).toContain('Linked account');
+      expect(html).toMatch(/<input[^>]*value=""/);
+      expect(html).not.toContain(ACCOUNT);
+      expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Save<\/button>/);
+    });
+
+    it('offers "Use their sign-in account" only for a person with an oid when the sign-in tenant is the Azure tenant', async () => {
+      const without = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const withOid = { ...without, oid: ACCOUNT };
+      expect(form(withOid, true)).toContain('Use their sign-in account');
+      expect(form(withOid, false)).not.toContain('Use their sign-in account');
+      expect(form(without, true)).not.toContain('Use their sign-in account');
+    });
+
+    it('never fills the field itself, even when the button is offered', async () => {
+      const person = { ...(await listUsersWithAccess()).find(u => u.id === target.id)!, oid: ACCOUNT };
+      const html = form(person, true);
+      expect(html).toMatch(/<input[^>]*value=""/);
+      expect(html).not.toContain(`value="${ACCOUNT}"`);
+    });
+  });
+
+  describe('a mirrored person', () => {
+    const SCOPES: MirroredScope[] = [
+      { scope: SUB, origins: [{ roleName: 'Reader', throughGroup: false, eligible: false }] },
+      { scope: RG, origins: [{ roleName: 'Contributor', throughGroup: true, eligible: false }, { roleName: 'Owner', throughGroup: false, eligible: true }] },
+    ];
+    const render = (users: AppUserWithAccess[]) =>
+      renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
+
+    it('has a Refresh button, the last successful refresh, and each Scope with its Azure role and "through a group" where recorded', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', SCOPES)]);
+      expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
+      expect(html).toContain('Last refreshed');
+      expect(html).toContain(ACCOUNT);
+      expect(html).toContain('Reader');
+      expect(html).toContain('Contributor (through a group)');
+      expect(html).toContain('Owner (eligible)');
+      expect(html).toContain('2 scopes, mirrored');
+      expect(html).not.toContain('The last refresh failed');
+    });
+
+    it('says the last refresh failed, when, and that the Scopes shown are the last ones that loaded, in words of its own', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', SCOPES, { code: 'failed', at: '2026-06-03T00:00:00.000Z' })]);
+      expect(html).toContain('The last refresh failed');
+      expect(html).toContain('The Scopes shown are the last ones that loaded');
+      expect(html).toContain('Check the RuleBeat server logs');
+      expect(html).toContain('Contributor (through a group)');
+    });
+
+    it('says the Linked account holds no role assignments, in place of an empty list, when it gives no Scope', async () => {
+      const html = render([await mirroredPerson('mirrored@example.com', [])]);
+      expect(html).toContain('holds no Azure role assignments RuleBeat can see');
+      expect(html).toContain('No access, mirrored');
+    });
+
+    it('shows no refresh or Linked account for a person with Manual access', async () => {
+      const html = render((await listUsersWithAccess()).filter(u => u.id === target.id));
+      expect(html).not.toContain('Linked account');
+      expect(html).not.toMatch(/Refresh<\/button>/);
+    });
+
+    it('says, when Edit is opened on them, that saving stops the mirror, and says nothing of the kind for a manual person', async () => {
+      const mirrored = await mirroredPerson('mirrored@example.com', SCOPES);
+      const manual = (await listUsersWithAccess()).find(u => u.id === target.id)!;
+      const open = (user: AppUserWithAccess) => inTable(createElement(PromptRows, {
+        user, editing: true, demotingTo: null, saving: false,
+        onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
+      }));
+      expect(open(mirrored)).toContain('Saving here stops the mirror');
+      expect(open(manual)).not.toContain('stops the mirror');
+      expect(open(mirrored)).toContain('Manual access');
+      expect(open(mirrored)).toContain('Mirrored access');
+    });
+  });
+
+  describe('a mirrored person with no Scope, in their own access', () => {
+    it('is told the Linked account holds no Azure role assignments RuleBeat can see, not that they have been given no access', async () => {
+      const person = await makeUser('mirrored@example.com', 'viewer');
+      await setMirroredAccess(person.id, { role: 'viewer', tenantId: TENANT, objectId: ACCOUNT, scopes: [], at: AT });
+      signInAs(person);
+
+      const own = propsWith(await AccessPage(), 'own').own as OwnAccess;
+      expect(own).toMatchObject({ source: 'mirrored', scopes: [] });
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own }));
+      expect(html).toContain('Linked account holds no Azure role assignments RuleBeat can see');
+      expect(html).not.toContain('You have been given no access');
+    });
+
+    it('still tells a manual person with no Scope they have been given no access', async () => {
+      const html = renderToStaticMarkup(createElement(OwnAccessSection, { own: { role: 'viewer', source: 'manual', scopes: [] } }));
+      expect(html).toContain('You have been given no access');
+      expect(html).not.toContain('Linked account');
+    });
   });
 });

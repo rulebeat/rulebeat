@@ -7,7 +7,7 @@
  * manage categories is then one edit here rather than a sweep through route files.
  */
 
-import { buildAccess, scopeCovers, type Access, type Scope } from '@/lib/access-model';
+import { buildAccess, grantCovers, type Access, type Scope } from '@/lib/access-model';
 
 export type Role = 'viewer' | 'editor' | 'admin';
 
@@ -126,7 +126,7 @@ export function mayAct(access: Access, action: Action, placement?: Scope): boole
     case 'placed':
     case 'scoped':
       return access.grants.some(g =>
-        can(g.role, action) && (placement === undefined || scopeCovers(g.scope, placement)));
+        can(g.role, action) && (placement === undefined || grantCovers(access, g, placement)));
     default:
       return false;
   }
@@ -138,7 +138,11 @@ export function mayAct(access: Access, action: Action, placement?: Scope): boole
  * first, so a finding in the second is outside it. Nothing is left when no Role held allows the action.
  */
 export function accessAllowing(access: Access, action: Action): Access {
-  return buildAccess(access.grants.filter(g => can(g.role, action)), access.source);
+  return buildAccess(
+    access.grants.filter(g => can(g.role, action)),
+    access.source,
+    access.managementGroups.filter(e => can(e.role, action)),
+  );
 }
 
 export function isRole(value: unknown): value is Role {

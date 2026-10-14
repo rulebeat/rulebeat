@@ -24,17 +24,6 @@ export async function loadSuppressions(access: Access): Promise<Suppression[]> {
 }
 
 /**
- * Every suppression, whatever the person's Scopes: what the dashboard widgets read to leave suppressed
- * findings out of a count. Their findings are not narrowed to the person's Scopes until #274, and a
- * suppression the person cannot see must still keep its finding out of the numbers, or a widget body
- * would change for a scoped person. Move this to `loadSuppressions(access)` when #274 narrows them.
- */
-export async function loadSuppressionsForWidgets(access: Access): Promise<Suppression[]> {
-  void access;
-  return (await many(db.select().from(suppressionsTable))).map(rowToSuppression);
-}
-
-/**
  * Whether the finding with this fingerprint sits inside a Scope where the person holds a Role that
  * allows `action`. Everything is not asked: an Admin or an Editor on Everything may act on a
  * fingerprint no finding holds, as before. For anyone else a fingerprint no finding holds, and one that

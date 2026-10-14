@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/access-model';
-import { narrowRuleScope, narrowRulesScope, OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
+import { narrowRuleScope, narrowRulesScope } from '@/lib/rule-scope-access';
 import type { RuleScope } from '@/lib/types';
 
 const SUB_A = '00000000-0000-0000-0000-00000000000a';
@@ -78,11 +78,5 @@ describe('narrowRuleScope', () => {
   it('narrows a list, rule by rule', () => {
     const rules = narrowRulesScope([rule(FULL), rule({ level: 'resource' })], holding(`/subscriptions/${SUB_A}`));
     expect(rules.map(r => r.scope.outsideAccess)).toEqual([2, undefined]);
-  });
-});
-
-describe('the label a hidden entry is shown as', () => {
-  it('reads "Outside your access"', () => {
-    expect(OUTSIDE_ACCESS_LABEL).toBe('Outside your access');
   });
 });

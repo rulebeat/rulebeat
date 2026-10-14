@@ -6,6 +6,7 @@
  * Adding a new action without deciding which roles get it will fail here, which is the point.
  */
 import { describe, expect, it } from 'vitest';
+import { expandManagementGroups } from '@/lib/management-group-tree';
 import {
   ALL_ACTIONS as MODEL_ALL_ACTIONS, ACTION_CLASS, can, isRole, mayAct, ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS,
   type Action, type Role,
@@ -222,5 +223,60 @@ describe('mayAct: may this access do this action (#269)', () => {
         expect(mayAct(everything(role), action), `${role} ${action}`).toBe(can(role, action));
       }
     }
+  });
+});
+
+describe('mayAct for a management group Scope (#273)', () => {
+  const TENANT = '00000000-0000-0000-0000-0000000000f0';
+  const GROUP = '/providers/Microsoft.Management/managementGroups/mg-example';
+  const SUB_IN = '00000000-0000-0000-0000-00000000000a';
+  const SUB_OUT = '00000000-0000-0000-0000-00000000000b';
+  const nodes = [
+    { tenantId: TENANT, kind: 'managementGroup' as const, id: TENANT, name: 'Root', parentId: null },
+    { tenantId: TENANT, kind: 'managementGroup' as const, id: 'mg-example', name: 'Example', parentId: TENANT },
+    { tenantId: TENANT, kind: 'managementGroup' as const, id: 'mg-child', name: 'Child', parentId: 'mg-example' },
+    { tenantId: TENANT, kind: 'subscription' as const, id: SUB_IN, name: 'In', parentId: 'mg-child' },
+    { tenantId: TENANT, kind: 'subscription' as const, id: SUB_OUT, name: 'Out', parentId: TENANT },
+  ];
+  const holding = (role: Role, tenantId = TENANT): Access => {
+    const grants = [{ tenantId, scope: parseScope(GROUP)!, role }];
+    return buildAccess(grants, 'manual', expandManagementGroups(grants, nodes));
+  };
+
+  it('lets an Editor on a management group act on a subscription, a resource group or a group under it', () => {
+    const editor = holding('editor');
+    expect(mayAct(editor, 'suppressions:write', parseScope(`/subscriptions/${SUB_IN}`)!)).toBe(true);
+    expect(mayAct(editor, 'suppressions:write', parseScope(`/subscriptions/${SUB_IN}/resourceGroups/rg-app`)!)).toBe(true);
+    expect(mayAct(editor, 'suppressions:write', parseScope('/providers/Microsoft.Management/managementGroups/mg-child')!)).toBe(true);
+    expect(mayAct(editor, 'suppressions:write', parseScope(GROUP)!)).toBe(true);
+  });
+
+  it('refuses outside it: another subscription, its resource group, a group above, and a group it does not hold', () => {
+    const editor = holding('editor');
+    expect(mayAct(editor, 'suppressions:write', parseScope(`/subscriptions/${SUB_OUT}`)!)).toBe(false);
+    expect(mayAct(editor, 'suppressions:write', parseScope(`/subscriptions/${SUB_OUT}/resourceGroups/rg-app`)!)).toBe(false);
+    expect(mayAct(editor, 'suppressions:write', parseScope(`/providers/Microsoft.Management/managementGroups/${TENANT}`)!)).toBe(false);
+    expect(mayAct(editor, 'suppressions:write', parseScope('/providers/Microsoft.Management/managementGroups/mg-beside')!)).toBe(false);
+    expect(mayAct(editor, 'suppressions:write', parseScope('@directory')!)).toBe(false);
+  });
+
+  it('compares ids without regard to case', () => {
+    expect(mayAct(holding('editor'), 'suppressions:write', parseScope(`/SUBSCRIPTIONS/${SUB_IN.toUpperCase()}/resourcegroups/RG-App`)!)).toBe(true);
+    expect(mayAct(holding('editor'), 'suppressions:write', parseScope('/providers/microsoft.management/managementgroups/MG-CHILD')!)).toBe(true);
+  });
+
+  it('asks for the Role as well as the Scope: a Viewer on the group may not suppress', () => {
+    expect(mayAct(holding('viewer'), 'suppressions:write', parseScope(`/subscriptions/${SUB_IN}`)!)).toBe(false);
+  });
+
+  it('covers nothing for a grant under another tenant, and nothing install-wide', () => {
+    expect(mayAct(holding('editor', 'other-tenant'), 'suppressions:write', parseScope(`/subscriptions/${SUB_IN}`)!)).toBe(false);
+    expect(mayAct(holding('editor'), 'rules:write')).toBe(false);
+  });
+
+  it('covers nothing for a grant that carries no expansion: it fails closed', () => {
+    const bare = buildAccess([{ tenantId: TENANT, scope: parseScope(GROUP)!, role: 'editor' }], 'manual');
+    expect(mayAct(bare, 'suppressions:write', parseScope(`/subscriptions/${SUB_IN}`)!)).toBe(false);
+    expect(mayAct(bare, 'suppressions:write', parseScope(GROUP)!)).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import type { AuditEntry, AuditEntityType } from '@/lib/db/audit';
 import {
   ChevronDown, ChevronRight, ChevronLeft, ScrollText, Download,
   FileCode, EyeOff, CalendarClock, Folder, LayoutDashboard, Radar, Users, LogIn, Cloud, KeyRound,
-  ShieldCheck, Bell, Compass, Database, Search, Terminal, Bookmark,
+  ShieldCheck, Bell, Compass, Database, Network, Search, Terminal, Bookmark,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -34,6 +34,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
   notification_channel: Bell,
   onboarding: Compass,
   schema_cache: Database,
+  management_group_hierarchy: Network,
   query: Terminal,
   saved_view: Bookmark,
 };
@@ -42,7 +43,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
 // which is exactly what someone opens this page to look for.
 const NOTABLE_ACTIONS = new Set([
   'rule.delete', 'rule.clear_findings', 'suppression.create', 'schedule.delete', 'category.delete',
-  'dashboard.delete', 'view.delete', 'user.remove', 'user.role_change', 'user.access_change', 'user.default_role_change',
+  'dashboard.delete', 'view.delete', 'user.remove', 'user.role_change', 'user.access_change', 'user.mirror_set', 'user.default_role_change',
   'user.invite_claimed',
   'user.password_reset', 'user.password_removed', 'auth.locked_out',
   'sign_in_config.delete', 'sign_in_config.policy_change',

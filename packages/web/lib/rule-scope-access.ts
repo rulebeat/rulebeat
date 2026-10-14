@@ -9,9 +9,6 @@ import type { Access } from './access-model';
 import { heldScopes, holdsManagementGroup, holdsSubscription } from './held-scopes';
 import type { RuleScope } from './types';
 
-/** The text a hidden scope entry is shown as, once per entry. */
-export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
-
 /**
  * The rule with the scope entries the person does not hold dropped and `scope.outsideAccess` set to how
  * many there were. A person on Everything gets the rule itself, untouched. The count is left off when

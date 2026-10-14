@@ -28,14 +28,17 @@
  * Every reader takes the caller's `Access` (#270) and narrows by it (#272): a person who does not hold
  * Everything is shown only the findings whose placement sits inside a Scope they hold, in every list,
  * count, facet, column option and export. The narrowing is in the SQL that reads the tab's findings
- * (lib/db/access-filter.ts), so everything built over them is already in scope. `queryFilterOptions`
- * is the one reader that does not narrow yet: the dashboards that use it are narrowed in #274.
+ * (lib/db/access-filter.ts), so everything built over them is already in scope, `queryFilterOptions`
+ * included: the dashboards' filter lists offer only values the person has a finding to see (#274).
+ * `queryView` also marks the values of the view's own subscription and resource group filters that sit
+ * outside the person's access (lib/outside-access.ts), so the explorer can say so without naming them.
  *
  * Before the upgrade's copy into finding_rows has been proven, the old row columns are the truth (as
  * in listFindings()), so a view then reads every finding in full and the reference answers it.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { everythingAccess, type Access } from '../access-model';
+import type { Access } from '../access-model';
+import { markOutsideAccess } from '../outside-access';
 import { accessFilterSql } from './access-filter';
 import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
 import {
@@ -49,7 +52,7 @@ import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSum
 import { ruleTagsOf } from '../rules';
 import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
-import { activeRowFilters, applyView, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
+import { activeRowFilters, applyView, filterValues, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { isActiveSuppression } from '../suppressions';
@@ -275,18 +278,22 @@ export function queryRuleFindingCounts(access: Access): Promise<Record<string, n
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */
 export function queryView(view: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
+  const outsideAccess = markOutsideAccess(access, {
+    subscriptions: filterValues(view.filters, 'subscription'),
+    resourceGroups: filterValues(view.filters, 'resourceGroup'),
+  });
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);
     if (!(await rowsTableReady(tx))) {
       const findings = await readWhole(tx, query.tab, rules, access);
       const catalogueColumns = access.everything ? await listReturnedColumnsIn(tx, rulesInPlay(findings)) : rowLeafPaths(findings);
-      return buildViewResponse(findings, view, ctx, { tab: query.tab, catalogueColumns, categories });
+      return { ...buildViewResponse(findings, view, ctx, { tab: query.tab, catalogueColumns, categories }), outsideAccess };
     }
     const slim = await readSlim(tx, query.tab, rules, access);
     const index = await buildIndex(tx, slim, view, ctx);
     const catalogueColumns = await returnedColumns(tx, access, slim);
     const { entries, ...answer } = answerView(slim, index, view, ctx, { tab: query.tab, catalogueColumns, categories });
-    return { ...answer, items: await fillEntries(tx, entries, view, rules) };
+    return { ...answer, outsideAccess, items: await fillEntries(tx, entries, view, rules) };
   });
 }
 
@@ -359,8 +366,7 @@ export function queryFilterOptions(access: Access): Promise<FilterOptions> {
   return inReadTransaction(async (tx) => {
     const rules = await readRuleDetails(tx);
     const found: Awaited<ReturnType<typeof readSlim>> = [];
-    // Not narrowed yet (#274 narrows the dashboards that read it), so it reads as Everything does.
-    for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules, everythingAccess('admin')));
+    for (const tab of VIEW_TABS) found.push(...await readSlim(tx, tab, rules, access));
     const named = new Map(found.map(f => [f.ruleId, { id: f.ruleId, name: rules.get(f.ruleId)?.name ?? f.title }]));
     return {
       // A Directory finding is one more option, the reserved value, since its stored subscription is empty.

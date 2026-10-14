@@ -33,6 +33,8 @@ export {
   LogAnalyticsTruncatedError,
   LogAnalyticsNotConfiguredError,
 } from './clients/log-analytics.js';
+export { RoleAssignmentsClient, RoleAssignmentsThrottledError } from './clients/role-assignments.js';
+export type { ArmRoleAssignment, RoleAssignmentsClientOptions, VisibleScopes } from './clients/role-assignments.js';
 export { getAllResourceTypes, getResourceTypeFields } from './clients/resource-schema.js';
 export type {
   AggFn, AggregateColumn, AggregateStage,

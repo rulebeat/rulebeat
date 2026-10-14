@@ -6,6 +6,11 @@ import { recoverInterruptedRuns, recoverPendingNotifications } from './startup-r
 import { isDemoMode } from './demo';
 import { SYSTEM_ACCESS } from './system-access';
 import type { Access } from './access-model';
+import { getHierarchyStatus } from './db/management-group-hierarchy';
+import { refreshManagementGroupHierarchy, type HierarchyReader } from './management-group-hierarchy';
+import { refreshDue } from './management-group-tree';
+import type { RoleAssignmentReader } from './access-mirror';
+import { refreshMirrorsIfDue } from './access-mirror-refresh';
 
 const TICK_INTERVAL_MS = 30_000;
 
@@ -58,13 +63,19 @@ export function getSchedulerStatus(): {
   };
 }
 
-async function tickOnce(): Promise<void> {
+/** One tick of the scheduler. Exported so a test can drive it with `now`, a tenant context and a hierarchy reader; a real tick passes none. */
+export async function tickOnce(opts: {
+  now?: Date; ctx?: TenantContext; read?: HierarchyReader; mirrorRead?: RoleAssignmentReader; mirrorWait?: (ms: number) => Promise<void>;
+} = {}): Promise<void> {
   schedulerGlobals().__rulebeatSchedulerLastTickAt = new Date().toISOString();
   if (scanLock.busy) return;
   scanLock.busy = true;
   try {
     await sweepStaleWork();
-    await runDueSchedules();
+    await runDueSchedules(opts);
+    await refreshHierarchyIfDue(opts);
+    // After the tree, so a person's management group Scopes expand against the tree this tick refreshed.
+    await refreshMirrorsIfDue({ now: opts.now, read: opts.mirrorRead, wait: opts.mirrorWait });
   } finally {
     scanLock.busy = false;
   }
@@ -101,6 +112,22 @@ export async function runDueSchedules(opts: { now?: Date; ctx?: TenantContext } 
       // runOnce already records failures in schedule_runs; never let one bad
       // schedule stop the loop from processing the rest.
     }
+  }
+}
+
+/**
+ * Reads the management group tree again when the last attempt, successful or not, was an hour ago or more
+ * (or there has been none), so a subscription moved under a group is covered within the hour. A reader that
+ * throws is a failed attempt the refresh records itself; nothing here lets it stop the tick. `now` and
+ * `read` are for tests: a real tick passes neither.
+ */
+export async function refreshHierarchyIfDue(opts: { now?: Date; read?: HierarchyReader } = {}): Promise<void> {
+  const now = opts.now ?? new Date();
+  try {
+    if (!refreshDue(await getHierarchyStatus(), now)) return;
+    await refreshManagementGroupHierarchy({ now, read: opts.read });
+  } catch (err) {
+    console.error('[scheduler] management group tree refresh failed:', err);
   }
 }
 

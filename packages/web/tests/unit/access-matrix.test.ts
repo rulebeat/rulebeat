@@ -5,7 +5,8 @@
  * every person must get a 200 whose body equals the Admin's from it. A ticket that narrows a route moves it
  * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see: #272 did so for the five
  * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
- * #277 did so for the eight routes that send a query a person wrote to Azure. They call a fake Azure
+ * #277 did so for the eight routes that send a query a person wrote to Azure, and #274 for the six widget
+ * routes, the two dashboard routes and the two saved view routes. #277's routes call a fake Azure
  * rather than read the seed, so their probes report the status, the error and the scope the fake was sent,
  * and run in their own `describe` over their own database. #275 did so for `suppressions` and for the three
  * Azure pickers: `suppressions` reads the seed, and the pickers call a fake ARM, so they run in their own
@@ -36,10 +37,11 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import {
-  createPeople, MANAGEMENT_GROUP, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
-  SCOPED_RULE_KQL, SCOPED_RULE_NAME, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
+  createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
+  SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
 import type { OwnAccess } from '@/lib/access';
+import { refreshFrom } from '../helpers/fake-hierarchy';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
 import { VIEW_TABS, type ViewTab } from '@/lib/view-response';
 
@@ -151,16 +153,6 @@ const azure = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'calls Azur
 const byHand = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'listed by hand: it reads no findings-derived data and does not take the actor\'s access yet' });
 
 export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
-  'widgets/summary': stored(async () => get('/api/widgets/summary', await import('@/app/api/widgets/summary/route')), '#274'),
-  'widgets/findings': stored(async () => get('/api/widgets/findings', await import('@/app/api/widgets/findings/route')), '#274'),
-  'widgets/top-rules': stored(async () => get('/api/widgets/top-rules', await import('@/app/api/widgets/top-rules/route')), '#274'),
-  'widgets/top-resources': stored(async () => get('/api/widgets/top-resources', await import('@/app/api/widgets/top-resources/route')), '#274'),
-  'widgets/advisories': stored(async () => get('/api/widgets/advisories', await import('@/app/api/widgets/advisories/route')), '#274'),
-  'widgets/filter-options': stored(async () => get('/api/widgets/filter-options', await import('@/app/api/widgets/filter-options/route')), '#274'),
-  'dashboards': byHand('#274'),
-  'dashboards/[id]': byHand('#274'),
-  'views': byHand('#274'),
-  'views/[id]': byHand('#274'),
 
   'scans/run': stored(async () => get('/api/scans/run', await import('@/app/api/scans/run/route')), '#276'),
   'scans/[id]/snapshot': stored(async seed => getWith(`/api/scans/${seed.scanIds[1]}/snapshot`, await import('@/app/api/scans/[id]/snapshot/route'), seed.scanIds[1]), '#276'),
@@ -172,7 +164,8 @@ export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
   'schedules/[id]/runs': stored(async seed => getWith(`/api/schedules/${seed.scheduleId}/runs`, await import('@/app/api/schedules/[id]/runs/route'), seed.scheduleId), '#276'),
 
 
-  'azure/subscriptions/[id]/resource-groups': azure('#273'),
+  // Admin-only, and a list of one subscription's resource groups for the Scope picker: this ticket does not narrow it.
+  'azure/subscriptions/[id]/resource-groups': azure('#284'),
 
   'schemas': azure('#284'),
   'resources/types': azure('#284'),
@@ -196,14 +189,16 @@ const namesOf = (seed: MatrixSeed, items: { fingerprint: string }[]): string[] =
 type ByTab = Record<ViewTab, unknown>;
 
 /**
- * What each person gets, by what they hold: Everything (the Admin and the Editor), one subscription, one
- * resource group, the Directory, and nothing (the management group Viewer, whose Scope covers nothing until
- * #273, and the person with no Scope).
+ * What each person gets, by what they hold: Everything (the Admin and the Editor), the management group
+ * (both subscriptions under it, and what sits at the group), one subscription, one resource group, the
+ * Directory, and nothing (the person with no Scope).
  */
-const byPerson = (everything: ByTab, subscription: ByTab, resourceGroup: ByTab, directory: ByTab, nothing: ByTab): Record<string, ByTab> => ({
+const byPerson = (
+  everything: ByTab, managementGroup: ByTab, subscription: ByTab, resourceGroup: ByTab, directory: ByTab, nothing: ByTab,
+): Record<string, ByTab> => ({
   'Admin': everything,
   'Editor on Everything': everything,
-  'Viewer on the management group': nothing,
+  'Viewer on the management group': managementGroup,
   'Viewer on one subscription': subscription,
   'Viewer on one resource group': resourceGroup,
   'Directory only': directory,
@@ -255,6 +250,24 @@ const viewEntry: Matrix = {
       activity: {
         names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
         columns: ['otherSubColumn', 'zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+    },
+    // Both subscriptions under the group, and the finding placed at the group itself. vm-two is suppressed, so it
+    // counts toward suppressedCount and is not listed. The subscription facet has no entry for the group-level
+    // finding, which sits in no subscription.
+    {
+      results: {
+        names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], total: 4, tilesTotal: 4,
+        subscriptions: [[SUB_ONE, 2], [SUB_TWO, 1]], ruleRows: [['matrix-rule', 4]],
+        columns: ['otherSubColumn', 'zone'], suppressedCount: 1, lastScanAt: DATE, policyOptions: ['matrix-rule'],
+      },
+      advisories: {
+        names: ['advisory-one', 'advisory-other-sub'], total: 2, tilesTotal: 2, subscriptions: [[SUB_ONE, 1], [SUB_TWO, 1]],
+        ruleRows: [['matrix-advisory-rule', 2]], columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-advisory-rule'],
+      },
+      activity: {
+        names: ['workspace-user'], total: 1, tilesTotal: 1, subscriptions: [[SUB_ONE, 1]], ruleRows: [['matrix-rule', 1]],
+        columns: ['zone'], suppressedCount: 0, lastScanAt: DATE, policyOptions: ['matrix-rule'],
       },
     },
     {
@@ -322,6 +335,11 @@ const group: Matrix = {
       activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
     },
     {
+      results: { headers: [['security', 4]], names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], total: 4, groupCount: 4 },
+      advisories: { headers: [['security', 2]], names: ['advisory-one', 'advisory-other-sub'], total: 2, groupCount: 2 },
+      activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
+    },
+    {
       results: { headers: [['security', 2]], names: ['subscription-level', 'vm-one'], total: 2, groupCount: 2 },
       advisories: { headers: [['security', 1]], names: ['advisory-one'], total: 1, groupCount: 1 },
       activity: { headers: [['security', 1]], names: ['workspace-user'], total: 1, groupCount: 1 },
@@ -360,6 +378,11 @@ const columnValues: Matrix = {
       activity: { zone: [['a', 1]], otherSubColumn: [] },
     },
     {
+      results: { zone: [['a', 4]], otherSubColumn: [['x', 1]] },
+      advisories: { zone: [['a', 2]], otherSubColumn: [] },
+      activity: { zone: [['a', 1]], otherSubColumn: [] },
+    },
+    {
       results: { zone: [['a', 2]], otherSubColumn: [] },
       advisories: { zone: [['a', 1]], otherSubColumn: [] },
       activity: { zone: [['a', 1]], otherSubColumn: [] },
@@ -394,6 +417,11 @@ const exported: Matrix = {
   expected: byPerson(
     {
       results: { names: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
+      advisories: { names: ['advisory-one', 'advisory-other-sub'], rowKeys: ['zone'] },
+      activity: { names: ['workspace-user'], rowKeys: ['zone'] },
+    },
+    {
+      results: { names: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
       advisories: { names: ['advisory-one', 'advisory-other-sub'], rowKeys: ['zone'] },
       activity: { names: ['workspace-user'], rowKeys: ['zone'] },
     },
@@ -438,6 +466,11 @@ const rows: Matrix = {
   },
   expected: byPerson(
     { results: opens('results', STORED_BY_TAB.results), advisories: opens('advisories', STORED_BY_TAB.advisories), activity: opens('activity', STORED_BY_TAB.activity) },
+    {
+      results: opens('results', ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub', 'vm-two']),
+      advisories: opens('advisories', ['advisory-one', 'advisory-other-sub']),
+      activity: opens('activity', ['workspace-user']),
+    },
     { results: opens('results', ['subscription-level', 'vm-one', 'vm-two']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
     { results: opens('results', ['vm-one']), advisories: opens('advisories', ['advisory-one']), activity: opens('activity', ['workspace-user']) },
     { results: opens('results', ['directory-app']), advisories: opens('advisories', []), activity: opens('activity', []) },
@@ -468,8 +501,9 @@ const suppressionsList: Matrix = {
     const body = await BODY(await (await import('@/app/api/suppressions/route')).GET()) as { fingerprint: string }[];
     return namesOf(seed, body);
   },
-  // vm-two sits in subscription one, so a Viewer on that subscription sees it; a Viewer on only `rg-one` does not.
-  expected: byPerson(same(['vm-two']), same(['vm-two']), same([]), same([]), same([])),
+  // vm-two sits in subscription one, so a Viewer on that subscription sees it, and so does a Viewer on the management
+  // group over it; a Viewer on only `rg-one` does not.
+  expected: byPerson(same(['vm-two']), same(['vm-two']), same(['vm-two']), same([]), same([]), same([])),
 };
 
 /**
@@ -487,8 +521,223 @@ const suppressionRemoval: Matrix = {
     await removeSuppression(id);
     return res.status;
   },
-  expected: byPerson(same(204), same(403), same(403), same(403), same(403)),
+  expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
+
+const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
+const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
+const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
+
+/**
+ * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
+ * is not per tab, so each expectation is `same(...)` across the three. The summary probe runs under a
+ * fixed clock because `trendDays` and the delta window are rolling: the seed's days are in June 2026.
+ */
+function dashboardMatrix(): Record<string, Matrix> {
+  const loaders: Record<string, () => Promise<{ GET(req: Request): Promise<Response> }>> = {
+    'summary': () => import('@/app/api/widgets/summary/route'),
+    'findings': () => import('@/app/api/widgets/findings/route'),
+    'top-rules': () => import('@/app/api/widgets/top-rules/route'),
+    'top-resources': () => import('@/app/api/widgets/top-resources/route'),
+    'advisories': () => import('@/app/api/widgets/advisories/route'),
+    'filter-options': () => import('@/app/api/widgets/filter-options/route'),
+  };
+  const widget = async (route: string, query = '') =>
+    BODY(await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}${query}`)));
+  const nameOf = (items: { fingerprint: string }[], seed: MatrixSeed) => namesOf(seed, items);
+
+  const summary: Matrix = {
+    probe: async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(MATRIX_NOW));
+      try {
+        const body = await widget('summary', '?trendDays=30') as {
+          current: { activeFindings: number; severityCounts: { high: number } };
+          perSubscription: { subscriptionId: string; activeFindings: number }[];
+          trend: { date: string; findings: number }[];
+          baseline: { date: string } | null; deltaPct: number | null;
+          trendUnavailable: string | null; trendIsCategoryScopedOnly: boolean; lastScanAt: string | null;
+          perCategory: { category: string; lastScanAt: string | null }[];
+        };
+        return {
+          activeFindings: body.current.activeFindings,
+          high: body.current.severityCounts.high,
+          perSubscription: body.perSubscription.map(s => [s.subscriptionId, s.activeFindings]),
+          trend: body.trend.map(p => [p.date, p.findings]),
+          baselineDate: body.baseline?.date ?? null,
+          deltaPct: body.deltaPct === null ? null : 'a number',
+          trendUnavailable: body.trendUnavailable,
+          lastScanAt: body.lastScanAt,
+          securityLastScanAt: body.perCategory.find(c => c.category === 'security')?.lastScanAt,
+        };
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    expected: byPerson(
+      same({
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [[SNAPSHOT_DAYS[0], 5], [SNAPSHOT_DAYS[1], 6]],
+        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+      // Both subscriptions and no filter: two subscriptions' rows are never added into one trend.
+      same({
+        activeFindings: 4, high: 4, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [], baselineDate: null, deltaPct: null,
+        trendUnavailable: 'choose-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+      // Everything the person holds lies in subscription one, so its rows serve the trend: its count, not the install's.
+      same({
+        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: [[SNAPSHOT_DAYS[0], 3], [SNAPSHOT_DAYS[1], 2]],
+        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+      same({
+        activeFindings: 1, high: 1, perSubscription: [[SUB_ONE, 1]], trend: [], baselineDate: null, deltaPct: null,
+        trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+      same({
+        activeFindings: 1, high: 1, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
+        trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+      same({
+        activeFindings: 0, high: 0, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
+        trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+      }),
+    ),
+  };
+
+  const SEEN = {
+    everything: ['directory-app', 'management-group-level', 'subscription-level', 'unplaceable-thing', 'vm-one', 'vm-other-sub'],
+    managementGroup: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'],
+    subscription: ['subscription-level', 'vm-one'],
+    resourceGroup: ['vm-one'],
+    directory: ['directory-app'],
+  };
+
+  const findings: Matrix = {
+    probe: async seed => nameOf(await widget('findings') as { fingerprint: string }[], seed),
+    expected: byPerson(same(SEEN.everything), same(SEEN.managementGroup), same(SEEN.subscription), same(SEEN.resourceGroup), same(SEEN.directory), same([])),
+  };
+
+  const topRules: Matrix = {
+    probe: async () => (await widget('top-rules') as { ruleId: string; count: number }[]).map(r => [r.ruleId, r.count]),
+    expected: byPerson(
+      same([['matrix-rule', 6]]), same([['matrix-rule', 4]]), same([['matrix-rule', 2]]), same([['matrix-rule', 1]]), same([['matrix-rule', 1]]), same([]),
+    ),
+  };
+
+  // A Directory finding is listed by its name and needs the Directory Scope.
+  const topResources: Matrix = {
+    probe: async () => (await widget('top-resources') as { resourceName: string }[]).map(r => r.resourceName).sort(),
+    expected: byPerson(
+      same(SEEN.everything), same(SEEN.managementGroup), same(SEEN.subscription), same(SEEN.resourceGroup), same(['directory-app']), same([]),
+    ),
+  };
+
+  const advisories: Matrix = {
+    probe: async seed => {
+      const body = await widget('advisories') as { items: { fingerprint: string }[]; total: number };
+      return { names: nameOf(body.items, seed), total: body.total };
+    },
+    expected: byPerson(
+      same({ names: ['advisory-one', 'advisory-other-sub'], total: 2 }), same({ names: ['advisory-one', 'advisory-other-sub'], total: 2 }),
+      same({ names: ['advisory-one'], total: 1 }), same({ names: ['advisory-one'], total: 1 }), same({ names: [], total: 0 }), same({ names: [], total: 0 }),
+    ),
+  };
+
+  const ALL_RULES = ['matrix-advisory-rule', 'matrix-rule'];
+  const options = (subscriptions: string[], resourceGroups: string[], rules: string[]) => same({
+    categories: ['compliance', 'cost', 'security', 'identity', 'reliability'], hasTags: false, subscriptions, resourceGroups, rules,
+  });
+  const filterOptions: Matrix = {
+    probe: async () => {
+      const body = await widget('filter-options') as {
+        categories: { id: string }[]; tags: string[]; subscriptions: string[]; resourceGroups: string[]; rules: { id: string }[];
+      };
+      return {
+        categories: body.categories.map(c => c.id), hasTags: body.tags.length > 0, subscriptions: body.subscriptions,
+        resourceGroups: body.resourceGroups, rules: body.rules.map(r => r.id).sort(),
+      };
+    },
+    expected: byPerson(
+      options([SUB_ONE, SUB_TWO, 'directory'], ['rg-one', 'rg-two'], ALL_RULES),
+      options([SUB_ONE, SUB_TWO], ['rg-one', 'rg-two'], ALL_RULES),
+      options([SUB_ONE], ['rg-one', 'rg-two'], ALL_RULES),
+      options([SUB_ONE], ['rg-one'], ALL_RULES),
+      options(['directory'], [], ['matrix-rule']),
+      options([], [], []),
+    ),
+  };
+
+  // A stored filter reads back exactly as stored, with the marks beside it. The marks are what differs.
+  const marked = (marks: { subscriptions: string[]; resourceGroups: string[] }) => ({ marks });
+  const marksByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
+    byPerson(same(everything), same(managementGroup), same(subscription), same(resourceGroup), same(directory), same(nothing));
+
+  const dashboardOf = (body: { config: { filters?: unknown; widgets: { config: unknown }[] }; outsideAccess: unknown }) =>
+    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, marks: body.outsideAccess });
+  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] } };
+  const dashboardExpected = marksByPerson(
+    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
+    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
+    { ...STORED_DASHBOARD, ...marked(SUB_TWO_MARKED) },
+    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+  );
+  const dashboards: Matrix = {
+    probe: async seed => {
+      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; outsideAccess: unknown }[];
+      return dashboardOf(list.find(d => d.id === seed.dashboardId)!);
+    },
+    expected: dashboardExpected,
+  };
+  const dashboardById: Matrix = {
+    probe: async seed => dashboardOf(await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as never),
+    expected: dashboardExpected,
+  };
+
+  const VIEW_QUERY = `subscription=${SUB_TWO}`;
+  const viewOf = (body: { query: string; tab: string; outsideAccess: unknown }) => ({ tab: body.tab, query: body.query, marks: body.outsideAccess });
+  const viewExpected = marksByPerson(
+    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
+    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
+    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+  );
+  const views: Matrix = {
+    probe: async seed => {
+      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      return viewOf(list.find(v => v.id === seed.savedViewId)!);
+    },
+    expected: viewExpected,
+  };
+  const viewById: Matrix = {
+    probe: async seed => viewOf(await BODY(await getWith('/api/views/x', await import('@/app/api/views/[id]/route'), seed.savedViewId)) as never),
+    expected: viewExpected,
+  };
+
+  // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
+  const FORBIDDEN = { status: 403, filters: undefined, marks: undefined };
+  const duplicate: Matrix = {
+    probe: async seed => {
+      const route = await import('@/app/api/dashboards/[id]/duplicate/route');
+      const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
+      const body = await res.json() as { outsideAccess?: unknown; config?: { filters?: unknown } };
+      return { status: res.status, filters: body.config?.filters, marks: body.outsideAccess };
+    },
+    expected: byPerson(
+      same({ status: 201, filters: { subscriptions: [SUB_TWO] }, marks: NOTHING_MARKED }),
+      same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN),
+    ),
+  };
+
+  return {
+    'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
+    'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
+    'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
+  };
+}
 
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
@@ -500,6 +749,7 @@ const FINDINGS_MATRIX: Record<string, Matrix> = {
   'findings/column-values': columnValues,
   'findings/export': exported,
   'findings/rows': rows,
+  ...dashboardMatrix(),
 };
 
 // #277: the routes that send a query a person wrote to Azure. Every one asks `rules:validate` or
@@ -619,7 +869,7 @@ const pickerExpectation = (everything: unknown, held: { group: unknown; subscrip
 const PICKER_MATRIX: Record<string, Matrix> = {
   'azure/subscriptions': {
     probe: async () => BODY(await (await import('@/app/api/azure/subscriptions/route')).GET()),
-    expected: pickerExpectation([SUB_ONE_ENTRY, SUB_TWO_ENTRY], { group: [], subscription: [SUB_ONE_ENTRY], resourceGroup: [SUB_ONE_ENTRY], directory: [], none: [] }),
+    expected: pickerExpectation([SUB_ONE_ENTRY, SUB_TWO_ENTRY], { group: [SUB_ONE_ENTRY, SUB_TWO_ENTRY], subscription: [SUB_ONE_ENTRY], resourceGroup: [SUB_ONE_ENTRY], directory: [], none: [] }),
   },
   'azure/management-groups': {
     probe: async () => BODY(await (await import('@/app/api/azure/management-groups/route')).GET()),
@@ -643,13 +893,14 @@ const PICKER_MATRIX: Record<string, Matrix> = {
 const SCOPE_LEVEL = 'subscription';
 /**
  * The scoped seed rule's `scope`, as each person is sent it, written by hand from `seedScopedRule`: it names both
- * seed subscriptions and the management group. A hidden entry is counted, never named, and a Viewer on one
- * resource group holds that group's subscription for this purpose.
+ * seed subscriptions and the management group. A hidden entry is counted, never named. A Viewer on one resource
+ * group holds that group's subscription for this purpose, and a Viewer on the management group holds the
+ * subscriptions under it, so the rule is shown to them whole.
  */
 const RULE_SCOPE_EXPECTED = pickerExpectation(
   { level: SCOPE_LEVEL, subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] },
   {
-    group: { level: SCOPE_LEVEL, managementGroups: [MANAGEMENT_GROUP], outsideAccess: 2 },
+    group: { level: SCOPE_LEVEL, subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] },
     subscription: { level: SCOPE_LEVEL, subscriptions: [SUB_ONE], outsideAccess: 2 },
     resourceGroup: { level: SCOPE_LEVEL, subscriptions: [SUB_ONE], outsideAccess: 2 },
     directory: { level: SCOPE_LEVEL, outsideAccess: 3 },
@@ -779,7 +1030,7 @@ describe('every person reads what the Admin reads', () => {
   });
 
   it('runs every stored-data GET, and finds the seeded data in the Admin\'s answers', () => {
-    expect(probed.length).toBeGreaterThan(10);
+    expect(probed.length).toBeGreaterThanOrEqual(7);
     expect(adminBodies['schedules/[id]/runs']).toContain(seed.runId);
     expect(adminBodies['scans/[id]/snapshot']).toContain('vm-other-sub');
     expect(adminBodies['scans/compare']).toContain('directory-app');
@@ -857,6 +1108,30 @@ describe('the findings routes show each person only what their Scopes cover', ()
     expect(await listedFor()).toEqual({ results: [], advisories: [] });
   });
 
+  it('answers a request filtered to a subscription outside the person\'s access with a 200 and an empty result', async () => {
+    const ask = async (route: string, query: string) => {
+      const handler = await import(`@/app/api/${route}/route`) as { GET(req: Request): Promise<Response> };
+      const res = await handler.GET(new Request(`http://localhost/api/${route}?${query}`));
+      expect(res.status, route).toBe(200);
+      return res.json() as Promise<Record<string, unknown>>;
+    };
+    for (const person of ['Viewer on one subscription', 'Viewer on one resource group']) {
+      mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+      const outside = `subscriptions=${SUB_TWO}`;
+      const summary = await ask('widgets/summary', outside) as { current: { activeFindings: number }; perSubscription: unknown[] };
+      expect(summary.current.activeFindings, person).toBe(0);
+      expect(summary.perSubscription, person).toEqual([]);
+      expect(await ask('widgets/findings', outside), person).toEqual([]);
+      expect(await ask('widgets/top-rules', outside), person).toEqual([]);
+      expect(await ask('widgets/top-resources', outside), person).toEqual([]);
+      expect((await ask('widgets/advisories', outside) as { total: number }).total, person).toBe(0);
+      await ask('widgets/filter-options', outside);
+      const view = await ask('findings/view', `subscription=${SUB_TWO}`) as { total: number; items: unknown[] };
+      expect(view.total, person).toBe(0);
+      expect(view.items, person).toEqual([]);
+    }
+  });
+
   it('answers a finding outside the Scopes with the body of one that does not exist', async () => {
     const route = await import('@/app/api/findings/rows/route');
     mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one resource group'] } });
@@ -903,6 +1178,8 @@ describe('the Azure pickers tell each person only what they hold', () => {
   beforeAll(async () => {
     await resetDb();
     Object.assign(userIds, await createPeople());
+    // The management group Viewer holds what sits under the group, which is read from RuleBeat's copy of the tree.
+    await refreshFrom(matrixHierarchy());
   });
 
   it('holds an expectation for each of the three pickers', () => {
@@ -929,15 +1206,18 @@ describe('the Azure pickers tell each person only what they hold', () => {
   });
 
   it('compares ids without regard to case', async () => {
-    const created = await createUser({ email: 'shouting@example.com', role: 'viewer' });
-    if ('error' in created) throw new Error(created.error);
-    await inTransaction(tx => replaceAssignmentsOn(tx, created.user.id, [
-      { tenantId: MATRIX_TENANT, scope: `/subscriptions/${SUB_TWO.toUpperCase()}`, role: 'viewer' as const },
-      { tenantId: MATRIX_TENANT, scope: SCOPE_MANAGEMENT_GROUP.toUpperCase(), role: 'viewer' as const },
-    ]));
-    mockAuth.mockResolvedValue({ user: { uid: created.user.id } });
+    const holding = async (email: string, scope: string): Promise<void> => {
+      const created = await createUser({ email, role: 'viewer' });
+      if ('error' in created) throw new Error(created.error);
+      await inTransaction(tx => replaceAssignmentsOn(tx, created.user.id, [{ tenantId: MATRIX_TENANT, scope, role: 'viewer' as const }]));
+      mockAuth.mockResolvedValue({ user: { uid: created.user.id } });
+    };
+    await holding('shouting-subscription@example.com', `/subscriptions/${SUB_TWO.toUpperCase()}`);
     expect(await PICKER_MATRIX['azure/subscriptions']!.probe({} as MatrixSeed, 'results')).toEqual([SUB_TWO_ENTRY]);
+    expect(await PICKER_MATRIX['azure/management-groups']!.probe({} as MatrixSeed, 'results')).toEqual([]);
+    await holding('shouting-group@example.com', SCOPE_MANAGEMENT_GROUP.toUpperCase());
     expect(await PICKER_MATRIX['azure/management-groups']!.probe({} as MatrixSeed, 'results')).toEqual([{ id: MANAGEMENT_GROUP, name: 'Example group' }]);
+    expect(await PICKER_MATRIX['azure/subscriptions']!.probe({} as MatrixSeed, 'results')).toEqual([SUB_ONE_ENTRY, SUB_TWO_ENTRY]);
   });
 });
 
@@ -955,6 +1235,7 @@ describe('GET /api/rules gives each person a rule scope that names only what the
   beforeAll(async () => {
     await resetDb();
     Object.assign(userIds, await createPeople());
+    await refreshFrom(matrixHierarchy());
     await seedScopedRule();
   });
 
@@ -1019,7 +1300,7 @@ describe('the Rules tab counts cover only the findings inside each person\'s Sco
   const COUNTS: Record<string, Record<string, number>> = {
     'Admin': EVERYTHING_COUNTS,
     'Editor on Everything': EVERYTHING_COUNTS,
-    'Viewer on the management group': {},
+    'Viewer on the management group': { 'matrix-rule': 4, 'matrix-advisory-rule': 2 },
     'Viewer on one subscription': { 'matrix-rule': 2, 'matrix-advisory-rule': 1 },
     'Viewer on one resource group': { 'matrix-rule': 1, 'matrix-advisory-rule': 1 },
     'Directory only': { 'matrix-rule': 1 },
@@ -1380,6 +1661,13 @@ describe('suppressing needs a Role that allows it at a Scope containing the find
     // subscription-level sits in subscription one but in no resource group.
     expect((await post(wide, seed.fingerprints['subscription-level']!)).status).toBe(404);
     expect((await post(wide, seed.fingerprints['vm-one']!)).status).toBe(201);
+  });
+
+  it('lets an Editor on the management group suppress a finding under it, and refuses one outside it', async () => {
+    const groupEditor = await newPerson('suppress-group-editor@example.com', [{ scope: SCOPE_MANAGEMENT_GROUP, role: 'editor' }]);
+    expect((await post(groupEditor, seed.fingerprints['vm-other-sub']!)).status).toBe(201);
+    expect((await post(groupEditor, seed.fingerprints['management-group-level']!)).status).toBe(201);
+    expect((await post(groupEditor, seed.fingerprints['directory-app']!)).status).toBe(404);
   });
 
   it('refuses a Viewer, as before, at the guard', async () => {

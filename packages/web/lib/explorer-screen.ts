@@ -7,6 +7,8 @@
  */
 import { groupUrl, type Loaded, type ViewRequest } from './explorer-session';
 import { NO_VALUE_LABEL, type ColumnValuesResponse, type ViewResponse } from './view-response';
+import { filterValues, type ViewField, type ViewFilter } from './finding-view';
+import { filterOutsideDimension, outsideAwareLabel, type OutsideAccess } from './outside-access';
 
 // ---- The screen ----
 
@@ -37,6 +39,42 @@ export function screenOf(state: {
 // ---- The list ----
 
 export type ListBody = 'unavailable' | 'empty' | 'rows';
+
+/** Why a list with no rows is empty, when the explorer must say which: `access` when the filters the
+ *  person is looking through name only subscriptions (or only resource groups) outside their access,
+ *  so nothing in them could ever be shown, `filters` for every other empty list. No Scope at all is the
+ *  no-access screen, decided before the list. A scoped person whose own estate is clean gets `filters`. */
+export type EmptyReason = 'access' | 'filters';
+
+export function emptyReasonOf(state: {
+  noAccess?: boolean;
+  filters: readonly ViewFilter[];
+  outsideAccess: OutsideAccess | undefined;
+}): EmptyReason {
+  if (state.noAccess) return 'access';
+  const dimension = filterOutsideDimension({
+    subscriptions: filterValues(state.filters, 'subscription'),
+    resourceGroups: filterValues(state.filters, 'resourceGroup'),
+  }, state.outsideAccess);
+  return dimension ? 'access' : 'filters';
+}
+
+/** The words an empty list shows for its reason. */
+export function emptyListCopy(reason: EmptyReason, subject: 'findings' | 'rules'): string {
+  return reason === 'access'
+    ? `These filters name a subscription or resource group outside your Access, so no ${subject} can be listed`
+    : `No ${subject} match your filters`;
+}
+
+/** What a filter chip reads: "Outside your access" for a marked subscription or resource group, with
+ *  neither its id nor its name, otherwise `named(value)`. */
+export function filterChipLabel(
+  field: ViewField, value: string, outsideAccess: OutsideAccess | undefined, named: (value: string) => string,
+): string {
+  if (field === 'subscription') return outsideAwareLabel(outsideAccess, 'subscription', value, named);
+  if (field === 'resourceGroup') return outsideAwareLabel(outsideAccess, 'resourceGroup', value, named);
+  return named(value);
+}
 
 /** What fills the list's place: the failure, a message that nothing matches, or the rows. The By rule
  *  list is empty by its rule rows, a grouped list by its groups, and a flat one by its findings. */

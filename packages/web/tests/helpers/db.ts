@@ -33,12 +33,17 @@ const CLEARABLE = [
   'audit_log',
   'local_accounts',
   'role_assignments',
+  'management_group_hierarchy',
   'users',
   'sso_providers',
   'saved_queries',
   'query_runs',
   'saved_views',
 ] as const;
+
+/** The `meta` rows a test can create. `meta` is not cleared wholesale, but the management group tree's
+ *  refresh status goes with the tree rows it describes. */
+const META_RESET = "DELETE FROM meta WHERE key = 'management_group_hierarchy_status'";
 
 /** Resets the mutable state a test creates, leaving the seeded baseline intact.
  *
@@ -52,10 +57,12 @@ export async function resetDb(): Promise<void> {
     for (const table of CLEARABLE) {
       await pgDb!.execute(sql.raw(`DELETE FROM ${table}`));
     }
+    await pgDb!.execute(sql.raw(META_RESET));
     return;
   }
   db.run(sql`PRAGMA foreign_keys = OFF`);
   for (const table of CLEARABLE) db.run(sql.raw(`DELETE FROM ${table}`));
+  db.run(sql.raw(META_RESET));
   db.run(sql`PRAGMA foreign_keys = ON`);
 }
 

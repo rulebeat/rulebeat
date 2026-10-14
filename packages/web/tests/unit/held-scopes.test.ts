@@ -28,6 +28,19 @@ describe('heldScopes', () => {
     expect(heldScopes(holding(MG_PATH))).toEqual({ everything: false, subscriptions: [], managementGroups: ['mg-example'] });
   });
 
+  it('holds the subscriptions and groups under a management group by its expansion', () => {
+    const grant = { tenantId: 't', scope: parseScope(MG_PATH)!, role: 'viewer' as const };
+    const expansion = { tenantId: 't', path: MG_PATH, role: 'viewer' as const, groups: ['mg-example', 'mg-child'], subscriptions: [SUB_A.toLowerCase(), SUB_B] };
+    const held = heldScopes(buildAccess([grant], 'manual', [expansion]));
+    expect(held.subscriptions).toEqual([SUB_A.toLowerCase(), SUB_B]);
+    expect(held.managementGroups).toEqual(['mg-example', 'mg-child']);
+    expect(holdsSubscription(held, SUB_B.toUpperCase())).toBe(true);
+  });
+
+  it('holds nothing under a management group whose expansion is missing', () => {
+    expect(heldScopes(holding(MG_PATH)).subscriptions).toEqual([]);
+  });
+
   it('holds nothing through the Directory, and nothing at all with no Scope', () => {
     expect(heldScopes(holding('@directory'))).toEqual({ everything: false, subscriptions: [], managementGroups: [] });
     expect(heldScopes(buildAccess([], 'manual'))).toEqual({ everything: false, subscriptions: [], managementGroups: [] });
@@ -71,8 +84,21 @@ describe('limitHierarchy', () => {
     expect(limitHierarchy(tree, held(`/subscriptions/${SUB_A}`))).toEqual([sub(SUB_A)]);
   });
 
-  it('keeps both a held group and a held subscription inside it', () => {
-    expect(limitHierarchy(tree, held(MG_PATH, `/subscriptions/${SUB_B}`)).map(n => n.id)).toEqual(['mg-example', SUB_B]);
+  it('does not list a held subscription a second time when it sits inside a kept group', () => {
+    expect(limitHierarchy(tree, held(MG_PATH, `/subscriptions/${SUB_B}`)).map(n => n.id)).toEqual(['mg-example']);
+  });
+
+  it('keeps a held subscription outside the kept group at the top level, beside the group', () => {
+    const other = [...tree, group('mg-elsewhere', sub('third'))];
+    expect(limitHierarchy(other, held(MG_PATH, '/subscriptions/third')).map(n => n.id)).toEqual(['mg-example', 'third']);
+  });
+
+  it('keeps a held group nested inside another held group only inside it', () => {
+    const nested = [group('mg-outer', group('mg-inner', sub(SUB_A)))];
+    const both = heldScopes(holding(
+      '/providers/Microsoft.Management/managementGroups/mg-outer', '/providers/Microsoft.Management/managementGroups/mg-inner',
+    ));
+    expect(limitHierarchy(nested, both).map(n => n.id)).toEqual(['mg-outer']);
   });
 
   it('keeps nothing for a person who holds nothing in it', () => {

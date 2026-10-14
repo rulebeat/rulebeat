@@ -141,6 +141,10 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['settings/azure-connection/test/route.ts', 'azure:manage'],
     ['settings/log-analytics-workspace/route.ts', 'azure:manage'],
     ['users/[id]/password/route.ts', 'users:manage'],
+    // Mirrored access reads a Linked account's Azure role assignments and writes a person's Scopes (#278).
+    ['users/[id]/mirror/route.ts', 'users:manage'],
+    ['users/[id]/mirror/preview/route.ts', 'users:manage'],
+    ['users/[id]/mirror/refresh/route.ts', 'users:manage'],
     ['account/password/route.ts', 'account:self'],
     ['settings/sign-in/route.ts', 'auth:manage'],
     ['settings/sign-in/test/route.ts', 'auth:manage'],

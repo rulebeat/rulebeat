@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import type { ScopeTree, ScopeTreeNode } from '@/app/api/azure/scope-tree/route';
 import { toggleInSet } from '@/lib/toggle-set';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
 /* The three scope kinds are told apart by shape and letter, not by colour.

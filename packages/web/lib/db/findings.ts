@@ -14,6 +14,7 @@ import { derivePlacement } from './finding-placement';
 import type { Access } from '../access-model';
 import { SYSTEM_ACCESS } from '../system-access';
 import { subscriptionFilterSql } from './subscription-filter';
+import { accessFilterSql } from './access-filter';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
@@ -230,22 +231,27 @@ interface ListFindingsOptions {
   kinds?: readonly RuleKind[];
 }
 
-function listConditions(opts: ListFindingsOptions) {
+function listConditions(opts: ListFindingsOptions, access: Access) {
   const conditions = [
     ...(opts.status ? [eq(findingsTable.status, opts.status)] : []),
     ...(opts.kinds ? [inArray(findingsTable.kind, [...opts.kinds])] : []),
+    ...compact([accessFilterSql(access)]),
   ];
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
+function compact<T>(items: Array<T | undefined>): T[] {
+  return items.filter((item): item is T => item !== undefined);
+}
+
 export async function listFindings(access: Access, opts: ListFindingsOptions = {}): Promise<FindingRecord[]> {
-  const rows = await many(db.select().from(findingsTable).where(listConditions(opts)));
+  const rows = await many(db.select().from(findingsTable).where(listConditions(opts, access)));
   return toRecords(rows);
 }
 
 /** listFindings() without the rows: the same findings, never reading the stored row columns. */
 export async function listFindingSummaries(access: Access, opts: ListFindingsOptions = {}): Promise<FindingSummary[]> {
-  const rows = await many(db.select(summaryColumns).from(findingsTable).where(listConditions(opts)));
+  const rows = await many(db.select(summaryColumns).from(findingsTable).where(listConditions(opts, access)));
   return rows.map(rowToSummary);
 }
 
@@ -512,8 +518,10 @@ export async function getFindingEventCounts(opts: {
   if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
+  const accessCondition = accessFilterSql(access);
+  if (accessCondition) conditions.push(accessCondition);
 
-  const selection = { type: findingEventsTable.type, occurredAt: findingEventsTable.occurredAt };
+  const selection =  { type: findingEventsTable.type, occurredAt: findingEventsTable.occurredAt };
   const rows = await many(db.select(selection).from(findingEventsTable)
     .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
     .where(and(...conditions)));
@@ -567,6 +575,8 @@ export async function getActivityOccurrenceCounts(opts: {
   if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
   if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
+  const accessCondition = accessFilterSql(access);
+  if (accessCondition) conditions.push(accessCondition);
 
   const rows = await many(
     db.select({ occurredAt: findingEventsTable.occurredAt })

@@ -96,6 +96,15 @@ describe('accessAllowing', () => {
     expect(accessAllowing(grants(['/', 'viewer'], [SUB, 'editor']), 'suppressions:write').everything).toBe(false);
   });
 
+  it('keeps the management group expansion only for the grants whose Role allows the action', () => {
+    const mg = '/providers/Microsoft.Management/managementGroups/mg-example';
+    const expansion = (role: Role) => ({ tenantId: 't', path: mg, role, groups: ['mg-example'], subscriptions: ['s1'] });
+    const editorGroup = buildAccess([{ tenantId: 't', scope: parseScope(mg)!, role: 'editor' }], 'manual', [expansion('editor')]);
+    expect(accessAllowing(editorGroup, 'suppressions:write').managementGroups).toEqual([expansion('editor')]);
+    const viewerGroup = buildAccess([{ tenantId: 't', scope: parseScope(mg)!, role: 'viewer' }], 'manual', [expansion('viewer')]);
+    expect(accessAllowing(viewerGroup, 'suppressions:write').managementGroups).toEqual([]);
+  });
+
   it('leaves nothing when no Role held allows the action', () => {
     const none = accessAllowing(grants([SUB, 'viewer']), 'suppressions:write');
     expect(none.grants).toEqual([]);

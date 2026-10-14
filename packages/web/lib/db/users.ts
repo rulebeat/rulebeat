@@ -4,7 +4,10 @@ import { eq, and, asc, count, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { dbKind } from './backend';
 import { isRole, type Role } from '@/lib/rbac';
-import { highestRole, isAccessSource, type AccessSource } from '@/lib/access-model';
+import { highestRole, isAccessSource, parseScope, type AccessSource, type GrantRole } from '@/lib/access-model';
+import {
+  isMirrorErrorCode, mirrorError, type MirrorErrorCode, type MirrorStatus, type MirroredScope,
+} from '@/lib/access-mirror-model';
 import {
   deleteAssignmentsOn, replaceAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn, type AssignmentInput,
 } from './role-assignments';
@@ -18,6 +21,10 @@ export interface AppUser {
   role: Role;
   /** Where a Viewer's or Editor's access came from. Null for an Admin. */
   accessSource: AccessSource | null;
+  /** The Azure account a mirrored person's Scopes follow, and the tenant it was read in. Null unless mirrored. */
+  linkedAccount: { tenantId: string; objectId: string } | null;
+  /** How the last refresh of a mirrored person went. Null unless mirrored. */
+  mirror: MirrorStatus | null;
   /** Bumped by bumpSessionEpoch() on any local-password mutation: see spec 020. */
   sessionEpoch: number;
   createdAt: string;
@@ -27,13 +34,25 @@ export interface AppUser {
 type Row = typeof users.$inferSelect;
 
 function rowToUser(row: Row): AppUser {
+  const accessSource = isAccessSource(row.accessSource) ? row.accessSource : null;
+  const mirrored = accessSource === 'mirrored';
   return {
     id: row.id,
     email: row.email,
     oid: row.oid ?? null,
     name: row.name ?? null,
     role: isRole(row.role) ? row.role : 'viewer',
-    accessSource: isAccessSource(row.accessSource) ? row.accessSource : null,
+    accessSource,
+    linkedAccount: mirrored && row.linkedObjectId && row.linkedTenantId
+      ? { tenantId: row.linkedTenantId, objectId: row.linkedObjectId }
+      : null,
+    mirror: mirrored
+      ? {
+        lastSuccessAt: row.mirrorLastSuccessAt ?? null,
+        lastAttemptAt: row.mirrorLastAttemptAt ?? null,
+        error: isMirrorErrorCode(row.mirrorError) ? mirrorError(row.mirrorError) : null,
+      }
+      : null,
     sessionEpoch: row.sessionEpoch,
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt ?? null,
@@ -42,6 +61,12 @@ function rowToUser(row: Row): AppUser {
 
 export async function listUsers(): Promise<AppUser[]> {
   const rows = await many(db.select().from(users).orderBy(asc(users.email)));
+  return rows.map(rowToUser);
+}
+
+/** Everyone on Mirrored access, ordered by email. An Admin never is: their access source is cleared. */
+export async function listMirroredUsers(): Promise<AppUser[]> {
+  const rows = await many(db.select().from(users).where(eq(users.accessSource, 'mirrored')).orderBy(asc(users.email)));
   return rows.map(rowToUser);
 }
 
@@ -93,6 +118,11 @@ async function lockAdminRowsForUpdate(tx: DbHandle): Promise<void> {
     sql`SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE`,
   );
 }
+
+/** What turning someone to Manual access, or making them an Admin, writes over a Linked account and its status. */
+const NO_MIRROR = {
+  linkedTenantId: null, linkedObjectId: null, mirrorLastSuccessAt: null, mirrorLastAttemptAt: null, mirrorError: null,
+} as const;
 
 /**
  * Creates a person. A Viewer or Editor holds what `access` says: Manual access an Admin chose, and the
@@ -151,11 +181,11 @@ export async function updateUserRole(
 
     if (role === 'admin') {
       // An Admin is never scoped: no rows, no source.
-      await run(tx.update(users).set({ role, accessSource: null }).where(eq(users.id, id)));
+      await run(tx.update(users).set({ role, accessSource: null, ...NO_MIRROR }).where(eq(users.id, id)));
       await deleteAssignmentsOn(tx, id);
     } else if (existing.role === 'admin') {
       // Demoting an Admin: the access the caller chose, else Everything at the new Role.
-      await run(tx.update(users).set({ role: access ? highestRole(access) : role, accessSource: 'manual' }).where(eq(users.id, id)));
+      await run(tx.update(users).set({ role: access ? highestRole(access) : role, accessSource: 'manual', ...NO_MIRROR }).where(eq(users.id, id)));
       if (access) await replaceAssignmentsOn(tx, id, access);
       else await replaceWithEverythingOn(tx, id, role);
     } else {
@@ -170,7 +200,8 @@ export async function updateUserRole(
  * Replaces a Viewer's or Editor's Manual access with exactly `access` and marks it manual, in one
  * transaction. The Role on the person is the highest among the rows (a Viewer when there are none), so
  * a page or sidebar that reads `users.role` has a defined value once Roles differ per Scope. An Admin is
- * never scoped, so they are refused rather than given rows that mean nothing.
+ * never scoped, so they are refused rather than given rows that mean nothing. A mirrored person turned manual
+ * here keeps no Linked account, no status and no origins: the mirror can never overwrite a hand-made change.
  */
 export async function setManualAccess(
   id: string, access: readonly AssignmentInput[],
@@ -179,10 +210,102 @@ export async function setManualAccess(
     const existing = await getUserOn(tx, id);
     if (!existing) return 'notfound';
     if (existing.role === 'admin') return 'admin';
-    await run(tx.update(users).set({ role: highestRole(access), accessSource: 'manual' }).where(eq(users.id, id)));
+    await run(tx.update(users).set({ role: highestRole(access), accessSource: 'manual', ...NO_MIRROR }).where(eq(users.id, id)));
     await replaceAssignmentsOn(tx, id, access);
     return { user: (await getUserOn(tx, id))! };
   });
+}
+
+/** The rows a mirror writes: its Scopes at one Role, each with why Azure gave it. Everything and the Directory are never one. */
+function mirroredRows(role: GrantRole, tenantId: string, scopes: readonly MirroredScope[]): AssignmentInput[] {
+  return scopes
+    .filter(s => {
+      const kind = parseScope(s.scope)?.kind;
+      return kind === 'managementGroup' || kind === 'subscription' || kind === 'resourceGroup';
+    })
+    .map(s => ({ tenantId, scope: s.scope, role, origins: s.origins }));
+}
+
+/**
+ * Gives a Viewer or Editor Mirrored access in one transaction: the source, the Role, the Linked account, the
+ * Scopes the mirror read with their origins, and the status of this first read. Any Manual rows are replaced.
+ * `tenantId` is the one RuleBeat resolved on the server. An Admin is refused: an Admin is never scoped.
+ */
+export async function setMirroredAccess(
+  id: string,
+  mirrored: { role: GrantRole; tenantId: string; objectId: string; scopes: readonly MirroredScope[]; at: string },
+): Promise<{ user: AppUser } | 'notfound' | 'admin'> {
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!existing) return 'notfound';
+    if (existing.role === 'admin') return 'admin';
+    await run(tx.update(users).set({
+      role: mirrored.role,
+      accessSource: 'mirrored',
+      linkedTenantId: mirrored.tenantId,
+      linkedObjectId: mirrored.objectId,
+      mirrorLastSuccessAt: mirrored.at,
+      mirrorLastAttemptAt: mirrored.at,
+      mirrorError: null,
+    }).where(eq(users.id, id)));
+    await replaceAssignmentsOn(tx, id, mirroredRows(mirrored.role, mirrored.tenantId, mirrored.scopes));
+    return { user: (await getUserOn(tx, id))! };
+  });
+}
+
+/** Whether a person is still mirrored to this account: what a refresh that took a while must find true before it writes. */
+function stillMirroredTo(user: AppUser | null, objectId: string): user is AppUser {
+  return !!user && user.role !== 'admin' && user.accessSource === 'mirrored' && user.linkedAccount?.objectId === objectId;
+}
+
+/**
+ * Stores a successful refresh: replaces the person's rows with the Scopes it read, at the Role they hold now,
+ * and records the success. Writes only when the person is still mirrored to the same object id. A refresh
+ * that was slow, and found them turned manual, promoted or linked elsewhere in the meantime, writes nothing
+ * and answers 'stale', so it can never overwrite a hand-made change.
+ */
+export async function recordMirrorRefresh(
+  id: string, refreshed: { objectId: string; tenantId: string; scopes: readonly MirroredScope[]; at: string },
+): Promise<{ user: AppUser } | 'stale'> {
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!stillMirroredTo(existing, refreshed.objectId)) return 'stale';
+    await run(tx.update(users).set({
+      linkedTenantId: refreshed.tenantId,
+      mirrorLastSuccessAt: refreshed.at,
+      mirrorLastAttemptAt: refreshed.at,
+      mirrorError: null,
+    }).where(eq(users.id, id)));
+    await replaceAssignmentsOn(tx, id, mirroredRows(existing.role as GrantRole, refreshed.tenantId, refreshed.scopes));
+    return { user: (await getUserOn(tx, id))! };
+  });
+}
+
+/**
+ * Records a failed refresh: the attempt and a stable code. The rows and the time of the last success stay as
+ * they were. Writes only when the person is still mirrored to the same object id, like a successful one.
+ */
+export async function recordMirrorFailure(
+  id: string, failed: { objectId: string; code: MirrorErrorCode; at: string },
+): Promise<{ user: AppUser } | 'stale'> {
+  return inTransaction(async (tx) => {
+    const existing = await getUserOn(tx, id);
+    if (!stillMirroredTo(existing, failed.objectId)) return 'stale';
+    await run(tx.update(users).set({ mirrorLastAttemptAt: failed.at, mirrorError: failed.code }).where(eq(users.id, id)));
+    return { user: (await getUserOn(tx, id))! };
+  });
+}
+
+/** Everyone, other than `exceptId`, who is mirrored to this account. A shared account is worth telling an Admin about. */
+export async function listUsersLinkedTo(objectId: string, exceptId?: string): Promise<{ id: string; email: string }[]> {
+  const rows = await many(
+    db.select({ id: users.id, email: users.email, linked: users.linkedObjectId })
+      .from(users).where(eq(users.accessSource, 'mirrored')).orderBy(asc(users.email)),
+  );
+  const wanted = objectId.toLowerCase();
+  return rows
+    .filter(r => r.id !== exceptId && r.linked?.toLowerCase() === wanted)
+    .map(r => ({ id: r.id, email: r.email }));
 }
 
 /**

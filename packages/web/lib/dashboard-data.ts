@@ -1,8 +1,9 @@
 import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityOccurrenceCounts, type FindingRecord, type FindingSummary } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
-import { loadSuppressionsForWidgets, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, SNAPSHOT_FORMULA_VERSION, type DailySnapshot } from './db/snapshots';
+import { loadSuppressions, isActiveSuppression } from './suppressions';
+import { getSnapshots, getBaselineSnapshots, getLastSnapshotTimes, SNAPSHOT_FORMULA_VERSION, type DailySnapshot } from './db/snapshots';
+import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
 import { listScanMetas } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
@@ -90,11 +91,9 @@ function matchesFilters(
   return true;
 }
 
-// Reads every suppression, not the ones the person sees: these findings are not narrowed to their Scopes
-// until #274, so a suppression outside them must still keep its finding out of the count.
 async function suppressedFingerprintSet(filters: WidgetFilters, access: Access): Promise<Set<string>> {
   if (filters.includeSuppressed) return new Set();
-  return new Set((await loadSuppressionsForWidgets(access)).filter(isActiveSuppression).map(s => s.fingerprint));
+  return new Set((await loadSuppressions(access)).filter(isActiveSuppression).map(s => s.fingerprint));
 }
 
 /** Active findings matching every dimension in `filters`. Excludes actively-suppressed
@@ -220,6 +219,10 @@ export interface WidgetSummary {
    *  subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
    *  Name kept from pre-Phase-5 for call-site stability. */
   trendIsCategoryScopedOnly: boolean;
+  /** Why `trend`, `baseline` and `deltaPct` are empty for this person (#274): they are kept per
+   *  subscription, and the person holds no whole subscription or has not chosen one. Null when the
+   *  trend is served, or empty for a reason `trendIsCategoryScopedOnly` already gives. */
+  trendUnavailable: TrendReason | null;
 }
 
 /** Live posture/findings numbers from the findings lifecycle table, plus trend/baseline
@@ -297,11 +300,11 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // Scans page and works under every filter (unlike deltaPct/baseline, which need a snapshot).
   const deltaFindings = newInWindow - fixedInWindow;
 
-  // Latest snapshot row per target category: used both for per-category lastScanAt and the
-  // overall lastScanAt below. A category with no snapshot row yet has never been scanned.
+  // Latest install-wide snapshot time per target category, for per-category lastScanAt and the
+  // overall lastScanAt below. A category with no snapshot row yet has never been scanned. Only the
+  // time is read, so a person on less than Everything is not handed an aggregate count (#274).
   const categoryIds = targetCategories.map(c => c.id);
-  const latestSnapshots = await getBaselineSnapshots(categoryIds, today(), access);
-  const latestByCategory = new Map(latestSnapshots.map(s => [s.category, s]));
+  const lastSnapshotAt = await getLastSnapshotTimes(categoryIds, today());
 
   const perCategory = await Promise.all(targetCategories.map(async cat => {
     const { stateRuleIds } = enabledRuleIdsForCategory(cat, allRules, filters);
@@ -320,7 +323,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       activeFindings: catFindings.length,
       passing: catPassing,
       total: catTotal,
-      lastScanAt: latestByCategory.get(cat.id)?.updatedAt ?? null,
+      lastScanAt: lastSnapshotAt.get(cat.id) ?? null,
       lastScanCoverage: lastScan?.coverage ?? null,
       lastScanIncompleteRules: lastScan?.incompleteRules ?? [],
     };
@@ -402,11 +405,20 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     return {
       current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
+      trendUnavailable: null,
     };
   }
 
   const trendCategoryIds = filters.categories?.length ? filters.categories : allCategories.map(c => c.id);
-  const trendSubscriptionId = filters.subscriptions?.length === 1 ? filters.subscriptions[0] : undefined;
+  const trendScope = trendScopeOf(access, filters.subscriptions);
+  if (!trendScope.available) {
+    return {
+      current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
+      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
+      trendUnavailable: trendScope.reason,
+    };
+  }
+  const trendSubscriptionId = trendScope.subscriptionId;
   const snaps = await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: daysAgo(trendDays) });
   const trend = aggregateSnapshotsByDate(snaps);
   const trendByCategory = groupSnapshotsByCategory(snaps);
@@ -436,6 +448,6 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   return {
     current, suppressedIncluded, baseline, deltaPct, deltaFindings,
     perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
-    trendIsCategoryScopedOnly: false,
+    trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

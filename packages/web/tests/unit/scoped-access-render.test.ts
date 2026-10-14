@@ -13,7 +13,7 @@ import { SchedulesTab } from '@/components/modules/schedules-tab';
 import { ScansClient } from '@/components/modules/scans-client';
 import { LibraryClient } from '@/app/(app)/library/library-client';
 import { RuleDetailClient } from '@/app/(app)/rules/[id]/rule-detail-client';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { SettingsClient } from '@/app/(app)/settings/settings-client';
 import { SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, type WriteControls } from '@/lib/write-controls';

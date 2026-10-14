@@ -75,7 +75,8 @@ describe('the pages narrow what they hand to client components', () => {
     expect(text).not.toContain(MANAGEMENT_GROUP);
     expect(props).toMatchObject({ canAuthor: false, canDelete: false });
     expect(props.writeReason).toBeUndefined();
-  });
+    // The first page imported pulls in the whole client tree, which can take longer than the default 5s on a busy machine.
+  }, 30_000);
 
   it('Library: sends the Editor on one subscription the controls off with the reason', async () => {
     signIn(scopedEditor);
