@@ -7,7 +7,7 @@
  * manage categories is then one edit here rather than a sweep through route files.
  */
 
-import { scopeCovers, type Access, type Scope } from '@/lib/access-model';
+import { buildAccess, scopeCovers, type Access, type Scope } from '@/lib/access-model';
 
 export type Role = 'viewer' | 'editor' | 'admin';
 
@@ -130,6 +130,15 @@ export function mayAct(access: Access, action: Action, placement?: Scope): boole
     default:
       return false;
   }
+}
+
+/**
+ * The access with only the grants whose Role allows `action`. Fed to `accessFilterSql`, it says where
+ * the person may do a placed action: an Editor on one subscription and a Viewer on another keeps the
+ * first, so a finding in the second is outside it. Nothing is left when no Role held allows the action.
+ */
+export function accessAllowing(access: Access, action: Action): Access {
+  return buildAccess(access.grants.filter(g => can(g.role, action)), access.source);
 }
 
 export function isRole(value: unknown): value is Role {

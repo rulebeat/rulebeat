@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getArmToken, armFetch } from '@/lib/arm';
+import { heldScopes, holdsManagementGroup } from '@/lib/held-scopes';
 
 interface ManagementGroupsPage {
   value: { name: string; properties?: { displayName?: string } }[];
@@ -26,8 +27,11 @@ export async function GET() {
       url = data.nextLink ?? null;
     }
 
-    mgs.sort((a, b) => a.name.localeCompare(b.name));
-    return NextResponse.json(mgs);
+    // Only the groups a person holds a Scope on; everyone else's names stay out of the answer.
+    const held = heldScopes(actor.access);
+    const listed = mgs.filter(mg => holdsManagementGroup(held, mg.id));
+    listed.sort((a, b) => a.name.localeCompare(b.name));
+    return NextResponse.json(listed);
   } catch (err) {
     return serverError('Failed to list Azure management groups', err);
   }

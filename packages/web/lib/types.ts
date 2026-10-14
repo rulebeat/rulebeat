@@ -294,6 +294,9 @@ export interface RuleScope {
   level: 'managementGroup' | 'subscription' | 'resourceGroup' | 'resource';
   subscriptions?: string[];
   managementGroups?: string[];
+  /** Set only on a rule sent to a person who does not hold Everything: how many of its subscription and
+   *  management group entries they do not hold and so were left out (lib/rule-scope-access.ts). Never stored. */
+  outsideAccess?: number;
 }
 
 // Same concept as Azure Policy's policyType (BuiltIn/Custom): gates edit/delete permissions.

@@ -186,10 +186,10 @@ describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the re
  * site can never ride in silently on an existing one's exemption.
  */
 const TYPE_FLOOR_ALLOWLIST = new Set([
-  'components/rules/scope-tree-picker.tsx:15',
-  'components/rules/scope-tree-picker.tsx:277',
-  'components/rules/scope-tree-picker.tsx:281',
-  'components/rules/scope-tree-picker.tsx:326',
+  'components/rules/scope-tree-picker.tsx:16',
+  'components/rules/scope-tree-picker.tsx:280',
+  'components/rules/scope-tree-picker.tsx:284',
+  'components/rules/scope-tree-picker.tsx:329',
   'components/rules/visual-query-builder.tsx:140',
   'components/rules/visual-query-builder.tsx:165',
   'components/rules/visual-query-builder.tsx:251',

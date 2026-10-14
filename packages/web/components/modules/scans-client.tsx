@@ -29,6 +29,7 @@ import {
 import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } from '@/lib/rule-bulk-toggle';
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
+import type { WriteControls } from '@/lib/write-controls';
 import type { Category, Rule, Severity, Suppression } from '@/lib/types';
 import type { View } from '@/lib/finding-view';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
@@ -102,7 +103,9 @@ export interface ScansClientProps {
   compareQuery?: ScanHistoryTabProps['compareQuery'];
   /** Undefined when the tab isn't active: server only loads this for ?tab=schedules. */
   initialSchedules?: ScheduleWithLastRun[];
-  canEditSchedules?: boolean;
+  /** The library, schedule and suppression controls the person gets, from `writeControlsFor` on the server.
+   *  Without it the Role alone decides, as it did before Scopes. */
+  controls?: WriteControls;
   /** Notification channel list for the Notifications section in the schedule form.
    *  Empty when the user lacks notifications:manage. The section is simply hidden. */
   notificationChannels?: NotificationChannelSummary[];
@@ -133,7 +136,7 @@ export function ScansClient({
   compareIds,
   compareQuery,
   initialSchedules,
-  canEditSchedules = false,
+  controls,
   notificationChannels = [],
   ruleFindingCounts = {},
   tabEmpty,
@@ -142,11 +145,17 @@ export function ScansClient({
   const router = useRouter();
   const searchString = useSearchParams().toString();
   const canRunScans = can(role, 'scans:run');
-  const canEditRules = can(role, 'rules:write');
+  const canEditRules = controls ? controls.rulesWrite : can(role, 'rules:write');
   // Same action as deleting a rule: clearing its findings reaches the same primitive that rule
   // deletion already does, so it is not an escalation for anyone who holds rules:delete.
-  const canClearFindings = can(role, 'rules:delete');
-  const canSuppress = can(role, 'suppressions:write');
+  const canClearFindings = controls ? controls.rulesDelete : can(role, 'rules:delete');
+  const canSuppress = controls ? controls.suppress : can(role, 'suppressions:write');
+  const canEditSchedules = controls ? controls.schedulesWrite : can(role, 'schedules:write');
+  // Set only for someone whose Editor access covers part of the install: their write controls are shown
+  // off with this reason instead of failing with a 403 on click.
+  const writeOffReason = controls?.reason;
+  const rulesOffReason = canEditRules ? undefined : writeOffReason;
+  const clearOffReason = canClearFindings ? undefined : writeOffReason;
   const canWriteViews = can(role, 'views:write');
 
   // The explorer reads its initial view once and then writes every change back to the URL. So when
@@ -472,13 +481,14 @@ export function ScansClient({
                 <div className="divide-y divide-border">
                   {/* Select-all row, and the action bar once anything is selected. Normal page
                       flow, not sticky: the page has one scroll region. */}
-                  {canEditRules && (
+                  {(canEditRules || rulesOffReason) && (
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3">
                       <input
                         type="checkbox"
                         id="rules-select-all"
                         checked={headerState === 'all'}
-                        disabled={bulkBusy}
+                        disabled={bulkBusy || !canEditRules}
+                        title={rulesOffReason}
                         ref={el => { if (el) el.indeterminate = headerState === 'some'; }}
                         onChange={() => setSelection(s => toggleAllVisible(pruneSelection(s, visible), visible))}
                         aria-label={headerState === 'all' ? 'Clear selection' : `Select all ${rulesPhrase(visible.length)} shown`}
@@ -514,6 +524,13 @@ export function ScansClient({
                           </div>
                         </>
                       )}
+                      {rulesOffReason && (
+                        <>
+                          <Button size="sm" variant="outline" disabled title={rulesOffReason}>Enable</Button>
+                          <Button size="sm" variant="outline" disabled title={rulesOffReason}>Disable</Button>
+                          <span className="text-xs text-ink-2">{rulesOffReason}</span>
+                        </>
+                      )}
                     </div>
                   )}
                   {visible.map(policy => {
@@ -527,11 +544,12 @@ export function ScansClient({
                           !policy.enabled && 'opacity-60',
                         )}
                       >
-                        {canEditRules && (
+                        {(canEditRules || rulesOffReason) && (
                           <input
                             type="checkbox"
                             checked={selected.has(policy.id)}
-                            disabled={bulkBusy}
+                            disabled={bulkBusy || !canEditRules}
+                            title={rulesOffReason}
                             onChange={() => setSelection(s => toggleInSet(pruneSelection(s, visible), policy.id))}
                             aria-label={`Select ${policy.name}`}
                             className="size-3.5 shrink-0 accent-ink"
@@ -542,7 +560,7 @@ export function ScansClient({
                           checked={policy.enabled}
                           disabled={!canEditRules}
                           onCheckedChange={() => { void toggleEnabled(policy); }}
-                          title={canEditRules ? (policy.enabled ? 'Disable rule' : 'Enable rule') : 'Read-only access'}
+                          title={canEditRules ? (policy.enabled ? 'Disable rule' : 'Enable rule') : (rulesOffReason ?? 'Read-only access')}
                         />
 
                         <Link href={`/rules/${encodeURIComponent(policy.id)}`} className="flex-1 min-w-0 group">
@@ -578,14 +596,14 @@ export function ScansClient({
                         {/* Only where there is something to clear: the affected count is what
                             prompts the operator to act, and a row with no findings would just
                             carry a button that does nothing. */}
-                        {canClearFindings && findingCount > 0 && (
+                        {(canClearFindings || clearOffReason) && findingCount > 0 && (
                           <Button
                             size="xs"
                             variant="ghost"
                             className="shrink-0"
-                            disabled={clearingId === policy.id}
+                            disabled={clearingId === policy.id || !canClearFindings}
                             onClick={() => { void clearFindings(policy); }}
-                            title="Delete every finding this rule produced, active and fixed. The rule stays."
+                            title={clearOffReason ?? 'Delete every finding this rule produced, active and fixed. The rule stays.'}
                           >
                             {clearingId === policy.id ? 'Clearing…' : 'Clear findings'}
                           </Button>
@@ -607,6 +625,7 @@ export function ScansClient({
           rules={policies}
           channels={notificationChannels}
           canEdit={canEditSchedules}
+          disabledReason={canEditSchedules ? undefined : writeOffReason}
         />
       )}
 

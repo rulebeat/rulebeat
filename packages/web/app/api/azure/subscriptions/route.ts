@@ -7,6 +7,7 @@ import { SubscriptionClient } from '@azure/arm-resources-subscriptions';
 import { AZURE_LIST_TIMEOUT_MS } from '@rulebeat/core';
 import { isDemoMode } from '@/lib/demo';
 import { DEMO_SUBSCRIPTIONS } from '@/lib/demo-fixtures';
+import { heldScopes, holdsSubscription } from '@/lib/held-scopes';
 
 export async function GET() {
   const actor = await requireRole('read');
@@ -30,8 +31,12 @@ export async function GET() {
         subs.push({ id: sub.subscriptionId, name: sub.displayName ?? sub.subscriptionId });
       }
     }
-    subs.sort((a, b) => a.name.localeCompare(b.name));
-    return NextResponse.json(subs);
+    // Everyone but a person on Everything is told only of what they hold: a subscription they hold, or
+    // one they hold a resource group in. The rest of the tenant's names stay out of the answer.
+    const held = heldScopes(actor.access);
+    const listed = subs.filter(sub => holdsSubscription(held, sub.id));
+    listed.sort((a, b) => a.name.localeCompare(b.name));
+    return NextResponse.json(listed);
   } catch (err) {
     // Every page that labels a subscription filter calls this in the background on load, including
     // before Azure has ever been connected (a fresh install, or mid-onboarding). Unlike an

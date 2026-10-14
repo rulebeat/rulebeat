@@ -12,6 +12,8 @@ import { createSchedule } from '@/lib/db/schedules';
 import { syncScanFindings } from '@/lib/db/findings';
 import { saveScanResult } from '@/lib/scan-history';
 import { addSuppression } from '@/lib/suppressions';
+import { saveRules } from '@/lib/rules';
+import type { Rule } from '@rulebeat/core';
 import { finishRun, startRun } from '@/lib/schedule-runs';
 import type { Role } from '@/lib/rbac';
 import type { Finding, ScanSummary } from '@/lib/types';
@@ -153,4 +155,20 @@ export async function seedMatrix(): Promise<MatrixSeed> {
 
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
   return { scanIds, scheduleId: created.schedule.id, runId: run.id, suppressedFingerprint, fingerprints };
+}
+
+export const SCOPED_RULE_ID = 'matrix-scoped-rule';
+export const SCOPED_RULE_NAME = 'matrix scoped rule';
+export const SCOPED_RULE_KQL = 'resources | project id';
+
+/**
+ * A custom rule whose scope names both seed subscriptions and the management group (#275). Separate from
+ * `seedMatrix` so the findings expectations never see it: a rule with no findings changes none of them.
+ */
+export async function seedScopedRule(): Promise<void> {
+  await saveRules([{
+    id: SCOPED_RULE_ID, name: SCOPED_RULE_NAME, description: 'a rule scoped to the seed', category: CATEGORY, severity: 'medium',
+    enabled: true, type: 'custom', scope: { level: 'subscription', subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] },
+    resourceTypes: [], conditions: [], rawKql: SCOPED_RULE_KQL,
+  } as unknown as Rule]);
 }

@@ -22,7 +22,6 @@ import { matchesRuleSearch } from '@/lib/rule-filters';
 import { PACK_LABELS } from '@/lib/pack-labels';
 import { retiredMessage, versionLabel } from '@/lib/rule-version-markers';
 import { splitLearnMore } from '@/lib/rule-description';
-import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, RuleKind } from '@/lib/types';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import { isExternalPack, type PackManifestEntry } from './pack-manifest';
@@ -212,8 +211,11 @@ function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record
 
 // ---- Main component ----
 
-export function LibraryClient({ initialRules, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, role }: { initialRules: Rule[]; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; role: Role }) {
-  const canAuthor = can(role, 'rules:write');
+export function LibraryClient({ initialRules, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, canAuthor, canDelete, writeReason }: { initialRules: Rule[]; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; canAuthor: boolean; canDelete: boolean; writeReason?: string }) {
+  // Set only for someone whose Editor access covers part of the install: the write controls are shown
+  // off with this reason rather than hidden, so they do not fail with a 403 on click.
+  const authorOffReason = canAuthor ? undefined : writeReason;
+  const deleteOffReason = canDelete ? undefined : writeReason;
   const router = useRouter();
   const [rules, setRules] = useState<Rule[]>(initialRules);
   const [error, setError] = useState<string | null>(null);
@@ -524,6 +526,12 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
               </Button>
             </Link>
           )}
+          {authorOffReason && (
+            <Button variant="outline" size="sm" className="ml-auto" disabled title={authorOffReason}>
+              <Plus className="size-4" />
+              New rule
+            </Button>
+          )}
         </div>
         <p className="-mt-2 text-xs text-ink-muted">Type, Kind, Category, Severity and Status are filterable from the funnel icon in their column header below.</p>
 
@@ -796,19 +804,21 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                             <Eye className="size-3.5" />
                           </Button>
                         </Link>
-                        {canAuthor && (
+                        {(canAuthor || authorOffReason) && (
                           <Button
                             variant="ghost" size="icon-sm"
-                            title="Duplicate as Custom"
+                            title={authorOffReason ?? 'Duplicate as Custom'}
+                            disabled={!canAuthor}
                             onClick={() => { void handleDuplicate(rule); }}
                           >
                             <Copy className="size-3.5" />
                           </Button>
                         )}
-                        {canAuthor && rule.type !== 'builtin' && (
+                        {(canDelete || deleteOffReason) && rule.type !== 'builtin' && (
                           <Button
                             variant="ghost" size="icon-sm"
-                            title="Delete rule"
+                            title={deleteOffReason ?? 'Delete rule'}
+                            disabled={!canDelete}
                             className="hover:text-sev-critical"
                             onClick={() => { void handleDelete(rule); }}
                           >

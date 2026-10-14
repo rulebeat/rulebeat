@@ -4,7 +4,9 @@ import { loadRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
 import { loadRecordedVersions } from '@/lib/db/recorded-versions';
 import { newerVersionsByRule } from '@/lib/rule-version-markers';
-import { getCurrentUser } from '@/lib/api-auth';
+import { getPageAccess } from '@/lib/page-access';
+import { narrowRulesScope } from '@/lib/rule-scope-access';
+import { writeControlsFor } from '@/lib/write-controls';
 import { LibraryClient } from './library-client';
 import type { Rule } from '@/lib/types';
 import packManifestJson from '@/data/packs/pack-manifest.json';
@@ -16,12 +18,13 @@ export default async function LibraryPage({
   searchParams: Promise<{ section?: string }>;
 }) {
   const { section } = await searchParams;
-  const rules = await loadRules() as unknown as Rule[];
+  const { access } = await getPageAccess();
+  const rules = narrowRulesScope(await loadRules(), access) as unknown as Rule[];
   const newerVersions = newerVersionsByRule(rules, await loadRecordedVersions());
   const categories = await listCategories();
   const cookieStore = await cookies();
   const initialSidebarPinned = cookieStore.get('sidebar:library')?.value !== 'false';
-  const user = await getCurrentUser();
+  const controls = writeControlsFor(access);
   return (
     <>
       <Header title="Library" description="Search, filter, and manage the rules that power your scans: built-in packs, community contributions, and your own custom checks" />
@@ -33,7 +36,9 @@ export default async function LibraryPage({
           packManifest={packManifestJson as Record<string, PackManifestEntry>}
           categories={categories}
           initialSidebarPinned={initialSidebarPinned}
-          role={user?.role ?? 'viewer'}
+          canAuthor={controls.rulesWrite}
+          canDelete={controls.rulesDelete}
+          writeReason={controls.reason}
         />
       </main>
     </>

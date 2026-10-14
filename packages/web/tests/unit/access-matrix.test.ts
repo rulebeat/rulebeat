@@ -7,7 +7,10 @@
  * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
  * #277 did so for the eight routes that send a query a person wrote to Azure. They call a fake Azure
  * rather than read the seed, so their probes report the status, the error and the scope the fake was sent,
- * and run in their own `describe` over their own database.
+ * and run in their own `describe` over their own database. #275 did so for `suppressions` and for the three
+ * Azure pickers: `suppressions` reads the seed, and the pickers call a fake ARM, so they run in their own
+ * `describe` too. The rule list, the Rules tab counts and the write routes are checked by tables of their
+ * own below, since a `MATRIX` key is a route file and these are several tables over one.
  *
  * The lists are checked against the route files on disk, the way `route-guards.test.ts` checks guards:
  * a route that uses the actor's access must be in exactly one of the two lists, and an entry must name a
@@ -15,16 +18,26 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { createUser } from '@/lib/db/users';
-import { saveRules } from '@/lib/rules';
+import { createUser, getUser } from '@/lib/db/users';
+import { loadRules, saveRules } from '@/lib/rules';
+import { createCategory, listCategories } from '@/lib/db/categories';
+import { createSchedule, listSchedules } from '@/lib/db/schedules';
+import { countAuditEntries, listAuditEntries } from '@/lib/db/audit';
+import { listFindingSummaries } from '@/lib/db/findings';
+import { queryRuleFindingCounts } from '@/lib/db/finding-views';
+import { addSuppression, loadSuppressions, removeSuppression, saveSuppressions } from '@/lib/suppressions';
+import { everythingAccess } from '@/lib/access-model';
+import { resolveAccess } from '@/lib/access';
+import type { Action } from '@/lib/rbac';
 import { fakeTenantContext, type FakeTenantContext } from '../helpers/fake-azure';
 import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import {
-  createPeople, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_ONE, SUB_TWO, seedMatrix, type MatrixSeed,
+  createPeople, MANAGEMENT_GROUP, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
+  SCOPED_RULE_KQL, SCOPED_RULE_NAME, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
 import type { OwnAccess } from '@/lib/access';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
@@ -38,6 +51,52 @@ vi.mock('@/lib/azure-credential', async () => {
   const actual = await vi.importActual<typeof import('@/lib/azure-credential')>('@/lib/azure-credential');
   return { ...actual, createTenantContext: () => Promise.resolve(fakeCtx) };
 });
+
+// The three picker routes call ARM directly rather than through a tenant context, so ARM is faked here: two
+// subscriptions under one management group, and a sibling group with nothing under it.
+const FAKE_TENANT_NAME = 'Tenant Root Group';
+const SIBLING_GROUP = 'mg-other';
+const GROUP_TYPE = '/providers/Microsoft.Management/managementGroups';
+const fakeSubscription = (id: string, displayName: string) => ({ name: id, type: '/subscriptions', displayName });
+vi.mock('@/lib/arm', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/arm')>('@/lib/arm');
+  return {
+    ...actual,
+    getArmCredential: () => Promise.resolve({}),
+    getArmToken: () => Promise.resolve('token'),
+    getArmTenantId: () => Promise.resolve(MATRIX_TENANT),
+    armFetch: (url: string) => {
+      if (url.includes(`managementGroups/${MATRIX_TENANT}`)) {
+        return Promise.resolve({
+          name: MATRIX_TENANT,
+          properties: {
+            displayName: FAKE_TENANT_NAME,
+            children: [
+              { name: MANAGEMENT_GROUP, type: GROUP_TYPE, displayName: 'Example group', children: [fakeSubscription(SUB_ONE, 'Sub one'), fakeSubscription(SUB_TWO, 'Sub two')] },
+              { name: SIBLING_GROUP, type: GROUP_TYPE, displayName: 'Other group', children: [] },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({
+        value: [
+          { name: MANAGEMENT_GROUP, properties: { displayName: 'Example group' } },
+          { name: SIBLING_GROUP, properties: { displayName: 'Other group' } },
+        ],
+      });
+    },
+  };
+});
+vi.mock('@azure/arm-resources-subscriptions', () => ({
+  SubscriptionClient: class {
+    subscriptions = {
+      list: async function* () {
+        yield { subscriptionId: SUB_ONE, displayName: 'Sub one', state: 'Enabled' };
+        yield { subscriptionId: SUB_TWO, displayName: 'Sub two', state: 'Enabled' };
+      },
+    };
+  },
+}));
 
 const API_DIR = path.resolve(__dirname, '../../app/api');
 
@@ -102,11 +161,6 @@ export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
   'dashboards/[id]': byHand('#274'),
   'views': byHand('#274'),
   'views/[id]': byHand('#274'),
-
-  'suppressions': stored(async () => get('/api/suppressions', await import('@/app/api/suppressions/route')), '#275'),
-  'azure/subscriptions': byHand('#275'),
-  'azure/management-groups': byHand('#275'),
-  'azure/scope-tree': byHand('#275'),
 
   'scans/run': stored(async () => get('/api/scans/run', await import('@/app/api/scans/run/route')), '#276'),
   'scans/[id]/snapshot': stored(async seed => getWith(`/api/scans/${seed.scanIds[1]}/snapshot`, await import('@/app/api/scans/[id]/snapshot/route'), seed.scanIds[1]), '#276'),
@@ -408,8 +462,38 @@ const ownAccess: Matrix = {
   },
 };
 
+/** Every suppression a person is shown: the seed holds one, on `vm-two` (subscription one, `rg-two`). */
+const suppressionsList: Matrix = {
+  probe: async seed => {
+    const body = await BODY(await (await import('@/app/api/suppressions/route')).GET()) as { fingerprint: string }[];
+    return namesOf(seed, body);
+  },
+  // vm-two sits in subscription one, so a Viewer on that subscription sees it; a Viewer on only `rg-one` does not.
+  expected: byPerson(same(['vm-two']), same(['vm-two']), same([]), same([]), same([])),
+};
+
+/**
+ * Removing a suppression on `vm-two`: a fresh one is stored for each call and removed again, so the seed's own is
+ * never touched. Removal asks `suppressions:write`, which the five Viewers do not hold, so each is refused by the
+ * guard. What a scoped Editor gets, by where the finding sits, is in the suppression `describe` further down.
+ */
+const suppressionRemoval: Matrix = {
+  probe: async seed => {
+    const id = globalThis.crypto.randomUUID();
+    await addSuppression({ id, fingerprint: seed.fingerprints['vm-two']!, reason: 'removed by the matrix', suppressedAt: DATE });
+    const res = await (await import('@/app/api/suppressions/[id]/route')).DELETE(
+      new Request(`http://localhost/api/suppressions/${id}`, { method: 'DELETE' }), { params: Promise.resolve({ id }) },
+    );
+    await removeSuppression(id);
+    return res.status;
+  },
+  expected: byPerson(same(204), same(403), same(403), same(403), same(403)),
+};
+
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
+  'suppressions': suppressionsList,
+  'suppressions/[id]': suppressionRemoval,
   'access': ownAccess,
   'findings/view': viewEntry,
   'findings/group': group,
@@ -510,8 +594,88 @@ const WRITTEN_QUERY_MATRIX: Record<string, Matrix> = {
   },
 };
 
+// #275: the three Azure pickers. The fake ARM lists both seed subscriptions under the seed management group, and a
+// sibling group with nothing under it. A person who does not hold Everything is told only what they hold: the
+// Viewer on one resource group is told of that group's subscription, and nothing else.
+const SUB_ONE_ENTRY = { id: SUB_ONE, name: 'Sub one' };
+const SUB_TWO_ENTRY = { id: SUB_TWO, name: 'Sub two' };
+const SUB_ONE_NODE = { id: SUB_ONE, name: 'Sub one', type: 'subscription' };
+const SUB_TWO_NODE = { id: SUB_TWO, name: 'Sub two', type: 'subscription' };
+const GROUP_NODE = { id: MANAGEMENT_GROUP, name: 'Example group', type: 'managementGroup', children: [SUB_ONE_NODE, SUB_TWO_NODE] };
+const SIBLING_NODE = { id: SIBLING_GROUP, name: 'Other group', type: 'managementGroup' };
+const limitedTree = (children: unknown[]) => ({ tenantId: '', tenantName: '', children });
+
+/** What each person gets when the Admin and the Editor get `everything` and the five Viewers get what they hold. */
+const pickerExpectation = (everything: unknown, held: { group: unknown; subscription: unknown; resourceGroup: unknown; directory: unknown; none: unknown }): Matrix['expected'] => ({
+  'Admin': same(everything),
+  'Editor on Everything': same(everything),
+  'Viewer on the management group': same(held.group),
+  'Viewer on one subscription': same(held.subscription),
+  'Viewer on one resource group': same(held.resourceGroup),
+  'Directory only': same(held.directory),
+  'No Scope': same(held.none),
+});
+
+const PICKER_MATRIX: Record<string, Matrix> = {
+  'azure/subscriptions': {
+    probe: async () => BODY(await (await import('@/app/api/azure/subscriptions/route')).GET()),
+    expected: pickerExpectation([SUB_ONE_ENTRY, SUB_TWO_ENTRY], { group: [], subscription: [SUB_ONE_ENTRY], resourceGroup: [SUB_ONE_ENTRY], directory: [], none: [] }),
+  },
+  'azure/management-groups': {
+    probe: async () => BODY(await (await import('@/app/api/azure/management-groups/route')).GET()),
+    expected: pickerExpectation(
+      [{ id: MANAGEMENT_GROUP, name: 'Example group' }, { id: SIBLING_GROUP, name: 'Other group' }],
+      { group: [{ id: MANAGEMENT_GROUP, name: 'Example group' }], subscription: [], resourceGroup: [], directory: [], none: [] },
+    ),
+  },
+  'azure/scope-tree': {
+    probe: async () => BODY(await (await import('@/app/api/azure/scope-tree/route')).GET()),
+    expected: pickerExpectation(
+      { tenantId: MATRIX_TENANT, tenantName: FAKE_TENANT_NAME, children: [GROUP_NODE, SIBLING_NODE] },
+      {
+        group: limitedTree([GROUP_NODE]), subscription: limitedTree([SUB_ONE_NODE]), resourceGroup: limitedTree([SUB_ONE_NODE]),
+        directory: limitedTree([]), none: limitedTree([]),
+      },
+    ),
+  },
+};
+
+const SCOPE_LEVEL = 'subscription';
+/**
+ * The scoped seed rule's `scope`, as each person is sent it, written by hand from `seedScopedRule`: it names both
+ * seed subscriptions and the management group. A hidden entry is counted, never named, and a Viewer on one
+ * resource group holds that group's subscription for this purpose.
+ */
+const RULE_SCOPE_EXPECTED = pickerExpectation(
+  { level: SCOPE_LEVEL, subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] },
+  {
+    group: { level: SCOPE_LEVEL, managementGroups: [MANAGEMENT_GROUP], outsideAccess: 2 },
+    subscription: { level: SCOPE_LEVEL, subscriptions: [SUB_ONE], outsideAccess: 2 },
+    resourceGroup: { level: SCOPE_LEVEL, subscriptions: [SUB_ONE], outsideAccess: 2 },
+    directory: { level: SCOPE_LEVEL, outsideAccess: 3 },
+    none: { level: SCOPE_LEVEL, outsideAccess: 3 },
+  },
+);
+
+/**
+ * The versions route answers for any rule id, and a custom rule's current definition carries its scope, so it is
+ * narrowed the way the rule list is. It reads the scoped seed rule, which the rule list's `describe` below seeds.
+ */
+const RULE_VERSIONS: Matrix = {
+  probe: async () => {
+    const route = await import('@/app/api/rules/[id]/versions/route');
+    const body = await BODY(await route.GET(new Request('http://localhost'), { params: Promise.resolve({ id: SCOPED_RULE_ID }) })) as {
+      currentDefinition: { scope: unknown };
+    };
+    return body.currentDefinition.scope;
+  },
+  expected: RULE_SCOPE_EXPECTED,
+};
+
 /** Every route that narrows what a person sees or sends. */
-export const MATRIX: Record<string, Matrix> = { ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX };
+export const MATRIX: Record<string, Matrix> = {
+  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
+};
 
 export interface ListProblems {
   unlisted: string[];
@@ -616,7 +780,6 @@ describe('every person reads what the Admin reads', () => {
 
   it('runs every stored-data GET, and finds the seeded data in the Admin\'s answers', () => {
     expect(probed.length).toBeGreaterThan(10);
-    expect(adminBodies['suppressions']).toContain(seed.suppressedFingerprint);
     expect(adminBodies['schedules/[id]/runs']).toContain(seed.runId);
     expect(adminBodies['scans/[id]/snapshot']).toContain('vm-other-sub');
     expect(adminBodies['scans/compare']).toContain('directory-app');
@@ -732,4 +895,537 @@ describe('the routes that send a written query give each person what their Scope
       }
     }
   }
+});
+
+describe('the Azure pickers tell each person only what they hold', () => {
+  const userIds: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+  });
+
+  it('holds an expectation for each of the three pickers', () => {
+    expect(Object.keys(PICKER_MATRIX).sort()).toEqual(['azure/management-groups', 'azure/scope-tree', 'azure/subscriptions']);
+  });
+
+  for (const [route, entry] of Object.entries(PICKER_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      it(`${route}: ${person}`, async () => {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        expect(await entry.probe({} as MatrixSeed, 'results')).toEqual(entry.expected[person]!.results);
+      });
+    }
+  }
+
+  it('names nothing outside what the Viewer on one subscription holds, in any of the three', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one subscription'] } });
+    for (const entry of Object.values(PICKER_MATRIX)) {
+      const text = JSON.stringify(await entry.probe({} as MatrixSeed, 'results'));
+      for (const hidden of [SUB_TWO, 'Sub two', MANAGEMENT_GROUP, 'Example group', SIBLING_GROUP, 'Other group', FAKE_TENANT_NAME, MATRIX_TENANT]) {
+        expect(text).not.toContain(hidden);
+      }
+    }
+  });
+
+  it('compares ids without regard to case', async () => {
+    const created = await createUser({ email: 'shouting@example.com', role: 'viewer' });
+    if ('error' in created) throw new Error(created.error);
+    await inTransaction(tx => replaceAssignmentsOn(tx, created.user.id, [
+      { tenantId: MATRIX_TENANT, scope: `/subscriptions/${SUB_TWO.toUpperCase()}`, role: 'viewer' as const },
+      { tenantId: MATRIX_TENANT, scope: SCOPE_MANAGEMENT_GROUP.toUpperCase(), role: 'viewer' as const },
+    ]));
+    mockAuth.mockResolvedValue({ user: { uid: created.user.id } });
+    expect(await PICKER_MATRIX['azure/subscriptions']!.probe({} as MatrixSeed, 'results')).toEqual([SUB_TWO_ENTRY]);
+    expect(await PICKER_MATRIX['azure/management-groups']!.probe({} as MatrixSeed, 'results')).toEqual([{ id: MANAGEMENT_GROUP, name: 'Example group' }]);
+  });
+});
+
+// ---- The rule list: a rule's scope names only what the person holds ----
+
+describe('GET /api/rules gives each person a rule scope that names only what they hold', () => {
+  const userIds: Record<string, string> = {};
+  type ListedRule = { id: string; scope: unknown } & Record<string, unknown>;
+  const list = async (person: string): Promise<ListedRule[]> => {
+    mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+    return BODY(await (await import('@/app/api/rules/route')).GET()) as Promise<ListedRule[]>;
+  };
+  const withoutScope = (rules: ListedRule[]) => rules.map(({ scope: _scope, ...rest }) => rest);
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await seedScopedRule();
+  });
+
+  for (const person of PEOPLE.map(p => p.name)) {
+    it(`${person}: the rule's scope`, async () => {
+      const rule = (await list(person)).find(r => r.id === SCOPED_RULE_ID);
+      expect(rule?.scope).toEqual(RULE_SCOPE_EXPECTED[person]!.results);
+    });
+
+    it(`${person}: every other part of every rule is what the Admin gets`, async () => {
+      expect(withoutScope(await list(person))).toEqual(withoutScope(await list('Admin')));
+    });
+
+    it(`${person}: rules/[id]/versions narrows the current definition's scope the same way`, async () => {
+      mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+      expect(await RULE_VERSIONS.probe({} as MatrixSeed, 'results')).toEqual(RULE_VERSIONS.expected[person]!.results);
+    });
+  }
+
+  it('sends a person on Everything the rules as they are stored', async () => {
+    const stored = JSON.parse(JSON.stringify(await loadRules())) as unknown;
+    expect(await list('Admin')).toEqual(stored);
+    expect(await list('Editor on Everything')).toEqual(stored);
+  });
+
+  it('names no subscription or management group the Viewer on one subscription does not hold, anywhere in the body', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one subscription'] } });
+    const text = await (await (await import('@/app/api/rules/route')).GET()).text();
+    expect(text).not.toContain(SUB_TWO);
+    expect(text).not.toContain(MANAGEMENT_GROUP);
+    expect(text).toContain(SUB_ONE);
+  });
+
+  it('keeps the name, description, KQL and conditions of the scoped rule the same for the person with no Scope', async () => {
+    const rule = (await list('No Scope')).find(r => r.id === SCOPED_RULE_ID)!;
+    expect(rule).toMatchObject({ name: SCOPED_RULE_NAME, rawKql: SCOPED_RULE_KQL, conditions: [] });
+  });
+
+  it('narrows the shipped definitions the versions route sends for a custom rule too', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one subscription'] } });
+    const route = await import('@/app/api/rules/[id]/versions/route');
+    const res = await route.GET(new Request('http://localhost'), { params: Promise.resolve({ id: SCOPED_RULE_ID }) });
+    const text = await res.text();
+    expect(res.status).toBe(200);
+    expect(text).not.toContain(SUB_TWO);
+    expect(text).not.toContain(MANAGEMENT_GROUP);
+  });
+});
+
+// ---- The Rules tab's counts: only the findings inside the person's Scopes ----
+
+describe('the Rules tab counts cover only the findings inside each person\'s Scopes', () => {
+  const userIds: Record<string, string> = {};
+
+  /** The rule ids of the seed with the count each person's access gives them, from the read the page calls. */
+  const countsFor = async (person: string) => {
+    const user = await getUser(userIds[person]!);
+    return queryRuleFindingCounts(await resolveAccess(user!));
+  };
+
+  const EVERYTHING_COUNTS = { 'matrix-rule': 6, 'matrix-advisory-rule': 2 };
+  const COUNTS: Record<string, Record<string, number>> = {
+    'Admin': EVERYTHING_COUNTS,
+    'Editor on Everything': EVERYTHING_COUNTS,
+    'Viewer on the management group': {},
+    'Viewer on one subscription': { 'matrix-rule': 2, 'matrix-advisory-rule': 1 },
+    'Viewer on one resource group': { 'matrix-rule': 1, 'matrix-advisory-rule': 1 },
+    'Directory only': { 'matrix-rule': 1 },
+    'No Scope': {},
+  };
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await seedMatrix();
+  });
+
+  it('holds an expectation for every person', () => {
+    expect(Object.keys(COUNTS).sort()).toEqual(PEOPLE.map(p => p.name).sort());
+  });
+
+  for (const person of PEOPLE.map(p => p.name)) {
+    it(`${person}`, async () => {
+      expect(await countsFor(person)).toEqual(COUNTS[person]);
+    });
+  }
+
+  it('counts a finding again once the suppression that covered it has expired', async () => {
+    // vm-two (subscription one) is suppressed in the seed, so the Viewer on subscription one counts 2 of the 3 there.
+    expect((await countsFor('Viewer on one subscription'))['matrix-rule']).toBe(2);
+    await saveSuppressions([{
+      id: '00000000-0000-0000-0000-0000000000b2', fingerprint: (await queryFingerprint('vm-two')), reason: 'expired', suppressedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-02T00:00:00.000Z',
+    }]);
+    expect((await countsFor('Viewer on one subscription'))['matrix-rule']).toBe(3);
+  });
+});
+
+/** The fingerprint the seed gave a finding, found by the name it was seeded with. */
+async function queryFingerprint(name: string): Promise<string> {
+  const rows = await listFindingSummaries(everythingAccess('admin'), {});
+  const found = rows.find(r => (r.resourceName ?? r.dimensionKey) === name);
+  if (!found) throw new Error(`no seeded finding named ${name}`);
+  return found.fingerprint;
+}
+
+// ---- Writes: a scoped Editor is refused where an Editor on Everything is not ----
+
+const WRITE_ACTIONS: readonly Action[] = ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'suppressions:write'];
+
+/** A write route a person who does not hold Everything is refused, or that names where it acts. */
+interface WriteCase {
+  /** What the route sends, over targets made fresh for this call. */
+  prepare: () => Promise<() => Promise<Response>>;
+  action: Action;
+  /** What an Admin gets. */
+  admin: number;
+  /** What an Editor on Everything gets. */
+  everything: number;
+}
+
+let writeCounter = 0;
+const nextName = (what: string) => `write ${what} ${++writeCounter}`;
+const ctxFor = (params: { id: string }) => ({ params: Promise.resolve(params) });
+
+async function freshRule(): Promise<string> {
+  const id = `write-rule-${++writeCounter}`;
+  await saveRules([{ ...ruleBody(nextName('rule')), id } as unknown as Rule]);
+  return id;
+}
+
+async function freshSchedule(): Promise<string> {
+  const created = await createSchedule({
+    name: nextName('schedule'), targetType: 'all', targetValues: [], recurrenceType: 'daily', interval: 1,
+    daysOfWeek: null, dayOfMonth: null, startAt: '2026-06-01T00:00:00.000Z', endType: 'never', endDate: null,
+  });
+  if ('error' in created) throw new Error(created.error);
+  return created.schedule.id;
+}
+
+async function freshCategory(): Promise<string> {
+  const created = await createCategory({ label: nextName('category') });
+  if ('error' in created) throw new Error(created.error);
+  return created.category.id;
+}
+
+const scheduleBody = (name: string) => ({
+  name, targetType: 'all', targetValues: [], recurrenceType: 'daily', interval: 1, startAt: '2026-06-01T00:00:00.000Z', endType: 'never',
+});
+
+const WRITE_CASES: Record<string, WriteCase> = {
+  'rules POST': {
+    action: 'rules:write', admin: 201, everything: 201,
+    prepare: async () => () => import('@/app/api/rules/route').then(r => r.POST(sendJson('/api/rules', 'POST', ruleBody(nextName('rule'))))),
+  },
+  'rules/[id] PUT': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRule();
+      return () => import('@/app/api/rules/[id]/route').then(r => r.PUT(sendJson(`/api/rules/${id}`, 'PUT', ruleBody(nextName('renamed rule'))), ctxFor({ id })));
+    },
+  },
+  'rules/[id] DELETE': {
+    action: 'rules:delete', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRule();
+      return () => import('@/app/api/rules/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/rules/${id}`, { method: 'DELETE' }), ctxFor({ id })));
+    },
+  },
+  'rules/bulk PATCH': {
+    action: 'rules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshRule();
+      return () => import('@/app/api/rules/bulk/route').then(r => r.PATCH(sendJson('/api/rules/bulk', 'PATCH', { disable: [id] })));
+    },
+  },
+  'rules/[id]/duplicate POST': {
+    action: 'rules:write', admin: 201, everything: 201,
+    prepare: async () => {
+      const id = await freshRule();
+      return () => import('@/app/api/rules/[id]/duplicate/route').then(r => r.POST(new Request(`http://localhost/api/rules/${id}/duplicate`, { method: 'POST' }), ctxFor({ id })));
+    },
+  },
+  'rules/[id]/findings DELETE': {
+    action: 'rules:delete', admin: 200, everything: 200,
+    prepare: async () => {
+      // The rule the seed's findings belong to, saved once and then cleared by whoever is allowed to.
+      await saveRules([{ ...ruleBody('matrix rule with findings'), id: 'matrix-rule' } as unknown as Rule]);
+      return () => import('@/app/api/rules/[id]/findings/route').then(r => r.DELETE(new Request('http://localhost/api/rules/matrix-rule/findings', { method: 'DELETE' }), ctxFor({ id: 'matrix-rule' })));
+    },
+  },
+  'schedules POST': {
+    action: 'schedules:write', admin: 201, everything: 201,
+    prepare: async () => () => import('@/app/api/schedules/route').then(r => r.POST(sendJson('/api/schedules', 'POST', scheduleBody(nextName('schedule'))))),
+  },
+  'schedules/[id] PUT': {
+    action: 'schedules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshSchedule();
+      return () => import('@/app/api/schedules/[id]/route').then(r => r.PUT(sendJson(`/api/schedules/${id}`, 'PUT', scheduleBody(nextName('renamed schedule'))), ctxFor({ id })));
+    },
+  },
+  'schedules/[id] DELETE': {
+    action: 'schedules:write', admin: 200, everything: 200,
+    prepare: async () => {
+      const id = await freshSchedule();
+      return () => import('@/app/api/schedules/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/schedules/${id}`, { method: 'DELETE' }), ctxFor({ id })));
+    },
+  },
+  // Categories are install administration (ADR 0010): an Admin only, whatever Scope an Editor holds.
+  'categories POST': {
+    action: 'categories:write', admin: 201, everything: 403,
+    prepare: async () => () => import('@/app/api/categories/route').then(r => r.POST(sendJson('/api/categories', 'POST', { label: nextName('category') }))),
+  },
+  'categories/[id] PUT': {
+    action: 'categories:write', admin: 200, everything: 403,
+    prepare: async () => {
+      const id = await freshCategory();
+      return () => import('@/app/api/categories/[id]/route').then(r => r.PUT(sendJson(`/api/categories/${id}`, 'PUT', { label: nextName('renamed category') }), ctxFor({ id })));
+    },
+  },
+  'categories/[id] DELETE': {
+    action: 'categories:write', admin: 200, everything: 403,
+    prepare: async () => {
+      const id = await freshCategory();
+      return () => import('@/app/api/categories/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/categories/${id}`, { method: 'DELETE' }), ctxFor({ id })));
+    },
+  },
+};
+
+/** The routes that write and are checked by their own `describe`, because what they ask is where a finding sits. */
+const PLACED_WRITES = ['suppressions POST', 'suppressions/[id] DELETE'];
+
+/** The one handler that names a write action and is not in the table, with the ticket that covers it. */
+const WRITE_SWEEP_EXCEPTIONS: Record<string, string> = { 'schedules/[id]/run POST': '#276' };
+
+const WRITE_VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+
+/** `rules/[id] PUT` for each handler in a route's source that asks for one of `actions`. */
+export function writeHandlersIn(route: string, source: string, actions: readonly string[]): string[] {
+  const code = stripComments(source);
+  const starts = WRITE_VERBS.flatMap(verb => {
+    const at = code.search(new RegExp(`export\\s+(?:async\\s+)?function\\s+${verb}\\b`));
+    return at < 0 ? [] : [{ verb, at }];
+  }).sort((a, b) => a.at - b.at);
+  return starts.flatMap(({ verb, at }, i) => {
+    const body = code.slice(at, starts[i + 1]?.at ?? code.length);
+    const asked = [...body.matchAll(/requireRole\(\s*'([^']+)'/g)].map(m => m[1]!);
+    return asked.some(a => actions.includes(a)) ? [`${route} ${verb}`] : [];
+  });
+}
+
+describe('every handler that writes is in the write table', () => {
+  const sourceOf = (file: string) => readFileSync(file, 'utf8');
+  const named = routeFiles(API_DIR).flatMap(file => writeHandlersIn(routeName(file), sourceOf(file), WRITE_ACTIONS));
+
+  it('finds the handlers that ask for a write action', () => {
+    expect(named.length).toBeGreaterThan(10);
+    expect(named).toContain('rules/[id] PUT');
+    expect(named).toContain('suppressions POST');
+  });
+
+  it('has each of them in the table, in the placed writes, or in the listed exception', () => {
+    const covered = new Set([...Object.keys(WRITE_CASES), ...PLACED_WRITES, ...Object.keys(WRITE_SWEEP_EXCEPTIONS)]);
+    expect(named.filter(handler => !covered.has(handler))).toEqual([]);
+  });
+
+  it('lists nothing in the table that is not a handler on disk', () => {
+    expect(Object.keys(WRITE_CASES).concat(PLACED_WRITES).filter(handler => !named.includes(handler))).toEqual([]);
+  });
+
+  it('names the ticket for the one exception, and no other', () => {
+    expect(WRITE_SWEEP_EXCEPTIONS).toEqual({ 'schedules/[id]/run POST': '#276' });
+  });
+
+  it('says what a handler missing from the table looks like', () => {
+    const source = `export async function POST() { await requireRole('schedules:write'); }\nexport async function GET() { await requireRole('read'); }`;
+    expect(writeHandlersIn('widgets/new', source, WRITE_ACTIONS)).toEqual(['widgets/new POST']);
+    expect(writeHandlersIn('widgets/new', `// await requireRole('rules:write')\nexport async function GET() { await requireRole('read'); }`, WRITE_ACTIONS)).toEqual([]);
+  });
+});
+
+describe('a scoped Editor is refused every library and schedule write, and an Editor on Everything is not', () => {
+  const userIds: Record<string, string> = {};
+  let scopedEditor: string;
+
+  /** What every write route changes, in one value, so a refusal can be shown to have changed nothing. */
+  const stored = async () => ({
+    rules: JSON.parse(JSON.stringify(await loadRules())) as unknown,
+    schedules: await listSchedules(),
+    categories: await listCategories(),
+    findings: await queryRuleFindingCounts(everythingAccess('admin')),
+    audit: await countAuditEntries(),
+  });
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await seedMatrix();
+    const created = await createUser({ email: 'scoped-editor@example.com', role: 'editor' });
+    if ('error' in created) throw new Error(created.error);
+    scopedEditor = created.user.id;
+    await inTransaction(tx => replaceAssignmentsOn(tx, scopedEditor, [{ tenantId: MATRIX_TENANT, scope: SCOPE_SUBSCRIPTION, role: 'editor' }]));
+  });
+
+  beforeEach(() => { fakeCtx = fakeTenantContext({}); });
+
+  it('has a case for every route in the brief', () => {
+    expect(Object.keys(WRITE_CASES).sort()).toEqual([
+      'categories POST', 'categories/[id] DELETE', 'categories/[id] PUT', 'rules POST', 'rules/[id] DELETE', 'rules/[id] PUT',
+      'rules/[id]/duplicate POST', 'rules/[id]/findings DELETE', 'rules/bulk PATCH', 'schedules POST', 'schedules/[id] DELETE', 'schedules/[id] PUT',
+    ]);
+  });
+
+  it('starts with findings for the rule the clear-findings case targets', async () => {
+    expect((await stored()).findings['matrix-rule']).toBe(6);
+  });
+
+  for (const [name, c] of Object.entries(WRITE_CASES)) {
+    it(`${name}: the Editor on one subscription gets 403 and nothing is stored`, async () => {
+      const send = await c.prepare();
+      mockAuth.mockResolvedValue({ user: { uid: scopedEditor } });
+      const before = await stored();
+      const res = await send();
+      expect(res.status).toBe(403);
+      expect(await stored()).toEqual(before);
+    });
+
+    it(`${name}: the Editor on Everything gets ${c.everything}`, async () => {
+      const send = await c.prepare();
+      mockAuth.mockResolvedValue({ user: { uid: userIds['Editor on Everything'] } });
+      expect((await send()).status).toBe(c.everything);
+    });
+
+    it(`${name}: the Admin gets ${c.admin}`, async () => {
+      const send = await c.prepare();
+      mockAuth.mockResolvedValue({ user: { uid: userIds['Admin'] } });
+      expect((await send()).status).toBe(c.admin);
+    });
+  }
+
+  it('refuses the Editor on one subscription in the same way as a Viewer, with the same body', async () => {
+    const send = await WRITE_CASES['rules POST']!.prepare();
+    mockAuth.mockResolvedValue({ user: { uid: scopedEditor } });
+    const editor = await send();
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one subscription'] } });
+    const viewer = await send();
+    expect(editor.status).toBe(403);
+    expect(await editor.json()).toEqual(await viewer.json());
+  });
+});
+
+// ---- Suppressing: where the finding sits decides ----
+
+describe('suppressing needs a Role that allows it at a Scope containing the finding', () => {
+  const userIds: Record<string, string> = {};
+  let seed: MatrixSeed;
+  let scopedEditor: string;
+  let mixed: string;
+
+  const post = async (person: string, fingerprint: string): Promise<Response> => {
+    mockAuth.mockResolvedValue({ user: { uid: person } });
+    return (await import('@/app/api/suppressions/route')).POST(sendJson('/api/suppressions', 'POST', { fingerprint, reason: 'accepted for the test' }));
+  };
+  const remove = async (person: string, id: string): Promise<Response> => {
+    mockAuth.mockResolvedValue({ user: { uid: person } });
+    return (await import('@/app/api/suppressions/[id]/route')).DELETE(new Request(`http://localhost/api/suppressions/${id}`, { method: 'DELETE' }), ctxFor({ id }));
+  };
+  const stored = async () => (await loadSuppressions(everythingAccess('admin'))).map(s => s.fingerprint).sort();
+
+  async function newPerson(email: string, grants: { scope: string; role: 'viewer' | 'editor' }[]): Promise<string> {
+    const created = await createUser({ email, role: 'editor' });
+    if ('error' in created) throw new Error(created.error);
+    await inTransaction(tx => replaceAssignmentsOn(tx, created.user.id, grants.map(g => ({ tenantId: MATRIX_TENANT, ...g }))));
+    return created.user.id;
+  }
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    seed = await seedMatrix();
+    scopedEditor = await newPerson('suppress-editor@example.com', [{ scope: SCOPE_SUBSCRIPTION, role: 'editor' }]);
+    // Editor on resource group `rg-one` of subscription one, Viewer on subscription two.
+    mixed = await newPerson('suppress-mixed@example.com', [
+      { scope: SCOPE_RESOURCE_GROUP, role: 'editor' }, { scope: `/subscriptions/${SUB_TWO}`, role: 'viewer' },
+    ]);
+  });
+
+  it('lets an Editor on one subscription suppress a finding inside it, stores it and audits it', async () => {
+    const res = await post(scopedEditor, seed.fingerprints['vm-one']!);
+    expect(res.status).toBe(201);
+    const body = await res.json() as { id: string; fingerprint: string };
+    expect(await stored()).toContain(seed.fingerprints['vm-one']);
+    const audit = (await listAuditEntries({ limit: 20 })).find(e => e.action === 'suppression.create' && e.entityId === body.id);
+    expect(audit?.actorId).toBe(scopedEditor);
+  });
+
+  it('answers a finding outside it with the body of a fingerprint that does not exist, and stores nothing', async () => {
+    const before = await stored();
+    const outside = await post(scopedEditor, seed.fingerprints['vm-other-sub']!);
+    const unknown = await post(scopedEditor, '0000000000000000');
+    expect(outside.status).toBe(404);
+    expect(unknown.status).toBe(404);
+    expect(await outside.text()).toBe(await unknown.text());
+    expect(await stored()).toEqual(before);
+  });
+
+  it('refuses a person who is an Editor on one Scope and a Viewer on another on a finding in the Viewer Scope', async () => {
+    const before = await stored();
+    const inViewerScope = await post(mixed, seed.fingerprints['vm-other-sub']!);
+    expect(inViewerScope.status).toBe(404);
+    expect(await stored()).toEqual(before);
+  });
+
+  it('lets that person suppress a finding in the Scope where they are an Editor', async () => {
+    expect((await post(mixed, seed.fingerprints['advisory-one']!)).status).toBe(201);
+  });
+
+  it('refuses them a finding a Viewer Scope contains and an Editor Scope does not, even when the Viewer Scope is the wider one', async () => {
+    const wide = await newPerson('suppress-wide-viewer@example.com', [
+      { scope: SCOPE_SUBSCRIPTION, role: 'viewer' }, { scope: SCOPE_RESOURCE_GROUP, role: 'editor' },
+    ]);
+    // subscription-level sits in subscription one but in no resource group.
+    expect((await post(wide, seed.fingerprints['subscription-level']!)).status).toBe(404);
+    expect((await post(wide, seed.fingerprints['vm-one']!)).status).toBe(201);
+  });
+
+  it('refuses a Viewer, as before, at the guard', async () => {
+    expect((await post(userIds['Viewer on one subscription']!, seed.fingerprints['vm-one']!)).status).toBe(403);
+  });
+
+  it('is unchanged for the Admin and the Editor on Everything: any fingerprint is accepted', async () => {
+    expect((await post(userIds['Admin']!, seed.fingerprints['vm-other-sub']!)).status).toBe(201);
+    expect((await post(userIds['Editor on Everything']!, '0000000000000001')).status).toBe(201);
+  });
+
+  describe('removing one', () => {
+    const suppressionOn = async (name: string): Promise<string> => {
+      const res = await post(userIds['Admin']!, seed.fingerprints[name]!);
+      return ((await res.json()) as { id: string }).id;
+    };
+
+    it('removes a suppression on a finding inside an Editor Scope', async () => {
+      const id = await suppressionOn('directory-app');
+      const inside = await newPerson('suppress-directory-editor@example.com', [{ scope: SCOPE_DIRECTORY, role: 'editor' }]);
+      expect((await remove(inside, id)).status).toBe(204);
+      expect((await loadSuppressions(everythingAccess('admin'))).some(s => s.id === id)).toBe(false);
+    });
+
+    it('answers a suppression outside it with the body of an id that does not exist, and removes nothing', async () => {
+      const id = await suppressionOn('management-group-level');
+      const before = await stored();
+      const outside = await remove(scopedEditor, id);
+      const unknown = await remove(scopedEditor, '00000000-0000-0000-0000-00000000dead');
+      expect(outside.status).toBe(404);
+      expect(unknown.status).toBe(404);
+      expect(await outside.text()).toBe(await unknown.text());
+      expect(await stored()).toEqual(before);
+    });
+
+    it('refuses the person who is a Viewer where the finding sits', async () => {
+      const id = await suppressionOn('vm-other-sub');
+      expect((await remove(mixed, id)).status).toBe(404);
+      expect((await loadSuppressions(everythingAccess('admin'))).some(s => s.id === id)).toBe(true);
+    });
+
+    it('is unchanged for the Admin and the Editor on Everything', async () => {
+      const first = await suppressionOn('unplaceable-thing');
+      expect((await remove(userIds['Admin']!, first)).status).toBe(204);
+      const second = await suppressionOn('unplaceable-thing');
+      expect((await remove(userIds['Editor on Everything']!, second)).status).toBe(204);
+    });
+  });
 });

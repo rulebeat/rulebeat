@@ -20,11 +20,15 @@ interface Props {
   categories?: Category[];
   /** Whether this person may author rules at all. Built-ins still lock their detection query. */
   canAuthor: boolean;
+  /** Why `canAuthor` is off for someone whose Editor access covers part of the install: the controls it
+   *  switches off are shown disabled with this text. Absent for a Viewer. */
+  writeReason?: string;
   canVersion: boolean;
   versionHistory?: RuleVersionHistory;
 }
 
-export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor, canVersion, versionHistory }: Props) {
+export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing = false, allTags, categories, canAuthor, writeReason, canVersion, versionHistory }: Props) {
+  const offReason = canAuthor ? undefined : writeReason;
   const router = useRouter();
   const isBuiltin = rule.type === 'builtin';
   const canDuplicate = canDuplicateRule(rule);
@@ -66,6 +70,12 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
                 Edit
               </Button>
             )}
+            {offReason && (
+              <Button variant="outline" size="sm" className="h-6 text-xs px-2 gap-1" disabled title={offReason}>
+                <Pencil className="h-2.5 w-2.5" />
+                Edit
+              </Button>
+            )}
           </>
         )}
         {canAuthor && (
@@ -85,7 +95,14 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
             Duplicate
           </Button>
         )}
+        {offReason && canDuplicate && (
+          <Button variant="outline" size="sm" className="h-7 text-xs px-2.5 gap-1.5 ml-auto" disabled title={offReason}>
+            <Copy className="h-3 w-3" />
+            Duplicate
+          </Button>
+        )}
       </div>
+      {offReason && <p className="max-w-[1600px] mx-auto text-xs text-ink-2">{offReason}</p>}
 
       {origin && (
         <div className="max-w-[1600px] mx-auto">
@@ -108,6 +125,7 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
         allTags={allTags}
         categories={categories}
         canAuthor={canAuthor}
+        writeReason={writeReason}
         onDirtyChange={setDirty}
         onSavingChange={setSaving}
         saveHandleRef={saveHandleRef}

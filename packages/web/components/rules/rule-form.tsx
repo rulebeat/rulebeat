@@ -16,6 +16,7 @@ import { HelpCircle, Copy, Check, Play, ExternalLink, Lock, Sparkles } from 'luc
 import { FieldCombobox } from './field-combobox';
 import { ResourceTypeInput } from './resource-type-input';
 import { ScopeTreePicker } from './scope-tree-picker';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/rule-scope-access';
 import { TagPicker } from './tag-picker';
 import type { LockedTag } from './tag-picker';
 import { PACK_LABELS } from '@/lib/pack-labels';
@@ -145,6 +146,9 @@ interface RuleFormProps {
   categories?: Category[];
   /** Gates tags/enabled, which stay live-editable regardless of readOnly/edit mode. */
   canAuthor?: boolean;
+  /** Why `canAuthor` is off for someone whose Editor access covers part of the install. Shown with the
+   *  controls it switches off. Absent for a Viewer. */
+  writeReason?: string;
   /**
    * What a brand-new rule (no `initial`) checks against, chosen by ChecksPickerDialog before this
    * form ever mounts (rule-new-client.tsx). Ignored once `initial` is set. An existing rule's
@@ -166,7 +170,7 @@ interface RuleFormProps {
 }
 
 export function RuleForm({
-  initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, initialQueryBackend, copyFrom,
+  initial, kqlQuery, readOnly, allTags = [], categories = [], canAuthor = false, writeReason, initialQueryBackend, copyFrom,
   versionHistory, canVersion = false,
   onDirtyChange, onSavingChange, saveHandleRef,
 }: RuleFormProps) {
@@ -260,6 +264,8 @@ export function RuleForm({
   const [scopeSubscriptions, setScopeSubscriptions]     = useState<string[]>(initial?.scope.subscriptions ?? []);
   const [scopeManagementGroups, setScopeManagementGroups] = useState<string[]>(initial?.scope.managementGroups ?? []);
   const [scopeNames, setScopeNames]   = useState<Record<string, string>>({});
+  // Entries of the rule's scope the person does not hold, which the server left out (lib/rule-scope-access.ts).
+  const outsideAccess = initial?.scope.outsideAccess ?? 0;
   const [resourceTypes, setResourceTypes] = useState(() => {
     const own = (initial?.resourceTypes ?? []).filter(t => t && t !== '*');
     if (own.length) return own.join(', ');
@@ -590,7 +596,7 @@ export function RuleForm({
                   checked={enabled}
                   onCheckedChange={setEnabled}
                   disabled={operationalReadOnly}
-                  title={operationalReadOnly ? 'Read-only access' : enabled ? 'Disable rule' : 'Enable rule'}
+                  title={operationalReadOnly ? (writeReason ?? 'Read-only access') : enabled ? 'Disable rule' : 'Enable rule'}
                 />
                 <span className="text-xs text-ink-2">Enabled</span>
               </label>
@@ -734,6 +740,7 @@ export function RuleForm({
               <div>
                 <Label className="mb-1">Tags</Label>
                 <TagPicker tags={tags} allTags={allTags} onChange={setTags} disabled={operationalReadOnly} lockedTags={lockedTags} />
+                {operationalReadOnly && writeReason && <p className="mt-1 text-xs text-ink-2">{writeReason}</p>}
               </div>
             </CardContent>
           </Card>
@@ -794,12 +801,13 @@ export function RuleForm({
                 />
               )}
 
-              {!isReadOnly && (scopeSubscriptions.length > 0 || scopeManagementGroups.length > 0) && (
+              {!isReadOnly && (scopeSubscriptions.length > 0 || scopeManagementGroups.length > 0 || outsideAccess > 0) && (
                 <Callout tone="info" title="Execution scope restricted">
                   <p>
                     {[
                       ...scopeManagementGroups.map(id => scopeNames[id] ?? id),
                       ...scopeSubscriptions.map(id => scopeNames[id] ?? id),
+                      ...Array.from({ length: outsideAccess }, () => OUTSIDE_ACCESS_LABEL),
                     ].join(', ')}
                   </p>
                 </Callout>
@@ -894,6 +902,7 @@ export function RuleForm({
                       guiSet(setScopeManagementGroups)(mgs);
                     }}
                     onNamesReady={setScopeNames}
+                    outsideAccess={outsideAccess}
                   />
                 </div>
                 {!isReadOnly && (
