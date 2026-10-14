@@ -12,7 +12,7 @@ import type { AuditEntry, AuditEntityType } from '@/lib/db/audit';
 import {
   ChevronDown, ChevronRight, ChevronLeft, ScrollText, Download,
   FileCode, EyeOff, CalendarClock, Folder, LayoutDashboard, Radar, Users, LogIn, Cloud, KeyRound,
-  ShieldCheck, Bell, Compass, Database, Network, Search, Terminal, Bookmark,
+  ShieldCheck, Bell, Compass, Database, Network, Search, Terminal, Bookmark, Lock,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,6 +37,7 @@ const ENTITY_ICONS: Record<AuditEntityType, LucideIcon> = {
   management_group_hierarchy: Network,
   query: Terminal,
   saved_view: Bookmark,
+  personal_rule: Lock,
 };
 
 // Destructive and access-changing actions are tinted so they stand out when scanning the list,

@@ -134,6 +134,41 @@ table notification_deliveries
   http_status INTEGER
   error TEXT
   findings_count INTEGER NOT NULL DEFAULT 0
+table personal_rule_results
+  personal_rule_id TEXT NOT NULL PK(1)
+  ordinal INTEGER NOT NULL PK(2)
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  subscription_id TEXT
+  resource_group TEXT
+  location TEXT
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  rows TEXT NOT NULL
+table personal_rules
+  id TEXT PK(1)
+  owner_id TEXT NOT NULL
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  conditions TEXT NOT NULL
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  query_backend TEXT NOT NULL
+  graph_query TEXT
+  kind TEXT NOT NULL DEFAULT 'state'
+  tags TEXT
+  visual_query TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+  last_run_status TEXT
+  last_run_covered_scope TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -354,6 +389,7 @@ index idx_finding_events_time on finding_events
 index idx_findings_category_status on findings
 index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
+index idx_personal_rules_owner on personal_rules
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
 index idx_scan_findings_order on scan_findings
@@ -377,6 +413,8 @@ management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
+personal_rule_results: 0
+personal_rules: 0
 posture_snapshots: 1
 query_runs: 0
 resource_types_cache: 0
@@ -589,6 +627,41 @@ table notification_deliveries
   http_status INTEGER
   error TEXT
   findings_count INTEGER NOT NULL DEFAULT 0
+table personal_rule_results
+  personal_rule_id TEXT NOT NULL PK(1)
+  ordinal INTEGER NOT NULL PK(2)
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  subscription_id TEXT
+  resource_group TEXT
+  location TEXT
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  rows TEXT NOT NULL
+table personal_rules
+  id TEXT PK(1)
+  owner_id TEXT NOT NULL
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  conditions TEXT NOT NULL
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  query_backend TEXT NOT NULL
+  graph_query TEXT
+  kind TEXT NOT NULL DEFAULT 'state'
+  tags TEXT
+  visual_query TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+  last_run_status TEXT
+  last_run_covered_scope TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -809,6 +882,7 @@ index idx_finding_events_time on finding_events
 index idx_findings_category_status on findings
 index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
+index idx_personal_rules_owner on personal_rules
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
 index idx_scan_findings_order on scan_findings
@@ -832,6 +906,8 @@ management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
+personal_rule_results: 0
+personal_rules: 0
 posture_snapshots: 0
 query_runs: 0
 resource_types_cache: 0
@@ -1031,6 +1107,41 @@ table notification_deliveries
   http_status INTEGER
   error TEXT
   findings_count INTEGER NOT NULL DEFAULT 0
+table personal_rule_results
+  personal_rule_id TEXT NOT NULL PK(1)
+  ordinal INTEGER NOT NULL PK(2)
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  subscription_id TEXT
+  resource_group TEXT
+  location TEXT
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  rows TEXT NOT NULL
+table personal_rules
+  id TEXT PK(1)
+  owner_id TEXT NOT NULL
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  conditions TEXT NOT NULL
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  query_backend TEXT NOT NULL
+  graph_query TEXT
+  kind TEXT NOT NULL DEFAULT 'state'
+  tags TEXT
+  visual_query TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+  last_run_status TEXT
+  last_run_covered_scope TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -1251,6 +1362,7 @@ index idx_finding_events_time on finding_events
 index idx_findings_category_status on findings
 index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
+index idx_personal_rules_owner on personal_rules
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
 index idx_scan_findings_order on scan_findings
@@ -1274,6 +1386,8 @@ management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
+personal_rule_results: 0
+personal_rules: 0
 posture_snapshots: 0
 query_runs: 0
 resource_types_cache: 0
@@ -1482,6 +1596,41 @@ table notification_deliveries
   http_status INTEGER
   error TEXT
   findings_count INTEGER NOT NULL DEFAULT 0
+table personal_rule_results
+  personal_rule_id TEXT NOT NULL PK(1)
+  ordinal INTEGER NOT NULL PK(2)
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  subscription_id TEXT
+  resource_group TEXT
+  location TEXT
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  rows TEXT NOT NULL
+table personal_rules
+  id TEXT PK(1)
+  owner_id TEXT NOT NULL
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  conditions TEXT NOT NULL
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  query_backend TEXT NOT NULL
+  graph_query TEXT
+  kind TEXT NOT NULL DEFAULT 'state'
+  tags TEXT
+  visual_query TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+  last_run_status TEXT
+  last_run_covered_scope TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -1702,6 +1851,7 @@ index idx_finding_events_time on finding_events
 index idx_findings_category_status on findings
 index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
+index idx_personal_rules_owner on personal_rules
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
 index idx_scan_findings_order on scan_findings
@@ -1725,6 +1875,8 @@ management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
+personal_rule_results: 0
+personal_rules: 0
 posture_snapshots: 0
 query_runs: 0
 resource_types_cache: 0
@@ -1934,6 +2086,41 @@ table notification_deliveries
   http_status INTEGER
   error TEXT
   findings_count INTEGER NOT NULL DEFAULT 0
+table personal_rule_results
+  personal_rule_id TEXT NOT NULL PK(1)
+  ordinal INTEGER NOT NULL PK(2)
+  resource_id TEXT
+  resource_name TEXT
+  resource_type TEXT
+  subscription_id TEXT
+  resource_group TEXT
+  location TEXT
+  severity TEXT NOT NULL
+  title TEXT NOT NULL
+  rows TEXT NOT NULL
+table personal_rules
+  id TEXT PK(1)
+  owner_id TEXT NOT NULL
+  name TEXT NOT NULL
+  description TEXT NOT NULL
+  category TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  resource_types TEXT NOT NULL
+  conditions TEXT NOT NULL
+  condition_groups TEXT
+  project_columns TEXT
+  raw_kql TEXT
+  query_backend TEXT NOT NULL
+  graph_query TEXT
+  kind TEXT NOT NULL DEFAULT 'state'
+  tags TEXT
+  visual_query TEXT
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+  last_run_at TEXT
+  last_run_status TEXT
+  last_run_covered_scope TEXT
 table posture_snapshots
   category TEXT NOT NULL PK(1)
   subscription_id TEXT NOT NULL PK(2) DEFAULT ''
@@ -2154,6 +2341,7 @@ index idx_finding_events_time on finding_events
 index idx_findings_category_status on findings
 index idx_findings_rule on findings
 index idx_notification_deliveries_channel on notification_deliveries
+index idx_personal_rules_owner on personal_rules
 index idx_query_runs_owner on query_runs
 index idx_saved_queries_owner on saved_queries
 index idx_scan_findings_order on scan_findings
@@ -2177,6 +2365,8 @@ management_group_hierarchy: 0
 meta: 5
 notification_channels: 0
 notification_deliveries: 0
+personal_rule_results: 0
+personal_rules: 0
 posture_snapshots: 0
 query_runs: 0
 resource_types_cache: 0

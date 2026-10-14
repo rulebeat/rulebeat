@@ -6,13 +6,41 @@
  * zero. See `lib/db/users.ts` for the `inTransaction()` + row-lock fix.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { resetDb, execRaw } from '../helpers/db';
+import { resetDb, execRaw, countRows } from '../helpers/db';
 import { dbKind } from '@/lib/db/backend';
 import {
   createUser, updateUserRole, deleteUser, countAdmins, getUser, type AppUser,
 } from '@/lib/db/users';
 import { createSavedQuery, listSavedQueries } from '@/lib/db/saved-queries';
 import { recordQueryRun, listQueryRuns } from '@/lib/db/query-runs';
+import {
+  createPersonalRule, listPersonalRuleResults, listPersonalRules, replacePersonalRuleResults,
+  type PersonalRuleDefinition,
+} from '@/lib/db/personal-rules';
+
+const PERSONAL_DEFINITION: PersonalRuleDefinition = {
+  name: 'Mine',
+  description: '',
+  category: 'security',
+  severity: 'high',
+  queryBackend: 'resource-graph',
+  kind: 'state',
+  scope: { level: 'subscription' },
+  resourceTypes: [],
+  conditions: [],
+  rawKql: 'resources | project id',
+};
+
+async function seedPersonalRule(ownerId: string, name = 'Mine') {
+  const rule = await createPersonalRule(ownerId, { ...PERSONAL_DEFINITION, name });
+  await replacePersonalRuleResults(rule.id, ownerId, {
+    status: 'success',
+    ranAt: new Date().toISOString(),
+    coveredScope: '[]',
+    results: [{ resourceId: '/subscriptions/x/rg/a', resourceName: 'a', severity: 'high', title: 't', rows: [{ id: 'a' }] }],
+  });
+  return rule;
+}
 
 async function makeUser(email: string, role: AppUser['role'] = 'viewer'): Promise<AppUser> {
   const result = await createUser({ email, role });
@@ -104,6 +132,7 @@ describe('deleteUser: atomicity of its three deletes', () => {
         truncated: false,
         ownerId: owner.id,
       });
+      const personal = await seedPersonalRule(owner.id);
 
       const triggerName = 'trg_block_delete_for_test';
       await execRaw(`
@@ -122,9 +151,29 @@ describe('deleteUser: atomicity of its three deletes', () => {
         expect(await getUser(owner.id)).not.toBeNull();
         expect(await listSavedQueries(owner.id)).toHaveLength(1);
         expect(await listQueryRuns(owner.id)).toHaveLength(1);
+        expect(await listPersonalRules(owner.id)).toHaveLength(1);
+        expect(await listPersonalRuleResults(personal.id, owner.id)).toHaveLength(1);
       } finally {
         await execRaw(`DROP TRIGGER IF EXISTS ${triggerName}`);
       }
     },
   );
+});
+
+describe('deleteUser: Personal rules go with their owner', () => {
+  it('removes the owner\'s Personal rules and their results, and no one else\'s', async () => {
+    const owner = await makeUser('personal-owner@example.com', 'editor');
+    const other = await makeUser('personal-other@example.com', 'editor');
+    const ownerRule = await seedPersonalRule(owner.id, 'Owner rule');
+    const otherRule = await seedPersonalRule(other.id, 'Other rule');
+
+    expect(await deleteUser(owner.id)).toBe(true);
+
+    expect(await listPersonalRules(owner.id)).toEqual([]);
+    expect(await countRows('personal_rules')).toBe(1);
+    expect(await countRows('personal_rule_results')).toBe(1);
+    expect(await listPersonalRuleResults(ownerRule.id, owner.id)).toEqual([]);
+    expect((await listPersonalRules(other.id)).map(r => r.id)).toEqual([otherRule.id]);
+    expect(await listPersonalRuleResults(otherRule.id, other.id)).toHaveLength(1);
+  });
 });

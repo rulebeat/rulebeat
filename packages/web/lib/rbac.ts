@@ -32,6 +32,7 @@ const EDITOR_ACTIONS = [
   'rules:write',
   'rules:delete',
   'rules:validate',
+  'rules:personal',
   'scans:run',
   'schedules:write',
   'suppressions:write',
@@ -102,6 +103,7 @@ export const ACTION_CLASS: Record<Action, ActionClass> = {
   'suppressions:write': 'placed',
   'read': 'scoped',
   'rules:validate': 'scoped',
+  'rules:personal': 'scoped',
   'scans:run': 'scoped',
   'account:self': 'outside',
 };

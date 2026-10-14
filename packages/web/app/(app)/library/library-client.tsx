@@ -26,6 +26,7 @@ import { can, type Role } from '@/lib/rbac';
 import type { Category, Rule, RuleKind } from '@/lib/types';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import { isExternalPack, type PackManifestEntry } from './pack-manifest';
+import { PersonalRulesTab } from './personal-rules-tab';
 
 // ---- Constants ----
 
@@ -43,7 +44,7 @@ const PACK_META: Record<string, { fullName: string; summary: string; docsUrl: st
   },
 };
 
-type NavSection = 'all' | `pack:${string}` | 'community' | 'gallery' | 'custom';
+type NavSection = 'all' | `pack:${string}` | 'community' | 'gallery' | 'custom' | 'personal';
 
 const SIDEBAR_RAIL_WIDTH = 40;
 const SIDEBAR_EXPANDED_WIDTH = 208;
@@ -212,7 +213,7 @@ function PackInfoBanner({ packId, manifest }: { packId: string; manifest: Record
 
 // ---- Main component ----
 
-export function LibraryClient({ initialRules, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, role }: { initialRules: Rule[]; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; role: Role }) {
+export function LibraryClient({ initialRules, personalRules, personalWriteBlockedReason, newerVersions, initialSection, packManifest, categories, initialSidebarPinned, role }: { initialRules: Rule[]; personalRules: Rule[]; personalWriteBlockedReason: string | null; newerVersions: Record<string, string>; initialSection?: string; packManifest: Record<string, PackManifestEntry>; categories: Category[]; initialSidebarPinned: boolean; role: Role }) {
   const canAuthor = can(role, 'rules:write');
   const router = useRouter();
   const [rules, setRules] = useState<Rule[]>(initialRules);
@@ -397,6 +398,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
   }, []);
 
   const isGallery       = nav === 'gallery';
+  const isPersonal      = nav === 'personal';
   const isCommunityEmpty = nav === 'community' && counts.community === 0;
   const isCustomEmpty   = nav === 'custom'    && counts.custom    === 0;
 
@@ -471,6 +473,9 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
                 <NavItem active={nav === 'custom'} count={counts.custom} onClick={() => setNav('custom')}>
                   Custom
                 </NavItem>
+                <NavItem active={isPersonal} count={personalRules.length} onClick={() => setNav('personal')}>
+                  Personal
+                </NavItem>
               </div>
             </>
           )}
@@ -488,6 +493,7 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
         )}
 
         {/* Toolbar */}
+        {!isPersonal && (<>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
@@ -526,9 +532,13 @@ export function LibraryClient({ initialRules, newerVersions, initialSection, pac
           )}
         </div>
         <p className="-mt-2 text-xs text-ink-muted">Type, Kind, Category, Severity and Status are filterable from the funnel icon in their column header below.</p>
+                </>)}
 
-        {/* Gallery stub */}
-        {isGallery ? (
+                {/* Gallery stub */}
+                {isPersonal ? (
+                  <PersonalRulesTab rules={personalRules} categories={categories} writeBlockedReason={personalWriteBlockedReason} />
+
+                ) : isGallery ? (
           <EmptySection
             icon={Sparkles}
             title="Community Gallery"

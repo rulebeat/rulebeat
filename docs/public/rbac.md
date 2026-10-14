@@ -10,6 +10,7 @@ so on) rather than a role rank, so this table is the single place the mapping li
 | Author, edit, delete, or test-validate rules, and clear a rule's findings | | ✅ | ✅ |
 | Switch a shipped Rule version (`rules:version`) | | | ✅ |
 | Run a manual scan | | ✅ | ✅ |
+| Write and run a Personal rule (`rules:personal`), needs a subscription or management group | | ✅ | ✅ |
 | Create or edit schedules | | ✅ | ✅ |
 | Suppress a finding | | ✅ | ✅ |
 | Create, edit, or delete dashboards | | ✅ | ✅ |
@@ -31,6 +32,10 @@ covers the resource group of the workspace. Findings outside the Scopes the Edit
 before they are stored, and the run marks findings fixed only inside what it covered, so it never
 resolves another team's findings. Running a schedule from the Schedules tab changes what the whole
 install shares, so it needs Everything. See [Run history](scans-and-schedules.md#run-history).
+
+A Personal rule is the one rule an Editor can write without changing what the install shares: only its
+author sees it, and only its author runs it, by hand. Another person's Personal rule reads as not found
+for everyone, an Admin included. See [Personal rules](personal-rules.md).
 
 Every account, viewer included, can change its own password. That sits outside the ladder: it is
 not something one role grants another.
