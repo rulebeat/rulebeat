@@ -6,6 +6,7 @@ import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
 import { toggleInSet } from '@/lib/toggle-set';
+import { withOutsideOptions, type OutsideAccess } from '@/lib/outside-access';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import type { DateWindow } from '@/lib/date-window';
 import type { Category, FilterOptionsResponse, Severity } from '@/lib/types';
@@ -26,13 +27,15 @@ interface Props {
   dateWindow: DateWindow;
   onFiltersChange: (next: DashboardFilters) => void;
   onDateWindowChange: (w: DateWindow) => void;
+  /** Stored subscription and resource group values the person's access does not reach (#274). */
+  outsideAccess?: OutsideAccess;
 }
 
 /** Dashboard-level filter toolbar: Category/Rule/Subscription/Tags/Severity multi-selects plus a
  *  24h/7d/30d/custom window control. Persistence (debounced PUT) and refetch-triggering
  *  (refreshKey bump) both live in the parent (`dashboard-grid-client.tsx`); this component only
  *  reports changes upward via `onFiltersChange`/`onDateWindowChange`. */
-export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange }: Props) {
+export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, outsideAccess }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
@@ -55,8 +58,10 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
   }, []);
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.label }));
-  const subscriptionOptions = subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id }));
-  const resourceGroupOptions = resourceGroups.map(rg => ({ value: rg, label: rg }));
+  const subscriptionOptions = withOutsideOptions(
+    subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id })), filters.subscriptions, outsideAccess, 'subscription');
+  const resourceGroupOptions = withOutsideOptions(
+    resourceGroups.map(rg => ({ value: rg, label: rg })), filters.resourceGroups, outsideAccess, 'resourceGroup');
   const tagOptions = tags.map(t => ({ value: t, label: t }));
   const severityOptions = SEVERITY_OPTIONS.map(s => ({ value: s, label: SEVERITY_LABEL[s] }));
   const ruleOptions = rules.map(r => ({ value: r.id, label: r.name }));

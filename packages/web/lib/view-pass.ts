@@ -16,6 +16,7 @@
  * stable. The reference is fed in that order by the parity test.
  */
 import { resolveDateWindow } from './date-window';
+import { NOTHING_OUTSIDE } from './outside-access';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings } from './explorer-filters';
@@ -269,6 +270,7 @@ export function answerView(
     lastScanAt: lastScanAtOf(slim),
     policyOptions: policyOptionsOf(slim),
     categories: opts.categories,
+    outsideAccess: NOTHING_OUTSIDE,
   };
 }
 

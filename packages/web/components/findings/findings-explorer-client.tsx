@@ -45,7 +45,7 @@ import {
   explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
-import { listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { emptyListCopy, emptyReasonOf, filterChipLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
@@ -655,8 +655,11 @@ export function FindingsExplorerClient({
   );
   const chips = useMemo<FilterChip[]>(() => filters
     .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
-    .flatMap(f => f.values.map(value => ({ field: f.field, value, fieldLabel: fieldLabel(f.field), valueLabel: isRowField(f.field) ? value : valueLabel(f.field, value) }))),
-  [filters, lockedCategory, fieldLabel, valueLabel]);
+    .flatMap(f => f.values.map(value => ({
+      field: f.field, value, fieldLabel: fieldLabel(f.field),
+      valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
+    }))),
+  [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;
@@ -839,6 +842,7 @@ export function FindingsExplorerClient({
 
   // What fills the list's place: the failure, a message that nothing matches, or the rows.
   const listBody = listBodyOf({ layout, failure, ruleRows: ruleRows.length, grouped, items: paginated.length });
+  const emptyReason = emptyReasonOf({ noAccess, filters, outsideAccess: data.outsideAccess });
 
   // One finding as a row of the list, and its detail when expanded. The flat list and every expanded
   // group render through here, so a finding looks the same wherever it is listed. `expandKey` is what
@@ -1344,7 +1348,7 @@ export function FindingsExplorerClient({
             {resolves && <span className="label-grid text-right">Fixed</span>}
           </div>
           {listBody === 'empty' ? (
-            <div className="py-16 text-center text-sm text-ink-muted">No rules match your filters</div>
+            <div className="py-16 text-center text-sm text-ink-muted">{emptyListCopy(emptyReason, 'rules')}</div>
           ) : ruleRows.map(r => {
             const isOpen = expandedRules.has(r.ruleId);
             return (
@@ -1470,7 +1474,7 @@ export function FindingsExplorerClient({
           {listBody === 'unavailable' && failure ? (
             <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
           ) : listBody === 'empty' ? (
-            <div className="py-16 text-center text-sm text-ink-muted">No findings match your filters</div>
+            <div className="py-16 text-center text-sm text-ink-muted">{emptyListCopy(emptyReason, 'findings')}</div>
           ) : (
             <div style={{ minWidth: rowMinWidth }}>
               {grouped ? renderGroups(grouped.groups) : paginated.map(item => renderFinding(item))}
