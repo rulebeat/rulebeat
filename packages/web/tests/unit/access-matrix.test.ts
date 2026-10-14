@@ -1,24 +1,21 @@
 /**
- * #270: the access matrix. Seven people who hold different Scopes call every stored-data GET route through
- * the real `requireRole` (only the session, `@/auth`, is mocked) and the real repositories, over one data
- * set written through the real write paths. A route that does not narrow yet is on `NOT_YET_SCOPED`, and
- * every person must get a 200 whose body equals the Admin's from it. A ticket that narrows a route moves it
- * from `NOT_YET_SCOPED` to `MATRIX` and says what each person should now see: #272 did so for the five
- * `findings/*` routes, with expectations written by hand from the seed in `tests/helpers/access-matrix.ts`.
- * #277 did so for the eight routes that send a query a person wrote to Azure, and #274 for the six widget
+ * The access matrix (#270). Seven people who hold different Scopes call every route that uses the actor's
+ * access through the real `requireRole` (only the session, `@/auth`, is mocked) and the real repositories, and
+ * each gets what their Scopes allow, written by hand in `MATRIX`. The routes that read findings share one data
+ * set written through the real write paths, with expectations written by hand from the seed in
+ * `tests/helpers/access-matrix.ts`: #272 did so for the five `findings/*` routes, #274 for the six widget
  * routes, the two dashboard routes and the two saved view routes, and #276 for the eight Run History and Run now
- * routes. #277's routes call a fake Azure
- * rather than read the seed, so their probes report the status, the error and the scope the fake was sent,
- * and run in their own `describe` over their own database. #275 did so for `suppressions` and for the three
- * Azure pickers: `suppressions` reads the seed, and the pickers call a fake ARM, so they run in their own
- * `describe` too. The rule list, the Rules tab counts and the write routes are checked by tables of their
- * own below, since a `MATRIX` key is a route file and these are several tables over one.
+ * routes. The routes that call Azure (#277's eight that send a query a person wrote, the three pickers of #275,
+ * and the five install-administration and schema routes of #284) go through a fake Azure rather than read the
+ * seed, so their probes report the status, the body and how many requests the fake was sent, and each runs in
+ * its own `describe` over its own database. `suppressions` reads the seed, and the rule list, the Rules tab
+ * counts and the write routes are checked by tables of their own below, since a `MATRIX` key is a route file
+ * and these are several tables over one.
  *
- * The lists are checked against the route files on disk, the way `route-guards.test.ts` checks guards:
- * a route that uses the actor's access must be in exactly one of the two lists, and an entry must name a
- * route file that exists.
+ * `MATRIX` is checked against the route files on disk, the way `route-guards.test.ts` checks guards: a route
+ * that uses the actor's access must have an entry, and an entry must name a route file that exists.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
@@ -44,6 +41,7 @@ import {
 } from '../helpers/access-matrix';
 import type { OwnAccess } from '@/lib/access';
 import { refreshFrom } from '../helpers/fake-hierarchy';
+import { writeResourceTypesCache, writeSchemaCache } from '@/lib/schema-cache';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
 import { VIEW_TABS, type ViewTab } from '@/lib/view-response';
 
@@ -102,6 +100,21 @@ vi.mock('@azure/arm-resources-subscriptions', () => ({
   },
 }));
 
+// The schema refresh asks ARM for each common resource type's provider. The fake answers for one type and says
+// the rest have no properties, so a refresh reaches no Azure and writes one schema.
+const SCHEMA_TYPE = 'microsoft.compute/virtualmachines';
+vi.mock('@azure/arm-resources', () => ({
+  ResourceManagementClient: class {
+    providers = {
+      get: async (namespace: string) => ({
+        resourceTypes: namespace === 'microsoft.compute'
+          ? [{ resourceType: 'virtualmachines', aliases: [{ defaultPath: 'properties.hardwareProfile.vmSize' }] }]
+          : [],
+      }),
+    };
+  },
+}));
+
 const API_DIR = path.resolve(__dirname, '../../app/api');
 
 function routeFiles(dir: string, found: string[] = []): string[] {
@@ -122,18 +135,6 @@ const stripComments = (source: string): string =>
 /** A route reads the person's access when it hands `<something>.access` on to a read. */
 export const USES_ACCESS = /\b\w+\.access\b/;
 
-type Probe = (seed: MatrixSeed) => Promise<Response>;
-
-interface NotYetScoped {
-  /** The ticket that narrows this route and so moves it to `MATRIX`. */
-  ticket: string;
-  /** Present for a GET that reads stored data: the matrix calls it for every person. Absent for a route
-   *  that calls Azure and for a route listed by hand because it reads no findings-derived data. */
-  probe?: Probe;
-  /** Why there is no probe. */
-  unprobed?: string;
-}
-
 /** Calls a route for one tab and reduces the answer to the parts the expectations name. */
 type TabProbe = (seed: MatrixSeed, tab: ViewTab) => Promise<unknown>;
 
@@ -147,21 +148,6 @@ const get = (url: string, route: { GET(req: Request, ctx?: never): Promise<Respo
 const getWith = (url: string, route: { GET(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> }, id: string) =>
   route.GET(new Request(`http://localhost${url}`), { params: Promise.resolve({ id }) });
 
-
-const stored = (probe: Probe, ticket: string): NotYetScoped => ({ ticket, probe });
-const azure = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'calls Azure, which a test never does' });
-const byHand = (ticket: string): NotYetScoped => ({ ticket, unprobed: 'listed by hand: it reads no findings-derived data and does not take the actor\'s access yet' });
-
-export const NOT_YET_SCOPED: Record<string, NotYetScoped> = {
-
-  // Admin-only, and a list of one subscription's resource groups for the Scope picker: this ticket does not narrow it.
-  'azure/subscriptions/[id]/resource-groups': azure('#284'),
-
-  'schemas': azure('#284'),
-  'resources/types': azure('#284'),
-  'resources/properties': azure('#284'),
-  'diagnostics/preflight': azure('#284'),
-};
 
 const BODY = async (res: Response): Promise<unknown> => {
   expect(res.status).toBe(200);
@@ -1117,32 +1103,137 @@ const RULE_VERSIONS: Matrix = {
   expected: RULE_SCOPE_EXPECTED,
 };
 
+// #284: the install-administration and schema routes. They use the actor's access only to build a tenant context,
+// and read no findings. The two that need `users:manage` or `azure:manage` let only the Admin through, and
+// `schemas` (POST needs `schemas:refresh`) lets the Editor on Everything in beside the Admin; the guard refuses
+// everyone else before anything reaches Azure. The two `resources/*` routes need only `read`, answer from a fresh
+// cache, and so give everyone the same body without a request to Azure.
+const FORBIDDEN_AZURE: AzureReply = { status: 403, body: { error: 'Forbidden' }, requests: 0 };
+const KNOWN_TYPES = [SCHEMA_TYPE, 'microsoft.storage/storageaccounts'];
+const KNOWN_FIELDS = ['name', 'properties.hardwareProfile.vmSize'];
+
+interface AzureReply { status: number; body: unknown; requests: number }
+
+/** Calls a route over a fresh fake Azure and reports what came back and how many requests the fake was sent. */
+async function azureReply<Body = unknown>(
+  send: () => Promise<Response>, reduce: (body: Body) => unknown = body => body, opts: Parameters<typeof fakeTenantContext>[0] = {},
+): Promise<AzureReply> {
+  fakeCtx = fakeTenantContext(opts);
+  const res = await send();
+  const body = await res.json() as Body;
+  return {
+    status: res.status,
+    body: res.status === 200 ? reduce(body) : body,
+    requests: fakeCtx.queries.length + fakeCtx.graphRequests.length + fakeCtx.logsQueries.length,
+  };
+}
+
+/** What each person gets when the Admin and the Editor get what is written for them and the five Viewers get the guard's 403. */
+const refusedBelow = (admin: AzureReply, editor: AzureReply): Matrix['expected'] => ({
+  'Admin': same(admin),
+  'Editor on Everything': same(editor),
+  'Viewer on the management group': same(FORBIDDEN_AZURE),
+  'Viewer on one subscription': same(FORBIDDEN_AZURE),
+  'Viewer on one resource group': same(FORBIDDEN_AZURE),
+  'Directory only': same(FORBIDDEN_AZURE),
+  'No Scope': same(FORBIDDEN_AZURE),
+});
+
+/** Everyone, including a person with no Scope, gets `answer`. */
+const everyone = (answer: AzureReply): Matrix['expected'] => byPerson(...Array(6).fill(same(answer)) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]);
+
+const SCHEMAS_REFRESHED: AzureReply = { status: 200, body: { ok: [SCHEMA_TYPE], empty: 19, error: 0 }, requests: 0 };
+
+const AZURE_ADMIN_MATRIX: Record<string, Matrix> = {
+  'azure/subscriptions/[id]/resource-groups': {
+    probe: async () => azureReply(
+      async () => (await import('@/app/api/azure/subscriptions/[id]/resource-groups/route')).GET(
+        new Request('http://localhost'), { params: Promise.resolve({ id: SUB_ONE }) }),
+      undefined,
+      { rows: [{ name: 'rg-two' }, { name: 'rg-one' }] },
+    ),
+    expected: refusedBelow({ status: 200, body: { resourceGroups: ['rg-one', 'rg-two'] }, requests: 1 }, FORBIDDEN_AZURE),
+  },
+  // The fake credential holds no token, so the credential check fails and the Graph check warns. What matters here
+  // is who gets an answer, and that it is built from the fake and nothing else.
+  'diagnostics/preflight': {
+    probe: async () => {
+      // The route logs the credential failure it is about to report, which is the failure this probe expects.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        return await azureReply(
+          async () => (await import('@/app/api/diagnostics/preflight/route')).GET(),
+          (body: { overall: string; checks: { id: string; status: string }[]; subscriptions: unknown[] }) => ({
+            overall: body.overall, checks: Object.fromEntries(body.checks.map(c => [c.id, c.status])), subscriptions: body.subscriptions,
+          }),
+          { rows: [{ subscriptionId: SUB_ONE, name: 'Sub one' }], subscriptionIds: [SUB_ONE] },
+        );
+      } finally {
+        logged.mockRestore();
+      }
+    },
+    expected: refusedBelow({
+      status: 200,
+      body: {
+        overall: 'fail',
+        checks: { credential: 'fail', subscriptions: 'ok', 'resource-graph': 'ok', 'graph-applications': 'warn' },
+        subscriptions: [{ id: SUB_ONE, name: 'Sub one' }],
+      },
+      requests: 1,
+    }, FORBIDDEN_AZURE),
+  },
+  'schemas': {
+    probe: async () => azureReply(
+      async () => (await import('@/app/api/schemas/route')).POST(),
+      (body: { results: { type: string; status: string }[] }) => ({
+        ok: body.results.filter(r => r.status === 'ok').map(r => r.type),
+        empty: body.results.filter(r => r.status === 'empty').length,
+        error: body.results.filter(r => r.status === 'error').length,
+      }),
+    ),
+    expected: refusedBelow(SCHEMAS_REFRESHED, SCHEMAS_REFRESHED),
+  },
+  'resources/types': {
+    probe: async () => {
+      await writeResourceTypesCache(KNOWN_TYPES);
+      return azureReply(async () => (await import('@/app/api/resources/types/route')).GET());
+    },
+    expected: everyone({ status: 200, body: { types: KNOWN_TYPES, source: 'cache' }, requests: 0 }),
+  },
+  'resources/properties': {
+    probe: async () => {
+      await writeSchemaCache(SCHEMA_TYPE, KNOWN_FIELDS);
+      return azureReply(
+        async () => (await import('@/app/api/resources/properties/route')).GET(new Request(`http://localhost/api/resources/properties?type=${SCHEMA_TYPE}`)),
+        (body: { fields: string[]; source: string }) => ({ fields: body.fields, source: body.source }),
+      );
+    },
+    expected: everyone({ status: 200, body: { fields: KNOWN_FIELDS, source: 'cache' }, requests: 0 }),
+  },
+};
+
 /** Every route that narrows what a person sees or sends. */
 export const MATRIX: Record<string, Matrix> = {
-  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, ...PERSONAL_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
+  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, ...PERSONAL_MATRIX, ...AZURE_ADMIN_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
 };
 
 export interface ListProblems {
   unlisted: string[];
-  inBoth: string[];
   missingFile: string[];
 }
 
-/** Compares the two lists with the route files found on disk. */
-export function checkLists(
-  routes: Map<string, boolean>, matrix: Record<string, unknown>, notYetScoped: Record<string, unknown>,
-): ListProblems {
-  const unlisted = [...routes].filter(([name, usesAccess]) => usesAccess && !(name in matrix) && !(name in notYetScoped)).map(([name]) => name);
-  const inBoth = Object.keys(matrix).filter(name => name in notYetScoped);
-  const missingFile = [...Object.keys(matrix), ...Object.keys(notYetScoped)].filter(name => !routes.has(name));
-  return { unlisted, inBoth, missingFile };
+/** Compares `MATRIX` with the route files found on disk. */
+export function checkLists(routes: Map<string, boolean>, matrix: Record<string, unknown>): ListProblems {
+  const unlisted = [...routes].filter(([name, usesAccess]) => usesAccess && !(name in matrix)).map(([name]) => name);
+  const missingFile = Object.keys(matrix).filter(name => !routes.has(name));
+  return { unlisted, missingFile };
 }
 
 const diskRoutes = new Map<string, boolean>();
 for (const file of routeFiles(API_DIR)) diskRoutes.set(routeName(file), USES_ACCESS.test(stripComments(readFileSync(file, 'utf8'))));
 
-describe('the lists are checked against the route files on disk', () => {
-  it('finds the routes, and the ones that use the actor\'s access', () => {
+describe('MATRIX is checked against the route files on disk', () => {
+  it('finds the routes, and the ones that use the access of the person asking', () => {
     expect(diskRoutes.size).toBeGreaterThan(20);
     for (const name of ['findings/view', 'widgets/summary', 'scans/run', 'schedules/[id]/runs', 'suppressions']) {
       expect(diskRoutes.get(name), name).toBe(true);
@@ -1150,95 +1241,31 @@ describe('the lists are checked against the route files on disk', () => {
     expect([...diskRoutes.values()].filter(Boolean).length).toBeGreaterThan(20);
   });
 
-  it('reads the actor\'s access off a route\'s source and ignores a comment', () => {
+  it('reads the access off a route source and ignores a comment', () => {
     expect(USES_ACCESS.test(stripComments('await queryView(view, q, actor.access);'))).toBe(true);
     expect(USES_ACCESS.test(stripComments('// uses actor.access later\nawait list();'))).toBe(false);
     expect(USES_ACCESS.test(stripComments('/* actor.access */ await list();'))).toBe(false);
   });
 
-  it('has every route that uses the actor\'s access in exactly one list, naming only routes that exist', () => {
-    expect(checkLists(diskRoutes, MATRIX, NOT_YET_SCOPED)).toEqual({ unlisted: [], inBoth: [], missingFile: [] });
-  });
-
-  it('names the ticket that removes each route from NOT_YET_SCOPED', () => {
-    for (const [name, entry] of Object.entries(NOT_YET_SCOPED)) {
-      expect(entry.ticket, name).toMatch(/^#\d+$/);
-      expect(Boolean(entry.probe) !== Boolean(entry.unprobed), `${name} has a probe or a reason it has none`).toBe(true);
-    }
-  });
-
-  it('only lists a route file that is there', () => {
-    for (const name of Object.keys(NOT_YET_SCOPED)) {
-      expect(existsSync(path.join(API_DIR, name, 'route.ts')), name).toBe(true);
-    }
+  it('has an entry for every route that uses the access of the person asking, naming only routes that exist', () => {
+    expect(checkLists(diskRoutes, MATRIX)).toEqual({ unlisted: [], missingFile: [] });
   });
 
   describe('checkLists on fixtures', () => {
     const routes = new Map([['findings/view', true], ['findings/new', true], ['widgets/rules', false], ['views', false]]);
 
-    it('flags a route that uses access and is in neither list', () => {
-      expect(checkLists(routes, {}, { 'findings/view': {} }).unlisted).toEqual(['findings/new']);
+    it('flags a route that uses access and has no entry', () => {
+      expect(checkLists(routes, { 'findings/view': {} }).unlisted).toEqual(['findings/new']);
     });
 
     it('does not flag a route that does not use access', () => {
-      expect(checkLists(routes, {}, { 'findings/view': {}, 'findings/new': {} }).unlisted).toEqual([]);
-    });
-
-    it('flags a route in both lists', () => {
-      expect(checkLists(routes, { 'findings/view': {} }, { 'findings/view': {}, 'findings/new': {} }).inBoth).toEqual(['findings/view']);
+      expect(checkLists(routes, { 'findings/view': {}, 'findings/new': {} }).unlisted).toEqual([]);
     });
 
     it('flags an entry naming a route file that no longer exists', () => {
-      expect(checkLists(routes, {}, { 'findings/view': {}, 'findings/new': {}, 'findings/gone': {} }).missingFile).toEqual(['findings/gone']);
+      expect(checkLists(routes, { 'findings/view': {}, 'findings/new': {}, 'findings/gone': {} }).missingFile).toEqual(['findings/gone']);
     });
   });
-});
-
-describe('every person reads what the Admin reads', () => {
-  const userIds: Record<string, string> = {};
-  let seed: MatrixSeed;
-  let adminBodies: Record<string, string>;
-
-  const probed = Object.entries(NOT_YET_SCOPED).filter(([, entry]) => entry.probe);
-
-  async function call(person: string, probe: Probe): Promise<{ status: number; body: string }> {
-    mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
-    const res = await probe(seed);
-    return { status: res.status, body: await res.text() };
-  }
-
-  beforeAll(async () => {
-    await resetDb();
-    Object.assign(userIds, await createPeople());
-    seed = await seedMatrix();
-    adminBodies = {};
-    for (const [name, entry] of probed) adminBodies[name] = (await call('Admin', entry.probe!)).body;
-  });
-
-  it('seeds seven people', () => {
-    expect(PEOPLE.map(p => p.name)).toEqual([
-      'Admin', 'Editor on Everything', 'Viewer on the management group', 'Viewer on one subscription',
-      'Viewer on one resource group', 'Directory only', 'No Scope',
-    ]);
-    expect(Object.keys(userIds)).toHaveLength(7);
-  });
-
-  it('runs every stored-data GET, and finds the seeded data in the Admin\'s answers', () => {
-    // The Run History routes moved to MATRIX (#276) and `suppressions` with the pickers (#275), where each person's
-    // numbers are written by hand. What is left on `NOT_YET_SCOPED` calls Azure, which a test never does, so nothing
-    // here is probed any more: a stored-data GET added to the list must come with a probe and be seen here.
-    expect(probed.map(([name]) => name)).toEqual([]);
-  });
-
-  for (const person of PEOPLE.map(p => p.name).filter(n => n !== 'Admin')) {
-    it(`${person} gets a 200 whose body equals the Admin's from every route`, async () => {
-      for (const [name, entry] of probed) {
-        const answer = await call(person, entry.probe!);
-        expect(answer.status, `${person} ${name}`).toBe(200);
-        expect(answer.body, `${person} ${name}`).toBe(adminBodies[name]);
-      }
-    });
-  }
 });
 
 describe('the findings routes show each person only what their Scopes cover', () => {
@@ -1423,6 +1450,30 @@ describe('the Personal rule routes answer every stranger the same', () => {
   }
 });
 
+describe('the install-administration and schema routes answer each person by their Role', () => {
+  const userIds: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+  });
+
+  it('holds an expectation for each of the five routes', () => {
+    expect(Object.keys(AZURE_ADMIN_MATRIX).sort()).toEqual([
+      'azure/subscriptions/[id]/resource-groups', 'diagnostics/preflight', 'resources/properties', 'resources/types', 'schemas',
+    ]);
+  });
+
+  for (const [route, entry] of Object.entries(AZURE_ADMIN_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      it(`${route}: ${person}`, async () => {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        expect(await entry.probe({} as MatrixSeed, 'results')).toEqual(entry.expected[person]!.results);
+      });
+    }
+  }
+});
+
 describe('a Personal rule and its results appear in no shared response', () => {
   const userIds: Record<string, string> = {};
   const seen: string[] = [];
@@ -1444,9 +1495,6 @@ describe('a Personal rule and its results appear in no shared response', () => {
     try {
       for (const person of PEOPLE.map(p => p.name)) {
         mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
-        for (const [name, entry] of Object.entries(NOT_YET_SCOPED)) {
-          if (entry.probe) seen.push(`${person} ${name} ${await (await entry.probe(seed)).text()}`);
-        }
         for (const [name, entry] of Object.entries(MATRIX)) {
           if (name.startsWith('personal-rules')) continue;
           for (const tab of VIEW_TABS) seen.push(`${person} ${name} ${tab} ${JSON.stringify(await entry.probe(seed, tab))}`);

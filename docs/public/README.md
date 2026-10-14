@@ -41,6 +41,7 @@ Everything else is reference you can come back to.
 | [Dashboards](dashboards.md) | The widget catalog, filters, date windows, and what a widget cannot show. |
 | [Suppressions](suppressions.md) | What suppressing a finding does and does not do, with reasons and expiry. |
 | [Roles and permissions](rbac.md) | The three roles, and what the audit log records. |
+| [Access](access.md) | Roles at Scopes, Mirrored and Manual access, where a finding sits, what a scoped Editor can do, and the known gaps. |
 | [Configuring RuleBeat](configure.md) | Every setting, in the console and the environment, and which one wins. |
 | [Security and privacy](security.md) | What RuleBeat reads, stores, encrypts, and never does. |
 | [Troubleshooting](troubleshooting.md) | The diagnostics page and the failure modes seen so far, with fixes. |

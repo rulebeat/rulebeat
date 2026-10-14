@@ -31,7 +31,8 @@ rule runs only for someone who holds the Directory, and a Log Analytics rule onl
 covers the resource group of the workspace. Findings outside the Scopes the Editor holds are dropped
 before they are stored, and the run marks findings fixed only inside what it covered, so it never
 resolves another team's findings. Running a schedule from the Schedules tab changes what the whole
-install shares, so it needs Everything. See [Run history](scans-and-schedules.md#run-history).
+install shares, so it needs Everything. See [Run history](scans-and-schedules.md#run-history), and
+[Access](access.md) for how Scopes are granted and what a scoped Editor can do.
 
 A Personal rule is the one rule an Editor can write without changing what the install shares: only its
 author sees it, and only its author runs it, by hand. Another person's Personal rule reads as not found
@@ -54,7 +55,9 @@ A brand-new install with zero users seeds one local admin account with a generat
 to change on first sign-in ([`install.md`](install.md)). From there an admin can add local accounts
 from the Access page with their role chosen up front, or configure Microsoft Entra ID sign-in
 ([`configure.md`](configure.md)) so people use their work account. A user's row can be created by
-email before they have ever signed in; the account binds to their identity on first login.
+email before they have ever signed in; the account binds to their identity on first login. Each Viewer
+and Editor also gets Scopes, either picked by hand or mirrored from an Azure account's role
+assignments: see [Access](access.md).
 
 ![The Access page, with a role dropdown and local password actions per user](img/settings-users.png)
 

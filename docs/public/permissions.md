@@ -46,9 +46,19 @@ authenticate. Take the **Application (client) ID** and **Directory (tenant) ID**
 
 ## 2. Grant Reader
 
-Reader is the only role RuleBeat ever needs. Assign it wherever you want visibility: one
-subscription for a pilot, or a management group to cover many at once. Both lines work in bash, zsh
-and PowerShell.
+Reader is the only role RuleBeat ever needs. Assign it at the **tenant root management group**, whose
+id is your tenant id. One assignment there covers every subscription, including ones created later,
+and it lets RuleBeat read the whole management group tree. The mirror and the management group tree
+(see [Access](access.md)) see only what this credential can read, so a management group or an
+assignment it cannot read is a Scope RuleBeat cannot give.
+
+```
+# On the tenant root management group (recommended)
+az role assignment create --assignee <client-id> --role Reader --scope /providers/Microsoft.Management/managementGroups/<tenant-id>
+```
+
+To start smaller, such as one subscription for a pilot, or one management group, assign it there
+instead. Both lines work in bash, zsh and PowerShell.
 
 ```
 # On a subscription
@@ -58,9 +68,9 @@ az role assignment create --assignee <client-id> --role Reader --scope /subscrip
 az role assignment create --assignee <client-id> --role Reader --scope /providers/Microsoft.Management/managementGroups/<management-group-id>
 ```
 
-In the Portal: the subscription or management group → **Access control (IAM)** → **Add role
-assignment** → role **Reader**, assign access to **User, group, or service principal**, select the
-app registration. Repeat per scope.
+In the Portal: the tenant root management group (or the subscription or management group you chose)
+→ **Access control (IAM)** → **Add role assignment** → role **Reader**, assign access to **User,
+group, or service principal**, select the app registration. Repeat per scope.
 
 RuleBeat's scope is exactly what Azure RBAC grants. Narrow it later by removing the assignment; no
 setting inside RuleBeat controls it.

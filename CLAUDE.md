@@ -103,8 +103,8 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   `Access.managementGroups` once per request and the filter stays synchronous. `Access.grants` stays
   the stored rows, so moving a subscription changes what a person sees and no row. A failed refresh
   keeps the last tree and the page says so.
-  `access-matrix.test.ts` holds each narrowed route in `MATRIX`, with what each person gets written by
-  hand, and keeps every other route on `NOT_YET_SCOPED` until the ticket that narrows it. Suppressions, the rule list and
+  `access-matrix.test.ts` holds every route that uses a person's access in `MATRIX`, with what each person gets written by
+  hand; a route under `app/api/` that uses `<x>.access` and has no entry fails the suite. Suppressions, the rule list and
   the Azure pickers follow the same Scopes: `loadSuppressions(access)` returns only suppressions on findings inside them, and
   suppressing or unsuppressing needs a Role that allows `suppressions:write` at a Scope containing the finding
   (`accessAllowing()` feeds `accessFilterSql`; a refusal answers 404 like an unknown id). A rule's KQL is the same for everyone,
