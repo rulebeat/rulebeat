@@ -10,7 +10,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { LibraryClient } from '@/app/(app)/library/library-client';
 import { PersonalRuleClient } from '@/app/(app)/library/personal/[id]/personal-rule-client';
 import { RequestsTab } from '@/app/(app)/library/requests-tab';
-import type { AuthorLibraryRequest, LibraryRequestSummary, Rule } from '@/lib/types';
+import { LibraryRequestReviewClient } from '@/app/(app)/library/requests/[id]/library-request-review-client';
+import type { AuthorLibraryRequest, LibraryRequestDetail, LibraryRequestSummary, Rule } from '@/lib/types';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => undefined, replace: () => undefined, refresh: () => undefined }),
@@ -148,5 +149,119 @@ describe('a Personal rule and its Library request', () => {
     expect(html).not.toContain('Resubmit');
     expect(html).not.toContain('Send to library');
     expect(page([request('open')], { canWrite: false })).not.toContain('Withdraw');
+  });
+});
+
+describe('a Personal rule and update requests (#283)', () => {
+  const targets = [{ id: 'lib-1', name: 'VM baseline' }, { id: 'lib-2', name: 'Source rule' }];
+  const withTargets = (requests: AuthorLibraryRequest[], extra: { updateTargets?: { id: string; name: string }[]; newOnlyReason?: string | null; canWrite?: boolean } = {}) =>
+    renderToStaticMarkup(createElement(PersonalRuleClient, {
+      rule, source: null, updatedAt: '2026-01-01T00:00:00.000Z', results: [], lastRunCovered: null, allTags: [], categories: [],
+      canWrite: extra.canWrite ?? true, runBlockedReason: null, requests, copiedTo: null, copyToLibrary: null,
+      updateTargets: extra.updateTargets ?? targets, newOnlyReason: extra.newOnlyReason ?? null,
+    }));
+
+  it('offers an update to each eligible target next to Send as new rule', () => {
+    const html = withTargets([]);
+    expect(html).toContain('Send as new rule');
+    expect(html).toContain('Send as update to VM baseline');
+    expect(html).toContain('Send as update to Source rule');
+    expect(html).not.toContain('Send to library');
+  });
+
+  it('keeps offering updates after an approval, with no second new-rule send', () => {
+    const html = withTargets([request('approved', { libraryRule: { id: 'lib-1', name: 'VM baseline' } })], { updateTargets: [targets[0]!] });
+    expect(html).toContain('Send as update to VM baseline');
+    expect(html).not.toContain('Send as new rule');
+    expect(html).not.toContain('Send to library');
+  });
+
+  it('offers updates after a rejection beside Resubmit, and none while a request is open', () => {
+    const rejected = withTargets([request('rejected', { rejectionReason: 'No.' })]);
+    expect(rejected).toContain('Resubmit');
+    expect(rejected).toContain('Send as update to VM baseline');
+    const open = withTargets([request('open', { isUpdate: true, target: targets[0]! })]);
+    expect(open).not.toContain('Send as update');
+    expect(open).toContain('as an update to &quot;VM baseline&quot;');
+  });
+
+  it('offers no update when there is no eligible target, and says why for a built-in source', () => {
+    const reason = 'A copy of a built-in rule can only be sent as a new rule.';
+    const html = withTargets([], { updateTargets: [], newOnlyReason: reason });
+    expect(html).not.toContain('Send as update');
+    expect(html).toContain('Send to library');
+    expect(html).toContain(reason);
+  });
+
+  it('offers a demoted author no update', () => {
+    expect(withTargets([], { canWrite: false })).not.toContain('Send as update');
+  });
+
+  it('tells the author an approved update went to the library rule', () => {
+    const html = withTargets([request('approved', { isUpdate: true, target: targets[0]!, libraryRule: targets[0]! })], { updateTargets: [targets[0]!] });
+    expect(html).toContain('Sent as an update to');
+    expect(html).toContain('href="/rules/lib-1"');
+  });
+});
+
+describe('the update marker in the requests list (#283)', () => {
+  it('marks an update with its target and a new-rule request with nothing', () => {
+    const html = renderToStaticMarkup(createElement(RequestsTab, {
+      requests: [
+        { ...summary('r1', 'Edited rule'), isUpdate: true, target: { id: 'lib-1', name: 'VM baseline' } },
+        summary('r2', 'Brand new rule'),
+      ],
+      categories: [],
+    }));
+    expect(html).toContain('Update to VM baseline');
+    expect(html.match(/Update to /g)).toHaveLength(1);
+  });
+});
+
+describe('the review page of an update request (#283)', () => {
+  const detail = (extra: Partial<LibraryRequestDetail> = {}): LibraryRequestDetail => ({
+    ...summary('r1', 'Edited rule'), isUpdate: true, target: { id: 'lib-1', name: 'VM baseline' }, status: 'open', description: 'd',
+    kql: 'resources | project id', targetChanged: false, targetEnabled: true,
+    diff: [{ kind: 'same', text: 'Category: security' }, { kind: 'removed', text: 'Severity: high' }, { kind: 'added', text: 'Severity: low' }],
+    definition: { name: 'Edited rule', description: 'd', category: 'security', severity: 'low', queryBackend: 'resource-graph', kind: 'state', tags: [], scope: { level: 'subscription' }, resourceTypes: [], conditions: [] },
+    ...extra,
+  });
+  const review = (request: LibraryRequestDetail) => renderToStaticMarkup(createElement(LibraryRequestReviewClient, {
+    request, categories: [{ id: 'security', label: 'Security', sortOrder: 1, isBuiltin: true, createdAt: '2026-01-01T00:00:00.000Z' }],
+  }));
+  const approveDisabled = (html: string) => /<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*Approve/.test(html);
+
+  it('shows the target and the line diff, and no warning while the target is as it was', () => {
+    const html = review(detail());
+    expect(html).toContain('Update to');
+    expect(html).toContain('href="/rules/lib-1"');
+    expect(html).toContain('aria-label="Definition line diff"');
+    expect(html).toContain('Severity: high');
+    expect(html).toContain('Severity: low');
+    expect(html).not.toContain('changed after this request was sent');
+  });
+
+  it('warns when the target changed after the request was sent', () => {
+    expect(review(detail({ targetChanged: true }))).toContain('&quot;VM baseline&quot; changed after this request was sent');
+  });
+
+  it('says the target is gone, and disables Approve', () => {
+    const html = review(detail({ target: null, diff: [] }));
+    expect(html).toContain('no longer exists');
+    expect(approveDisabled(html)).toBe(true);
+    expect(approveDisabled(review(detail()))).toBe(false);
+  });
+
+  it('shows no diff, target or warning on a new-rule request', () => {
+    const html = review({ ...detail(), isUpdate: false, target: undefined, diff: undefined, targetChanged: undefined, targetEnabled: undefined });
+    expect(html).not.toContain('Definition line diff');
+    expect(html).not.toContain('changed after this request was sent');
+    expect(html).toContain('Starting state');
+  });
+
+  it('labels the enabled switch as the target\'s state for an update', () => {
+    const html = review(detail());
+    expect(html).toContain('Enabled state');
+    expect(html).toContain('keeps the state it has now');
   });
 });

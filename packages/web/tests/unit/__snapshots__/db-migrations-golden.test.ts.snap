@@ -98,6 +98,8 @@ table library_requests
   rejection_reason TEXT
   resubmits_request_id TEXT
   library_rule_id TEXT
+  target_rule_id TEXT
+  target_definition TEXT
 table local_accounts
   user_id TEXT PK(1)
   password_hash TEXT NOT NULL
@@ -609,6 +611,8 @@ table library_requests
   rejection_reason TEXT
   resubmits_request_id TEXT
   library_rule_id TEXT
+  target_rule_id TEXT
+  target_definition TEXT
 table local_accounts
   user_id TEXT PK(1)
   password_hash TEXT NOT NULL
@@ -1107,6 +1111,8 @@ table library_requests
   rejection_reason TEXT
   resubmits_request_id TEXT
   library_rule_id TEXT
+  target_rule_id TEXT
+  target_definition TEXT
 table local_accounts
   user_id TEXT PK(1)
   password_hash TEXT NOT NULL
@@ -1614,6 +1620,8 @@ table library_requests
   rejection_reason TEXT
   resubmits_request_id TEXT
   library_rule_id TEXT
+  target_rule_id TEXT
+  target_definition TEXT
 table local_accounts
   user_id TEXT PK(1)
   password_hash TEXT NOT NULL
@@ -2122,6 +2130,8 @@ table library_requests
   rejection_reason TEXT
   resubmits_request_id TEXT
   library_rule_id TEXT
+  target_rule_id TEXT
+  target_definition TEXT
 table local_accounts
   user_id TEXT PK(1)
   password_hash TEXT NOT NULL

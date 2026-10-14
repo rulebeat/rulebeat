@@ -6,9 +6,12 @@ import type { Access } from '@/lib/access-model';
 import { isJsonContentType } from '@/lib/api-body';
 import { getCategory } from '@/lib/db/categories';
 import { getUser } from '@/lib/db/users';
-import type { LibraryRequest, ReviewEdits } from '@/lib/db/library-requests';
+import { applyReviewEdits, type LibraryRequest, type ReviewEdits } from '@/lib/db/library-requests';
 import type { PersonalRuleDefinition } from '@/lib/db/personal-rules';
-import { loadRule } from '@/lib/rules';
+import { loadRule, loadRuleWithDefinition } from '@/lib/rules';
+import { sameDefinition } from '@/lib/rule-versions';
+import { diffQueryLines } from '@/lib/rule-version-preview';
+import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import { mayAct } from '@/lib/rbac';
 import { SEVERITY_ORDER } from '@/lib/severity';
 
@@ -31,7 +34,16 @@ export async function authorRequestView(request: LibraryRequest): Promise<Author
     rejectionReason: request.rejectionReason,
     resubmitsRequestId: request.resubmitsRequestId,
     libraryRule: rule ? { id: rule.id, name: rule.name } : undefined,
+    isUpdate: request.targetRuleId !== undefined,
+    target: request.targetRuleId !== undefined ? await targetOf(request) : undefined,
   };
+}
+
+/** The rule an update request edits, or null once that rule is gone. Undefined for a new-rule request. */
+async function targetOf(request: LibraryRequest): Promise<{ id: string; name: string } | null> {
+  if (request.targetRuleId === undefined) return null;
+  const rule = await loadRule(request.targetRuleId);
+  return rule ? { id: rule.id, name: rule.name } : null;
 }
 
 /** One line of a list of open requests for a reviewer. */
@@ -52,6 +64,8 @@ export async function requestSummary(request: LibraryRequest): Promise<RequestSu
     createdAt: request.createdAt,
     author: { id: request.authorId, label: await authorLabel(request.authorId) },
     isResubmission: request.resubmitsRequestId !== undefined,
+    isUpdate: request.targetRuleId !== undefined,
+    target: request.targetRuleId !== undefined ? await targetOf(request) : undefined,
   };
 }
 
@@ -62,17 +76,82 @@ export function generatedKql(definition: PersonalRuleDefinition): string | null 
   return buildRuleQuery({ ...definition, id: '', type: 'custom', enabled: true } as Rule);
 }
 
+/** A stored rule's definition in the shape a request's snapshot has, so both sides of a diff render the same way. */
+function asRequestDefinition(definition: RuleDefinition): PersonalRuleDefinition {
+  return {
+    name: definition.name,
+    description: definition.description,
+    category: definition.category as PersonalRuleDefinition['category'],
+    severity: definition.severity as Severity,
+    queryBackend: definition.queryBackend,
+    kind: definition.kind,
+    scope: definition.scope,
+    resourceTypes: definition.resourceTypes,
+    conditions: definition.conditions,
+    conditionGroups: definition.conditionGroups ?? undefined,
+    projectColumns: definition.projectColumns ?? undefined,
+    rawKql: definition.rawKql ?? undefined,
+    visualQuery: definition.visualQuery ?? undefined,
+    graphQuery: definition.graphQuery ?? undefined,
+  };
+}
+
+/**
+ * A definition as text, one field per line, so two definitions line up in a diff: name, description,
+ * category, severity, scope, then the query (the KQL, or a Microsoft Graph rule's query as JSON). Line
+ * breaks inside a description collapse to a space so the description stays one line.
+ */
+export function definitionLines(definition: PersonalRuleDefinition): string {
+  const scope = definition.scope;
+  const scopeParts = [
+    scope.level,
+    ...(scope.managementGroups?.length ? [`management groups ${scope.managementGroups.join(', ')}`] : []),
+    ...(scope.subscriptions?.length ? [`subscriptions ${scope.subscriptions.join(', ')}`] : []),
+  ];
+  const query = definition.queryBackend === 'microsoft-graph'
+    ? JSON.stringify(definition.graphQuery ?? null, null, 2)
+    : (generatedKql(definition) ?? '');
+  return [
+    `Name: ${definition.name}`,
+    `Description: ${definition.description.replace(/\s*\r?\n\s*/g, ' ').trim()}`,
+    `Category: ${definition.category}`,
+    `Severity: ${definition.severity}`,
+    `Scope: ${scopeParts.join('; ')}`,
+    'Query:',
+    query,
+  ].join('\n');
+}
+
 /** A request as a reviewer reads it: the whole snapshot, the query it generates and who sent it. */
 export type RequestDetail = LibraryRequestDetail;
 
-export async function requestDetail(request: LibraryRequest): Promise<RequestDetail> {
-  return {
+/**
+ * For an update request the detail also says whether the target changed since the request was sent, and
+ * carries the line diff from the target as it is now to the sent definition with `edits` laid over it.
+ */
+export async function requestDetail(request: LibraryRequest, edits: ReviewEdits = {}): Promise<RequestDetail> {
+  const detail: RequestDetail = {
     ...(await requestSummary(request)),
     status: request.status,
     description: request.definition.description,
     kql: generatedKql(request.definition),
     definition: request.definition,
     resubmitsRequestId: request.resubmitsRequestId,
+  };
+  if (request.targetRuleId === undefined) return detail;
+
+  const current = await loadRuleWithDefinition(request.targetRuleId);
+  const targetChanged = current === null
+    ? false
+    : request.targetDefinition === undefined || !sameDefinition(request.targetDefinition, current.definition);
+  return {
+    ...detail,
+    targetChanged,
+    targetEnabled: current?.rule.enabled,
+    diff: current === null ? [] : diffQueryLines(
+      definitionLines(asRequestDefinition(current.definition)),
+      definitionLines(applyReviewEdits(request.definition, edits)),
+    ),
   };
 }
 

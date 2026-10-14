@@ -614,7 +614,9 @@ export function runMigrations(sqlite: Database.Database): void {
       reviewed_at TEXT,
       rejection_reason TEXT,
       resubmits_request_id TEXT,
-      library_rule_id TEXT
+      library_rule_id TEXT,
+      target_rule_id TEXT,
+      target_definition TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_library_requests_status ON library_requests(status);
     CREATE INDEX IF NOT EXISTS idx_library_requests_personal_rule ON library_requests(personal_rule_id);
@@ -1238,6 +1240,12 @@ export function runMigrations(sqlite: Database.Database): void {
     try {
       renameLibraryRuleInRequests = sqlite.prepare(`UPDATE library_requests SET library_rule_id = ? WHERE library_rule_id = ?`);
     } catch { /* no table yet */ }
+    // The library rule an update request edits (#283). The column is added further down, so a database
+    // from before it has nothing to rewrite.
+    let renameTargetInRequests: Database.Statement | undefined;
+    try {
+      renameTargetInRequests = sqlite.prepare(`UPDATE library_requests SET target_rule_id = ? WHERE target_rule_id = ?`);
+    } catch { /* no column yet */ }
 
     for (const [oldId, newId] of pairs) {
       try {
@@ -1270,6 +1278,7 @@ export function runMigrations(sqlite: Database.Database): void {
         renameInPersonalRules?.run(newId, oldId);
         renameLibraryRuleInPersonalRules?.run(newId, oldId);
         renameLibraryRuleInRequests?.run(newId, oldId);
+        renameTargetInRequests?.run(newId, oldId);
       } catch { /* ignore this pair, continue with the rest */ }
     }
   }
@@ -1343,6 +1352,11 @@ export function runMigrations(sqlite: Database.Database): void {
   // from. Both nullable, nothing backfilled: no existing rule came from a request.
   try { sqlite.exec(`ALTER TABLE personal_rules ADD COLUMN library_rule_id TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE rules ADD COLUMN library_request_id TEXT`); } catch { /* already exists */ }
+
+  // #283: the library rule an update request edits, and its definition when the request was sent. Both
+  // nullable, nothing backfilled: every existing request creates a new rule.
+  try { sqlite.exec(`ALTER TABLE library_requests ADD COLUMN target_rule_id TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE library_requests ADD COLUMN target_definition TEXT`); } catch { /* already exists */ }
 
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);

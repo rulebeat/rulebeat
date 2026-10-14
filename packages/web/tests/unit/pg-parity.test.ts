@@ -19,7 +19,9 @@ import {
   syncScanFindings, listFindings, getFindingsByFingerprints, getFindingEventCounts,
 } from '@/lib/db/findings';
 import type { Rule } from '@rulebeat/core';
-import { loadRules, saveRules } from '@/lib/rules';
+import { loadRule, loadRules, saveRules } from '@/lib/rules';
+import { approveLibraryRequest, createLibraryRequest, getLibraryRequest } from '@/lib/db/library-requests';
+import { createPersonalRule, getPersonalRule, updatePersonalRule } from '@/lib/db/personal-rules';
 import { loadSuppressions, saveSuppressions, isActiveSuppression } from '@/lib/suppressions';
 import {
   createUser, getUser, listUsers, updateUserRole, deleteUser, bumpSessionEpoch, countAdmins,
@@ -275,5 +277,38 @@ describe('suppressions repository parity', () => {
     // saveSuppressions replaces the whole set, so a dropped row really is gone.
     await saveSuppressions([s1]);
     expect((await loadSuppressions(EVERYTHING_ACCESS)).map(x => x.id)).toEqual([s1.id]);
+  });
+});
+
+describe('library update requests parity (#283)', () => {
+  it('stores a target and its snapshot, and approving edits the target in place', async () => {
+    const author = await createUser({ email: 'parity-author@example.com', role: 'editor' });
+    const reviewer = await createUser({ email: 'parity-reviewer@example.com', role: 'admin' });
+    if ('error' in author || 'error' in reviewer) throw new Error('could not create users');
+    const kql = 'resources | project id, name, type, location, resourceGroup, subscriptionId';
+    const definition = {
+      name: 'Parity update rule', description: 'first', category: 'security', severity: 'medium' as const, queryBackend: 'resource-graph' as const,
+      kind: 'state' as const, scope: { level: 'subscription' as const }, resourceTypes: [], conditions: [], rawKql: kql,
+    };
+    const personal = await createPersonalRule(author.user.id, definition);
+    const first = await createLibraryRequest(personal, author.user.id);
+    if (!first.ok) throw new Error(first.reason);
+    const created = await approveLibraryRequest(first.request.id, reviewer.user.id, { enabled: true });
+    if (!created.ok) throw new Error(created.reason);
+    const count = (await loadRules()).length;
+
+    await updatePersonalRule(personal.id, author.user.id, { ...definition, description: 'second', severity: 'low' });
+    const edited = (await getPersonalRule(personal.id, author.user.id))!;
+    const update = await createLibraryRequest(edited, author.user.id, undefined, created.rule.id);
+    if (!update.ok) throw new Error(update.reason);
+    expect(await getLibraryRequest(update.request.id)).toMatchObject({
+      targetRuleId: created.rule.id, targetDefinition: { description: 'first', severity: 'medium', rawKql: kql },
+    });
+
+    const approved = await approveLibraryRequest(update.request.id, reviewer.user.id, {});
+    if (!approved.ok) throw new Error(approved.reason);
+    expect(approved.rule.id).toBe(created.rule.id);
+    expect((await loadRules()).length).toBe(count);
+    expect(await loadRule(created.rule.id)).toMatchObject({ description: 'second', severity: 'low', enabled: true, rawKql: kql });
   });
 });

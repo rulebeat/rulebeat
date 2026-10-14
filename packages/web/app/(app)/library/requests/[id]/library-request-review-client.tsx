@@ -66,13 +66,18 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
   const router = useRouter();
   const open = request.status === 'open';
   const { definition } = request;
+  const isUpdate = request.isUpdate === true;
+  const target = request.target ?? null;
+  const targetGone = isUpdate && target === null;
+  const targetEnabled = request.targetEnabled ?? false;
 
   const [name, setName] = useState(definition.name);
   const [category, setCategory] = useState(definition.category);
   const [severity, setSeverity] = useState<Severity>(definition.severity);
   const [subscriptions, setSubscriptions] = useState(definition.scope?.subscriptions ?? []);
   const [managementGroups, setManagementGroups] = useState(definition.scope?.managementGroups ?? []);
-  const [enabled, setEnabled] = useState(false);
+  // A new rule starts disabled. An update starts as the target is now, and only a change is sent.
+  const [enabled, setEnabled] = useState(isUpdate ? targetEnabled : false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<'preview' | 'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +117,8 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
   }
 
   async function approve() {
-    const result = await send('approve', 'approve', { name, category, severity, scope, enabled }) as { rule?: { id: string } } | null;
+    const edits = { name, category, severity, scope, ...(!isUpdate || enabled !== targetEnabled ? { enabled } : {}) };
+    const result = await send('approve', 'approve', edits) as { rule?: { id: string } } | null;
     if (result?.rule) router.push(`/rules/${encodeURIComponent(result.rule.id)}`);
   }
 
@@ -135,15 +141,26 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
           {request.isResubmission && (
             <span className="bg-surface-sunken px-2 py-1 text-xs font-medium text-ink-2">Sent again after a rejection</span>
           )}
+          {isUpdate && (
+            <span className="bg-surface-sunken px-2 py-1 text-xs font-medium text-ink-2">
+              {target ? <>Update to <Link href={`/rules/${encodeURIComponent(target.id)}`} className="text-ink underline underline-offset-2">{target.name}</Link></> : 'Update to a library rule that is gone'}
+            </span>
+          )}
         </div>
 
         {request.status !== 'open' && (
           <Callout tone="info">
             <span className="flex flex-col gap-1">
-              <span>{CLOSED_TEXT[request.status]}</span>
+              <span>{request.status === 'approved' && isUpdate ? 'This request was approved and its library rule was updated.' : CLOSED_TEXT[request.status]}</span>
               {request.status === 'rejected' && rejectionReason && <span>{`Reason: ${rejectionReason}`}</span>}
             </span>
           </Callout>
+        )}
+        {open && targetGone && (
+          <Callout tone="warn">The library rule this request updates no longer exists, so it cannot be approved. Reject it and the author can send the rule as a new one.</Callout>
+        )}
+        {open && request.targetChanged && target && (
+          <Callout tone="warn">{`"${target.name}" changed after this request was sent. The lines below compare it as it is now with what was sent, and approving replaces its definition with what was sent.`}</Callout>
         )}
         {error && <Callout tone="error">{error}</Callout>}
 
@@ -173,6 +190,20 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
           )}
         </div>
 
+        {open && isUpdate && target && request.diff && (
+          <div className="space-y-2">
+            <h2 className="title-grid">Changes to the library rule</h2>
+            <p className="text-xs text-ink-2">- Removed from the library rule as it is now. + Added by this request.</p>
+            <pre aria-label="Definition line diff" className="bg-surface-sunken p-3 whitespace-pre-wrap break-all text-xs">
+              {request.diff.map((line, index) => (
+                <span key={index} className={`block ${line.kind === 'removed' ? 'text-muted-foreground line-through' : line.kind === 'added' ? 'text-ink font-medium' : 'text-ink-2'}`}>
+                  {line.kind === 'removed' ? '- ' : line.kind === 'added' ? '+ ' : '  '}{line.text || '\u00a0'}
+                </span>
+              ))}
+            </pre>
+          </div>
+        )}
+
         <Card>
           <div className="px-6 py-3"><h2 className="title-grid">Decide</h2></div>
           <CardContent className="space-y-4">
@@ -191,12 +222,16 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
                 <Select value={severity} onValueChange={v => setSeverity(v as Severity)} disabled={!open} options={SEVERITY_OPTIONS} aria-label="Severity" />
               </div>
               <div>
-                <Label className="mb-1">Starting state</Label>
+                <Label className="mb-1">{isUpdate ? 'Enabled state' : 'Starting state'}</Label>
                 <div className="flex h-9 items-center gap-3">
                   <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!open} />
                   <span className="text-sm text-ink">{enabled ? 'Enabled' : 'Disabled'}</span>
                 </div>
-                <p className="mt-1 text-xs text-ink-2">An enabled rule runs in the next scheduled scan. A disabled one waits in the library.</p>
+                <p className="mt-1 text-xs text-ink-2">
+                  {isUpdate
+                    ? 'The library rule keeps the state it has now unless you change this, so a scheduled rule keeps running.'
+                    : 'An enabled rule runs in the next scheduled scan. A disabled one waits in the library.'}
+                </p>
               </div>
               {definition.queryBackend !== 'microsoft-graph' && (
                 <div className="md:col-span-3">
@@ -221,7 +256,7 @@ export function LibraryRequestReviewClient({ request, rejectionReason, categorie
                   {busy === 'preview' ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
                   Preview
                 </Button>
-                <Button size="sm" className="h-8 gap-1.5" disabled={busy !== null || name.trim() === '' || categoryMissing} onClick={() => { void approve(); }}>
+                <Button size="sm" className="h-8 gap-1.5" disabled={busy !== null || name.trim() === '' || categoryMissing || targetGone} onClick={() => { void approve(); }}>
                   {busy === 'approve' ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                   Approve
                 </Button>

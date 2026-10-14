@@ -2,6 +2,7 @@ import type { DateWindow } from './date-window';
 import type { ChangedFinding, FindingRow } from './finding-rows';
 import type { FindingPlacement } from './placement';
 import type { CoveredScopeView } from './run-scope';
+import type { QueryDiffLine } from './rule-version-preview';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -417,8 +418,12 @@ export interface AuthorLibraryRequest {
   reviewedAt?: string;
   rejectionReason?: string;
   resubmitsRequestId?: string;
-  /** The library rule this request created, while that rule still exists. */
+  /** The library rule this request created, or the one an approved update edited, while that rule still exists. */
   libraryRule?: { id: string; name: string };
+  /** True when the request edits an existing library rule instead of adding a new one (#283). */
+  isUpdate?: boolean;
+  /** For an update request: the rule it edits, null once that rule is deleted. Undefined for a new-rule request. */
+  target?: { id: string; name: string } | null;
 }
 
 /** One line of the open requests a reviewer sees. Mirrors `RequestSummary` in lib/library-request-view.ts. */
@@ -431,6 +436,10 @@ export interface LibraryRequestSummary {
   createdAt: string;
   author: { id: string; label: string };
   isResubmission: boolean;
+  /** True when the request edits an existing library rule in place (#283). */
+  isUpdate?: boolean;
+  /** For an update request: the rule it edits, null once that rule is deleted. Undefined for a new-rule request. */
+  target?: { id: string; name: string } | null;
 }
 
 /** A request as a reviewer reads it. Mirrors `RequestDetail` in lib/library-request-view.ts. */
@@ -441,6 +450,12 @@ export interface LibraryRequestDetail extends LibraryRequestSummary {
   kql: string | null;
   definition: Pick<Rule, 'name' | 'description' | 'category' | 'severity' | 'queryBackend' | 'kind' | 'tags' | 'scope' | 'resourceTypes' | 'conditions' | 'graphQuery'>;
   resubmitsRequestId?: string;
+  /** Update requests only: true when the target's definition differs from what it was when the request was sent. */
+  targetChanged?: boolean;
+  /** Update requests only: lines from the target as it is now to the sent definition. Empty once the target is gone. */
+  diff?: QueryDiffLine[];
+  /** Update requests only: whether the target is enabled right now, which an approval keeps unless the reviewer sets it. */
+  targetEnabled?: boolean;
 }
 
 export interface RuleVersionDefinition {

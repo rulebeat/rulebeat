@@ -75,6 +75,25 @@ request does not change.
   was, and the library rule is a separate rule: editing one never changes the other.
 - Deleting a Personal rule withdraws its open request. Removing a person withdraws all of theirs.
 
+### Send an edit as an update
+
+Once a rule is in the library, a later edit of your Personal rule can go back as an **update request**
+aimed at one existing custom library rule, instead of as a second copy. On the rule's page, **Send as
+update to** offers each rule it can update: the library rule your approved request created, and the
+custom library rule your Personal rule was copied from. **Send as new rule** is still there. An update
+can be sent after an earlier request was approved, but not while one is open.
+
+- A copy of a built-in rule can only be sent as a new rule. A built-in changes only with a new version,
+  so the page shows only the new-rule send and says why.
+- An update must use the same backend as the library rule. A Resource Graph rule cannot update a
+  Microsoft Graph one.
+- The request keeps the library rule's definition as it was when you sent it, so a reviewer can tell if
+  it changed since.
+- Rejecting, withdrawing and resubmitting work as for any request, and a resubmitted update keeps its
+  target.
+- If the library rule is deleted while the request is open, the request cannot be approved. A reviewer
+  rejects it and you send the rule as a new one.
+
 ### Reviewing requests
 
 An Admin, or an Editor on Everything, sees a **Requests** section in the Library with the number of open
@@ -89,6 +108,16 @@ definition, the query it runs, the scope and who sent it.
   rule starts disabled unless you turn it on. A name that matches another library rule, ignoring case,
   is refused and the request stays open.
 - **Reject** needs a reason, which the author reads on their rule.
+
+An update request is marked in the list and names the library rule it edits. Its page shows a line diff
+from that rule as it is now to the definition that was sent (name, description, category, severity,
+scope and the query, one per line). When the library rule was edited after the request was sent, a
+warning says so, and the diff already compares against the edited rule. Approving an update edits that
+library rule in place. It keeps its id, so its open findings, how long they have been open and their
+suppressions stay as they are, and the library has the same number of rules. The rule keeps its current
+enabled state unless you change it first, so approving never switches off a rule that is scheduled. A
+name that matches another library rule, ignoring case, is refused and the request stays open. If the
+library rule has been deleted, approval is refused; reject the request instead.
 
 A reviewer can also use **Copy to library** on their own Personal rule to add it straight to the library
 with no request. The copy starts disabled. This asks Admins and Editors on Everything the same as

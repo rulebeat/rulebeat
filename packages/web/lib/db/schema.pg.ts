@@ -476,6 +476,8 @@ export const libraryRequests = pgTable('library_requests', {
   rejectionReason: text('rejection_reason'),
   resubmitsRequestId: text('resubmits_request_id'),
   libraryRuleId: text('library_rule_id'),
+  targetRuleId: text('target_rule_id'),
+  targetDefinition: text('target_definition'),
 });
 
 export const personalRuleResults = pgTable('personal_rule_results', {

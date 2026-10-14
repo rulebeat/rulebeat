@@ -564,8 +564,13 @@ CREATE TABLE IF NOT EXISTS library_requests (
   reviewed_at TEXT,
   rejection_reason TEXT,
   resubmits_request_id TEXT,
-  library_rule_id TEXT
+  library_rule_id TEXT,
+  target_rule_id TEXT,
+  target_definition TEXT
 );
+-- The library rule an update request edits, and its definition when sent (#283), for a database bootstrapped before it shipped.
+ALTER TABLE library_requests ADD COLUMN IF NOT EXISTS target_rule_id TEXT;
+ALTER TABLE library_requests ADD COLUMN IF NOT EXISTS target_definition TEXT;
 CREATE INDEX IF NOT EXISTS idx_library_requests_status ON library_requests(status);
 CREATE INDEX IF NOT EXISTS idx_library_requests_personal_rule ON library_requests(personal_rule_id);
 

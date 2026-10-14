@@ -61,6 +61,11 @@ export function RequestsTab({ requests, categories }: { requests: LibraryRequest
                       >
                         {request.name}
                       </Link>
+                      {request.isUpdate && (
+                        <span className="block text-xs text-ink-2">
+                          {request.target ? `Update to ${request.target.name}` : 'Update to a library rule that is gone'}
+                        </span>
+                      )}
                       {request.isResubmission && <span className="text-xs text-ink-2">Sent again after a rejection</span>}
                     </TableCell>
                     <TableCell className="text-xs">{request.author.label}</TableCell>
