@@ -103,9 +103,9 @@ types; web re-declares client-facing types in `packages/web/lib/types.ts`.
   (`accessAllowing()` feeds `accessFilterSql`; a refusal answers 404 like an unknown id). A rule's KQL is the same for everyone,
   but `lib/rule-scope-access.ts` drops the subscription and management group entries a person does not hold from its scope
   (`scope.outsideAccess` counts them, the UI says "Outside your access"), and `lib/held-scopes.ts` limits `azure/subscriptions`,
-  `azure/management-groups` and `azure/scope-tree` to what they hold. Library, rule and schedule writes are install-wide, so a scoped
+  `azure/management-groups` and `azure/scope-tree` to what they hold. Library, rule, schedule and category writes are install-wide (an Admin, or an Editor on Everything), so a scoped
   Editor gets them disabled with a reason from `writeControlsFor(access)` (`lib/write-controls.ts`), computed on the server
-  from `mayAct()`; `categories:write` stays Admin only. An Admin
+  from `mayAct()`. An Admin
   sets a Viewer's or Editor's Manual access (`PUT /api/users/[id]/access`, the invite, and demoting an
   Admin); the tenant id on a row is resolved on the server (`lib/manual-access.ts`), never read from
   the request. Page and sidebar gating stays on `can(user.role, action)`; every Role has the Access

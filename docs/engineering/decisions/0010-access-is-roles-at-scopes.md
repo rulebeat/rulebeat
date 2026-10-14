@@ -51,7 +51,7 @@ with no assignments gives no scope, and the person sees nothing with a message s
 
 **An Admin is never scoped.** An Admin holds everything an Editor can do, on Everything, plus
 install administration: people and their access, sign-in, the Azure connection, notifications, the
-audit log, categories and rule versions. Only Admins grant access. There are no delegated admins per
+audit log and rule versions. Only Admins grant access. There are no delegated admins per
 subscription or management group.
 
 ## Considered options

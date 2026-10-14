@@ -1164,20 +1164,20 @@ const WRITE_CASES: Record<string, WriteCase> = {
       return () => import('@/app/api/schedules/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/schedules/${id}`, { method: 'DELETE' }), ctxFor({ id })));
     },
   },
-  // Categories are install administration (ADR 0010): an Admin only, whatever Scope an Editor holds.
+  // Categories are install-wide (ADR 0011): an Admin or an Editor on Everything, and no Editor held at a narrower Scope.
   'categories POST': {
-    action: 'categories:write', admin: 201, everything: 403,
+    action: 'categories:write', admin: 201, everything: 201,
     prepare: async () => () => import('@/app/api/categories/route').then(r => r.POST(sendJson('/api/categories', 'POST', { label: nextName('category') }))),
   },
   'categories/[id] PUT': {
-    action: 'categories:write', admin: 200, everything: 403,
+    action: 'categories:write', admin: 200, everything: 200,
     prepare: async () => {
       const id = await freshCategory();
       return () => import('@/app/api/categories/[id]/route').then(r => r.PUT(sendJson(`/api/categories/${id}`, 'PUT', { label: nextName('renamed category') }), ctxFor({ id })));
     },
   },
   'categories/[id] DELETE': {
-    action: 'categories:write', admin: 200, everything: 403,
+    action: 'categories:write', admin: 200, everything: 200,
     prepare: async () => {
       const id = await freshCategory();
       return () => import('@/app/api/categories/[id]/route').then(r => r.DELETE(new Request(`http://localhost/api/categories/${id}`, { method: 'DELETE' }), ctxFor({ id })));

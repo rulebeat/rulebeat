@@ -21,8 +21,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   viewer: 'Read and export everything. Cannot change anything.',
-  editor: 'Author rules, run scans, manage schedules, dashboards, saved views and suppressions.',
-  admin: 'Everything an editor can do, plus switching rule versions, categories, users, sign-in configuration, the Azure connection, notifications and the audit log.',
+  editor: 'Author rules, run scans, manage schedules, categories, dashboards, saved views and suppressions.',
+  admin: 'Everything an editor can do, plus switching rule versions, users, sign-in configuration, the Azure connection, notifications and the audit log.',
 };
 
 const VIEWER_ACTIONS = ['read'] as const;
@@ -34,6 +34,7 @@ const EDITOR_ACTIONS = [
   'rules:validate',
   'scans:run',
   'schedules:write',
+  'categories:write',
   'suppressions:write',
   'dashboards:write',
   'views:write',
@@ -43,7 +44,6 @@ const EDITOR_ACTIONS = [
 const ADMIN_ACTIONS = [
   ...EDITOR_ACTIONS,
   'rules:version',
-  'categories:write',
   'users:manage',
   'audit:read',
   'azure:manage',
@@ -87,7 +87,6 @@ export type ActionClass = 'install-administration' | 'install-wide' | 'placed' |
 
 export const ACTION_CLASS: Record<Action, ActionClass> = {
   'rules:version': 'install-administration',
-  'categories:write': 'install-administration',
   'users:manage': 'install-administration',
   'audit:read': 'install-administration',
   'azure:manage': 'install-administration',
@@ -96,6 +95,7 @@ export const ACTION_CLASS: Record<Action, ActionClass> = {
   'rules:write': 'install-wide',
   'rules:delete': 'install-wide',
   'schedules:write': 'install-wide',
+  'categories:write': 'install-wide',
   'dashboards:write': 'install-wide',
   'views:write': 'install-wide',
   'schemas:refresh': 'install-wide',

@@ -1,7 +1,7 @@
 import { Header } from '@/components/layout/header';
 import { listCategories } from '@/lib/db/categories';
-import { getCurrentUser } from '@/lib/api-auth';
-import { can } from '@/lib/rbac';
+import { getPageAccess } from '@/lib/page-access';
+import { can, mayAct } from '@/lib/rbac';
 import { getAzureConnectionStatus } from '@/lib/azure-credential';
 import { getSignInStatus } from '@/lib/sign-in-config';
 import { listChannels } from '@/lib/db/notification-channels';
@@ -9,7 +9,7 @@ import { isDemoMode } from '@/lib/demo';
 import { SettingsClient } from './settings-client';
 
 export default async function SettingsPage() {
-  const user = await getCurrentUser();
+  const { user, access } = await getPageAccess();
   const role = user?.role ?? 'viewer';
   const manageAzure = can(role, 'azure:manage');
   const manageAuth = can(role, 'auth:manage');
@@ -27,6 +27,7 @@ export default async function SettingsPage() {
         <SettingsClient
           initialCategories={categories}
           role={role}
+          canEditCategories={mayAct(access, 'categories:write')}
           initialAzureStatus={manageAzure ? await getAzureConnectionStatus() : null}
           initialSignInStatus={manageAuth ? await getSignInStatus() : null}
           initialChannels={initialChannels}

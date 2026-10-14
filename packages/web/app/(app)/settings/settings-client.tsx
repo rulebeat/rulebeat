@@ -186,6 +186,7 @@ function EditRow({
 export function SettingsClient({
   initialCategories,
   role,
+  canEditCategories,
   initialAzureStatus,
   initialSignInStatus,
   initialChannels,
@@ -193,6 +194,8 @@ export function SettingsClient({
 }: {
   initialCategories: Category[];
   role: Role;
+  /** From `mayAct` on the server: categories are install-wide, so an Editor held at a Scope short of Everything cannot change them. */
+  canEditCategories: boolean;
   /** Null unless the viewer is an admin. The server only loads it for `azure:manage`. */
   initialAzureStatus: AzureConnectionStatus | null;
   /** Null unless the viewer is an admin. The server only loads it for `auth:manage`. */
@@ -202,7 +205,6 @@ export function SettingsClient({
   /** A Demo: the Locked surfaces render with their reason and every control inside disabled. */
   demo?: boolean;
 }) {
-  const canEditCategories = can(role, 'categories:write');
   const canManageAzure = can(role, 'azure:manage');
   const canManageAuth = can(role, 'auth:manage');
   const canManageNotifications = can(role, 'notifications:manage');

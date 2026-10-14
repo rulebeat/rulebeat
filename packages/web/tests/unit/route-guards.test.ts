@@ -177,7 +177,7 @@ describe('TS-04 · the actions the sensitive routes require', () => {
   }
 
   it("admin-only routes are not reachable by an editor", async () => {
-    const adminOnly: Action[] = ['users:manage', 'audit:read', 'categories:write', 'azure:manage', 'auth:manage', 'notifications:manage'];
+    const adminOnly: Action[] = ['users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'];
     for (const action of adminOnly) {
       expect(can('editor' as Role, action)).toBe(false);
       expect(can('viewer' as Role, action)).toBe(false);
