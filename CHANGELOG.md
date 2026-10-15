@@ -6,9 +6,21 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-15
+
 ### Changed
 
 - The Access page is simpler to use. Invite, Edit and Demote list only the Scopes a person holds, each with its kind, name, Role and a remove control, and a management group shows its short path. An Admin finds new Scopes with an Add access search over management groups and subscriptions by name or id, with Everything and the Directory always offered. A Scope already covered by a held Scope at the same or a higher Role is refused with "Covered by" the Scope that contains it, and a higher Role at a narrower Scope can still be added. A new Scope takes the person's Role until Different Role here is chosen on its row, and a held subscription can be limited to resource groups from a searchable list. Demoting an Admin now offers Mirrored access as well as Manual access: it demotes the person with no Scopes, then links the Linked account, and if linking fails the page says the person was demoted and holds no access. The Role control in the row shows the pending Role while the demote panel is open. An Edit that changed nothing sends nothing, so a held management group that has left the tree no longer blocks it. The Management groups card starts collapsed with Show tree and a filter that keeps each match under its parents, the users table has a search by name or email, keeps Status on one line and cuts a long email short, and scrolls sideways inside its panel. Nothing in the access model, the API routes or the calls to Azure changes.
+
+### Dependencies
+
+- Updated `@base-ui/react` from 1.8.0 to 1.9.0.
+- Updated `drizzle-orm` from 0.45.3 to 0.45.4.
+- Updated `lucide-react` from 1.48.0 to 1.55.0.
+- Updated `next` from 16.3.6 to 16.4.0.
+- Updated `nodemailer` from 10.0.10 to 10.1.0.
+- Updated `pg` from 8.23.0 to 8.23.1.
+- Updated `react-grid-layout` from 2.2.4 to 2.3.0.
 
 ## [0.11.0] - 2026-10-14
 
@@ -449,7 +461,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/rulebeat/rulebeat/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/rulebeat/rulebeat/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/rulebeat/rulebeat/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/rulebeat/rulebeat/compare/v0.9.0...v0.10.0
