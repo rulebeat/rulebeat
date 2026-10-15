@@ -9,7 +9,7 @@ import {
   alsoLinkedNote, canInvite, canInviteMirrored, canPreviewMirror, canUseSignInAccount, EDIT_STOPS_MIRROR_NOTE, previewHeading, replacesManualNote,
   addGrant, coveringGrant, demotedWithoutAccessMessage, demoteToMirrored, describeScopePath, editSaveRequest, filterTree, GROUPS_LOAD_FAILED_MESSAGE, grantsOfAccess, heldAt, heldRows, NO_SUBSCRIPTIONS_MESSAGE, nothingMatchedMessage, offerStatus,
   managementGroupPathLabel, resourceGroupScopePath, resourceGroupsHeld, roleLocked, searchResourceGroups, searchScopes, setEveryRole,
-  setGrantRole, shownRole, subscriptionScopePath, toggleGrant,
+  setGrantRole, shownRole, subscriptionScopePath, tickScope, toggleGrant,
 } from '@/lib/access-picker';
 import type { AppUserWithAccess } from '@/lib/access';
 
@@ -275,6 +275,37 @@ describe('the searchable picker (#307)', () => {
       // An Editor addition under a Viewer group is real: nothing blocks it.
       expect(offerStatus(held, nodes, subscriptionScopePath(OTHER), 'editor')).toBeNull();
       expect(offerStatus([], nodes, SUB_PATH, 'viewer')).toBeNull();
+    });
+  });
+
+  describe('ticking a Scope in the tree (#311)', () => {
+    it('adds the Scope at the Role given, and drops every held Scope it covers', () => {
+      const held: ManualGrant[] = [
+        { scope: SUB_PATH, role: 'viewer' },
+        { scope: MG_PATH('mg-prod'), role: 'viewer' },
+        { scope: subscriptionScopePath(OTHER), role: 'viewer' },
+        { scope: '@directory', role: 'viewer' },
+      ];
+      expect(tickScope(held, nodes, MG_PATH('mg-enterprise'), 'viewer')).toEqual([
+        { scope: subscriptionScopePath(OTHER), role: 'viewer' },
+        { scope: '@directory', role: 'viewer' },
+        { scope: MG_PATH('mg-enterprise'), role: 'viewer' },
+      ]);
+    });
+
+    it('drops the resource groups of a subscription when the subscription is ticked', () => {
+      const held: ManualGrant[] = [{ scope: resourceGroupScopePath(SUB, 'rg-one'), role: 'editor' }];
+      expect(tickScope(held, nodes, SUB_PATH, 'editor')).toEqual([{ scope: SUB_PATH, role: 'editor' }]);
+    });
+
+    it('replaces the whole list with Everything when Everything is ticked', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }, { scope: '@directory', role: 'viewer' }];
+      expect(tickScope(held, nodes, '/', 'viewer')).toEqual([{ scope: '/', role: 'viewer' }]);
+    });
+
+    it('leaves the list as it is when the Scope is already held, in any casing', () => {
+      const held: ManualGrant[] = [{ scope: SUB_PATH, role: 'viewer' }];
+      expect(tickScope(held, nodes, SUB_PATH.toUpperCase(), 'editor')).toEqual(held);
     });
   });
 

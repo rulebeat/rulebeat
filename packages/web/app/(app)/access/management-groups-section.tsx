@@ -1,29 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
-import { Input } from '@/components/ui/input';
-import { filterTree } from '@/lib/access-picker';
-import { describeHierarchyStatus, orderedTree, type HierarchyView } from '@/lib/management-group-tree';
+import { ScopeTree } from '@/components/scope-tree';
+import { describeHierarchyStatus, type HierarchyView } from '@/lib/management-group-tree';
+import { hierarchyItems } from '@/lib/scope-tree';
 
 const formatTime = (iso: string): string => new Date(iso).toLocaleString();
 
 /**
- * RuleBeat's copy of the management group tree, for an Admin: when it was last read and a Refresh that reads it
- * again, with the tree itself behind "Show tree". Open, it lists every group with the subscriptions under it, and
- * a filter by name or id keeps each match under its parents. A person holding a management group sees what is
- * under it as of this copy, so a subscription moved in Azure is covered after the next refresh. A failed refresh
- * always shows its error, and the tree it kept shows when the tree is open.
+ * RuleBeat's copy of the management group tree, for an Admin: when it was last read, a Refresh that reads it
+ * again, and the tree itself, read-only and collapsed to its top level. Each group expands to the groups and
+ * subscriptions under it, and the search opens the path to each match. A person holding a management group sees
+ * what is under it as of this copy, so a subscription moved in Azure is covered after the next refresh. A failed
+ * refresh always shows its error, above the tree it kept.
  */
-export function ManagementGroupsSection({ initial, initiallyOpen = false }: { initial: HierarchyView; initiallyOpen?: boolean }) {
+export function ManagementGroupsSection({ initial }: { initial: HierarchyView }) {
   const [view, setView] = useState<HierarchyView>(initial);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(initiallyOpen);
-  const [filter, setFilter] = useState('');
 
   async function refresh() {
     setRefreshing(true);
@@ -41,23 +39,16 @@ export function ManagementGroupsSection({ initial, initiallyOpen = false }: { in
     }
   }
 
-  const ordered = orderedTree(filterTree(view.nodes, filter));
   const failed = view.status.error !== null;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Management groups</CardTitle>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
-            <RefreshCw className="size-3.5" />
-            {refreshing ? 'Refreshing' : 'Refresh'}
-          </Button>
-          <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-            {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-            {open ? 'Hide tree' : 'Show tree'}
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
+          <RefreshCw className="size-3.5" />
+          {refreshing ? 'Refreshing' : 'Refresh'}
+        </Button>
       </CardHeader>
       <CardContent className="p-0">
         {error && <Callout tone="error" className="border-x-0 border-t-0">{error}</Callout>}
@@ -71,20 +62,7 @@ export function ManagementGroupsSection({ initial, initiallyOpen = false }: { in
           every hour. Someone given a management group sees the findings in every subscription under it as of this copy,
           including subscriptions moved under it later.
         </p>
-        {open && view.nodes.length > 0 && (
-          <div className="px-6 pb-3">
-            <Input
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-              placeholder="Filter by name or id"
-              aria-label="Filter the management group tree"
-              className="max-w-sm"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-        )}
-        {view.nodes.length === 0 && (
+        {view.nodes.length === 0 ? (
           <p className="px-6 pb-4 text-sm text-ink-2">
             {failed
               ? 'No tree has loaded, so there are no management groups to show.'
@@ -92,26 +70,10 @@ export function ManagementGroupsSection({ initial, initiallyOpen = false }: { in
                 ? 'Azure returned no management groups.'
                 : 'Nothing has been read yet.'}
           </p>
-        )}
-        {open && view.nodes.length > 0 && ordered.length === 0 && (
-          <p className="px-6 pb-4 text-sm text-ink-2">No management group or subscription matched “{filter.trim()}”.</p>
-        )}
-        {open && ordered.length > 0 && (
-          <ul className="pb-3">
-            {ordered.map(({ node, depth }) => (
-              <li
-                key={`${node.kind}:${node.id}`}
-                className="flex items-baseline gap-3 py-1 pr-6"
-                style={{ paddingLeft: `${24 + depth * 20}px` }}
-              >
-                <span className={node.kind === 'managementGroup' ? 'text-sm font-medium text-ink' : 'text-sm text-ink'}>
-                  {node.name}
-                </span>
-                <span className="font-mono text-xs text-ink-2">{node.id}</span>
-                <span className="label-grid ml-auto">{node.kind === 'managementGroup' ? 'Group' : 'Subscription'}</span>
-              </li>
-            ))}
-          </ul>
+        ) : (
+          <div className="px-4 pb-4">
+            <ScopeTree items={hierarchyItems(view.nodes)} searchLabel="Search the management group tree" searchPlaceholder="Search by name or id" />
+          </div>
         )}
       </CardContent>
     </Card>

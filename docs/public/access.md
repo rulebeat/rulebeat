@@ -28,8 +28,26 @@ An Admin is never scoped. An Admin holds Everything and is not given rows to nar
 access, and there are no delegated Admins for one subscription or management group, because an Admin
 who manages people could widen their own Scope.
 
-Everything is its own choice in the picker. It is not the same as selecting every management group,
+Everything is its own choice on a person's page. It is not the same as ticking every management group,
 which would miss what is created later.
+
+## A person's page
+
+The users table on the **Access** page lists each person with their Role and a one-line summary of
+their access, such as "2 scopes, mirrored". It has a search by name or email, and a long name or email
+is cut short with the whole of it shown on hover. Choosing a person opens their page; **Add user**
+opens the same page with a **Work email** field. Setting, resetting or removing a password and removing
+a user are in the menu at the end of each row.
+
+A person's page has two parts, and **Save** makes whichever changes they add up to:
+
+- **Role**: Viewer, Editor or Admin, set here and nowhere else. The only Admin cannot be made a Viewer
+  or Editor until someone else is an Admin, and the page says so.
+- **Access**: Everything, Selected Scopes or Mirrored from Azure. An Admin has access to everything,
+  so there is nothing to choose. Every Scope a person holds takes their Role.
+
+A person someone added is given nothing until an access choice is made, so **Add user** stays disabled
+until there is one. A Viewer or an Editor sees their own access on the Access page, read-only.
 
 ## Mirrored and Manual access
 
@@ -38,38 +56,34 @@ never both, so a refresh never has to decide which list wins.
 
 ### Manual access
 
-The Admin picks Scopes by hand. Choose them on the **Access** page when adding someone, with **Edit**
-beside a person, or when demoting an Admin, where Everything is preselected. Adding a Viewer or Editor
-needs at least one Scope. Manual access is the only way to give Everything or the Directory. The Access
-list shows each Scope and its Role under the person.
+The Admin picks Scopes by hand: **Everything**, or **Selected Scopes** on the person's page. Choosing
+Selected Scopes needs at least one Scope. Manual access is the only way to give Everything or the
+Directory.
 
-The picker lists only the Scopes the person holds, never the whole tree. Each row shows the kind of
-Scope, its name, the Role at it and a remove control. A management group also shows its short path,
-such as "Tenant Root Group › mg-enterprise", read from RuleBeat's copy of the tree. A Scope held for a
-management group the tree no longer has stays in the list, marked as not in the tree, so it can be
-removed; an Edit that changes nothing sends nothing, so it never trips over that group.
+Selected Scopes lists what is chosen, each with a remove control, above one tree to tick more in: the
+Directory, then each management group with the groups and subscriptions under it, and a subscription's
+resource groups once it is opened. Each level opens and closes on its own, and the search finds a
+management group, subscription or resource group by name or id, in any casing, keeping each match under
+its parents. A Scope held for a management group the
+tree no longer has stays in the list, so it can be removed, and a Save that changes nothing sends
+nothing.
 
-- **Add access** searches management groups and subscriptions by name or id, in any casing.
-  Everything and the Directory are always offered. While Everything is held the search is switched off,
-  with the reason beside it.
-- **Covered Scopes are refused.** A Scope that a held Scope already contains, at the same or a higher
-  Role, shows "Covered by" the Scope that contains it and is not added. Everything covers all. A
-  management group covers the groups below it, the subscriptions under any of them and those
-  subscriptions' resource groups. A subscription covers its resource groups. Only Everything covers the
-  Directory. A higher Role at a narrower Scope is still a real addition: Editor on a subscription while
-  holding Viewer on a management group above it.
-- **A new Scope takes the person's Role.** To give one Scope another Role, choose **Different Role
-  here** on its row. A Scope saved with a Role other than the person's opens already unlocked, with
-  that Role unchanged.
-- **Limit to resource groups** on a held subscription opens a searchable list of that subscription's
-  resource groups. Choosing one replaces the whole subscription with that resource group.
+- **Covered Scopes are shown, not added twice.** Below a ticked Scope, everything it contains shows as
+  ticked with "Covered by" that Scope, and cannot be ticked again. Ticking a Scope that contains ones
+  already chosen replaces them. Everything covers all, so while it is chosen there is nothing more to
+  tick. A management group covers the groups below it, the subscriptions under any of them and those
+  subscriptions' resource groups. A subscription covers its resource groups. Only Everything covers
+  the Directory.
+- **Every Scope takes the person's Role.** The page never sets a Role per Scope. A person who holds
+  Scopes at different Roles, given before this page or through the API, is told so, and saving gives
+  every Scope the Role chosen.
 
-When an Admin is demoted, the choice between Manual access and Mirrored access is offered as it is for
-anyone else. Mirrored access shows the Scopes of the Linked account first, then demotes the person with
-no Scopes and links the account. The demote comes first because Mirrored access is never given to an
-Admin, and it is never done with Everything, so a failure leaves the person with nothing rather than
-everything. If reading the account fails after the demote, the page says the person was demoted and
-holds no access, and the form can be tried again.
+When an Admin is made a Viewer or an Editor, Everything is chosen until something narrower is, so the
+change never takes access away by itself. Choosing Mirrored from Azure shows the Scopes of the Linked
+account first, then demotes the person with no Scopes and links the account. The demote comes first
+because Mirrored access is never given to an Admin, and it is never done with Everything, so a failure
+leaves the person with nothing rather than everything. If linking fails after the demote, the page says
+the person was demoted and holds no access, and Save can be tried again.
 
 ### Mirrored access
 
@@ -85,16 +99,16 @@ with its own Reader credential and turns them into Scopes.
 - The Azure role never decides the RuleBeat Role. Azure Contributor means "can change Azure
   resources"; RuleBeat Editor means "can write rules, schedules and suppressions". The Admin chooses the Role.
 
-Choose Mirrored access when adding someone, with **Edit** beside a person, or when demoting an Admin
-(see Manual access above for the order of steps). Adding someone asks for
-Mirrored or Manual with neither chosen, and shows the Scopes the account would give before the invite
-is sent. On **Edit**, saving shows the Scopes the account would give, and the Manual Scopes they hold
-that would be replaced, before **Confirm**. "Use their sign-in account" fills the object id for a person who signed
-in with Entra, when sign-in uses the same tenant as the Azure connection.
+Choose **Mirrored from Azure** on a person's page, when adding someone or when demoting an Admin (see
+Manual access above for the order of steps). Enter the object id, then **Preview** lists the Scopes the
+account would give, with the Azure role behind each, and Save stays disabled until the account saved is
+the one last previewed. "Use their sign-in account" fills the object id for a person who signed in with
+Entra, when sign-in uses the same tenant as the Azure connection. A mirrored person's page shows their
+Linked account, its Scopes, the last refresh, **Refresh**, and **Link a different account**.
 
 **When it refreshes.** About once an hour, after the management group tree is read; in the background
 each time the person signs in, which never waits for it; and on demand with the **Refresh** button
-beside each mirrored person. Automatic refreshes write no audit entry.
+on a mirrored person's page. Automatic refreshes write no audit entry.
 
 **When a refresh fails.** The last Scopes are kept, a stable reason is recorded (never Azure's own
 text), and the Access page says the refresh failed, when, and that the Scopes shown are the last ones
@@ -104,9 +118,9 @@ that loaded. The person sees the same on their own access, with the time of the 
 They see a message that they have been given no access and to ask an Admin, in place of "No findings
 yet", and the Access page says why.
 
-**Editing by hand.** Changing a mirrored person's Scopes by hand turns them into Manual access with the
-same Scopes, so the mirror never overwrites a hand-made change. Changing their Role keeps the mirror
-on. Switching back to mirrored replaces the Manual list after a confirmation.
+**Editing by hand.** Choosing Everything or Selected Scopes for a mirrored person turns them into
+Manual access with the Scopes shown, and the page says so before Save, so the mirror never overwrites
+a hand-made change. Changing their Role keeps the mirror on.
 
 For the mirror and the management group tree to see anything, the Reader credential has to be able to
 read it. Grant Reader at the tenant root management group: see [Azure permissions](permissions.md#2-grant-reader).
@@ -114,13 +128,9 @@ read it. Grant Reader at the tenant root management group: see [Azure permission
 ## The management group tree
 
 The **Management groups** card on the Access page shows when RuleBeat last read its copy of the tree,
-and **Refresh** reads it again. The tree itself is collapsed until **Show tree** is chosen. Open, it
-lists every group with the subscriptions under it, and a filter by name or id keeps each match under
-its parents. A failed refresh shows its error on the card whether the tree is open or not, and the tree
-it kept shows when the tree is open.
-
-The users table above it has a search by name or email. It scrolls sideways inside its panel when the
-window is narrow, and a long email is cut short with the full address shown on hover.
+and **Refresh** reads it again. The tree opens at its top level, and each group opens and closes on its
+own to show the groups and subscriptions under it. A search by name or id keeps each match under its
+parents. A failed refresh shows its error on the card, with the tree it kept.
 
 ## Where a finding sits
 

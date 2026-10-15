@@ -196,6 +196,19 @@ export function coveringGrant(
 }
 
 /**
+ * Ticks a Scope in the tree at `role`, and drops every held Scope the new one covers: a ticked group already
+ * gives the subscriptions under it, so keeping them too would only list the same access twice. A Scope already
+ * held is left as it is.
+ */
+export function tickScope(
+  grants: readonly ManualGrant[], nodes: readonly TreeNode[], path: string, role: GrantRole,
+): ManualGrant[] {
+  if (heldAt(grants, path)) return [...grants];
+  const added: ManualGrant = { scope: path, role };
+  return [...grants.filter(g => !coveringGrant([added], nodes, g.scope, g.role)), added];
+}
+
+/**
  * Why an offered Scope cannot be added, or null when it can: it is already held (at whatever Role, which a held
  * row changes with "Different Role here"), or a held Scope already covers it at the same or a higher Role.
  */

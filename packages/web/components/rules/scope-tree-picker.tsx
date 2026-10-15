@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
+import { ChevronDown, Loader2, X } from 'lucide-react';
 import type { ScopeTree, ScopeTreeNode } from '@/app/api/azure/scope-tree/route';
-import { toggleInSet } from '@/lib/toggle-set';
+import { ScopeTree as ScopeTreeView } from '@/components/scope-tree';
+import { ruleScopeItems, ruleScopeKey } from '@/lib/scope-tree';
 import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
@@ -43,12 +44,9 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
   const anchorRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const limitedTree = useMemo<ScopeTree | null>(() => limitTo ? limitedScopeTree(limitTo) : null, [limitTo]);
@@ -65,8 +63,6 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
       .then((data: ScopeTree | { error: string }) => {
         if ('error' in data) throw new Error(data.error);
         setTree(data);
-        const topMgs = data.children.filter(c => c.type === 'managementGroup').map(c => c.id);
-        setExpanded(new Set(topMgs));
         if (onNamesReady) {
           const names: Record<string, string> = {};
           function collect(nodes: ScopeTreeNode[]) {
@@ -100,7 +96,6 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
   useEffect(() => {
     if (!open) return;
     reposition();
-    setTimeout(() => searchRef.current?.focus(), 0);
     window.addEventListener('scroll', reposition, true);
     window.addEventListener('resize', reposition);
     return () => {
@@ -146,74 +141,7 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
     onChange({ subscriptions: next, managementGroups });
   }
 
-  function toggleExpand(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setExpanded(prev => toggleInSet(prev, id));
-  }
-
-  function nodeMatchesSearch(node: ScopeTreeNode): boolean {
-    const q = search.toLowerCase();
-    if (node.name.toLowerCase().includes(q) || node.id.toLowerCase().includes(q)) return true;
-    return node.children?.some(c => nodeMatchesSearch(c)) ?? false;
-  }
-
-  function renderNode(node: ScopeTreeNode, depth: number): React.ReactNode {
-    if (search && !nodeMatchesSearch(node)) return null;
-    const isMg = node.type === 'managementGroup';
-    const isExpanded = expanded.has(node.id) || !!search;
-    const hasChildren = (node.children?.length ?? 0) > 0;
-    const checked = isMg ? managementGroups.includes(node.id) : subscriptions.includes(node.id);
-
-    return (
-      <div key={node.id}>
-        <button
-          onClick={() => isMg ? toggleMg(node.id) : toggleSub(node.id)}
-          className={cn(
-            'flex w-full items-center gap-2 py-1.5 pr-3 text-left transition-colors hover:bg-surface-hover',
-            checked && 'bg-surface-sunken',
-          )}
-          style={{ paddingLeft: `${12 + depth * 16}px` }}
-        >
-          {/* Expand toggle */}
-          <span
-            className="flex size-3.5 shrink-0 items-center justify-center text-ink-muted"
-            onClick={hasChildren ? (e) => toggleExpand(node.id, e) : undefined}
-          >
-            {isMg && hasChildren
-              ? isExpanded
-                ? <ChevronDown className="size-3.5" />
-                : <ChevronRight className="size-3.5" />
-              : null}
-          </span>
-
-          {/* Checkbox */}
-          <div className={cn(
-            'flex size-4 shrink-0 items-center justify-center border',
-            checked ? 'border-ink bg-ink' : 'border-rule-strong',
-          )}>
-            {checked && <Check className="size-2.5 text-surface" />}
-          </div>
-
-          {/* Type indicator */}
-          <span className={cn(MARKER, 'size-3.5', !isMg && 'rounded-full')}>
-            {isMg ? 'M' : 'S'}
-          </span>
-
-          {/* Name + ID */}
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-ink">{node.name}</p>
-            <p className="truncate font-mono text-xs text-ink">{node.id}</p>
-          </div>
-        </button>
-
-        {isExpanded && hasChildren && (
-          <div>
-            {node.children!.map(child => renderNode(child, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const items = tree ? ruleScopeItems(tree.children) : [];
 
   const chips = [
     ...managementGroups.map(id => ({ id, name: nameMap.get(id) ?? id, type: 'mg' as const })),
@@ -227,17 +155,6 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
       className="overflow-hidden border border-rule-strong bg-surface shadow-overlay"
       onMouseDown={e => e.stopPropagation()}
     >
-      {/* Search */}
-      <div className="shrink-0 border-b border-border px-3 py-1.5">
-        <input
-          ref={searchRef}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder={limitTo ? 'Search your subscriptions or management groups…' : 'Search management groups or subscriptions…'}
-          className="w-full bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
-        />
-      </div>
-
       {/* Tree */}
       <div className="scroll-y min-h-0 flex-1">
         {loading && (
@@ -274,23 +191,22 @@ export function ScopeTreePicker({ subscriptions, managementGroups, onChange, onN
 
             <div className="mx-3 my-1 border-t border-border" />
 
-            {/* Legend */}
-            <div className="flex items-center gap-3 px-3 pb-1">
-              <span className="flex items-center gap-1 text-xs text-ink-muted">
-                <span className={cn(MARKER, 'size-3 text-[7px]')}>M</span>
-                Management group
-              </span>
-              <span className="flex items-center gap-1 text-xs text-ink-muted">
-                <span className={cn(MARKER, 'size-3 rounded-full text-[7px]')}>S</span>
-                Subscription
-              </span>
-            </div>
-
-            {tree.children.map(node => renderNode(node, 0))}
-
-            {search && tree.children.every(n => !nodeMatchesSearch(n)) && (
-              <p className="px-3 py-2 text-xs text-ink-muted">No results</p>
-            )}
+            <ScopeTreeView
+              items={items}
+              className="px-1 pb-2"
+              searchLabel={limitTo ? 'Search your subscriptions and management groups' : 'Search management groups and subscriptions'}
+              searchPlaceholder="Search by name or id"
+              autoFocusSearch
+              defaultExpanded={tree.children.filter(c => c.type === 'managementGroup').map(c => ruleScopeKey('managementGroup', c.id))}
+              selection={{
+                isTicked: key => key.startsWith('managementGroup:')
+                  ? managementGroups.includes(key.slice('managementGroup:'.length))
+                  : subscriptions.includes(key.slice('subscription:'.length)),
+                onToggle: item => item.kind === 'managementGroup'
+                  ? toggleMg(item.key.slice('managementGroup:'.length))
+                  : toggleSub(item.key.slice('subscription:'.length)),
+              }}
+            />
           </>
         )}
       </div>

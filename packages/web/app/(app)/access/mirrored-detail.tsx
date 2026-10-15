@@ -26,7 +26,7 @@ export function MirrorStatusLine({ status, own = false }: { status: MirrorStatus
  * Azure said so. Refresh reads the account again now. A failed refresh answers with the person as stored, so the
  * Scopes shown are always the last ones that loaded.
  */
-export function MirroredDetailRow({ user, disabled, onChanged }: {
+export function MirroredDetail({ user, disabled, onChanged }: {
   user: AppUserWithAccess;
   disabled?: boolean;
   onChanged: (user: AppUserWithAccess) => void;
@@ -52,45 +52,41 @@ export function MirroredDetailRow({ user, disabled, onChanged }: {
 
   const status = user.mirror;
   return (
-    <tr className="border-b border-border bg-surface-sunken last:border-0">
-      <td colSpan={7} className="px-3 py-3">
-        <div className="flex max-w-3xl flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <span className="label-grid">Linked account</span>
-            <span className="font-mono text-xs text-ink-2">{user.linkedAccount?.objectId}</span>
-            <span className="text-xs text-ink-2">Role: {ROLE_LABELS[user.role]}</span>
-            <Button
-              size="xs"
-              variant="outline"
-              className="ml-auto"
-              disabled={disabled || refreshing}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw className="size-3" />
-              {refreshing ? 'Refreshing' : 'Refresh'}
-            </Button>
-          </div>
-          {error && <Callout tone="error">{error}</Callout>}
-          {status && <MirrorStatusLine status={status} />}
-          {user.mirroredScopes.length === 0 ? (
-            <p className="text-sm text-ink-2">
-              The Linked account holds no Azure role assignments RuleBeat can see, so this person sees no findings.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border bg-surface">
-              {user.mirroredScopes.map(s => (
-                <li key={s.scope} className="flex items-baseline gap-3 px-3 py-1.5">
-                  <span className="text-sm text-ink">{describeScopePath(s.scope)}</span>
-                  <span className="font-mono text-xs text-ink-2">{s.scope}</span>
-                  <span className="ml-auto text-xs text-ink-2">
-                    {s.origins.length > 0 ? describeOrigins(s.origins) : 'Azure role not recorded'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </td>
-    </tr>
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="label-grid">Linked account</span>
+        <span className="break-all font-mono text-xs text-ink-2">{user.linkedAccount?.objectId}</span>
+        <span className="text-xs text-ink-2">Role: {ROLE_LABELS[user.role]}</span>
+        <Button
+          size="xs"
+          variant="outline"
+          className="ml-auto"
+          disabled={disabled || refreshing}
+          onClick={() => void refresh()}
+        >
+          <RefreshCw className="size-3" />
+          {refreshing ? 'Refreshing' : 'Refresh'}
+        </Button>
+      </div>
+      {error && <Callout tone="error">{error}</Callout>}
+      {status && <MirrorStatusLine status={status} />}
+      {user.mirroredScopes.length === 0 ? (
+        <p className="text-sm text-ink-2">
+          The Linked account holds no Azure role assignments RuleBeat can see, so this person sees no findings.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border bg-surface">
+          {user.mirroredScopes.map(s => (
+            <li key={s.scope} className="flex flex-wrap items-baseline gap-x-3 px-3 py-1.5">
+              <span className="text-sm text-ink">{describeScopePath(s.scope)}</span>
+              <span className="min-w-0 break-all font-mono text-xs text-ink-2">{s.scope}</span>
+              <span className="ml-auto text-xs text-ink-2">
+                {s.origins.length > 0 ? describeOrigins(s.origins) : 'Azure role not recorded'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

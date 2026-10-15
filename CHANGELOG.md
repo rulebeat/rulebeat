@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Each person on the Access page now has a page of their own, opened from the users table or with Add user. It sets the Role in one place (Viewer, Editor or Admin) and access as one of three choices: Everything, Selected Scopes or Mirrored from Azure. Selected Scopes is one tree of the Directory, the management groups, their subscriptions and a subscription's resource groups, where each level opens and closes on its own, a search keeps each match under its parents, and what a ticked Scope already contains shows as "Covered by" it. Every Scope takes the person's Role; a person who holds Scopes at different Roles is told so, and saving gives them all the Role chosen. The users table no longer scrolls sideways: it shows each person's Role and a one-line summary of their access, with passwords and removal in a menu on the row. The Management groups card uses the same tree, open at its top level. The access model, the API routes and the calls to Azure are unchanged.
+
 ## [0.12.0] - 2026-10-15
 
 ### Changed

@@ -17,10 +17,14 @@ import { deleteAssignmentsOn, listAssignmentsFor, replaceAssignmentsOn } from '@
 import { inTransaction } from '@/lib/db/exec';
 import { listUsersWithAccess, type AppUserWithAccess, type OwnAccess } from '@/lib/access';
 import { describeAccess } from '@/lib/access-model';
-import { UsersSection, InviteRow, PromptRows } from '@/app/(app)/access/users-section';
+import { UsersSection } from '@/app/(app)/access/users-section';
 import { OwnAccessSection } from '@/app/(app)/access/own-access-section';
 import { ScopePicker } from '@/app/(app)/access/scope-picker';
-import { MirroredAccessRow } from '@/app/(app)/access/mirrored-access-form';
+import { LinkedAccountFields } from '@/app/(app)/access/mirrored-access-form';
+import { MirroredDetail } from '@/app/(app)/access/mirrored-detail';
+import { LAST_ADMIN_NOTE, PersonClient } from '@/app/(app)/access/person-client';
+import { ScopeTree } from '@/components/scope-tree';
+import { hierarchyItems } from '@/lib/scope-tree';
 import type { MirroredScope } from '@/lib/access-mirror-model';
 import { AzureNotConfiguredError } from '@/lib/azure-credential';
 import { NO_AZURE_CONNECTION_MESSAGE, UNKNOWN_MANAGEMENT_GROUP_MESSAGE } from '@/lib/manual-access';
@@ -29,7 +33,7 @@ import type { Role } from '@/lib/rbac';
 import { resetDb } from '../helpers/db';
 import { ManagementGroupsSection } from '@/app/(app)/access/management-groups-section';
 import {
-  demotedWithoutAccessMessage, demoteToMirrored, editSaveRequest, grantsOfAccess, heldRows, type DemoteFetch,
+  demotedWithoutAccessMessage, demoteToMirrored, EDIT_STOPS_MIRROR_NOTE, editSaveRequest, grantsOfAccess, heldRows, type DemoteFetch,
 } from '@/lib/access-picker';
 import {
   fakeRoleAssignments, ACCOUNT, MG_EXAMPLE as MIRROR_MG, SUB_A as MIRROR_SUB, type FakeRoleAssignments,
@@ -45,6 +49,12 @@ const MG = '/providers/Microsoft.Management/managementGroups/mg-example';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
+
+// The person page's client pushes back to the list on Save; notFound stays real, since the pages are tested by it.
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  useRouter: () => ({ push: () => undefined, replace: () => undefined, refresh: () => undefined }),
+}));
 
 const mockTenant = vi.fn();
 vi.mock('@/lib/arm', async (importOriginal) => ({
@@ -76,6 +86,8 @@ vi.mock('@/lib/access-mirror', async (importOriginal) => {
 });
 
 const { default: AccessPage } = await import('@/app/(app)/access/page');
+const { default: PersonPage } = await import('@/app/(app)/access/users/[id]/page');
+const { default: NewPersonPage } = await import('@/app/(app)/access/users/new/page');
 const usersRoute = await import('@/app/api/users/route');
 const userRoute = await import('@/app/api/users/[id]/route');
 const accessRoute = await import('@/app/api/users/[id]/access/route');
@@ -338,11 +350,9 @@ describe('access in the page and the routes (#269)', () => {
       createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }),
     );
     expect(html).toContain('>Access</th>');
-    expect(html.match(/Everything, manual/g)).toHaveLength(2);
-    // The Access column: the Admin alone reads a bare "Everything".
-    expect(html.match(/<span>Everything<\/span>/g)).toHaveLength(1);
-    // The two manual people each list their one Scope below their row (#267, story 2); the Admin lists none.
-    expect(html.match(/<span class="text-sm text-ink">Everything<\/span>/g)).toHaveLength(2);
+    // Each person's access is one line under their name; the Admin alone reads a bare "Everything".
+    expect(html.match(/>Everything, manual<\/span>/g)).toHaveLength(2);
+    expect(html.match(/>Everything<\/span>/g)).toHaveLength(1);
   });
 
   it('reads a short non-blank label for a person who holds no Scope', async () => {
@@ -685,20 +695,46 @@ describe('Manual access (#272)', () => {
   });
 });
 
-describe('the invite form', () => {
-  it('has neither source nor Scope chosen, and cannot be submitted until one is (#267, story 19)', () => {
-    const html = renderToStaticMarkup(createElement('table', null, createElement('tbody', null,
-      createElement(InviteRow, { onSave: () => undefined, onCancel: () => undefined }))));
-    expect(html).toContain('Manual access');
-    expect(html).toContain('Mirrored access');
+/** The person page's client as it first renders, for `user` (null to add someone). */
+function personMarkup(user: AppUserWithAccess | null, opts: { isLastAdmin?: boolean; signInTenantIsAzureTenant?: boolean } = {}): string {
+  return renderToStaticMarkup(createElement(PersonClient, {
+    user, isLastAdmin: opts.isLastAdmin ?? false, isSelf: false, signInTenantIsAzureTenant: opts.signInTenantIsAzureTenant ?? false, demo: false,
+  }));
+}
+
+/** Each radio of one group on the person page: its label, and whether it is checked or disabled. */
+function choicesIn(html: string, name: 'role' | 'access') {
+  const radio = new RegExp(`<input type="radio"([^>]*name="${name}"[^>]*)>(?:(?!</label>)[\\s\\S])*?font-medium text-ink">([^<]+)</span>`, 'g');
+  return [...html.matchAll(radio)].map(m => ({ label: m[2]!, checked: /checked=""/.test(m[1]!), disabled: /disabled=""/.test(m[1]!) }));
+}
+const checkedIn = (html: string, name: 'role' | 'access') => choicesIn(html, name).filter(c => c.checked).map(c => c.label);
+
+/** Whether the page's Save (or Add user) button is disabled. */
+const saveDisabled = (html: string, label: 'Save' | 'Add user') =>
+  new RegExp(`<button[^>]*disabled=""[^>]*>(?:(?!</button>)[\\s\\S])*${label}</button>`).test(html);
+
+describe('the add user page (#311)', () => {
+  it('starts as a Viewer with no access chosen, and cannot be submitted until an email and a choice are given (#267, story 19)', () => {
+    const html = personMarkup(null);
+    expect(html).toContain('Work email');
+    expect(checkedIn(html, 'role')).toEqual(['Viewer']);
+    expect(choicesIn(html, 'access').map(c => c.label)).toEqual(['Everything', 'Selected Scopes', 'Mirrored from Azure']);
+    expect(checkedIn(html, 'access')).toEqual([]);
     expect(html).toContain('Until you do, this person is given nothing');
-    expect(html).not.toContain('aria-pressed="true"');
-    // No Scope list and no Linked account field until a source is picked.
-    expect(html).not.toContain('Choose at least one');
-    expect(html).not.toContain('invite-linked-account');
-    expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*checked/);
-    expect(html).not.toContain('Add access');
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Add<\/button>/);
+    // No Scope list and no Linked account field until a choice is made.
+    expect(html).not.toContain('Nothing is chosen yet');
+    expect(html).not.toContain('linked-account-new');
+    expect(saveDisabled(html, 'Add user')).toBe(true);
+    expect(html).toContain('Enter a work email.');
+  });
+
+  it('is for an Admin only, and hands the form no one', async () => {
+    signInAs(admin);
+    expect(propsWith(await NewPersonPage(), 'isLastAdmin').user).toBeNull();
+    signInAs(target);
+    await expect(NewPersonPage()).rejects.toMatchObject({ digest: expect.stringContaining('404') });
+    mockAuth.mockResolvedValue(null);
+    await expect(NewPersonPage()).rejects.toMatchObject({ digest: expect.stringContaining('404') });
   });
 });
 
@@ -709,86 +745,109 @@ describe('setManualAccess', () => {
   });
 });
 
-describe("the prompts under a person's row", () => {
-  /** The prompt elements a row opens, each with the key React remounts it by. */
-  function promptsOf(user: AppUserWithAccess, open: { editing?: boolean; demotingTo?: Role | null }) {
-    const fragment = PromptRows({
-      user, editing: open.editing ?? false, demotingTo: open.demotingTo ?? null, saving: false,
-      onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
-    }) as ReactElement<{ children: ReactNode }>;
-    const found: ReactElement<Record<string, unknown>>[] = [];
-    for (const child of [fragment.props.children].flat()) if (isValidElement(child)) found.push(child as ReactElement<Record<string, unknown>>);
-    return found;
-  }
+describe('the person page (#311)', () => {
+  const personProps = async (id: string) => propsWith(await PersonPage(params(id)), 'isLastAdmin');
+  const withAccessOf = async (id: string) => (await listUsersWithAccess()).find(u => u.id === id)!;
 
-  /** What a person's open prompts render as, in a table the way the page puts them. */
-  function promptMarkup(user: AppUserWithAccess, open: { editing?: boolean; demotingTo?: Role | null }): string {
-    return renderToStaticMarkup(createElement('table', null, createElement('tbody', null, PromptRows({
-      user, editing: open.editing ?? false, demotingTo: open.demotingTo ?? null, saving: false,
-      onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
-    }))));
-  }
+  it('hands an Admin the person with their access, and whether they are the last Admin or the Admin themselves', async () => {
+    signInAs(admin);
+    const props = await personProps(target.id);
+    expect((props.user as AppUserWithAccess).email).toBe('target@example.com');
+    expect((props.user as AppUserWithAccess).access).toBeDefined();
+    expect(props.isLastAdmin).toBe(false);
+    expect(props.isSelf).toBe(false);
+    const own = await personProps(admin.id);
+    expect(own.isLastAdmin).toBe(true);
+    expect(own.isSelf).toBe(true);
+    await makeUser('second@example.com', 'admin');
+    expect((await personProps(admin.id)).isLastAdmin).toBe(false);
+  });
 
-  it('restarts the demote prompt at the Role picked, so the button and the list never disagree', async () => {
+  it('is not found for a person who does not exist, or with no session', async () => {
+    signInAs(admin);
+    await expect(PersonPage(params('00000000-0000-0000-0000-000000000099'))).rejects.toMatchObject({ digest: expect.stringContaining('404') });
+    mockAuth.mockResolvedValue(null);
+    await expect(PersonPage(params(target.id))).rejects.toMatchObject({ digest: expect.stringContaining('404') });
+  });
+
+  it.each(['viewer', 'editor'] as const)('shows a %s their own access read-only, and anyone else\'s as not found', async (role) => {
+    const person = await makeUser(`${role}@example.com`, role);
+    signInAs(person);
+    const page = await PersonPage(params(person.id));
+    expect(propsWith(page, 'own').own).toMatchObject({ role });
+    expect(() => propsWith(page, 'isLastAdmin')).toThrow('isLastAdmin not rendered');
+    await expect(PersonPage(params(admin.id))).rejects.toMatchObject({ digest: expect.stringContaining('404') });
+    await expect(PersonPage(params(target.id))).rejects.toMatchObject({ digest: expect.stringContaining('404') });
+  });
+
+  it('sets the Role in one place, three choices, and offers no access choice for an Admin', async () => {
     const second = await makeUser('second@example.com', 'admin');
-    const person = (await listUsersWithAccess()).find(u => u.id === second.id)!;
-    const [asViewer] = promptsOf(person, { demotingTo: 'viewer' });
-    const [asEditor] = promptsOf(person, { demotingTo: 'editor' });
-    expect(asViewer!.props.role).toBe('viewer');
-    expect(asEditor!.props.role).toBe('editor');
-    expect(promptMarkup(person, { demotingTo: 'viewer' })).toContain('Make Viewer');
-    expect(promptMarkup(person, { demotingTo: 'editor' })).toContain('Make Editor');
-    // Everything is preselected at the Role picked, and listed as held.
-    expect(promptMarkup(person, { demotingTo: 'editor' })).toContain('Remove Everything');
-    // The prompt keeps its list in its own state, so only a different key makes it start again.
-    expect(asEditor!.key).not.toBe(asViewer!.key);
+    const html = personMarkup(await withAccessOf(second.id));
+    expect(choicesIn(html, 'role').map(c => c.label)).toEqual(['Viewer', 'Editor', 'Admin']);
+    expect(checkedIn(html, 'role')).toEqual(['Admin']);
+    expect(html).toContain('An Admin has access to everything, so there is no access to choose.');
+    expect(choicesIn(html, 'access')).toEqual([]);
+    expect(saveDisabled(html, 'Save')).toBe(true);
+    expect(html).toContain('Nothing has changed.');
   });
 
-  it('offers Manual access and Mirrored access when demoting an Admin, as Edit does (#307)', async () => {
-    const second = await makeUser('second@example.com', 'admin');
-    const person = (await listUsersWithAccess()).find(u => u.id === second.id)!;
-    const html = promptMarkup(person, { demotingTo: 'viewer' });
-    expect(html).toContain('Access source');
-    expect(html).toContain('Manual access');
-    expect(html).toContain('Mirrored access');
-    expect(html).toContain('aria-pressed="true"');
+  it('keeps the last Admin an Admin: the other Roles are disabled, and the page says why', async () => {
+    const html = personMarkup(await withAccessOf(admin.id), { isLastAdmin: true });
+    expect(choicesIn(html, 'role').filter(c => c.disabled).map(c => c.label)).toEqual(['Viewer', 'Editor']);
+    expect(html).toContain(LAST_ADMIN_NOTE);
+    expect(personMarkup(await withAccessOf(admin.id))).not.toContain(LAST_ADMIN_NOTE);
   });
 
-  it('lists only what the person holds in Edit: no tree, no checkbox for every group and subscription (#307)', async () => {
-    await inTransaction(tx => replaceAssignmentsOn(tx, target.id, [{ tenantId: TENANT, scope: SUB, role: 'viewer' }]));
-    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-    const html = promptMarkup(person, { editing: true });
-    expect(html).toContain('Remove ' + SUB.split('/')[2]);
-    expect(html).toContain('Limit to resource groups');
-    expect(html).toContain('Add access');
-    expect(html).not.toMatch(/type="checkbox"/);
+  it('opens a person who holds only Everything on Everything, with no Scope list', async () => {
+    await setManualAccess(target.id, [{ tenantId: '', scope: '/', role: 'editor' }]);
+    const html = personMarkup(await withAccessOf(target.id));
+    expect(checkedIn(html, 'access')).toEqual(['Everything']);
+    expect(html).not.toContain('aria-label="Chosen Scopes"');
   });
 
-  it('lists a held management group the tree no longer has, in the Edit it opens (#307)', async () => {
+  it('opens a person with Manual access on Selected Scopes, each listed with a remove control and no Role of its own', async () => {
+    await setManualAccess(target.id, [
+      { tenantId: TENANT, scope: SUB, role: 'viewer' },
+      { tenantId: TENANT, scope: `${OTHER_SUB}/resourceGroups/rg-two`, role: 'viewer' },
+    ]);
+    const html = personMarkup(await withAccessOf(target.id));
+    expect(checkedIn(html, 'access')).toEqual(['Selected Scopes']);
+    expect(html).toContain('aria-label="Chosen Scopes"');
+    expect(html).toContain('aria-label="Remove 00000000-0000-0000-0000-00000000000a"');
+    expect(html).toContain('aria-label="Remove rg-two"');
+    expect(html).toContain('in 00000000-0000-0000-0000-00000000000b');
+    expect(html).not.toContain('Different Role here');
+    expect(html).not.toMatch(/<select/);
+    expect(html).not.toContain('at different Roles');
+    expect(saveDisabled(html, 'Save')).toBe(true);
+    expect(html).toContain('Nothing has changed.');
+  });
+
+  it('says when Scopes are held at different Roles, and that saving gives them all the Role chosen', async () => {
+    await setManualAccess(target.id, [
+      { tenantId: TENANT, scope: SUB, role: 'viewer' },
+      { tenantId: TENANT, scope: OTHER_SUB, role: 'editor' },
+    ]);
+    const html = personMarkup(await withAccessOf(target.id));
+    expect(html).toContain('This person holds Scopes at different Roles. Saving gives every Scope the Role above, Editor.');
+    // Saving would change them, so Save is on.
+    expect(saveDisabled(html, 'Save')).toBe(false);
+  });
+
+  it('lists a held management group the tree no longer has, so it can be removed (#307)', async () => {
     signInAs(admin);
     const fake = fakeHierarchy([group(TENANT, 'Tenant Root Group', null), group('mg-example', 'Example group', TENANT)]);
     await refreshFrom(fake);
     await accessRoute.PUT(jsonRequest('PUT', { access: [grant(MG, 'viewer')] }), params(target.id));
     fake.nodes = [group(TENANT, 'Tenant Root Group', null)];
     await refreshFrom(fake);
-    const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-    expect(promptMarkup(person, { editing: true })).toContain('Remove mg-example');
+    expect(personMarkup(await withAccessOf(target.id))).toContain('aria-label="Remove mg-example"');
   });
 
-  it("restarts the Edit prompt when the person's Role or Scopes change under it", async () => {
-    const before = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-    await inTransaction(tx => replaceAssignmentsOn(tx, target.id, [{ tenantId: TENANT, scope: SUB, role: 'editor' }]));
-    const after = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-    const [opened] = promptsOf(before, { editing: true });
-    const [reopened] = promptsOf(after, { editing: true });
-    expect(opened!.key).not.toBe(reopened!.key);
-    expect(promptsOf(before, { editing: true })[0]!.key).toBe(opened!.key);
-  });
-
-  it('opens nothing for a closed prompt, and no Edit prompt for an Admin', async () => {
-    const person = (await listUsersWithAccess()).find(u => u.id === admin.id)!;
-    expect(promptsOf(person, {})).toEqual([]);
-    expect(promptsOf(person, { editing: true })).toEqual([]);
+  it('tells an Admin when a person was given nothing, without a Scope list to read it from', async () => {
+    await setManualAccess(target.id, []);
+    const html = personMarkup(await withAccessOf(target.id));
+    expect(html).toContain('Nothing is chosen, so this person will see no findings until an Admin gives them access.');
   });
 });
 
@@ -903,40 +962,34 @@ describe('the management groups card (#273)', () => {
     { id: 'mg-example', kind: 'managementGroup' as const, name: 'Example group', parentId: TENANT },
     { id: '00000000-0000-0000-0000-00000000000a', kind: 'subscription' as const, name: 'Subscription A', parentId: 'mg-example' },
   ];
-  /** The card as the page renders it, collapsed, unless the test opens it. */
-  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial'], initiallyOpen?: boolean) =>
-    renderToStaticMarkup(createElement(ManagementGroupsSection, initiallyOpen === undefined ? { initial } : { initial, initiallyOpen }));
+  const render = (initial: Parameters<typeof ManagementGroupsSection>[0]['initial']) =>
+    renderToStaticMarkup(createElement(ManagementGroupsSection, { initial }));
   const LOADED = { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null };
   const FAILED = {
     lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
     error: { code: 'failed' as const, message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
   };
 
-  it('starts collapsed: the status line, Refresh and Show tree, and no tree (#307)', () => {
+  it('shows the status line, Refresh, a search, and the tree with only its top level open to expand (#311)', () => {
     const html = render({ nodes, status: LOADED });
+    expect(html).toContain('Management groups');
     expect(html).toContain('Last refreshed');
     expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
-    expect(html).toMatch(/aria-expanded="false"[^>]*>(?:(?!<\/button>)[\s\S])*Show tree<\/button>/);
-    expect(html).not.toContain('Tenant Root Group');
+    expect(html).toContain('aria-label="Search the management group tree"');
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-label="Expand Tenant Root Group"/);
     expect(html).not.toContain('Example group');
-    expect(html).not.toContain('Filter the management group tree');
+    expect(html).not.toContain('Subscription A');
+    // A read-only tree: nothing to tick.
+    expect(html).not.toMatch(/type="checkbox"/);
+    expect(html).not.toContain('failed');
   });
 
-  it('opens on Show tree, with a filter over the tree (#307)', () => {
-    const html = render({ nodes, status: LOADED }, true);
-    expect(html).toContain('Hide tree');
-    expect(html).toContain('Filter the management group tree');
-    expect(html).toContain('Subscription A');
-  });
-
-  it('shows a failed refresh even while collapsed, and the tree it kept once opened (#307)', () => {
-    const collapsed = render({ nodes, status: FAILED });
-    expect(collapsed).toContain('The last refresh failed');
-    expect(collapsed).toContain('Check the RuleBeat server logs');
-    expect(collapsed).not.toContain('Example group');
-    const open = render({ nodes, status: FAILED }, true);
-    expect(open).toContain('Check the RuleBeat server logs');
-    expect(open).toContain('Example group');
+  it('says the refresh failed, when, and that the tree shown is the last one that loaded', () => {
+    const html = render({ nodes, status: FAILED });
+    expect(html).toContain('The last refresh failed');
+    expect(html).toContain('The tree shown is the last one that loaded');
+    expect(html).toContain('Check the RuleBeat server logs');
+    expect(html).toContain('Tenant Root Group');
   });
 
   it('hands an Admin the stored tree and status, and no one else', async () => {
@@ -955,28 +1008,19 @@ describe('the management groups card (#273)', () => {
     }
   });
 
-  it('shows the tree with each group and the subscriptions under it, when it was read, and a Refresh button', () => {
-    const html = render({ nodes, status: { lastSuccessAt: '2026-06-02T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z', error: null } }, true);
-    expect(html).toContain('Management groups');
+  it('nests each group and the subscriptions under it once opened, one level deeper each, with a Collapse control', () => {
+    const items = hierarchyItems(nodes);
+    const html = renderToStaticMarkup(createElement(ScopeTree, {
+      items, searchLabel: 'Search the management group tree', defaultExpanded: [items[0]!.key, items[0]!.children![0]!.key],
+    }));
     expect(html.indexOf('Tenant Root Group')).toBeLessThan(html.indexOf('Example group'));
     expect(html.indexOf('Example group')).toBeLessThan(html.indexOf('Subscription A'));
-    expect(html).toMatch(/Last refreshed /);
-    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
-    expect(html).not.toContain('failed');
-  });
-
-  it('says the refresh failed, when, and that the tree shown is the last one that loaded', () => {
-    const html = render({
-      nodes,
-      status: {
-        lastSuccessAt: '2026-06-01T00:00:00.000Z', lastAttemptAt: '2026-06-02T00:00:00.000Z',
-        error: { code: 'failed', message: 'The management group tree could not be read from Azure. Check the RuleBeat server logs for details.' },
-      },
-    }, true);
-    expect(html).toContain('The last refresh failed');
-    expect(html).toContain('The tree shown is the last one that loaded');
-    expect(html).toContain('Check the RuleBeat server logs');
-    expect(html).toContain('Example group');
+    const indent = (name: string) => Number(new RegExp(`<li[^>]*padding-left:(\\d+)px(?:(?!</li>)[\\s\\S])*?${name}`).exec(html)?.[1]);
+    expect(indent('Example group')).toBeGreaterThan(indent('Tenant Root Group'));
+    expect(indent('Subscription A')).toBeGreaterThan(indent('Example group'));
+    expect(html).toMatch(/aria-expanded="true"[^>]*aria-label="Collapse Tenant Root Group"/);
+    // A subscription has nothing beneath it here, so it has no expand control.
+    expect(html).not.toContain('Expand Subscription A');
   });
 
   it('says why there is no tree, never the copy of an empty one', () => {
@@ -1009,8 +1053,6 @@ describe('Mirrored access on the page (#278)', () => {
     return (await listUsersWithAccess()).find(u => u.id === person.id)!;
   }
 
-  const inTable = (node: ReactElement) => renderToStaticMarkup(createElement('table', null, createElement('tbody', null, node)));
-
   describe('whether the sign-in tenant is the Azure connection tenant', () => {
     beforeEach(() => {
       signInAs(admin);
@@ -1019,52 +1061,57 @@ describe('Mirrored access on the page (#278)', () => {
     });
     afterEach(() => { vi.unstubAllEnvs(); });
 
+    const passedDown = async () => propsWith(await PersonPage(params(target.id)), 'signInTenantIsAzureTenant').signInTenantIsAzureTenant;
+
     it('is passed down as true when both are the same tenant, whatever the casing', async () => {
       vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT.toUpperCase());
-      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(true);
+      expect(await passedDown()).toBe(true);
     });
 
     it('is passed down as false when sign-in is another tenant', async () => {
       vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', '00000000-0000-0000-0000-0000000000f1');
-      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+      expect(await passedDown()).toBe(false);
     });
 
     it('is passed down as false when Azure is not connected', async () => {
       vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_TENANT_ID', TENANT);
       mockTenant.mockRejectedValue(new AzureNotConfiguredError('RuleBeat has no Azure credential to scan with.'));
-      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+      expect(await passedDown()).toBe(false);
     });
 
     it('is passed down as false when sign-in is not configured', async () => {
       vi.stubEnv('AUTH_MICROSOFT_ENTRA_ID_ID', '');
-      expect(accessClientProps(await AccessPage()).signInTenantIsAzureTenant).toBe(false);
+      expect(await passedDown()).toBe(false);
     });
   });
 
-  describe('the Mirrored access form', () => {
-    const form = (user: AppUserWithAccess, signInTenantIsAzureTenant: boolean) =>
-      inTable(createElement(MirroredAccessRow, { user, signInTenantIsAzureTenant, onSaved: () => undefined, onCancel: () => undefined }));
+  describe('the Linked account fields', () => {
+    const fields = (user: AppUserWithAccess, signInTenantIsAzureTenant: boolean) =>
+      renderToStaticMarkup(createElement(LinkedAccountFields, {
+        user, email: user.email, role: 'viewer', objectId: '', previewedId: null, signInTenantIsAzureTenant,
+        onObjectId: () => undefined, onPreviewed: () => undefined,
+      }));
 
-    it('asks for a Role and a Linked account, and the object id field starts empty with Save disabled', async () => {
+    it('asks for a Linked account, and the object id field starts empty with Preview disabled', async () => {
       const person = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-      const html = form(person, true);
+      const html = fields(person, true);
       expect(html).toContain('Linked account');
       expect(html).toMatch(/<input[^>]*value=""/);
       expect(html).not.toContain(ACCOUNT);
-      expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Save<\/button>/);
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*Preview<\/button>/);
     });
 
     it('offers "Use their sign-in account" only for a person with an oid when the sign-in tenant is the Azure tenant', async () => {
       const without = (await listUsersWithAccess()).find(u => u.id === target.id)!;
       const withOid = { ...without, oid: ACCOUNT };
-      expect(form(withOid, true)).toContain('Use their sign-in account');
-      expect(form(withOid, false)).not.toContain('Use their sign-in account');
-      expect(form(without, true)).not.toContain('Use their sign-in account');
+      expect(fields(withOid, true)).toContain('Use their sign-in account');
+      expect(fields(withOid, false)).not.toContain('Use their sign-in account');
+      expect(fields(without, true)).not.toContain('Use their sign-in account');
     });
 
     it('never fills the field itself, even when the button is offered', async () => {
       const person = { ...(await listUsersWithAccess()).find(u => u.id === target.id)!, oid: ACCOUNT };
-      const html = form(person, true);
+      const html = fields(person, true);
       expect(html).toMatch(/<input[^>]*value=""/);
       expect(html).not.toContain(`value="${ACCOUNT}"`);
     });
@@ -1075,23 +1122,23 @@ describe('Mirrored access on the page (#278)', () => {
       { scope: SUB, origins: [{ roleName: 'Reader', throughGroup: false, eligible: false }] },
       { scope: RG, origins: [{ roleName: 'Contributor', throughGroup: true, eligible: false }, { roleName: 'Owner', throughGroup: false, eligible: true }] },
     ];
-    const render = (users: AppUserWithAccess[]) =>
+    const detail = (user: AppUserWithAccess) => renderToStaticMarkup(createElement(MirroredDetail, { user, onChanged: () => undefined }));
+    const list = (users: AppUserWithAccess[]) =>
       renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
 
     it('has a Refresh button, the last successful refresh, and each Scope with its Azure role and "through a group" where recorded', async () => {
-      const html = render([await mirroredPerson('mirrored@example.com', SCOPES)]);
+      const html = detail(await mirroredPerson('mirrored@example.com', SCOPES));
       expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Refresh<\/button>/);
       expect(html).toContain('Last refreshed');
       expect(html).toContain(ACCOUNT);
       expect(html).toContain('Reader');
       expect(html).toContain('Contributor (through a group)');
       expect(html).toContain('Owner (eligible)');
-      expect(html).toContain('2 scopes, mirrored');
       expect(html).not.toContain('The last refresh failed');
     });
 
     it('says the last refresh failed, when, and that the Scopes shown are the last ones that loaded, in words of its own', async () => {
-      const html = render([await mirroredPerson('mirrored@example.com', SCOPES, { code: 'failed', at: '2026-06-03T00:00:00.000Z' })]);
+      const html = detail(await mirroredPerson('mirrored@example.com', SCOPES, { code: 'failed', at: '2026-06-03T00:00:00.000Z' }));
       expect(html).toContain('The last refresh failed');
       expect(html).toContain('The Scopes shown are the last ones that loaded');
       expect(html).toContain('Check the RuleBeat server logs');
@@ -1099,28 +1146,32 @@ describe('Mirrored access on the page (#278)', () => {
     });
 
     it('says the Linked account holds no role assignments, in place of an empty list, when it gives no Scope', async () => {
-      const html = render([await mirroredPerson('mirrored@example.com', [])]);
-      expect(html).toContain('holds no Azure role assignments RuleBeat can see');
-      expect(html).toContain('No access, mirrored');
+      const person = await mirroredPerson('mirrored@example.com', []);
+      expect(detail(person)).toContain('holds no Azure role assignments RuleBeat can see');
+      expect(list([person])).toContain('No access, mirrored');
     });
 
-    it('shows no refresh or Linked account for a person with Manual access', async () => {
-      const html = render((await listUsersWithAccess()).filter(u => u.id === target.id));
-      expect(html).not.toContain('Linked account');
+    it('is summed up in the list, with the Linked account and its Scopes left to their page', async () => {
+      const html = list([await mirroredPerson('mirrored@example.com', SCOPES)]);
+      expect(html).toContain('2 scopes, mirrored');
+      expect(html).not.toContain(ACCOUNT);
       expect(html).not.toMatch(/Refresh<\/button>/);
     });
 
-    it('says, when Edit is opened on them, that saving stops the mirror, and says nothing of the kind for a manual person', async () => {
-      const mirrored = await mirroredPerson('mirrored@example.com', SCOPES);
-      const manual = (await listUsersWithAccess()).find(u => u.id === target.id)!;
-      const open = (user: AppUserWithAccess) => inTable(createElement(PromptRows, {
-        user, editing: true, demotingTo: null, saving: false,
-        onSaveAccess: () => undefined, onDemote: () => undefined, onCancelEdit: () => undefined, onCancelDemote: () => undefined,
-      }));
-      expect(open(mirrored)).toContain('Saving here stops the mirror');
-      expect(open(manual)).not.toContain('stops the mirror');
-      expect(open(mirrored)).toContain('Manual access');
-      expect(open(mirrored)).toContain('Mirrored access');
+    it('opens on Mirrored from Azure on their page, with the Linked account and a way to link another', async () => {
+      const html = personMarkup(await mirroredPerson('mirrored@example.com', SCOPES));
+      expect(checkedIn(html, 'access')).toEqual(['Mirrored from Azure']);
+      expect(html).toContain(ACCOUNT);
+      expect(html).toMatch(/Refresh<\/button>/);
+      expect(html).toContain('Link a different account');
+      // The warning is for leaving Mirrored, which the page has not done yet.
+      expect(html).not.toContain(EDIT_STOPS_MIRROR_NOTE);
+    });
+
+    it('shows no refresh or Linked account on the page of a person with Manual access', async () => {
+      const html = personMarkup((await listUsersWithAccess()).find(u => u.id === target.id)!);
+      expect(html).not.toContain('linked-account-');
+      expect(html).not.toMatch(/Refresh<\/button>/);
     });
   });
 
@@ -1128,25 +1179,24 @@ describe('Mirrored access on the page (#278)', () => {
     const render = (users: AppUserWithAccess[]) =>
       renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
     const listed = async (id: string) => (await listUsersWithAccess()).filter(u => u.id === id);
-    const scopeRows = (html: string) => [...html.matchAll(/<li[^>]*>((?:(?!<\/li>)[\s\S])*)<\/li>/g)].map(m => m[1]!.replace(/<[^>]+>/g, '|'));
 
-    it('lists each Scope with the Role at it, without opening Edit', async () => {
+    it('sums up what each person holds in one line, and links to their page for the rest', async () => {
       await setManualAccess(target.id, [
         { tenantId: TENANT, scope: SUB, role: 'viewer' },
         { tenantId: TENANT, scope: `${OTHER_SUB}/resourceGroups/rg-two`, role: 'editor' },
       ]);
-      const rows = scopeRows(render(await listed(target.id)));
-      expect(rows).toHaveLength(2);
-      expect(rows.find(r => r.includes(`|${SUB}|`))).toContain('|Viewer|');
-      expect(rows.find(r => r.includes(`${OTHER_SUB}/resourceGroups/rg-two`))).toContain('|Editor|');
-      expect(rows.find(r => r.includes(`${OTHER_SUB}/resourceGroups/rg-two`))).toContain('rg-two in 00000000-0000-0000-0000-00000000000b');
+      const [person] = await listed(target.id);
+      const html = render([person!]);
+      expect(html).toContain(describeAccess(person!.access));
+      expect(html).toContain(`href="/access/users/${target.id}"`);
+      expect(html).not.toContain(SUB);
+      expect(html).not.toMatch(/<li/);
     });
 
-    it('has no Scope list for a person given nothing, or for an Admin', async () => {
+    it('says a person given nothing has no access', async () => {
       await setManualAccess(target.id, []);
       const html = render([...await listed(target.id), ...await listed(admin.id)]);
       expect(html).toContain('No access, manual');
-      expect(scopeRows(html)).toEqual([]);
     });
   });
 
@@ -1345,7 +1395,7 @@ describe('saving an Edit that changed nothing (#307)', () => {
   });
 });
 
-describe('the users table (#307)', () => {
+describe('the users table (#307, #311)', () => {
   const LONG = 'a-very-long-address-for-a-person-with-a-long-name@subdomain.example-company-name.example.com';
   const html = async () => {
     await makeUser(LONG, 'viewer');
@@ -1353,66 +1403,86 @@ describe('the users table (#307)', () => {
     return renderToStaticMarkup(createElement(UsersSection, { initialUsers: users, initialUsersWithPassword: [], currentUserId: admin.id }));
   };
 
-  it('has a search by name or email', async () => {
-    expect(await html()).toContain('aria-label="Search users"');
+  it('has a search by name or email, and adds a user on a page of its own', async () => {
+    const markup = await html();
+    expect(markup).toContain('aria-label="Search users"');
+    expect(markup).toMatch(/<a[^>]*href="\/access\/users\/new"[^>]*>(?:(?!<\/a>)[\s\S])*Add user<\/a>/);
   });
 
-  it('keeps Status on one line and cuts a long email short with the whole address on hover', async () => {
+  it('cuts a long email short with the whole address on hover, and says who has never signed in', async () => {
     const markup = await html();
-    expect(markup).toMatch(/<td[^>]*whitespace-nowrap[^>]*>(?:(?!<\/td>)[\s\S])*Never signed in/);
-    expect(markup).toMatch(new RegExp(`<div[^>]*truncate[^>]*title="${LONG}"`));
+    expect(markup).toMatch(new RegExp(`<span[^>]*truncate[^>]*title="${LONG}"`));
+    expect(markup).toContain('Never signed in');
   });
 
-  it('scrolls sideways inside its panel, never vertically', async () => {
+  it('fits its panel: a fixed layout, no sideways scroll box and no height cap of its own (#311)', async () => {
     const markup = await html();
-    expect(markup).toMatch(/data-slot="table-scroll"[^>]*class="[^"]*scroll-x/);
+    expect(markup).toMatch(/<table[^>]*class="[^"]*table-fixed/);
+    expect(markup).not.toContain('data-slot="table-scroll"');
     expect(markup).not.toMatch(/max-h-/);
+  });
+
+  it('edits nothing in the row: the Role is text, each person opens their page, and the rest sits in one menu', async () => {
+    const markup = await html();
+    expect(markup).not.toMatch(/<select/);
+    expect(markup).not.toMatch(/>Edit<\/button>/);
+    expect(markup).toContain(`href="/access/users/${target.id}"`);
+    expect(markup).toContain('aria-label="Actions for target@example.com"');
   });
 });
 
-describe('the Scope picker (#307)', () => {
+describe('the Scope picker (#311)', () => {
   const render = (value: { scope: string; role: 'viewer' | 'editor' }[], role: 'viewer' | 'editor' = 'viewer') =>
-    renderToStaticMarkup(createElement(ScopePicker, { value, onChange: () => undefined, defaultRole: role }));
+    renderToStaticMarkup(createElement(ScopePicker, { value, onChange: () => undefined, role }));
 
-  it('renders no tree: no checkbox, only what is held, with Everything and the Directory offered', () => {
-    const html = render([{ scope: SUB, role: 'viewer' }]);
-    expect(html).not.toMatch(/type="checkbox"/);
-    expect(html).toContain('Add access');
-    expect(html).toContain('aria-label="Add Everything"');
-    expect(html).toContain('aria-label="Add Directory"');
+  it('lists what is chosen with a remove control, and no Role of its own, while the tree loads', () => {
+    const html = render([{ scope: SUB, role: 'viewer' }, { scope: '@directory', role: 'viewer' }]);
+    expect(html).toContain('aria-label="Chosen Scopes"');
     expect(html).toContain('aria-label="Remove 00000000-0000-0000-0000-00000000000a"');
-    expect(html).toContain('Limit to resource groups');
+    expect(html).toContain('aria-label="Remove Directory"');
+    expect(html).not.toContain('Different Role here');
+    expect(html).not.toContain('Role at ');
+    // The tree waits for the management groups and subscriptions, and says so.
+    expect(html).toContain('Loading management groups');
+    expect(html).toContain('Loading subscriptions');
+    expect(html).not.toMatch(/type="checkbox"/);
   });
 
-  it('says nothing is held yet for an empty list', () => {
-    expect(render([])).toContain('Nothing is held yet');
+  it('says nothing is chosen yet for an empty list', () => {
+    expect(render([])).toContain('Nothing is chosen yet. Tick a Scope in the tree below.');
   });
 
-  it('shows a Scope at the person\'s Role as locked, and one at another Role with its own Role control', () => {
-    const locked = render([{ scope: SUB, role: 'viewer' }]);
-    expect(locked).toContain('Different Role here');
-    expect(locked).not.toContain('Role at ');
-    const unlocked = render([{ scope: SUB, role: 'editor' }]);
-    expect(unlocked).toContain('Role at ');
-    expect(unlocked).toContain('Use Viewer');
-    expect(unlocked).not.toContain('Different Role here');
+  it('says Everything covers every Scope while it is chosen', () => {
+    expect(render([{ scope: '/', role: 'viewer' }])).toContain('Everything is chosen, so every Scope is already covered');
+    expect(render([{ scope: SUB, role: 'viewer' }])).not.toContain('Everything is chosen');
+  });
+});
+
+describe('the scope tree with ticks (#311)', () => {
+  const items = hierarchyItems([
+    { id: TENANT, kind: 'managementGroup', name: 'Tenant Root Group', parentId: null },
+    { id: 'mg-example', kind: 'managementGroup', name: 'Example group', parentId: TENANT },
+    { id: '00000000-0000-0000-0000-00000000000a', kind: 'subscription', name: 'Subscription A', parentId: 'mg-example' },
+  ]);
+  const render = (ticked: string[], disabled = false) => renderToStaticMarkup(createElement(ScopeTree, {
+    items, searchLabel: 'Search', defaultExpanded: [items[0]!.key, items[0]!.children![0]!.key],
+    selection: { isTicked: key => ticked.includes(key), onToggle: () => undefined, disabled },
+  }));
+  const box = (html: string, name: string) => new RegExp(`<input type="checkbox"[^>]*aria-label="${name}"[^>]*>`).exec(html)?.[0] ?? '';
+
+  it('ticks what is held, and shows what sits beneath it as covered, ticked and not tickable again', () => {
+    const html = render([MG]);
+    expect(box(html, 'Example group')).toContain('checked=""');
+    expect(box(html, 'Example group')).not.toContain('disabled=""');
+    expect(box(html, 'Subscription A')).toContain('checked=""');
+    expect(box(html, 'Subscription A')).toContain('disabled=""');
+    expect(html).toContain('Covered by Example group');
+    expect(box(html, 'Tenant Root Group')).not.toContain('checked=""');
   });
 
-  it('switches the search off while Everything is held, says why, and covers the Directory by it', () => {
-    const html = render([{ scope: '/', role: 'viewer' }]);
-    expect(html).toMatch(/<input[^>]*placeholder="Search management groups[^"]*"[^>]*\sdisabled=""/);
-    expect(html).toContain('Everything is held, so every Scope is already covered');
-    expect(html).toContain('Covered by Everything');
-    expect(html).not.toContain('aria-label="Add Directory"');
-  });
-
-  it('keeps the search on when Everything is not held, and offers a Scope Everything at a lower Role would not cover', () => {
-    expect(render([{ scope: SUB, role: 'viewer' }])).not.toMatch(/<input[^>]*placeholder="Search management groups[^"]*"[^>]*\sdisabled=""/);
-    // An Editor holding Everything at Viewer: Everything shows as held, never as something to add (adding toggled it off),
-    // and the Directory, which Viewer does not cover at the Editor Role, stays addable.
-    const editorHoldingViewerEverything = render([{ scope: '/', role: 'viewer' }], 'editor');
-    expect(editorHoldingViewerEverything).toContain('Held at Viewer');
-    expect(editorHoldingViewerEverything).not.toContain('aria-label="Add Everything"');
-    expect(editorHoldingViewerEverything).toContain('aria-label="Add Directory"');
+  it('disables every tick when the picker is disabled', () => {
+    const html = render([], true);
+    expect(box(html, 'Tenant Root Group')).toContain('disabled=""');
+    expect(box(html, 'Subscription A')).toContain('disabled=""');
   });
 });
