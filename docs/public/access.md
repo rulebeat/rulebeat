@@ -91,7 +91,8 @@ The Admin picks one Role and a **Linked account**: an Azure object id, which may
 account from the one the person signs in with. RuleBeat reads that account's Azure role assignments
 with its own Reader credential and turns them into Scopes.
 
-- Active assignments and PIM-eligible ones both count, whether held directly or through a group.
+- Active assignments and PIM-eligible ones both count, whether held directly or through a group. A
+  tenant without Entra ID P2 or Entra ID Governance has no PIM, so only active assignments are read.
 - An assignment on a single resource gives that resource's resource group.
 - A role at the tenant root management group gives that management group. A mirror never gives
   Everything or the Directory.

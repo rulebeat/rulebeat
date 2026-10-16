@@ -19,14 +19,21 @@ const credential: TokenCredential = {
 const json = (body: unknown, init: ResponseInit = {}): Response =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' }, ...init });
 
-function fakeFetch(answer: (url: string) => Response | Promise<Response>) {
+/**
+ * A fake network. `languages` records the Accept-Language each request went out with, as Node's own `fetch`
+ * sends it: `*` when the caller set none (#314).
+ */
+function fakeFetch(answer: (url: string, language: string) => Response | Promise<Response>) {
   const urls: string[] = [];
-  const impl = (async (input: RequestInfo | URL) => {
+  const languages: string[] = [];
+  const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    const language = new Headers(init?.headers).get('accept-language') ?? '*';
     urls.push(url);
-    return answer(url);
+    languages.push(language);
+    return answer(url, language);
   }) as typeof fetch;
-  return { urls, impl };
+  return { urls, languages, impl };
 }
 
 const NO_WAIT = { maxAttempts: 2, backoffMs: [0] };
@@ -67,6 +74,45 @@ describe('RoleAssignmentsClient', () => {
       `https://management.azure.com${MG}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&$filter=assignedTo('${OBJECT_ID}')`,
     ]);
     expect(rows[0]).toMatchObject({ scope: MG, memberType: 'Group', principalType: null });
+  });
+
+  it('reads PIM eligibility from an endpoint that refuses the Accept-Language Node sends by default (#314)', async () => {
+    // ARM's eligibility endpoint answers `Accept-Language: *` with this 400; the other endpoints accept it.
+    const fake = fakeFetch((_url, language) => (language === '*'
+      ? json({ ErrorCode: 'CultureNotFoundException', Message: '* is an invalid culture identifier.' }, { status: 400 })
+      : json({ value: [row(MG, { memberType: 'Direct' })] })));
+    const rows = await clientOver(fake).listEligible(MG, OBJECT_ID);
+    expect(rows.map(r => r.scope)).toEqual([MG]);
+  });
+
+  it('sends a real Accept-Language on every read, never the default *', async () => {
+    const fake = fakeFetch(url => (url.includes('managementGroups?')
+      ? json({ value: [{ name: 'mg-example' }] })
+      : url.includes('/roleDefinitions/') ? json({ properties: { roleName: 'Reader' } }) : json({ value: [] })));
+    const client = clientOver(fake);
+    await client.listScopes();
+    await client.listActive(SUB, OBJECT_ID);
+    await client.listEligible(SUB, OBJECT_ID);
+    await client.roleName(`${SUB}/providers/Microsoft.Authorization/roleDefinitions/r1`);
+
+    expect(fake.languages).toHaveLength(4);
+    for (const language of fake.languages) expect(language).not.toBe('*');
+  });
+
+  it('reads no eligibility, rather than failing, in a tenant without Entra ID P2 (#314)', async () => {
+    const fake = fakeFetch(() => json(
+      { error: { code: 'AadPremiumLicenseRequired', message: 'The tenant needs to have Microsoft Entra ID P2 or Microsoft Entra ID Governance license.' } },
+      { status: 400 },
+    ));
+    expect(await clientOver(fake).listEligible(SUB, OBJECT_ID)).toEqual([]);
+  });
+
+  it('still fails an eligibility read for any other 400, and an active read for the licence one', async () => {
+    const other = fakeFetch(() => json({ error: { code: 'InvalidPrincipalId', message: 'Principal ID must be a GUID.' } }, { status: 400 }));
+    await expect(clientOver(other).listEligible(SUB, OBJECT_ID)).rejects.toThrow(/400/);
+
+    const licence = fakeFetch(() => json({ error: { code: 'AadPremiumLicenseRequired', message: 'licence' } }, { status: 400 }));
+    await expect(clientOver(licence).listActive(SUB, OBJECT_ID)).rejects.toThrow(/400/);
   });
 
   it('follows nextLink until there is none and returns every page', async () => {
