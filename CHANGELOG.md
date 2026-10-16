@@ -6,6 +6,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-16
+
 ### Fixed
 
 - Mirrored from Azure reads a Linked account on a live tenant. Every Preview and Refresh failed with "The role assignments could not be read from Azure", because Azure's PIM eligibility read refused the `Accept-Language: *` header Node sends by default. A tenant without Entra ID P2 or Entra ID Governance, which cannot have PIM-eligible roles, now mirrors its active role assignments instead of failing.
@@ -472,7 +474,8 @@ First public release.
   role assignment. It reads with a Reader credential you provide, and it never changes anything in
   your tenant.
 
-[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/rulebeat/rulebeat/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/rulebeat/rulebeat/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/rulebeat/rulebeat/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/rulebeat/rulebeat/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/rulebeat/rulebeat/compare/v0.10.1...v0.11.0
