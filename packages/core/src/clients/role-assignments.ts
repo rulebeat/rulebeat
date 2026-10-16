@@ -65,6 +65,29 @@ interface RawAssignment {
   };
 }
 
+/** The code ARM answers a PIM read with in a tenant that has no Entra ID P2 or Governance licence. */
+const NO_PIM_LICENCE = 'AadPremiumLicenseRequired';
+
+/** A read ARM refused, with its status and, when the body names one, ARM's error code. */
+class ArmReadError extends Error {
+  constructor(public readonly status: number, public readonly code: string | null, body: string) {
+    super(`ARM ${status}: ${body.slice(0, 200)}`);
+    this.name = 'ArmReadError';
+  }
+}
+
+async function armReadError(res: Response): Promise<ArmReadError> {
+  const body = await res.text();
+  let code: string | null = null;
+  try {
+    const parsed = JSON.parse(body) as { error?: { code?: unknown } };
+    if (typeof parsed.error?.code === 'string') code = parsed.error.code;
+  } catch {
+    // Not JSON: the status and the text are all there is.
+  }
+  return new ArmReadError(res.status, code, body);
+}
+
 function retryAfterMs(res: Response): number {
   const header = res.headers.get('retry-after');
   if (!header) return DEFAULT_RETRY_AFTER_MS;
@@ -104,7 +127,9 @@ export class RoleAssignmentsClient {
   private async get(url: string, token: string): Promise<Response> {
     const res = await fetchWithRetry(
       url,
-      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
+      // Node's fetch sends `Accept-Language: *` when none is set, and the PIM eligibility endpoint answers
+      // that with 400 CultureNotFoundException (#314), so every read names a language.
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Accept-Language': 'en-US' } },
       { ...this.retry, ...(this.fetchImpl ? { fetchImpl: this.fetchImpl } : {}) },
     );
     if (res.status === 429) throw new RoleAssignmentsThrottledError(retryAfterMs(res));
@@ -113,7 +138,7 @@ export class RoleAssignmentsClient {
 
   private async getJson<T>(url: string, token: string): Promise<T> {
     const res = await this.get(url, token);
-    if (!res.ok) throw new Error(`ARM ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) throw await armReadError(res);
     return res.json() as Promise<T>;
   }
 
@@ -168,11 +193,20 @@ export class RoleAssignmentsClient {
     );
   }
 
-  /** The PIM eligibility schedule instances that apply to the account at `scope`. */
+  /**
+   * The PIM eligibility schedule instances that apply to the account at `scope`. A tenant without Entra ID P2
+   * (or Governance) has no PIM, and ARM answers it with 400 `AadPremiumLicenseRequired` (#314): that is no
+   * eligibility, not a failed read. Every other failure still throws.
+   */
   async listEligible(scope: string, objectId: string): Promise<ArmRoleAssignment[]> {
-    return this.assignments(
-      `${ARM}${scope}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=${ELIGIBILITY_API_VERSION}&${this.filterFor(objectId)}`,
-    );
+    try {
+      return await this.assignments(
+        `${ARM}${scope}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=${ELIGIBILITY_API_VERSION}&${this.filterFor(objectId)}`,
+      );
+    } catch (err) {
+      if (err instanceof ArmReadError && err.status === 400 && err.code === NO_PIM_LICENCE) return [];
+      throw err;
+    }
   }
 
   /** The display name of a role definition, or null when it no longer exists (a deleted custom role). */
