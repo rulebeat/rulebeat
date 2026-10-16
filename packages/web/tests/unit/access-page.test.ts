@@ -984,6 +984,12 @@ describe('the management groups card (#273)', () => {
     expect(html).not.toContain('failed');
   });
 
+  it('labels a management group node "Management group", not just "Group"', () => {
+    const html = render({ nodes, status: LOADED });
+    expect(html).toMatch(/<span class="label-grid shrink-0">Management group<\/span>/);
+    expect(html).not.toMatch(/<span class="label-grid shrink-0">Group<\/span>/);
+  });
+
   it('says the refresh failed, when, and that the tree shown is the last one that loaded', () => {
     const html = render({ nodes, status: FAILED });
     expect(html).toContain('The last refresh failed');

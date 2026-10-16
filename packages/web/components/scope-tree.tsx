@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 const KIND_LABELS: Record<ScopeTreeKind, string> = {
   directory: 'Directory',
-  managementGroup: 'Group',
+  managementGroup: 'Management group',
   subscription: 'Subscription',
   resourceGroup: 'Resource group',
 };

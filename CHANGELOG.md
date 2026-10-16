@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Fixed
 
 - Mirrored from Azure reads a Linked account on a live tenant. Every Preview and Refresh failed with "The role assignments could not be read from Azure", because Azure's PIM eligibility read refused the `Accept-Language: *` header Node sends by default. A tenant without Entra ID P2 or Entra ID Governance, which cannot have PIM-eligible roles, now mirrors its active role assignments instead of failing.
+- The scope tree on the Access page, the Management groups card and the rule form labels a management group "Management group", not "Group".
 
 ## [0.13.0] - 2026-10-16
 
