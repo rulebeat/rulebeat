@@ -123,7 +123,7 @@ Two tests hold the twins together. `tests/unit/schema-twins.test.ts` compares th
 
 ## The trend record
 
-The contract for Trend history ([ADR 0012](../decisions/0012-trend-history-records-the-inputs-to-posture.md)). Every rule here was written to keep the record equal to live state at every commit.
+The contract for Trend history ([ADR 0014](../decisions/0014-trend-history-records-the-inputs-to-posture.md)). Every rule here was written to keep the record equal to live state at every commit.
 
 **Every posture input writes through the trend-record module, in its own transaction.** A scan sync, a suppression, an expiry, a rule write, a placement change and a rekey each call it inside the transaction of the action that caused them. Nothing else inserts into the trend tables; the writer allowlist test fails any other file that does.
 

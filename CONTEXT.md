@@ -138,7 +138,7 @@ _Avoid_: diff, delta
 What RuleBeat keeps so the dashboard can draw a trend for any filter and any Access: the inputs to
 posture on each day, not the posture itself. A trend is worked out from it when it is read, so it
 follows today's formula and today's labels. Nothing in it is backfilled, and a day is never
-rewritten. ADR 0012 decides what it holds.
+rewritten. ADR 0014 decides what it holds.
 _Avoid_: trend record, posture history, history table
 
 **Recorded day**:

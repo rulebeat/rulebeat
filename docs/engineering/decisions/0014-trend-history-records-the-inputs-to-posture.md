@@ -1,4 +1,4 @@
-# ADR 0012: Trend history records the inputs to posture, not posture
+# ADR 0014: Trend history records the inputs to posture, not posture
 
 Status: accepted, 2026-10-23 (map #320). Rests on formula v3 and the filter model. ADR 0008's
 snapshots and the findings lifecycle stand.
