@@ -60,6 +60,8 @@ The Admin picks Scopes by hand: **Everything**, or **Selected Scopes** on the pe
 Selected Scopes needs at least one Scope. Manual access is the only way to give Everything or the
 Directory.
 
+To set up a dedicated person for a wall screen, see [A screen on the wall](dashboards.md#a-screen-on-the-wall).
+
 Selected Scopes lists what is chosen, each with a remove control, above one tree to tick more in: the
 Directory, then each management group with the groups and subscriptions under it, and a subscription's
 resource groups once it is opened. Each level opens and closes on its own, and the search finds a
