@@ -131,7 +131,6 @@ _Avoid_: overrides, session filters, local filters
 **Effective filters**:
 The saved filters, then the filter changes, then a widget's override, each replacing the one before
 and never intersecting with it. Every number, widget link and Duplicate uses them.
-_Avoid_: current filters, applied filters
 
 ## Run History
 
