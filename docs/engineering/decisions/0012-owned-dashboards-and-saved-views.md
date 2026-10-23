@@ -1,6 +1,8 @@
 # ADR 0012: Dashboards and saved views have an Owner and are Personal or Shared
 
-Status: accepted, 2026-10-23.
+Status: accepted, 2026-10-23. Supersedes the visibility part of ADR 0006 ("a saved view is shared with
+everyone on the install, the way dashboards are"): a saved view is now Personal or Shared, and has an
+Owner. ADR 0006's model of findings, rows and views stands.
 
 Builds on ADR 0010 (Access is Roles at Scopes), ADR 0002 (the writable shared Demo) and the
 curation-on-Everything principle of ADR 0011 (only an Admin or an Editor on Everything changes what
