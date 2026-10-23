@@ -75,6 +75,17 @@ its rows, and the same resource found by another rule is a separate finding. A f
 a Row counts as changed. Every rule kind and every query backend follows this.
 _Avoid_: issue, violation, alert
 
+**Finding age**:
+The time from the date a finding was first seen to now, in whole UTC days. A reactivated finding
+keeps its first-seen date, so reopening one never resets its age.
+_Avoid_: time open, days open
+
+**New and Fixed (in a window)**:
+New is a finding that is open and was first seen in the window. Fixed is a finding that was fixed
+in the window. Each is the same list Scans shows with status=new and status=fixed over that
+window.
+_Avoid_: added and resolved (Added is a Compare word for a finding in only the newer snapshot)
+
 **Row**:
 One line a rule's query returned. A finding has one or more; views group and filter by rows, but a
 group counts findings and the distinct resources they are on, never rows. The screen does not use
@@ -86,8 +97,21 @@ _Avoid_: result (ambiguous), record, evidence
 What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
 from severity, category and query backend. A Logs rule is always an Activity rule. A custom rule
 is a Problem rule unless someone sets it to Advisory, and it can be switched back. A built-in
-rule's kind is set by RuleBeat with its version and cannot be changed on an install.
+rule's kind is set by RuleBeat with its version and cannot be changed on an install. A dashboard
+number counts one kind: it never adds the findings of different kinds into one figure.
 _Avoid_: rule type (that is builtin, community or custom), mode
+
+**Checked**:
+A rule that is passing or failing. A Problem rule is always Checked once it has run; an Activity
+rule is checked or unknown, never passing, since what it reports is activity and not a state that
+can be right.
+_Avoid_: evaluated, scored (that is what posture does with Problem rules only)
+
+**Outcome**:
+What a rule's latest run says about it: passing, failing or unknown. Only an enabled rule has an
+outcome. An outcome belongs to a rule at a Scope, not to the rule alone: the same rule can pass in
+one subscription and fail in another.
+_Avoid_: result (ambiguous), status (that is a finding's Open, New or Fixed)
 
 **Problem rule**:
 A rule whose every result is something wrong with a resource. Its findings are failures and are
@@ -117,6 +141,49 @@ _Avoid_: report, perspective, group column
 **Saved view**:
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
+
+## Dashboards
+
+**Dashboard**:
+A page of widgets that answers five questions: are we OK and improving, where is it worst, are we
+keeping up, can I trust these numbers, and what should I know that is not a failure. It is never a
+second findings explorer: the list of findings is on Scans, and a dashboard opens it.
+_Avoid_: report, overview (that is one dashboard's name)
+
+**Widget**:
+A count or summary of a list Scans can show (Results, Advisories, Activity, Rules or Run History),
+or a labelled trend. Every count and summary is a link to that list.
+_Avoid_: tile, card, panel
+
+**Definition line**:
+The five sentences saying what a widget counts: which rule kinds, out of what, over which window
+and under which filters.
+_Avoid_: tooltip, caption, description
+
+**Partial and Stale**:
+The dashboard's two markers on a widget. Partial means some rules in what the widget covers are
+unknown. Stale means a category the widget covers was not scanned within Stale after. Neither is a
+scan's coverage "partial", which is a fact about one scan and is shown in Run History.
+_Avoid_: incomplete, outdated
+
+**Set on this widget**:
+A widget's own value for a filter level, which replaces the dashboard's value for that level and
+never combines with it.
+_Avoid_: scoped, override
+
+**Retired widget**:
+A widget type the catalogue no longer offers. It keeps its stored row and shows no number. A
+Retired rule keeps running; the word is shared because both mean RuleBeat no longer offers it and
+leaves it where it is.
+_Avoid_: removed widget, deleted widget
+
+**Trend point**:
+One recorded day's value of a measure. It is never a link, because the list it counted is not
+kept.
+_Avoid_: snapshot (that is a past scan's findings, in Run History)
+
+Filter-model terms (the levels a filter is set at, and what a viewer may change) are defined with
+the filter model's own spec, not here.
 
 ## Run History
 
