@@ -92,8 +92,8 @@ the filter are always rule tags.
 ### Limits a widget will tell you about
 
 Trend needs snapshots at the right grain, so under a tag, severity or rule filter, or with Scope
-picks, it says a trend is not available rather than
-drawing a misleading blended line ([`posture.md`](posture.md#snapshots-and-trend)); the
+picks other than a single subscription, it says a trend is not available rather than drawing a
+misleading blended line ([`posture.md`](posture.md#snapshots-and-trend)); the
 open-findings delta keeps working under every filter. A failed data request shows "Couldn't load
 this widget" with a Retry, while genuinely absent data shows an empty state, so a broken dashboard
 cannot pass for a clean tenant. And no enabled rules in scope shows an empty posture rather than 0%
