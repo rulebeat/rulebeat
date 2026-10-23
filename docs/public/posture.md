@@ -79,6 +79,25 @@ blends rows sharing the current formula version. The open-findings delta and the
 come from live finding timestamps instead, never from subtracting two snapshots, so they survive
 every filter and always agree with the Scans page.
 
+## Under filters
+
+Posture under filters is part of formula v3. With filters set on a dashboard, a widget or Scans, it
+counts the enabled Problem rules that overlap every picked dimension, after the filters have been
+narrowed to your Access.
+
+- **Scope** overlaps by the rule's reach at its level. A rule overlaps a picked Scope when the
+  places it looks at and the Scope meet. Microsoft Graph rules overlap only the Directory.
+- **Severity** overlaps when it is the rule's own severity or one of its Graph band severities. A
+  severity filter is any-of only.
+- Category, Rule source, Rule tags and Rule must each match the rule.
+- **An enabled Problem rule with an open finding you can see under the filters is always counted,**
+  and is failing, whatever the overlap says.
+- **A disabled rule's findings still count in finding counts but never in posture.** Finding counts
+  and failing rules can therefore differ: a count of findings may include a disabled rule's, and the
+  failing rules never do.
+- A rule scoped to a management group RuleBeat's tree does not know counts only where it has
+  findings.
+
 ## Reading it honestly
 
 Put the Overall Posture ring next to a Scan Coverage widget, because the ring alone looks fine the

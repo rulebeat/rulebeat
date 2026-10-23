@@ -74,6 +74,15 @@ value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backsla
 including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
 and a filter that keeps nothing.
 
+Subscription and resource group are no longer filters of their own. Their column funnels write Scope
+picks instead, and the resource group funnel lists resource group and subscription pairs. The **Scope**
+picker narrows by management group, subscription, resource group or the Directory, matched the way
+Access is, so it never shows more than you hold ([`access.md`](access.md#the-scope-filter-is-not-access)).
+The **Rule source** control narrows by where the rule comes from: each Pack, Community or Custom. A
+chip such as **First seen 31 to 90 days ago** narrows by the age of a finding. It rolls with the
+clock and is separate from the First seen funnel, which takes dates. Old links with `subscription=`
+and `rg=` still open, as Scope picks.
+
 ### Group by
 
 The Group by button in the By resource toolbar groups the list by one or more fields, the same
@@ -116,6 +125,9 @@ columns and filters by name, so a view that mentions a returned field no finding
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
 names of the fields that changed, never their values.
+
+Saved views were converted to Scope picks on upgrade, so a view that filtered by subscription or
+resource group now holds the matching Scope picks.
 
 ## Disable, clear findings, or suppress
 
