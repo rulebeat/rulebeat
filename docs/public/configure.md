@@ -267,3 +267,17 @@ alongside the URL ([Running with no persistent volume](#running-with-no-persiste
 older runs pruned as new ones complete. The findings lifecycle is unaffected: first-seen, last-seen
 and fixed state live in their own table, so pruning run records never changes the posture number or a
 finding's age.
+
+## Trend history retention
+
+The trend record (what the dashboard trend is worked out from) and the lifecycle finding events
+(created, reactivated, resolved and occurred) are kept 365 days. The row events (a row added to a
+finding, a row removed from it) are kept 180 days. For each part of the record, the newest entry at
+or before the cutoff is kept, so a window that opens at the cutoff still has a state to start from.
+
+There is no setting for any of this. The trim runs in the daily job, so an install with every
+scheduler off keeps the whole record until one runs.
+
+Switching backends, from SQLite to PostgreSQL or back, starts a new record: there is no data
+migration between them ([Database backend](#database-backend)). The trend then starts on the first
+day the new database was recording.
