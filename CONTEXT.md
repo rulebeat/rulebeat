@@ -139,7 +139,7 @@ What RuleBeat keeps so the dashboard can draw a trend for any filter and any Acc
 posture on each day, not the posture itself. A trend is worked out from it when it is read, so it
 follows today's formula and today's labels. Nothing in it is backfilled, and a day is never
 rewritten. ADR 0014 decides what it holds.
-_Avoid_: trend record, posture history, history table
+_Avoid_: posture history, history table
 
 **Recorded day**:
 A UTC day RuleBeat was recording. A day without one is a gap, and the trend shows it as a gap
@@ -155,7 +155,7 @@ _Avoid_: data point, snapshot (that is one scan's findings), posture snapshot
 **Posture snapshot**:
 The daily per-category and per-subscription total RuleBeat wrote before Trend history existed. It
 is still written, and is now read only to bridge the days before recording began.
-_Avoid_: trend record, trend history, snapshot (that is one scan's findings)
+_Avoid_: trend record
 
 ## Access
 

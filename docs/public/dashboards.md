@@ -6,9 +6,9 @@ The widget catalog, filters and date windows. If the question is what "7 of 12" 
 [`posture.md`](posture.md) first.
 
 Every widget reads live state from the findings table plus, for trend lines, recorded trend history.
-The daily posture snapshots only bridge the days before that history began. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
-dashboard swing. Suppressed findings are excluded everywhere on a dashboard; the Scans page is where
-you see them.
+The daily posture snapshots only bridge the days before that history began. No widget reads the last
+scan's result blob, so a narrow scheduled run cannot make a dashboard swing. Suppressed findings are excluded everywhere on a dashboard; the Scans page is where you
+see them.
 
 ## The widget catalog
 
