@@ -5,8 +5,8 @@
 The widget catalog, filters and date windows. If the question is what "7 of 12" means, read
 [`posture.md`](posture.md) first.
 
-Every widget reads live state from the findings table plus, for trend lines, the daily posture
-snapshots. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
+Every widget reads live state from the findings table plus, for trend lines, the recorded trend
+history; the daily posture snapshots only bridge the days before that history began. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
 dashboard swing. Suppressed findings are excluded everywhere on a dashboard; the Scans page is where
 you see them.
 
@@ -18,7 +18,7 @@ you see them.
 |---|---|
 | **Stat Card** | One number from a metric you pick: posture, open findings, critical, high, rules scanned, categories healthy, new or fixed. Carries the window's delta and any unknown count. |
 | **Posture Ring** | The "X of Y passing" gauge for one category or overall, with "N not yet proven" underneath. |
-| **Trend Chart** | Posture % over time, one series per category. Needs stored history. |
+| **Trend Chart** | Posture % over time, one series per category. |
 | **Top Violating Rules** | The rules producing the most open findings. |
 | **Category Scorecard** | One row per category: passing, open findings, delta. |
 | **Recent Findings** | The newest findings, with category, severity and first-seen date. |
@@ -49,13 +49,21 @@ The date window is a rolling preset (24 hours, 7 or 30 days) or a custom range. 
 "7 days" rather than two dates, so it keeps rolling. It drives anything that says new, fixed or
 delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not change what counts as open.
 
-Three limits a widget will tell you about. Trend needs snapshots at the right grain, so under a
-resource group, tag, severity or rule filter, or with two or more subscriptions selected, it says a
-trend is not available rather than drawing a misleading blended line
-([`posture.md`](posture.md#snapshots-and-trend)); the open-findings delta keeps working under every
-filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
-data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled
-rules in scope shows an empty posture rather than 0% or 100%.
+The trend serves every filter above, including a resource group, a tag, a severity, a rule and two or
+more subscriptions, and it shows only what your Access lets you see
+([`posture.md`](posture.md#trend)). A few things a widget will tell you about:
+
+- **Gaps and no-scan days.** A day RuleBeat was not recording is a gap, and nothing is drawn across
+  it. A recorded day on which no scan overlapped what the widget looks at is marked as a no-scan day.
+- **"History at this level starts on `<date>`".** The days before recording began are bridged only for
+  Everything with a category filter and for one whole subscription. At any other level the trend
+  starts on its first recorded day and says so.
+- **No baseline.** When there is no recorded day on or before the start of the window, the posture
+  ring and the stat card say there is no baseline to compare with instead of showing a delta.
+
+A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent data
+shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled rules in
+scope shows an empty posture rather than 0% or 100%.
 
 ## Managing dashboards
 

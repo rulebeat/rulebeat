@@ -40,8 +40,9 @@ code so every claim here can be checked.
  save scan + sync findings (lib/db/findings.ts)
    |  upsert into the findings table by fingerprint; resolve only on success
    v
- posture snapshots refreshed for the categories the sync touched (lib/db/snapshots.ts),
- after the sync commits; the daily snapshot keeps the trend
+ trend history written in the same transaction as the sync, so a scan that cannot record fails;
+ the daily posture snapshots are still refreshed for the categories the sync touched
+ (lib/db/snapshots.ts), after the sync commits
 ```
 
 Every Azure call uses one identity, resolved in one place (`packages/web/lib/azure-credential.ts`):
