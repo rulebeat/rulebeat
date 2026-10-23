@@ -1,8 +1,10 @@
 # ADR 0012: Dashboards and saved views have an Owner and are Personal or Shared
 
-Status: accepted, 2026-10-23 (map #320). Builds on ADR 0010 (access is roles at scopes), ADR 0002
-(the writable, shared Demo) and the principle of ADR 0011 that what the whole install shares is
-curated on Everything.
+Status: accepted, 2026-10-23 (map #320). Supersedes the sharing part of
+[ADR 0006](0006-findings-keep-rows-views-arrange-them.md) ("a saved view is shared with everyone on
+the install, the way dashboards are"): a saved view is now Personal or Shared, and so is a
+dashboard. Builds on ADR 0010 (access is roles at scopes), ADR 0002 (the writable, shared Demo) and
+the principle of ADR 0011 that what the whole install shares is curated on Everything.
 
 ## Decision
 
