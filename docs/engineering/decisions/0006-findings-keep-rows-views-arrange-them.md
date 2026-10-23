@@ -2,7 +2,8 @@
 
 Status: accepted, 2026-10-08. Supersedes the grouping and Deadline parts of ADR 0005. Partly
 superseded by ADR 0007: the view engine runs on the server and rows live in their own table; the
-model of findings, rows and views stands.
+model of findings, rows and views stands. Partly superseded by ADR 0012: a saved view is Personal
+or Shared and has an Owner, not shared with everyone.
 
 ## Decision
 

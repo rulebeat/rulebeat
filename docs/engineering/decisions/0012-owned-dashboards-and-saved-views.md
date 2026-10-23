@@ -1,6 +1,7 @@
 # ADR 0012: Dashboards and saved views have an Owner and are Personal or Shared
 
-Status: accepted, 2026-10-23 (map #320).
+Status: accepted, 2026-10-23 (map #320). Partly supersedes ADR 0006: a saved view is no longer "shared
+with everyone on the install"; it is Personal or Shared, and has an Owner. The rest of ADR 0006 stands.
 
 Builds on ADR 0010 (Access is Roles at Scopes), ADR 0002 (the writable shared Demo) and the
 principle of ADR 0011 that what the whole install shares is curated on Everything.
@@ -23,10 +24,15 @@ any Shared item, takes it over and chooses the install default, which must be Sh
 automatic promotion: no dashboard becomes the default because it is the oldest, or because the
 default was deleted. After that the install may have no default.
 
-**Held-back values never leave the server.** A stored filter value outside the viewer's Access is
-sent as a count per place and dimension, never as the value. Saves merge the held-back values back
-in, under a revision check. A save never widens a filter: a new value outside the saver's Access is
-refused. Held-back values are dropped only by an explicit, audited action (Remove N values).
+**Held-back values never leave the server, are merged back on read and save under a revision check,
+never widen a filter, and are dropped only by an explicit audited action.** A stored filter value
+outside the viewer's Access is sent as a count per place and dimension, never as the value. On a
+read the server adds the held-back values back before it queries, so they match nothing for that
+viewer. On a save the held-back values are merged back in against the current revision, so a save
+from a stale revision is refused rather than overwriting them. A held-back value never widens what
+the viewer sees, even in a dimension whose values are all held back: that dimension shows "Outside
+your access" and matches nothing, not everything. A new value outside the saver's Access is refused
+on save. Held-back values are dropped only by an explicit, audited action (Remove N values).
 
 **Upgrade.** Every existing item becomes Shared. Saved views are owned by their creator when that
 person still exists. Dashboards have no owner, because none was recorded. The current default stays
