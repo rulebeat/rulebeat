@@ -64,7 +64,7 @@ when it was last seen, how many times, and the date it was fixed
 ([`how-it-works.md`](how-it-works.md)). A finding is marked fixed only when its rule's own run
 succeeded, so a query that broke never looks like a problem that went away. A run with any failed or
 capped rule is badged partial, and a rule that has not run or whose run failed is unknown and never
-counted as passing ([`posture.md`](posture.md)). A daily snapshot keeps the trend. A suppression is
+counted as passing ([`posture.md`](posture.md)). The trend comes from recorded trend history ([`posture.md`](posture.md#snapshots-and-trend)). A suppression is
 RuleBeat's equivalent of an exemption: per finding, with a required reason, an optional expiry and
 an audit log entry ([`suppressions.md`](suppressions.md)). Expiry is not a difference between the
 two.

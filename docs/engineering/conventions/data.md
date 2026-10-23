@@ -121,6 +121,36 @@ Two tests hold the twins together. `tests/unit/schema-twins.test.ts` compares th
 
 **The pg bootstrap is async behind `client.ts`'s exported `dbReady` promise.** Anything touching the database outside the exec seam (test helpers, raw assertions) must `await dbReady` first or it races schema creation and fails with "relation does not exist".
 
+## The trend record
+
+The contract for Trend history ([ADR 0012](../decisions/0012-trend-history-records-the-inputs-to-posture.md)). Every rule here was written to keep the record equal to live state at every commit.
+
+**Every posture input writes through the trend-record module, in its own transaction.** A scan sync, a suppression, an expiry, a rule write, a placement change and a rekey each call it inside the transaction of the action that caused them. Nothing else inserts into the trend tables; the writer allowlist test fails any other file that does.
+
+**The record lock is taken last, after any name lock, and is held only for reads, record inserts and `trend_state` updates.** On Postgres it is one advisory lock. Taking it before the rule name lock, or holding it across a scan's Azure calls or a sync's findings upserts, is how two writers deadlock or queue the whole app behind one of them.
+
+**A write is never dated before its key's newest row; `seq` breaks ties.** A key is a cell or a rule's facts. A clock step back, a restored clock or a late-finishing scan takes the newest row's date, not its own, so a point already read is never changed by a row inserted under it.
+
+**A deletion writes the rule's cells to 0.** It does not delete the rule's rows, so past days still count what was open. The rule's last labels are kept as a rule fact.
+
+**A failed write fails the action.** The record write is not wrapped in a `try { … } catch {}`; the scan, the suppression or the rule edit rolls back with it. A record that silently lagged would disagree with Scans for as long as nobody looked.
+
+**The startup and daily recounts write only the keys that differ.** They recount from live state, and a key that already equals its newest row writes nothing, so a recount on a healthy install adds no rows. A correction is dated when the recount runs; earlier days are never rewritten.
+
+**Retention keeps each key's newest row at or before the cutoff,** and the newest Recorded day marker older than the cutoff. Pruning to the cutoff alone would leave a key with no row for the first days inside the window and read them as 0.
+
+**`seq` is a real column in both twins.** It is the tiebreak for rows of one key on one day. Do not take it from `rowid` on SQLite or a `bigserial` only on pg; `schema-twins.test.ts` has no declared difference for it.
+
+**Every trend table date is TEXT, in both twins.** A Demo Reset shifts dates by rewriting text columns; a date column typed any other way is left where it was and the Demo's history stops ending today.
+
+**`record_version` and its equality table.** Every row carries the `record_version` it was written under. A change to what is stored bumps it and adds a row to the equality table saying which versions read the same. A reader marks a day recorded under a version that does not equal the current one, and never converts it. The same table is what lets the daily posture snapshots bridge the days before recording.
+
+**A rule-id rename covers the trend tables.** Cells and rule facts are keyed on the rule id, so a rename rewrites them with `findings`, `suppressions` and `scan_findings`. It is the one case where a past record changes. A rename that skips them strands the rule's history under an id nothing reads.
+
 ## Measuring the findings views
 
 **A change to how findings views are read is measured with `npm run bench:views`, not guessed.** A read that got slower or heavier shows up there before a user feels it; the codebase map says how to run it.
+
+## Measuring the trend
+
+<!-- The medians of `bench:trend` are filled in by the bench ticket. -->

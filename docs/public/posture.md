@@ -65,19 +65,42 @@ the shipped version, and the next scan may flag different resources.
 
 ## Snapshots and trend
 
-Counts are live; trend lines need history. Once a day, after a scan's findings are synced, RuleBeat
-writes a `posture_snapshots` row per category, plus one per subscription holding an active finding,
-with that day's passing / failing / unknown counts and the percentage, tagged with the formula
-version that produced it. Suppressed fingerprints are excluded there as they are live.
+Counts are live; the trend is worked out from **recorded trend history**. Every time something that
+posture depends on changes (a scan syncs, a finding is suppressed, a rule is edited, enabled or
+deleted), RuleBeat records the inputs: how many open, unsuppressed findings each rule has in each
+place and severity, and the facts about each rule. The trend is computed from those when you open
+the dashboard, with today's formula, today's labels and your Access, so it works under every
+filter and for every person, and a person who holds one subscription sees a trend of that
+subscription. Points are daily and labelled UTC.
 
-So a trend works for a category, or a category narrowed to one subscription. Under a resource group,
-tag, severity or rule filter, or with two or more subscriptions selected, the widget reports that a
-trend is not available rather than drawing one: per-subscription counts cannot be added into an
-honest blended line, since a rule can pass in one subscription and fail in another the same day.
-"vs baseline" compares today against the snapshot at or before the start of your window and only
-blends rows sharing the current formula version. The open-findings delta and the New vs Fixed widget
-come from live finding timestamps instead, never from subtracting two snapshots, so they survive
-every filter and always agree with the Scans page.
+What that means when you read it:
+
+- **Past points regroup under today's category.** Move a rule to another category and its earlier
+  days move with it. A kind switch between Problem and Advisory steps the line on the day it was
+  made, and earlier days are not rewritten.
+- **The chart always ends today.** A custom window moves only the comparison, not the end of the
+  line. A custom window that ends before today compares its end day, worded `<to> vs <baseline date>`.
+- **The baseline is the newest recorded day on or before the window's start.** If nothing was
+  recorded that early, the ring and the stat card say there is no baseline rather than comparing
+  against nothing.
+- **Gaps and no-scan days are marked.** A day RuleBeat was not recording is a gap and the line
+  breaks there. A recorded day on which no scan overlapped your filter is marked as such, because
+  its numbers are the last ones known, not new ones.
+- **Days before recording began are bridged from the daily snapshots** RuleBeat wrote before trend
+  history existed (one total per category and one per subscription, tagged with the formula
+  version that produced it). The bridge covers two views: Everything with a category filter, and
+  one whole subscription. Every other level, such as a resource group, a tag, a severity, a rule, two
+  or more subscriptions or a scoped person's Access, says "History at this level starts on <date>"
+  and begins on its first recorded day.
+- **Clearing a rule's findings keeps them in past trend days.** The record holds what was open on
+  each day, so the line does not change, while New vs Fixed loses those events because it is read
+  from the finding events, which clearing deletes.
+- **Recorded coverage keeps the categories as scanned.** A moved rule's earlier scans do not mark
+  its new category as covered on days before the move.
+
+The open-findings delta and the New vs Fixed widget come from live finding timestamps, never from
+subtracting two points, so they agree with the Scans page. How long the record is kept is under
+[Trend history retention](configure.md#trend-history-retention).
 
 ## Reading it honestly
 

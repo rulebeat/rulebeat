@@ -125,12 +125,37 @@ The findings one past scan returned, as that scan saw them: which findings, with
 severity, title, resource and row count each had then. A snapshot never changes after its scan.
 It keeps no rows and has no status; a finding's rows and status belong to the finding as it is
 now. A snapshot is not a trend point on the dashboard.
-_Avoid_: scan result, history entry, posture snapshot (that is the dashboard's daily trend record)
+_Avoid_: scan result, history entry, posture snapshot (that is a separate thing: see Posture snapshot)
 
 **Compare**:
 Two snapshots of one category set side by side. A finding in only the newer one is added, in only
 the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
 _Avoid_: diff, delta
+
+## Trend history
+
+**Trend history**:
+What RuleBeat keeps so the dashboard can draw a trend for any filter and any Access: the inputs to
+posture on each day, not the posture itself. A trend is worked out from it when it is read, so it
+follows today's formula and today's labels. Nothing in it is backfilled, and a day is never
+rewritten. ADR 0012 decides what it holds.
+_Avoid_: trend record, posture history, history table
+
+**Recorded day**:
+A UTC day RuleBeat was recording. A day without one is a gap, and the trend shows it as a gap
+rather than drawing a line across it.
+_Avoid_: snapshot day, data point
+
+**Trend point**:
+One day's numbers, worked out now with today's formula, today's labels and the viewer's Access. It
+is never read back from a stored percentage, so two people with different Access see different
+points for the same day.
+_Avoid_: data point, snapshot (that is one scan's findings), posture snapshot
+
+**Posture snapshot**:
+The daily per-category and per-subscription total RuleBeat wrote before Trend history existed. It
+is still written, and is now read only to bridge the days before recording began.
+_Avoid_: trend record, trend history, snapshot (that is one scan's findings)
 
 ## Access
 

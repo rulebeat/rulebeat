@@ -179,9 +179,11 @@
 | `packages/web/app/(app)/rules/new/page.tsx` | New rule form. `?copyFrom=<id>` pre-fills it (duplicate-as-draft) |
 | `packages/web/lib/schema-cache.ts` | Schema cache read/write + `COMMON_RESOURCE_TYPES`. Backed by the `schema_cache` and `resource_types_cache` tables (7d / 1d TTL), not files; the old `data/schemas/` JSON is imported once by `migrate.ts` |
 | `packages/web/lib/db/snapshots.ts` | `upsertDailySnapshot`, `getSnapshots`/`getBaselineSnapshots`, `backfillSnapshots`. See the Dashboards architecture note in `CLAUDE.md` |
+| `packages/web/lib/db/trend-record.ts` | The only writer of the trend tables (ADR 0012): the cell and rule-fact change rows and the Recorded day markers, written inside the caller's transaction. Holds the record lock key (taken last, after any name lock), the dating rule (never before a key's newest row), the startup and daily recounts that write only keys that differ, and the markers |
+| `packages/web/lib/trend-history.ts` | `getTrend()` and `getTrendBaseline()`: the trend worked out on read from the record with today's formula, labels, management group tree and the viewer's `Access`, with gaps, no-scan days and the bridge from `posture_snapshots` |
 | `packages/web/lib/date-window.ts` | `DateWindow` type + `resolveDateWindow()`, which resolves at query time, not save time |
 | `packages/web/lib/dashboard-filters.ts` | `WidgetFilters` type + `mergeWidgetFilters()`, where per-widget replaces and never intersects |
-| `packages/web/lib/dashboard-data.ts` | `queryActiveFindings`/`computeWidgetSummary`. See the Dashboards trend-limits note in `CLAUDE.md` |
+| `packages/web/lib/dashboard-data.ts` | `queryActiveFindings`/`computeWidgetSummary`. The trend itself is not here: it is read by `lib/trend-history.ts`, from the record `lib/db/trend-record.ts` writes (ADR 0012) |
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
 | `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
