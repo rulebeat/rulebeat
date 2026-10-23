@@ -118,6 +118,19 @@ _Avoid_: report, perspective, group column
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
 
+## Dashboards
+
+**Present**:
+Showing a dashboard read-only and full screen, refreshing on its own, as a signed-in person under
+their own Access. It is the same dashboard that person would see in the console, never a separate
+copy or a link anyone can open.
+_Avoid_: kiosk mode, TV mode, wall mode, screen account, embed
+
+**Stamp**:
+The "As seen by" band on Present and on paper that names the person, their Access, the filters they
+hold, the time and the unavailable widgets.
+_Avoid_: watermark, footer, banner
+
 ## Run History
 
 **Snapshot**:

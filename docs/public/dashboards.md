@@ -2,8 +2,8 @@
 
 ![Dashboard with the Overall Posture ring, category scorecard and trend](img/dashboard.png)
 
-The widget catalog, filters and date windows. If the question is what "7 of 12" means, read
-[`posture.md`](posture.md) first.
+The widget catalog, filters, date windows, and how to present or print a dashboard. If the question is
+what "7 of 12" means, read [`posture.md`](posture.md) first.
 
 Every widget reads live state from the findings table plus, for trend lines, the daily posture
 snapshots. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
@@ -56,6 +56,92 @@ trend is not available rather than drawing a misleading blended line
 filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
 data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled
 rules in scope shows an empty posture rather than 0% or 100%.
+
+## Present and print
+
+A dashboard leaves your own screen in two ways, Present and paper. Both show what you can see under
+your own [Access](access.md), never more, and both carry one **stamp**: an "As seen by" band that says
+whose view it is.
+
+### Present
+
+Present shows a dashboard read-only and full screen, for a monitor on a wall or a screen in a meeting.
+Nothing on it can be edited, and every number is still a link to Scans with the same filters applied.
+Its address is `/dashboards/<id>/present`.
+
+Present refreshes on its own, layout and numbers together. It uses the dashboard's refresh interval,
+or every 5 minutes when that is Off. A `?refresh=` value in the address overrides it for that screen
+only: `30s`, `1m`, `5m`, `15m`, `30m` or `1h`. Any other value falls back to the dashboard's interval.
+
+### The stamp
+
+The stamp has six cells.
+
+| Cell | Shows |
+|---|---|
+| **As seen by** | The person the dashboard is shown to. |
+| **Access** | That person's Access as counts by kind (for example subscriptions and resource groups), or Everything. |
+| **Filters** | The filters in effect for this person. Values they do not hold are not shown, only a count: "+N outside your access". On screen a long list is cut short with "and N more". |
+| **Updated** | When the numbers were last read. |
+| **Widgets** | How many widgets are unavailable, so a dashboard with a failed widget cannot pass for a clean one. |
+| **Refreshes every** | The interval Present is using. |
+
+The same stamp is printed on paper.
+
+### The Everything notice
+
+An Admin, or anyone whose Access is Everything, sees a notice when presenting, because Present shows
+everything they can see. It does not block the screen. If the screen is for other people, present as a
+person with narrower Access instead ([A screen on the wall](#a-screen-on-the-wall)). The notice does
+not appear in the Demo.
+
+### When Present cannot show a dashboard
+
+Present never goes blank without saying why.
+
+- **Signed out.** The session ended, so Present shows a sign-in screen. After signing in you return to
+  the dashboard you asked for.
+- **Forbidden.** The person's Access no longer allows the dashboard, or the dashboard is no longer
+  shared with them, and Present says so.
+- **Unavailable.** The dashboard cannot be loaded, for example because it was deleted, and Present
+  says so.
+- **Not updated since.** If a refresh fails, Present keeps the last numbers it has and shows "Not
+  updated since" with the time of the last good read, rather than showing stale numbers as current.
+
+### Print
+
+Use the Print action on a dashboard, or Ctrl/Cmd+P. The page is laid out for paper and carries the
+stamp. Landscape fits the grid best. Safari does not pick it for you, so choose landscape yourself in
+the print dialog.
+
+One exception: when you print from the browser's own Print menu rather than the Print action, the
+browser can scale charts differently from the rest of the page. If a chart looks off, use the Print
+action instead.
+
+### A screen on the wall
+
+A wall screen is a dedicated person, signed in on a browser that stays open. It sees only what that
+person's Access allows.
+
+1. Invite a dedicated person as a Viewer with Manual access to only that team's Scopes. How to give
+   Manual access is in [Manual access](access.md#manual-access); it is not repeated here.
+2. Sign that person in on the screen, however your install's sign-in policy allows
+   ([`configure.md`](configure.md#local-sign-in-and-the-first-admin)).
+3. Open the dashboard in Present.
+
+The session lasts while the screen keeps refreshing: each refresh renews it, so a screen left running
+stays signed in. If the screen stops refreshing for longer than a session lasts
+([`security.md`](security.md#authentication-and-sessions)), it shows the signed-out screen and someone
+must sign in again.
+
+There is no link-only or embed access. Every screen is a signed-in person under their own Access, and
+RuleBeat refuses to be shown inside another page.
+
+Present can't put the browser in full screen by itself after a reload. On a dedicated screen, start the
+browser in kiosk mode: `--kiosk` for Chrome or Firefox.
+
+A touch screen should run in kiosk mode. Without it, a stray tap leaves Present, and only someone with
+a keyboard can undo it.
 
 ## Managing dashboards
 
