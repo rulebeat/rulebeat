@@ -48,7 +48,8 @@ read-time mapping keeps the stored row as the record of what the person placed, 
 ## Consequences
 
 - Every widget type ever stored needs an entry in the mapping table, or it falls to Unavailable.
-  A test per stored type proves a stored row renders and saves back unchanged.
+  A test per stored type proves a stored row renders in the form the table gives it. A test per
+  retired and unknown type proves its row is saved unchanged.
 - A dashboard nobody saves keeps showing the Replaced note. That is deliberate: the note is
   the prompt to save.
 - The Retired frame and the Unavailable frame keep the widget in place, so removing one is a

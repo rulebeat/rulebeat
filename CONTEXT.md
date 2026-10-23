@@ -102,9 +102,8 @@ number counts one kind: it never adds the findings of different kinds into one f
 _Avoid_: rule type (that is builtin, community or custom), mode
 
 **Checked**:
-A rule that is passing or failing. A Problem rule is always Checked once it has run; an Activity
-rule is checked or unknown, never passing, since what it reports is activity and not a state that
-can be right.
+A rule that is passing or failing. An Activity rule is checked or unknown, never passing, since
+what it reports is activity and not a state that can be right.
 _Avoid_: evaluated, scored (that is what posture does with Problem rules only)
 
 **Outcome**:
@@ -156,7 +155,7 @@ or a labelled trend. Every count and summary is a link to that list.
 _Avoid_: tile, card, panel
 
 **Definition line**:
-The five sentences saying what a widget counts: which rule kinds, out of what, over which window
+The five sentences saying what a widget counts, which rule kinds, out of what, over which window
 and under which filters.
 _Avoid_: tooltip, caption, description
 
