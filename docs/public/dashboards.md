@@ -110,11 +110,13 @@ Present never leaves the last picture up as if it were current without saying so
 
 - **Signed out.** The session ended. Present says so and offers sign-in; signing in returns you to
   the same dashboard.
-- **Forbidden.** You are signed in but can no longer open this dashboard, because it stopped being
-  shared with you or your Access changed. Present clears the dashboard rather than keep showing
-  numbers you are no longer allowed to see.
-- **Unavailable.** The dashboard no longer exists, or RuleBeat could not be reached. Present says
-  which, rather than showing an empty dashboard.
+- **Forbidden.** You are signed in, but the person signed in here can't open this dashboard right now.
+  Present clears the dashboard rather than keep showing numbers, and a **Continue** button reloads the
+  Present address to try again.
+- **Unavailable.** Present says "This dashboard is no longer available to you." and clears the
+  dashboard. The message is the same whether the dashboard was unshared, deleted or handed over, so it
+  does not reveal which one it was. Present keeps checking and returns on its own if the dashboard
+  comes back.
 - **Not updated since.** A refresh that fails for a passing reason, such as a network drop, keeps the
   last numbers on screen and adds "Not updated since" with the time of the last good refresh. The next
   tick that succeeds removes it.
@@ -125,9 +127,11 @@ Use the **Print** action on a dashboard, or Ctrl+P (Cmd+P on a Mac). The page is
 no navigation or controls, the grid kept in place, and the stamp at the top. Landscape fits the grid
 best. Safari users choose landscape in the print dialog themselves.
 
-One exception. The Print action and Ctrl/Cmd+P resize the charts to the page before the dialog opens.
-Printing from the browser's own Print menu skips that step, so charts print at their screen size and
-may be cropped or small. Use the action or the shortcut for paper.
+One exception. The Print action and Ctrl/Cmd+P prepare the page for paper before the dialog opens.
+Printing from the browser's own Print menu is best effort: the print styles cap each chart at the width
+of its widget so a chart is never clipped, and that can leave chart text smaller than 12px. This is the
+one exception to the 12px text floor, and it covers chart text only. Use the action or the shortcut
+for the best result.
 
 ## A screen on the wall
 
