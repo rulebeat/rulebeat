@@ -118,6 +118,21 @@ _Avoid_: report, perspective, group column
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
 
+**Saved filters**:
+The filters stored on a dashboard or a saved view. They change only by an explicit save by someone
+allowed to edit it, never by looking at it.
+_Avoid_: default filters, stored state
+
+**Filter changes**:
+The differences in the address on top of the saved filters, per dimension. They are kept for no
+one: not on the item, not for the person who made them.
+_Avoid_: overrides, session filters, local filters
+
+**Effective filters**:
+The saved filters, then the filter changes, then a widget's own override, each layer replacing the
+one before it and never intersecting with it. Every number, widget link and Duplicate uses them.
+_Avoid_: current filters, applied filters
+
 ## Run History
 
 **Snapshot**:
