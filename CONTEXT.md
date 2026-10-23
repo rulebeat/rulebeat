@@ -64,6 +64,13 @@ A shipped rule its pack no longer ships. It keeps running its last version until
 it. The same word is used for every pack.
 _Avoid_: obsolete, deprecated, removed
 
+**Rule source**:
+Where a rule comes from: a Pack, Community or Custom. Rule source splits the builtin rule type by Pack.
+_Avoid_: rule type, origin
+
+**Severity band**:
+The span of days before an expiry date that sets a finding's severity in a Microsoft Graph rule.
+
 ## Findings
 
 **Finding**:
@@ -115,8 +122,19 @@ query returned. A rule never says how its findings are viewed.
 _Avoid_: report, perspective, group column
 
 **Saved view**:
-A view kept under a name. Every saved view is shared with everyone on the install.
+A view kept under a name. Its filters use the same dimensions as a dashboard. Every saved view is
+shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
+
+**Scope filter**:
+The Scopes a dashboard, saved view, widget or Scans list is narrowed to, matched the way Access is;
+it only narrows, never widens.
+_Avoid_: scope (alone), subscription filter, resource group filter
+
+**Widget override**:
+A widget's own value for one filter dimension, which replaces the dashboard's (Inherit, Replace or
+Any).
+_Avoid_: widget scope
 
 ## Run History
 

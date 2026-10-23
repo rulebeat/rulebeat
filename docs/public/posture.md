@@ -63,6 +63,27 @@ new definition is an admin's choice, not a silent consequence of restarting. The
 rule an earlier release left on a stored definition that differed from the shipped one: it now runs
 the shipped version, and the next scan may flag different resources.
 
+## Under filters
+
+Under dashboard or Scans filters, posture counts the **enabled Problem rules that overlap every picked
+dimension**, after your access has narrowed them. This is part of formula v3.
+
+- **Scope**: a rule overlaps a Scope by its reach at its own level. A rule scoped to a subscription
+  overlaps a pick of that subscription, of a management group above it, or of a resource group inside
+  it. Microsoft Graph rules overlap only the Directory.
+- **Severity**: a rule overlaps a severity when it is the rule's own or one of its Microsoft Graph
+  band severities. Several picks are any-of.
+- **Category, Rule source, Rule tags and Rule** match what the rule carries.
+
+A rule that overlaps the filters is passing, failing or unknown as in [the definition](#the-definition),
+counting only the findings you can see under the filters. An enabled Problem rule with an open finding
+you can see under the filters is always counted, and failing, even when its own reach does not
+overlap the picks.
+
+A disabled rule's findings still count in finding counts but never in posture, so the number of
+findings and the number of failing rules can differ. A rule scoped to a management group RuleBeat's
+tree does not know counts only where it has findings.
+
 ## Snapshots and trend
 
 Counts are live; trend lines need history. Once a day, after a scan's findings are synced, RuleBeat
