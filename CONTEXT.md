@@ -195,3 +195,15 @@ Running the RuleBeat install itself: people and their Access, sign-in, the Azure
 notifications, the audit log and rule versions. Only an Admin does it, and it has no
 Scope.
 _Avoid_: tenant admin, global admin
+
+## Dashboards
+
+**Present**:
+Showing a dashboard read-only and full screen, refreshing on its own, as a signed-in person under
+their own Access.
+_Avoid_: kiosk mode, TV mode, wall mode, screen account, embed
+
+**Stamp**:
+The "As seen by" band on Present and on paper that names the person, their Access, the filters they
+hold, the time and the unavailable widgets.
+_Avoid_: watermark, footer, banner

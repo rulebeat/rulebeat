@@ -85,6 +85,8 @@ because Mirrored access is never given to an Admin, and it is never done with Ev
 leaves the person with nothing rather than everything. If linking fails after the demote, the page says
 the person was demoted and holds no access, and Save can be tried again.
 
+To set up a dedicated person for a wall screen, see [A screen on the wall](dashboards.md#a-screen-on-the-wall).
+
 ### Mirrored access
 
 The Admin picks one Role and a **Linked account**: an Azure object id, which may be a different
