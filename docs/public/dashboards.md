@@ -48,7 +48,7 @@ sandbox subscription, that widget shows the sandbox.
 The date window is a rolling preset (Today (UTC), 7 or 30 days) or a custom range, and days are UTC
 days. A preset is stored as "7 days" rather than two dates, so it keeps rolling. It drives anything
 that says new, fixed or delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not
-change what counts as open. A widget has no period of its own; the dashboard's window is the window.
+change what counts as open.
 
 Three limits a widget will tell you about. A trend is served only for a category, the date window,
 and at most one subscription or the Directory. With any other filter the widget says a trend is not
