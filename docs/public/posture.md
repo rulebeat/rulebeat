@@ -63,6 +63,28 @@ new definition is an admin's choice, not a silent consequence of restarting. The
 rule an earlier release left on a stored definition that differed from the shipped one: it now runs
 the shipped version, and the next scan may flag different resources.
 
+## Under filters
+
+Posture narrows by every filter together, and this is part of formula v3. Posture counts the enabled
+Problem rules that overlap every picked dimension, after your Access has narrowed what you can see.
+
+- **Scope:** a rule overlaps a pick by its reach at its own level. A rule scoped to a subscription
+  overlaps a pick of that subscription, of a resource group in it, or of a management group above it.
+  Microsoft Graph rules overlap only the Directory.
+- **Severity:** a rule overlaps a severity when it is the rule's own severity or one of its Microsoft
+  Graph band severities. Severity is any-of only.
+- **Category, Rule source, Rule tags and Rule:** a rule overlaps when it matches the pick.
+
+Across dimensions a rule must overlap all of them. Within a dimension any one pick is enough.
+
+An enabled Problem rule with an open finding you can see under the filters is always counted, and
+failing.
+
+A disabled rule's findings still count in finding counts, but a disabled rule never counts in
+posture. So a count of findings and a count of failing rules can differ under the same filters. A
+rule scoped to a management group that RuleBeat's tree does not know counts only where it has
+findings.
+
 ## Snapshots and trend
 
 Counts are live; trend lines need history. Once a day, after a scan's findings are synced, RuleBeat
@@ -70,8 +92,8 @@ writes a `posture_snapshots` row per category, plus one per subscription holding
 with that day's passing / failing / unknown counts and the percentage, tagged with the formula
 version that produced it. Suppressed fingerprints are excluded there as they are live.
 
-So a trend works for a category, or a category narrowed to one subscription. Under a resource group,
-tag, severity or rule filter, or with two or more subscriptions selected, the widget reports that a
+So a trend works for a category, or a category narrowed to one subscription. Under a resource group
+Scope pick, a tag, severity or rule filter, or with Scope picks across two or more subscriptions, the widget reports that a
 trend is not available rather than drawing one: per-subscription counts cannot be added into an
 honest blended line, since a rule can pass in one subscription and fail in another the same day.
 "vs baseline" compares today against the snapshot at or before the start of your window and only
