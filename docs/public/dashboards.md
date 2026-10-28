@@ -5,8 +5,8 @@
 The widget catalog, filters and date windows. If the question is what "7 of 12" means, read
 [`posture.md`](posture.md) first.
 
-Every widget reads live state from the findings table plus, for trend lines, the daily posture
-snapshots. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
+Every widget reads live state from the findings table plus, for trend lines, the stored Trend
+points. No widget reads the last scan's result blob, so a narrow scheduled run cannot make a
 dashboard swing. Suppressed findings are excluded everywhere on a dashboard; the Scans page is where
 you see them.
 
@@ -16,17 +16,17 @@ you see them.
 
 | Widget | Shows |
 |---|---|
-| **Stat Card** | One number from a metric you pick: posture, open findings, critical, high, rules scanned, categories healthy, new or fixed. Carries the window's delta and any unknown count. |
+| **Stat Card** | One number from a metric you pick: posture, open findings, critical, high, rules counted, categories healthy, new or fixed. Carries the window's delta and any unknown count. |
 | **Posture Ring** | The "X of Y passing" gauge for one category or overall, with "N not yet proven" underneath. |
-| **Trend Chart** | Posture % over time, one series per category. Needs stored history. |
-| **Top Violating Rules** | The rules producing the most open findings. |
-| **Category Scorecard** | One row per category: passing, open findings, delta. |
+| **Trend Chart** | Posture % over time, one series per category, for the whole install, one subscription or the Directory. Needs Trend points at that Level. |
+| **Top Violating Rules** | The rules producing the most open findings, each shown at its highest open severity. |
+| **Category Scorecard** | One row per category: passing and open findings. |
 | **Recent Findings** | The newest findings, with category, severity and first-seen date. |
 | **Severity Breakdown** | A donut of open findings by severity. |
-| **Subscription Scorecard** | One row per subscription, graded against the rules that apply to it. |
+| **Subscription Scorecard** | One row for every subscription RuleBeat knows, including ones with no findings or no rules, and a Directory row if you hold the Directory. Each is graded against the rules whose scope includes it. A footer counts the findings placed outside any subscription or the Directory and opens them on Scans. |
 | **Top Offending Resources** | The resources with the most open findings. |
-| **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against your threshold. |
-| **New vs. Fixed** | Findings first seen against findings fixed, per day. |
+| **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against your threshold, and the incomplete rules of every kind (failed, capped or invalid on their last run). Last scanned is the newest scan that covered part of what you hold. |
+| **New vs. Fixed** | The findings on the Scans New and Fixed lists for the window, per UTC day. |
 | **Activity Occurrences** | Daily findings from activity rules. Empty until the Log Analytics backend lands. |
 | **Advisories** | Open Advisories with rule, resource, severity and when each was last seen, most severe first and then most recently seen. Advisories are never counted as problems, so this is the one widget that lists them. A row opens the Advisories tab on Scans. |
 
@@ -45,17 +45,20 @@ dashboard's value for that dimension on that widget; anything left on inherit ta
 Values never intersect, so if the dashboard is filtered to production and a widget's Scope names the
 sandbox subscription, that widget shows the sandbox.
 
-The date window is a rolling preset (24 hours, 7 or 30 days) or a custom range. A preset is stored as
-"7 days" rather than two dates, so it keeps rolling. It drives anything that says new, fixed or
-delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not change what counts as open.
+The date window is a rolling preset (Today (UTC), 7 or 30 days) or a custom range, and days are UTC
+days. A preset is stored as "7 days" rather than two dates, so it keeps rolling. It drives anything
+that says new, fixed or delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not
+change what counts as open. A widget has no period of its own; the dashboard's window is the window.
 
-Three limits a widget will tell you about. Trend needs snapshots at the right grain, so under a
-resource group, tag, severity or rule filter, or with two or more subscriptions selected, it says a
-trend is not available rather than drawing a misleading blended line
-([`posture.md`](posture.md#snapshots-and-trend)); the open-findings delta keeps working under every
-filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
-data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled
-rules in scope shows an empty posture rather than 0% or 100%.
+Three limits a widget will tell you about. A trend is served only for a category, the date window,
+and at most one subscription or the Directory. With any other filter the widget says a trend is not
+available rather than comparing a filtered number with an unfiltered Trend point
+([`posture.md`](posture.md#what-each-widget-counts)); the open-findings delta keeps working under
+every filter. A failed data request shows "Couldn't load this widget" with a Retry, while a known
+reason (no access, a filter that left nothing) shows that reason with no Retry, and genuinely absent
+data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And an empty
+posture says why there is nothing to count: you have been given no access, no rule looks at what you
+hold, or the filter left nothing, never a bare 0% or 100%.
 
 ## Managing dashboards
 

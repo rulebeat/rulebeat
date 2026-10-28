@@ -271,15 +271,17 @@ date-math engine (`computeNextRun()` in `lib/db/schedules.ts`), not cron.
 
 ### Dashboards
 Read live posture from the `findings` lifecycle table (not scan-blob history) plus a daily
-`posture_snapshots` table for trend history (each row tagged with the formula version that
-produced it, so a baseline never blends two formulas).
+`posture_snapshots` table for trend history (each point tagged with its formula and finding-count
+versions; readers compare points only through the version-equality table (ADR 0013), so a baseline
+never blends two meanings).
 - **Filters:** `WidgetFilters` (`lib/dashboard-filters.ts`) is the shared shape;
   `mergeWidgetFilters()` has per-widget values **replace, never intersect**, the dashboard-level
   filter. `dateWindow` (`lib/date-window.ts`) resolves to concrete dates at query time, not save
   time, so a saved "7d" preset stays rolling.
 - **Unavailable vs. empty:** every widget fetches through `useWidgetFetch`, which wraps
-  `fetchJson()`'s `FetchResult<T>` union; a failed fetch renders the shared `WidgetUnavailable`
-  component, never the widget's own "no data" copy.
+  `fetchJson()`'s `FetchResult<T>` union; a failed fetch renders `WidgetUnavailable` with
+  Retry, and a known reason renders `WidgetUnavailable` with that reason and no Retry, never the
+  widget's own "no data" copy.
 - **`/scans` deep links:** `scans/page.tsx`'s `searchParams` and
   `findings-explorer-client.tsx`'s URL-sync effect must stay symmetric; a change to one without the
   other breaks deep-linking silently.

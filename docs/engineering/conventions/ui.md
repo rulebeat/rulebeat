@@ -43,7 +43,7 @@ Visual and colour decisions live in [design-system.md](design-system.md), not he
 
 **`fetch().then(r => r.json()).then(setState)` stores error bodies as if they were data.** A 401/403/500 body crashes on the first property access; in a grid of self-fetching widgets, one failed request takes down the whole page. Use a helper that returns a `{ok,data}`/`{ok:false}` result, never null on failure. Null collapses a real error into the same shape as a genuinely empty result, so the widget can't tell "broken" from "nothing to show."
 
-**A self-fetching widget needs a third visual state, not just loading/empty.** `useWidgetFetch` + `WidgetUnavailable` give every widget a shared "Couldn't load this widget" + Retry state, scoped per-widget. Retry refetches only the widget it's clicked on, not the dashboard-wide `refreshKey`.
+**A self-fetching widget needs a third visual state, not just loading/empty.** `useWidgetFetch` + `WidgetUnavailable` give every widget two shared states, scoped per-widget. A failed fetch gets "Couldn't load this widget" + Retry; Retry refetches only the widget it's clicked on, not the dashboard-wide `refreshKey`. A known reason (no access, a filter that left nothing, a baseline that cannot be named) gets `WidgetUnavailable` with that reason, `role="status"`, no Retry and no warn icon, as a full-tile variant or an inline one for the delta slot. Never reuse the failed state for a reason, and never the widget's own "no data" copy for either.
 
 **When migrating widgets to self-fetch-with-merged-filter-object, a fetch call can compute the merged object correctly but still forward only a subset of its fields into the actual request.** Audit that every field of the merged object reaches the query string.
 

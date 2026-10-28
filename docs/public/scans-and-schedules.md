@@ -136,7 +136,10 @@ Three controls make findings go away, and they mean different things.
   it recreates whatever still matches and notifies about each one as new, so disable the rule
   first unless a clean baseline is what you want. Suppressions are kept, so a finding that comes
   back is still suppressed. Past runs in Run History and past days on the trend charts keep their
-  original counts. The action is written to the audit log with the number of findings removed.
+  original counts, while today's trend point changes through the day, because it is refreshed
+  whenever a rule, a suppression or a scan changes what it counts. Days are UTC. On a dashboard,
+  Last scanned for someone without Everything is the newest scan that covered part of what they
+  hold. The action is written to the audit log with the number of findings removed.
 - **Suppress a finding** ([`suppressions.md`](suppressions.md)) records that one finding is real
   but accepted. It hides that finding from the figures without deleting anything.
 
