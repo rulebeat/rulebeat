@@ -7,8 +7,8 @@ Status: accepted, 2026-10-28 (builds on ADR 0010, ADR 0002 and ADR 0011).
 **Every dashboard and saved view has an Owner and a visibility of Personal or Shared.** There are no
 lists of people, Roles or Scopes on an item. Lists would duplicate Access, go stale as Scopes and
 people change, and leak who holds what. A filtered Shared item plus held-back values already gives
-each reader only what their Access allows (ADR 0010: Access is Roles at Scopes, resolved once per
-request).
+each reader only what their Access allows. Access is Roles at Scopes (ADR 0010), and each request
+resolves it once (ADR 0011).
 
 **Creating makes a Personal item, and sharing is a deliberate step.** Any signed-in person, Viewer
 included, keeps Personal items.
@@ -24,8 +24,10 @@ choosing it. Each person may pick a My default; without one they land on the Ins
 there may be none.
 
 **Held-back values never leave the server.** A stored filter value outside the viewer's Access is
-counted per place and dimension, never sent. Saves merge held-back values back against the current
-revision, so a viewer who cannot see a value cannot lose it by saving. A held-back value never
+counted per place and dimension, never sent. The server adds the stored values back when it reads,
+so a widget or a Scans read for an open saved view runs on the full stored filter and the held-back
+values match nothing for that viewer. Saves merge held-back values back against the current
+revision, under a revision check, so a viewer who cannot see a value cannot lose it by saving. A held-back value never
 widens a filter: it matches nothing for that viewer, and a dimension whose values are all held back
 reads "Outside your access" rather than falling back to everything. A new value outside the saver's
 Access is refused. Only an explicit, audited Remove N values action drops held-back values.
