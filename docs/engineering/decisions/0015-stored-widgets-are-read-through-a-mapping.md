@@ -13,9 +13,11 @@ stored dashboard row is read through it on every render and is never rewritten b
 - **A changed type renders in its new form.** It keeps its stored title, size and position, and its
   stored config is translated to the new type's config by the mapping.
 - **A faithful replacement carries a Replaced note.** The note stays until someone saves the
-  dashboard and the save writes the mapped form. That save is checked against the dashboard's
-  revision, so a save made on a stale copy is refused as every other save is. The note is a fact
-  about the stored row, so it shows to everyone until then.
+  dashboard and a revision-checked save writes the mapped form. The revision check on dashboard
+  saves is not in place yet: it arrives with a later spec in the map, and this decision relies on it
+  rather than describing it as current behaviour. Until it lands, a save writes the stored form
+  as it does today. The note is a fact about the stored row, so it shows to everyone until the
+  mapped form is written.
 - **A retired type renders a Retired frame.** The frame says the catalogue no longer offers the
   widget and shows no number. Saving the dashboard writes the stored widget unchanged. A retired
   widget is never dropped.
