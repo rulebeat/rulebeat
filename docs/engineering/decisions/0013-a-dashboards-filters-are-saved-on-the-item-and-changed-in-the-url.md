@@ -31,6 +31,10 @@ a time.** They use the `/scans` encoding through `lib/finding-view.ts`.
   than inheriting it.
 - A dimension whose values are all malformed inherits, as if it were missing.
 
+These rules apply to an address that names the revision it is a difference from. A saved-view link
+from before this decision names no revision and is read as a complete copy instead (see
+Consequences).
+
 **Nothing is kept per viewer.** A filter change lasts as long as the address that holds it. Closing
 the tab, or opening the dashboard without the address, shows the saved filters.
 
@@ -70,8 +74,17 @@ opener sees the count and gets no more findings than their own Access allows.
 - Duplicate copies the duplicator's effective filters as the copy's saved filters.
 - Saved views follow the same contract on Scans: the address carries only the differences from the
   open view.
-- An old saved-view link that carries a full copy of the filters still opens as bookmarked. Its
-  dimensions are read as filter changes over the view's saved filters, so it shows what it showed
-  when it was made, and no migration of the links is needed.
+- An old saved-view link that carries a full copy of the filters still opens as bookmarked. It
+  cannot be read as filter changes: `viewToSearchParams` leaves defaults out (an empty dimension,
+  `status=open`, the default window), so an old link is silent about every dimension the view left
+  empty, and "missing inherits" would hand those dimensions the view's saved filters the next time
+  someone saves it with, say, `severity=High`. The link would narrow after the fact. What tells the
+  two apart is the revision. An address written under this contract names the revision of the
+  saved view it is a difference from; an old link names the view id and no revision. An address
+  with a view id and no revision is read as a complete copy: a missing dimension means the default
+  ("any"), and the view's saved filters are not consulted. It shows what it showed when it was
+  made, whatever the view holds now, and no migration of the links is needed. The ticket that
+  writes the address decoder must test this against links built by `savedViewHref` from a view
+  that is later saved with a narrower filter.
 - The symmetry between `scans/page.tsx` `searchParams` and the URL sync in
   `findings-explorer-client.tsx` stays, because both read the same encoding.
