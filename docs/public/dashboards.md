@@ -94,7 +94,7 @@ The stamp is a band with six cells:
 | **Access** | What they hold, as counts by kind (for example subscriptions and resource groups), or **Everything**. |
 | **Filters** | The filters in effect for that person. A filter value they do not hold is left out and counted as "+N outside your access". On screen a long list is cut short with "and N more". |
 | **Updated** | When the numbers on the screen were last loaded. |
-| **Widgets** | How many widgets are unavailable, those that show "Couldn't load this widget" instead of a number. |
+| **Widgets** | How many widgets show no number. That is any widget that is Unavailable (with its reason), shows "Outside your access", is a saved view that is not shared with you, or is still loading when the page is printed. A widget with partial data is counted separately as Partial, not as unavailable. |
 | **Refreshes every** | The interval Present is using, from the dashboard, the 5 minute default or `?refresh=`. |
 
 On paper the Filters cell lists every value, with no "and N more".
@@ -112,13 +112,15 @@ Present says why it has nothing to show, instead of a blank page that could pass
 
 - **Signed out.** The session ended, so Present asks you to sign in again and brings you back to the
   dashboard afterwards.
-- **Forbidden.** You are signed in but no longer have access to this dashboard, for example it is no
-  longer shared with you.
-- **Unavailable.** The dashboard was deleted, or RuleBeat could not load it.
+- **Forbidden.** You are signed in but the dashboard cannot be opened for you right now. Present says
+  "The person signed in here can't open this dashboard right now." and offers **Continue**.
+- **Unavailable.** The dashboard was deleted, is no longer shared with you, or was handed over to
+  someone else. Every cause reads the same: "This dashboard is no longer available to you." Present
+  keeps checking and resumes by itself when the dashboard comes back, with no one at the screen.
 
-When a refresh fails after Present has already shown numbers, the last numbers stay on screen and the
-stamp reads **Not updated since** the time of the last good load, so a stale wall screen is never
-mistaken for a current one.
+A failed load is not one of these screens. When a refresh fails after Present has already shown
+numbers, the last numbers stay on screen and the stamp reads **Not updated since** the time of the
+last good load, so a stale wall screen is never mistaken for a current one.
 
 ### Printing
 
@@ -126,9 +128,11 @@ Use the **Print** action on a dashboard, or Ctrl+P (Cmd+P on a Mac). The page is
 the stamp is printed at the top. Landscape fits the grid best. Chrome and Edge pick it from the
 dashboard; Safari does not, so Safari users choose landscape themselves in the print dialog.
 
-One exception: charts are sized for the screen, and when you print from the browser's own Print menu
-rather than the Print action, a chart can be scaled to the page width and look different from the
-screen. Use the Print action for the closest copy.
+One exception: each chart is capped at the width of its widget, so it never overflows the page. When
+you print from the browser's own Print menu rather than the Print action, the page can be narrower than
+the screen, and a chart is then scaled down to fit. The text inside a chart scales with it and can end
+up below the 12px text floor that applies everywhere else. This applies to chart text only; the rest of
+the page keeps its sizes. Use the Print action for the closest copy.
 
 ## A screen on the wall
 
