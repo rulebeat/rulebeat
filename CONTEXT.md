@@ -86,8 +86,16 @@ _Avoid_: result (ambiguous), record, evidence
 What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
 from severity, category and query backend. A Logs rule is always an Activity rule. A custom rule
 is a Problem rule unless someone sets it to Advisory, and it can be switched back. A built-in
-rule's kind is set by RuleBeat with its version and cannot be changed on an install.
+rule's kind is set by RuleBeat with its version and cannot be changed on an install. A dashboard
+number counts one kind.
 _Avoid_: rule type (that is builtin, community or custom), mode
+
+**Checked**:
+A rule that is passing or failing. A Problem rule is checked when it has run and is either passing
+(no findings) or failing (findings). An Activity rule is checked or unknown, never passing: it
+reports occurrences, so having none says nothing about whether anything is right. Only an enabled
+rule has an outcome. An outcome belongs to a rule at a Scope, not to the rule alone.
+_Avoid_: evaluated, scored (that is what posture does with Problem rules)
 
 **Problem rule**:
 A rule whose every result is something wrong with a resource. Its findings are failures and are
@@ -106,6 +114,16 @@ keeps a severity. It differs from a problem only in what it counts toward, never
 stored, shown or grouped.
 _Avoid_: notice, recommendation (that is what Azure Advisor calls its own rows), info finding
 
+**Finding age**:
+The time from the day a finding was first seen to now, in whole UTC days. A finding that is
+reactivated after being Fixed keeps its first-seen date, so its age does not restart.
+_Avoid_: time open, days open
+
+**New and Fixed (in a window)**:
+New is a finding that is open and was first seen in the window. Fixed is a finding that was fixed in
+the window. They are the same sets Scans shows as `status=new` and `status=fixed`.
+_Avoid_: added and resolved (Compare's added and fixed are about two snapshots, not a window)
+
 ## Views
 
 **View**:
@@ -117,6 +135,48 @@ _Avoid_: report, perspective, group column
 **Saved view**:
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
+
+## Dashboards
+
+**Dashboard**:
+A page of widgets that answers five questions: are we OK and improving, where is it worst, are we
+keeping up, can I trust these numbers, and what should I know that is not a failure. It is never a
+second findings explorer: finding-level work happens on Scans.
+_Avoid_: report, scorecard (that is one widget)
+
+**Widget**:
+A count or summary of a list Scans can show (Results, Advisories, Activity, Rules or Run History),
+or a labelled trend. A count or summary links to the Scans list that holds the same number for the
+same viewer.
+_Avoid_: tile, card, panel
+
+**Definition line**:
+The five sentences a widget shows to say what it counts, which rule kinds, out of what, over which
+window and under which filters.
+_Avoid_: tooltip, caption, subtitle
+
+**Partial and Stale**:
+The dashboard's markers on a number. Partial means some rules are unknown, so the number is not
+exhaustive. Stale means a category was not scanned within Stale after. Both are distinct from a
+scan's coverage `partial`, which describes one scan run.
+_Avoid_: incomplete, outdated
+
+**Set on this widget**:
+A widget's own value for a filter level, replacing the dashboard's value for that level rather than
+adding to it.
+_Avoid_: scoped, override
+
+**Retired widget**:
+A widget type the catalogue no longer offers. It keeps its stored row and shows no number. Unlike a
+Retired rule, which keeps running, a Retired widget does nothing; the shared word means RuleBeat no
+longer offers it and leaves it where it is.
+_Avoid_: removed widget, deleted widget, deprecated widget
+
+**Trend point**:
+One recorded day's value on a trend. It is never a link, because the findings behind it have changed since and no list can show that day again.
+_Avoid_: snapshot (that is a past scan's findings), history entry
+
+Filter-model terms stay with the spec that defines the filter model.
 
 ## Run History
 
