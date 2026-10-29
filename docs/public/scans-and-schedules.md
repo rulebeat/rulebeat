@@ -74,6 +74,16 @@ value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backsla
 including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
 and a filter that keeps nothing.
 
+Subscription and resource group are no longer filters of their own. Their column funnels write
+**Scope** picks instead, and the resource group funnel lists resource group and subscription pairs,
+so the same name in two subscriptions is two choices. The toolbar has a **Scope** picker, which
+shows only the Scopes you hold and narrows the way Access does
+([`access.md`](access.md#the-scope-filter-is-not-access)), and a **Rule source** control for each
+Pack, Community and Custom. An **age chip** such as "First seen 31 to 90 days ago" filters by how
+long ago a finding was first seen. It is rolling, so it moves with the date, and it is separate
+from the First seen funnel, which takes fixed dates. Old links with `subscription=` and `rg=` still
+open, as Scope picks.
+
 ### Group by
 
 The Group by button in the By resource toolbar groups the list by one or more fields, the same
@@ -113,8 +123,8 @@ Viewers can open saved views. Editors and admins can also save the current view,
 view's filters with the current ones (Update with current view), rename it and delete it. A name
 is unique whatever its case, and saving a name already in use says so. A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
-opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
-view never changes findings. The audit log records each save, update, rename and delete with the
+opens, with an empty column and a filter that keeps nothing, as it does in a link. Saved views that filtered by subscription or resource group were converted to
+Scope picks on upgrade. Deleting a saved view never changes findings. The audit log records each save, update, rename and delete with the
 names of the fields that changed, never their values.
 
 ## Disable, clear findings, or suppress
