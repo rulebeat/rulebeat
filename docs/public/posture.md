@@ -93,9 +93,10 @@ with that day's passing / failing / unknown counts and the percentage, tagged wi
 version that produced it. Suppressed fingerprints are excluded there as they are live.
 
 So a trend works for a category, or a category narrowed to one subscription. Under a resource group
-Scope pick, a tag, severity or rule filter, or with Scope picks across two or more subscriptions, the widget reports that a
-trend is not available rather than drawing one: per-subscription counts cannot be added into an
-honest blended line, since a rule can pass in one subscription and fail in another the same day.
+Scope pick, a tag, severity or rule filter, or with Scope picks across two or more subscriptions,
+the widget reports that a trend is not available rather than drawing one: per-subscription counts
+cannot be added into an honest blended line, since a rule can pass in one subscription and fail in
+another the same day.
 "vs baseline" compares today against the snapshot at or before the start of your window and only
 blends rows sharing the current formula version. The open-findings delta and the New vs Fixed widget
 come from live finding timestamps instead, never from subtracting two snapshots, so they survive

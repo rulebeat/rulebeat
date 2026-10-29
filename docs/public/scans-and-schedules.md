@@ -123,9 +123,8 @@ Viewers can open saved views. Editors and admins can also save the current view,
 view's filters with the current ones (Update with current view), rename it and delete it. A name
 is unique whatever its case, and saving a name already in use says so. A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
-opens, with an empty column and a filter that keeps nothing, as it does in a link. Saved views that filtered by subscription or resource group were converted to Scope picks on
-upgrade. Deleting a saved
-view never changes findings. The audit log records each save, update, rename and delete with the
+opens, with an empty column and a filter that keeps nothing, as it does in a link. Saved views that filtered by subscription or resource group were converted to
+Scope picks on upgrade. Deleting a saved view never changes findings. The audit log records each save, update, rename and delete with the
 names of the fields that changed, never their values.
 
 ## Disable, clear findings, or suppress
