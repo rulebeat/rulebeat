@@ -125,12 +125,38 @@ The findings one past scan returned, as that scan saw them: which findings, with
 severity, title, resource and row count each had then. A snapshot never changes after its scan.
 It keeps no rows and has no status; a finding's rows and status belong to the finding as it is
 now. A snapshot is not a trend point on the dashboard.
-_Avoid_: scan result, history entry, posture snapshot (that is the dashboard's daily trend record)
+_Avoid_: scan result, history entry, posture snapshot (that is the dashboard's earlier daily total, see Posture snapshot)
 
 **Compare**:
 Two snapshots of one category set side by side. A finding in only the newer one is added, in only
 the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
 _Avoid_: diff, delta
+
+## Trend history
+
+**Trend history**:
+What RuleBeat keeps so a dashboard can draw the past: the inputs to posture as they changed, day by
+day, not the posture they added up to. Any trend is worked out from it when it is read, for any
+filter and for the Access of whoever is looking. It starts when recording starts and is never
+backfilled or rewritten.
+_Avoid_: posture history, history table
+
+**Recorded day**:
+A UTC day RuleBeat was recording. A day without one is a gap: the trend marks it and draws nothing
+across it. A Recorded day on which no scan overlapped a point's scope is marked as a no-scan day.
+_Avoid_: history day, snapshot day, data day
+
+**Trend point**:
+One day's numbers worked out now, with today's formula, today's labels and the viewer's Access. A
+point is never read back from what was stored on that day, so the same day can read differently
+after a rule changes category or the formula changes.
+_Avoid_: data point, snapshot, stored point
+
+**Posture snapshot**:
+The daily per-category and per-subscription total RuleBeat wrote before Trend history existed. It is
+still written, and is now read only to bridge the days before recording began. It is not a Snapshot
+of a scan.
+_Avoid_: trend record, trend history, snapshot (that is a scan's findings, see Snapshot)
 
 ## Access
 
