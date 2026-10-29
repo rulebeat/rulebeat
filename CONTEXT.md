@@ -173,7 +173,8 @@ longer offers it and leaves it where it is.
 _Avoid_: removed widget, deleted widget, deprecated widget
 
 **Trend point**:
-One recorded day's value on a trend. It is never a link, because the findings behind it have changed since and no list can show that day again.
+One recorded day's value on a trend. It is never a link, because the findings behind it have
+changed since and no list can show that day again.
 _Avoid_: snapshot (that is a past scan's findings), history entry
 
 Filter-model terms stay with the spec that defines the filter model.
