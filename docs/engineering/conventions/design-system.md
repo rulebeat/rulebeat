@@ -67,3 +67,7 @@ Component and CSS *mechanics* live in [ui.md](ui.md). The design system itself i
 **Recharts takes neither a Tailwind class for SVG paint nor the theme's colour for its own chrome.** Use `fill`/`stroke="var(--color-…)"`, and pass axis-tick and legend styles explicitly from shared constants, or they stay a fixed grey in both themes.
 
 **An area fill encodes "quantity under the curve" and only reads for a single series.** Force plain lines the moment a second series can appear, or the overlap reads as a stacked total nobody computed.
+
+## Dashboards
+
+**A dashboard frame's height comes from its content, and a frame never scrolls inside.** A frame that needs more room makes its row taller, and a row stretches to its tallest frame, so the page keeps its single scroll region. A fixed height with an inner `overflow-auto` hides the rows that did not fit and adds a second scroller to a page that is meant to have one.
