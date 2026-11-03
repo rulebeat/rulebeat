@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The upgrade records an owner, a visibility (Personal or Shared) and a revision on every dashboard and saved view, and a My default on every person. Every existing item stays Shared, a saved view is owned by its creator while that person still exists, a dashboard has no owner, and the current default stays the install default. Nothing you see changes yet.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

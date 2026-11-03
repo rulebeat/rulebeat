@@ -1,7 +1,9 @@
 import { db } from '@/lib/db/client';
 import { savedViews } from '@/lib/db/tables';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from '@/lib/db/exec';
+import { loadItemOwners, readVisibility } from '@/lib/db/item-owners';
+import type { ItemOwner } from '@/lib/types';
 import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 
 /**
@@ -18,7 +20,7 @@ const SAVED_VIEW_NAME_LOCK_KEY = 7194826112;
 
 type Row = typeof savedViews.$inferSelect;
 
-function rowToView(row: Row): SavedView {
+function rowToView(row: Row, owners: Map<string, ItemOwner>): SavedView {
   return {
     id: row.id,
     name: row.name,
@@ -29,7 +31,15 @@ function rowToView(row: Row): SavedView {
     createdAt: row.createdAt,
     updatedBy: row.updatedBy ?? null,
     updatedAt: row.updatedAt,
+    owner: (row.ownerId && owners.get(row.ownerId)) || null,
+    visibility: readVisibility(row.visibility),
+    revision: row.revision,
   };
+}
+
+async function toViews(rows: Row[], handle: DbHandle = db): Promise<SavedView[]> {
+  const owners = await loadItemOwners(rows.map(r => r.ownerId), handle);
+  return rows.map(row => rowToView(row, owners));
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -38,14 +48,13 @@ const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().t
  *  Postgres, whose collations differ, list them in the same order. */
 export async function listSavedViews(): Promise<SavedView[]> {
   const rows = await many(db.select().from(savedViews));
-  return rows
-    .map(rowToView)
+  return (await toViews(rows))
     .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id));
 }
 
 export async function getSavedView(id: string): Promise<SavedView | null> {
   const row = await one(db.select().from(savedViews).where(eq(savedViews.id, id)));
-  return row ? rowToView(row) : null;
+  return row ? (await toViews([row]))[0] : null;
 }
 
 async function isNameTaken(tx: DbHandle, name: string, excludeId?: string): Promise<boolean> {
@@ -69,10 +78,12 @@ export async function createSavedView(
     const now = new Date().toISOString();
     await run(tx.insert(savedViews).values({
       id, name, tab: data.tab, query: data.query,
+      // Shared until Personal items arrive, and spelled out so no insert depends on the column default.
+      ownerId: null, visibility: 'shared', revision: 1,
       createdBy: actorId, createdAt: now, updatedBy: actorId, updatedAt: now,
     }));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
-    return { ok: true, view: rowToView(stored!) } as const;
+    return { ok: true, view: (await toViews([stored!], tx))[0] } as const;
   });
 }
 
@@ -101,9 +112,11 @@ export async function updateSavedView(
       ...(data.query !== undefined && { query: data.query }),
       updatedBy: actorId,
       updatedAt: new Date().toISOString(),
+      revision: sql`${savedViews.revision} + 1`,
     }).where(eq(savedViews.id, id)));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
-    return { ok: true, view: rowToView(stored!), before: rowToView(existing) } as const;
+    const [view, before] = await toViews([stored!, existing], tx);
+    return { ok: true, view, before } as const;
   });
 }
 
@@ -113,6 +126,6 @@ export async function deleteSavedView(id: string): Promise<SavedView | null> {
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return null;
     await run(tx.delete(savedViews).where(eq(savedViews.id, id)));
-    return rowToView(existing);
+    return (await toViews([existing], tx))[0];
   });
 }
