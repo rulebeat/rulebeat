@@ -132,6 +132,18 @@ Two snapshots of one category set side by side. A finding in only the newer one 
 the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
 _Avoid_: diff, delta
 
+## Dashboards
+
+**Present**:
+Showing a dashboard read-only and full screen, refreshing on its own, as a signed-in person under
+their own Access.
+_Avoid_: kiosk mode, TV mode, wall mode, screen account, embed
+
+**Stamp**:
+The "As seen by" band on Present and on paper that names the person, their Access, the filters they
+hold, the time and the unavailable widgets.
+_Avoid_: watermark, footer, banner
+
 ## Access
 
 **Role**:
