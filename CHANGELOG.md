@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Signing in returns you to the page you asked for. Both sign-in actions ignored the `callbackUrl` and always landed on the dashboard, so a link to any other page was lost at sign-in. A relative path, or an absolute URL on the same origin, is now followed with its search and hash kept; anything else still lands on the dashboard.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
