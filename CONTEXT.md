@@ -118,6 +118,27 @@ _Avoid_: report, perspective, group column
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
 
+## Dashboards
+
+**Dashboard**:
+A named layout of widgets that is the same for every viewer, whose numbers follow each viewer's
+Access.
+_Avoid_: board, report
+
+**Template**:
+A shipped dashboard layout for one audience. A dashboard made from it never follows it.
+_Avoid_: starter, preset, audience dashboard
+
+**Widget**:
+One number, chart or list on a dashboard. Every count it shows opens the same count on Scans; a
+trend-only widget says on its definition line why it opens none.
+_Avoid_: tile, card, panel
+
+**Editing**:
+The explicit period in which a dashboard's layout and settings change, ended by Save or Cancel.
+Code may say "editing session"; UI copy says only "Editing".
+_Avoid_: edit mode, session, design mode
+
 ## Run History
 
 **Snapshot**:

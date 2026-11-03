@@ -19,9 +19,9 @@ Visual and colour decisions live in [design-system.md](design-system.md), not he
 
 **A `useRef<'gui'|'kql'>` driver flag (not state) prevents feedback loops in bidirectional form-to-KQL sync.** Set it before updating one side so the matching effect on the other side is suppressed.
 
-**Guard `onLayoutChange`-style callbacks (react-grid-layout and similar) with a ref-mirror comparison, not just a mount flag.** Prevents both false-positive dirty state and update-triggers-callback-triggers-update render loops.
+**Only a person's change in Editing makes a dashboard dirty or writes anything.** Snapping a stored layout to the grid at render time, and a frame growing or shrinking with its content, are not changes: they never mark Editing dirty, never show "Save changes" and never write. Compare against the layout as it was when Editing began, not against the previous render, so a layout handler that fires for a reason other than a person cannot set the flag, and cannot start an update-calls-handler-calls-update render loop.
 
-**An automatic layout adjustment must tell the layout handler it was not a person.** Shrinking one widget makes react-grid-layout compact everything below it and report the new positions, which reads as a drag and shows "Save changes" to someone who only opened the page.
+**A layout change that comes from the page, not from a person, must say so.** A widget loading its data, a viewport that crosses a breakpoint or a stored layout snapping to an allowed width all reflow the dashboard. The handler that records a person's change takes a source, and only the person's source marks Editing dirty, so someone who only opened the page is never shown "Save changes".
 
 **Use `useLayoutEffect` (not `useEffect`) to restore `localStorage` state before first paint in Next.js client components.** `useState(() => readFromStorage())` causes a hydration mismatch: the initializer returns null on the server and rehydration reuses that null rather than re-running it.
 
