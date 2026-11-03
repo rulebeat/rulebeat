@@ -64,7 +64,8 @@ export interface View {
    *  not read it; the server does. */
   scope?: string[];
   /** The content-addressed set a long Scope list travels as (ADR 0016), lower-case sha256. Written
-   *  instead of `scope` when the list is over `SCOPE_INLINE_BUDGET`. */
+   *  instead of `scope` when the list is over `SCOPE_INLINE_BUDGET`. A value that is not a sha256 is kept
+   *  as read: the server resolves it to nothing, which is not the same as no Scope filter. */
   scopeSet?: string;
   /** Rule sources: each Pack, Community and Custom. Absent is no filter and empty is Any. */
   source?: string[];
@@ -702,7 +703,6 @@ function readNamedValues(raw: string): { name: string; values: string[] } | unde
 }
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-const SCOPE_SET_HASH = /^[0-9a-f]{64}$/i;
 const MAX_AGE_DAYS = 36_500;
 
 /** The built-in fields whose short param can also be written empty, which is Any over a base. */
@@ -859,7 +859,7 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
   const scopeSet = readParam(source, 'scopeset');
   const scope = distinctIgnoringCase(splitList(readParam(source, 'scope')));
   const sources = [...new Set(splitList(readParam(source, 'source')))];
-  if (scopeSet && SCOPE_SET_HASH.test(scopeSet)) view.scopeSet = scopeSet.toLowerCase();
+  if (scopeSet) view.scopeSet = scopeSet.toLowerCase();
   else if (scope.length > 0 || isAny('scope')) view.scope = scope;
   if (sources.length > 0 || isAny('source')) view.source = sources;
   if (isAny('age')) view.age = null;
@@ -975,7 +975,8 @@ function intersectAge(a: AgeRange, b: AgeRange): AgeRange | null {
  *  narrower of each pair that overlaps (a subscription under a management group pick is that
  *  subscription; resource group picks inside a subscription are those picks), and a dimension only
  *  one names is taken as it is. A metric's window replaces the widget's. If a dimension has nothing
- *  left, no finding is in both, and the answer says so instead of linking to an empty view. */
+ *  left, no finding is in both, and the answer says so instead of linking to an empty view. Rule tags are the exception: a rule carries several and a tags
+ *  filter matches any of them, so they never count as empty (see `mergeTags`). */
 export function findingsLink(widget: LinkFilters, metric: LinkFilters, options: LinkOptions = {}): FindingsLink {
   const outside: LinkDimension[] = [];
   const merge = (dimension: LinkDimension, a: string[] | undefined, b: string[] | undefined): string[] | undefined => {
@@ -985,10 +986,20 @@ export function findingsLink(widget: LinkFilters, metric: LinkFilters, options: 
     if (both.length === 0) outside.push(dimension);
     return both;
   };
+  // A rule carries several tags and a tags filter matches any of them, so two tag lists have no
+  // intersection to take: a rule can carry one tag from each side. When one list holds the other the
+  // narrower is exact; otherwise the metric's own tags are linked, which can show findings the
+  // widget's tags would have left out but never hides one the number counted.
+  const mergeTags = (a: string[] | undefined, b: string[] | undefined): string[] | undefined => {
+    if (!narrows(a)) return narrows(b) ? b : undefined;
+    if (!narrows(b)) return a;
+    if (a.every(v => b.includes(v))) return a;
+    return b;
+  };
   const category = merge('category', widget.category, metric.category);
   const scope = merge('scope', widget.scope, metric.scope);
   const source = merge('source', widget.source, metric.source);
-  const tags = merge('tags', widget.tags, metric.tags);
+  const tags = mergeTags(widget.tags, metric.tags);
   const severity = merge('severity', widget.severity, metric.severity);
   const rule = merge('rule', widget.rule, metric.rule);
   let age = widget.age ?? metric.age;

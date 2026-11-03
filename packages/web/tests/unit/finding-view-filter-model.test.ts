@@ -206,10 +206,17 @@ describe('a long Scope list', () => {
     expect(encodeView(view({ scope: commas })).needsScopeSet).toBe(true);
   });
 
-  it('reads scopeset= as a reference, lower-cased, and ignores one that is not a sha256', () => {
+  it('reads scopeset= as a reference, lower-cased', () => {
     expect(read(`scopeset=${HASH.toUpperCase()}`).scopeSet).toBe(HASH);
-    expect(read('scopeset=nothex').scopeSet).toBeUndefined();
     expect(read(`scope=${SUB1}&scopeset=${HASH}`).scope).toBeUndefined();
+  });
+
+  it('keeps a scopeset= that is not a sha256 as an unresolved reference, never as no Scope filter (ADR 0016)', () => {
+    const v = read('scopeset=nothex');
+    expect(v.scopeSet).toBe('nothex');
+    expect(v.scope).toBeUndefined();
+    expect(text(v)).toContain('scopeset=nothex');
+    expect(read('scopeset=nothex', { overBase: true }).scopeSet).toBe('nothex');
   });
 
   it('needs no set when there is no list', () => {
@@ -293,6 +300,18 @@ describe('findingsLink', () => {
     expect(params.get('tags')).toBe('t');
     expect(params.get('scope')).toBe(SUB1);
     expect(params.get('window')).toBe('30');
+  });
+
+  it('keeps the metric tags whole when the sides only partly overlap, and the narrower side when one holds the other', () => {
+    expect(link(findingsLink({ tags: ['a', 'b'] }, { tags: ['b', 'c'] })).params.get('tags')).toBe('b,c');
+    expect(link(findingsLink({ tags: ['a', 'b'] }, { tags: ['b'] })).params.get('tags')).toBe('b');
+    expect(link(findingsLink({ tags: ['b'] }, { tags: ['a', 'b'] })).params.get('tags')).toBe('b');
+  });
+
+  it('never reports tags as outside the filters, since one rule can carry a tag from each side', () => {
+    const result = findingsLink({ tags: ['framework:iso27001', 'framework:cis'] }, { tags: ['team:net'] });
+    expect(result.kind).toBe('link');
+    expect(link(result).params.get('tags')).toBe('team:net');
   });
 
   it('adds status, tab and q as given', () => {
