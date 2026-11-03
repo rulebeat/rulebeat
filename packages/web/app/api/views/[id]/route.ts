@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
+import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
@@ -15,7 +16,8 @@ export async function GET(_: Request, { params }: Params) {
   const { id } = await params;
   try {
     const view = await getSavedView(id);
-    if (!view) return Response.json({ error: 'Not found' }, { status: 404 });
+    const refused = guardItem(actor, 'view', view, 'open');
+    if (refused || !view) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
     return Response.json(markedSavedView(actor.access, view));
   } catch (err) {
     return serverError('Could not load the saved view', err);
@@ -23,7 +25,9 @@ export async function GET(_: Request, { params }: Params) {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
-  const actor = await requireRole('views:write');
+  // Every Role holds the Personal action, so this only gets the person in: which action the change needs
+  // depends on the view's owner and visibility, which guardItem() checks next.
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
 
@@ -33,6 +37,8 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
+    const refused = guardItem(actor, 'view', await getSavedView(id), 'change');
+    if (refused) return refused;
     const result = await updateSavedView(id, fields.value, actor.id);
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
@@ -51,9 +57,12 @@ export async function PATCH(req: Request, { params }: Params) {
         action: renamedOnly ? 'view.rename' : 'view.update',
         entityType: 'saved_view',
         entityId: id,
-        summary: renamedOnly
-          ? `Renamed saved view "${before.name}" to "${view.name}"`
-          : `Updated saved view "${view.name}"`,
+        // A Personal item is logged by id and kind only: its name is its owner's alone.
+        summary: before.visibility === 'personal'
+          ? (renamedOnly ? 'Renamed a Personal saved view' : 'Updated a Personal saved view')
+          : renamedOnly
+            ? `Renamed saved view "${before.name}" to "${view.name}"`
+            : `Updated saved view "${view.name}"`,
         details: { fields: changed },
       });
     }
@@ -64,11 +73,13 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_: Request, { params }: Params) {
-  const actor = await requireRole('views:write');
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
 
   try {
+    const refused = guardItem(actor, 'view', await getSavedView(id), 'change');
+    if (refused) return refused;
     const removed = await deleteSavedView(id);
     if (!removed) return Response.json({ error: 'Not found' }, { status: 404 });
 
@@ -77,7 +88,7 @@ export async function DELETE(_: Request, { params }: Params) {
       action: 'view.delete',
       entityType: 'saved_view',
       entityId: id,
-      summary: `Deleted saved view "${removed.name}"`,
+      summary: removed.visibility === 'personal' ? 'Deleted a Personal saved view' : `Deleted saved view "${removed.name}"`,
       details: { fields: SAVED_VIEW_FIELDS },
     });
     return new Response(null, { status: 204 });

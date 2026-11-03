@@ -23,7 +23,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds saved_views to an existing da
     await bootstrapPg(pgDb!);
     expect(await listSavedViews()).toEqual([]);
 
-    const made = await createSavedView({ name: 'Critical only', tab: 'results', query: 'severity=critical' }, null);
+    const made = await createSavedView({ name: 'Critical only', tab: 'results', query: 'severity=critical' }, 'person-1');
     if (!made.ok) throw new Error('create failed');
 
     await bootstrapPg(pgDb!);

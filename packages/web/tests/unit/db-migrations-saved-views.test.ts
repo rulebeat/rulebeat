@@ -66,7 +66,7 @@ describe('upgrading to a database with saved views', () => {
   it('keeps a saved view, query and all, across a restart', async () => {
     const sample = makeSample('current');
     const first = await startProductOn(sample.file);
-    const made = await first.views.createSavedView({ name: 'Critical and high', tab: 'advisories', query: QUERY }, null);
+    const made = await first.views.createSavedView({ name: 'Critical and high', tab: 'advisories', query: QUERY }, 'person-1');
     if (!made.ok) throw new Error('create failed');
     first.stop();
 

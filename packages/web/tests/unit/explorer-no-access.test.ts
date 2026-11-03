@@ -16,10 +16,16 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const render = (props: { tab: 'results' | 'advisories' | 'activity'; noAccess: boolean; emptyTitle?: string }) =>
+const savedViews = {
+  tab: 'results' as const, currentUserId: 'me', openId: null, onOpen: () => undefined, onUrlWrite: () => undefined,
+  permissions: { personal: true, write: false, manage: false },
+};
+
+const render = (props: { tab: 'results' | 'advisories' | 'activity'; noAccess: boolean; emptyTitle?: string; withViews?: boolean }) =>
   renderToStaticMarkup(createElement(FindingsExplorerClient, {
     tab: props.tab, categories: [], canSuppress: false, initialView: emptyView(), basePath: '/scans', extraParams: { tab: props.tab },
     mode: 'page', noAccess: props.noAccess, emptyTitle: props.emptyTitle,
+    ...(props.withViews ? { savedViews } : {}),
   }));
 
 describe('the explorer for a person with no Scope', () => {
@@ -30,6 +36,12 @@ describe('the explorer for a person with no Scope', () => {
     expect(html).not.toContain('No findings yet');
     expect(html).not.toContain('No findings match your filters');
     expect(html).not.toContain('No open Advisories');
+  });
+
+  it('still offers the saved views menu, since a person with no Scope keeps their own views and can open Shared ones', () => {
+    const html = render({ tab: 'results', noAccess: true, withViews: true });
+    expect(html).toContain('You have been given no access');
+    expect(html).toContain('Views');
   });
 
   it('shows the ordinary first screen to a person who holds a Scope', () => {

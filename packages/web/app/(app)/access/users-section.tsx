@@ -15,6 +15,7 @@ import {
 import { ROLE_LABELS } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
 import { describeAccess } from '@/lib/access-model';
+import { removalConfirmation, type OwnedItemCounts } from '@/lib/owned-items-copy';
 import { KeyRound, Mail, MoreHorizontal, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 
 /** The href of one person's page. */
@@ -27,10 +28,12 @@ export const personHref = (id: string): string => `/access/users/${encodeURIComp
  * page never scrolls sideways.
  */
 export function UsersSection({
-  initialUsers, initialUsersWithPassword, currentUserId,
+  initialUsers, initialUsersWithPassword, ownedItems = {}, currentUserId,
 }: {
   initialUsers: AppUserWithAccess[];
   initialUsersWithPassword: string[];
+  /** What each person owns, by person id: counts only, for the removal confirmation. */
+  ownedItems?: Record<string, OwnedItemCounts>;
   currentUserId: string;
 }) {
   const [users, setUsers] = useState<AppUserWithAccess[]>(initialUsers);
@@ -46,7 +49,7 @@ export function UsersSection({
     const message = self
       ? 'Remove your own access? You will be signed out on your next request, and denied if you try to sign in again. An admin would need to add you back first.'
       : `Remove ${user.email}? They lose access immediately, and are denied if they try to sign in again until an admin adds them back.`;
-    if (!confirm(message)) return;
+    if (!confirm(removalConfirmation(message, ownedItems[user.id]))) return;
 
     setError(null);
     setBusyFor(user.id);

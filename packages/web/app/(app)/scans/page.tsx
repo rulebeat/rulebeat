@@ -17,6 +17,7 @@ import { getPageAccess } from '@/lib/page-access';
 import { holdsNoScope } from '@/lib/access-model';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
+import { itemPermissionsFor } from '@/lib/item-access-model';
 import type { Rule, Suppression } from '@/lib/types';
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
@@ -113,6 +114,7 @@ export default async function ScansPage({
         compareQuery={compareIds ? compareQueryFromParams(params) : undefined}
         initialSchedules={initialSchedules}
         controls={controls}
+        savedViewAccess={user ? { userId: user.id, permissions: itemPermissionsFor(access, 'view') } : undefined}
         notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
         tabEmpty={tabEmpty}

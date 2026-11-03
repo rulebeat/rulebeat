@@ -60,8 +60,36 @@ rules in scope shows an empty posture rather than 0% or 100%.
 ## Managing dashboards
 
 Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
-Restore starter to recreate the seeded Overview layout. Every dashboard is deletable including the
-default; deleting it promotes the oldest remaining one. Layouts save per dashboard. Creating,
+Restore starter to recreate the seeded Overview layout. Layouts save per dashboard. Creating,
 renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
-and would bury real changes. Viewers see every dashboard, editing needs the editor role
+and would bury real changes.
+
+### Personal and Shared
+
+Every dashboard is **Personal** or **Shared**, and has an owner. Anything you make is Personal: a new
+dashboard, a Duplicate, one made from a template, and Restore starter. A Personal dashboard is yours
+alone. Anyone else, an Admin included, gets "not found" for it, in the address bar and from the API.
+Everyone signed in can keep Personal dashboards, a Viewer and a person with no Scope too.
+
+A Shared dashboard opens at `/dashboards/<id>` for anyone signed in, each person seeing what their own
+access allows. A person who holds no Scope sees a message that they have been given no access in place of the widgets, since every widget would read empty. Its owner can change it if they are an Editor. An Admin, or an Editor on Everything, can
+change any Shared dashboard, including one with no owner (every dashboard from before owners has none).
+Anyone who can open a dashboard can Duplicate it: the copy is a Personal dashboard of their own, it is
+never the default, and its widgets keep any saved view they point at.
+
+The gallery has two sections. **Yours** lists everything you own, each tagged Personal or Shared.
+**Shared by others** lists the Shared dashboards you do not own, with the owner's name, or their email
+when they have no name yet, or "No owner". Your own Shared dashboards appear only under Yours.
+
+A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
+else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
+Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names
+that already clash from before keep working.
+
+The Install default is a Shared dashboard chosen by an Admin or an Editor on Everything. Nothing becomes
+the default by being first or by being the oldest left: deleting the default leaves the install without
+one until it is set again. A new dashboard is never the default.
+
+Creating, renaming and deleting a Personal dashboard is audited by its id and kind only, with no name.
+Removing a person deletes their Personal dashboards and leaves their Shared ones Shared with no owner
 ([`rbac.md`](rbac.md)).
