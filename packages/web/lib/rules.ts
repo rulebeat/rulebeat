@@ -10,8 +10,8 @@ import { isCommitDateVersion } from './rule-version-markers';
 import type { RuleDefinition } from './shipped-catalogue';
 import type { RuleVersionHistory } from './types';
 
-export async function loadRules(): Promise<Rule[]> {
-  return (await many(db.select().from(rulesTable))).map(rowToRule);
+export async function loadRules(handle: DbHandle = db): Promise<Rule[]> {
+  return (await many(handle.select().from(rulesTable))).map(rowToRule);
 }
 
 function definitionQuery(definition: RuleDefinition): string {
@@ -205,25 +205,22 @@ const UPDATABLE_FIELDS = [
  * `lastRunStatus`/`lastRunAt` are never written here.
  */
 export type UpdateRuleResult =
-  | { ok: true; rule: Rule; movedCategories: string[] }
+  | { ok: true; rule: Rule }
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'name-taken' };
 
 export async function updateRule(id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
-  const result = await inTransaction(async (tx) => {
+  return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     return updateRuleOn(tx, id, changes);
   });
-  if (result.ok) await refreshSnapshotsFor(result.movedCategories);
-  return result;
 }
 
 /**
  * The read, name check and write of `updateRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library update request's approval, #283). The caller
  * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. A change of category moves the rule's
- * findings with it in the same transaction; `movedCategories` names the categories whose counts changed,
- * and the caller passes them to `refreshSnapshotsFor()` once its transaction has committed.
+ * findings with it in the same transaction, and both categories' daily snapshots are refreshed in it too.
  */
 export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
   const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
@@ -250,13 +247,15 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
   if (Object.keys(set).length > 0) {
     await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
   }
-  const movedCategories = typeof set.category === 'string' ? await moveFindingsToCategory(tx, id, set.category) : [];
+  if (typeof set.category === 'string') {
+    await refreshSnapshotsFor(await moveFindingsToCategory(tx, id, set.category), undefined, tx);
+  }
 
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
   // Always present: this same transaction just confirmed the row exists and only this process
   // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
   // isn't reachable through any caller `updateRule()` has today.
-  return { ok: true, rule: rowToRule(stored!), movedCategories };
+  return { ok: true, rule: rowToRule(stored!) };
 }
 
 export type SwitchRuleVersionResult =
@@ -265,8 +264,7 @@ export type SwitchRuleVersionResult =
   | { ok: false; reason: 'name-taken'; conflictingName: string };
 
 export async function switchRuleVersion(id: string, version: string): Promise<SwitchRuleVersionResult> {
-  let movedCategories: string[] = [];
-  const result = await inTransaction(async (tx): Promise<SwitchRuleVersionResult> => {
+  return inTransaction(async (tx): Promise<SwitchRuleVersionResult> => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     if (!current) return { ok: false, reason: 'not-found' };
@@ -285,15 +283,13 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
       ...definitionToColumns(definition), version, filter: null,
     }).where(eq(rulesTable.id, id)));
     // The rule's findings follow its category, so the live numbers change with the switch.
-    movedCategories = await moveFindingsToCategory(tx, id, definition.category);
+    await refreshSnapshotsFor(await moveFindingsToCategory(tx, id, definition.category), undefined, tx);
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     return {
       ok: true, rule: rowToRule(stored!), oldVersion: current.version,
       before: definitionOfRow(current), after: definition,
     };
   });
-  if (result.ok) await refreshSnapshotsFor(movedCategories);
-  return result;
 }
 
 /**

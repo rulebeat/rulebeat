@@ -661,7 +661,7 @@ export async function removeFindingRowsForRule(
  *  rule at once instead of at its next scan. Touches `findings` only: `scan_findings`, the stored scan
  *  blobs and `finding_events` keep the category each scan saw. Returns the categories whose counts
  *  changed (the ones the findings left, and `category`), empty when none moved; the caller passes
- *  them to refreshSnapshotsFor() once its transaction has committed. */
+ *  them to refreshSnapshotsFor() on the same `tx`. */
 export async function moveFindingsToCategory(tx: DbHandle, ruleId: string, category: string): Promise<string[]> {
   const left = await many(
     tx.selectDistinct({ category: findingsTable.category }).from(findingsTable)
@@ -672,11 +672,11 @@ export async function moveFindingsToCategory(tx: DbHandle, ruleId: string, categ
   return [...left.map(r => r.category), category];
 }
 
-/** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
- *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
- *  transaction has not yet committed. */
-export async function refreshSnapshotsFor(categories: string[], now?: Date): Promise<void> {
-  for (const category of categories) await upsertDailySnapshot(category, now);
+/** Recomputes today's snapshot for each category. Pass the transaction `handle` that wrote the rows
+ *  when the refresh must commit with them: on Postgres a recompute on the default handle uses its own
+ *  connection and would not see rows that transaction has not yet committed. */
+export async function refreshSnapshotsFor(categories: string[], now?: Date, handle?: DbHandle): Promise<void> {
+  for (const category of categories) await upsertDailySnapshot(category, now, handle);
 }
 
 /** Refreshes today's snapshot of each category startup seeding moved findings between, which it could

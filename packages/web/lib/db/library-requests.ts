@@ -5,7 +5,6 @@ import { many, one, run, inTransaction, pgAdvisoryXactLock } from './exec';
 import { LIBRARY_REQUEST_LOCK_KEY } from './library-request-cleanup';
 import type { Rule, RuleScope, Severity } from '@rulebeat/core';
 import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges } from '@/lib/rules';
-import { refreshSnapshotsFor } from './findings';
 import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import {
   definitionOfPersonalRule, getPersonalRule, setPersonalRuleLibraryRule, type PersonalRule, type PersonalRuleDefinition,
@@ -247,13 +246,12 @@ function changesFrom(definition: PersonalRuleDefinition, enabled: boolean | unde
  * A new-rule request inserts the library rule with a new id and the request's id. An update request (#283)
  * re-reads its target under the locks and writes the reviewed definition onto the same id, so the rule's
  * findings, suppressions and ages stay as they are (its findings follow it, in this transaction, when the
- * reviewed definition changes its category). It is refused when the target is gone, is not `custom`
+ * reviewed definition changes its category, with both categories' snapshots refreshed in it). It is refused when the target is gone, is not `custom`
  * (a built-in changes only by version) or runs on another backend. The target keeps its enabled state
  * unless the reviewer sets one.
  */
 export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits): Promise<ApproveResult> {
-  let movedCategories: string[] = [];
-  const result = await inTransaction(async (tx): Promise<ApproveResult> => {
+  return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     await pgAdvisoryXactLock(tx, LIBRARY_REQUEST_LOCK_KEY);
     const row = await one(tx.select().from(libraryRequests).where(eq(libraryRequests.id, id)));
@@ -272,7 +270,6 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
       if (!updated.ok) return updated.reason === 'not-found' ? { ok: false, reason: 'target-gone' } : updated;
       rule = updated.rule;
       before = target.rule;
-      movedCategories = updated.movedCategories;
     } else {
       const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id));
       if (!inserted.ok) return inserted;
@@ -286,9 +283,6 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
 
     return { ok: true, rule, before, request: rowToRequest((await one(tx.select().from(libraryRequests).where(eq(libraryRequests.id, id))))!) };
   });
-  // After the commit: on Postgres a snapshot recompute runs on its own connection and would not see the move before it.
-  if (result.ok) await refreshSnapshotsFor(movedCategories);
-  return result;
 }
 
 export type CloseResult =
