@@ -62,8 +62,11 @@ export function dateWindowPhrase(w: DateWindow): string {
 }
 
 /** `dateWindowLabel` with the year on each end of a custom range, so a range that crosses a year
- *  reads unambiguously on the stamp. Relative windows read the same as in `dateWindowLabel`. */
-export function dateWindowLabelWithYear(w: DateWindow): string {
+ *  reads unambiguously on the stamp. A custom range is labelled with the dates `resolveDateWindow`
+ *  gives for `now` (clamped, never the stored ones), so the label and the resolved dates agree.
+ *  Relative windows read the same as in `dateWindowLabel`. */
+export function dateWindowLabelWithYear(w: DateWindow, now: Date = new Date()): string {
   if (w.mode === 'relative') return dateWindowLabel(w);
-  return `${formatDateKeyWithYear(w.from)} – ${formatDateKeyWithYear(w.to)}`;
+  const { from, to } = resolveDateWindow(w, now);
+  return `${formatDateKeyWithYear(from)} – ${formatDateKeyWithYear(to)}`;
 }

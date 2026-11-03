@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { loadDashboardStamp } from '@/lib/dashboard-stamp';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -16,7 +16,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // The stamp rides in this response so it and the definition are read under one Access. The page's
   // address filters arrive as the query string, and the server works out the effective filters itself.
   const stamp = await loadDashboardStamp(actor, d.config, new URL(req.url).searchParams);
-  return Response.json({ ...markedDashboard(actor.access, d), stamp });
+  const [held] = await holdBackDashboards(actor.access, [d]);
+  return Response.json({ ...held, stamp });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -34,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
     // isDefault-only request: return the (now-updated) dashboard without touching other fields.
     const updated = await getDashboard(id);
-    return Response.json(updated && markedDashboard(actor.access, updated));
+    return Response.json(updated && (await holdBackDashboards(actor.access, [updated]))[0]);
   }
 
   const before = await getDashboard(id);
@@ -61,7 +62,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  return Response.json(markedDashboard(actor.access, result.dashboard));
+  const [held] = await holdBackDashboards(actor.access, [result.dashboard]);
+  return Response.json(held);
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

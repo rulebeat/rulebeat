@@ -31,18 +31,17 @@ import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activi
 import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
-import type { Dashboard, WidgetDef } from '@/lib/types';
-import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
+import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
+import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
+import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
 
 interface Props {
-  dashboard: Dashboard;
-  /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
-  outsideAccess: OutsideAccess;
+  /** The dashboard without the stored values the person's Access does not reach, which `heldBack` counts. */
+  dashboard: HeldBackDashboard;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -50,7 +49,7 @@ interface Props {
 const ROW_HEIGHT = 80;
 const ROW_MARGIN = 8;
 
-function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
+function filtersFromConfig(config: HeldBackDashboard['config']): DashboardFilters {
   return {
     categories: config.filters?.categories ?? [],
     subscriptions: config.filters?.subscriptions ?? [],
@@ -61,19 +60,22 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, onRemove, onConfigure }: {
   widget: WidgetDef;
   filters: WidgetFilters;
   filtered: boolean;
   refreshKey: number;
   editMode: boolean;
-  outsideAccess: OutsideAccess;
+  dashboardId: string;
+  heldBack: HeldBack[];
   onRemove: () => void;
   onConfigure: () => void;
 }) {
   // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
   // empty read would turn into a 100% posture or "No violations found".
-  const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
+  const accessReason = widgetHeldBackReason(heldBack, dashboardId, widget, {
+    subscriptions: filters.subscriptions ?? [], resourceGroups: filters.resourceGroups ?? [],
+  });
   const inner = accessReason ? (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
       <Lock className="size-5 text-ink-2" aria-hidden="true" />
@@ -120,9 +122,9 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
+export function DashboardGridClient({ dashboard: initial }: Props) {
   const router = useRouter();
-  const [dashboard, setDashboard] = useState<Dashboard>(initial);
+  const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -169,7 +171,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
       })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
+        .then(res => res.ok ? res.json() as Promise<HeldBackDashboard> : null)
         .then(d => { if (d) setDashboard(d); });
     }, 500);
     return () => clearTimeout(t);
@@ -312,7 +314,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       body: JSON.stringify({ name: trimmed }),
     });
     if (res.ok) {
-      const d = await res.json() as Dashboard;
+      const d = await res.json() as HeldBackDashboard;
       setDashboard(d);
       setTitleValue(d.name);
       setTitleError('');
@@ -340,7 +342,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         }),
       });
       if (res.ok) {
-        const d = await res.json() as Dashboard;
+        const d = await res.json() as HeldBackDashboard;
         setDashboard(d);
         setDirty(false);
       }
@@ -371,7 +373,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
   async function handleDuplicate() {
     const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
     if (res.ok) {
-      const copy = await res.json() as Dashboard;
+      const copy = await res.json() as HeldBackDashboard;
       router.push(`/dashboards/${copy.id}`);
       router.refresh();
     }
@@ -384,7 +386,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       body: JSON.stringify({ isDefault: true }),
     });
     if (res.ok) {
-      const d = await res.json() as Dashboard;
+      const d = await res.json() as HeldBackDashboard;
       setDashboard(d);
       router.refresh(); // invalidate cached server data so sidebar / gallery update
     }
@@ -553,7 +555,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         dateWindow={dateWindow}
         onFiltersChange={setDashFilters}
         onDateWindowChange={setDateWindow}
-        outsideAccess={outsideAccess}
+        dashboardId={dashboard.id}
+        heldBack={dashboard.heldBack}
       />
 
       {/* Edit mode banner */}
@@ -594,7 +597,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
                   refreshKey={refreshKey}
                   editMode={editMode}
-                  outsideAccess={outsideAccess}
+                  dashboardId={dashboard.id}
+                  heldBack={dashboard.heldBack}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />
@@ -608,7 +612,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       {configuringWidget && (
         <WidgetConfigPanel
           widget={configuringWidget}
-          outsideAccess={outsideAccess}
+          heldBack={dashboard.heldBack}
           onClose={() => setConfiguringWidget(null)}
           onSave={updated => { updateWidget(updated); setConfiguringWidget(null); }}
         />

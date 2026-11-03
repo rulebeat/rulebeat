@@ -35,13 +35,26 @@ describe('GET /api/dashboards/[id] stamp', () => {
   });
 
   it('lets the address replace a saved dimension and add others, and holds back what the person does not hold', async () => {
-    const stamp = await stampFor('Viewer on one subscription', `?subscriptions=${SUB_ONE},${SUB_TWO}&severities=critical&from=2025-12-20&to=2026-01-05`);
+    const stamp = await stampFor('Viewer on one subscription', `?subscription=${SUB_ONE},${SUB_TWO}&severity=critical&from=2025-12-20&to=2026-01-05`);
     expect(stamp.filters).toEqual([
       { dimension: 'subscription', values: [SUB_ONE], heldBack: 1 },
       { dimension: 'severity', values: ['Critical'], heldBack: 0 },
     ]);
     expect(stamp.dateWindow).toEqual({ label: 'Dec 20, 2025 – Jan 5, 2026', from: '2025-12-20', to: '2026-01-05' });
     expect(JSON.stringify(stamp)).not.toContain(SUB_TWO);
+  });
+
+  it('keeps the label and the dates of a window it cannot read or has to clamp in agreement', async () => {
+    const bad = await stampFor('Admin', '?from=2026-13-40&to=2026-01-01');
+    expect(bad.dateWindow.label).toBe('7d');
+    const backwards = await stampFor('Admin', '?from=2026-02-01&to=2026-01-01');
+    expect(backwards.dateWindow).toEqual({ label: 'Jan 1, 2026 – Jan 1, 2026', from: '2026-01-01', to: '2026-01-01' });
+  });
+
+  it('never names a held-back subscription anywhere in the response', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: people['Viewer on one subscription'] } });
+    const res = await GET(new Request('http://localhost/api/dashboards/x'), { params: Promise.resolve({ id: seed.dashboardId }) });
+    expect(JSON.stringify(await res.json())).not.toContain(SUB_TWO);
   });
 
   it('answers 401 with no stamp when nobody is signed in', async () => {

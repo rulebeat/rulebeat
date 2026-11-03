@@ -11,7 +11,8 @@ import { SlideOverPanel } from '@/components/dashboard/slide-over-panel';
 import type { WidgetDef, WidgetType, StatMetric, Category, FilterOptionsResponse } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { subscriptionValueLabel } from '@/lib/placement';
-import { withOutsideOptions, type OutsideAccess } from '@/lib/outside-access';
+import { HeldBackChip } from '@/components/ui/held-back-chip';
+import { heldBackCount, type HeldBack } from '@/lib/held-back';
 
 interface PolicyOption { id: string; name: string; category: string; enabled?: boolean }
 
@@ -115,8 +116,8 @@ interface Props {
   widget: WidgetDef | null;
   onClose: () => void;
   onSave: (updated: WidgetDef) => void;
-  /** Stored subscription and resource group values the person's access does not reach (#274). */
-  outsideAccess?: OutsideAccess;
+  /** The stored values of any place the person's Access does not reach, counted (#363). */
+  heldBack?: HeldBack[];
 }
 
 const STAT_METRICS: Array<{ value: StatMetric; label: string }> = [
@@ -213,14 +214,17 @@ interface ScopeSectionProps {
   tags: string[];
   policies: PolicyOption[];
   trendCaveat?: boolean;
-  outsideAccess?: OutsideAccess;
+  widgetId: string;
+  heldBack?: HeldBack[];
 }
-function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroups, tags, policies, trendCaveat, outsideAccess }: ScopeSectionProps) {
+function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroups, tags, policies, trendCaveat, widgetId, heldBack }: ScopeSectionProps) {
   const selectedPolicyIds: string[] = Array.isArray(cfg.policyIds) ? cfg.policyIds as string[] : [];
   const selectedSubs: string[] = Array.isArray(cfg.subscriptions) ? cfg.subscriptions as string[] : [];
   const selectedRGs: string[] = Array.isArray(cfg.resourceGroups) ? cfg.resourceGroups as string[] : [];
   const selectedTags: string[] = Array.isArray(cfg.tags) ? cfg.tags as string[] : [];
   const selectedSevs: string[] = Array.isArray(cfg.severities) ? cfg.severities as string[] : [];
+  const heldSubs = heldBackCount(heldBack, 'widget', widgetId, 'subscription');
+  const heldRGs = heldBackCount(heldBack, 'widget', widgetId, 'resourceGroup');
   const windowValue = (cfg.windowDays === 1 || cfg.windowDays === 7 || cfg.windowDays === 30) ? String(cfg.windowDays) : 'inherit';
 
   const inheritCategoryOptions = [
@@ -255,18 +259,20 @@ function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroup
         <div className="flex flex-wrap gap-2">
           <ChecklistDropdown
             label="Subscription"
-            options={withOutsideOptions(subscriptions.map(s => ({ value: s, label: subscriptionValueLabel(s) })), selectedSubs, outsideAccess, 'subscription')}
+            options={subscriptions.map(s => ({ value: s, label: subscriptionValueLabel(s) }))}
             selected={new Set(selectedSubs)}
             onToggle={v => toggleList('subscriptions', selectedSubs, v)}
             onClear={() => setConfig('subscriptions', [])}
           />
+          {heldSubs > 0 && <HeldBackChip count={heldSubs} visible={selectedSubs.length} className="self-center" />}
           <ChecklistDropdown
             label="Resource Group"
-            options={withOutsideOptions(resourceGroups.map(r => ({ value: r, label: r })), selectedRGs, outsideAccess, 'resourceGroup')}
+            options={resourceGroups.map(r => ({ value: r, label: r }))}
             selected={new Set(selectedRGs)}
             onToggle={v => toggleList('resourceGroups', selectedRGs, v)}
             onClear={() => setConfig('resourceGroups', [])}
           />
+          {heldRGs > 0 && <HeldBackChip count={heldRGs} visible={selectedRGs.length} className="self-center" />}
           <ChecklistDropdown
             label="Tags"
             options={tags.map(t => ({ value: t, label: t }))}
@@ -295,7 +301,7 @@ function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroup
   );
 }
 
-export function WidgetConfigPanel({ widget, onClose, onSave, outsideAccess }: Props) {
+export function WidgetConfigPanel({ widget, onClose, onSave, heldBack }: Props) {
   const [local, setLocal] = useState<WidgetDef | null>(widget);
   const [policies, setPolicies] = useState<PolicyOption[]>([]);
   const [options, setOptions] = useState<FilterOptionsResponse>({ categories: [], tags: [], subscriptions: [], resourceGroups: [], rules: [] });
@@ -434,7 +440,8 @@ export function WidgetConfigPanel({ widget, onClose, onSave, outsideAccess }: Pr
         resourceGroups={options.resourceGroups}
         tags={options.tags}
         policies={policies}
-        outsideAccess={outsideAccess}
+        widgetId={local.id}
+        heldBack={heldBack}
         trendCaveat={trendCaveatTypes.includes(local.type)}
       />
 

@@ -10,6 +10,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - `GET /api/dashboards/[id]` returns the data for the "As seen by" stamp with the dashboard: the person, their Access as counts by kind (or Everything, or No access), each filter with the values they hold and a count of the ones held back, and the date window with the dates it resolved to. The stamp is worked out under the same Access as the dashboard, and a custom range that crosses a year shows both years.
 
+### Changed
+
+- A dashboard or saved view no longer sends a stored subscription, resource group, resource name or returned-column value outside your Access to your browser. It comes back without those values and with a count for each place, and the dashboard filter bar, the widget editor and the Scans filter bar show a soft "N outside your access" chip (or "Outside your access" when every value in a filter is held back) in their place. A widget filtered only to values you cannot see says so instead of drawing a number. People who hold Everything see every value as before.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
