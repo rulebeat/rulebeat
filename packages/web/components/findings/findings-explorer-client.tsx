@@ -820,7 +820,28 @@ export function FindingsExplorerClient({
   // in the widget, then a failed read, then loading, then the empty state, so a failure is never
   // drawn as "no findings".
   const screen = screenOf({ noAccess, mode, suppressionsFailed, failure, data });
-  if (screen === 'no-access') return <NoAccessState />;
+  if (screen === 'no-access') {
+    // Saved views are the person's own to keep and Shared ones are open to everyone, so the menu stays
+    // even when there are no findings to read.
+    return (
+      <>
+        {mode === 'page' && savedViews && (
+          <div className="flex items-center bg-surface px-5 py-3">
+            <SavedViewsMenu
+              tab={savedViews.tab}
+              currentUserId={savedViews.currentUserId}
+              permissions={savedViews.permissions}
+              openId={openViewId}
+              onOpenIdChange={setOpenViewId}
+              onOpen={savedViews.onOpen}
+              currentQuery={savedViewQuery}
+            />
+          </div>
+        )}
+        <NoAccessState />
+      </>
+    );
+  }
   if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
   }

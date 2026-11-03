@@ -1,10 +1,11 @@
 /**
  * #355: a person who holds no Scope still owns their Personal dashboards, so the dashboard page opens them
- * with the editing controls instead of the no-access message. The no-access message is for findings.
+ * with the editing controls. A Shared dashboard opens too, but its widgets would all read "No findings", so
+ * the page says why there is nothing to show instead.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { clearDashboards, resetDb } from '../helpers/db';
+import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { deleteAssignmentsOn } from '@/lib/db/role-assignments';
@@ -66,5 +67,15 @@ describe('the dashboard page for a person with no Scope', () => {
     expect(tree.some(n => n.type === NoAccessState)).toBe(false);
     const grid = tree.find(n => n.type === DashboardGridClient);
     expect(grid?.props.canChange).toBe(true);
+  });
+
+  it('tells them they have been given no access on a Shared dashboard, in place of widgets that would read empty', async () => {
+    const user = await viewerWithNoScope();
+    const made = await createDashboard({ name: 'Team', config: { widgets: [] } as never }, user.id);
+    if (!made.ok) throw new Error(made.reason);
+    await execRaw(`UPDATE dashboards SET visibility = 'shared' WHERE id = '${made.dashboard.id}'`);
+    const tree = await render(made.dashboard);
+    expect(tree.some(n => n.type === NoAccessState)).toBe(true);
+    expect(tree.some(n => n.type === DashboardGridClient)).toBe(false);
   });
 });

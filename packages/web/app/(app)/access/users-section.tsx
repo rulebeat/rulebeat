@@ -15,7 +15,7 @@ import {
 import { ROLE_LABELS } from '@/lib/rbac';
 import type { AppUserWithAccess } from '@/lib/access';
 import { describeAccess } from '@/lib/access-model';
-import { effectOfRemoving, ownedItemsSentence, type OwnedItemCounts } from '@/lib/owned-items-copy';
+import { removalConfirmation, type OwnedItemCounts } from '@/lib/owned-items-copy';
 import { KeyRound, Mail, MoreHorizontal, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 
 /** The href of one person's page. */
@@ -49,8 +49,7 @@ export function UsersSection({
     const message = self
       ? 'Remove your own access? You will be signed out on your next request, and denied if you try to sign in again. An admin would need to add you back first.'
       : `Remove ${user.email}? They lose access immediately, and are denied if they try to sign in again until an admin adds them back.`;
-    const owned = ownedItemsSentence(effectOfRemoving(ownedItems[user.id]));
-    if (!confirm(owned ? `${message} ${owned}` : message)) return;
+    if (!confirm(removalConfirmation(message, ownedItems[user.id]))) return;
 
     setError(null);
     setBusyFor(user.id);

@@ -54,3 +54,9 @@ export function ownedItemsSentence(effect: OwnedItemsEffect): string {
 export function ownedItemsAuditSentence(effect: OwnedItemsEffect): string {
   return ownedItemsSentence(effect).replace(/ will be deleted\./, ' deleted.').replace(/ will stay Shared with no owner\./, ' left Shared with no owner.');
 }
+
+/** The removal confirmation: the base warning, then what happens to what the person owns, when they own any. */
+export function removalConfirmation(message: string, counts: OwnedItemCounts | undefined): string {
+  const owned = ownedItemsSentence(effectOfRemoving(counts));
+  return owned ? `${message} ${owned}` : message;
+}

@@ -72,7 +72,7 @@ alone. Anyone else, an Admin included, gets "not found" for it, in the address b
 Everyone signed in can keep Personal dashboards, a Viewer and a person with no Scope too.
 
 A Shared dashboard opens at `/dashboards/<id>` for anyone signed in, each person seeing what their own
-access allows. Its owner can change it if they are an Editor. An Admin, or an Editor on Everything, can
+access allows. A person who holds no Scope sees a message that they have been given no access in place of the widgets, since every widget would read empty. Its owner can change it if they are an Editor. An Admin, or an Editor on Everything, can
 change any Shared dashboard, including one with no owner (every dashboard from before owners has none).
 Anyone who can open a dashboard can Duplicate it: the copy is a Personal dashboard of their own, it is
 never the default, and its widgets keep any saved view they point at.

@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation';
+import { NoAccessState } from '@/components/findings/no-access-state';
 import { Header } from '@/components/layout/header';
 import { getDashboard, listDashboards } from '@/lib/db/dashboards';
 import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
-import { NO_ACCESS } from '@/lib/access-model';
+import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
 import { markDashboardConfig } from '@/lib/outside-access';
-import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem } from '@/lib/item-access-model';
+import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem, isOwnItem } from '@/lib/item-access-model';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props { params: Promise<{ id: string }> }
@@ -24,6 +25,7 @@ export default async function DashboardPage({ params }: Props) {
   const dashboards = openableItems({ id: user?.id ?? '' }, await listDashboards());
   const access = user ? await resolveAccess(user) : NO_ACCESS;
   const permissions = itemPermissionsFor(access, 'dashboard');
+  const ownsPersonal = dashboard.visibility === 'personal' && isOwnItem({ id: user?.id ?? '' }, dashboard);
 
   return (
     <>
@@ -31,13 +33,16 @@ export default async function DashboardPage({ params }: Props) {
       <div className="flex-1 min-h-0 flex flex-col">
         <DashboardTabs dashboards={dashboards} activeId={dashboard.id} />
         <div className="flex-1 min-h-0">
-          {/* No Scope gate: the person owns their Personal dashboards, and the widgets read nothing for them. */}
-          <DashboardGridClient
-            dashboard={dashboard}
-            outsideAccess={markDashboardConfig(access, dashboard.config)}
-            canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
-            canSetDefault={permissions.manage}
-          />
+          {/* A person with no Scope keeps their own Personal dashboards to edit, but a Shared one would draw
+              every widget empty ("No findings"), so they are told why instead. */}
+          {holdsNoScope(access) && !ownsPersonal
+            ? <NoAccessState />
+            : <DashboardGridClient
+                dashboard={dashboard}
+                outsideAccess={markDashboardConfig(access, dashboard.config)}
+                canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
+                canSetDefault={permissions.manage}
+              />}
         </div>
       </div>
     </>
