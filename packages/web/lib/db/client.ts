@@ -25,6 +25,7 @@ let sqliteDrizzle: BetterSQLite3Database<typeof schema> | null = null;
 export let sqliteFilePath: string | null = null;
 let pgDrizzle: NodePgDatabase<typeof pgSchema> | null = null;
 let ready: Promise<void> = Promise.resolve();
+let categoriesMovedBySeeding: string[] = [];
 
 if (dbKind === 'pg') {
   // Postgres mode (issue #73): RULEBEAT_DATABASE_URL is set. One pool for the process; Drizzle's
@@ -38,8 +39,9 @@ if (dbKind === 'pg') {
   // Schema first, then the same built-in content a fresh SQLite install gets; both idempotent. A
   // failure rejects dbReady, so the first query fails loudly instead of running against a missing
   // or unseeded schema.
-  ready = bootstrapPg(pgInstance).then(() =>
-    seedPg(pgInstance, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST }));
+  ready = bootstrapPg(pgInstance)
+    .then(() => seedPg(pgInstance, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST }))
+    .then((moved) => { categoriesMovedBySeeding = moved; });
 } else {
   // SQLite mode: the default, byte-identical to the behaviour before Postgres support existed.
 
@@ -65,7 +67,16 @@ if (dbKind === 'pg') {
   // See runSeeds' own doc comment: this is the one call site that can't point dataDir at a
   // throwaway directory, so it's the one that opts out of the owner-bootstrap file write under Vitest
   // (which sets this env var itself: nothing in the product does).
-  runSeeds(sqliteHandle, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST });
+  categoriesMovedBySeeding = runSeeds(sqliteHandle, DATA_DIR, { skipOwnerBootstrap: !!process.env.VITEST });
+}
+
+/** The categories whose findings startup seeding moved because a rule moved to a new version, once, so
+ *  the caller can refresh their snapshots with the database open. Empty on every start that moved
+ *  nothing. Await `dbReady` first: on Postgres the seeding finishes after the module loads. */
+export function takeCategoriesMovedBySeeding(): string[] {
+  const moved = categoriesMovedBySeeding;
+  categoriesMovedBySeeding = [];
+  return moved;
 }
 
 /** Raw better-sqlite3 connection. Null in Postgres mode; only exec.ts's transaction helper and

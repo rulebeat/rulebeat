@@ -6,6 +6,14 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Moving a rule to another category now moves its findings with it at once, instead of at its next scan. This holds for a custom rule edit, a version switch, a disabled rule that moves to a new version at startup, and a Library request approval. The ring, the Scans count and New vs Fixed count the rule's open and fixed findings under the new category straight away, and both categories' snapshots are refreshed. Run History and Compare keep showing the category each scan saw.
+
+### Fixed
+
+- Subscription and resource group filters now ignore case, so a count can go up where it used to miss findings. A filter on `RG-A` now counts findings placed in `rg-a` as well, in the posture ring, New vs Fixed, Activity occurrences and the Scans views.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

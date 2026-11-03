@@ -288,7 +288,11 @@ describe('#246 · a database an earlier release left on "Before versioning"', ()
 
   it('keeps every rule id, enabled state and tag, every finding with its first-seen date, and every suppression', () => {
     read(db => {
-      expect(rowsIfPresent(db, 'findings')).toEqual(findings);
+      // Every column is kept but the category: the rule's findings follow it to the category its shipped
+      // definition is in (#379), at once and not at its next scan.
+      const shippedCategory = loadShippedCatalogue(REAL_DATA_DIR).rules.find(r => r.id === coreId)!.definition.category;
+      expect(shippedCategory).not.toBe(findings[0]!.category);
+      expect(rowsIfPresent(db, 'findings')).toEqual(findings.map(f => ({ ...f, category: shippedCategory })));
       expect(rowsIfPresent(db, 'suppressions')).toEqual(suppressions);
       const now = new Map(rowsIfPresent(db, 'rules').map(r => [String(r.id), { enabled: r.enabled, tags: r.tags }]));
       expect(now).toEqual(ruleState);

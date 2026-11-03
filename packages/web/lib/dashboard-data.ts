@@ -6,10 +6,10 @@ import { getSnapshots, getBaselineSnapshots, getLastSnapshotTimes, SNAPSHOT_FORM
 import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
 import { listScanMetas } from './scan-history';
-import type { WidgetFilters } from './dashboard-filters';
+import { resourceGroupFilterMatches, subscriptionFilterMatches, type WidgetFilters } from './dashboard-filters';
 import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
-import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
+import { DIRECTORY_SUBSCRIPTION } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 import type { Access } from './access-model';
 
@@ -80,8 +80,8 @@ function matchesFilters(
 ): boolean {
   if (suppressedFingerprints.has(f.fingerprint)) return false;
   if (filters.categories?.length && !filters.categories.includes(f.category)) return false;
-  if (filters.subscriptions?.length && !filters.subscriptions.includes(subscriptionValue(f))) return false;
-  if (filters.resourceGroups?.length && (!f.resourceGroup || !filters.resourceGroups.includes(f.resourceGroup))) return false;
+  if (filters.subscriptions?.length && !subscriptionFilterMatches(filters.subscriptions, f)) return false;
+  if (filters.resourceGroups?.length && (!f.resourceGroup || !resourceGroupFilterMatches(filters.resourceGroups, f.resourceGroup))) return false;
   if (filters.severities?.length && !filters.severities.includes(f.severity)) return false;
   if (filters.ruleIds?.length && !filters.ruleIds.includes(f.ruleId)) return false;
   if (filters.tags?.length) {

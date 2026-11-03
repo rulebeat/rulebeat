@@ -1613,12 +1613,12 @@ export interface SeedOptions {
   catalogue?: ShippedCatalogue;
 }
 
-export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedOptions = {}): void {
+export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedOptions = {}): string[] {
   // Seed from legacy JSON files on first run (one-time migration)
   seedFromJson();
   // Seed shipped rules (RuleBeat Core and packs) and record their versions on every startup. An
   // upgrade adds versions beside the one a rule runs; it never changes what an enabled rule runs.
-  seedRules();
+  const categoriesMoved = seedRules();
   // Seed built-in categories on every startup (INSERT OR IGNORE preserves user edits)
   seedCategories();
   // Seed the default dashboard if none exist
@@ -1635,6 +1635,9 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   if (!opts.skipOwnerBootstrap) seedOwnerAccount();
   // Ensure someone can administer this install
   seedInitialAdmin();
+  // The categories whose findings a rule's new version moved, for the caller to refresh their snapshots
+  // (they need the async database, which is not open yet while this runs).
+  return categoriesMoved;
 
   function seedFromJson() {
     // suppressions
@@ -1723,7 +1726,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   // change is decided by `planRuleSeeding()` (lib/rule-versions.ts), shared with the Postgres seeder:
   // it adds versions beside the one a rule runs and never changes what an enabled rule runs (ADR 0004),
   // bar the one-time move off the removed "Before versioning" pseudo-version (ADR 0009).
-  function seedRules() {
+  function seedRules(): string[] {
     // Remove legacy orphan:: / standards:: rows superseded by builtin:: equivalents
     sqlite.exec(`DELETE FROM rules WHERE id LIKE 'orphan::%' OR id LIKE 'standards::%'`);
 
@@ -1754,6 +1757,18 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       WHERE id = @id
     `);
     const setRetired = sqlite.prepare(`UPDATE rules SET retired_at = ? WHERE id = ?`);
+    // A rule's findings follow its category (moveFindingsToCategory, db/findings.ts, async, so not callable
+    // here): a version that moves the rule moves its findings in the same transaction.
+    const categoriesLeft = sqlite.prepare(`SELECT DISTINCT category FROM findings WHERE rule_id = ? AND category <> ?`);
+    const moveFindings = sqlite.prepare(`UPDATE findings SET category = ? WHERE rule_id = ?`);
+    const categoriesMoved = new Set<string>();
+    const moveFindingsTo = (ruleId: string, category: string) => {
+      const left = categoriesLeft.all(ruleId, category) as { category: string }[];
+      if (left.length === 0) return;
+      moveFindings.run(category, ruleId);
+      for (const l of left) categoriesMoved.add(l.category);
+      categoriesMoved.add(category);
+    };
     // The #221 correction (APRL_QUERY_CORRECTION): the recorded definition of the version the rule runs,
     // and the findings its wrong query produced. The same set of tables as removeFindingRowsForRule()
     // (db/findings.ts, async, so not callable here), suppressions left alone.
@@ -1785,7 +1800,10 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
         case 'clear-running': clearRunning.run(a.ruleId); break;
         case 'clear-origin-version': clearOriginVersion.run(a.ruleId); break;
         case 'delete-recorded': deleteRecorded.run(a.ruleId, a.version); break;
-        case 'apply': applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version }); break;
+        case 'apply':
+          applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version });
+          moveFindingsTo(a.rule.id, a.rule.definition.category);
+          break;
         case 'correct':
           // `version` is written back unchanged: the rule keeps the version it already runs.
           applyVersion.run({ id: a.rule.id, ...definitionToColumns(a.rule.definition), version: a.rule.version });
@@ -1825,6 +1843,7 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
     // .immediate(): see seedDefaultDashboard()/seedOwnerAccount() below for why a deferred
     // transaction isn't enough under concurrent build-time workers.
     seedAll.immediate();
+    return [...categoriesMoved];
   }
   function seedCategories() {
     const insert = sqlite.prepare(`

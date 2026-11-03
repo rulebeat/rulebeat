@@ -50,7 +50,9 @@ const EXEMPT: Record<string, Record<string, string>> = {
     syncScanFindingsDetailed: 'write: stores a scan\'s findings',
     deleteFindingsForRule: 'write: removes a deleted rule\'s findings',
     removeFindingRowsForRule: 'write: removes a rule\'s finding rows',
+    moveFindingsToCategory: 'write: records a moved rule\'s findings under its new category',
     refreshSnapshotsFor: 'write: recomputes the stored snapshots, under the system access',
+    refreshSnapshotsForSeededMoves: 'write: recomputes the stored snapshots after startup seeding, under the system access',
     backfillFindings: 'write: startup backfill, under the system access',
   },
   'lib/db/finding-views.ts': {
