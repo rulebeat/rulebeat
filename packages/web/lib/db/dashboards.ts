@@ -1,12 +1,15 @@
 import { db } from './client';
 import { dashboards } from './tables';
-import { eq, asc } from 'drizzle-orm';
+import { eq, ne, and, asc, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
-import type { Dashboard, DashboardConfig } from '@/lib/types';
+import type { Dashboard, DashboardConfig, ItemOwner } from '@/lib/types';
+import { loadItemOwners, readVisibility } from './item-owners';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
 
-function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
+type Row = typeof dashboards.$inferSelect;
+
+function rowToDashboard(row: Row, owners: Map<string, ItemOwner>): Dashboard {
   return {
     id: row.id,
     name: row.name,
@@ -14,17 +17,24 @@ function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
     config: migrateDashboardConfig(JSON.parse(row.config) as DashboardConfig),
     isDefault: row.isDefault ?? false,
     createdAt: row.createdAt,
+    owner: (row.ownerId && owners.get(row.ownerId)) || null,
+    visibility: readVisibility(row.visibility),
+    revision: row.revision,
   };
 }
 
+async function toDashboards(rows: Row[], handle: DbHandle = db): Promise<Dashboard[]> {
+  const owners = await loadItemOwners(rows.map(r => r.ownerId), handle);
+  return rows.map(row => rowToDashboard(row, owners));
+}
+
 export async function listDashboards(): Promise<Dashboard[]> {
-  const rows = await many(db.select().from(dashboards));
-  return rows.map(rowToDashboard);
+  return toDashboards(await many(db.select().from(dashboards)));
 }
 
 export async function getDashboard(id: string): Promise<Dashboard | null> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
-  return row ? rowToDashboard(row) : null;
+  return row ? (await toDashboards([row]))[0] : null;
 }
 
 /**
@@ -64,9 +74,13 @@ async function insertDashboard(tx: DbHandle, data: { name: string; description?:
     config: JSON.stringify(data.config),
     isDefault: isFirstDashboard,
     createdAt: new Date().toISOString(),
+    // Shared until Personal items arrive, and spelled out so no insert depends on the column default.
+    ownerId: null,
+    visibility: 'shared',
+    revision: 1,
   }));
   const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-  return rowToDashboard(stored!);
+  return (await toDashboards([stored!], tx))[0];
 }
 
 export type CreateDashboardResult =
@@ -108,9 +122,10 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
       ...(data.name !== undefined && { name: data.name }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.config !== undefined && { config: JSON.stringify(data.config) }),
+      revision: sql`${dashboards.revision} + 1`,
     }).where(eq(dashboards.id, id)));
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-    return { ok: true, dashboard: rowToDashboard(stored!) };
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
   });
 }
 
@@ -124,7 +139,9 @@ export async function deleteDashboard(id: string): Promise<boolean> {
     await run(tx.delete(dashboards).where(eq(dashboards.id, id)));
     if (row.isDefault) {
       const oldest = await one(tx.select().from(dashboards).orderBy(asc(dashboards.createdAt)).limit(1));
-      if (oldest) await run(tx.update(dashboards).set({ isDefault: true }).where(eq(dashboards.id, oldest.id)));
+      if (oldest) {
+        await run(tx.update(dashboards).set({ isDefault: true, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, oldest.id)));
+      }
     }
   });
   return true;
@@ -136,8 +153,11 @@ export async function setDefaultDashboard(id: string): Promise<boolean> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
   if (!row) return false;
   await inTransaction(async (tx) => {
-    await run(tx.update(dashboards).set({ isDefault: false }));
-    await run(tx.update(dashboards).set({ isDefault: true }).where(eq(dashboards.id, id)));
+    // Only the rows whose flag actually changes are written, so only they move to a new revision.
+    await run(tx.update(dashboards).set({ isDefault: false, revision: sql`${dashboards.revision} + 1` })
+      .where(and(eq(dashboards.isDefault, true), ne(dashboards.id, id))));
+    await run(tx.update(dashboards).set({ isDefault: true, revision: sql`${dashboards.revision} + 1` })
+      .where(and(eq(dashboards.id, id), eq(dashboards.isDefault, false))));
   });
   return true;
 }
@@ -158,7 +178,7 @@ export async function duplicateDashboard(id: string): Promise<Dashboard | null> 
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!row) return null;
-    const src = rowToDashboard(row);
+    const src = (await toDashboards([row], tx))[0];
     const name = await nextFreeName(tx, `${src.name} (copy)`, n => `${src.name} (copy ${n})`);
     return insertDashboard(tx, {
       name,
