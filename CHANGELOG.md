@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Added
 
 - RuleBeat starts keeping trend history: the counts and rule settings that make up posture, written as they change. The first start after this release records the state of the moment, with nothing backfilled. Every later start checks that record against your findings and rules before requests are served, writes only what differs, and logs one warning with counts only when it had to correct something. No dashboard reads it yet.
+- Every scan now writes to trend history in the same transaction that saves its findings, dated at the scan's finish: the cells of every rule it ran, those rules' settings and last-run status, and which scopes and rules it covered, partial scans included. If the history cannot be written, the scan and its findings are not saved and Run History says "Trend history could not be recorded, so this scan's results were not saved." The one-time rebuild of finding history from old scans records only the state it ends with, dated when it ran.
 
 ## [0.13.1] - 2026-10-16
 
