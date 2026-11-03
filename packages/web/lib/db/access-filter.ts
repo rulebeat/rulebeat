@@ -1,13 +1,14 @@
 import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { findings as findingsTable, scanFindings } from './tables';
+import { findings as findingsTable, scanFindings, trendCells } from './tables';
 import { accessReach, type Access } from '../access-model';
 
-/** The two tables that hold where a finding sits: the live `findings` and a scan's `scan_findings` records. */
-export type PlacedTable = typeof findingsTable | typeof scanFindings;
+/** The tables that hold where a finding sits: the live `findings`, a scan's `scan_findings` records and the trend
+ *  record's `trend_cells`, whose place columns are the same four, lowercased. */
+export type PlacedTable = typeof findingsTable | typeof scanFindings | typeof trendCells;
 
 /**
- * The condition a person's access puts on the `findings` table (or on a scan's `scan_findings` records,
- * which hold the same four placement columns), or undefined when it puts none
+ * The condition a person's access puts on the `findings` table (or on a scan's `scan_findings` records or the
+ * trend record's `trend_cells`, which hold the same four placement columns), or undefined when it puts none
  * (Everything). A finding is seen when its placement sits inside a Scope the person holds:
  *
  *  - `resource` and `workspace`: under a subscription Scope on its subscription, or a resource group

@@ -106,6 +106,7 @@ const TABLE_IMPORT_EXEMPT: Record<string, string> = {
   'lib/db/snapshot.ts': 'opens a read-only connection of its own with the whole schema, for an export',
   'lib/db/pg/bootstrap.ts': 'creates the Postgres schema',
   'lib/db/pg/seeds.ts': 'seeds the Postgres schema',
+  'lib/db/trend-record.ts': 'writes the trend record: counts the findings and suppressions of the whole install into cells, and returns none of them to anyone',
 };
 
 const FAMILY_TABLES = [

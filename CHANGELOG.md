@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- RuleBeat starts keeping trend history: the counts and rule settings that make up posture, written as they change. The first start after this release records the state of the moment, with nothing backfilled. Every later start checks that record against your findings and rules before requests are served, writes only what differs, and logs one warning with counts only when it had to correct something. No dashboard reads it yet.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

@@ -221,6 +221,58 @@ CREATE TABLE IF NOT EXISTS management_group_hierarchy (
   PRIMARY KEY (tenant_id, kind, node_id)
 );
 
+-- The trend record (ADR 0012). A row is a change; a key's newest row at or before a day says what was true on it.
+CREATE TABLE IF NOT EXISTS trend_cells (
+  seq BIGSERIAL PRIMARY KEY,
+  rule_id TEXT NOT NULL,
+  placement TEXT NOT NULL,
+  subscription_id TEXT NOT NULL DEFAULT '',
+  resource_group TEXT NOT NULL DEFAULT '',
+  management_group_id TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL,
+  changed_at TEXT NOT NULL,
+  open_count INTEGER NOT NULL DEFAULT 0,
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_trend_cells_key
+  ON trend_cells(rule_id, placement, subscription_id, resource_group, management_group_id, severity, changed_at, seq);
+CREATE INDEX IF NOT EXISTS idx_trend_cells_changed ON trend_cells(changed_at);
+
+CREATE TABLE IF NOT EXISTS trend_rule_facts (
+  seq BIGSERIAL PRIMARY KEY,
+  rule_id TEXT NOT NULL,
+  changed_at TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL,
+  kind TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  running_version TEXT,
+  last_run_status TEXT,
+  deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  last_name TEXT,
+  last_category TEXT,
+  last_category_label TEXT,
+  last_tags TEXT,
+  last_source TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trend_rule_facts_rule ON trend_rule_facts(rule_id, changed_at, seq);
+
+CREATE TABLE IF NOT EXISTS trend_recorded_days (
+  day TEXT PRIMARY KEY,
+  record_version INTEGER NOT NULL DEFAULT 1,
+  first_recorded_at TEXT NOT NULL,
+  covered TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS trend_state (
+  id INTEGER PRIMARY KEY,
+  swept_through TEXT,
+  events_kept_since TEXT,
+  recounted_at TEXT,
+  recount_corrected INTEGER,
+  retained_through TEXT
+);
+
 CREATE TABLE IF NOT EXISTS azure_credentials (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

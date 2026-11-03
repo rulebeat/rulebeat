@@ -385,6 +385,45 @@ table suppressions
   reason TEXT NOT NULL
   suppressed_at TEXT NOT NULL
   expires_at TEXT
+table trend_cells
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  placement TEXT NOT NULL
+  subscription_id TEXT NOT NULL DEFAULT ''
+  resource_group TEXT NOT NULL DEFAULT ''
+  management_group_id TEXT NOT NULL DEFAULT ''
+  severity TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  open_count INTEGER NOT NULL DEFAULT 0
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+table trend_recorded_days
+  day TEXT PK(1)
+  record_version INTEGER NOT NULL DEFAULT 1
+  first_recorded_at TEXT NOT NULL
+  covered TEXT NOT NULL DEFAULT '[]'
+table trend_rule_facts
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  enabled INTEGER NOT NULL
+  kind TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  running_version TEXT
+  last_run_status TEXT
+  deleted INTEGER NOT NULL DEFAULT 0
+  last_name TEXT
+  last_category TEXT
+  last_category_label TEXT
+  last_tags TEXT
+  last_source TEXT
+table trend_state
+  id INTEGER PK(1)
+  swept_through TEXT
+  events_kept_since TEXT
+  recounted_at TEXT
+  recount_corrected INTEGER
+  retained_through TEXT
 table users
   id TEXT PK(1)
   email TEXT NOT NULL
@@ -415,6 +454,9 @@ index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
+index idx_trend_cells_changed on trend_cells
+index idx_trend_cells_key on trend_cells
+index idx_trend_rule_facts_rule on trend_rule_facts
 index idx_users_oid on users
 
 == COUNTS ==
@@ -451,6 +493,10 @@ schedules: 2
 schema_cache: 0
 sso_providers: 0
 suppressions: 1
+trend_cells: 1
+trend_recorded_days: 1
+trend_rule_facts: 20
+trend_state: 1
 users: 1
 
 == ROWS ==
@@ -510,6 +556,29 @@ schedule_runs {"categories":"[\\"cost\\"]","changed_findings":null,"covered_scop
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000001","interval":1,"last_run_at":"<TS>","name":"Nightly cost sweep","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"categories","target_values":"[\\"cost\\",\\"security\\"]","updated_at":"<TS>"}
 schedules {"created_at":"<TS>","day_of_month":null,"days_of_week":null,"enabled":0,"end_date":null,"end_type":"never","id":"sch00000-0000-4000-8000-000000000002","interval":1,"last_run_at":null,"name":"Everything, weekly","next_run_at":null,"recurrence_type":"daily","start_at":"<TS>","target_type":"all","target_values":"[]","updated_at":"<TS>"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+trend_cells {"changed_at":"<TS>","management_group_id":"","open_count":1,"placement":"resource","resource_group":"rg-legacy","rule_id":"<UUID>","seq":1,"severity":"high","subscription_id":"<UUID>","suppressed_count":1}
+trend_recorded_days {"covered":"[]","day":"<DAY>","first_recorded_at":"<TS>","record_version":1}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":16,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":17,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":4,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"advisory","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":20,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":10,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":11,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":12,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":13,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":5,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":6,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":7,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":8,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":1,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":2,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":3,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":18,"severity":"medium"}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -898,6 +967,45 @@ table suppressions
   reason TEXT NOT NULL
   suppressed_at TEXT NOT NULL
   expires_at TEXT
+table trend_cells
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  placement TEXT NOT NULL
+  subscription_id TEXT NOT NULL DEFAULT ''
+  resource_group TEXT NOT NULL DEFAULT ''
+  management_group_id TEXT NOT NULL DEFAULT ''
+  severity TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  open_count INTEGER NOT NULL DEFAULT 0
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+table trend_recorded_days
+  day TEXT PK(1)
+  record_version INTEGER NOT NULL DEFAULT 1
+  first_recorded_at TEXT NOT NULL
+  covered TEXT NOT NULL DEFAULT '[]'
+table trend_rule_facts
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  enabled INTEGER NOT NULL
+  kind TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  running_version TEXT
+  last_run_status TEXT
+  deleted INTEGER NOT NULL DEFAULT 0
+  last_name TEXT
+  last_category TEXT
+  last_category_label TEXT
+  last_tags TEXT
+  last_source TEXT
+table trend_state
+  id INTEGER PK(1)
+  swept_through TEXT
+  events_kept_since TEXT
+  recounted_at TEXT
+  recount_corrected INTEGER
+  retained_through TEXT
 table users
   id TEXT PK(1)
   email TEXT NOT NULL
@@ -928,6 +1036,9 @@ index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
+index idx_trend_cells_changed on trend_cells
+index idx_trend_cells_key on trend_cells
+index idx_trend_rule_facts_rule on trend_rule_facts
 index idx_users_oid on users
 
 == COUNTS ==
@@ -964,6 +1075,10 @@ schedules: 0
 schema_cache: 0
 sso_providers: 0
 suppressions: 0
+trend_cells: 0
+trend_recorded_days: 1
+trend_rule_facts: 16
+trend_state: 1
 users: 1
 
 == ROWS ==
@@ -1010,6 +1125,24 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"TLS versions below 1.2 have known vulnerabilities. All storage accounts should enforce a minimum of TLS 1.2.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"library_request_id":null,"logs_query":null,"name":"Storage Account TLS Version Below 1.2","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.storage/storageaccounts'\\n| where isnotempty(properties.minimumTlsVersion)\\n| where properties.minimumTlsVersion !in ('TLS1_2', 'TLS1_3')\\n| project id, name, type, location, resourceGroup, subscriptionId, minimumTlsVersion=properties.minimumTlsVersion","resource_types":"[\\"microsoft.storage/storageaccounts\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without purge protection, soft-deleted Key Vault objects can still be permanently deleted before the retention period ends.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"library_request_id":null,"logs_query":null,"name":"Key Vault Purge Protection Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enablePurgeProtection != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"medium","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"library_request_id":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
+trend_recorded_days {"covered":"[]","day":"<DAY>","first_recorded_at":"<TS>","record_version":1}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":11,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":12,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":13,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"advisory","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":16,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":1,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":10,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":2,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":3,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":4,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":5,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":6,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":7,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":8,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -1398,6 +1531,45 @@ table suppressions
   reason TEXT NOT NULL
   suppressed_at TEXT NOT NULL
   expires_at TEXT
+table trend_cells
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  placement TEXT NOT NULL
+  subscription_id TEXT NOT NULL DEFAULT ''
+  resource_group TEXT NOT NULL DEFAULT ''
+  management_group_id TEXT NOT NULL DEFAULT ''
+  severity TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  open_count INTEGER NOT NULL DEFAULT 0
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+table trend_recorded_days
+  day TEXT PK(1)
+  record_version INTEGER NOT NULL DEFAULT 1
+  first_recorded_at TEXT NOT NULL
+  covered TEXT NOT NULL DEFAULT '[]'
+table trend_rule_facts
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  enabled INTEGER NOT NULL
+  kind TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  running_version TEXT
+  last_run_status TEXT
+  deleted INTEGER NOT NULL DEFAULT 0
+  last_name TEXT
+  last_category TEXT
+  last_category_label TEXT
+  last_tags TEXT
+  last_source TEXT
+table trend_state
+  id INTEGER PK(1)
+  swept_through TEXT
+  events_kept_since TEXT
+  recounted_at TEXT
+  recount_corrected INTEGER
+  retained_through TEXT
 table users
   id TEXT PK(1)
   email TEXT NOT NULL
@@ -1428,6 +1600,9 @@ index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
+index idx_trend_cells_changed on trend_cells
+index idx_trend_cells_key on trend_cells
+index idx_trend_rule_facts_rule on trend_rule_facts
 index idx_users_oid on users
 
 == COUNTS ==
@@ -1464,6 +1639,10 @@ schedules: 0
 schema_cache: 0
 sso_providers: 0
 suppressions: 1
+trend_cells: 1
+trend_recorded_days: 1
+trend_rule_facts: 19
+trend_state: 1
 users: 1
 
 == ROWS ==
@@ -1519,6 +1698,28 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 scan_findings {"category":"cost","fingerprint":"<FP>","kind":"state","management_group_id":null,"placement":"unplaceable","resource_group":null,"resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":null,"row_count":0,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","severity":"high","subscription_id":"","title":"A pre-upgrade finding"}
 scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","covered_scope":null,"duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","has_records":1,"id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+trend_cells {"changed_at":"<TS>","management_group_id":"","open_count":1,"placement":"resource","resource_group":"rg-legacy","rule_id":"<UUID>","seq":1,"severity":"high","subscription_id":"<UUID>","suppressed_count":1}
+trend_recorded_days {"covered":"[]","day":"<DAY>","first_recorded_at":"<TS>","record_version":1}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":16,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":4,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":5,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":6,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"advisory","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":10,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":11,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":12,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":13,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":7,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":8,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":1,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":2,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":3,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":18,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":17,"severity":"medium"}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -1907,6 +2108,45 @@ table suppressions
   reason TEXT NOT NULL
   suppressed_at TEXT NOT NULL
   expires_at TEXT
+table trend_cells
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  placement TEXT NOT NULL
+  subscription_id TEXT NOT NULL DEFAULT ''
+  resource_group TEXT NOT NULL DEFAULT ''
+  management_group_id TEXT NOT NULL DEFAULT ''
+  severity TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  open_count INTEGER NOT NULL DEFAULT 0
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+table trend_recorded_days
+  day TEXT PK(1)
+  record_version INTEGER NOT NULL DEFAULT 1
+  first_recorded_at TEXT NOT NULL
+  covered TEXT NOT NULL DEFAULT '[]'
+table trend_rule_facts
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  enabled INTEGER NOT NULL
+  kind TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  running_version TEXT
+  last_run_status TEXT
+  deleted INTEGER NOT NULL DEFAULT 0
+  last_name TEXT
+  last_category TEXT
+  last_category_label TEXT
+  last_tags TEXT
+  last_source TEXT
+table trend_state
+  id INTEGER PK(1)
+  swept_through TEXT
+  events_kept_since TEXT
+  recounted_at TEXT
+  recount_corrected INTEGER
+  retained_through TEXT
 table users
   id TEXT PK(1)
   email TEXT NOT NULL
@@ -1937,6 +2177,9 @@ index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
+index idx_trend_cells_changed on trend_cells
+index idx_trend_cells_key on trend_cells
+index idx_trend_rule_facts_rule on trend_rule_facts
 index idx_users_oid on users
 
 == COUNTS ==
@@ -1973,6 +2216,10 @@ schedules: 0
 schema_cache: 0
 sso_providers: 0
 suppressions: 1
+trend_cells: 0
+trend_recorded_days: 1
+trend_rule_facts: 23
+trend_state: 1
 users: 1
 
 == ROWS ==
@@ -2029,6 +2276,31 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 scan_findings {"category":"compliance","fingerprint":"<FP>","kind":"state","management_group_id":null,"placement":"unplaceable","resource_group":null,"resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01","resource_name":"vm-legacy-01","resource_type":null,"row_count":0,"rule_id":"<UUID>","scan_id":"s0000000-0000-4000-8000-000000000001","severity":"high","subscription_id":"","title":"A pre-upgrade finding"}
 scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","covered_scope":null,"duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\",\\"resourceName\\":\\"vm-legacy-01\\",\\"severity\\":\\"high\\",\\"title\\":\\"A pre-upgrade finding\\"}]","finished_at":"<TS>","has_records":1,"id":"s0000000-0000-4000-8000-000000000001","incomplete_rules":"[]","module":"compliance","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":0,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+trend_recorded_days {"covered":"[]","day":"<DAY>","first_recorded_at":"<TS>","record_version":1}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":18,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":20,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":4,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":5,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":6,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":7,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"advisory","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":23,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":10,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":11,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":12,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":13,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":16,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":17,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":8,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":1,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":2,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":3,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":22,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":21,"severity":"medium"}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -2417,6 +2689,45 @@ table suppressions
   reason TEXT NOT NULL
   suppressed_at TEXT NOT NULL
   expires_at TEXT
+table trend_cells
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  placement TEXT NOT NULL
+  subscription_id TEXT NOT NULL DEFAULT ''
+  resource_group TEXT NOT NULL DEFAULT ''
+  management_group_id TEXT NOT NULL DEFAULT ''
+  severity TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  open_count INTEGER NOT NULL DEFAULT 0
+  suppressed_count INTEGER NOT NULL DEFAULT 0
+table trend_recorded_days
+  day TEXT PK(1)
+  record_version INTEGER NOT NULL DEFAULT 1
+  first_recorded_at TEXT NOT NULL
+  covered TEXT NOT NULL DEFAULT '[]'
+table trend_rule_facts
+  seq INTEGER PK(1)
+  rule_id TEXT NOT NULL
+  changed_at TEXT NOT NULL
+  enabled INTEGER NOT NULL
+  kind TEXT NOT NULL
+  severity TEXT NOT NULL
+  scope TEXT NOT NULL
+  running_version TEXT
+  last_run_status TEXT
+  deleted INTEGER NOT NULL DEFAULT 0
+  last_name TEXT
+  last_category TEXT
+  last_category_label TEXT
+  last_tags TEXT
+  last_source TEXT
+table trend_state
+  id INTEGER PK(1)
+  swept_through TEXT
+  events_kept_since TEXT
+  recounted_at TEXT
+  recount_corrected INTEGER
+  retained_through TEXT
 table users
   id TEXT PK(1)
   email TEXT NOT NULL
@@ -2447,6 +2758,9 @@ index idx_scan_findings_order on scan_findings
 index idx_scans_module_started on scans
 index idx_schedule_runs_schedule on schedule_runs
 index idx_snapshots_date on posture_snapshots
+index idx_trend_cells_changed on trend_cells
+index idx_trend_cells_key on trend_cells
+index idx_trend_rule_facts_rule on trend_rule_facts
 index idx_users_oid on users
 
 == COUNTS ==
@@ -2483,6 +2797,10 @@ schedules: 0
 schema_cache: 0
 sso_providers: 0
 suppressions: 1
+trend_cells: 1
+trend_recorded_days: 1
+trend_rule_facts: 19
+trend_state: 1
 users: 1
 
 == ROWS ==
@@ -2536,5 +2854,27 @@ rules {"category":"security","condition_groups":null,"conditions":"[]","descript
 rules {"category":"security","condition_groups":null,"conditions":"[]","description":"Without soft delete, accidentally deleted Key Vault objects are permanently gone. Soft delete provides a recovery window.","enabled":1,"filter":null,"graph_query":null,"group_name":null,"id":"<UUID>","kind":"state","last_run_at":null,"last_run_status":null,"library_request_id":null,"logs_query":null,"name":"Key Vault Soft Delete Disabled","origin_rule_id":null,"origin_version":null,"pack":"rulebeat-core","project_columns":null,"query_backend":"resource-graph","raw_kql":"Resources\\n| where type =~ 'microsoft.keyvault/vaults'\\n| where properties.enableSoftDelete != true\\n| project id, name, type, location, resourceGroup, subscriptionId","resource_types":"[\\"microsoft.keyvault/vaults\\"]","retired_at":null,"rules_operator":null,"scope":"{\\"level\\":\\"resource\\"}","severity":"high","tags":null,"type":"builtin","version":"1.0.0","visual_query":null}
 scans {"counts":"{\\"critical\\":0,\\"high\\":1,\\"medium\\":0,\\"low\\":0}","coverage":"complete","covered_scope":null,"duration_ms":300000,"findings":"[{\\"fingerprint\\":\\"<FP>\\",\\"ruleId\\":\\"<UUID>\\",\\"resourceId\\":\\"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Compute/virtualMachines/vm-legacy-01\\"}]","finished_at":"<TS>","has_records":0,"id":"s0000000-0000-4000-8000-000000000009","incomplete_rules":"[]","module":"cost","run_id":null,"schedule_id":null,"started_at":"<TS>","subscriptions_scanned":"[\\"<UUID>\\"]","total_policies":0,"total_rules":12,"triggered_by":"manual"}
 suppressions {"expires_at":null,"fingerprint":"<FP>","id":"sup00000-0000-4000-8000-000000000001","reason":"Accepted risk, reviewed by the platform team","resource_id":"/subscriptions/<UUID>/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacy001","suppressed_at":"<TS>"}
+trend_cells {"changed_at":"<TS>","management_group_id":"","open_count":1,"placement":"resource","resource_group":"rg-legacy","rule_id":"<UUID>","seq":1,"severity":"high","subscription_id":"<UUID>","suppressed_count":1}
+trend_recorded_days {"covered":"[]","day":"<DAY>","first_recorded_at":"<TS>","record_version":1}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":0,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":16,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"advisory","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":10,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":11,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":12,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":13,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":4,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":5,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":6,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":7,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":8,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":1,"severity":"high"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":2,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":3,"severity":"low"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":18,"severity":"medium"}
+trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":17,"severity":"medium"}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;

@@ -12,6 +12,7 @@ import { loadShippedCatalogue, type ShippedCatalogue } from '../../shipped-catal
 import { STARTER_DASHBOARD } from '../../dashboard-templates';
 import { hashPasswordSync } from '../../password';
 import { BUILTIN_CATEGORIES, OLD_SECURITY_RED, type SeedOptions } from '../migrate';
+import { startTrendRecordingPg } from '../trend-record';
 
 type PgDb = NodePgDatabase<typeof pgSchema>;
 
@@ -44,6 +45,9 @@ export async function seedPg(
   await seedOnboardingState(db);
   if (!opts.skipOwnerBootstrap) await seedOwnerAccount(db, dataDir);
   await seedInitialAdmin(db);
+  // Last, once the rules are in: the first start records the state of the moment, every later one recounts it
+  // (lib/db/trend-record.ts, ADR 0012). The twin of the call at the end of runSeeds().
+  await startTrendRecordingPg(db, opts.now);
 }
 
 /**
