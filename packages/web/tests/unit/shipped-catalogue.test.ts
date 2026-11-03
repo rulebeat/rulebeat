@@ -52,6 +52,41 @@ describe('the shipped catalogue', () => {
     }
   });
 
+  // `community` and `custom` are the Rule source filter's own values (a rule's type), so a pack under
+  // either id would be indistinguishable from that type in a filter.
+  it.each(['community', 'custom', 'Community'])('refuses a rule whose resolved pack is %s, and says the pack was unreadable rather than dropped', (reserved) => {
+    const dir = mkdtempSync(join(tmpdir(), 'rb-catalogue-'));
+    mkdirSync(join(dir, 'packs'));
+    writeFileSync(join(dir, 'packs', 'pack-manifest.json'), JSON.stringify({ 'aprl-v2': { versionScheme: 'semver', version: '1.0.0' } }));
+    const entry = (id: string, pack?: string) => ({ id, name: id, description: 'd', category: 'security', severity: 'low', ...(pack ? { pack } : {}) });
+    writeFileSync(join(dir, 'packs', 'aprl-v2.json'), JSON.stringify([entry('fine'), entry('reserved', reserved)]));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = loadShippedCatalogue(dir);
+      expect(result.rules.some(r => r.pack === 'aprl-v2' || r.pack.toLowerCase() === reserved.toLowerCase())).toBe(false);
+      expect(result.unreadablePacks).toEqual(['aprl-v2']);
+      expect(result.packsDirRead).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('aprl-v2'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('refuses a pack file named for a reserved id, since its rules resolve to that pack', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rb-catalogue-'));
+    mkdirSync(join(dir, 'packs'));
+    writeFileSync(join(dir, 'packs', 'pack-manifest.json'), JSON.stringify({ custom: { versionScheme: 'semver', version: '1.0.0' } }));
+    writeFileSync(join(dir, 'packs', 'custom.json'), JSON.stringify([{ id: 'r1', name: 'n', description: 'd', category: 'security', severity: 'low' }]));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = loadShippedCatalogue(dir);
+      expect(result.rules.some(r => r.id === 'r1')).toBe(false);
+      expect(result.unreadablePacks).toEqual(['custom']);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('reads the scheme RuleBeat Core ships under from the manifest, and falls back to semver without one', () => {
     const declared = mkdtempSync(join(tmpdir(), 'rb-catalogue-'));
     mkdirSync(join(declared, 'packs'));

@@ -101,6 +101,7 @@ const TABLE_IMPORT_EXEMPT: Record<string, string> = {
   'lib/db/finding-kinds-sql.ts': 'SQL-fragment builder: returns a predicate, reads nothing',
   'lib/db/subscription-filter.ts': 'SQL-fragment builder: returns a predicate, reads nothing',
   'lib/db/access-filter.ts': 'SQL-fragment builder: returns the predicate an access puts on findings, reads nothing',
+  'lib/db/view-filters.ts': 'SQL-fragment builder: returns the predicate a view\'s Scope, Rule source and First seen filters put on findings, reads the stored tree and rules and no finding',
   'lib/db/client.ts': 'opens the connection with the whole schema',
   'lib/db/tables.ts': 'picks the table set for the backend',
   'lib/db/snapshot.ts': 'opens a read-only connection of its own with the whole schema, for an export',

@@ -39,13 +39,14 @@ import {
 import {
   BUILTIN_FIELDS, DEFAULT_SORT, clearFilter, columnCell, emptyView, filterValues,
   findingSubject, isRowField, rowField, rowPath, toggleFilterValue,
-  type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
+  type AgeRange, type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
 import {
   explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
-import { emptyListCopy, emptyReasonOf, filterChipLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { emptyListCopy, emptyReasonOf, filterValueLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { NO_LONGER_EXISTS, ageChipLabel, dropValues, markedLabel, scopeChips } from '@/lib/filter-states';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
@@ -470,6 +471,12 @@ export function FindingsExplorerClient({
     lockedCategory ? [...clearFilter(initial.filters, 'category'), { field: 'category', values: [lockedCategory] }] : initial.filters
   ));
   const [search, setSearch] = useState(initial.search);
+  // The three dimensions a View holds beside its filters: Scope (picks, or the reference to a long list),
+  // Rule source and the First seen age. They come from the address, show as chips and go back to it.
+  const [scope, setScope] = useState<string[] | undefined>(initial.scope);
+  const [scopeSet, setScopeSet] = useState<string | undefined>(initial.scopeSet);
+  const [source, setSource] = useState<string[] | undefined>(initial.source);
+  const [age, setAge] = useState<AgeRange | null | undefined>(initial.age);
   const [layout, setLayout] = useState<ViewMode>('resource');
   const [showSuppressed, setShowSuppressed] = useState(false);
   const [dateWindow, setDateWindow] = useState<DateWindow>(initial.window);
@@ -574,7 +581,8 @@ export function FindingsExplorerClient({
   const findingView = useMemo<View>(() => ({
     ...emptyView(),
     filters, search, window: dateWindow, columns, sort, groupBy, groupSort, page: page + 1,
-  }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page]);
+    ...(scope ? { scope } : {}), ...(scopeSet ? { scopeSet } : {}), ...(source ? { source } : {}), ...(age !== undefined ? { age } : {}),
+  }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page, scope, scopeSet, source, age]);
   const request = useMemo<ViewRequest>(() => ({ view: findingView, tab, showSuppressed }), [findingView, tab, showSuppressed]);
   const requestQuery = useMemo(() => viewQuery(request), [request]);
   useEffect(() => { session.view.request(request); }, [session, request]);
@@ -653,13 +661,30 @@ export function FindingsExplorerClient({
     (field: ViewField): ChecklistOption[] => (isRowField(field) ? [] : builtinOptions(field)),
     [builtinOptions],
   );
-  const chips = useMemo<FilterChip[]>(() => filters
-    .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
-    .flatMap(f => f.values.map(value => ({
-      field: f.field, value, fieldLabel: fieldLabel(f.field),
-      valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
-    }))),
-  [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
+  const filterStates = data?.filterStates;
+  const chips = useMemo<FilterChip[]>(() => {
+    const own = filters
+      .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
+      .flatMap(f => f.values.map(value => ({
+        field: f.field, value, fieldLabel: fieldLabel(f.field),
+        valueLabel: isRowField(f.field) ? value : filterValueLabel(f.field, value, data?.outsideAccess, filterStates, v => valueLabel(f.field, v)),
+      })));
+    const scopeChipList: FilterChip[] = scopeSet
+      ? [{ field: 'scope', value: scopeSet, fieldLabel: 'Scope', valueLabel: 'A saved list that cannot be opened', remove: () => { setScopeSet(undefined); setPage(0); } }]
+      : scopeChips(filterStates?.scope ?? []).map(chip => ({
+        field: 'scope', value: chip.key, fieldLabel: chip.key.startsWith('outside') ? '' : 'Scope', valueLabel: chip.label,
+        remove: () => { setScope(prev => dropValues(prev, chip.values)); setPage(0); },
+      }));
+    const sourceChipList: FilterChip[] = (filterStates?.source ?? []).map(state => ({
+      field: 'source', value: state.value, fieldLabel: 'Rule source',
+      valueLabel: state.exists ? state.label : markedLabel(state.label, NO_LONGER_EXISTS),
+      remove: () => { setSource(prev => dropValues(prev, [state.value])); setPage(0); },
+    }));
+    const ageChipList: FilterChip[] = age
+      ? [{ field: 'age', value: `${age.min}-${age.max ?? ''}`, fieldLabel: '', valueLabel: ageChipLabel(age), remove: () => { setAge(undefined); setPage(0); } }]
+      : [];
+    return [...own, ...scopeChipList, ...sourceChipList, ...ageChipList];
+  }, [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess, filterStates, scopeSet, age]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;
@@ -721,9 +746,11 @@ export function FindingsExplorerClient({
   }, [resetPage]);
   const toggleGroup = useCallback((key: string) => setExpandedGroups(prev => toggleInSet(prev, key)), []);
 
-  const hasActiveFilter = filters.some(f => f.values.length > 0 && !(lockedCategory && f.field === 'category')) || search !== '';
+  const hasActiveFilter = filters.some(f => f.values.length > 0 && !(lockedCategory && f.field === 'category')) || search !== ''
+    || scope !== undefined || scopeSet !== undefined || source !== undefined || !!age;
   const clearFilters = useCallback(() => {
     setFilters(lockedCategory ? [{ field: 'category', values: [lockedCategory] }] : []);
+    setScope(undefined); setScopeSet(undefined); setSource(undefined); setAge(undefined);
     setSearch(''); resetPage();
   }, [resetPage, lockedCategory]);
 
@@ -842,7 +869,7 @@ export function FindingsExplorerClient({
 
   // What fills the list's place: the failure, a message that nothing matches, or the rows.
   const listBody = listBodyOf({ layout, failure, ruleRows: ruleRows.length, grouped, items: paginated.length });
-  const emptyReason = emptyReasonOf({ noAccess, filters, outsideAccess: data.outsideAccess });
+  const emptyReason = emptyReasonOf({ noAccess, filters, outsideAccess: data.outsideAccess, filterStates: data.filterStates });
 
   // One finding as a row of the list, and its detail when expanded. The flat list and every expanded
   // group render through here, so a finding looks the same wherever it is listed. `expandKey` is what
@@ -1323,7 +1350,7 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
-      <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
+      <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field as ViewField, chip.value)} />
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (
         <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
