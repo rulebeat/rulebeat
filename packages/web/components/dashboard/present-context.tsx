@@ -15,7 +15,10 @@ export function usePresenting(): boolean {
   return useContext(PresentContext);
 }
 
-/** The `isAnimationActive` value for a chart series: on in the ordinary view, off on Present. */
-export function useChartAnimation(): boolean {
-  return !usePresenting();
+/**
+ * The `isAnimationActive` value for a chart series: Recharts' own default in the ordinary view (which skips
+ * the animation for someone who prefers reduced motion), off on Present.
+ */
+export function useChartAnimation(): false | 'auto' {
+  return usePresenting() ? false : 'auto';
 }

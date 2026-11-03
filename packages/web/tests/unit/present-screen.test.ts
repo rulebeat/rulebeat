@@ -123,8 +123,9 @@ describe('the reasons a widget gives', () => {
 describe('chart animation', () => {
   const Probe = () => createElement('i', null, String(useChartAnimation()));
 
-  it('is on in the ordinary view and off on Present', () => {
-    expect(html(createElement(Probe))).toBe('<i>true</i>');
+  it('is left to the chart library in the ordinary view and off on Present', () => {
+    // 'auto' is the library's own default, which honours prefers-reduced-motion; only Present forces false.
+    expect(html(createElement(Probe))).toBe('<i>auto</i>');
     expect(html(createElement(PresentProvider, { value: true }, createElement(Probe)))).toBe('<i>false</i>');
   });
 

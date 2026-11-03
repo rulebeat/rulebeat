@@ -150,6 +150,18 @@ describe('who may present', () => {
     expect((client?.props.dashboard as { id: string }).id).toBe(dashboard.id);
   });
 
+  // Blocked by the sharing ticket (owners, visibility, the Personal 404): a dashboard has no owner yet, so
+  // getOpenableDashboard cannot refuse anyone. Remove the marker when that ticket lands.
+  it.fails('answers 404 for another person\'s Personal dashboard', async () => {
+    const made = await createDashboard({ name: 'Mine', config: { widgets: [] } } as never);
+    if (!made.ok) throw new Error(made.reason);
+    const owner = await signInAs('editor', 'owner@example.com');
+    // Once owners exist this marks the dashboard Personal to `owner`; today nothing can.
+    void owner;
+    await signInAs('admin', 'other@example.com');
+    expect(await outcome(() => present(made.dashboard.id))).toBe('404');
+  });
+
   it('is the same decision for a Viewer as for the ordinary page', async () => {
     const dashboard = await makeDashboard();
     await signInAs('viewer');
