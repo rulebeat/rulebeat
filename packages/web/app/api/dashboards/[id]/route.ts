@@ -4,15 +4,19 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
+import { loadDashboardStamp } from '@/lib/dashboard-stamp';
 import type { DashboardConfig } from '@/lib/types';
 
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   const d = await getDashboard(id);
   if (!d) return Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(markedDashboard(actor.access, d));
+  // The stamp rides in this response so it and the definition are read under one Access. The page's
+  // address filters arrive as the query string, and the server works out the effective filters itself.
+  const stamp = await loadDashboardStamp(actor, d.config, new URL(req.url).searchParams);
+  return Response.json({ ...markedDashboard(actor.access, d), stamp });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

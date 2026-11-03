@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/dashboards/[id]` returns the data for the "As seen by" stamp with the dashboard: the person, their Access as counts by kind (or Everything, or No access), each filter with the values they hold and a count of the ones held back, and the date window with the dates it resolved to. The stamp is worked out under the same Access as the dashboard, and a custom range that crosses a year shows both years.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
