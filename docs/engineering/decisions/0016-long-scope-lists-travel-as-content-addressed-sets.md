@@ -13,7 +13,7 @@ line, and a link over it fails before RuleBeat sees it.
 ## Decision
 
 **A `scope=` value over about 1500 characters is written as `scopeset=<hash>` instead.** The hash
-is the sha256 of the sorted, de-duplicated, lower-cased path list. It points to an immutable row in
+is the sha256 of the sorted, de-duplicated, lower-cased path list, written as a JSON array. It points to an immutable row in
 `scope_sets` that stores the paths in their first-written casing.
 
 **The server validates every path and always computes the hash itself.**

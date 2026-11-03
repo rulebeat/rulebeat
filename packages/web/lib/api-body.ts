@@ -61,3 +61,35 @@ export async function parseOptionalJsonBody<T>(req: Request, fallback: T): Promi
     return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
   }
 }
+
+/**
+ * `parseJsonBody` for a route that takes a body of known size: one over `maxBytes` is refused with a 413
+ * before it is parsed. A declared `Content-Length` over the cap is refused without reading anything; a body
+ * that declares none (chunked) is read only until it passes the cap, so a caller cannot make the route hold
+ * more than `maxBytes` in memory.
+ */
+export async function parseCappedJsonBody<T>(req: Request, maxBytes: number): Promise<T | NextResponse> {
+  if (!isJsonContentType(req.headers.get('content-type'))) return JSON_CONTENT_TYPE_RESPONSE();
+  const tooLarge = () => NextResponse.json({ error: 'Request body is too large.' }, { status: 413 });
+  const declared = Number(req.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return tooLarge();
+
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = req.body?.getReader();
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return tooLarge();
+    }
+    chunks.push(value);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
+  } catch {
+    return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
+  }
+}

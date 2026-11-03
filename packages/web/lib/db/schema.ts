@@ -599,3 +599,13 @@ export const savedViews = sqliteTable('saved_views', {
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull(),
 });
+
+// Long Scope lists (ADR 0016). A `scope=` value over the address budget travels as `scopeset=<hash>`, and
+// the hash points here. `hash` is the sha256 of the sorted, de-duplicated, lower-cased path list, always
+// computed on the server; `paths` is that list as JSON in the casing first written. A row is immutable and
+// never deleted, since links and bookmarks hold its hash, and writing the same list twice is the same row.
+export const scopeSets = sqliteTable('scope_sets', {
+  hash: text('hash').primaryKey(),
+  paths: text('paths').notNull(),            // JSON array of Scope paths, original casing
+  createdAt: text('created_at').notNull(),
+});

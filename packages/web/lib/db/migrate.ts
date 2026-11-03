@@ -631,6 +631,12 @@ export function runMigrations(sqlite: Database.Database): void {
       updated_by TEXT,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS scope_sets (
+      hash TEXT PRIMARY KEY,
+      paths TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Drop columns that moved from notification_channels to schedule_notification_channels.

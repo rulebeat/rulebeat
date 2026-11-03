@@ -584,6 +584,12 @@ CREATE TABLE IF NOT EXISTS saved_views (
   updated_by TEXT,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scope_sets (
+  hash TEXT PRIMARY KEY,
+  paths TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 /**

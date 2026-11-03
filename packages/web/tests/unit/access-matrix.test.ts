@@ -1157,6 +1157,44 @@ const PICKER_MATRIX: Record<string, Matrix> = {
   },
 };
 
+// The Scope list route: each person sends three lists. The first names one subscription, the second that one and the
+// other, and the third is Everything's path, which no set takes, so even Everything is refused it. A path the person does
+// not hold is answered with the "outside the Scopes you hold" message and a malformed one with the shape message; neither
+// names a path.
+const SCOPE_SET_HELD = { error: 'A path in the list is outside the Scopes you hold.', status: 400 };
+const SCOPE_SET_SHAPE = { error: 'Send paths as a list of management group, subscription, resource group or Directory paths.', status: 400 };
+const SCOPE_SET_ONE = { hash: 'f63363efa2a6b8edecf9bbb166f0c2d15d8d5a53083838af1ff66e7f06b05c64', count: 1, status: 200 };
+const SCOPE_SET_BOTH = { hash: '19cb6a752798f3ce643d4e18662cf51f7327ea2fd6e5ff66f3030c069ba93f12', count: 2, status: 200 };
+
+async function scopeSetReply(paths: string[]): Promise<unknown> {
+  const { POST } = await import('@/app/api/scope-sets/route');
+  const res = await POST(new Request('http://localhost/api/scope-sets', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paths }),
+  }));
+  return { ...(await res.json() as object), status: res.status };
+}
+
+const SCOPE_SET_EXPECTED: Matrix['expected'] = {
+  'Admin': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_BOTH, malformed: SCOPE_SET_SHAPE }),
+  'Editor on Everything': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_BOTH, malformed: SCOPE_SET_SHAPE }),
+  'Viewer on the management group': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_BOTH, malformed: SCOPE_SET_SHAPE }),
+  'Viewer on one subscription': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
+  'Viewer on one resource group': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
+  'Directory only': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
+  'No Scope': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
+};
+
+const SCOPE_SET_MATRIX: Record<string, Matrix> = {
+  'scope-sets': {
+    probe: async () => ({
+      one: await scopeSetReply([SCOPE_SUBSCRIPTION]),
+      both: await scopeSetReply([SCOPE_SUBSCRIPTION, `/subscriptions/${SUB_TWO}`]),
+      malformed: await scopeSetReply(['/']),
+    }),
+    expected: SCOPE_SET_EXPECTED,
+  },
+};
+
 const SCOPE_LEVEL = 'subscription';
 /**
  * The scoped seed rule's `scope`, as each person is sent it, written by hand from `seedScopedRule`: it names both
@@ -1301,7 +1339,7 @@ const AZURE_ADMIN_MATRIX: Record<string, Matrix> = {
 
 /** Every route that narrows what a person sees or sends. */
 export const MATRIX: Record<string, Matrix> = {
-  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, ...PERSONAL_MATRIX, ...AZURE_ADMIN_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
+  ...FINDINGS_MATRIX, ...WRITTEN_QUERY_MATRIX, ...PICKER_MATRIX, ...SCOPE_SET_MATRIX, ...PERSONAL_MATRIX, ...AZURE_ADMIN_MATRIX, 'rules/[id]/versions': RULE_VERSIONS,
 };
 
 export interface ListProblems {
@@ -1656,6 +1694,30 @@ describe('the Azure pickers tell each person only what they hold', () => {
     await holding('shouting-group@example.com', SCOPE_MANAGEMENT_GROUP.toUpperCase());
     expect(await PICKER_MATRIX['azure/management-groups']!.probe({} as MatrixSeed, 'results')).toEqual([{ id: MANAGEMENT_GROUP, name: 'Example group' }]);
     expect(await PICKER_MATRIX['azure/subscriptions']!.probe({} as MatrixSeed, 'results')).toEqual([SUB_ONE_ENTRY, SUB_TWO_ENTRY]);
+  });
+});
+
+describe('POST /api/scope-sets takes from each person only the paths they hold', () => {
+  const userIds: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    await refreshFrom(matrixHierarchy());
+  });
+
+  for (const [route, entry] of Object.entries(SCOPE_SET_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      it(`${route}: ${person}`, async () => {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        expect(await entry.probe({} as MatrixSeed, 'results')).toEqual(entry.expected[person]!.results);
+      });
+    }
+  }
+
+  it('names no path in a refusal', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: userIds['Viewer on one subscription'] } });
+    expect(JSON.stringify(await SCOPE_SET_MATRIX['scope-sets']!.probe({} as MatrixSeed, 'results'))).not.toContain(SUB_TWO);
   });
 });
 
