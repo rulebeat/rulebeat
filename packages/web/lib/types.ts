@@ -3,6 +3,7 @@ import type { ChangedFinding, FindingRow } from './finding-rows';
 import type { FindingPlacement } from './placement';
 import type { CoveredScopeView } from './run-scope';
 import type { QueryDiffLine } from './rule-version-preview';
+import type { HeldBack } from './held-back';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -244,6 +245,12 @@ export interface Dashboard {
   config: DashboardConfig;
   isDefault: boolean;
   createdAt: string;
+}
+
+/** A dashboard as the routes and pages return it: the stored values outside the viewer's Access are left out
+ *  of `config` and counted in `heldBack` (lib/held-back.ts). */
+export interface HeldBackDashboard extends Dashboard {
+  heldBack: HeldBack[];
 }
 
 export interface Category {

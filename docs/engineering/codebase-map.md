@@ -190,7 +190,10 @@
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page |
 | `packages/web/lib/db/saved-views.ts` | Saved views repository: list, get, create, update, delete. A name is unique case-insensitively, checked in the write's transaction after a Postgres advisory lock, and a clash comes back as `name-taken` (409) |
 | `packages/web/lib/saved-views.ts` | Server-side request validation for the saved-view routes: `parseSavedViewFields` (the one validator both use), `SAVED_VIEW_FIELDS` and the name-taken message |
-| `packages/web/lib/saved-view-query.ts` | Client-safe saved-view types (`SavedViewFields`, `SavedView`), limits, `normalizeViewQuery`, `OPEN_VIEW_PARAM` and `savedViewHref`, the `/scans?tab=&view=&...` link that opens a view |
+| `packages/web/lib/held-back.ts` | Pure, client-safe: `OUTSIDE_ACCESS_LABEL`, the `HeldBack` count (`place`, `id`, `dimension`, `count`) and the chip words and lookups (`heldBackNote`, `heldBackCount`, `onlyHeldBack`, `widgetHeldBackReason`) |
+| `packages/web/lib/db/held-back.ts` | Server: which stored Scope, resourceName and `row.*` values are outside an Access (`heldBackValues`, one findings query through the access filter, none for Everything) and the dashboards and saved views returned without them (`holdBackDashboards`, `holdBackSavedViews`) |
+| `packages/web/lib/outside-access.ts` | Marks the Scans address's own `subscription` and `rg` values outside an Access (`markOutsideAccess`, used by `queryView`) and the empty-state and chip helpers that read the marks |
+| `packages/web/lib/saved-view-query.ts` | Client-safe saved-view types (`SavedViewFields`, `SavedView`, `HeldBackSavedView`), limits, `normalizeViewQuery`, `OPEN_VIEW_PARAM` and `savedViewHref`, the `/scans?tab=&view=&...` link that opens a view |
 | `packages/web/lib/saved-view-actions.ts` | The menu's create, update and delete requests (`requestSavedViewChange`) and `upsertSavedView`; the fetch is injectable for tests |
 | `packages/web/lib/own-url-writes.ts` | Tells the explorer's own `router.replace` writes from an outside navigation, so opening a saved view restarts the explorer and a filter edit does not |
 | `packages/web/app/api/views/` | Saved view routes. Reads need `read`, writes need `views:write`; each write audits field names only |

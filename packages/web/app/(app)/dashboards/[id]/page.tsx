@@ -6,7 +6,7 @@ import { NoAccessState } from '@/components/findings/no-access-state';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
-import { markDashboardConfig } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props { params: Promise<{ id: string }> }
@@ -19,9 +19,11 @@ export default async function DashboardPage({ params }: Props) {
   if (id === '__e2e-throw__') throw new Error('e2e-triggered render error');
   const dashboard = await getDashboard(id);
   if (!dashboard) notFound();
-  const dashboards = await listDashboards();
   const user = await getCurrentUser();
   const access = user ? await resolveAccess(user) : NO_ACCESS;
+  // The page reaches the browser, so what it holds is trimmed the way the API's answer is.
+  const dashboards = await holdBackDashboards(access, await listDashboards());
+  const held = dashboards.find(d => d.id === dashboard.id);
 
   return (
     <>
@@ -31,7 +33,7 @@ export default async function DashboardPage({ params }: Props) {
         <div className="flex-1 min-h-0">
           {holdsNoScope(access)
             ? <NoAccessState />
-            : <DashboardGridClient dashboard={dashboard} outsideAccess={markDashboardConfig(access, dashboard.config)} />}
+            : <DashboardGridClient dashboard={held ?? { ...dashboard, heldBack: [] }} />}
         </div>
       </div>
     </>

@@ -501,9 +501,6 @@ const suppressionRemoval: Matrix = {
   expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
 
-const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
-const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
-const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
 
 /**
  * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
@@ -644,26 +641,31 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
-  // A stored filter reads back exactly as stored, with the marks beside it. The marks are what differs.
-  const marked = (marks: { subscriptions: string[]; resourceGroups: string[] }) => ({ marks });
-  const marksByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
+  // #363: a stored filter value outside the person's Access is left out of what comes back and counted beside it.
+  // Each expectation is the item as stored with only the held-back values removed, and the counts, by hand.
+  const heldByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
     byPerson(same(everything), same(managementGroup), same(subscription), same(resourceGroup), same(directory), same(nothing));
 
-  const dashboardOf = (body: { config: { filters?: unknown; widgets: { config: unknown }[] }; outsideAccess: unknown }) =>
-    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, marks: body.outsideAccess });
-  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] } };
-  const dashboardExpected = marksByPerson(
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(SUB_TWO_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+  const SELF = 'self';
+  const dashboardOf = (body: { id: string; config: { filters?: unknown; widgets: { config: unknown }[] }; heldBack: { id: string }[] }) =>
+    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [] };
+  const DASHBOARD_SUBSCRIPTION = { place: 'dashboard', id: SELF, dimension: 'subscription', count: 1 };
+  const WIDGET_GROUP = { place: 'widget', id: 'matrix-widget', dimension: 'resourceGroup', count: 1 };
+  // Subscription one holds every resource group name, since a name is not tied to a subscription. A person who
+  // holds one resource group, the Directory or nothing holds neither subscription two nor `rg-two`.
+  const dashboardExpected = heldByPerson(
+    STORED_DASHBOARD,
+    STORED_DASHBOARD,
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [DASHBOARD_SUBSCRIPTION] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
   );
   const dashboards: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; outsideAccess: unknown }[];
-      return dashboardOf(list.find(d => d.id === seed.dashboardId)!);
+      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; heldBack: never }[];
+      return dashboardOf(list.find(d => d.id === seed.dashboardId)! as never);
     },
     expected: dashboardExpected,
   };
@@ -673,18 +675,20 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
-  const viewOf = (body: { query: string; tab: string; outsideAccess: unknown }) => ({ tab: body.tab, query: body.query, marks: body.outsideAccess });
-  const viewExpected = marksByPerson(
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+  const viewOf = (body: { id: string; query: string; tab: string; heldBack: { id: string }[] }) =>
+    ({ tab: body.tab, query: body.query, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  const VIEW_HELD = [{ place: 'savedView', id: SELF, dimension: 'subscription', count: 1 }];
+  const viewExpected = heldByPerson(
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: '', heldBack: VIEW_HELD },
+    { tab: 'results', query: '', heldBack: VIEW_HELD },
+    { tab: 'results', query: '', heldBack: VIEW_HELD },
+    { tab: 'results', query: '', heldBack: VIEW_HELD },
   );
   const views: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; heldBack: { id: string }[] }[];
       return viewOf(list.find(v => v.id === seed.savedViewId)!);
     },
     expected: viewExpected,
@@ -695,16 +699,16 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
-  const FORBIDDEN = { status: 403, filters: undefined, marks: undefined };
+  const FORBIDDEN = { status: 403, filters: undefined, heldBack: undefined };
   const duplicate: Matrix = {
     probe: async seed => {
       const route = await import('@/app/api/dashboards/[id]/duplicate/route');
       const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
-      const body = await res.json() as { outsideAccess?: unknown; config?: { filters?: unknown } };
-      return { status: res.status, filters: body.config?.filters, marks: body.outsideAccess };
+      const body = await res.json() as { heldBack?: unknown; config?: { filters?: unknown } };
+      return { status: res.status, filters: body.config?.filters, heldBack: body.heldBack };
     },
     expected: byPerson(
-      same({ status: 201, filters: { subscriptions: [SUB_TWO] }, marks: NOTHING_MARKED }),
+      same({ status: 201, filters: { subscriptions: [SUB_TWO] }, heldBack: [] }),
       same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN),
     ),
   };
