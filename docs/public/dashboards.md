@@ -35,23 +35,59 @@ the list you land on is the list the number counted.
 
 ## Filters and scope
 
-A dashboard has one filter bar applied to every widget: categories, subscriptions, resource groups,
-tags, severities, rules, and a date window. A funnel indicator appears on the bar and on each widget
-title while a filter is active, so a scoped number never looks global. Tags here are **rule** tags
-(labels like `framework:iso27001`), not Azure resource tags.
+A dashboard has one filter bar applied to every widget. It has seven dimensions, the same ones Scans
+and saved views use:
 
-Each widget also has a **Scope** panel with the same dimensions. A value set there **replaces** the
-dashboard's value for that dimension on that widget; anything left on inherit takes the dashboard's.
-Values never intersect, so if the dashboard is filtered to production and a widget's Scope names the
-sandbox subscription, that widget shows the sandbox.
+- **Category:** the categories a finding's rule belongs to.
+- **Scope:** management groups, subscriptions, resource groups and the Directory.
+- **Rule source:** each Pack, Community and Custom.
+- **Rule tags:** labels on the rule, such as `framework:iso27001`.
+- **Severity:** the finding's own severity, including the severity a Microsoft Graph rule's expiry
+  bands set.
+- **Rule:** individual rules.
+- **Date window:** the period that new, fixed and delta are measured over.
 
-The date window is a rolling preset (24 hours, 7 or 30 days) or a custom range. A preset is stored as
-"7 days" rather than two dates, so it keeps rolling. It drives anything that says new, fixed or
-delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not change what counts as open.
+Within a dimension, values are any-of; across dimensions, all of them must match. A funnel indicator
+appears on the bar and on each widget title while a filter is active, so a scoped number never looks
+global.
+
+The **Scope** filter is matched the way Access is, so it only narrows what you hold and never widens
+it. See [`access.md`](access.md#the-scope-filter-is-not-access).
+
+### Filters
+
+Each widget also has a **Filters** panel with the same dimensions. For each dimension a widget either
+inherits the dashboard's value, replaces it, or is set to Any, which ignores the dashboard's value
+for that dimension. The date window has two states, inherit or replace. A value set on a widget
+**replaces** the dashboard's value for that dimension on that widget. Values never intersect, so if
+the dashboard is filtered to production and a widget's Scope names the sandbox subscription, that
+widget shows the sandbox. The panel names every override, and every dimension the widget does not
+apply, so a number never silently ignores a filter. A saved-view summary follows its saved view and
+ignores the bar and the overrides.
+
+The date window is a rolling preset from 24 hours to 365 days, or a custom range that reaches no
+more than 365 days back. A preset is stored as "7 days" rather than two dates, so it keeps rolling.
+It drives anything that says new, fixed or delta, the Trend and New vs. Fixed charts, and "vs
+baseline". It does not change what counts as open.
+
+### Values that are missing
+
+A value that cannot be shown as picked stays visible and is never dropped.
+
+- A Scope outside your access is counted, not named: the filter reads "Outside your access".
+- A Scope Azure no longer lists is still named and marked "Not found in Azure". It still matches
+  the findings recorded there.
+- A deleted category still matches the findings recorded under it.
+- Tags and packs that no rule carries match nothing.
+- A long Scope list travels as a short reference in the address. It opens only on the install that
+  made it, and only while its row exists. Otherwise it shows as an unresolved Scope filter that
+  matches nothing and says why.
+
+Findings do not store Azure resource tags, so there is no filter by them. Tags here are rule tags.
 
 Three limits a widget will tell you about. Trend needs snapshots at the right grain, so under a
-resource group, tag, severity or rule filter, or with two or more subscriptions selected, it says a
-trend is not available rather than drawing a misleading blended line
+resource group Scope pick, a tag, severity or rule filter, or with Scope picks across two or more
+subscriptions, it says a trend is not available rather than drawing a misleading blended line
 ([`posture.md`](posture.md#snapshots-and-trend)); the open-findings delta keeps working under every
 filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
 data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled

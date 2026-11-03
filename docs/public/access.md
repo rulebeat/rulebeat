@@ -149,6 +149,19 @@ Results, Advisories and Activity tabs, the dashboards, saved views, suppressions
 saved view or dashboard filtered to something outside a person's access still opens: the filter
 reads "Outside your access" and can be cleared.
 
+## The Scope filter is not access
+
+Dashboards, saved views, widgets and the Scans page can be narrowed by a **Scope filter**. It is not
+a way to get access, and it only ever narrows.
+
+- It is matched by the same table as Access, in [Where a finding sits](#where-a-finding-sits), so a
+  filter and your Access agree about whether a finding is inside a Scope.
+- It can only narrow what you hold.
+- The picker shows only the Scopes you hold. A pick nested inside another shows "Covered by" and the
+  Scope that covers it.
+- A pick you hold only in part applies as the part you hold, and the filter says it is "narrowed to
+  what you hold".
+
 ## What a scoped Editor can do
 
 An Editor whose Scopes fall short of Everything works inside them.
