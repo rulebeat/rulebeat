@@ -247,6 +247,10 @@ describe.runIf(dbKind === 'pg')('two syncs touching one key at once', () => {
       scanId: id, category: CATEGORY, ranRuleIds: [], findings: [f], finishedAt: at(1).toISOString(),
     });
 
+    // beforeEach inserts RULE_B raw and the syncs never touch it, so its fact is recorded first. Otherwise the final
+    // full recount would write that fact whatever the lock does.
+    await recount(at(0));
+
     try {
       await Promise.all([sync('s1', finding('vm-one')), sync('s2', finding('vm-two'))]);
     } finally {
