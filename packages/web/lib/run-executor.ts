@@ -14,6 +14,7 @@ import type { ChangedFinding } from './finding-rows';
 import type { ChangedFindingDetail } from './types';
 import type { Access } from './access-model';
 import { coveredScopeOf } from './run-scope';
+import { TREND_RECORD_FAILED_MESSAGE, TrendRecordWriteError } from './db/trend-record';
 
 export interface RunTarget {
   targetType: ScheduleTargetType;
@@ -132,7 +133,9 @@ export async function executeTarget(
         // Never put String(err) in a message that reaches the browser. An Azure SDK error carries
         // the full request URL (tenant and subscription ids). Run History renders run.error directly.
         console.error(`[RuleBeat] category ${categoryId} failed in scan run ${run.id}:`, err);
-        errors.push(`${categoryId}: scan failed. Check the RuleBeat server logs for details`);
+        errors.push(err instanceof TrendRecordWriteError
+          ? `${categoryId}: ${TREND_RECORD_FAILED_MESSAGE}`
+          : `${categoryId}: scan failed. Check the RuleBeat server logs for details`);
       }
     }
 

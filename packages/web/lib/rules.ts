@@ -116,9 +116,9 @@ export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<
  * Rules outside `ids` (disabled, or excluded by a targeted scan's own rule list) are left untouched,
  * so their last known status still reflects their own last real run.
  */
-export async function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus, at: string): Promise<void> {
+export async function setRulesLastRunStatus(ids: string[], status: RuleExecutionStatus, at: string, handle: DbHandle = db): Promise<void> {
   if (ids.length === 0) return;
-  await run(db.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
+  await run(handle.update(rulesTable).set({ lastRunStatus: status, lastRunAt: at }).where(inArray(rulesTable.id, ids)));
 }
 
 /**

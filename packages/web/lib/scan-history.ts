@@ -2,7 +2,7 @@ import { eq, desc, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { dbKind } from './db/backend';
 import { scans as scansTable, scanFindings } from './db/tables';
-import { many, run, inTransaction } from './db/exec';
+import { many, run, inTransaction, type DbHandle } from './db/exec';
 import { chunk } from './db/chunk';
 import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
@@ -153,15 +153,17 @@ export async function saveScanResult(
     for (const part of chunk(records, RECORDS_PER_STATEMENT)) {
       await run(tx.insert(scanFindings).values(part));
     }
-  });
 
-  await pruneOldScans(module);
+    // On the handle this transaction hands out, so that under a caller's transaction (a scan saves with its
+    // sync) the read sees the scan just inserted.
+    await pruneOldScans(tx, module);
+  });
 }
 
 // --- helpers ---
 
-async function pruneOldScans(module: string): Promise<void> {
-  const rows = await many(db
+async function pruneOldScans(tx: DbHandle, module: string): Promise<void> {
+  const rows = await many(tx
     .select({ id: scansTable.id })
     .from(scansTable)
     .where(eq(scansTable.module, module))
@@ -172,10 +174,8 @@ async function pruneOldScans(module: string): Promise<void> {
 
   // A scan goes with its records, in one transaction: one statement for each table, or one per
   // parameter-limit's worth of ids when a lowered SCAN_HISTORY_LIMIT expires many at once.
-  await inTransaction(async (tx) => {
-    for (const ids of chunk(expired)) {
-      await run(tx.delete(scanFindings).where(inArray(scanFindings.scanId, ids)));
-      await run(tx.delete(scansTable).where(inArray(scansTable.id, ids)));
-    }
-  });
+  for (const ids of chunk(expired)) {
+    await run(tx.delete(scanFindings).where(inArray(scanFindings.scanId, ids)));
+    await run(tx.delete(scansTable).where(inArray(scansTable.id, ids)));
+  }
 }
