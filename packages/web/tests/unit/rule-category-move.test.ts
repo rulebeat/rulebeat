@@ -13,17 +13,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { join, resolve } from 'node:path';
 import { getCategory } from '@/lib/db/categories';
-import { db, dbReady, pgDb, rawSqlite } from '@/lib/db/client';
+import { db, dbReady, pgDb, rawSqlite, recordCategoriesMovedBySeeding } from '@/lib/db/client';
 import { many as execMany, run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable, ruleVersions, scanFindings as scanFindingsTable } from '@/lib/db/tables';
 import { runSeeds } from '@/lib/db/migrate';
 import { seedPg } from '@/lib/db/pg/seeds';
-import { getFindingEventCounts, listFindings } from '@/lib/db/findings';
+import { getActivityOccurrenceCounts, getFindingEventCounts, listFindings, refreshSnapshotsForSeededMoves, syncScanFindings } from '@/lib/db/findings';
+import { computeActivityFingerprint } from '@rulebeat/core';
+import type { Finding } from '@/lib/types';
 import { queryView } from '@/lib/db/finding-views';
 import { querySnapshot } from '@/lib/db/scan-snapshots';
 import { listScanMetas } from '@/lib/scan-history';
 import { emptySnapshotQuery } from '@/lib/snapshot-query';
-import { getSnapshots } from '@/lib/db/snapshots';
+import { getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
 import { approveLibraryRequest, createLibraryRequest } from '@/lib/db/library-requests';
 import { createPersonalRule } from '@/lib/db/personal-rules';
 import { createUser } from '@/lib/db/users';
@@ -239,6 +241,16 @@ describe('startup seeding that changes the category', () => {
     expect(await builtinCategories()).toEqual(['compliance']);
   });
 
+  it('refreshes both categories\' snapshots at startup', async () => {
+    await upsertDailySnapshot('security');
+    expect(await snapshotActive('security')).toBe(1);
+    await updateRule(BUILTIN_ID, { enabled: false });
+    recordCategoriesMovedBySeeding(await seed(catalogueOf(v2)));
+    await refreshSnapshotsForSeededMoves();
+    expect(await snapshotActive('security')).toBe(0);
+    expect(await snapshotActive('compliance')).toBe(1);
+  });
+
   it('leaves the findings of an enabled rule, which keeps what it runs', async () => {
     expect(await seed(catalogueOf(v2))).toEqual([]);
     expect((await loadRules()).find(r => r.id === BUILTIN_ID)!.category).toBe('security');
@@ -273,5 +285,38 @@ describe('a Library request approval that changes the category', () => {
     expect(await activeIn('compliance')).toBe(1);
     expect(await snapshotActive('security')).toBe(0);
     expect(await snapshotActive('compliance')).toBe(1);
+  });
+});
+
+describe('Activity occurrences after a rule moves category', () => {
+  const day = () => new Date().toISOString().slice(0, 10);
+  const activityFinding = (): Finding => ({
+    module: 'security', ruleId: RULE_ID, fingerprint: computeActivityFingerprint(RULE_ID, 'principal-a'),
+    kind: 'activity', dimensionKey: 'principal-a', severity: 'medium', category: 'security',
+    subscriptionId: 'sub-1', title: 'activity', description: 'test', evidence: {}, recommendation: 'investigate',
+    remediationSteps: [], detectedAt: new Date().toISOString(),
+  });
+  const occurrencesIn = async (category: string) =>
+    (await getActivityOccurrenceCounts({ categories: [category], sinceDate: day() }, EVERYTHING_ACCESS))
+      .reduce((n, c) => n + c.count, 0);
+
+  beforeEach(async () => {
+    await syncScanFindings({
+      scanId: 'activity-scan', category: 'security', ranRuleIds: [RULE_ID],
+      findings: [activityFinding()], finishedAt: new Date().toISOString(),
+    });
+    expect(await occurrencesIn('security')).toBe(1);
+  });
+
+  it('counts the rule\'s occurrences under its new category, with no rescan', async () => {
+    await updateRule(RULE_ID, { category: 'compliance' });
+    expect(await occurrencesIn('compliance')).toBe(1);
+    expect(await occurrencesIn('security')).toBe(0);
+  });
+
+  it('keeps counting them under the stored category once the rule row is gone', async () => {
+    await execRun(db.delete(rulesTable).where(eq(rulesTable.id, RULE_ID)));
+    expect(await occurrencesIn('security')).toBe(1);
+    expect(await occurrencesIn('compliance')).toBe(0);
   });
 });

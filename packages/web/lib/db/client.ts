@@ -79,6 +79,12 @@ export function takeCategoriesMovedBySeeding(): string[] {
   return moved;
 }
 
+/** Records what a seeding run moved, the way the module's own seeding does at load. For tests that run a
+ *  seeder themselves and then exercise the startup refresh. */
+export function recordCategoriesMovedBySeeding(moved: string[]): void {
+  categoriesMovedBySeeding = moved;
+}
+
 /** Raw better-sqlite3 connection. Null in Postgres mode; only exec.ts's transaction helper and
  *  SQLite-only code (migrate/seed tooling, tests) may touch it. */
 export const rawSqlite = sqliteHandle;
