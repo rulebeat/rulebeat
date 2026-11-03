@@ -92,6 +92,15 @@ export interface WriteOptions {
 }
 
 /**
+ * What `insertRuleOn()` and `updateRuleOn()` take. A caller that writes other rows in the same transaction passes
+ * `recount: false` and calls `recountTrend()` itself after its last write, so the record lock stays last
+ * (ADR 0012).
+ */
+export interface RuleWriteOnOptions extends WriteOptions {
+  recount?: boolean;
+}
+
+/**
  * Flips just the `enabled` column for a batch of rules. A single `UPDATE ... WHERE id IN (...)`,
  * deliberately not `saveRules()`, which deletes and reinserts every row. Round-tripping 156 rules
  * through `rowToRule`/`ruleToRow` to flip 143 booleans is how a field eventually gets dropped.
@@ -188,12 +197,12 @@ export type CreateRuleResult =
  * The name check and the insert of `createRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library request's approval, #282). The caller has
  * taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. The rule's trend record rows are written in the same
- * transaction, after that lock (ADR 0012).
+ * transaction, after that lock (ADR 0012), unless `opts.recount` is false.
  */
-export async function insertRuleOn(tx: DbHandle, rule: Rule, opts: WriteOptions = {}): Promise<CreateRuleResult> {
+export async function insertRuleOn(tx: DbHandle, rule: Rule, opts: RuleWriteOnOptions = {}): Promise<CreateRuleResult> {
   if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
   await run(tx.insert(rulesTable).values(ruleToRow(rule)));
-  await recountTrend(tx, { ruleIds: [rule.id], now: opts.now });
+  if (opts.recount !== false) await recountTrend(tx, { ruleIds: [rule.id], now: opts.now });
   // The stored row, not the input: a field the table has no column for is not echoed back.
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
   return { ok: true, rule: rowToRule(stored!) };
@@ -253,9 +262,9 @@ export async function updateRule(id: string, changes: RuleChanges, opts: WriteOp
  * The read, name check and write of `updateRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library update request's approval, #283). The caller
  * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. A change to a posture input (enabled, kind, severity,
- * scope) writes the trend record in the same transaction, after that lock (ADR 0012).
+ * scope) writes the trend record in the same transaction, after that lock (ADR 0012), unless `opts.recount` is false.
  */
-export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges, opts: WriteOptions = {}): Promise<UpdateRuleResult> {
+export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges, opts: RuleWriteOnOptions = {}): Promise<UpdateRuleResult> {
   const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
   if (!current) return { ok: false, reason: 'not-found' };
 
@@ -279,7 +288,7 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
 
   if (Object.keys(set).length > 0) {
     await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
-    if (POSTURE_COLUMNS.some(column => column in set)) await recountTrend(tx, { ruleIds: [id], now: opts.now });
+    if (opts.recount !== false && POSTURE_COLUMNS.some(column => column in set)) await recountTrend(tx, { ruleIds: [id], now: opts.now });
   }
 
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
