@@ -394,6 +394,68 @@ export const postureSnapshots = sqliteTable('posture_snapshots', {
   pk: primaryKey({ columns: [table.category, table.subscriptionId, table.date] }),
 }));
 
+/**
+ * The trend record (ADR 0012): the inputs to posture as they changed, written only through
+ * `lib/db/trend-record.ts`. A row is a change, so a key's value on a day is its newest row at or before it.
+ * `seq` is the one ordering column: a write is never dated before its key's newest row, and `seq` says
+ * which of two rows of one key came later. Every date is TEXT (an ISO time, or a `YYYY-MM-DD` day), so a
+ * Demo Reset shifts it.
+ *
+ * One row per rule, place and severity: how many open, unsuppressed Problem findings there are and how many an
+ * active suppression covers. The three place columns are lowercased, `''` for none, and match a finding
+ * the way `lib/db/access-filter.ts` does. A row is written whenever either count changes, 0/0 as its own row.
+ */
+export const trendCells = sqliteTable('trend_cells', {
+  seq: integer('seq').primaryKey({ autoIncrement: true }),
+  ruleId: text('rule_id').notNull(),
+  placement: text('placement').notNull(),
+  subscriptionId: text('subscription_id').notNull().default(''),
+  resourceGroup: text('resource_group').notNull().default(''),
+  managementGroupId: text('management_group_id').notNull().default(''),
+  severity: text('severity').notNull(),            // the finding's own severity
+  changedAt: text('changed_at').notNull(),
+  openCount: integer('open_count').notNull().default(0),
+  suppressedCount: integer('suppressed_count').notNull().default(0),
+});
+
+/** What a rule was on a day, one wide row whenever any fact changes, for every rule, enabled or not. The `last_*`
+ *  labels are filled only on the deletion row, so a deleted rule's past days still read. */
+export const trendRuleFacts = sqliteTable('trend_rule_facts', {
+  seq: integer('seq').primaryKey({ autoIncrement: true }),
+  ruleId: text('rule_id').notNull(),
+  changedAt: text('changed_at').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+  kind: text('kind').notNull(),
+  severity: text('severity').notNull(),            // the rule's own
+  scope: text('scope').notNull(),                  // JSON: RuleScope, as stored
+  runningVersion: text('running_version'),
+  lastRunStatus: text('last_run_status'),          // null means never run
+  deleted: integer('deleted', { mode: 'boolean' }).notNull().default(false),
+  lastName: text('last_name'),
+  lastCategory: text('last_category'),
+  lastCategoryLabel: text('last_category_label'),
+  lastTags: text('last_tags'),
+  lastSource: text('last_source'),
+});
+
+/** One row per UTC day RuleBeat was recording. A day with none is a gap on the trend. */
+export const trendRecordedDays = sqliteTable('trend_recorded_days', {
+  day: text('day').primaryKey(),                   // YYYY-MM-DD, UTC
+  recordVersion: integer('record_version').notNull().default(1),
+  firstRecordedAt: text('first_recorded_at').notNull(),
+  covered: text('covered').notNull().default('[]'), // JSON: { category, tenantId, path, ruleIds }[]; path null = Everything, ruleIds null = every enabled rule in the category
+});
+
+/** One row, id 1. Kept here and not in `meta`, which a Demo Reset skips. */
+export const trendState = sqliteTable('trend_state', {
+  id: integer('id').primaryKey(),
+  sweptThrough: text('swept_through'),             // ISO: the suppression expiry sweep has recounted up to here
+  eventsKeptSince: text('events_kept_since'),      // YYYY-MM-DD: the first day finding events can show
+  recountedAt: text('recounted_at'),               // ISO: the last full recount
+  recountCorrected: integer('recount_corrected'),  // how many rows that recount had to write
+  retainedThrough: text('retained_through'),       // YYYY-MM-DD: the last day retention ran
+});
+
 // Despite the name (kept for migration simplicity), this table is now the general "runs" record
 // for BOTH scheduled and manual (ad-hoc "Run Scan") executions: scheduleId is '' for manual runs
 // rather than a nullable column, avoiding a NOT NULL relaxation that would need a table rebuild.

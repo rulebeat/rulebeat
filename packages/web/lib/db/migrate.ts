@@ -33,6 +33,7 @@ import {
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from './scan-findings-copy';
+import { startTrendRecording } from './trend-record';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -431,6 +432,58 @@ export function runMigrations(sqlite: Database.Database): void {
       display_name TEXT NOT NULL,
       parent_id TEXT,
       PRIMARY KEY (tenant_id, kind, node_id)
+    );
+
+    -- The trend record (ADR 0012). A row is a change; a key's newest row at or before a day says what was true on it.
+    CREATE TABLE IF NOT EXISTS trend_cells (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      placement TEXT NOT NULL,
+      subscription_id TEXT NOT NULL DEFAULT '',
+      resource_group TEXT NOT NULL DEFAULT '',
+      management_group_id TEXT NOT NULL DEFAULT '',
+      severity TEXT NOT NULL,
+      changed_at TEXT NOT NULL,
+      open_count INTEGER NOT NULL DEFAULT 0,
+      suppressed_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_trend_cells_key
+      ON trend_cells(rule_id, placement, subscription_id, resource_group, management_group_id, severity, changed_at, seq);
+    CREATE INDEX IF NOT EXISTS idx_trend_cells_changed ON trend_cells(changed_at);
+
+    CREATE TABLE IF NOT EXISTS trend_rule_facts (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      changed_at TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      running_version TEXT,
+      last_run_status TEXT,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      last_name TEXT,
+      last_category TEXT,
+      last_category_label TEXT,
+      last_tags TEXT,
+      last_source TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_trend_rule_facts_rule ON trend_rule_facts(rule_id, changed_at, seq);
+
+    CREATE TABLE IF NOT EXISTS trend_recorded_days (
+      day TEXT PRIMARY KEY,
+      record_version INTEGER NOT NULL DEFAULT 1,
+      first_recorded_at TEXT NOT NULL,
+      covered TEXT NOT NULL DEFAULT '[]'
+    );
+
+    CREATE TABLE IF NOT EXISTS trend_state (
+      id INTEGER PRIMARY KEY,
+      swept_through TEXT,
+      events_kept_since TEXT,
+      recounted_at TEXT,
+      recount_corrected INTEGER,
+      retained_through TEXT
     );
 
     CREATE TABLE IF NOT EXISTS audit_log (
@@ -1217,6 +1270,9 @@ export function runMigrations(sqlite: Database.Database): void {
     const renameInFindingsTable = sqlite.prepare(`UPDATE findings SET rule_id = ? WHERE rule_id = ?`);
     const renameInFindingEvents = sqlite.prepare(`UPDATE finding_events SET rule_id = ? WHERE rule_id = ?`);
     const renameInScanFindings = sqlite.prepare(`UPDATE scan_findings SET rule_id = ? WHERE rule_id = ?`);
+    // The trend record is derived from the rule id (ADR 0012). This is the one place it is rewritten.
+    const renameInTrendCells = sqlite.prepare(`UPDATE trend_cells SET rule_id = ? WHERE rule_id = ?`);
+    const renameInTrendRuleFacts = sqlite.prepare(`UPDATE trend_rule_facts SET rule_id = ? WHERE rule_id = ?`);
     // A database from before the catalogue has no catalogue to move. A path the new id already holds stays one
     // entry, so the move cannot trip the key.
     let copyCatalogue: Database.Statement | undefined;
@@ -1273,6 +1329,8 @@ export function runMigrations(sqlite: Database.Database): void {
         renameInFindingsTable.run(newId, oldId);
         renameInFindingEvents.run(newId, oldId);
         renameInScanFindings.run(newId, oldId);
+        renameInTrendCells.run(newId, oldId);
+        renameInTrendRuleFacts.run(newId, oldId);
         copyCatalogue?.run(newId, oldId);
         dropCatalogue?.run(oldId);
         renameInPersonalRules?.run(newId, oldId);
@@ -1611,6 +1669,8 @@ export interface SeedOptions {
   /** What this build ships. Defaults to RuleBeat Core plus `<dataDir>/packs/*.json`; a test passes
    *  its own so it can ship a changed definition without editing the real rule files. */
   catalogue?: ShippedCatalogue;
+  /** The clock the trend record's first rows are dated by (ADR 0012). Defaults to now; a test passes its own. */
+  now?: Date;
 }
 
 export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedOptions = {}): void {
@@ -1635,6 +1695,10 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
   if (!opts.skipOwnerBootstrap) seedOwnerAccount();
   // Ensure someone can administer this install
   seedInitialAdmin();
+  // Last, once the rules are in: the first start records the state of the moment as the trend record's first
+  // rows, and every later start recounts it and writes only what differs (lib/db/trend-record.ts, ADR 0012).
+  // Here and not in the migrations, which Postgres never runs; seedPg() makes the same call.
+  startTrendRecording(sqlite, opts.now);
 
   function seedFromJson() {
     // suppressions

@@ -96,7 +96,7 @@ export function dumpDb(sqlite: Database): string {
     if (COUNT_ONLY.has(name)) continue;
     // Masked *before* sorting, not after: two rows that differ only by a freshly generated id sort
     // into an arbitrary order otherwise, and the dump stops being comparable with itself.
-    const lines = rowsOf(sqlite, name).map(row => `${name} ${normalise(JSON.stringify(row))}`);
+    const lines = rowsOf(sqlite, name).map(row => `${name} ${maskDays(name, normalise(JSON.stringify(row)))}`);
     out.push(...lines.sort());
   }
 
@@ -109,6 +109,12 @@ interface ColumnInfo {
   notnull: number;
   dflt_value: string | null;
   pk: number;
+}
+
+/** The trend record's days are the day the dump was made on (a Recorded day, the day events are kept from), so they are
+ *  masked in its tables and left alone everywhere else, where a date is a fixed one the sample was built with. */
+function maskDays(table: string, line: string): string {
+  return table.startsWith('trend_') ? line.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '<DAY>') : line;
 }
 
 /**
