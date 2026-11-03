@@ -1,8 +1,9 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
-import { rules as rulesTable, ruleVersions, personalRules } from './db/tables';
+import { rules as rulesTable, ruleVersions, personalRules, categories } from './db/tables';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
 import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
+import { recountTrend, type DeletedRuleLabels } from './db/trend-record';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 import { buildRuleQuery } from '@rulebeat/core/kql';
 import { definitionOfRow, definitionToColumns } from './rule-versions';
@@ -85,6 +86,11 @@ export function deriveKind(queryBackend: QueryBackend): RuleKind {
  */
 export const APPLIES_TO_REMOVED_ERROR = 'Applies to has been removed. Remove the appliesTo field from the request.';
 
+/** The clock a rule write dates its trend record rows by (ADR 0012). Defaults to now; a test passes its own. */
+export interface WriteOptions {
+  now?: Date;
+}
+
 /**
  * Flips just the `enabled` column for a batch of rules. A single `UPDATE ... WHERE id IN (...)`,
  * deliberately not `saveRules()`, which deletes and reinserts every row. Round-tripping 156 rules
@@ -92,20 +98,42 @@ export const APPLIES_TO_REMOVED_ERROR = 'Applies to has been removed. Remove the
  *
  * Unknown ids are reported rather than failing the batch. A stale browser tab must not 404 the
  * whole request over one id that no longer exists.
+ *
+ * One transaction with the trend record's rows for the rules that changed (ADR 0012), dated by `opts.now`.
  */
-export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<{ updatedIds: string[]; notFoundIds: string[] }> {
-  if (ids.length === 0) return { updatedIds: [], notFoundIds: [] };
+export async function setRulesEnabled(
+  ids: string[], enabled: boolean, opts: WriteOptions = {},
+): Promise<{ updatedIds: string[]; notFoundIds: string[] }> {
+  const result = await setRulesEnabledBulk(enabled ? ids : [], enabled ? [] : ids, opts);
+  return enabled ? result.enabled : result.disabled;
+}
 
-  const existingIds = (await many(db.select({ id: rulesTable.id }).from(rulesTable)
+type EnabledResult = { updatedIds: string[]; notFoundIds: string[] };
+
+/** The update of one list, with no record write: the caller recounts once after every update, so the record lock is last. */
+async function updateEnabled(tx: DbHandle, ids: string[], enabled: boolean): Promise<EnabledResult> {
+  if (ids.length === 0) return { updatedIds: [], notFoundIds: [] };
+  const existingIds = (await many(tx.select({ id: rulesTable.id }).from(rulesTable)
     .where(inArray(rulesTable.id, ids)))).map(r => r.id);
   const existingSet = new Set(existingIds);
-  const notFoundIds = ids.filter(id => !existingSet.has(id));
+  if (existingIds.length > 0) await run(tx.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)));
+  return { updatedIds: existingIds, notFoundIds: ids.filter(id => !existingSet.has(id)) };
+}
 
-  if (existingIds.length > 0) {
-    await run(db.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)));
-  }
-
-  return { updatedIds: existingIds, notFoundIds };
+/**
+ * Both lists of a bulk toggle in one transaction: every update first, then one recount of the rules that changed,
+ * so a failure anywhere leaves both lists undone and the record lock is taken after every row write.
+ */
+export async function setRulesEnabledBulk(
+  enableIds: string[], disableIds: string[], opts: WriteOptions = {},
+): Promise<{ enabled: EnabledResult; disabled: EnabledResult }> {
+  return inTransaction(async (tx) => {
+    const enabled = await updateEnabled(tx, enableIds, true);
+    const disabled = await updateEnabled(tx, disableIds, false);
+    const changed = [...new Set([...enabled.updatedIds, ...disabled.updatedIds])];
+    if (changed.length > 0) await recountTrend(tx, { ruleIds: changed, now: opts.now });
+    return { enabled, disabled };
+  });
 }
 
 /**
@@ -159,21 +187,23 @@ export type CreateRuleResult =
 /**
  * The name check and the insert of `createRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library request's approval, #282). The caller has
- * taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first.
+ * taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. The rule's trend record rows are written in the same
+ * transaction, after that lock (ADR 0012).
  */
-export async function insertRuleOn(tx: DbHandle, rule: Rule): Promise<CreateRuleResult> {
+export async function insertRuleOn(tx: DbHandle, rule: Rule, opts: WriteOptions = {}): Promise<CreateRuleResult> {
   if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
   await run(tx.insert(rulesTable).values(ruleToRow(rule)));
+  await recountTrend(tx, { ruleIds: [rule.id], now: opts.now });
   // The stored row, not the input: a field the table has no column for is not echoed back.
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
   return { ok: true, rule: rowToRule(stored!) };
 }
 
 /** Inserts one rule. Touches no other row, so it cannot disturb a concurrent edit or scan write. */
-export async function createRule(rule: Rule): Promise<CreateRuleResult> {
+export async function createRule(rule: Rule, opts: WriteOptions = {}): Promise<CreateRuleResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
-    return insertRuleOn(tx, rule);
+    return insertRuleOn(tx, rule, opts);
   });
 }
 
@@ -193,6 +223,9 @@ const UPDATABLE_FIELDS = [
   'queryBackend', 'graphQuery', 'logsQuery',
 ] as const satisfies readonly (keyof RuleChanges)[];
 
+// The columns the trend record keeps (ADR 0012): the rule facts, and the kind that decides whether its findings count.
+const POSTURE_COLUMNS = ['enabled', 'severity', 'scope', 'kind'] as const;
+
 /**
  * Updates one rule's row and returns the stored result, `{ ok: false, reason: 'not-found' }` if no
  * such rule exists, or `{ ok: false, reason: 'name-taken' }` if `changes.name` would collide with
@@ -209,19 +242,20 @@ export type UpdateRuleResult =
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'name-taken' };
 
-export async function updateRule(id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
+export async function updateRule(id: string, changes: RuleChanges, opts: WriteOptions = {}): Promise<UpdateRuleResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
-    return updateRuleOn(tx, id, changes);
+    return updateRuleOn(tx, id, changes, opts);
   });
 }
 
 /**
  * The read, name check and write of `updateRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library update request's approval, #283). The caller
- * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first.
+ * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. A change to a posture input (enabled, kind, severity,
+ * scope) writes the trend record in the same transaction, after that lock (ADR 0012).
  */
-export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
+export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges, opts: WriteOptions = {}): Promise<UpdateRuleResult> {
   const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
   if (!current) return { ok: false, reason: 'not-found' };
 
@@ -245,6 +279,7 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
 
   if (Object.keys(set).length > 0) {
     await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
+    if (POSTURE_COLUMNS.some(column => column in set)) await recountTrend(tx, { ruleIds: [id], now: opts.now });
   }
 
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
@@ -259,7 +294,7 @@ export type SwitchRuleVersionResult =
   | { ok: false; reason: 'not-found' | 'unknown-version' | 'custom-rule' }
   | { ok: false; reason: 'name-taken'; conflictingName: string };
 
-export async function switchRuleVersion(id: string, version: string): Promise<SwitchRuleVersionResult> {
+export async function switchRuleVersion(id: string, version: string, opts: WriteOptions = {}): Promise<SwitchRuleVersionResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
@@ -278,6 +313,7 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
     await run(tx.update(rulesTable).set({
       ...definitionToColumns(definition), version, filter: null,
     }).where(eq(rulesTable.id, id)));
+    await recountTrend(tx, { ruleIds: [id], now: opts.now });
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     return {
       ok: true, rule: rowToRule(stored!), oldVersion: current.version,
@@ -289,12 +325,18 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
 /**
  * Deletes one rule together with its findings and finding events, in one transaction: either all
  * of it goes or none of it does. Returns false if the rule does not exist. Suppressions are keyed
- * on the fingerprint and are left alone, as they are when a rule's findings are cleared.
+ * on the fingerprint and are left alone, as they are when a rule's findings are cleared. The same transaction
+ * writes the rule's trend cells down to 0 and a deletion fact that keeps its last labels (ADR 0012).
  */
-export async function deleteRule(id: string): Promise<boolean> {
+export async function deleteRule(id: string, opts: WriteOptions = {}): Promise<boolean> {
   const outcome = await inTransaction(async (tx) => {
-    const existing = await one(tx.select({ id: rulesTable.id }).from(rulesTable).where(eq(rulesTable.id, id)));
+    const existing = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     if (!existing) return null;
+    const category = await one(tx.select({ label: categories.label }).from(categories).where(eq(categories.id, existing.category)));
+    const labels: DeletedRuleLabels = {
+      name: existing.name, category: existing.category, categoryLabel: category?.label ?? existing.category,
+      tags: ruleTagsOf(existing) ?? [], source: existing.type ?? 'custom',
+    };
     await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
     // A Personal rule copied from this one stays, without the link back to it (#281).
     await run(tx.update(personalRules).set({ sourceRuleId: null }).where(eq(personalRules.sourceRuleId, id)));
@@ -303,7 +345,9 @@ export async function deleteRule(id: string): Promise<boolean> {
     // An open update request aimed at this rule keeps its target id on purpose (#283): clearing it would
     // turn the request into a new-rule request. Approving it answers 'target-gone' and the review page
     // says the rule no longer exists.
-    return removeFindingRowsForRule(tx, id);
+    const removed = await removeFindingRowsForRule(tx, id);
+    await recountTrend(tx, { ruleIds: [id], now: opts.now, deleted: { [id]: labels } });
+    return removed;
   });
   if (!outcome) return false;
   await refreshSnapshotsFor(outcome.categories);
@@ -388,7 +432,7 @@ export function copiedOrigin(
  * `createRule()`'s: a concurrent create or duplicate landing on the same candidate name must not
  * both pass their own uniqueness check before either writes.
  */
-export async function duplicateRule(id: string): Promise<Rule | null> {
+export async function duplicateRule(id: string, opts: WriteOptions = {}): Promise<Rule | null> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const originalRow = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
@@ -419,6 +463,7 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
     };
 
     await run(tx.insert(rulesTable).values(ruleToRow(copy)));
+    await recountTrend(tx, { ruleIds: [copy.id], now: opts.now });
     return copy;
   });
 }

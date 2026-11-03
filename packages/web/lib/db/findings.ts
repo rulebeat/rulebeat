@@ -16,6 +16,7 @@ import { SYSTEM_ACCESS } from '../system-access';
 import { subscriptionFilterSql } from './subscription-filter';
 import { accessFilterSql } from './access-filter';
 import { getMeta, setMeta } from './meta';
+import { recountTrend } from './trend-record';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
@@ -615,8 +616,13 @@ export async function getActivityOccurrenceCounts(opts: {
  *  second call for the same rule finds nothing and returns 0. Suppressions are keyed on the
  *  fingerprint and are deliberately left alone, so a finding that later regenerates re-attaches to
  *  its old suppression. */
-export async function deleteFindingsForRule(ruleId: string): Promise<number> {
-  const { deleted, categories } = await inTransaction(tx => removeFindingRowsForRule(tx, ruleId));
+export async function deleteFindingsForRule(ruleId: string, opts: { now?: Date } = {}): Promise<number> {
+  // The rule's trend cells go to 0 in the same transaction, dated at the clear; past days keep their counts (ADR 0012).
+  const { deleted, categories } = await inTransaction(async (tx) => {
+    const removed = await removeFindingRowsForRule(tx, ruleId);
+    await recountTrend(tx, { ruleIds: [ruleId], now: opts.now });
+    return removed;
+  });
   await refreshSnapshotsFor(categories);
   return deleted;
 }

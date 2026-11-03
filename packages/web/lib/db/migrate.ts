@@ -7,7 +7,7 @@ import { join } from 'path';
 import { computeFingerprint, computeLegacyFingerprint } from '@rulebeat/core/finding';
 import { buildRuleQuery, type Rule } from '@rulebeat/core/kql';
 import {
-  definitionToColumns, planRuleSeeding, versionKey,
+  definitionToColumns, planRuleSeeding, seedActionRuleId, versionKey,
   type SeedAction, type StoredRuleRow,
 } from '../rule-versions';
 import { loadShippedCatalogue, type ShippedCatalogue } from '../shipped-catalogue';
@@ -33,7 +33,7 @@ import {
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from './scan-findings-copy';
-import { startTrendRecording } from './trend-record';
+import { recountTrendSqlite, startTrendRecording } from './trend-record';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -1878,11 +1878,23 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
         (sqlite.prepare(`SELECT rule_id, version FROM rule_versions`).all() as { rule_id: string; version: string }[])
           .map(r => versionKey(r.rule_id, r.version)),
       );
+      const touched = new Set<string>();
       for (const action of planRuleSeeding({ catalogue, rows, recorded })) {
         try {
           executeOne(action);
+          touched.add(seedActionRuleId(action));
         } catch (err) {
           console.warn(`[rulebeat] could not seed a rule (${action.action}): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      // What the seeding changed in the trend record's inputs is recorded in the same transaction, so the start
+      // recount that follows finds nothing to correct (ADR 0012). A record that cannot be written costs a log line
+      // here, as it does for the start: refusing to boot would cost more, and the start recount writes it.
+      if (touched.size > 0) {
+        try {
+          sqlite.transaction(() => recountTrendSqlite(sqlite, { ruleIds: [...touched], now: opts.now }))();
+        } catch (err) {
+          console.warn(`[rulebeat] could not record the seeded rules in the trend history: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     });

@@ -51,6 +51,15 @@ export interface RecountResult {
   facts: number;
 }
 
+/** What a deleted rule was called, kept on its deletion fact so its past days still read (ADR 0012). */
+export interface DeletedRuleLabels {
+  name: string;
+  category: string;
+  categoryLabel: string;
+  tags: readonly string[];
+  source: string;
+}
+
 export interface TrendStartResult extends RecountResult {
   /** True when this start found no `trend_state` row. */
   first: boolean;
@@ -205,6 +214,11 @@ function* readCurrentFacts({ tx, t }: Ctx, ruleIds: readonly string[] | undefine
     }).from(rules).where(ids ? inArray(rules.id, ids) : undefined));
     out.push(...stored.map(r => ({ ...r, deleted: false })));
   }
+  // In the order the caller named them, so what is written does not depend on how the database walks an `IN`.
+  if (ruleIds) {
+    const position = new Map(ruleIds.map((id, i) => [id, i]));
+    out.sort((x, y) => position.get(x.ruleId)! - position.get(y.ruleId)!);
+  }
   return out;
 }
 
@@ -217,6 +231,12 @@ function* readNewestFacts({ tx, t: tables }: Ctx, ruleIds: readonly string[] | u
   }
   return out;
 }
+
+interface DeletionLabels { lastName: string; lastCategory: string; lastCategoryLabel: string; lastTags: string | null; lastSource: string }
+
+const deletionLabels = (labels: DeletedRuleLabels | undefined): Partial<DeletionLabels> => labels
+  ? { lastName: labels.name, lastCategory: labels.category, lastCategoryLabel: labels.categoryLabel, lastTags: labels.tags.length ? JSON.stringify(labels.tags) : null, lastSource: labels.source }
+  : {};
 
 const sameFacts = (a: RuleFacts, b: RuleFacts): boolean =>
   a.enabled === b.enabled && a.kind === b.kind && a.severity === b.severity && a.scope === b.scope
@@ -233,10 +253,12 @@ const datedAt = (nowIso: string, newest: { changedAt: string } | undefined): str
 
 /**
  * Reads the live inputs for `ruleIds` (every rule when undefined), compares them with each key's newest row and
- * inserts the keys that differ. A rule that is gone gets its cells written down to 0 and a deletion fact; its
- * last labels are not known here, so a caller that has them writes them.
+ * inserts the keys that differ. A rule that is gone gets its cells written down to 0 and a deletion fact, which
+ * carries the labels the caller knew it by (`deleted`) when the caller has them.
  */
-function* recountScript(c: Ctx, nowIso: string, ruleIds: readonly string[] | undefined): Script<RecountResult> {
+function* recountScript(
+  c: Ctx, nowIso: string, ruleIds: readonly string[] | undefined, deleted: ReadonlyMap<string, DeletedRuleLabels> = new Map(),
+): Script<RecountResult> {
   const currentCells = yield* readCurrentCells(c, nowIso, ruleIds);
   const newestCells = new Map((yield* readNewestCells(c, ruleIds)).map(r => [cellKey(r), r]));
   const cellRows: (CellCounts & { changedAt: string })[] = [];
@@ -257,7 +279,7 @@ function* recountScript(c: Ctx, nowIso: string, ruleIds: readonly string[] | und
 
   const currentFacts = yield* readCurrentFacts(c, ruleIds);
   const newestFacts = new Map((yield* readNewestFacts(c, ruleIds)).map(r => [r.ruleId, r]));
-  const factRows: (RuleFacts & { changedAt: string })[] = [];
+  const factRows: (RuleFacts & { changedAt: string } & Partial<DeletionLabels>)[] = [];
   for (const facts of currentFacts) {
     const newest = newestFacts.get(facts.ruleId);
     newestFacts.delete(facts.ruleId);
@@ -266,7 +288,7 @@ function* recountScript(c: Ctx, nowIso: string, ruleIds: readonly string[] | und
   for (const newest of newestFacts.values()) {
     if (newest.deleted) continue;
     const { seq: _seq, ...facts } = newest;
-    factRows.push({ ...facts, deleted: true, changedAt: datedAt(nowIso, newest) });
+    factRows.push({ ...facts, deleted: true, changedAt: datedAt(nowIso, newest), ...deletionLabels(deleted.get(newest.ruleId)) });
   }
 
   for (const batch of chunk(cellRows, INSERT_ROWS)) yield* run(c.tx.insert(c.t.trendCells).values(batch));
@@ -384,18 +406,36 @@ export async function startTrendRecordingPg(
 
 // ---- Writers inside a transaction ----
 
+export interface RecountOptions {
+  ruleIds?: readonly string[];
+  now?: Date;
+  /** The labels of each rule this action deleted, by rule id, for its deletion fact. */
+  deleted?: Readonly<Record<string, DeletedRuleLabels>>;
+}
+
+const recountOf = (c: Ctx, opts: RecountOptions): Script<RecountResult> => (function* (): Script<RecountResult> {
+  yield* takeRecordLock(c);
+  return yield* recountScript(c, (opts.now ?? new Date()).toISOString(), opts.ruleIds, new Map(Object.entries(opts.deleted ?? {})));
+})();
+
 /**
  * Recounts the cells and facts of `ruleIds`, or of every rule when none are named, and inserts the keys that
  * differ, dated by `now` (the action's clock) or the key's newest row if that is later. Call it inside the
  * transaction of the change it records, after any name lock; it takes the record lock itself.
  */
-export async function recountTrend(tx: DbHandle, opts: { ruleIds?: readonly string[]; now?: Date } = {}): Promise<RecountResult> {
-  const nowIso = (opts.now ?? new Date()).toISOString();
-  const c = processCtx(tx);
-  return driveAsync((function* (): Script<RecountResult> {
-    yield* takeRecordLock(c);
-    return yield* recountScript(c, nowIso, opts.ruleIds);
-  })(), dbKind === 'pg');
+export async function recountTrend(tx: DbHandle, opts: RecountOptions = {}): Promise<RecountResult> {
+  return driveAsync(recountOf(processCtx(tx), opts), dbKind === 'pg');
+}
+
+/** `recountTrend()` for the SQLite seeder, which works on the database it was given inside its own synchronous
+ *  transaction (the twin of `startTrendRecording()`). */
+export function recountTrendSqlite(sqlite: Database.Database, opts: RecountOptions = {}): RecountResult {
+  return driveSync(recountOf({ tx: drizzle(sqlite) as unknown as DbHandle, t: SQLITE_TABLES }, opts));
+}
+
+/** `recountTrend()` for the Postgres seeder, which works on the transaction `seedPg()` opened. */
+export function recountTrendPg(tx: unknown, opts: RecountOptions = {}): Promise<RecountResult> {
+  return driveAsync(recountOf({ tx: tx as DbHandle, t: PG_TABLES }, opts), true);
 }
 
 /** Writes the Recorded day marker of `now`'s UTC day if it is not there, and merges `covered` into its coverage. */

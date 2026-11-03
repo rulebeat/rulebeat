@@ -4,7 +4,7 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock } from './exec';
 import { LIBRARY_REQUEST_LOCK_KEY } from './library-request-cleanup';
 import type { Rule, RuleScope, Severity } from '@rulebeat/core';
-import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges } from '@/lib/rules';
+import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges, type WriteOptions } from '@/lib/rules';
 import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import {
   definitionOfPersonalRule, getPersonalRule, setPersonalRuleLibraryRule, type PersonalRule, type PersonalRuleDefinition,
@@ -249,7 +249,7 @@ function changesFrom(definition: PersonalRuleDefinition, enabled: boolean | unde
  * (a built-in changes only by version) or runs on another backend. The target keeps its enabled state
  * unless the reviewer sets one.
  */
-export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits): Promise<ApproveResult> {
+export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits, opts: WriteOptions = {}): Promise<ApproveResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     await pgAdvisoryXactLock(tx, LIBRARY_REQUEST_LOCK_KEY);
@@ -265,12 +265,12 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
       if (!target) return { ok: false, reason: 'target-gone' };
       if (target.rule.type !== 'custom') return { ok: false, reason: 'not-custom' };
       if (target.rule.queryBackend !== definition.queryBackend) return { ok: false, reason: 'backend-mismatch' };
-      const updated = await updateRuleOn(tx, target.rule.id, changesFrom(definition, edits.enabled));
+      const updated = await updateRuleOn(tx, target.rule.id, changesFrom(definition, edits.enabled), opts);
       if (!updated.ok) return updated.reason === 'not-found' ? { ok: false, reason: 'target-gone' } : updated;
       rule = updated.rule;
       before = target.rule;
     } else {
-      const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id));
+      const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id), opts);
       if (!inserted.ok) return inserted;
       rule = inserted.rule;
     }
