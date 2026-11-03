@@ -17,6 +17,7 @@
  */
 import { resolveDateWindow } from './date-window';
 import { NOTHING_OUTSIDE } from './outside-access';
+import { NO_FILTER_STATES } from './filter-states';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings } from './explorer-filters';
@@ -271,6 +272,7 @@ export function answerView(
     policyOptions: policyOptionsOf(slim),
     categories: opts.categories,
     outsideAccess: NOTHING_OUTSIDE,
+    filterStates: NO_FILTER_STATES,
   };
 }
 

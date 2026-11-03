@@ -13,6 +13,7 @@
 import type { RuleKind } from './types';
 import { subscriptionValueLabel } from './placement';
 import { NOTHING_OUTSIDE, type OutsideAccess } from './outside-access';
+import { NO_FILTER_STATES, type FilterStates } from './filter-states';
 import { resolveDateWindow } from './date-window';
 import type { ExplorerFinding } from './explorer-data';
 import type { FindingRecord } from './db/findings';
@@ -153,6 +154,9 @@ export interface ViewResponse {
   /** The view's own subscription and resource group filter values outside the caller's access (#274).
    *  The filter itself is unchanged. Empty from the pure builders, set by the read that knows the caller. */
   outsideAccess: OutsideAccess;
+  /** How the values of the view's Scope, Rule source, tags and category filters stand: against the caller's
+   *  Access, and whether each still exists. Empty from the pure builders, set by the read that knows. */
+  filterStates: FilterStates;
 }
 
 export interface FindingRowsResponse {
@@ -304,6 +308,7 @@ export function buildViewResponse(
     policyOptions: policyOptionsOf(findings),
     categories: opts.categories,
     outsideAccess: NOTHING_OUTSIDE,
+    filterStates: NO_FILTER_STATES,
   };
 }
 

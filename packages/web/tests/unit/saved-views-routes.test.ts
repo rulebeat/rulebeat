@@ -10,7 +10,7 @@ import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { listSavedViews } from '@/lib/db/saved-views';
-import { applyView, columnCell, viewFromSearchParams } from '@/lib/finding-view';
+import { applyView, columnCell, emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
 import type { SavedView } from '@/lib/saved-view-query';
 import type { Role } from '@/lib/rbac';
 
@@ -215,6 +215,16 @@ describe('saved views routes', () => {
       const cells = Object.fromEntries(page.items.map(i => [i.finding.fingerprint, columnCell(i.rows, 'properties.tier')]));
       expect(cells['has-column'].value).toEqual({ kind: 'text', text: 'premium' });
       expect(cells['lacks-column']).toEqual({ value: { kind: 'empty' }, more: 0 });
+    });
+
+    it('stores the age, the Scope and the Rule source, and opens them as the same filters', async () => {
+      const scope = '/subscriptions/00000000-0000-0000-0000-00000000000a';
+      const written = viewToSearchParams({ ...emptyView(), age: { min: 31, max: 90 }, scope: [scope], source: ['custom', 'aprl-v2'] }).toString();
+      const view = await created('Old findings', { query: `tab=results&${written}` });
+      expect(view.query).toBe(written);
+      const stored = viewFromSearchParams(new URLSearchParams((await (await read(view.id)).json() as SavedView).query));
+      expect([stored.age, stored.scope, stored.source]).toEqual([{ min: 31, max: 90 }, [scope], ['custom', 'aprl-v2']]);
+      expect(view.query).toContain('age=31-90');
     });
 
     it('deletes the view', async () => {

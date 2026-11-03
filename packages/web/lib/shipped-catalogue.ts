@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Rule } from '@rulebeat/core';
 import { BUILTIN_RULES } from './builtin-rules';
+import { COMMUNITY_SOURCE, CUSTOM_SOURCE } from './filter-states';
 
 /**
  * Everything this build ships: RuleBeat Core's definitions plus every pack file under
@@ -65,6 +66,14 @@ export interface CoreRuleDefinition extends Rule {
 }
 
 export const CORE_PACK = 'rulebeat-core';
+
+/** The Rule source filter's own values for a rule's type. A pack under either id could not be told
+ *  apart from that type there, so the loader refuses it. */
+export const RESERVED_PACK_IDS: readonly string[] = [COMMUNITY_SOURCE, CUSTOM_SOURCE];
+
+export function isReservedPackId(pack: string): boolean {
+  return RESERVED_PACK_IDS.includes(pack.toLowerCase());
+}
 
 /** JSON text (or an already parsed value) to a value, or allback when it is absent or malformed. */
 export function parseMaybeJson<T>(value: unknown, fallback: T): T {
@@ -193,6 +202,8 @@ function packRuleToShipped(
   declared: { scheme: VersionScheme; version: string },
   entry: PackManifestEntry,
 ): ShippedRule {
+  const pack = (p.pack as string | undefined) ?? packId;
+  if (isReservedPackId(pack)) throw new Error(`rule ${String(p.id)} resolves to the reserved pack id "${pack}"`);
   const ownVersion = nonEmptyString(p.version);
   const version = ownVersion ?? declared.version;
   // Without a version of its own the rule was synced at the pinned commit; with one, the commit
@@ -200,7 +211,7 @@ function packRuleToShipped(
   const upstreamRef = nonEmptyString(p.upstreamRef) ?? (ownVersion ? undefined : entry.pinnedCommit);
   return {
     id: p.id as string,
-    pack: (p.pack as string | undefined) ?? packId,
+    pack,
     versionScheme: declared.scheme,
     version,
     releaseNote: nonEmptyString(p.releaseNote)
