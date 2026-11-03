@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
+import { serverError } from '@/lib/api-error';
 import { loadRules, updateRule, deleteRule, ruleNameTakenError, resolveKind, ADVISORY_ON_LOGS_ERROR, APPLIES_TO_REMOVED_ERROR, type RuleChanges, type UpdateRuleResult } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { changedFields } from '@/lib/changed-fields';
@@ -70,7 +71,12 @@ export async function PUT(
       return NextResponse.json({ error: BUILTIN_QUERY_LOCKED_ERROR }, { status: 400 });
     }
 
-    const result = await updateRule(id, changes);
+    let result: UpdateRuleResult;
+    try {
+      result = await updateRule(id, changes);
+    } catch (err) {
+      return serverError('Could not update the rule', err);
+    }
     if (!result.ok) return updateFailureResponse(result, existing.name);
     const updated = result.rule;
 
@@ -124,7 +130,12 @@ export async function PUT(
   const kindChange = requestedKindChange(existing, body.kind);
   if (kindChange instanceof NextResponse) return kindChange;
   if (kindChange) changes.kind = kindChange;
-  const result = await updateRule(id, changes);
+  let result: UpdateRuleResult;
+  try {
+    result = await updateRule(id, changes);
+  } catch (err) {
+    return serverError('Could not update the rule', err);
+  }
   if (!result.ok) return updateFailureResponse(result, body.name);
   const updated = result.rule;
 
@@ -154,7 +165,11 @@ export async function DELETE(
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (target.type === 'builtin') return NextResponse.json({ error: 'Built-in rules cannot be deleted.' }, { status: 403 });
 
-  if (!await deleteRule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    if (!await deleteRule(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (err) {
+    return serverError('Could not delete the rule', err);
+  }
 
   await writeAudit({
     actor,

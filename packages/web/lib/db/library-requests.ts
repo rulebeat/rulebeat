@@ -4,7 +4,8 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock } from './exec';
 import { LIBRARY_REQUEST_LOCK_KEY } from './library-request-cleanup';
 import type { Rule, RuleScope, Severity } from '@rulebeat/core';
-import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges } from '@/lib/rules';
+import { recountTrend } from './trend-record';
+import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges, type WriteOptions } from '@/lib/rules';
 import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import {
   definitionOfPersonalRule, getPersonalRule, setPersonalRuleLibraryRule, type PersonalRule, type PersonalRuleDefinition,
@@ -249,7 +250,7 @@ function changesFrom(definition: PersonalRuleDefinition, enabled: boolean | unde
  * (a built-in changes only by version) or runs on another backend. The target keeps its enabled state
  * unless the reviewer sets one.
  */
-export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits): Promise<ApproveResult> {
+export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits, opts: WriteOptions = {}): Promise<ApproveResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     await pgAdvisoryXactLock(tx, LIBRARY_REQUEST_LOCK_KEY);
@@ -265,12 +266,12 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
       if (!target) return { ok: false, reason: 'target-gone' };
       if (target.rule.type !== 'custom') return { ok: false, reason: 'not-custom' };
       if (target.rule.queryBackend !== definition.queryBackend) return { ok: false, reason: 'backend-mismatch' };
-      const updated = await updateRuleOn(tx, target.rule.id, changesFrom(definition, edits.enabled));
+      const updated = await updateRuleOn(tx, target.rule.id, changesFrom(definition, edits.enabled), { ...opts, recount: false });
       if (!updated.ok) return updated.reason === 'not-found' ? { ok: false, reason: 'target-gone' } : updated;
       rule = updated.rule;
       before = target.rule;
     } else {
-      const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id));
+      const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id), { ...opts, recount: false });
       if (!inserted.ok) return inserted;
       rule = inserted.rule;
     }
@@ -279,6 +280,8 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
       status: 'approved', reviewedBy: reviewerId, reviewedAt: new Date().toISOString(), libraryRuleId: rule.id,
     }).where(eq(libraryRequests.id, id)));
     if (row.personalRuleId) await setPersonalRuleLibraryRule(row.personalRuleId, row.authorId, rule.id, tx);
+    // Last, so the record lock is taken after every other row this transaction writes (ADR 0012).
+    await recountTrend(tx, { ruleIds: [rule.id], now: opts.now });
 
     return { ok: true, rule, before, request: rowToRequest((await one(tx.select().from(libraryRequests).where(eq(libraryRequests.id, id))))!) };
   });
@@ -326,15 +329,16 @@ export type CopyToLibraryResult =
  * or an approved request made a rule that still exists) is refused, read again under the lock, so two
  * clicks cannot add it twice.
  */
-export async function copyPersonalRuleToLibrary(rule: PersonalRule): Promise<CopyToLibraryResult> {
+export async function copyPersonalRuleToLibrary(rule: PersonalRule, opts: WriteOptions = {}): Promise<CopyToLibraryResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await getPersonalRule(rule.id, rule.ownerId, tx);
     const existing = current?.libraryRuleId ? await loadRuleWithDefinition(current.libraryRuleId, tx) : null;
     if (existing) return { ok: false, reason: 'in-library', libraryRuleName: existing.rule.name };
-    const inserted = await insertRuleOn(tx, libraryRuleFrom(definitionOfPersonalRule(rule), false));
+    const inserted = await insertRuleOn(tx, libraryRuleFrom(definitionOfPersonalRule(rule), false), { ...opts, recount: false });
     if (!inserted.ok) return inserted;
     await setPersonalRuleLibraryRule(rule.id, rule.ownerId, inserted.rule.id, tx);
+    await recountTrend(tx, { ruleIds: [inserted.rule.id], now: opts.now });
     return { ok: true, rule: inserted.rule };
   });
 }
