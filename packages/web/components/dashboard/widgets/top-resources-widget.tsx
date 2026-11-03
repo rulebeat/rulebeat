@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useChartAnimation } from '@/components/dashboard/present-context';
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import type { Severity } from '@/lib/types';
@@ -21,6 +22,7 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
  *  resource-id-scoped filter, so name search is the closest equivalent, same as the old
  *  findings-table row click used). */
 export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const params = useMemo(() => {
@@ -72,7 +74,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
               );
             }}
           />
-          <Bar dataKey="count" minPointSize={3}>
+          <Bar isAnimationActive={animate} dataKey="count" minPointSize={3}>
             {chartData.map((entry, i) => (
               <Cell
                 key={i}

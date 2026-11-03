@@ -125,3 +125,8 @@ export const REFRESH_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 1800, label: '30m' },
   { value: 3600, label: '1h' },
 ];
+
+/* The grid's own geometry. Named here because the fit-to-content pass has to run
+   the conversion backwards, from a measured pixel height to a row span. */
+export const ROW_HEIGHT = 80;
+export const ROW_MARGIN = 8;

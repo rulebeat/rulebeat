@@ -5,7 +5,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
-  ChevronDown, Save, MoreHorizontal, Star, Lock,
+  ChevronDown, Save, MoreHorizontal, Star,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -13,27 +13,17 @@ import { Callout } from '@/components/ui/callout';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { WidgetWrapper } from '@/components/dashboard/widget-wrapper';
+import { PresentAction } from '@/components/dashboard/present-action';
+import { NoWidgetsYet } from '@/components/dashboard/no-widgets-yet';
+import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
+import { useFitWidgetsToContent } from '@/components/dashboard/use-fit-widgets-to-content';
 import { WidgetConfigPanel } from '@/components/dashboard/widget-config-panel';
 import { AddWidgetPanel } from '@/components/dashboard/add-widget-panel';
-import { StatCardWidget } from '@/components/dashboard/widgets/stat-card-widget';
-import { PostureRingWidget } from '@/components/dashboard/widgets/posture-ring-widget';
-import { TrendWidget } from '@/components/dashboard/widgets/trend-widget';
-import { TopRulesWidget } from '@/components/dashboard/widgets/top-rules-widget';
-import { CategoryScorecardWidget } from '@/components/dashboard/widgets/category-scorecard-widget';
-import { RecentFindingsWidget } from '@/components/dashboard/widgets/recent-findings-widget';
-import { SeverityBreakdownWidget } from '@/components/dashboard/widgets/severity-breakdown-widget';
-import { SubscriptionScorecardWidget } from '@/components/dashboard/widgets/subscription-scorecard-widget';
-import { TopResourcesWidget } from '@/components/dashboard/widgets/top-resources-widget';
-import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage-freshness-widget';
-import { NewVsFixedWidget } from '@/components/dashboard/widgets/new-vs-fixed-widget';
-import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activity-occurrences-widget';
-import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
-import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
+import { REFRESH_OPTIONS, ROW_HEIGHT, ROW_MARGIN } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
-import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
+import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
+import type { OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
@@ -45,11 +35,6 @@ interface Props {
   outsideAccess: OutsideAccess;
 }
 
-/* The grid's own geometry. Named here because the fit-to-content pass has to run
-   the conversion backwards, from a measured pixel height to a row span. */
-const ROW_HEIGHT = 80;
-const ROW_MARGIN = 8;
-
 function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   return {
     categories: config.filters?.categories ?? [],
@@ -59,65 +44,6 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
     severities: config.filters?.severities ?? [],
     ruleIds: config.filters?.ruleIds ?? [],
   };
-}
-
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
-  widget: WidgetDef;
-  filters: WidgetFilters;
-  filtered: boolean;
-  refreshKey: number;
-  editMode: boolean;
-  outsideAccess: OutsideAccess;
-  onRemove: () => void;
-  onConfigure: () => void;
-}) {
-  // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
-  // empty read would turn into a 100% posture or "No violations found".
-  const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
-  const inner = accessReason ? (
-    <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
-      <Lock className="size-5 text-ink-2" aria-hidden="true" />
-      <p className="text-sm font-semibold text-ink">{accessReason.title}</p>
-      <p className="max-w-xs text-xs text-ink-2">{accessReason.detail}</p>
-    </div>
-  ) : (() => {
-    switch (widget.type) {
-      case 'stat-card':
-        return <StatCardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'posture-ring':
-        return <PostureRingWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'trend':
-        return <TrendWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'top-rules':
-        return <TopRulesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'category-scorecard':
-        return <CategoryScorecardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'recent-findings':
-        return <RecentFindingsWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'severity-breakdown':
-        return <SeverityBreakdownWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'subscription-scorecard':
-        return <SubscriptionScorecardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'top-resources':
-        return <TopResourcesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'coverage-freshness':
-        return <CoverageFreshnessWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'new-vs-fixed':
-        return <NewVsFixedWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'activity-occurrences':
-        return <ActivityOccurrencesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      case 'advisories':
-        return <AdvisoriesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
-      default:
-        return <div className="flex h-full items-center justify-center text-sm text-ink-muted">Unknown widget</div>;
-    }
-  })();
-
-  return (
-    <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      {inner}
-    </WidgetWrapper>
-  );
 }
 
 export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
@@ -200,75 +126,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
     return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
   }, [autoRefresh, fetchData]);
 
-  /* Fit a widget's height to what it actually renders.
-     A list widget gets a fixed row span from the template, so a category scorecard
-     holding four cards sat in a box tall enough for twelve and left a dead area
-     below them. Widgets that mark their natural-height block with
-     `data-widget-content` get measured here and their row span shrunk to fit.
-     Only ever shrinks: anything taller than its box keeps its own scrollbar.
-     Watches the DOM rather than running once, because every widget fetches its own
-     data: at first paint they are all spinners and there is nothing to measure. The
-     MutationObserver is the one that matters: it catches a widget swapping its
-     spinner for content, and the ResizeObserver handles the window being resized. */
-  useEffect(() => {
-    const container = gridContainerRef.current as HTMLElement | null;
-    if (!container || editMode) return; // in edit mode the heights are the user's to set
-
-    let raf = 0;
-    const ro = new ResizeObserver(() => schedule());
-
-    const measure = () => {
-      const current = widgetsRef.current;
-      let changed = false;
-
-      // Blocks appear as each widget's fetch resolves, so pick up any that are new
-      // since the last pass: a content block that grows later still gets measured.
-      container.querySelectorAll('[data-widget-content]').forEach(el => ro.observe(el));
-
-      const next = current.map(w => {
-        const block = container.querySelector<HTMLElement>(`[data-grid-item="${w.id}"] [data-widget-content]`);
-        const item = block?.closest<HTMLElement>('[data-grid-item]');
-        // The widget's own content region, not the block's immediate parent: some
-        // widgets put a scroll region in between, and that region sizes itself to
-        // the content, which would report no unused space at all.
-        const box = item?.querySelector<HTMLElement>('[data-widget-body]');
-        if (!block || !item || !box) return w;
-
-        // Measure the unused space rather than the widget chrome, so this never has
-        // to know how tall a widget header is.
-        const slack = box.clientHeight - block.offsetHeight;
-        if (slack <= ROW_MARGIN) return w; // content fills the box, or overflows it
-
-        const neededPx = item.offsetHeight - slack;
-        const rows = Math.max(2, Math.ceil((neededPx + ROW_MARGIN) / (ROW_HEIGHT + ROW_MARGIN)));
-        if (rows >= w.h) return w;
-
-        changed = true;
-        return { ...w, h: rows };
-      });
-
-      if (!changed) return;
-      /* Shrinking a widget makes the grid compact everything below it upward, and
-         RGL reports that back through onLayoutChange with new positions, which is
-         fine: this pass only ever runs outside edit mode, and a layout change
-         outside edit mode never marks the dashboard dirty (see onLayoutChange). */
-      widgetsRef.current = next;
-      setWidgets(next);
-    };
-
-    const schedule = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
-    };
-
-    const mo = new MutationObserver(schedule);
-    mo.observe(container, { childList: true, subtree: true });
-    ro.observe(container);
-    schedule();
-
-    return () => { mo.disconnect(); ro.disconnect(); if (raf) cancelAnimationFrame(raf); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widgets, gridWidth, editMode, refreshKey]);
+  useFitWidgetsToContent({ containerRef: gridContainerRef, widgetsRef, setWidgets, enabled: !editMode, triggers: [widgets, gridWidth, editMode, refreshKey] });
 
   // Layout change from drag/resize, and from RGL's own compaction passes.
   // RGL v2 fires onLayoutChange on mount (and after each state update) with the compacted layout.
@@ -491,6 +349,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
           <RefreshCw className="size-3.5" />
         </Button>
 
+        <PresentAction dashboardId={dashboard.id} editMode={editMode} />
+
         {/* Edit mode toggle */}
         {editMode ? (
           <>
@@ -569,12 +429,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       {/* Grid */}
       <div className="px-4 py-4" ref={gridContainerRef as React.RefObject<HTMLDivElement>}>
         {widgets.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-4 border border-dashed border-rule-strong">
-            <p className="text-sm text-ink-muted">No widgets yet</p>
+          <NoWidgetsYet>
             <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
               <Plus className="size-3.5" />Add your first widget
             </Button>
-          </div>
+          </NoWidgetsYet>
         ) : (
           <GridLayout
             width={gridWidth}

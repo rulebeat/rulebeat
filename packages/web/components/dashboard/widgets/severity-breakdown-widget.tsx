@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useChartAnimation } from '@/components/dashboard/present-context';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
@@ -15,6 +16,7 @@ interface Config { category?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
 export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const params = buildSummaryParams(merged).toString();
@@ -43,6 +45,7 @@ export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) 
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
+            isAnimationActive={animate}
             data={data}
             dataKey="value"
             nameKey="name"

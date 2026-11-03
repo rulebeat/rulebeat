@@ -199,6 +199,7 @@
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |
 | `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode, merges filters into every widget fetch |
+| `packages/web/app/dashboards/[id]/present/` | Present, outside the `(app)` layout so it has no sidebar or Header. `page.tsx` makes the layout's checks through `lib/app-entry.ts`, 404s through `lib/dashboard-visibility.ts`, and hands `present-screen.tsx` (frame with Exit, Full screen and Esc; read-only grid) the dashboard with the URL filters laid over its saved ones. `lib/present.ts` holds the pure parts: the `?refresh=` parse, Exit and Present addresses, Full screen and Esc rules |
 | `packages/web/components/dashboard/widget-config-panel.tsx` | Shared `ScopeSection` config drawer rendered for every widget type |
 | `packages/web/components/dashboard/slide-over-panel.tsx` | `SlideOverPanel`: shared right-drawer shell used by `add-widget-panel.tsx` and `widget-config-panel.tsx` |
 | `packages/web/components/dashboard/widgets/delta.tsx` | Shared `Delta` trend indicator (Up/Down/flat), used by the stat-card and posture-ring widgets |

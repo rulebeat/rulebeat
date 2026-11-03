@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Present shows a dashboard read-only and full screen at `/dashboards/<id>/present`, opened from the new Present action beside Edit on a dashboard. It has no sidebar or header, follows your theme, applies the filters in the address, and keeps every number a link to the same count on Scans. Exit, or Esc, returns to the dashboard with the same filters; in browser full screen the first Esc only leaves full screen. A Full screen button appears where the browser allows it. Charts draw without animating. `?refresh=` takes `30s`, `1m`, `5m`, `15m`, `30m` or `1h`; the page does not refresh yet. Anyone who can open a dashboard can present it, and opening Present is not audited.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

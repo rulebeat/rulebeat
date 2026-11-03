@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useChartAnimation } from '@/components/dashboard/present-context';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
@@ -17,6 +18,7 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
  *  so there is no pass/fail posture to show, only how often the pattern keeps occurring. Backed by
  *  getActivityOccurrenceCounts() via the shared /api/widgets/summary endpoint. */
 export function ActivityOccurrencesWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days
   const params = useMemo(() => {
@@ -58,7 +60,7 @@ export function ActivityOccurrencesWidget({ config, filters, refreshKey }: Props
             }}
           />
           {/* One measurement, one colour, same token top-rules gives its single bar series. */}
-          <Bar dataKey="count" name="Occurrences" fill="var(--color-fill)" />
+          <Bar isAnimationActive={animate} dataKey="count" name="Occurrences" fill="var(--color-fill)" />
         </BarChart>
       </ResponsiveContainer>
     </div>
