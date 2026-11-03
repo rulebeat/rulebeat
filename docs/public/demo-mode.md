@@ -85,7 +85,8 @@ stops the container with the reason in its log.
 
 A Reset copies the snapshot over the live data and moves every date forward so the Demo's history
 ends at the moment of the Reset. A finding that was 12 days old when the Demo was generated is 12
-days old after every Reset, and the posture trend always ends today.
+days old after every Reset, and the posture trend always ends today. All 60 generated days are
+recorded trend history.
 
 Three things start one:
 
