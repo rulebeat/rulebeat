@@ -224,11 +224,14 @@ describe.runIf(dbKind === 'pg')('two syncs touching one key at once', () => {
   it('both end correct, because the record lock is taken just before the recount', async () => {
     const realRecount = (await vi.importActual<typeof import('@/lib/db/trend-record')>('@/lib/db/trend-record')).recountTrend;
     let arrived = 0;
+    // For each sync, how many had reached the recount when it was let through. Two means the syncs met there.
+    const arrivedWhenLetThrough: number[] = [];
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     vi.mocked(trendRecord.recountTrend).mockImplementation(async (tx, opts) => {
       if (++arrived === 2) release();
       await Promise.race([gate, new Promise(resolve => setTimeout(resolve, 3000))]);
+      arrivedWhenLetThrough.push(arrived);
       return realRecount(tx, opts);
     });
     const finding = (name: string): Finding => {
@@ -250,7 +253,7 @@ describe.runIf(dbKind === 'pg')('two syncs touching one key at once', () => {
       vi.mocked(trendRecord.recountTrend).mockImplementation(realRecount);
     }
 
-    expect(arrived, 'the second sync never reached its recount while the first was there').toBe(2);
+    expect(arrivedWhenLetThrough, 'a sync was let through its recount before the other had reached its own').toEqual([2, 2]);
     expect((await cells()).at(-1)!.openCount).toBe(2);
     expect(await recount(at(2))).toEqual({ cells: 0, facts: 0 });
   });
