@@ -174,7 +174,7 @@ describe('recorded Rule versions', () => {
     ]);
   });
 
-  it('moves matched findings to the switched category and resolves dropped findings under their original category', async () => {
+  it('moves every finding to the switched category at once, and a rescan resolves the dropped one there', async () => {
     const security = (await getCategory('security'))!;
     const compliance = (await getCategory('compliance'))!;
     await seed(catalogueOf(shippedRule({
@@ -187,14 +187,19 @@ describe('recorded Rule versions', () => {
     await runCategoryScan(security, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
     const kept = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')!;
     expect((await PUT(switchRequest('3.0.0'), params)).status).toBe(200);
+    // The switch moved both findings with the rule, before any rescan (#379).
+    expect((await listFindings(EVERYTHING_ACCESS)).filter(f => f.ruleId === ID).map(f => f.category)).toEqual(['compliance', 'compliance']);
     await runCategoryScan(compliance, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
     expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, category: 'compliance', status: 'active',
     });
-    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'dropped')).toMatchObject({ category: 'security', status: 'fixed' });
+    expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'dropped')).toMatchObject({ category: 'compliance', status: 'fixed' });
     expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1)?.activeFindings).toBe(0);
-    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['compliance'] })).at(-1)?.activeFindings).toBe(1);
-    expect((await getFindingEventCounts({ categories: ['security'], sinceDate: '2026-09-24' }, EVERYTHING_ACCESS)).slice(0, 2)).toEqual([
+    // The switch refreshed both categories' snapshots (today's row), the scan then wrote its own simulated day's.
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['compliance'] })).find(s => s.date === '2026-09-25')?.activeFindings).toBe(1);
+    // The rule's events count under the rule's category now, so the history moved with it.
+    expect(await getFindingEventCounts({ categories: ['security'], sinceDate: '2026-09-24' }, EVERYTHING_ACCESS)).toEqual([]);
+    expect((await getFindingEventCounts({ categories: ['compliance'], sinceDate: '2026-09-24' }, EVERYTHING_ACCESS)).slice(0, 2)).toEqual([
       { date: '2026-09-24', created: 2, resolved: 0 }, { date: '2026-09-25', created: 0, resolved: 1 },
     ]);
     expect((await PUT(switchRequest('1.0.0'), params)).status).toBe(200);
