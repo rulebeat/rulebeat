@@ -26,21 +26,26 @@ async function newPerson(email: string, name: string | null) {
   return made.user;
 }
 
+const OWNER = 'owner-1';
+
 async function dashboard(name: string) {
-  const made = await createDashboard({ name, config: CONFIG });
+  const made = await createDashboard({ name, config: CONFIG }, OWNER);
   if (!made.ok) throw new Error('create failed');
   return made.dashboard;
 }
 
 describe('dashboards', () => {
-  it('are created Shared at revision 1 with no owner', async () => {
-    expect(await dashboard('First')).toMatchObject({ owner: null, visibility: 'shared', revision: 1 });
+  it('are created Personal at revision 1, owned by the person who made them', async () => {
+    const person = await newPerson('maker@example.com', 'Mo Maker');
+    const made = await createDashboard({ name: 'First', config: CONFIG }, person.id);
+    if (!made.ok) throw new Error('create failed');
+    expect(made.dashboard).toMatchObject({ visibility: 'personal', revision: 1, owner: { id: person.id } });
   });
 
-  it('are Shared at revision 1 with no owner when duplicated or restored from the starter', async () => {
+  it('are Personal at revision 1 when duplicated or restored from the starter', async () => {
     const first = await dashboard('First');
-    expect(await duplicateDashboard(first.id)).toMatchObject({ owner: null, visibility: 'shared', revision: 1 });
-    expect(await createStarterDashboard()).toMatchObject({ owner: null, visibility: 'shared', revision: 1 });
+    expect(await duplicateDashboard(first.id, OWNER)).toMatchObject({ visibility: 'personal', revision: 1 });
+    expect(await createStarterDashboard(OWNER)).toMatchObject({ visibility: 'personal', revision: 1 });
   });
 
   it('move up one revision on every update, and a failed update leaves it where it was', async () => {
@@ -58,19 +63,21 @@ describe('dashboards', () => {
     const first = await dashboard('First');
     const second = await dashboard('Second');
     const third = await dashboard('Third');
+    await setDefaultDashboard(first.id);
     await setDefaultDashboard(second.id);
 
     const byId = Object.fromEntries((await listDashboards()).map(d => [d.id, d]));
-    expect(byId[first.id]).toMatchObject({ isDefault: false, revision: 2 });
+    expect(byId[first.id]).toMatchObject({ isDefault: false, revision: 3 });
     expect(byId[second.id]).toMatchObject({ isDefault: true, revision: 2 });
     expect(byId[third.id]).toMatchObject({ isDefault: false, revision: 1 });
   });
 
-  it('move up one revision when deleting the default promotes the oldest', async () => {
+  it('stay at their revision when the default is deleted: no other dashboard is promoted', async () => {
     const first = await dashboard('First');
     const second = await dashboard('Second');
+    await setDefaultDashboard(first.id);
     await deleteDashboard(first.id);
-    expect(await getDashboard(second.id)).toMatchObject({ isDefault: true, revision: 2 });
+    expect(await getDashboard(second.id)).toMatchObject({ isDefault: false, revision: 1 });
   });
 
   it('read back the owner as the person is now, and none when the person is gone', async () => {
@@ -85,29 +92,29 @@ describe('dashboards', () => {
 });
 
 describe('saved views', () => {
-  it('are created Shared at revision 1', async () => {
-    const made = await createSavedView({ name: 'Critical', tab: 'results', query: 'severity=critical' }, null);
+  it('are created Personal at revision 1', async () => {
+    const made = await createSavedView({ name: 'Critical', tab: 'results', query: 'severity=critical' }, OWNER);
     if (!made.ok) throw new Error('create failed');
-    expect(made.view).toMatchObject({ owner: null, visibility: 'shared', revision: 1 });
+    expect(made.view).toMatchObject({ visibility: 'personal', revision: 1 });
   });
 
   it('move up one revision on every update, and a refused rename leaves it where it was', async () => {
-    const made = await createSavedView({ name: 'Critical', tab: 'results', query: 'severity=critical' }, null);
-    const other = await createSavedView({ name: 'High', tab: 'results', query: 'severity=high' }, null);
+    const made = await createSavedView({ name: 'Critical', tab: 'results', query: 'severity=critical' }, OWNER);
+    const other = await createSavedView({ name: 'High', tab: 'results', query: 'severity=high' }, OWNER);
     if (!made.ok || !other.ok) throw new Error('create failed');
 
-    const first = await updateSavedView(made.view.id, { query: 'severity=high' }, null);
+    const first = await updateSavedView(made.view.id, { query: 'severity=high' }, OWNER);
     if (!first.ok) throw new Error('update failed');
     expect(first.before.revision).toBe(1);
     expect(first.view.revision).toBe(2);
 
-    expect(await updateSavedView(made.view.id, { name: 'high' }, null)).toEqual({ ok: false, reason: 'name-taken' });
+    expect(await updateSavedView(made.view.id, { name: 'high' }, OWNER)).toEqual({ ok: false, reason: 'name-taken' });
     expect((await getSavedView(made.view.id))?.revision).toBe(2);
   });
 
   it('read back the owner as the person is now, and none when the person is gone', async () => {
     const person = await newPerson('viewer-owner@example.com', null);
-    const made = await createSavedView({ name: 'Critical', tab: 'results', query: '' }, null);
+    const made = await createSavedView({ name: 'Critical', tab: 'results', query: '' }, OWNER);
     if (!made.ok) throw new Error('create failed');
     await execRaw(`UPDATE saved_views SET owner_id = '${person.id}' WHERE id = '${made.view.id}'`);
     // Until they first sign in a person has no name, so the email stands in for it.

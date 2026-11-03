@@ -7,9 +7,12 @@ import type { ItemOwner } from '@/lib/types';
 import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 
 /**
- * Saved views: a View kept under a name and shared with everyone on the install.
+ * Saved views: a View kept under a name. A new one is Personal, its owner's alone; a Shared one is open to
+ * everyone on the install (ADR 0012).
  *
- * A name is unique case-insensitively (ignoring surrounding spaces), but there is no unique index:
+ * A Personal name is unique among its owner's Personal views, a Shared name among Shared views, both
+ * case-insensitively (ignoring surrounding spaces), and no check reads another person's Personal names.
+ * There is no unique index:
  * an index would make a clash a startup failure on any install that ever held two names differing
  * only by case, and an upgrade must never disturb existing data. The check lives here instead, in
  * the same transaction as the write, the way rule and dashboard names do. On SQLite
@@ -57,29 +60,40 @@ export async function getSavedView(id: string): Promise<SavedView | null> {
   return row ? (await toViews([row]))[0] : null;
 }
 
-async function isNameTaken(tx: DbHandle, name: string, excludeId?: string): Promise<boolean> {
-  const all = await many(tx.select({ id: savedViews.id, name: savedViews.name }).from(savedViews));
-  return all.some(v => v.id !== excludeId && sameName(v.name, name));
+type NameSpace = { visibility: 'personal'; ownerId: string } | { visibility: 'shared' };
+
+/** The name space a stored row's name has to be free in. A Personal row with no owner is read as Shared. */
+const spaceOf = (row: { visibility: string; ownerId: string | null }): NameSpace =>
+  readVisibility(row.visibility) === 'personal' && row.ownerId ? { visibility: 'personal', ownerId: row.ownerId } : { visibility: 'shared' };
+
+async function isNameTaken(tx: DbHandle, name: string, space: NameSpace, excludeId?: string): Promise<boolean> {
+  const all = await many(tx.select({ id: savedViews.id, name: savedViews.name, ownerId: savedViews.ownerId, visibility: savedViews.visibility }).from(savedViews));
+  return all.some(v => v.id !== excludeId && sameName(v.name, name) && (
+    space.visibility === 'personal'
+      ? readVisibility(v.visibility) === 'personal' && v.ownerId === space.ownerId
+      : readVisibility(v.visibility) === 'shared'
+  ));
 }
 
 export type CreateSavedViewResult =
   | { ok: true; view: SavedView }
   | { ok: false; reason: 'name-taken' };
 
+/** Creates a Personal saved view owned by `actorId`. */
 export async function createSavedView(
   data: SavedViewFields,
-  actorId: string | null,
+  actorId: string,
 ): Promise<CreateSavedViewResult> {
   const name = data.name.trim();
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
-    if (await isNameTaken(tx, name)) return { ok: false, reason: 'name-taken' } as const;
+    if (await isNameTaken(tx, name, { visibility: 'personal', ownerId: actorId })) return { ok: false, reason: 'name-taken' } as const;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await run(tx.insert(savedViews).values({
       id, name, tab: data.tab, query: data.query,
-      // Shared until Personal items arrive, and spelled out so no insert depends on the column default.
-      ownerId: null, visibility: 'shared', revision: 1,
+      // Spelled out so no insert depends on the column default.
+      ownerId: actorId, visibility: 'personal', revision: 1,
       createdBy: actorId, createdAt: now, updatedBy: actorId, updatedAt: now,
     }));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
@@ -103,7 +117,7 @@ export async function updateSavedView(
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' } as const;
     const name = data.name?.trim();
-    if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, id)) {
+    if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, spaceOf(existing), id)) {
       return { ok: false, reason: 'name-taken' } as const;
     }
     await run(tx.update(savedViews).set({

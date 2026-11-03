@@ -57,6 +57,7 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import type { ItemPermissions } from '@/lib/item-access-model';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
@@ -103,7 +104,9 @@ interface FindingsExplorerClientProps {
    *  applying one means starting the explorer again from that view. */
   savedViews?: {
     tab: SavedViewTab;
-    canWrite: boolean;
+    /** The person, and what they may do with saved views, for the sections and the controls on the open view. */
+    currentUserId: string;
+    permissions: ItemPermissions;
     /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
      *  the URL, and the explorer never keeps its own copy. */
     openId: string | null;
@@ -1277,7 +1280,8 @@ export function FindingsExplorerClient({
         {mode === 'page' && savedViews && (
           <SavedViewsMenu
             tab={savedViews.tab}
-            canWrite={savedViews.canWrite}
+            currentUserId={savedViews.currentUserId}
+            permissions={savedViews.permissions}
             openId={openViewId}
             onOpenIdChange={setOpenViewId}
             onOpen={savedViews.onOpen}

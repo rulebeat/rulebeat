@@ -4,29 +4,31 @@ import { parseJsonBody } from '@/lib/api-body';
 import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
+import { openableItems } from '@/lib/item-access';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json((await listDashboards()).map(d => markedDashboard(actor.access, d)));
+  return Response.json(openableItems(actor, await listDashboards()).map(d => markedDashboard(actor.access, d)));
 }
 
 export async function POST(req: Request) {
-  const actor = await requireRole('dashboards:write');
+  const actor = await requireRole('dashboards:personal');
   if (actor instanceof NextResponse) return actor;
 
   const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; template?: 'starter' }>(req);
   if (body instanceof NextResponse) return body;
 
   if (body.template === 'starter') {
-    const dashboard = await createStarterDashboard();
+    const dashboard = await createStarterDashboard(actor.id);
+    // A Personal item is logged by id and kind only: its name is its owner's alone.
     await writeAudit({
       actor,
       action: 'dashboard.create',
       entityType: 'dashboard',
       entityId: dashboard.id,
-      summary: `Restored the starter dashboard "${dashboard.name}"`,
+      summary: 'Restored the starter as a Personal dashboard',
     });
     return Response.json(markedDashboard(actor.access, dashboard), { status: 201 });
   }
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
     name,
     description: body.description,
     config: body.config ?? { autoRefresh: 0, widgets: [] },
-  });
+  }, actor.id);
 
   if (!result.ok) {
     const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
     action: 'dashboard.create',
     entityType: 'dashboard',
     entityId: result.dashboard.id,
-    summary: `Created dashboard "${result.dashboard.name}"`,
+    summary: 'Created a Personal dashboard',
   });
 
   return Response.json(markedDashboard(actor.access, result.dashboard), { status: 201 });

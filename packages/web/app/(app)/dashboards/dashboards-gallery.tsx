@@ -6,16 +6,23 @@ import { useRouter } from 'next/navigation';
 import { LayoutDashboard, Plus, Clock, Star, MoreHorizontal, Copy, Trash2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/callout';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { NewDashboardDialog } from '@/components/dashboard/new-dashboard-dialog';
+import { mayChangeItemWith, ownerLabel, sectionsOf, type ItemPermissions } from '@/lib/item-access-model';
 import type { Dashboard } from '@/lib/types';
 
-interface Props { initialDashboards: Dashboard[] }
+interface Props {
+  /** The dashboards the person may open: their own, Personal or Shared, and everyone's Shared ones. */
+  initialDashboards: Dashboard[];
+  currentUserId: string;
+  permissions: ItemPermissions;
+}
 
-export function DashboardsGallery({ initialDashboards }: Props) {
+export function DashboardsGallery({ initialDashboards, currentUserId, permissions }: Props) {
   const router = useRouter();
   const [dashboards, setDashboards] = useState(initialDashboards);
   const [showDialog, setShowDialog] = useState(false);
@@ -107,6 +114,77 @@ export function DashboardsGallery({ initialDashboards }: Props) {
     }
   }
 
+  const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, dashboards);
+
+  function renderCard(d: Dashboard, tag: React.ReactNode) {
+    const canChange = mayChangeItemWith({ id: currentUserId }, permissions, d);
+    const canSetDefault = permissions.manage && d.visibility === 'shared' && !d.isDefault;
+    return (
+      <Card key={d.id} className="relative h-full overflow-visible transition-colors hover:border-ink">
+        <Link href={`/dashboards/${d.id}`} className="absolute inset-0 z-0 cursor-pointer" aria-label={d.name} />
+        <CardContent className="pointer-events-none flex flex-col gap-3 pb-4 pt-5">
+          <div className="flex items-start gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center border border-border bg-surface-sunken">
+              <LayoutDashboard className="size-4 text-ink" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-ink">{d.name}</p>
+              <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                {tag}
+                {d.isDefault && (
+                  <span className="label-grid-strong flex items-center gap-1">
+                    <Star className="size-2.5 fill-current" />Default
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* The card is one big link (absolute, z-0); this needs its own stacking
+                context above it or the overlay wins hit-testing despite pointer-events. */}
+            <div className="pointer-events-auto relative z-10">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${d.name}`}>
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end" className="w-40">
+                  {canSetDefault && (
+                    <DropdownMenuItem onClick={() => void handleSetDefault(d.id)}>
+                      <Star />Set default
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => void handleDuplicate(d.id)}>
+                    <Copy />Duplicate
+                  </DropdownMenuItem>
+                  {canChange && (
+                    <DropdownMenuItem variant="destructive" onClick={() => void handleDelete(d)}>
+                      <Trash2 />Delete
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          {d.description && (
+            <p className="line-clamp-2 text-xs text-ink-2">{d.description}</p>
+          )}
+          <div className="numeral-grid mt-auto flex items-center gap-1.5 text-xs text-ink-muted">
+            <span>{d.config.widgets.length} widget{d.config.widgets.length !== 1 ? 's' : ''}</span>
+            {d.config.autoRefresh ? (
+              <>
+                <span>·</span>
+                <Clock className="size-3" />
+                <span>Auto-refresh {d.config.autoRefresh}s</span>
+              </>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="flex-1 space-y-6 px-6 py-6">
       {error && <Callout tone="error">{error}</Callout>}
@@ -137,67 +215,34 @@ export function DashboardsGallery({ initialDashboards }: Props) {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {dashboards.map(d => (
-            <Card key={d.id} className="relative h-full overflow-visible transition-colors hover:border-ink">
-              <Link href={`/dashboards/${d.id}`} className="absolute inset-0 z-0 cursor-pointer" aria-label={d.name} />
-              <CardContent className="pointer-events-none flex flex-col gap-3 pb-4 pt-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex size-9 shrink-0 items-center justify-center border border-border bg-surface-sunken">
-                    <LayoutDashboard className="size-4 text-ink" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-ink">{d.name}</p>
-                    {d.isDefault && (
-                      <span className="label-grid-strong mt-0.5 flex items-center gap-1">
-                        <Star className="size-2.5 fill-current" />Default
-                      </span>
-                    )}
-                  </div>
-                  {/* The card is one big link (absolute, z-0); this needs its own stacking
-                      context above it or the overlay wins hit-testing despite pointer-events. */}
-                  <div className="pointer-events-auto relative z-10">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${d.name}`}>
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        }
-                      />
-                      <DropdownMenuContent align="end" className="w-40">
-                        {!d.isDefault && (
-                          <DropdownMenuItem onClick={() => void handleSetDefault(d.id)}>
-                            <Star />Set default
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onClick={() => void handleDuplicate(d.id)}>
-                          <Copy />Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => void handleDelete(d)}>
-                          <Trash2 />Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-                {d.description && (
-                  <p className="line-clamp-2 text-xs text-ink-2">{d.description}</p>
-                )}
-                <div className="numeral-grid mt-auto flex items-center gap-1.5 text-xs text-ink-muted">
-                  <span>{d.config.widgets.length} widget{d.config.widgets.length !== 1 ? 's' : ''}</span>
-                  {d.config.autoRefresh ? (
-                    <>
-                      <span>·</span>
-                      <Clock className="size-3" />
-                      <span>Auto-refresh {d.config.autoRefresh}s</span>
-                    </>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <>
+          <section aria-labelledby="dashboards-yours" className="space-y-3">
+            <h2 id="dashboards-yours" className="title-grid">Yours</h2>
+            {yours.length === 0 ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-ink-muted">You have no dashboards of your own. Create one, restore the starter, or duplicate a Shared one to start from it.</p>
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={restoring} onClick={handleRestoreStarter}>
+                  <RotateCcw className="size-3.5" />
+                  {restoring ? 'Restoring…' : 'Restore starter'}
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {yours.map(d => renderCard(d, <Badge variant="secondary">{d.visibility === 'shared' ? 'Shared' : 'Personal'}</Badge>))}
+              </div>
+            )}
+          </section>
+          <section aria-labelledby="dashboards-shared-by-others" className="space-y-3">
+            <h2 id="dashboards-shared-by-others" className="title-grid">Shared by others</h2>
+            {sharedByOthers.length === 0 ? (
+              <p className="text-sm text-ink-muted">No one else has shared a dashboard.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {sharedByOthers.map(d => renderCard(d, <span className="truncate text-xs text-ink-muted">{ownerLabel(d.owner)}</span>))}
+              </div>
+            )}
+          </section>
+        </>
       )}
 
       {showDialog && (
