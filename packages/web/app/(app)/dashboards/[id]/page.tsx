@@ -2,10 +2,9 @@ import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { getDashboard, listDashboards } from '@/lib/db/dashboards';
 import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
-import { NoAccessState } from '@/components/findings/no-access-state';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
-import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
+import { NO_ACCESS } from '@/lib/access-model';
 import { markDashboardConfig } from '@/lib/outside-access';
 import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem } from '@/lib/item-access-model';
 import { DashboardGridClient } from './dashboard-grid-client';
@@ -32,14 +31,13 @@ export default async function DashboardPage({ params }: Props) {
       <div className="flex-1 min-h-0 flex flex-col">
         <DashboardTabs dashboards={dashboards} activeId={dashboard.id} />
         <div className="flex-1 min-h-0">
-          {holdsNoScope(access)
-            ? <NoAccessState />
-            : <DashboardGridClient
-                dashboard={dashboard}
-                outsideAccess={markDashboardConfig(access, dashboard.config)}
-                canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
-                canSetDefault={permissions.manage}
-              />}
+          {/* No Scope gate: the person owns their Personal dashboards, and the widgets read nothing for them. */}
+          <DashboardGridClient
+            dashboard={dashboard}
+            outsideAccess={markDashboardConfig(access, dashboard.config)}
+            canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
+            canSetDefault={permissions.manage}
+          />
         </div>
       </div>
     </>
