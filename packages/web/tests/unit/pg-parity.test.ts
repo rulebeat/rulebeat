@@ -231,7 +231,7 @@ describe('dashboards repository parity', () => {
 
     // Collisions are case-insensitive, on create and rename alike.
     expect(await createDashboard({ name: 'parity a', config: { widgets: [] } })).toEqual({ ok: false, reason: 'name-taken' });
-    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' })).toEqual({ ok: false, reason: 'name-taken' });
+    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' }, { revision: 1, actorId: 'u1' })).toEqual({ ok: false, reason: 'name-taken' });
 
     const dup = await duplicateDashboard(a.dashboard.id);
     expect(dup).not.toBeNull();

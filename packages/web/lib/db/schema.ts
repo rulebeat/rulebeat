@@ -93,6 +93,12 @@ export const dashboards = sqliteTable('dashboards', {
   config: text('config').notNull(),         // JSON: DashboardConfig
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
+  // No SQL-level FK, like every other table here: a deleted person leaves the row behind.
+  ownerId: text('owner_id'),
+  visibility: text('visibility').notNull().default('shared'),  // 'personal' | 'shared'
+  revision: integer('revision').notNull().default(1),          // +1 on every write
+  updatedBy: text('updated_by'),                               // null until a write names the person
+  updatedAt: text('updated_at'),
 });
 
 export const categories = sqliteTable('categories', {

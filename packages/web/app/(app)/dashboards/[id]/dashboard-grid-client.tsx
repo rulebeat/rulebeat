@@ -35,6 +35,7 @@ import type { Dashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
+import { saveBody, saveFailureMessage, type RefusedSave } from '@/lib/dashboard-save';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
@@ -167,10 +168,15 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
+        body: saveBody(dashboard, { config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
       })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
+        .then(async res => {
+          if (res.ok) return res.json() as Promise<Dashboard>;
+          const refused = await res.json().catch(() => ({})) as RefusedSave;
+          setError(saveFailureMessage(refused, 'Failed to save the filters.'));
+          return null;
+        })
+        .then(d => { if (d) { setDashboard(d); setError(null); } });
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,7 +315,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
     const res = await fetch(`/api/dashboards/${dashboard.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed }),
+      body: saveBody(dashboard, { name: trimmed }),
     });
     if (res.ok) {
       const d = await res.json() as Dashboard;
@@ -319,8 +325,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       setEditingTitle(false);
       router.refresh(); // update server-rendered Header
     } else {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      setTitleError(body.error ?? 'Failed to rename.');
+      const body = await res.json().catch(() => ({})) as RefusedSave;
+      setTitleError(saveFailureMessage(body, 'Failed to rename.'));
       titleInputRef.current?.focus();
     }
   }
@@ -332,7 +338,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       const res = await fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: saveBody(dashboard, {
           name: updatedName,
           // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
           // That persistence is independent (see the debounced effect above).
@@ -343,6 +349,10 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         const d = await res.json() as Dashboard;
         setDashboard(d);
         setDirty(false);
+        setError(null);
+      } else {
+        const refused = await res.json().catch(() => ({})) as RefusedSave;
+        setError(saveFailureMessage(refused, 'Failed to save the dashboard.'));
       }
     } finally { setSaving(false); }
   }

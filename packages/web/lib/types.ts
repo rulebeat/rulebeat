@@ -237,6 +237,8 @@ export interface DashboardConfig {
   };
 }
 
+export type ItemVisibility = 'personal' | 'shared';
+
 export interface Dashboard {
   id: string;
   name: string;
@@ -244,6 +246,15 @@ export interface Dashboard {
   config: DashboardConfig;
   isDefault: boolean;
   createdAt: string;
+  /** Who owns it. A Shared dashboard may have no owner. */
+  ownerId: string | null;
+  /** A Personal dashboard is its owner's alone; a Shared one is the same for everyone. */
+  visibility: ItemVisibility;
+  /** Starts at 1; every write to the row bumps it. A save sends the one it read. */
+  revision: number;
+  /** Who made the last write, or null when no write has named anyone. */
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
 export interface Category {

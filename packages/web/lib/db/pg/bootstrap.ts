@@ -140,8 +140,19 @@ CREATE TABLE IF NOT EXISTS dashboards (
   description TEXT,
   config TEXT NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  owner_id TEXT,
+  visibility TEXT NOT NULL DEFAULT 'shared',
+  revision INTEGER NOT NULL DEFAULT 1,
+  updated_by TEXT,
+  updated_at TEXT
 );
+-- #419: owner, visibility, revision and last editor, for a database bootstrapped before they shipped.
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS owner_id TEXT;
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'shared';
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS updated_by TEXT;
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,

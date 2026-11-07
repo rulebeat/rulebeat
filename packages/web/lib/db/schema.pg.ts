@@ -110,6 +110,11 @@ export const dashboards = pgTable('dashboards', {
   config: text('config').notNull(),
   isDefault: boolean('is_default').notNull().default(false),
   createdAt: text('created_at').notNull(),
+  ownerId: text('owner_id'),
+  visibility: text('visibility').notNull().default('shared'),
+  revision: integer('revision').notNull().default(1),
+  updatedBy: text('updated_by'),
+  updatedAt: text('updated_at'),
 });
 
 export const categories = pgTable('categories', {

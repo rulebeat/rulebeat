@@ -17,10 +17,11 @@ import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/ac
 const EXPECTED: Record<Role, Action[]> = {
   // account:self (manage your own password) sits outside the read/write ladder. Every real role
   // gets it, so it's listed on all three rather than folded into 'read'.
-  viewer: ['read', 'account:self'],
+  viewer: ['read', 'account:self', 'dashboards:personal'],
   editor: [
     'read',
     'account:self',
+    'dashboards:personal',
     'rules:write',
     'rules:delete',
     'rules:validate',
@@ -36,6 +37,7 @@ const EXPECTED: Record<Role, Action[]> = {
   admin: [
     'read',
     'account:self',
+    'dashboards:personal',
     'rules:write',
     'rules:delete',
     'rules:validate',
@@ -86,9 +88,9 @@ describe('TS-04 · the role → action grid', () => {
 });
 
 describe('TS-04 · role escalation is impossible through the model itself', () => {
-  it('04-01 · a viewer may only read and manage their own password', async () => {
+  it('04-01 · a viewer may only read, manage their own password and change their own Personal dashboards', async () => {
     const granted = ALL_ACTIONS.filter(a => can('viewer', a));
-    expect(granted.sort()).toEqual(['account:self', 'read']);
+    expect(granted.sort()).toEqual(['account:self', 'dashboards:personal', 'read']);
   });
 
   it('04-11 · an editor may not manage users or the audit log, and may manage categories (install-wide, #275)', async () => {
@@ -146,7 +148,7 @@ describe('action classes (#269)', () => {
     'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
     placed: ['suppressions:write'],
     scoped: ['read', 'rules:validate', 'rules:personal', 'scans:run'],
-    outside: ['account:self'],
+    outside: ['account:self', 'dashboards:personal'],
   };
 
   it('gives every action exactly one class, as the model states it', () => {
