@@ -1141,6 +1141,11 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE schedule_runs ADD COLUMN covered_scope TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN covered_scope TEXT`); } catch { /* already exists */ }
 
+  // #402: the rules a scan ran, as a JSON array of rule ids, so a rule's Outcome can tell a scan that ran it from
+  // one that came before it existed or was enabled. NULL on every earlier scan, which reads as not recorded:
+  // nothing is backfilled, since which rules an old scan ran is not known.
+  try { sqlite.exec(`ALTER TABLE scans ADD COLUMN ran_rule_ids TEXT`); } catch { /* already exists */ }
+
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any
   // rows created under the old model (disabling them: the old fields don't map 1:1 onto the new

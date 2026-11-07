@@ -61,6 +61,7 @@ export const scans = sqliteTable('scans', {
   coverage: text('coverage').notNull().default('complete'), // 'complete' | 'partial'
   incompleteRules: text('incomplete_rules').notNull().default('[]'), // JSON: IncompleteRule[]
   coveredScope: text('covered_scope'), // JSON: { tenantId, path }[], what the run covered (#276); null reads as Everything
+  ranRuleIds: text('ran_rule_ids'), // JSON: string[], the rules the scan ran (#402); null for a scan saved before it was recorded
   hasRecords: integer('has_records').notNull().default(0), // 1 once scan_findings holds this scan's records (ADR 0008); a release that does not know the column saves 0, so its scans convert on the next start
 });
 
