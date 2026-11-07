@@ -325,7 +325,7 @@ export function ScanHistoryTab({
                     <Badge
                       variant={c.coverage === 'partial' ? 'warning' : 'secondary'}
                       className="text-xs"
-                      title={c.coverage === 'partial' ? `${c.incompleteRules.length} rule${c.incompleteRules.length === 1 ? '' : 's'} did not complete` : undefined}
+                      title={c.coverage === 'partial' ? (c.incompleteRules.length === 0 ? 'The scan of this category failed' : `${c.incompleteRules.length} rule${c.incompleteRules.length === 1 ? '' : 's'} did not complete`) : undefined}
                     >
                       {c.coverage === 'partial' ? 'Partial' : 'Complete'}
                     </Badge>

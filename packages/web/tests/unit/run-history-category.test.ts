@@ -126,6 +126,54 @@ describe('listRunHistory · coverage per category', () => {
   });
 });
 
+describe('listRunHistory · a category that threw', () => {
+  let partlyFailed: string;
+  let allFailed: string;
+
+  beforeAll(async () => {
+    await resetDb();
+    // `cost` threw before it saved a scan, so the run has a scan for `security` only.
+    partlyFailed = await recordRun(['security', 'cost'], '2026-07-01T00:00:00.000Z', [scan('security', '2026-07-01T00:00:00.000Z', [])]);
+    // An error run: every category threw, nothing was saved.
+    const failed = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['cost'], now: new Date('2026-07-02T00:00:00.000Z') });
+    await finishRun(failed.id, { status: 'error', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-02T00:00:00.000Z') });
+    allFailed = failed.id;
+  });
+
+  it('lists the runs that attempted the category, saved scan or not', async () => {
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['cost'] }))).toEqual([allFailed, partlyFailed]);
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['security'] }))).toEqual([partlyFailed]);
+  });
+
+  it('shows Partial for a category that threw, beside Complete for one that finished', async () => {
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === partlyFailed)!;
+    expect(run.categoryCoverage).toEqual([
+      { category: 'security', coverage: 'complete', incompleteRules: [] },
+      { category: 'cost', coverage: 'partial', incompleteRules: [] },
+    ]);
+  });
+
+  it('shows Partial for every category of an error run', async () => {
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === allFailed)!;
+    expect(run.categoryCoverage).toEqual([{ category: 'cost', coverage: 'partial', incompleteRules: [] }]);
+  });
+
+  it('matches a category id exactly, wildcard characters included', async () => {
+    const odd = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['a_b', '50%'], now: new Date('2026-07-04T00:00:00.000Z') });
+    await finishRun(odd.id, { status: 'error', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-04T00:00:00.000Z') });
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['a_b'] }))).toEqual([odd.id]);
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['axb'] }))).toEqual([]);
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['5'] }))).toEqual([]);
+    expect(ids(await listRunHistory(EVERYTHING, { categories: ['50%'] }))).toEqual([odd.id]);
+  });
+
+  it('does not mark a category of a run still in progress', async () => {
+    const running = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date('2026-07-03T00:00:00.000Z') });
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === running.id)!;
+    expect(run.categoryCoverage).toEqual([]);
+  });
+});
+
 describe('runHistoryHref', () => {
   it('writes the categories the Scans page reads back', () => {
     for (const categories of [[], ['security'], ['security', 'cost']]) {

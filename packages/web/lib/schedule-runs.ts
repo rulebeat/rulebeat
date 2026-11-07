@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from './db/client';
 import { scheduleRuns, scans as scansTable } from './db/tables';
 import { many, one, run } from './db/exec';
@@ -318,11 +318,14 @@ export interface CategoryCoverage {
   incompleteRules: IncompleteRule[];
 }
 
-/** The coverage of every category each run scanned, in the order the scans started. A run with no saved
- *  scan has no entry. Rule names are the install's, the same ones a scan's detail already lists to anyone. */
-async function categoryCoverageForRuns(runIds: readonly string[]): Promise<Map<string, CategoryCoverage[]>> {
+/** The coverage of every category each run attempted, in the order the scans started. A category with a saved
+ *  scan reads its own `incompleteRules`. A category the run asked for that saved no scan threw before it
+ *  could, so it is Partial with no rule to name, listed after the scanned ones; a run still in progress has
+ *  not yet reached some of its categories and gets no such entry. Rule names are the install's, the same
+ *  ones a scan's detail already lists to anyone. */
+async function categoryCoverageForRuns(runs: readonly ScheduleRun[]): Promise<Map<string, CategoryCoverage[]>> {
   const byRun = new Map<string, CategoryCoverage[]>();
-  for (const ids of chunk(runIds)) {
+  for (const ids of chunk(runs.map(r => r.id))) {
     const rows = await many(db
       .select({ runId: scansTable.runId, module: scansTable.module, incompleteRules: scansTable.incompleteRules })
       .from(scansTable)
@@ -335,27 +338,42 @@ async function categoryCoverageForRuns(runIds: readonly string[]): Promise<Map<s
       byRun.set(row.runId!, list);
     }
   }
+  for (const r of runs) {
+    if (r.status === 'running') continue;
+    const list = byRun.get(r.id) ?? [];
+    for (const category of r.categories) {
+      if (!list.some(c => c.category === category)) list.push({ category, coverage: 'partial', incompleteRules: [] });
+    }
+    if (list.length > 0) byRun.set(r.id, list);
+  }
   return byRun;
 }
 
-/** A row of the Run History list: the run, and for each category it scanned whether that category was Complete or Partial. */
+/** A row of the Run History list: the run, and for each category it attempted whether that category was Complete or Partial. */
 export type RunHistoryEntry = ScheduleRun & { categoryCoverage: CategoryCoverage[] };
 
+/** Matches a run whose own `categories` list (a JSON array of ids) names `category`. */
+function runListsCategory(category: string) {
+  const quoted = JSON.stringify(category).replace(/[\\%_]/g, c => `\\${c}`);
+  return sql`${scheduleRuns.categories} LIKE ${`%${quoted}%`} ESCAPE '\\'`;
+}
+
 /**
- * The Run History list, newest first. With `categories`, only the runs that scanned at least one of them
- * (a run with a saved scan of that category), chosen before `limit` is applied. The list is the same for
- * every reader and the numbers are narrowed to their access as `listAllRuns` narrows them.
+ * The Run History list, newest first. With `categories`, only the runs that attempted at least one of them,
+ * by the categories the run itself recorded, so a category whose scan threw and saved nothing still lists its
+ * run. Chosen before `limit` is applied. The list is the same for every reader and the numbers are narrowed
+ * to their access as `listAllRuns` narrows them.
  */
 export async function listRunHistory(access: Access, opts: { categories?: readonly string[]; limit?: number } = {}): Promise<RunHistoryEntry[]> {
   const { categories = [], limit = 50 } = opts;
   const query = db.select().from(scheduleRuns);
   const rows = await many((categories.length > 0
-    ? query.where(inArray(scheduleRuns.id, db.select({ id: scansTable.runId }).from(scansTable).where(inArray(scansTable.module, [...categories]))))
+    ? query.where(or(...categories.map(runListsCategory)))
     : query)
     .orderBy(desc(scheduleRuns.startedAt))
     .limit(limit));
   const runs = await narrowRuns(rows.map(row => rowToRun(row, access)), access);
-  const coverage = await categoryCoverageForRuns(runs.map(r => r.id));
+  const coverage = await categoryCoverageForRuns(runs);
   return runs.map(r => ({ ...r, categoryCoverage: coverage.get(r.id) ?? [] }));
 }
 
