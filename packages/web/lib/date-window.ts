@@ -51,3 +51,11 @@ export function dateWindowPhrase(w: DateWindow): string {
   const label = dateWindowLabel(w);
   return w.mode === 'relative' ? `in the last ${label}` : `during ${label}`;
 }
+
+/** "since 30 days ago" for a baseline dated `date`, counted in whole days back from `today`. */
+export function sinceLabel(date: string, today: string = todayKey()): string {
+  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000);
+  if (days <= 0) return 'since today';
+  if (days === 1) return 'since yesterday';
+  return `since ${days} days ago`;
+}

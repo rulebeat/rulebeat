@@ -73,6 +73,10 @@ export function chartSeriesColor(index: number): string {
 export const CHART_TICK = { fontSize: 12, fill: 'var(--color-ink-muted)' };
 export const CHART_LEGEND_STYLE = { fontSize: 12, color: 'var(--color-ink-2)' };
 
+/** The one plot height of the posture trend, new vs. fixed and activity occurrences charts: axes
+ *  and legend included, so three charts side by side line up. Width stays responsive. */
+export const CHART_PLOT_HEIGHT = 220;
+
 export function timeAgo(iso: string): string {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1) return 'just now';

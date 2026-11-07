@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref, type ScansLinkOverrides } from '@/lib/scans-link';
-import { dateWindowLabel, dateWindowPhrase } from '@/lib/date-window';
+import { dateWindowLabel, dateWindowPhrase, sinceLabel } from '@/lib/date-window';
 import type { StatMetric } from '@/lib/types';
 import { Delta } from '@/components/dashboard/widgets/delta';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
@@ -45,8 +45,8 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   );
   const dateWindowKey = JSON.stringify(merged.dateWindow);
 
-  const { value, label, delta, deltaSuffix, deltaTitle, subtext, color } = useMemo(() => {
-    const fallback = { value: '-', label: '', delta: null as number | null, deltaSuffix: '%', deltaTitle: undefined as string | undefined, subtext: 'No data', color: 'var(--color-ink-faint)' };
+  const { value, label, delta, deltaSuffix, deltaSince, deltaTitle, subtext, color } = useMemo(() => {
+    const fallback = { value: '-', label: '', delta: null as number | null, deltaSuffix: '%', deltaSince: undefined as string | undefined, deltaTitle: undefined as string | undefined, subtext: 'No data', color: 'var(--color-ink-faint)' };
     if (!summary) return fallback;
     const { current, deltaPct, baseline, perCategory } = summary;
     const windowLabel = dateWindowLabel(merged.dateWindow);
@@ -59,6 +59,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: 'checks passing',
           delta: deltaPct,
           deltaSuffix: '%',
+          deltaSince: baseline?.date ? sinceLabel(baseline.date) : 'vs baseline',
           deltaTitle: baseline?.date ? `score today vs baseline since ${baseline.date}` : undefined,
           subtext: current.pct === null
             ? 'no checks enabled'
@@ -77,6 +78,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           // matches Scans' own new-findings/fixed-findings numbers exactly.
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: `${current.newInWindow} new · ${current.fixedInWindow} fixed ${windowPhrase}`,
           color: 'var(--color-ink)',
@@ -87,6 +89,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: 'critical',
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: 'require immediate action',
           color: (current.severityCounts.critical ?? 0) > 0 ? 'var(--color-sev-critical)' : 'var(--color-ink-faint)',
@@ -97,6 +100,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: 'high severity',
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: 'findings',
           color: (current.severityCounts.high ?? 0) > 0 ? 'var(--color-sev-high)' : 'var(--color-ink-faint)',
@@ -107,6 +111,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: 'rules scanned',
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: `${current.passingRules} passing`,
           color: 'var(--color-ink)',
@@ -119,6 +124,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: 'categories healthy',
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: 'categories with zero open findings',
           color: healthy === scanned.length && scanned.length > 0 ? 'var(--color-ink)' : 'var(--color-status-warn)',
@@ -130,9 +136,10 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: `new findings (${windowLabel})`,
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: `first seen ${windowPhrase}`,
-          color: current.newInWindow > 0 ? 'var(--color-sev-critical)' : 'var(--color-ink-faint)',
+          color: current.newInWindow > 0 ? 'var(--color-chart-1)' : 'var(--color-ink-faint)',
         };
       case 'fixed-findings':
         return {
@@ -140,9 +147,10 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
           label: `fixed findings (${windowLabel})`,
           delta: null,
           deltaSuffix: '',
+          deltaSince: undefined,
           deltaTitle: undefined,
           subtext: `resolved ${windowPhrase}`,
-          color: current.fixedInWindow > 0 ? 'var(--color-status-ok)' : 'var(--color-ink-faint)',
+          color: current.fixedInWindow > 0 ? 'var(--color-chart-2)' : 'var(--color-ink-faint)',
         };
       default:
         return fallback;
@@ -164,7 +172,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
     >
       <span className="numeral-grid text-4xl font-bold leading-none" style={{ color }}>{value}</span>
       <span className="mt-1 text-sm font-medium text-ink-2">{label}</span>
-      {delta !== null && <Delta value={delta} suffix={deltaSuffix} title={deltaTitle} neutralLabel="flat" />}
+      {delta !== null && <Delta value={delta} suffix={deltaSuffix} since={deltaSince} title={deltaTitle} />}
       <span className="mt-0.5 text-xs text-ink-muted">{subtext}</span>
     </button>
   );
