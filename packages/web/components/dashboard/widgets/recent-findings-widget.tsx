@@ -72,7 +72,7 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
         </TableHeader>
         <TableBody>
           {findings.map((f, i) => {
-            const href = buildScansHref(merged, { ruleId: f.ruleId, search: f.resourceName });
+            const href = buildScansHref(merged, { ruleId: f.ruleId, resourceId: f.resourceId, search: f.resourceId ? undefined : f.resourceName });
             return (
               <TableRow key={f.fingerprint ?? i} interactive onClick={() => router.push(href)}>
                 <TableCell shrink>

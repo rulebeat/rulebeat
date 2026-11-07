@@ -25,12 +25,15 @@ export async function GET(req: Request) {
     // 'activity' findings (spec 034) have no resource. This widget is resource-scoped by
     // definition, so they're counted by the dedicated activity-occurrences widget instead.
     if (!f.resourceId) continue;
-    const existing = resourceMap.get(f.resourceId);
+    // Azure ids are not case-sensitive and two rules can write one resource's id in different case:
+    // one resource, one row, the same resource the Scans link to it opens.
+    const key = f.resourceId.toLowerCase();
+    const existing = resourceMap.get(key);
     if (existing) {
       existing.count++;
       if (SEV_ORDER[f.severity] < SEV_ORDER[existing.maxSeverity]) existing.maxSeverity = f.severity;
     } else {
-      resourceMap.set(f.resourceId, {
+      resourceMap.set(key, {
         resourceId: f.resourceId,
         resourceName: f.resourceName ?? '',
         resourceType: f.resourceType ?? '',

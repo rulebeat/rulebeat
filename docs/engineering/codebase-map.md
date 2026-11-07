@@ -183,7 +183,8 @@
 | `packages/web/lib/dashboard-filters.ts` | `WidgetFilters` type + `mergeWidgetFilters()`, where per-widget replaces and never intersects |
 | `packages/web/lib/dashboard-data.ts` | `queryActiveFindings`/`computeWidgetSummary`. See the Dashboards trend-limits note in `CLAUDE.md` |
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
-| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
+| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses; its `resourceId` override writes `f=resourceId=<id>`, the exact-match link, where `search` matches by substring |
+| `packages/web/lib/first-seen-age.ts` | The rolling first-seen filter's value (`8-30`, `91-`, `-7`): parse, format, chip label and `matchesFirstSeenAge()`, which counts whole UTC days back from the request's `now`. The filter itself is the `firstSeenAge` built-in field of the view in `finding-view.ts`, beside `resourceId`; neither has a facet (`FACET_FIELDS` leaves them out) |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |

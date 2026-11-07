@@ -74,6 +74,24 @@ value, write `\,`, `\|`, `\=` and `\\` for a comma, bar, equals sign and backsla
 including `%` and spaces, is written as it is. A returned field no finding has gives an empty column
 and a filter that keeps nothing.
 
+Two filters come from a link and have no list of values to pick from. Both show as a chip and are
+removed with the chip's cross.
+
+- **First seen** as a rolling range counts the age of a finding in whole UTC days, from the day it was
+  first seen to the day you open the list. Both ends are included, and either may be left out.
+  `f=firstSeenAge=8-30` is "first seen 8 to 30 days ago", `f=firstSeenAge=-7` is "up to 7 days ago" (today
+  counts as day 0), and `f=firstSeenAge=91-` is "more than 90 days ago". The range is worked out when the
+  list is read, not when the link is made, so a shared link keeps rolling: opened a week later, the same
+  link counts back from that day. A value that is not a range is ignored, and a link whose only
+  value is not a range keeps nothing, so you see its chip and can remove it. This is not the
+  First seen filter above, which keeps findings first seen on the exact days you tick.
+- **Resource id**, `f=resourceId=<full resource id>`, keeps the findings on that one resource and no
+  other. Azure ids are not case-sensitive, so the case is ignored. It is not the search box: a search
+  for `vm1` also finds `vm10`, and the id does not. The Top resources and Recent findings widgets open
+  Scans this way, so a row opens the same findings it counts.
+
+Both work on the Results, Advisories and Activity tabs and narrow by your access like every other filter.
+
 ### Group by
 
 The Group by button in the By resource toolbar groups the list by one or more fields, the same

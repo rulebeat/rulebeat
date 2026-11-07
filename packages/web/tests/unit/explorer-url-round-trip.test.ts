@@ -62,6 +62,10 @@ const LINKS: Record<string, string> = {
   'a custom window': 'tab=results&from=2026-01-01&to=2026-01-31',
   'returned columns, a sort and grouping': 'tab=results&cols=zone%2Csku&sort=rule%3Adesc&group=category%2Clocation&gsort=count%3Adesc',
   'generic fields and a returned-column filter': 'tab=results&f=kind%3Dadvisory&f=firstSeen%3D2026-01-05&rf=zone%3Da%7Cb',
+  'a rolling first-seen filter': 'tab=results&f=firstSeenAge%3D8-30',
+  'a first-seen filter with no upper bound on Advisories': 'tab=advisories&f=firstSeenAge%3D91-',
+  'an exact resource id': 'tab=results&f=resourceId%3D%2Fsubscriptions%2Fs1%2FresourceGroups%2Frg%2Fproviders%2FMicrosoft.Compute%2FvirtualMachines%2Fvm1&ruleId=rule-1',
+  'a resource id on Activity beside a first-seen range': 'tab=activity&f=resourceId%3D%2Fsubscriptions%2Fs1%2Fvm1&f=firstSeenAge%3D0-7',
 };
 
 describe.each(Object.entries(LINKS))('a link with %s', (_name, query) => {

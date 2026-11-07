@@ -1,5 +1,8 @@
 import type { WidgetFilters } from './dashboard-filters';
 import type { ExplorerStatusFilter } from './explorer-filters';
+import { genericFilterParam } from './finding-view';
+
+export { parseCategoryParam } from './finding-view';
 
 /** Metric-appropriate overrides layered on top of a widget's inherited `WidgetFilters` when
  *  building a click-through link to the Scans Results tab: see `buildScansHref`. */
@@ -18,6 +21,9 @@ export interface ScansLinkOverrides {
   /** Single rule id to link to (e.g. a top-rules row): takes precedence over any inherited
    *  `filters.ruleIds`. */
   ruleId?: string;
+  /** One resource, by its full id (e.g. a top-resources row): matched exactly, where `search` matches
+   *  every resource whose name merely contains the text. */
+  resourceId?: string;
   search?: string;
 }
 
@@ -50,14 +56,8 @@ export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverr
   } else {
     params.set('window', String(filters.dateWindow.days));
   }
+  if (overrides.resourceId) params.append('f', genericFilterParam('resourceId', [overrides.resourceId]));
   if (overrides.search) params.set('q', overrides.search);
 
   return `/scans?${params.toString()}`;
-}
-
-/** Splits the `?category=` searchParam into a list, the same comma-list convention `?severity=`
- *  and every other multi-value filter param already use: shared between scans/page.tsx's own
- *  initializer and the test suite (cross-surface-filters.test.ts) so the two can't drift apart. */
-export function parseCategoryParam(sectionParam: string | undefined): string[] {
-  return sectionParam ? sectionParam.split(',').filter(v => v && v !== 'all') : [];
 }

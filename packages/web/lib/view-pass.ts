@@ -21,7 +21,7 @@ import type { ExplorerFinding } from './explorer-data';
 import type { FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings } from './explorer-filters';
 import {
-  BUILTIN_FIELDS, DEFAULT_PAGE_SIZE, DEFAULT_SORT, activeRowFilters, builtinFieldValues, clampPage, compareBy, compareGroups, countResources, filterFindings,
+  DEFAULT_PAGE_SIZE, DEFAULT_SORT, FACET_FIELDS, activeRowFilters, builtinFieldValues, clampPage, compareBy, compareGroups, countResources, filterFindings,
   groupParts, isRowField, isRowFilter, pageGroupItems, readPath, rowMatches, rowPath, valueText,
   type RowFilter, type View, type ViewContext, type ViewField,
 } from './finding-view';
@@ -38,10 +38,11 @@ export type SlimFinding = Pick<ExplorerFinding,
   | 'policyName' | 'ruleDisabled' | 'ruleTags'>;
 
 /** A view's context with its window resolved to dates, once, so every part agrees on them. */
-export type ResolvedContext = ViewContext & { range: { from: string; to: string } };
+export type ResolvedContext = ViewContext & { range: { from: string; to: string }; now: Date };
 
 export function resolveContext(view: View, ctx: ViewContext): ResolvedContext {
-  return { ...ctx, range: ctx.range ?? resolveDateWindow(view.window) };
+  const now = ctx.now ?? new Date();
+  return { ...ctx, now, range: ctx.range ?? resolveDateWindow(view.window, now) };
 }
 
 /** The view with its row filters left out: what the built-in side of every pool is computed from. */
@@ -166,7 +167,7 @@ export function candidatesOf(
     const add = (except: readonly ViewField[]) => {
       for (const f of filterFindings(slim, spec, ctx, { except: new Set(except) })) wanted.add(f.fingerprint);
     };
-    for (const field of BUILTIN_FIELDS) if (field !== 'status') add([field]);
+    for (const field of FACET_FIELDS) add([field]);
     add(TILE_EXCLUDED_FIELDS);
     add(['status']);
   }

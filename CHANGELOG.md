@@ -6,6 +6,14 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- First-seen and exact-resource filters on Scans. `f=firstSeenAge=8-30` keeps findings first seen 8 to 30 UTC days ago (`91-` is more than 90 days ago, `-7` is up to 7 days ago), counted from the day the list is read, so a shared link keeps rolling. `f=resourceId=<id>` keeps the findings on one resource and no other. Both are in the address, show as chips, and work on the Results, Advisories and Activity tabs under your access.
+
+### Fixed
+
+- The Top resources and Recent findings links opened findings for resources with similar names. They searched the resource name as text, so a row for `vm1` also opened `vm10`; they now open the exact resource. Top resources also counts a resource once when its rules wrote its id in different case.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
