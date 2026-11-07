@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
 import { db } from './db/client';
-import { scheduleRuns } from './db/tables';
+import { scheduleRuns, scans as scansTable } from './db/tables';
 import { many, one, run } from './db/exec';
 import { INSTANCE_ID } from './instance-id';
 import { SYSTEM_ACCESS } from './system-access';
@@ -10,6 +10,8 @@ import type { Access } from './access-model';
 import { EVERYTHING_COVERED, type CoveredEntry, type CoveredScopeView } from './run-scope';
 import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './covered-scope-view';
 import { recountRuns } from './db/run-recount';
+import { chunk } from './db/chunk';
+import type { IncompleteRule } from './types';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
 // now that this table also backs the user-facing Run History list, not just internal bookkeeping.
@@ -306,6 +308,55 @@ export async function listAllRuns(access: Access, limit = 50): Promise<ScheduleR
     .orderBy(desc(scheduleRuns.startedAt))
     .limit(limit)))
     .map(row => rowToRun(row, access)), access);
+}
+
+/** One category of a run: Complete when every rule of it ended `success`, Partial when `incompleteRules`
+ *  names any. Read from `incompleteRules` itself, the same list the Partial badge on a scan explains. */
+export interface CategoryCoverage {
+  category: string;
+  coverage: 'complete' | 'partial';
+  incompleteRules: IncompleteRule[];
+}
+
+/** The coverage of every category each run scanned, in the order the scans started. A run with no saved
+ *  scan has no entry. Rule names are the install's, the same ones a scan's detail already lists to anyone. */
+async function categoryCoverageForRuns(runIds: readonly string[]): Promise<Map<string, CategoryCoverage[]>> {
+  const byRun = new Map<string, CategoryCoverage[]>();
+  for (const ids of chunk(runIds)) {
+    const rows = await many(db
+      .select({ runId: scansTable.runId, module: scansTable.module, incompleteRules: scansTable.incompleteRules })
+      .from(scansTable)
+      .where(inArray(scansTable.runId, ids))
+      .orderBy(asc(scansTable.startedAt)));
+    for (const row of rows) {
+      const incompleteRules = row.incompleteRules ? JSON.parse(row.incompleteRules) as IncompleteRule[] : [];
+      const list = byRun.get(row.runId!) ?? [];
+      list.push({ category: row.module, coverage: incompleteRules.length > 0 ? 'partial' : 'complete', incompleteRules });
+      byRun.set(row.runId!, list);
+    }
+  }
+  return byRun;
+}
+
+/** A row of the Run History list: the run, and for each category it scanned whether that category was Complete or Partial. */
+export type RunHistoryEntry = ScheduleRun & { categoryCoverage: CategoryCoverage[] };
+
+/**
+ * The Run History list, newest first. With `categories`, only the runs that scanned at least one of them
+ * (a run with a saved scan of that category), chosen before `limit` is applied. The list is the same for
+ * every reader and the numbers are narrowed to their access as `listAllRuns` narrows them.
+ */
+export async function listRunHistory(access: Access, opts: { categories?: readonly string[]; limit?: number } = {}): Promise<RunHistoryEntry[]> {
+  const { categories = [], limit = 50 } = opts;
+  const query = db.select().from(scheduleRuns);
+  const rows = await many((categories.length > 0
+    ? query.where(inArray(scheduleRuns.id, db.select({ id: scansTable.runId }).from(scansTable).where(inArray(scansTable.module, [...categories]))))
+    : query)
+    .orderBy(desc(scheduleRuns.startedAt))
+    .limit(limit));
+  const runs = await narrowRuns(rows.map(row => rowToRun(row, access)), access);
+  const coverage = await categoryCoverageForRuns(runs.map(r => r.id));
+  return runs.map(r => ({ ...r, categoryCoverage: coverage.get(r.id) ?? [] }));
 }
 
 export async function getRun(id: string, access: Access): Promise<ScheduleRun | null> {

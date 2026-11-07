@@ -90,6 +90,8 @@ export interface ScansClientProps {
   /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
   initialSavedViewId?: string;
   runs?: ScanHistoryTabProps['runs'];
+  /** The categories `?category=` asks Run History to list; empty lists every run. */
+  historyCategories?: string[];
   runDetail?: ScanHistoryTabProps['runDetail'];
   /** The scan a `?scan=` link names, with what the address asks of it. The page sends no findings: the
    *  snapshot screen reads them from the server. */
@@ -128,6 +130,7 @@ export function ScansClient({
   initialView,
   initialSavedViewId,
   runs,
+  historyCategories,
   runDetail,
   snapshotScanId,
   snapshotQuery,
@@ -356,6 +359,7 @@ export function ScansClient({
           categories={categories}
           rules={policies}
           runs={runs ?? []}
+          categoryFilter={historyCategories}
           runDetail={runDetail}
           snapshotScanId={snapshotScanId}
           snapshotQuery={snapshotQuery}

@@ -154,6 +154,25 @@ successful rule may mark its old findings fixed, and a run with any non-success 
 [`how-it-works.md`](how-it-works.md#one-outcome-per-rule), and what "X of Y passing" counts is in
 [`posture.md`](posture.md).
 
+### Filter Run History by category
+
+The **Category** menu on the Run History list picks one or more categories and lists only the runs that
+scanned at least one of them. The choice is written to the address as `?tab=history&category=security,cost`,
+so a filtered list can be bookmarked, shared or linked to, and opening such an address shows the same list
+with the menu already set. Clearing the menu removes the parameter. The filter is applied before the list
+is cut to the 50 most recent runs, so a rarely scanned category still shows its runs. When no run scanned
+the category, the list says so and offers to clear the filter.
+
+Each run lists the categories it scanned, each marked **Complete** or **Partial**. A category is Partial
+when one or more of its rules did not end in success (the query failed, or its result was capped or
+had rows with no resource id), and Complete when every rule did. One run can show both: a run that
+scanned Security and Cost can be Complete for Security and Partial for Cost. Hover a Partial mark for how
+many rules did not complete, or open the run to see which. The list always shows every category the run
+scanned, not only the ones the filter asked for.
+
+A reader whose access is smaller than Everything sees the same runs, with the counts of the findings
+inside their Scopes, as described below.
+
 ### What a run covered
 
 Every run records the Scope it covered. An Admin's run, a scheduled run and every run from before this

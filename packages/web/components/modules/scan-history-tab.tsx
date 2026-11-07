@@ -8,16 +8,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { Select } from '@/components/ui/select';
+import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
 import { RunStatusDot } from '@/components/scans/run-status-dot';
 import { SnapshotScreen } from '@/components/scans/snapshot-screen';
 import { CategoryBadge } from '@/components/findings/category-badge';
 import { CompareScreen } from '@/components/scans/compare-screen';
 import { COUNTS_UNAVAILABLE_MESSAGE, CoveredScopeLabel } from '@/components/scans/covered-scope-label';
 import { describeTarget } from '@/lib/target-describe';
+import { runHistoryHref } from '@/lib/scans-link';
+import { toggleInSet } from '@/lib/toggle-set';
 import { emptyCompareQuery, type CompareQuery } from '@/lib/compare-query';
 import { emptySnapshotQuery, type SnapshotQuery } from '@/lib/snapshot-query';
 import type { Category, Rule, ScanMeta, Severity } from '@/lib/types';
-import type { ScheduleRun } from '@/lib/schedule-runs';
+import type { RunHistoryEntry, ScheduleRun } from '@/lib/schedule-runs';
 import { Activity, ArrowLeft } from 'lucide-react';
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
@@ -29,7 +32,9 @@ function formatDate(iso: string) {
 export interface ScanHistoryTabProps {
   categories: Category[];
   rules: Rule[];
-  runs: ScheduleRun[];
+  runs: RunHistoryEntry[];
+  /** The categories the address asks for (`?category=`). Empty lists every run. */
+  categoryFilter?: string[];
   runDetail?: { run: ScheduleRun; scans: ScanMeta[] } | null;
   /** The scan a `?scan=` link names. The screen reads its findings from the server a page at a time. */
   snapshotScanId?: string;
@@ -52,7 +57,7 @@ export interface ScanHistoryTabProps {
 }
 
 export function ScanHistoryTab({
-  categories, rules, runs, runDetail, snapshotScanId, snapshotQuery, snapshotRestarts = 0, onSnapshotUrlWrite,
+  categories, rules, runs, categoryFilter = [], runDetail, snapshotScanId, snapshotQuery, snapshotRestarts = 0, onSnapshotUrlWrite,
   compareCategorySlug, compareCategoryScans, compareIds, compareQuery, compareRestarts = 0, onCompareUrlWrite,
 }: ScanHistoryTabProps) {
   const router = useRouter();
@@ -242,27 +247,44 @@ export function ScanHistoryTab({
   }
 
   // ---- Unified run list ----
-  if (runs.length === 0) {
+  const filtering = categoryFilter.length > 0;
+  if (runs.length === 0 && !filtering) {
     return <p className="py-10 text-center text-sm text-ink-muted">No scans have run yet.</p>;
   }
+  const categoryLabels = categoryFilter.map(id => categoryById.get(id)?.label ?? id).join(', ');
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Run History ({runs.length})</CardTitle>
         <CardAction>
-          <div className="w-52">
-            <Select
-              value={pickedCategory}
-              onValueChange={v => router.push(v ? `/scans?tab=history&compareCategory=${v}` : '/scans?tab=history')}
-              options={categories.map(c => ({ value: c.id, label: c.label }))}
-              placeholder="Compare scans in…"
+          <div className="flex items-center gap-2">
+            <ChecklistDropdown
+              label="Category"
               size="sm"
-              aria-label="Compare scans in category"
+              options={categories.map(c => ({ value: c.id, label: c.label }))}
+              selected={new Set(categoryFilter)}
+              onToggle={v => router.push(runHistoryHref([...toggleInSet(new Set(categoryFilter), v)]))}
+              onClear={() => router.push(runHistoryHref([]))}
             />
+            <div className="w-52">
+              <Select
+                value={pickedCategory}
+                onValueChange={v => router.push(v ? `/scans?tab=history&compareCategory=${v}` : '/scans?tab=history')}
+                options={categories.map(c => ({ value: c.id, label: c.label }))}
+                placeholder="Compare scans in…"
+                size="sm"
+                aria-label="Compare scans in category"
+              />
+            </div>
           </div>
         </CardAction>
       </CardHeader>
+      {runs.length === 0 && (
+        <p className="py-10 text-center text-sm text-ink-muted">
+          No saved run scanned {categoryLabels}. Clear the category filter to see every run.
+        </p>
+      )}
       <div className="divide-y divide-border">
         {runs.map((run, i) => (
           <div key={run.id}>
@@ -295,6 +317,22 @@ export function ScanHistoryTab({
                 {!run.countsUnavailable && run.newFindings > 0 && <Badge variant="destructive" className="text-xs">+{run.newFindings} new</Badge>}
               </div>
             </Link>
+            {run.categoryCoverage.length > 0 && (
+              <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 pb-3.5 -mt-1" aria-label="Coverage per category">
+                {run.categoryCoverage.map(c => (
+                  <li key={c.category} className="flex items-center gap-2">
+                    <CategoryBadge id={c.category} categories={categories} />
+                    <Badge
+                      variant={c.coverage === 'partial' ? 'warning' : 'secondary'}
+                      className="text-xs"
+                      title={c.coverage === 'partial' ? `${c.incompleteRules.length} rule${c.incompleteRules.length === 1 ? '' : 's'} did not complete` : undefined}
+                    >
+                      {c.coverage === 'partial' ? 'Partial' : 'Complete'}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
             {run.error && (run.status === 'partial' || run.status === 'error') && (
               <div className="px-6 pb-3.5 -mt-1">
                 <Callout tone={run.status === 'error' ? 'error' : 'warn'}>

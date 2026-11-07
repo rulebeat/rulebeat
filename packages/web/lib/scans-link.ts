@@ -61,3 +61,9 @@ export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverr
 export function parseCategoryParam(sectionParam: string | undefined): string[] {
   return sectionParam ? sectionParam.split(',').filter(v => v && v !== 'all') : [];
 }
+
+/** The Run History address for a set of categories: the one the category control writes and
+ *  `scans/page.tsx` reads back with `parseCategoryParam`. No categories is the unfiltered list. */
+export function runHistoryHref(categories: readonly string[]): string {
+  return categories.length > 0 ? `/scans?tab=history&category=${categories.join(',')}` : '/scans?tab=history';
+}
