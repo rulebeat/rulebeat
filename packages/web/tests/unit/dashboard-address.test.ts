@@ -90,9 +90,14 @@ describe('writing a layer of filter changes', () => {
   });
 
   it('keeps the params the page owns first, and drops a stale dimension param it replaces or no longer needs', () => {
-    const out = address.write({ severity: ['low'] }, new URLSearchParams('tab=overview&severity=high&tags=prod&window=3&suppressed=1'));
-    expect(pairs(out.toString())).toEqual(pairs('tab=overview&severity=low&suppressed=1'));
+    const out = address.write({ severity: ['low'] }, new URLSearchParams('tab=overview&severity=high&tags=prod&window=3'));
+    expect(pairs(out.toString())).toEqual(pairs('tab=overview&severity=low'));
     expect(out.toString().startsWith('tab=overview')).toBe(true);
+  });
+
+  it('drops the params that carry includeSuppressed from the base, so it never appears in an address', () => {
+    const out = address.write({ severity: ['low'] }, new URLSearchParams('tab=overview&suppressed=1&includeSuppressed=true'));
+    expect(out.toString()).toBe('tab=overview&severity=low');
   });
 
   it('never writes includeSuppressed', () => {

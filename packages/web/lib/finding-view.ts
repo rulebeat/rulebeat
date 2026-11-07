@@ -806,6 +806,8 @@ const DASHBOARD_LIST_PARAMS: Record<DashboardListDim, string> = {
   category: 'category', subscription: 'subscription', resourceGroup: 'rg', tags: 'tags', rule: 'ruleId', severity: 'severity',
 };
 const DASHBOARD_LIST_DIMS = Object.keys(DASHBOARD_LIST_PARAMS) as DashboardListDim[];
+/** The params that carry `includeSuppressed`. They never travel in a dashboard address, so a base that holds one loses it. */
+const VIEWER_TOGGLE_PARAMS = ['suppressed', 'includeSuppressed'];
 const DASHBOARD_PARAMS = [...Object.values(DASHBOARD_LIST_PARAMS), 'window', 'from', 'to'];
 
 /** Whether a value can be named by a dashboard dimension; the rest are ignored, as in `/scans`. */
@@ -867,7 +869,7 @@ export function dashboardAddress(saved: DashboardFilters): {
       const params = new URLSearchParams();
       if (base instanceof URLSearchParams) base.forEach((v, k) => params.append(k, v));
       else if (base) for (const [k, v] of Object.entries(base)) for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) params.append(k, one);
-      for (const name of DASHBOARD_PARAMS) params.delete(name);
+      for (const name of [...DASHBOARD_PARAMS, ...VIEWER_TOGGLE_PARAMS]) params.delete(name);
 
       for (const dim of DASHBOARD_LIST_DIMS) {
         const values = changes[dim];
