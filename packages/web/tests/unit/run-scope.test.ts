@@ -10,7 +10,7 @@ import {
   sameCoveredScope, scopeForRule, subscriptionsAskedFor, type RequestScope,
 } from '@/lib/run-scope';
 import { parseCoveredScope, serializeCoveredScope } from '@/lib/covered-scope-view';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/held-back';
 import type { HierarchyNode } from '@/lib/management-group-tree';
 import type { Role } from '@/lib/rbac';
 import { listFindings } from '@/lib/db/findings';
