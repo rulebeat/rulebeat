@@ -5,6 +5,10 @@
  * written by hand from it.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db/client';
+import { scans as scansTable } from '@/lib/db/tables';
+import { many } from '@/lib/db/exec';
 import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/access-model';
 import { finishRun, listRunHistory, startRun } from '@/lib/schedule-runs';
 import { saveScanResult } from '@/lib/scan-history';
@@ -22,12 +26,17 @@ const ON_A: Access = buildAccess([{ tenantId: 't', scope: parseScope(`/subscript
 
 const FAILED: IncompleteRule = { ruleId: 'r-cost', ruleName: 'Idle disks', status: 'failed' };
 
-function scan(module: string, startedAt: string, findings: Finding[], incompleteRules: IncompleteRule[] = []) {
+// `storedCoverage` overrides the coverage column a scan is saved with, so a test can make it disagree with
+// `incompleteRules` (the list Run History must read).
+function scan(
+  module: string, startedAt: string, findings: Finding[], incompleteRules: IncompleteRule[] = [],
+  storedCoverage: 'complete' | 'partial' = incompleteRules.length > 0 ? 'partial' : 'complete',
+) {
   const counts = emptySeverityCounts();
   for (const f of findings) counts[f.severity]++;
   return {
     module, startedAt, finishedAt: startedAt, durationMs: 1, subscriptionsScanned: [SUB_A], findings, counts,
-    totalRules: 2, coverage: incompleteRules.length > 0 ? 'partial' as const : 'complete' as const, incompleteRules,
+    totalRules: 2, coverage: storedCoverage, incompleteRules,
   };
 }
 
@@ -47,10 +56,11 @@ beforeAll(async () => {
   const a1 = syntheticFinding('a1', [{ zone: 'a' }], { ruleId: 'r-sec', subscriptionId: SUB_A, resourceGroup: 'rg', severity: 'high' });
   const b1 = syntheticFinding('b1', [{ zone: 'a' }], { ruleId: 'r-sec', subscriptionId: SUB_B, resourceGroup: 'rg', severity: 'high' });
   securityOnly = await recordRun(['security'], '2026-06-01T00:00:00.000Z', [scan('security', '2026-06-01T00:00:00.000Z', [a1, b1])]);
-  // One run, two categories: cost lost a rule, security did not.
+  // One run, two categories: cost lost a rule, security did not. The stored coverage column says the
+  // opposite of each, so only a reader of `incompleteRules` gets both right.
   mixed = await recordRun(['security', 'cost'], '2026-06-02T00:00:00.000Z', [
-    scan('security', '2026-06-02T00:00:00.000Z', [a1]),
-    scan('cost', '2026-06-02T00:00:01.000Z', [], [FAILED]),
+    scan('security', '2026-06-02T00:00:00.000Z', [a1], [], 'partial'),
+    scan('cost', '2026-06-02T00:00:01.000Z', [], [FAILED], 'complete'),
   ]);
   costOnly = await recordRun(['cost'], '2026-06-03T00:00:00.000Z', [scan('cost', '2026-06-03T00:00:00.000Z', [])]);
 });
@@ -97,6 +107,15 @@ describe('listRunHistory · coverage per category', () => {
   });
 
   it('reads the coverage from incompleteRules, not from the stored coverage column', async () => {
+    // The mixed run is saved with security stored 'partial' over an empty list and cost stored 'complete'
+    // over a failed rule; the list wins in both.
+    const stored = await many(db.select({ module: scansTable.module, coverage: scansTable.coverage }).from(scansTable).where(eq(scansTable.runId, mixed)));
+    expect(Object.fromEntries(stored.map(s => [s.module, s.coverage]))).toEqual({ security: 'partial', cost: 'complete' });
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === mixed)!;
+    expect(run.categoryCoverage.map(c => [c.category, c.coverage])).toEqual([['security', 'complete'], ['cost', 'partial']]);
+  });
+
+  it('shows Complete for a category with no incomplete rules', async () => {
     const run = (await listRunHistory(EVERYTHING)).find(r => r.id === costOnly)!;
     expect(run.categoryCoverage).toEqual([{ category: 'cost', coverage: 'complete', incompleteRules: [] }]);
   });
