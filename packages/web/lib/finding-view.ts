@@ -669,7 +669,7 @@ function readParams(source: ParamSource, name: string): string[] {
 // escapes the three delimiters, and the backslash itself, with a backslash. Nothing is
 // percent-encoded here: URLSearchParams does that once when the query is written and undoes it
 // when it is read, so a plain space is `+` and a hand-written value with a bare `%` is kept as typed.
-function esc(text: string): string {
+export function esc(text: string): string {
   return text.replace(/[\\,|=]/g, '\\$&');
 }
 function unesc(piece: string): string {

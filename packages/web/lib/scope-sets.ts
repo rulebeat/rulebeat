@@ -4,7 +4,7 @@
  * `lib/db/scope-sets.ts`.
  */
 import { createHash } from 'node:crypto';
-import { grantCovers, parseScope, type Access, type ScopeKind } from '@/lib/access-model';
+import { grantCovers, parseScope, type Access, type ScopeKind } from './access-model';
 
 /** The most paths a caller may send in one set. A set the server builds itself is not held to it. */
 export const SCOPE_SET_MAX_PATHS = 2000;

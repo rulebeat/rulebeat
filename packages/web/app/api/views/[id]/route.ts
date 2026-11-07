@@ -5,6 +5,7 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
+import { prepareSavedViewQuery } from '@/lib/filter-save';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
 type Params = { params: Promise<{ id: string }> };
@@ -33,6 +34,13 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
+    if (fields.value.query !== undefined) {
+      const stored = await getSavedView(id);
+      if (!stored) return Response.json({ error: 'Not found' }, { status: 404 });
+      const query = await prepareSavedViewQuery(actor.access, fields.value.query, stored.query);
+      if (!query.ok) return Response.json({ error: query.error }, { status: 400 });
+      fields.value.query = query.value;
+    }
     const result = await updateSavedView(id, fields.value, actor.id);
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });

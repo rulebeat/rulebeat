@@ -20,6 +20,10 @@ import {
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from './finding-placement';
 import { planAccessUpgrade } from './access-upgrade';
 import {
+  DASHBOARDS_READ, PAIRS_READ, SAVED_VIEWS_READ, planFilterConversion,
+  type DashboardRow, type PairRow, type SavedViewRow,
+} from './filter-conversion';
+import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
   type RowCopySource, type RowRecord,
@@ -1378,6 +1382,32 @@ export function runMigrations(sqlite: Database.Database): void {
   placeFindings(sqlite);
   // Independent of the findings steps; after the column it reads exists.
   upgradeAccess(sqlite);
+  // After the records are converted, since the pairs it reads are in findings and scan_findings.
+  convertFilters(sqlite);
+}
+
+/**
+ * Runs lib/db/filter-conversion.ts's plan (ADR 0015) on every start, in one transaction: dashboard filters
+ * and saved view queries gain their Scope picks beside the legacy values, which stay as they were. It only
+ * changes a dashboard whose legacy values are not the ones it was converted from and a saved view with no
+ * Scope, so a second start changes nothing. A failure is logged and retried on the next start rather than
+ * allowed to stop the app booting. No audit entry: nobody did this.
+ */
+function convertFilters(sqlite: Database.Database): void {
+  try {
+    sqlite.transaction(() => {
+      const plan = planFilterConversion({
+        dashboards: sqlite.prepare(DASHBOARDS_READ).all() as DashboardRow[],
+        savedViews: sqlite.prepare(SAVED_VIEWS_READ).all() as SavedViewRow[],
+        pairs: sqlite.prepare(PAIRS_READ).all() as PairRow[],
+        now: new Date().toISOString(),
+      });
+      for (const s of plan.statements) sqlite.prepare(s.sql).run(...s.params);
+      for (const s of plan.skipped) console.error(`[migrate] left the filters of ${s.kind} ${s.id} as they were, ${s.reason}; it will be tried again on the next start`);
+    })();
+  } catch (err) {
+    console.error('[migrate] could not convert dashboard filters and saved views into Scope picks:', err);
+  }
 }
 
 /**

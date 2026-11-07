@@ -235,6 +235,35 @@ export interface DashboardConfig {
     severities?: Severity[];
     ruleIds?: string[];
   };
+  /** The dashboard's filter bar in the one filter model (ADR 0015): the same dimensions Scans and saved
+   *  views use. Written by the upgrade beside the legacy `filters`, `dateWindow` and `windowDays`, which
+   *  it leaves as they were so 0.13 still reads them after a rollback, and by the save routes, which
+   *  write nothing else. A dimension that is absent is Inherit: it narrows nothing. */
+  dimensionFilters?: DashboardDimensionFilters;
+  /** The legacy filter values `dimensionFilters` was converted from. When the legacy values stored now
+   *  differ (a save under 0.13), the upgrade converts again. */
+  convertedFrom?: LegacyDashboardFilters;
+}
+
+/** The legacy dashboard-level filter values, as 0.13 stored them. */
+export interface LegacyDashboardFilters {
+  filters?: DashboardConfig['filters'];
+  dateWindow?: DateWindow;
+  windowDays?: 1 | 7 | 30;
+}
+
+export interface DashboardDimensionFilters {
+  category?: string[];
+  /** Scope picks as paths, and `@directory`. A value that is no Scope path matches nothing and stays
+   *  visible: a legacy resource group name that no finding or scan record pairs with a subscription. */
+  scope?: string[];
+  /** The content-addressed set a Scope list too long to keep inline is stored as (ADR 0016). */
+  scopeSet?: string;
+  source?: string[];
+  tags?: string[];
+  severity?: Severity[];
+  rule?: string[];
+  window?: DateWindow;
 }
 
 export interface Dashboard {
