@@ -21,13 +21,15 @@ is the sha256 of the sorted, de-duplicated, lower-cased path list, written as a 
 - Only the shapes of a management group, a subscription, a resource group or the Directory are
   accepted.
 - A caller may send at most 2000 paths.
-- Only Scopes the caller holds are accepted, unless they hold Everything.
+- Only Scopes the caller holds, in whole or in part, are accepted, unless they hold Everything. A pick held in
+  part applies as the part held (ADR 0015), so a set gives the same findings as the same picks inline.
 - A hash a client sends is never trusted: the server hashes the validated list and answers with
   its own value.
 
 **Only the server expands a hash, and it does so under the viewer's own Access.** A link carries no
 paths, and opening it shows someone only the part of the list they hold, as ADR 0015 does for an
-inline list.
+inline list. The picks they hold in whole
+or in part and may name are sent to the browser; the rest are counted and their paths never sent.
 
 **An unknown hash is an unresolved Scope filter.** It matches nothing and says why: the reference
 comes from another install, or its row is gone. It is never read as no pick, which would widen the

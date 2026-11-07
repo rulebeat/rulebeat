@@ -45,8 +45,13 @@ function parseStatus(raw: string | null): HierarchyStatus {
   }
 }
 
-export async function getHierarchyStatus(): Promise<HierarchyStatus> {
-  const row = await one(db.select().from(metaTable).where(eq(metaTable.key, HIERARCHY_STATUS_KEY)));
+export function getHierarchyStatus(): Promise<HierarchyStatus> {
+  return getHierarchyStatusOn(db);
+}
+
+/** `getHierarchyStatus` on a handle, for a read that holds its own transaction. */
+export async function getHierarchyStatusOn(tx: DbHandle): Promise<HierarchyStatus> {
+  const row = await one(tx.select().from(metaTable).where(eq(metaTable.key, HIERARCHY_STATUS_KEY)));
   return parseStatus(row?.value ?? null);
 }
 

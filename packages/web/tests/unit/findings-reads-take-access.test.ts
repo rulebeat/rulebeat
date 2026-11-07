@@ -23,6 +23,7 @@ const WEB_DIR = path.resolve(__dirname, '../..');
 const FAMILY = [
   'lib/db/findings.ts',
   'lib/db/finding-views.ts',
+  'lib/db/filter-options.ts',
   'lib/db/scan-snapshots.ts',
   'lib/db/scan-compare.ts',
   'lib/db/snapshots.ts',

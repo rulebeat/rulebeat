@@ -46,7 +46,12 @@ import {
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
 import { emptyListCopy, emptyReasonOf, filterValueLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
-import { NO_LONGER_EXISTS, ageChipLabel, dropValues, markedLabel, scopeChips } from '@/lib/filter-states';
+import { NO_LONGER_EXISTS, ageChipLabel, dropValues, markedLabel, scopeChips, type ScopeListing } from '@/lib/filter-states';
+import { RuleSourceFilter, ScopeFilter, ScopeFunnel } from '@/components/filters/shared-filters';
+import { useFilterOptions } from '@/lib/hooks/use-filter-options';
+import { listedPaths, subscriptionNames } from '@/lib/scope-options';
+import { ruleOptionLabel } from '@/lib/filter-options';
+import { commitScopePicks, currentScopePicks, leftOutMessage, unheldPickPaths } from '@/lib/scope-picks-write';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
@@ -61,7 +66,7 @@ import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
-type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
+type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'subscription' | 'resourceGroup' | 'firstSeen' | 'lastSeen';
 type StatusFilterValue = ExplorerStatusFilter;
 type ViewMode = 'resource' | 'rule';
 
@@ -123,7 +128,8 @@ interface FindingsExplorerClientProps {
 const RETURNED_COL_WIDTH = 180;
 /** The built-in field each column header filters and sorts by. */
 const COL_FIELD: Record<SortCol, BuiltinField> = {
-  resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', firstSeen: 'firstSeen', lastSeen: 'lastSeen',
+  resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', subscription: 'subscription', resourceGroup: 'resourceGroup',
+  firstSeen: 'firstSeen', lastSeen: 'lastSeen',
 };
 /** How a built-in field is named in the Add filter list and on a filter chip. */
 const FIELD_LABEL: Record<BuiltinField, string> = {
@@ -131,7 +137,8 @@ const FIELD_LABEL: Record<BuiltinField, string> = {
   subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
   resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
 };
-const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
+const severityOptions = (severities: readonly Severity[]): SegmentedOption<Severity>[] => severities.map(sev => ({ value: sev, label: sev }));
+const DEFAULT_SEVERITY_OPTIONS = severityOptions(EXPLORER_SEVERITIES);
 
 /** How far each nesting level indents a group header's content. */
 const GROUP_INDENT_REM = 1.5;
@@ -215,8 +222,10 @@ function RuleFindings({
 }
 
 const KIND_LABEL: Record<string, string> = { state: 'Problem', advisory: 'Advisory', activity: 'Activity' };
-/** Status has its own select in the toolbar, so the Add filter list leaves it out. */
-const ADD_FILTER_BUILTINS = BUILTIN_FIELDS.filter(f => f !== 'status');
+/** Status has its own select in the toolbar, so the Add filter list leaves it out. Subscription and resource group are
+ *  not filters of their own any more: their column funnels write Scope picks. They stay columns, sort and group by. */
+const ADD_FILTER_BUILTINS = BUILTIN_FIELDS.filter(f => f !== 'status' && f !== 'subscription' && f !== 'resourceGroup');
+const GROUP_BY_BUILTINS = BUILTIN_FIELDS.filter(f => f !== 'status');
 /** The filters the chip row shows. Status is the toolbar select, and a locked category is the page's own. */
 const NO_CHIP_FIELDS: readonly ViewField[] = ['status'];
 
@@ -277,13 +286,19 @@ const VIEW_TAB_CLS = 'flex h-full items-center gap-1.5 px-3 text-xs font-medium 
 const VIEW_TAB_OFF = 'bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink';
 
 const COL_LABEL: Record<SortCol, string> = {
-  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', firstSeen: 'First seen', lastSeen: 'Last seen',
+  resource: 'Resource', rule: 'Rule', category: 'Category', severity: 'Severity', subscription: 'Subscription', resourceGroup: 'Resource group',
+  firstSeen: 'First seen', lastSeen: 'Last seen',
 };
-const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'firstSeen'];
+const RESIZABLE_COLS: SortCol[] = ['resource', 'rule', 'category', 'severity', 'subscription', 'resourceGroup', 'firstSeen'];
+/** The columns whose funnels write Scope picks, not filters of their own. */
+const isScopeFunnelCol = (col: SortCol): col is 'subscription' | 'resourceGroup' => col === 'subscription' || col === 'resourceGroup';
 /** An Activity finding is an event, so its tab also shows when it was last seen and how often. */
 const ACTIVITY_COLS: SortCol[] = [...RESIZABLE_COLS, 'lastSeen'];
 /** The width of the Activity tab's occurrence count. */
 const SEEN_COL_WIDTH = 64;
+
+/** The chip for a Scope filter whose set of Scopes this install cannot open. It matches nothing, and says why on the empty list. */
+const UNRESOLVED_SCOPE_LABEL = 'A list of Scopes this install cannot open';
 
 /** What the header tiles read before the first answer, so they show zeros rather than nothing. */
 const NO_TILES: ExplorerStats = {
@@ -477,6 +492,10 @@ export function FindingsExplorerClient({
   const [scopeSet, setScopeSet] = useState<string | undefined>(initial.scopeSet);
   const [source, setSource] = useState<string[] | undefined>(initial.source);
   const [age, setAge] = useState<AgeRange | null | undefined>(initial.age);
+  const { read: optionsRead, retry: retryOptions } = useFilterOptions();
+  const optionsReady = optionsRead.status === 'ready' ? optionsRead.options : null;
+  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
   const [layout, setLayout] = useState<ViewMode>('resource');
   const [showSuppressed, setShowSuppressed] = useState(false);
   const [dateWindow, setDateWindow] = useState<DateWindow>(initial.window);
@@ -498,8 +517,6 @@ export function FindingsExplorerClient({
   const categoryFilter = valueSets.category;
   const severityFilter = valueSets.severity as Set<Severity>;
   const policyFilter = valueSets.rule;
-  const subFilter = valueSets.subscription;
-  const rgFilter = valueSets.resourceGroup;
   const locFilter = valueSets.location;
   const tagFilter = valueSets.tags;
   const statusFilter: StatusFilterValue = parseExplorerStatus(filterValues(filters, 'status')[0]);
@@ -543,7 +560,7 @@ export function FindingsExplorerClient({
   const { widths: colWidths, startResize, isFlexible } = useResizableColumns<SortCol>(
     // Each header holds a label, a sort arrow, a filter funnel and a resize handle, so a column
     // sized to its widest *value* truncates its own name. These are sized to the header.
-    { resource: 260, rule: 200, category: 110, severity: 120, firstSeen: 134, lastSeen: 134 },
+    { resource: 260, rule: 200, category: 110, severity: 120, subscription: 150, resourceGroup: 150, firstSeen: 134, lastSeen: 134 },
     { flexCol: 'resource' },
   );
 
@@ -605,7 +622,10 @@ export function FindingsExplorerClient({
 
   // What a filter value is called on screen: a rule by name, a category by label, a subscription by
   // its display name, a day as a date. The value itself, which the URL carries, stays the id.
-  const ruleNames = useMemo(() => new Map((data?.policyOptions ?? []).map(p => [p.id, p.name] as const)), [data?.policyOptions]);
+  const ruleNames = useMemo(
+    () => new Map([...(optionsReady?.rules ?? []), ...(data?.policyOptions ?? [])].map(p => [p.id, p.name] as const)),
+    [optionsReady, data?.policyOptions],
+  );
   const valueLabel = useCallback((field: ViewField, value: string): string => {
     switch (field) {
       case 'rule': return ruleNames.get(value) ?? value;
@@ -657,11 +677,42 @@ export function FindingsExplorerClient({
     ...ADD_FILTER_BUILTINS.map(field => ({ field, label: FIELD_LABEL[field] })),
     ...columnChoices.map(c => ({ field: rowField(c.value), label: fieldLabel(rowField(c.value)) })),
   ], [columnChoices, fieldLabel]);
+  const groupByFields = useMemo<AddFilterField[]>(() => [
+    ...GROUP_BY_BUILTINS.map(field => ({ field, label: FIELD_LABEL[field] })),
+    ...columnChoices.map(c => ({ field: rowField(c.value), label: fieldLabel(rowField(c.value)) })),
+  ], [columnChoices, fieldLabel]);
   const addFilterOptions = useCallback(
     (field: ViewField): ChecklistOption[] => (isRowField(field) ? [] : builtinOptions(field)),
     [builtinOptions],
   );
   const filterStates = data?.filterStates;
+  // The picks being edited. A list that travels as a set is opened by the server, so its picks are read from the
+  // states of the answer to this very request, and it cannot be edited before that answer is here.
+  const answeredStates = answered ? filterStates : undefined;
+  const scopePicks = useMemo(() => currentScopePicks(scope, scopeSet, answeredStates?.scope ?? []), [scope, scopeSet, answeredStates]);
+  const scopeLocked = scopeBusy || (scopeSet !== undefined && answeredStates === undefined);
+  // Writes the picks as an inline list, or as a set when the list is too long for an address. The filter stays as
+  // it was until the server has answered, so a long list is never dropped, which would widen the view.
+  const changeScope = useCallback(async (picks: string[]) => {
+    setScopeBusy(true);
+    let written;
+    try {
+      written = await commitScopePicks(picks, undefined, unheldPickPaths(answeredStates?.scope ?? []));
+    } finally {
+      setScopeBusy(false);
+    }
+    if (!written.ok) { setScopeError(written.message); return; }
+    setScopeError(leftOutMessage(written.leftOut));
+    setScope(written.scope);
+    setScopeSet(written.scopeSet);
+    setPage(0);
+  }, [answeredStates]);
+  const scopeListing = useMemo<ScopeListing | undefined>(
+    () => (optionsReady ? { failed: optionsReady.scopes.listing === 'failed', known: listedPaths(optionsReady.scopes.tree) } : undefined),
+    [optionsReady],
+  );
+  // Subscription names for the funnels: the stored tree's, else the live list's.
+  const funnelNames = useMemo(() => ({ ...subNames, ...(optionsReady ? subscriptionNames(optionsReady.scopes.tree) : {}) }), [subNames, optionsReady]);
   const chips = useMemo<FilterChip[]>(() => {
     const own = filters
       .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
@@ -669,11 +720,12 @@ export function FindingsExplorerClient({
         field: f.field, value, fieldLabel: fieldLabel(f.field),
         valueLabel: isRowField(f.field) ? value : filterValueLabel(f.field, value, data?.outsideAccess, filterStates, v => valueLabel(f.field, v)),
       })));
-    const scopeChipList: FilterChip[] = scopeSet
-      ? [{ field: 'scope', value: scopeSet, fieldLabel: 'Scope', valueLabel: 'A saved list that cannot be opened', remove: () => { setScopeSet(undefined); setPage(0); } }]
-      : scopeChips(filterStates?.scope ?? []).map(chip => ({
+    // A set the server cannot open is one chip that says so, and a set it opened is chips of its picks.
+    const scopeChipList: FilterChip[] = filterStates?.scopeUnresolved
+      ? [{ field: 'scope', value: scopeSet ?? '', fieldLabel: 'Scope', valueLabel: UNRESOLVED_SCOPE_LABEL, remove: () => { void changeScope([]); } }]
+      : scopeChips(filterStates?.scope ?? [], scopeListing, filterStates?.scopeHidden).map(chip => ({
         field: 'scope', value: chip.key, fieldLabel: chip.key.startsWith('outside') ? '' : 'Scope', valueLabel: chip.label,
-        remove: () => { setScope(prev => dropValues(prev, chip.values)); setPage(0); },
+        remove: () => { void changeScope(dropValues(scopePicks, chip.values) ?? []); },
       }));
     const sourceChipList: FilterChip[] = (filterStates?.source ?? []).map(state => ({
       field: 'source', value: state.value, fieldLabel: 'Rule source',
@@ -684,14 +736,16 @@ export function FindingsExplorerClient({
       ? [{ field: 'age', value: `${age.min}-${age.max ?? ''}`, fieldLabel: '', valueLabel: ageChipLabel(age), remove: () => { setAge(undefined); setPage(0); } }]
       : [];
     return [...own, ...scopeChipList, ...sourceChipList, ...ageChipList];
-  }, [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess, filterStates, scopeSet, age]);
+  }, [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess, filterStates, scopeSet, scopePicks, scopeListing, changeScope, age]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;
-  const subOptions = useMemo(() => builtinOptions('subscription'), [builtinOptions]);
-  const rgOptions = useMemo(() => builtinOptions('resourceGroup'), [builtinOptions]);
   const locOptions = useMemo(() => builtinOptions('location'), [builtinOptions]);
-  const tagOptions = useMemo(() => builtinOptions('tags'), [builtinOptions]);
+  // Every tag on any rule once the options are here; until then the tags the findings in view carry.
+  const tagOptions = useMemo(
+    () => (optionsReady ? optionsReady.tags.map(tag => ({ value: tag, label: tag })) : builtinOptions('tags')),
+    [optionsReady, builtinOptions],
+  );
 
   // By-rule pivot. The status filter decides which rules are listed; the Open/New/Fixed numbers are
   // counted with every filter except status, so a rule's Open count is the same whatever window or
@@ -762,9 +816,12 @@ export function FindingsExplorerClient({
   // rule, since there's no single category left to scope the list to.
   const activeCategory = lockedCategory ?? (categoryFilter.size === 1 ? [...categoryFilter][0] : undefined);
   const policyOptions = data?.policyOptions;
+  // Every rule on the install once the options are here, including rules with no findings; until then the rules
+  // that have some.
   const availablePolicyOptions = useMemo(
-    () => (policyOptions ?? []).filter(p => !activeCategory || p.category === activeCategory),
-    [policyOptions, activeCategory],
+    () => (optionsReady ? optionsReady.rules.map(r => ({ id: r.id, name: ruleOptionLabel(r), category: r.category })) : policyOptions ?? [])
+      .filter(p => !activeCategory || p.category === activeCategory),
+    [optionsReady, policyOptions, activeCategory],
   );
 
   // If the category changes out from under a selected rule (e.g. switching category tabs while
@@ -772,14 +829,14 @@ export function FindingsExplorerClient({
   // instead of silently filtering on them.
   useEffect(() => {
     // Until the first answer there is no list of rules to check against.
-    if (policyFilter.size === 0 || !policyOptions) return;
+    if (policyFilter.size === 0 || (!policyOptions && !optionsReady)) return;
     const validIds = new Set(availablePolicyOptions.map(p => p.id));
     const next = new Set([...policyFilter].filter(id => validIds.has(id)));
     // Pruning a selection made stale by an external category change, not deriving it from props:
     // legitimate effect setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (next.size !== policyFilter.size) setValues('rule', [...next]);
-  }, [availablePolicyOptions, policyOptions, policyFilter, setValues]);
+  }, [availablePolicyOptions, policyOptions, optionsReady, policyFilter, setValues]);
 
   // URL sync (page mode only). `explorerAddress` is the one writer of every param
   // `viewFromSearchParams` reads, so a deep link survives the first render instead of being erased
@@ -832,7 +889,7 @@ export function FindingsExplorerClient({
   const resourceFlexible = isFlexible('resource');
   const resourceTrack = resourceFlexible ? `minmax(${colWidths.resource}px, 1fr)` : `${colWidths.resource}px`;
   const eventTrack = isActivity ? ` ${colWidths.lastSeen}px ${SEEN_COL_WIDTH}px` : '';
-  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.firstSeen}px${eventTrack}${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
+  const gridTemplate = `20px ${resourceTrack} ${colWidths.rule}px ${colWidths.category}px ${colWidths.severity}px ${colWidths.subscription}px ${colWidths.resourceGroup}px ${colWidths.firstSeen}px${eventTrack}${columns.map(() => ` ${RETURNED_COL_WIDTH}px`).join('')} 28px`;
   // While the Resource column is still flexing to fill the card (default state), the grid should
   // size to 100% of its container so 1fr has room to expand into: forcing max-content here would
   // shrink it back to content width, leaving the table looking squeezed to the left. Once the user
@@ -906,6 +963,8 @@ export function FindingsExplorerClient({
 
           <CategoryBadge id={f.category} categories={categories} />
           <SeverityBadge severity={f.severity} />
+          <span className="truncate text-xs text-ink" title={subscriptionText(f)}>{funnelNames[f.subscriptionId] ?? subscriptionText(f)}</span>
+          <span className="truncate text-xs text-ink" title={f.resourceGroup}>{f.resourceGroup}</span>
           <DateCell iso={f.firstSeenAt} />
           {isActivity && (
             <>
@@ -1213,7 +1272,7 @@ export function FindingsExplorerClient({
           label="Severity"
           className="shrink-0"
           optionClassName="capitalize"
-          options={SEVERITY_OPTIONS}
+          options={optionsReady ? severityOptions(optionsReady.severities) : DEFAULT_SEVERITY_OPTIONS}
           isOn={sev => severityFilter.has(sev)}
           onSelect={sev => toggleValue('severity', sev)}
         />
@@ -1247,22 +1306,20 @@ export function FindingsExplorerClient({
           />
         )}
 
+        <RuleSourceFilter
+          read={optionsRead}
+          retry={retryOptions}
+          selected={new Set(source ?? [])}
+          onToggle={value => {
+            setSource(prev => ((prev ?? []).includes(value) ? dropValues(prev, [value]) : [...(prev ?? []), value]));
+            resetPage();
+          }}
+          onClear={() => { setSource(undefined); resetPage(); }}
+        />
+
         <div className="h-6 w-px bg-border shrink-0" />
 
-        <ChecklistDropdown
-          label="Subscription"
-          options={subOptions}
-          selected={subFilter}
-          onToggle={v => toggleValue('subscription', v)}
-          onClear={() => clearField('subscription')}
-        />
-        <ChecklistDropdown
-          label="Resource Group"
-          options={rgOptions}
-          selected={rgFilter}
-          onToggle={v => toggleValue('resourceGroup', v)}
-          onClear={() => clearField('resourceGroup')}
-        />
+        <ScopeFilter read={optionsRead} retry={retryOptions} picks={scopePicks} onChange={picks => { void changeScope(picks); }} disabled={scopeLocked} error={scopeError} />
         <ChecklistDropdown
           label="Location"
           options={locOptions}
@@ -1292,7 +1349,7 @@ export function FindingsExplorerClient({
 
         {layout === 'resource' && (
           <GroupBy
-            fields={addFilterFields}
+            fields={groupByFields}
             groupBy={groupBy}
             groupSort={groupSort}
             fieldLabel={fieldLabel}
@@ -1458,13 +1515,26 @@ export function FindingsExplorerClient({
                   <span className="truncate">{colLabel(col)}</span>
                   <SortIcon field={COL_FIELD[col]} active={activeSort.field} dir={activeSort.dir} />
                 </button>
-                <ColumnFilterIcon
-                  label={colLabel(col)}
-                  options={colOptions[col]}
-                  selected={valueSets[COL_FIELD[col]]}
-                  onToggle={v => toggleValue(COL_FIELD[col], v)}
-                  onClear={() => clearField(COL_FIELD[col])}
-                />
+                {isScopeFunnelCol(col) ? (
+                  <ScopeFunnel
+                    kind={col}
+                    label={colLabel(col)}
+                    read={optionsRead}
+                    retry={retryOptions}
+                    names={funnelNames}
+                    picks={scopePicks}
+                    onChange={picks => { void changeScope(picks); }}
+                    disabled={scopeLocked}
+                  />
+                ) : (
+                  <ColumnFilterIcon
+                    label={colLabel(col)}
+                    options={colOptions[col]}
+                    selected={valueSets[COL_FIELD[col]]}
+                    onToggle={v => toggleValue(COL_FIELD[col], v)}
+                    onClear={() => clearField(COL_FIELD[col])}
+                  />
+                )}
                 <ColumnResizeHandle onMouseDown={startResize(col)} />
               </div>
             ))}
