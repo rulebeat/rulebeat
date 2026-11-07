@@ -7,7 +7,7 @@ import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CATEGORY_LABELS, postureColor } from '@/components/dashboard/dashboard-constants';
-import { Delta } from '@/components/dashboard/widgets/delta';
+import { PostureDelta } from '@/components/dashboard/widgets/posture-delta';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
@@ -65,8 +65,6 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
         : 'All Categories';
     return {
       pct: summary.current.pct,
-      delta: summary.deltaPct,
-      baselineDate: summary.baseline?.date ?? null,
       totalPolicies: summary.current.totalRules,
       passing: summary.current.passingRules,
       unknown: summary.current.unknownRules,
@@ -103,15 +101,7 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
       <Ring pct={result.pct} label={`${result.passing}/${result.totalPolicies}`} />
       <div className="space-y-1 text-center">
         <p className="text-sm font-semibold text-ink">{result.label}</p>
-        {config.showDelta && result.delta !== null && (
-          <Delta
-            value={result.delta}
-            suffix="% vs baseline"
-            title={result.baselineDate ? `score today vs baseline since ${result.baselineDate}` : undefined}
-            size="xs"
-            display="inline-flex"
-          />
-        )}
+        {config.showDelta && summary && <PostureDelta summary={summary} size="xs" />}
         <p className="text-xs text-ink-2">checks passing</p>
         {result.unknown > 0 && (
           <p className="text-xs text-ink-muted">{result.unknown} not yet proven</p>

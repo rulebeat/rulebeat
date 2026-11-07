@@ -125,13 +125,19 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
 
 describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not blend into the trend comparison', () => {
   // Comfortably before any `dateWindow: { mode: 'relative', days: 7 }` cutoff, whatever "today" is.
-  const BASELINE_DATE = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const BASELINE_DATE = daysAgo(30);
+  const DAYS_AGO_10 = daysAgo(10);
+  const DAYS_AGO_2 = daysAgo(2);
+  // A 7-day window starts 7 days ago, so the baseline is the newest point on or before the day before.
+  const DAY_BEFORE_WINDOW = daysAgo(8);
+  const SUB_ONE = 'sub-1';
 
-  async function baselineRow(category: string, passingRules: number, totalRules: number, formulaVersion: number): Promise<void> {
+  async function baselineRow(category: string, passingRules: number, totalRules: number, formulaVersion: number, date = BASELINE_DATE, subscriptionId = ''): Promise<void> {
     await execRun(db.insert(postureSnapshots).values({
       category,
-      subscriptionId: '',
-      date: BASELINE_DATE,
+      subscriptionId,
+      date,
       posturePct: Math.round((passingRules / totalRules) * 100),
       passingRules,
       totalRules,
@@ -149,18 +155,80 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await clearRules();
   });
 
-  it('a category whose only baseline row predates the honest formula is excluded from the blend, not blended in: this is the actual "-75%" bug', async () => {
-    // security's only baseline row is old-formula and generous (10/10). If it leaked into the
-    // blend it would pull basePct from cost's honest 25% up toward ~79%, a wrong comparison point.
+  it('refuses the baseline when one category has no comparable point, and names the date it needed and the earliest it could use', async () => {
+    // security's only point on or before the needed day is formula 1, which equals nothing. If it
+    // were dropped from the blend the delta would compare cost's rules with a different set.
+    // security does have a comparable point later, so the earliest date every category can be
+    // compared from is that one.
     await baselineRow('security', 10, 10, 1);
-    await baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
+    await baselineRow('security', 1, 4, 2, DAYS_AGO_2);
+    await baselineRow('cost', 1, 4, 2);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
 
     const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
-    expect(summary.baseline, 'the old-formula row should not have blanked the baseline entirely').not.toBeNull();
-    expect(summary.baseline!.pct, 'the old-formula row leaked into the baseline blend').toBe(25);
-    expect(summary.deltaPct).toBe(75);
+    expect(summary.current.pct).toBe(100);
+    expect(summary.baseline, 'a partial blend was built').toBeNull();
+    expect(summary.deltaPct).toBeNull();
+    expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: DAYS_AGO_2, level: 'install' });
+  });
+
+  it('never counts a formula-1 point comparable, so a category holding only that has no earliest date', async () => {
+    await baselineRow('security', 10, 10, 1);
+    await baselineRow('cost', 1, 4, 2);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+
+    expect(summary.baseline).toBeNull();
+    expect(summary.deltaPct).toBeNull();
+    expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: null, level: 'install' });
+  });
+
+  it('takes each category\'s newest comparable point, skipping a newer formula-1 point, and names the oldest date', async () => {
+    await baselineRow('security', 3, 4, 2, BASELINE_DATE);
+    await baselineRow('security', 10, 10, 1, DAYS_AGO_10);
+    await baselineRow('cost', 1, 4, 3, DAYS_AGO_10);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+
+    // 3/4 + 1/4 = 4/8: 50%. The live 1/1 is 100%.
+    expect(summary.baseline).toEqual({ pct: 50, date: BASELINE_DATE });
+    expect(summary.deltaPct).toBe(50);
+    expect(summary.baselineGap).toBeNull();
+  });
+
+  it('does not use a point from inside the window as the baseline', async () => {
+    await baselineRow('security', 3, 4, 2, DAYS_AGO_2);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+
+    expect(summary.baseline).toBeNull();
+    expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: DAYS_AGO_2, level: 'install' });
+  });
+
+  it('reads 240 of 240 to 239 of 240 as 99% and -1 pt, never 100% or flat', async () => {
+    await baselineRow('security', 240, 240, 2);
+    for (let i = 0; i < 239; i++) await insertRule(`bulk-passing-${i}`, { lastRunStatus: 'success' });
+    await insertRule('bulk-unproven', { lastRunStatus: null });
+
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+
+    expect(summary.current.pct).toBe(99);
+    expect(summary.baseline!.pct).toBe(100);
+    expect(summary.deltaPct).toBe(-1);
+  });
+
+  it('holds a subscription to formula 3: a formula-2 subscription point is not a baseline', async () => {
+    await baselineRow('security', 3, 4, 2, BASELINE_DATE, SUB_ONE);
+    await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+
+    const summary = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_ONE], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+
+    expect(summary.baseline).toBeNull();
+    expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: null, level: 'subscription' });
   });
 
   it('when the only baseline row is already honest, the delta still computes exactly as before', async () => {
