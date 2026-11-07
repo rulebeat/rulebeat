@@ -169,8 +169,8 @@ export async function shareDashboard(id: string): Promise<ShareDashboardResult> 
 }
 
 export type UnshareDashboardResult =
-  | { ok: true; dashboard: Dashboard; sharedName: string }
-  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' };
+  | { ok: true; dashboard: Dashboard; sharedName: string; wasInstallDefault: boolean }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' | 'install-default' };
 
 /**
  * Makes a Shared dashboard Personal again, to its owner. The owner's own unshare is refused when the name
@@ -178,13 +178,18 @@ export type UnshareDashboardResult =
  * never fails on a clash. It stops being the Install default, which has to be Shared, and a My default
  * that pointed at it for anyone but the owner is cleared. `dashboard` holds
  * the new name, so the caller returns it only to the owner; `sharedName` is the name it had while Shared.
+ * Whether it is the Install default is read on the transaction, not before it: someone who may not remove the
+ * Install default (`mayRemoveInstallDefault` false) gets `install-default`, and `wasInstallDefault` is what the
+ * caller audits.
  */
-export async function unshareDashboard(id: string, actorId: string): Promise<UnshareDashboardResult> {
+export async function unshareDashboard(id: string, actorId: string, mayRemoveInstallDefault: boolean): Promise<UnshareDashboardResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
     if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'wrong-state' };
+    const wasInstallDefault = existing.isDefault ?? false;
+    if (wasInstallDefault && !mayRemoveInstallDefault) return { ok: false, reason: 'install-default' };
     if (!existing.ownerId) return { ok: false, reason: 'no-owner' };
     const space: NameSpace = { visibility: 'personal', ownerId: existing.ownerId };
     let name = existing.name;
@@ -195,7 +200,7 @@ export async function unshareDashboard(id: string, actorId: string): Promise<Uns
     await run(tx.update(dashboards).set({ name, visibility: 'personal', isDefault: false, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
     await clearUnreachableMyDefaultsOn(tx);
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0], sharedName: existing.name };
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0], sharedName: existing.name, wasInstallDefault };
   });
 }
 
@@ -203,12 +208,27 @@ export async function unshareDashboard(id: string, actorId: string): Promise<Uns
 // none: no other dashboard is promoted for being the oldest (ADR 0012). A My default that pointed at
 // it is cleared in the same transaction.
 export async function deleteDashboard(id: string): Promise<boolean> {
+  return (await deleteDashboardAs(id, true)).ok;
+}
+
+export type DeleteDashboardResult =
+  | { ok: true; wasInstallDefault: boolean }
+  | { ok: false; reason: 'not-found' | 'install-default' };
+
+/**
+ * Deletes a dashboard, reading whether it is the Install default on the transaction that deletes it: someone
+ * who may not remove the Install default (`mayRemoveInstallDefault` false) gets `install-default`, and
+ * `wasInstallDefault` is what the caller audits.
+ */
+export async function deleteDashboardAs(id: string, mayRemoveInstallDefault: boolean): Promise<DeleteDashboardResult> {
   return inTransaction(async (tx) => {
     const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-    if (!row) return false;
+    if (!row) return { ok: false, reason: 'not-found' };
+    const wasInstallDefault = (row.isDefault ?? false) && readVisibility(row.visibility) === 'shared';
+    if (wasInstallDefault && !mayRemoveInstallDefault) return { ok: false, reason: 'install-default' };
     await run(tx.delete(dashboards).where(eq(dashboards.id, id)));
     await clearUnreachableMyDefaultsOn(tx);
-    return true;
+    return { ok: true, wasInstallDefault };
   });
 }
 

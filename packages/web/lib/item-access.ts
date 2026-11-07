@@ -12,8 +12,6 @@
  */
 import { NextResponse } from 'next/server';
 import type { Access } from '@/lib/access-model';
-import { mayAct } from '@/lib/rbac';
-import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
 import { canOpenItem, mayChangeItem, mayChangeVisibility, type ItemKind, type OwnedItem } from '@/lib/item-access-model';
 
 export { canOpenItem, openableItems, type ItemKind, type OwnedItem } from '@/lib/item-access-model';
@@ -33,14 +31,4 @@ export function guardItem(actor: ItemActor, kind: ItemKind, item: OwnedItem | nu
   if (intent === 'open') return null;
   const allowed = intent === 'change' ? mayChangeItem(actor, kind, item) : mayChangeVisibility(actor, kind, item, intent);
   return allowed ? null : NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-}
-
-/**
- * Null when the person may unshare or delete this dashboard, else the 403 to return. The Install default is the
- * install's, not its owner's: only whoever may manage Shared dashboards (`dashboards:manage`) can take it away,
- * though its owner can still edit it. Screens read the same decision from `installDefaultControlFor()`.
- */
-export function guardInstallDefault(actor: ItemActor, dashboard: { isInstallDefault: boolean }): NextResponse | null {
-  if (!dashboard.isInstallDefault || mayAct(actor.access, 'dashboards:manage')) return null;
-  return NextResponse.json({ error: INSTALL_DEFAULT_REASON }, { status: 403 });
 }

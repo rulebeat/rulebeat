@@ -4,7 +4,9 @@ import { serverError } from '@/lib/api-error';
 import { getDashboard, unshareDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
-import { guardInstallDefault, guardItem } from '@/lib/item-access';
+import { guardItem } from '@/lib/item-access';
+import { mayAct } from '@/lib/rbac';
+import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
 import { staleStateMessage, TAKE_OVER_BEFORE_UNSHARING } from '@/lib/item-sharing';
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,12 +21,11 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     const refused = guardItem(actor, 'dashboard', before, 'unshare');
     if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
 
-    const protectedDefault = guardInstallDefault(actor, before);
-    if (protectedDefault) return protectedDefault;
-
-    const result = await unshareDashboard(id, actor.id);
+    // Whether it is the Install default is read again inside the unshare, so a dashboard chosen after the read above is still protected and audited.
+    const result = await unshareDashboard(id, actor.id, mayAct(actor.access, 'dashboards:manage'));
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+      if (result.reason === 'install-default') return Response.json({ error: INSTALL_DEFAULT_REASON }, { status: 403 });
       const error = result.reason === 'name-taken' ? dashboardNameTakenMessage(before.name)
         : result.reason === 'no-owner' ? TAKE_OVER_BEFORE_UNSHARING
         : staleStateMessage('dashboard');
@@ -39,7 +40,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       // The name it had while Shared: a rename to the next free name is the owner's Personal name, never logged.
       summary: `Unshared dashboard "${result.sharedName}"`,
     });
-    if (before.isInstallDefault) {
+    if (result.wasInstallDefault) {
       await writeAudit({
         actor,
         action: 'dashboard.install_default',

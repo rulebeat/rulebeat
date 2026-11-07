@@ -256,6 +256,20 @@ describe('a My default that becomes unreachable', () => {
     expect(await getMyDefault(me)).toEqual({ dashboardId: shared.id, unavailable: false });
   });
 
+  it('is still marked as the person\'s My default in the answer to a save, a rename or an empty one', async () => {
+    const me = await makeUser('editor');
+    actAs(me);
+    const mine = await dashboardOf(me, 'Mine');
+    await setMine(mine.id);
+    for (const payload of [{ name: 'Renamed' }, { config: { autoRefresh: 0, widgets: [] } }, {}]) {
+      const res = await PUT(json('PUT', payload), ctx(mine.id));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ id: mine.id, isMyDefault: true });
+    }
+    const other = await dashboardOf(me, 'Other');
+    expect(await (await PUT(json('PUT', { name: 'Other 2' }), ctx(other.id))).json()).toMatchObject({ isMyDefault: false });
+  });
+
   it('is told once: /dashboard clears the flag, redirects with the notice, and the next visit has none', async () => {
     const admin = await makeUser('admin');
     const team = await dashboardOf(admin, 'Team', true);

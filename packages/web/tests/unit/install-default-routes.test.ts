@@ -21,6 +21,23 @@ import type { Dashboard } from '@/lib/types';
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
+// Runs once, right after a route has read the dashboard and before it changes it: the window another request
+// can use to make the dashboard the Install default.
+let afterRead: (() => Promise<void>) | null = null;
+vi.mock('@/lib/db/dashboards', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/db/dashboards')>();
+  return {
+    ...real,
+    getDashboard: async (id: string) => {
+      const found = await real.getDashboard(id);
+      const hook = afterRead;
+      afterRead = null;
+      await hook?.();
+      return found;
+    },
+  };
+});
+
 const { PUT: CHOOSE } = await import('@/app/api/dashboards/install-default/route');
 const { POST, GET: LIST } = await import('@/app/api/dashboards/route');
 const { PUT, DELETE } = await import('@/app/api/dashboards/[id]/route');
@@ -62,6 +79,7 @@ beforeEach(async () => {
   await resetDb();
   await clearDashboards();
   mockAuth.mockReset();
+  afterRead = null;
 });
 
 describe('PUT /api/dashboards/install-default', () => {
@@ -195,6 +213,37 @@ describe('the protected Install default', () => {
     const viewer = installDefaultControlFor(everythingAccess('viewer', 'manual'));
     expect(viewer.allowed).toBe(false);
     expect(viewer.reason).toMatch(/Admin|Everything/);
+  });
+});
+
+describe('an Install default chosen between a route\'s read and its change', () => {
+  const makeDefault = (id: string) => async () => { await execRaw(`UPDATE dashboards SET is_default = 1 WHERE id = '${id}'`); };
+
+  it('still cannot be deleted or unshared by its owner who holds only part of the install', async () => {
+    const owner = await signInAs('editor', { onOneSubscription: true });
+    const toDelete = await created('To delete', true);
+    const toUnshare = await created('To unshare', true);
+    actAs(owner);
+
+    afterRead = makeDefault(toDelete.id);
+    expect((await remove(toDelete.id)).status).toBe(403);
+    expect(await getDashboard(toDelete.id)).toMatchObject({ isInstallDefault: true });
+
+    afterRead = makeDefault(toUnshare.id);
+    expect((await unshare(toUnshare.id)).status).toBe(403);
+    expect(await getDashboard(toUnshare.id)).toMatchObject({ visibility: 'shared', isInstallDefault: true });
+  });
+
+  it('is audited as dashboard.install_default when an Admin deletes or unshares it', async () => {
+    await signInAs('admin');
+    const toDelete = await created('To delete', true);
+    const toUnshare = await created('To unshare', true);
+
+    afterRead = makeDefault(toDelete.id);
+    expect((await remove(toDelete.id)).status).toBe(204);
+    afterRead = makeDefault(toUnshare.id);
+    expect((await unshare(toUnshare.id)).status).toBe(200);
+    expect((await installDefaultAudit()).map(e => e.entityId).sort()).toEqual([toDelete.id, toUnshare.id].sort());
   });
 });
 

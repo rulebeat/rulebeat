@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { getDashboard, updateDashboard, deleteDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
+import { getDashboard, updateDashboard, deleteDashboardAs, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
-import { guardInstallDefault, guardItem } from '@/lib/item-access';
+import { guardItem } from '@/lib/item-access';
+import { mayAct } from '@/lib/rbac';
+import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
 import { getMyDefault } from '@/lib/db/default-dashboard';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
@@ -16,8 +18,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const d = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', d, 'open');
   if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const isMyDefault = (await getMyDefault(actor.id)).dashboardId === d.id;
-  return Response.json(markedDashboard(actor.access, { ...d, isMyDefault }));
+  return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, d)));
+}
+
+// The screens replace their copy of the dashboard with every answer, so each one says whether it is the person's My default.
+async function withMyDefault<T extends { id: string }>(userId: string, d: T): Promise<T & { isMyDefault: boolean }> {
+  return { ...d, isMyDefault: (await getMyDefault(userId)).dashboardId === d.id };
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -38,7 +44,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
-    return Response.json(markedDashboard(actor.access, before));
+    return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, before)));
   }
 
   const result = await updateDashboard(id, body);
@@ -83,7 +89,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  return Response.json(markedDashboard(actor.access, result.dashboard));
+  return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, result.dashboard)));
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -93,10 +99,13 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const protectedDefault = guardInstallDefault(actor, before);
-  if (protectedDefault) return protectedDefault;
-  const ok = await deleteDashboard(id);
-  if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
+  // Whether it is the Install default is read again inside the delete, so a dashboard chosen after the read above is still protected and audited.
+  const deleted = await deleteDashboardAs(id, mayAct(actor.access, 'dashboards:manage'));
+  if (!deleted.ok) {
+    return deleted.reason === 'install-default'
+      ? Response.json({ error: INSTALL_DEFAULT_REASON }, { status: 403 })
+      : Response.json({ error: 'Not found' }, { status: 404 });
+  }
 
   await writeAudit({
     actor,
@@ -105,7 +114,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     entityId: id,
     summary: before.visibility === 'personal' ? 'Deleted a Personal dashboard' : `Deleted dashboard "${before.name}"`,
   });
-  if (before.isInstallDefault) {
+  if (deleted.wasInstallDefault) {
     await writeAudit({
       actor,
       action: 'dashboard.install_default',
