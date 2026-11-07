@@ -26,9 +26,13 @@ interface Props {
   permissions: ItemPermissions;
   /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
   shareControl: { allowed: boolean; reason?: string };
+  /** Whether Unshare and Delete are on for the Install default, and why not when they are off. Computed on the server from `mayAct`. */
+  installDefaultControl: { allowed: boolean; reason?: string };
+  /** The one-line notice `/dashboard` redirected here with, if it did. */
+  notice: string | null;
 }
 
-export function DashboardsGallery({ initialDashboards, currentUserId, permissions, shareControl }: Props) {
+export function DashboardsGallery({ initialDashboards, currentUserId, permissions, shareControl, installDefaultControl, notice }: Props) {
   const router = useRouter();
   const [dashboards, setDashboards] = useState(initialDashboards);
   const [showDialog, setShowDialog] = useState(false);
@@ -45,20 +49,40 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   async function handleSetDefault(id: string) {
     setError(null);
     try {
-      const res = await fetch(`/api/dashboards/${id}`, {
+      const res = await fetch('/api/dashboards/install-default', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isDefault: true }),
+        body: JSON.stringify({ id }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        setError(body.error ?? 'Failed to set default dashboard.');
+        setError(body.error ?? 'Failed to set the Install default.');
         return;
       }
       refreshList();
       router.refresh();
     } catch {
-      setError('Failed to set default dashboard.');
+      setError('Failed to set the Install default.');
+    }
+  }
+
+  async function handleSetMyDefault(id: string) {
+    setError(null);
+    try {
+      const res = await fetch('/api/account/default-dashboard', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to set your default dashboard.');
+        return;
+      }
+      refreshList();
+      router.refresh();
+    } catch {
+      setError('Failed to set your default dashboard.');
     }
   }
 
@@ -133,11 +157,14 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   }
 
   const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, dashboards);
+  const shared = dashboards.filter(d => d.visibility === 'shared');
 
   function renderCard(d: Dashboard, tag: React.ReactNode) {
     const actor = { id: currentUserId };
     const canChange = mayChangeItemWith(actor, permissions, d);
-    const canSetDefault = permissions.manage && d.visibility === 'shared' && !d.isDefault;
+    const canSetDefault = permissions.manage && d.visibility === 'shared' && !d.isInstallDefault;
+    // The Install default is the install's: whoever may not manage it sees Unshare and Delete off, with the reason.
+    const protectedDefault = d.isInstallDefault && !installDefaultControl.allowed;
     const canShare = d.visibility === 'personal' && isOwnItem(actor, d);
     const canUnshare = mayChangeVisibilityWith(actor, permissions, d, 'unshare');
     return (
@@ -152,9 +179,14 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
               <p className="truncate text-sm font-semibold text-ink">{d.name}</p>
               <div className="mt-0.5 flex min-w-0 items-center gap-2">
                 {tag}
-                {d.isDefault && (
+                {d.isInstallDefault && (
                   <span className="label-grid-strong flex items-center gap-1">
-                    <Star className="size-2.5 fill-current" />Default
+                    <Star className="size-2.5 fill-current" />Install default
+                  </span>
+                )}
+                {d.isMyDefault && (
+                  <span className="label-grid-strong flex items-center gap-1">
+                    <Star className="size-2.5 fill-current" />My default
                   </span>
                 )}
               </div>
@@ -173,7 +205,12 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
                 <DropdownMenuContent align="end" className="w-52">
                   {canSetDefault && (
                     <DropdownMenuItem onClick={() => void handleSetDefault(d.id)}>
-                      <Star />Set default
+                      <Star />Set as Install default
+                    </DropdownMenuItem>
+                  )}
+                  {!d.isMyDefault && (
+                    <DropdownMenuItem onClick={() => void handleSetMyDefault(d.id)}>
+                      <Star />Make my default
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem onClick={() => void handleDuplicate(d.id)}>
@@ -188,14 +225,17 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
                     <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
                   )}
                   {canUnshare && (
-                    <DropdownMenuItem onClick={() => void handleVisibility(d, 'unshare')}>
+                    <DropdownMenuItem disabled={protectedDefault} onClick={() => void handleVisibility(d, 'unshare')}>
                       <Undo2 />Unshare
                     </DropdownMenuItem>
                   )}
                   {canChange && (
-                    <DropdownMenuItem variant="destructive" onClick={() => void handleDelete(d)}>
+                    <DropdownMenuItem variant="destructive" disabled={protectedDefault} onClick={() => void handleDelete(d)}>
                       <Trash2 />Delete
                     </DropdownMenuItem>
+                  )}
+                  {(canUnshare || canChange) && protectedDefault && installDefaultControl.reason && (
+                    <p className="px-3 pb-1.5 text-xs text-ink-2">{installDefaultControl.reason}</p>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -225,6 +265,24 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   return (
     <div className="flex-1 space-y-6 px-6 py-6">
       {error && <Callout tone="error">{error}</Callout>}
+      {notice && <Callout tone="info">{notice}</Callout>}
+      {!dashboards.some(d => d.isInstallDefault) && (
+        <Callout tone="info">
+          <div className="flex flex-wrap items-center gap-3">
+            <p>No Install default is set. Until one is, the Dashboards link opens your own default, or this page when you have none.</p>
+            {permissions.manage && shared.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" variant="outline" className="gap-1.5"><Star className="size-3.5" />Choose Install default</Button>} />
+                <DropdownMenuContent align="start" className="w-64">
+                  {shared.map(d => (
+                    <DropdownMenuItem key={d.id} onClick={() => void handleSetDefault(d.id)}>{d.name}</DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </Callout>
+      )}
       <div className="flex items-center justify-between">
         <p className="numeral-grid text-sm text-ink-muted">
           {dashboards.length} dashboard{dashboards.length !== 1 ? 's' : ''}

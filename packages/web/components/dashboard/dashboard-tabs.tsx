@@ -20,7 +20,10 @@ export function DashboardTabs({ dashboards, activeId }: Props) {
   const [showNewDialog, setShowNewDialog] = useState(false);
 
   const sorted = [...dashboards].sort((a, b) => {
-    if (a.isDefault !== b.isDefault) return Number(b.isDefault) - Number(a.isDefault);
+    const byMine = Number(!!b.isMyDefault) - Number(!!a.isMyDefault);
+    if (byMine !== 0) return byMine;
+    const byInstall = Number(b.isInstallDefault) - Number(a.isInstallDefault);
+    if (byInstall !== 0) return byInstall;
     return a.createdAt.localeCompare(b.createdAt);
   });
 
@@ -43,7 +46,12 @@ export function DashboardTabs({ dashboards, activeId }: Props) {
                 active ? 'border-ink text-ink' : 'border-transparent text-ink-2 hover:text-ink',
               )}
             >
-              {d.isDefault && <Star className="size-2.5 shrink-0 fill-current" />}
+              {(d.isInstallDefault || d.isMyDefault) && (
+                <Star
+                  className="size-2.5 shrink-0 fill-current"
+                  aria-label={d.isMyDefault ? 'My default' : 'Install default'}
+                />
+              )}
               <span className="max-w-40 truncate">{d.name}</span>
             </Link>
           );

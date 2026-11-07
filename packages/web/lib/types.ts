@@ -252,7 +252,12 @@ export interface Dashboard {
   name: string;
   description?: string;
   config: DashboardConfig;
+  /** The stored default flag. A Personal dashboard is never the Install default, see `isInstallDefault`. */
   isDefault: boolean;
+  /** Is this the Install default (ADR 0012): the default, and Shared. */
+  isInstallDefault: boolean;
+  /** Is this the signed-in person's My default. Set where a list or a read is made for a person, absent elsewhere. */
+  isMyDefault?: boolean;
   createdAt: string;
   /** Null for a Shared item with no Owner, which includes every dashboard from before owners. */
   owner: ItemOwner | null;

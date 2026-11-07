@@ -9,6 +9,7 @@ import {
   isMirrorErrorCode, mirrorError, type MirrorErrorCode, type MirrorStatus, type MirroredScope,
 } from '@/lib/access-mirror-model';
 import { releaseOwnedItemsOn, type OwnedItemsRemoved } from './item-owners';
+import { clearUnreachableMyDefaultsOn } from './default-dashboard';
 import { detachRequestsOfAuthorOn, withdrawOpenRequestsOn } from './library-request-cleanup';
 import {
   deleteAssignmentsOn, replaceAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn, type AssignmentInput,
@@ -359,6 +360,8 @@ export async function deleteUser(id: string): Promise<(OwnedItemsRemoved & { wit
     const owned = await releaseOwnedItemsOn(tx, id);
     await deleteAssignmentsOn(tx, id);
     await run(tx.delete(users).where(eq(users.id, id)));
+    // Anyone whose My default is no longer there for them is told on their next visit to /dashboard.
+    await clearUnreachableMyDefaultsOn(tx);
     return { withdrawnRequests, ...owned };
   });
 }

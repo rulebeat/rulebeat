@@ -752,7 +752,24 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: sharingExpected(kind),
   });
 
+  // Choosing the Install default needs `dashboards:manage`, which only the Admin and the Editor on Everything hold
+  // (the other people here are Viewers). A probe is a Shared dashboard of the asking person's own, so the one who may
+  // gets the dashboard back with the marks they would see on it, and everyone else is refused.
+  const installDefault: Matrix = {
+    probe: async () => {
+      const id = await ownItem('dashboard', 'shared');
+      const res = await (await import('@/app/api/dashboards/install-default/route')).PUT(new Request('http://localhost/api/dashboards/install-default', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+      }));
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { outsideAccess: unknown; config: { filters: unknown } };
+      return { status: res.status, filters: reply.config.filters, marks: reply.outsideAccess };
+    },
+    expected: sharingExpected('dashboard'),
+  };
+
   return {
+    'dashboards/install-default': installDefault,
     'dashboards/[id]/share': shareMatrix('dashboard', 'share'), 'dashboards/[id]/unshare': shareMatrix('dashboard', 'unshare'),
     'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
     'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
@@ -2302,6 +2319,15 @@ const putRequest = (url: string, method: string, body: unknown) =>
 const sameForAll = (by: PerKind<number>): Record<ItemPerson, PerKind<number>> =>
   Object.fromEntries(ITEM_PEOPLE.map(p => [p, by])) as Record<ItemPerson, PerKind<number>>;
 
+/** Choosing the Install default: `dashboards:manage` to get in, then a Shared dashboard the person may open. */
+const choosingInstallDefault: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(403, 403, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 200),
+  'Admin': perKind(409, 404, 200, 200, 200),
+  'No Scope': perKind(403, 403, 403, 403, 403),
+};
+
 /** One entry for each route file under `app/api/dashboards` and `app/api/views`, written by hand. */
 const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
   'dashboards/[id]': [
@@ -2311,6 +2337,10 @@ const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
       call: async id => (await (await import('@/app/api/dashboards/[id]/route')).PUT(putRequest(`/api/dashboards/${id}`, 'PUT', { name: `renamed dashboard ${++ownedCounter}` }), ctxFor({ id }))).status },
     { kind: 'dashboard', expected: changing(204),
       call: async id => (await (await import('@/app/api/dashboards/[id]/route')).DELETE(new Request(`http://localhost/api/dashboards/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/install-default': [
+    { kind: 'dashboard', expected: choosingInstallDefault,
+      call: async id => (await (await import('@/app/api/dashboards/install-default/route')).PUT(putRequest('/api/dashboards/install-default', 'PUT', { id }))).status },
   ],
   'dashboards/[id]/duplicate': [
     { kind: 'dashboard', expected: sameForAll(DUPLICATES),

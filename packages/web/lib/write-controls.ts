@@ -53,6 +53,18 @@ export function shareControlFor(access: Access, kind: 'dashboard' | 'view'): { a
   return allowed ? { allowed } : { allowed, reason: SHARE_REASON };
 }
 
+export const INSTALL_DEFAULT_REASON =
+  'The Install default is chosen, unshared and deleted by an Admin or an Editor on Everything. Choose another one first, or ask one of them.';
+
+/**
+ * The Unshare and Delete controls on the Install default: `allowed` from `mayAct` on `dashboards:manage`, and the
+ * reason they are off when it is not. The owner of the Install default who may not manage still edits its contents.
+ */
+export function installDefaultControlFor(access: Access): { allowed: boolean; reason?: string } {
+  const allowed = mayAct(access, 'dashboards:manage');
+  return allowed ? { allowed } : { allowed, reason: INSTALL_DEFAULT_REASON };
+}
+
 const INSTALL_WIDE_WRITES = ['rules:write', 'rules:delete', 'schedules:write'] as const;
 
 export function writeControlsFor(access: Access): WriteControls {

@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
+import { getDashboard, updateDashboard, deleteDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
-import { guardItem } from '@/lib/item-access';
-import { mayAct } from '@/lib/rbac';
+import { guardInstallDefault, guardItem } from '@/lib/item-access';
+import { getMyDefault } from '@/lib/db/default-dashboard';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -16,7 +16,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const d = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', d, 'open');
   if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(markedDashboard(actor.access, d));
+  const isMyDefault = (await getMyDefault(actor.id)).dashboardId === d.id;
+  return Response.json(markedDashboard(actor.access, { ...d, isMyDefault }));
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,21 +29,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: boolean }>(req);
+  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: unknown }>(req);
   if (body instanceof NextResponse) return body;
 
-  if (body.isDefault) {
-    // The Install default is a curation call (ADR 0012): an Admin or an Editor on Everything, and a Shared dashboard.
-    if (!mayAct(actor.access, 'dashboards:manage')) return Response.json({ error: 'Forbidden' }, { status: 403 });
-    if (before.visibility !== 'shared') return Response.json({ error: 'Only a Shared dashboard can be the Install default.' }, { status: 400 });
-    const ok = await setDefaultDashboard(id);
-    if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
+  // The Install default is chosen through its own route (PUT /api/dashboards/install-default), never by a save.
+  if (body.isDefault !== undefined) {
+    return Response.json({ error: 'The Install default is chosen at /api/dashboards/install-default, not in a dashboard save.' }, { status: 400 });
   }
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
-    // isDefault-only request: return the (now-updated) dashboard without touching other fields.
-    const updated = await getDashboard(id);
-    return Response.json(updated && markedDashboard(actor.access, updated));
+    return Response.json(markedDashboard(actor.access, before));
   }
 
   const result = await updateDashboard(id, body);
@@ -97,6 +93,8 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+  const protectedDefault = guardInstallDefault(actor, before);
+  if (protectedDefault) return protectedDefault;
   const ok = await deleteDashboard(id);
   if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
 
@@ -107,6 +105,15 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     entityId: id,
     summary: before.visibility === 'personal' ? 'Deleted a Personal dashboard' : `Deleted dashboard "${before.name}"`,
   });
+  if (before.isInstallDefault) {
+    await writeAudit({
+      actor,
+      action: 'dashboard.install_default',
+      entityType: 'dashboard',
+      entityId: id,
+      summary: `Deleted the Install default "${before.name}", so the install has no default`,
+    });
+  }
 
   return new Response(null, { status: 204 });
 }

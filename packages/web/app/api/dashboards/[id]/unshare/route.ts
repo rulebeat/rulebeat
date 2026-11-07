@@ -4,7 +4,7 @@ import { serverError } from '@/lib/api-error';
 import { getDashboard, unshareDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
-import { guardItem } from '@/lib/item-access';
+import { guardInstallDefault, guardItem } from '@/lib/item-access';
 import { staleStateMessage, TAKE_OVER_BEFORE_UNSHARING } from '@/lib/item-sharing';
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +18,9 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     const before = await getDashboard(id);
     const refused = guardItem(actor, 'dashboard', before, 'unshare');
     if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+
+    const protectedDefault = guardInstallDefault(actor, before);
+    if (protectedDefault) return protectedDefault;
 
     const result = await unshareDashboard(id, actor.id);
     if (!result.ok) {
@@ -36,6 +39,15 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       // The name it had while Shared: a rename to the next free name is the owner's Personal name, never logged.
       summary: `Unshared dashboard "${result.sharedName}"`,
     });
+    if (before.isInstallDefault) {
+      await writeAudit({
+        actor,
+        action: 'dashboard.install_default',
+        entityType: 'dashboard',
+        entityId: id,
+        summary: `Unshared the Install default "${result.sharedName}", so the install has no default`,
+      });
+    }
     // Someone else's unshare may have renamed it to a name only the owner should read, so only the owner gets the item.
     if (result.dashboard.owner?.id !== actor.id) {
       return Response.json({ id, visibility: result.dashboard.visibility, revision: result.dashboard.revision });

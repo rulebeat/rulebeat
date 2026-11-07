@@ -171,6 +171,10 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     // and guardItem() asks `*:write` for the owner's own item or `*:manage` to unshare anyone else's.
     ['dashboards/[id]/share/route.ts', 'dashboards:personal'],
     ['dashboards/[id]/unshare/route.ts', 'dashboards:personal'],
+    // The Install default is a curation call on the whole install (ADR 0012): it needs the Manage action, which an
+    // Editor holds only on Everything. My default is the person's own preference, so it needs the Personal action.
+    ['dashboards/install-default/route.ts', 'dashboards:manage'],
+    ['account/default-dashboard/route.ts', 'dashboards:personal'],
     ['views/route.ts', 'read'],
     ['views/route.ts', 'views:personal'],
     ['views/[id]/route.ts', 'read'],

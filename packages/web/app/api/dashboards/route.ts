@@ -5,12 +5,15 @@ import { listDashboards, createDashboard, createStarterDashboard, dashboardNameT
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
 import { openableItems } from '@/lib/item-access';
+import { getMyDefault } from '@/lib/db/default-dashboard';
+import { withMyDefault } from '@/lib/default-dashboards';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json(openableItems(actor, await listDashboards()).map(d => markedDashboard(actor.access, d)));
+  const mine = (await getMyDefault(actor.id)).dashboardId;
+  return Response.json(withMyDefault(openableItems(actor, await listDashboards()), mine).map(d => markedDashboard(actor.access, d)));
 }
 
 export async function POST(req: Request) {
