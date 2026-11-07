@@ -79,6 +79,20 @@ describe('POST /api/scope-sets', () => {
     expect((await post({ paths: [SCOPE_MANAGEMENT_GROUP, SUB_TWO_PATH, SCOPE_RESOURCE_GROUP] })).status).toBe(200);
   });
 
+  it('takes a subscription the caller holds only in part, since it applies as the part they hold', async () => {
+    signInAs('Viewer on one resource group');
+    const res = await post({ paths: [SCOPE_SUBSCRIPTION, SCOPE_RESOURCE_GROUP] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).count).toBe(2);
+  });
+
+  it('takes a management group the caller holds in part, and refuses one they hold none of', async () => {
+    signInAs('Viewer on one subscription');
+    expect((await post({ paths: [SCOPE_MANAGEMENT_GROUP] })).status).toBe(200);
+    signInAs('No Scope');
+    expect((await post({ paths: [SCOPE_MANAGEMENT_GROUP] })).status).toBe(400);
+  });
+
   it('refuses a path outside the Scopes the caller holds, with a stable message that names nothing', async () => {
     const res = await post({ paths: [SCOPE_SUBSCRIPTION, SUB_TWO_PATH] });
     expect(res.status).toBe(400);

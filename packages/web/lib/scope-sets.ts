@@ -5,6 +5,8 @@
  */
 import { createHash } from 'node:crypto';
 import { grantCovers, parseScope, type Access, type ScopeKind } from './access-model';
+import type { HierarchyNode } from './management-group-tree';
+import { classifyPick } from './scope-picks';
 
 /** The most paths a caller may send in one set. A set the server builds itself is not held to it. */
 export const SCOPE_SET_MAX_PATHS = 2000;
@@ -73,4 +75,13 @@ export function pathsOutsideAccess(access: Access, paths: readonly string[], alr
     const scope = parseScope(path);
     return !scope || !access.grants.some(grant => grantCovers(access, grant, scope));
   });
+}
+
+/**
+ * The paths of `paths` the caller holds no part of. A pick held in part is accepted, since ADR 0015 applies it as
+ * the part held, so a set gives the same findings as the same picks written inline. `nodes` is the stored
+ * management group tree, which says what lies under a group. Everything holds every path.
+ */
+export function pathsHeldInNoPart(access: Access, paths: readonly string[], nodes: readonly HierarchyNode[]): string[] {
+  return paths.filter(path => classifyPick(access, path, nodes) === 'outside');
 }

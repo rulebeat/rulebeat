@@ -5,3 +5,11 @@ export const PACK_LABELS: Record<string, string> = {
   'aprl-v2':       'APRL v2',
   'cis-azure':     'CIS Azure',
 };
+
+/** The part of a pack manifest entry the label is read from. */
+export type PackManifestLabels = Record<string, { label?: string }>;
+
+/** What a pack is called: the manifest's label, else the built-in pack label, else its id. */
+export function packSourceLabel(pack: string, manifest: PackManifestLabels): string {
+  return manifest[pack]?.label ?? PACK_LABELS[pack] ?? pack;
+}

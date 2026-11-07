@@ -9,7 +9,7 @@ import { many } from '@/lib/db/exec';
 import { scopeSets } from '@/lib/db/tables';
 import { createScopeSet, expandScopeSet } from '@/lib/db/scope-sets';
 import { buildAccess, everythingAccess, parseScope, type Access, type ScopeGrant } from '@/lib/access-model';
-import { SCOPE_SET_MAX_PATHS, checkScopeSetShape, pathsOutsideAccess, scopeSetHash } from '@/lib/scope-sets';
+import { SCOPE_SET_MAX_PATHS, checkScopeSetShape, pathsHeldInNoPart, pathsOutsideAccess, scopeSetHash } from '@/lib/scope-sets';
 import { resetDb } from '../helpers/db';
 
 const SUB_A = '/subscriptions/00000000-0000-0000-0000-00000000000a';
@@ -91,6 +91,30 @@ describe('pathsOutsideAccess', () => {
   it('skips the paths already stored on the row being saved', () => {
     const access = accessHolding(SUB_A);
     expect(pathsOutsideAccess(access, [SUB_A, SUB_B, RG_ONE], [SUB_B.toUpperCase()])).toEqual([RG_ONE]);
+  });
+});
+
+describe('pathsHeldInNoPart', () => {
+  const nodes = [
+    { tenantId: 't', kind: 'managementGroup' as const, id: 'mg-example', name: 'Example', parentId: null },
+    { tenantId: 't', kind: 'subscription' as const, id: SUB_A.split('/')[2]!, name: 'A', parentId: 'mg-example' },
+  ];
+
+  it('names nothing for Everything', () => {
+    expect(pathsHeldInNoPart(everythingAccess('admin'), [SUB_A, GROUP, '@directory'], [])).toEqual([]);
+  });
+
+  it('accepts a subscription held only through one of its resource groups, which applies as the part held', () => {
+    const access = accessHolding(`${SUB_A}/resourceGroups/rg-in`);
+    expect(pathsHeldInNoPart(access, [SUB_A, `${SUB_A}/resourceGroups/rg-in`, `${SUB_A}/resourceGroups/rg-out`, SUB_B], nodes)).toEqual([`${SUB_A}/resourceGroups/rg-out`, SUB_B]);
+  });
+
+  it('accepts a management group of which the caller holds a subscription, and refuses one they hold nothing under', () => {
+    const access = accessHolding(SUB_A);
+    const grants: ScopeGrant[] = [{ tenantId: 't', scope: parseScope(SUB_A)!, role: 'viewer' }];
+    const held = buildAccess(grants, 'manual');
+    expect(pathsHeldInNoPart(access, [GROUP], nodes)).toEqual([]);
+    expect(pathsHeldInNoPart(held, [GROUP], [])).toEqual([GROUP]);
   });
 });
 

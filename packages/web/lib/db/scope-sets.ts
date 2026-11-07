@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
 import { scopeSets } from '@/lib/db/tables';
-import { one, run } from '@/lib/db/exec';
+import { one, run, type DbHandle } from '@/lib/db/exec';
 import { isUnresolvedPick } from '@/lib/unresolved-pick';
 import { checkScopeSetShape, distinctPaths, scopeSetHash } from '@/lib/scope-sets';
 
@@ -45,10 +45,15 @@ export type ScopeSetExpansion =
   | { status: 'unresolved' };
 
 /** The stored paths for a hash, or `unresolved`. Never an empty list, which would read as no pick. */
-export async function expandScopeSet(hash: string): Promise<ScopeSetExpansion> {
+export function expandScopeSet(hash: string): Promise<ScopeSetExpansion> {
+  return expandScopeSetOn(db, hash);
+}
+
+/** `expandScopeSet` on a handle: a view read opens its set inside its own transaction. */
+export async function expandScopeSetOn(tx: DbHandle, hash: string): Promise<ScopeSetExpansion> {
   const key = hash.toLowerCase();
   if (!SHA256.test(key)) return { status: 'unresolved' };
-  const row = await one(db.select().from(scopeSets).where(eq(scopeSets.hash, key)));
+  const row = await one(tx.select().from(scopeSets).where(eq(scopeSets.hash, key)));
   if (!row) return { status: 'unresolved' };
   try {
     const paths: unknown = JSON.parse(row.paths);
