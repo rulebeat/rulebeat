@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useChartAnimation } from '@/components/dashboard/present-context';
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import type { Severity } from '@/lib/types';
@@ -17,6 +18,7 @@ interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 
 export function TopRulesWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const params = useMemo(() => {
@@ -69,7 +71,7 @@ export function TopRulesWidget({ config, filters, refreshKey }: Props) {
           />
           {/* One measurement, one colour. Giving each bar its category's hue turned a
               ranking into a rainbow, where length already carries the whole message. */}
-          <Bar dataKey="count" minPointSize={3}>
+          <Bar isAnimationActive={animate} dataKey="count" minPointSize={3}>
             {chartData.map((entry, i) => (
               <Cell
                 key={i}

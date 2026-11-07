@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useChartAnimation } from '@/components/dashboard/present-context';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
@@ -16,6 +17,7 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
  *  finding_events: a platform team closing more than it opens is the story this chart tells.
  *  Works under every filter dimension (see getFindingEventCounts). */
 export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days. Anything longer is empty air
   const params = useMemo(() => {
@@ -61,8 +63,8 @@ export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
           {/* The same two colours the Scans table gives new and fixed counts, so the
               same pair of numbers never appears in two different colours. Square bars:
               a rounded cap is not a Grid detail. */}
-          <Bar dataKey="created" name="New" fill="var(--color-sev-critical)" />
-          <Bar dataKey="resolved" name="Fixed" fill="var(--color-status-ok)" />
+          <Bar isAnimationActive={animate} dataKey="created" name="New" fill="var(--color-sev-critical)" />
+          <Bar isAnimationActive={animate} dataKey="resolved" name="Fixed" fill="var(--color-status-ok)" />
         </BarChart>
       </ResponsiveContainer>
     </div>

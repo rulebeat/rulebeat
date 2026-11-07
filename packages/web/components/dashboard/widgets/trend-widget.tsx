@@ -5,6 +5,7 @@ import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { useChartAnimation, usePresenting } from '@/components/dashboard/present-context';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
@@ -58,7 +59,20 @@ function CustomLegend({ series }: { series: Series[] }) {
   );
 }
 
+/** Why the trend cannot be drawn. A live region in the ordinary view; plain text on Present, where nothing is listening. */
+export function TrendUnavailable({ reason }: { reason: NonNullable<WidgetSummary['trendUnavailable']> }) {
+  const presenting = usePresenting();
+  const { title, detail } = trendUnavailableMessage(reason);
+  return (
+    <div role={presenting ? undefined : 'status'} className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
+      <p className="text-sm font-semibold text-ink">{title}</p>
+      <p className="max-w-xs text-xs text-ink-2">{detail}</p>
+    </div>
+  );
+}
+
 export function TrendWidget({ config, filters, refreshKey }: Props) {
+  const animate = useChartAnimation();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const trendDays = periodToDays(config.period ?? '30d', 365);
   const params = useMemo(() => {
@@ -139,15 +153,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   if (summary?.trendIsCategoryScopedOnly) {
     return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">Not available with a resource group/tag/severity/rule filter, or more than one subscription selected. Trend is tracked by category (and optionally a single subscription) only.</div>;
   }
-  if (summary?.trendUnavailable) {
-    const { title, detail } = trendUnavailableMessage(summary.trendUnavailable);
-    return (
-      <div role="status" className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
-        <p className="text-sm font-semibold text-ink">{title}</p>
-        <p className="max-w-xs text-xs text-ink-2">{detail}</p>
-      </div>
-    );
-  }
+  if (summary?.trendUnavailable) return <TrendUnavailable reason={summary.trendUnavailable} />;
   if (!chartData.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No trend data yet. Run scans to build history.</div>;
   }
@@ -180,7 +186,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} unit="%" label={Y_AXIS_LABEL} />
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
-            {series.map(s => <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} />)}
+            {series.map(s => <Bar key={s.key} isAnimationActive={animate} dataKey={s.key} name={s.name} fill={s.color} />)}
           </BarChart>
         ) : chartType === 'line' ? (
           <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
@@ -190,7 +196,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
             {series.map(s => (
-              <Line key={s.key} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+              <Line key={s.key} isAnimationActive={animate} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             ))}
           </LineChart>
         ) : (
@@ -209,7 +215,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
             {series.map(s => (
-              <Area key={s.key} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={1.5} fill={`url(#g-${s.key})`} dot={false} activeDot={{ r: 4 }} />
+              <Area key={s.key} isAnimationActive={animate} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={1.5} fill={`url(#g-${s.key})`} dot={false} activeDot={{ r: 4 }} />
             ))}
           </AreaChart>
         )}
