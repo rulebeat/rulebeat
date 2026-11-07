@@ -149,6 +149,11 @@ Results, Advisories and Activity tabs, the dashboards, saved views, suppressions
 saved view or dashboard filtered to something outside a person's access still opens: the filter
 reads "Outside your access" and can be cleared.
 
+Dashboard posture follows the same rule. It counts only the rules whose scope overlaps what a person
+holds, and Microsoft Graph rules only for someone who holds the Directory. A finding placed at a
+management group counts for people who hold that group or one above it, not for the subscriptions
+under it. See [`posture.md`](posture.md#the-formula).
+
 ## What a scoped Editor can do
 
 An Editor whose Scopes fall short of Everything works inside them.
