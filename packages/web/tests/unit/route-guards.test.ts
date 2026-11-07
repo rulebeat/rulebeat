@@ -167,10 +167,16 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['dashboards/[id]/route.ts', 'read'],
     ['dashboards/[id]/route.ts', 'dashboards:personal'],
     ['dashboards/[id]/duplicate/route.ts', 'dashboards:personal'],
+    // Sharing and unsharing change who sees an item, not its content: they name the Personal action to get in,
+    // and guardItem() asks `*:write` for the owner's own item or `*:manage` to unshare anyone else's.
+    ['dashboards/[id]/share/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/unshare/route.ts', 'dashboards:personal'],
     ['views/route.ts', 'read'],
     ['views/route.ts', 'views:personal'],
     ['views/[id]/route.ts', 'read'],
     ['views/[id]/route.ts', 'views:personal'],
+    ['views/[id]/share/route.ts', 'views:personal'],
+    ['views/[id]/unshare/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],

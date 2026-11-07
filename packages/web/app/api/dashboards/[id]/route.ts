@@ -6,6 +6,7 @@ import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
+import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -51,23 +52,39 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json({ error }, { status: 409 });
   }
 
-  // Only renames are audited. Every widget drag and resize also lands here as a `config` save,
-  // and logging those would bury every meaningful entry under layout noise.
-  const renamed = (
-    (body.name !== undefined && body.name !== before.name) ||
-    (body.description !== undefined && body.description !== before.description)
-  );
-  if (renamed) {
-    await writeAudit({
-      actor,
-      action: 'dashboard.rename',
-      entityType: 'dashboard',
-      entityId: id,
-      // A Personal item is logged by id and kind only: its name is its owner's alone.
-      summary: before.visibility === 'personal'
-        ? 'Renamed a Personal dashboard'
-        : `Renamed dashboard "${before.name}" to "${result.dashboard.name}"`,
-    });
+  // A Personal dashboard is logged by id and kind only, and only for a rename: every widget drag and resize
+  // also lands here as a `config` save, and logging those would bury every meaningful entry under layout
+  // noise. A Shared dashboard is everyone's, so each save that changed something writes one entry with the
+  // changed field names (never their values).
+  if (before.visibility === 'personal') {
+    const renamed = (
+      (body.name !== undefined && body.name !== before.name) ||
+      (body.description !== undefined && body.description !== before.description)
+    );
+    if (renamed) {
+      await writeAudit({
+        actor,
+        action: 'dashboard.rename',
+        entityType: 'dashboard',
+        entityId: id,
+        summary: 'Renamed a Personal dashboard',
+      });
+    }
+  } else {
+    const changed = changedDashboardFields(before, result.dashboard);
+    if (changed.length > 0) {
+      const renamedOnly = changed.length === 1 && changed[0] === 'name';
+      await writeAudit({
+        actor,
+        action: renamedOnly ? 'dashboard.rename' : 'dashboard.update',
+        entityType: 'dashboard',
+        entityId: id,
+        summary: renamedOnly
+          ? `Renamed dashboard "${before.name}" to "${result.dashboard.name}"`
+          : `Updated dashboard "${before.name}"`,
+        details: { fields: changed },
+      });
+    }
   }
 
   return Response.json(markedDashboard(actor.access, result.dashboard));

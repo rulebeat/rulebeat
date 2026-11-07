@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LayoutDashboard, Plus, Clock, Star, MoreHorizontal, Copy, Trash2, RotateCcw } from 'lucide-react';
+import { LayoutDashboard, Plus, Clock, Star, MoreHorizontal, Copy, Trash2, RotateCcw, Share2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,11 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { NewDashboardDialog } from '@/components/dashboard/new-dashboard-dialog';
-import { mayChangeItemWith, ownerLabel, sectionsOf, type ItemPermissions } from '@/lib/item-access-model';
+import {
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, ownerLabel, sectionsOf, type ItemPermissions,
+} from '@/lib/item-access-model';
+import { shareConfirmation } from '@/lib/item-sharing';
+import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import type { Dashboard } from '@/lib/types';
 
 interface Props {
@@ -20,9 +24,11 @@ interface Props {
   initialDashboards: Dashboard[];
   currentUserId: string;
   permissions: ItemPermissions;
+  /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
+  shareControl: { allowed: boolean; reason?: string };
 }
 
-export function DashboardsGallery({ initialDashboards, currentUserId, permissions }: Props) {
+export function DashboardsGallery({ initialDashboards, currentUserId, permissions, shareControl }: Props) {
   const router = useRouter();
   const [dashboards, setDashboards] = useState(initialDashboards);
   const [showDialog, setShowDialog] = useState(false);
@@ -90,6 +96,18 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
     }
   }
 
+  async function handleVisibility(d: Dashboard, action: 'share' | 'unshare') {
+    if (action === 'share' && !confirm(shareConfirmation('dashboard', d.name))) return;
+    setError(null);
+    const outcome = await requestVisibilityChange('dashboard', d.id, action);
+    if (!outcome.ok) {
+      setError(outcome.error);
+      return;
+    }
+    refreshList();
+    router.refresh(); // the sidebar and the other tabs read the list from the server
+  }
+
   async function handleRestoreStarter() {
     setRestoring(true);
     setError(null);
@@ -117,8 +135,11 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, dashboards);
 
   function renderCard(d: Dashboard, tag: React.ReactNode) {
-    const canChange = mayChangeItemWith({ id: currentUserId }, permissions, d);
+    const actor = { id: currentUserId };
+    const canChange = mayChangeItemWith(actor, permissions, d);
     const canSetDefault = permissions.manage && d.visibility === 'shared' && !d.isDefault;
+    const canShare = d.visibility === 'personal' && isOwnItem(actor, d);
+    const canUnshare = mayChangeVisibilityWith(actor, permissions, d, 'unshare');
     return (
       <Card key={d.id} className="relative h-full overflow-visible transition-colors hover:border-ink">
         <Link href={`/dashboards/${d.id}`} className="absolute inset-0 z-0 cursor-pointer" aria-label={d.name} />
@@ -149,7 +170,7 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
                     </Button>
                   }
                 />
-                <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuContent align="end" className="w-52">
                   {canSetDefault && (
                     <DropdownMenuItem onClick={() => void handleSetDefault(d.id)}>
                       <Star />Set default
@@ -158,6 +179,19 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
                   <DropdownMenuItem onClick={() => void handleDuplicate(d.id)}>
                     <Copy />Duplicate
                   </DropdownMenuItem>
+                  {canShare && (
+                    <DropdownMenuItem disabled={!shareControl.allowed} onClick={() => void handleVisibility(d, 'share')}>
+                      <Share2 />Share
+                    </DropdownMenuItem>
+                  )}
+                  {canShare && !shareControl.allowed && shareControl.reason && (
+                    <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
+                  )}
+                  {canUnshare && (
+                    <DropdownMenuItem onClick={() => void handleVisibility(d, 'unshare')}>
+                      <Undo2 />Unshare
+                    </DropdownMenuItem>
+                  )}
                   {canChange && (
                     <DropdownMenuItem variant="destructive" onClick={() => void handleDelete(d)}>
                       <Trash2 />Delete
@@ -169,6 +203,9 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
           </div>
           {d.description && (
             <p className="line-clamp-2 text-xs text-ink-2">{d.description}</p>
+          )}
+          {isDemotedOwner(actor, permissions, d) && (
+            <p className="text-xs text-ink-2">{DEMOTED_OWNER_NOTE}</p>
           )}
           <div className="numeral-grid mt-auto flex items-center gap-1.5 text-xs text-ink-muted">
             <span>{d.config.widgets.length} widget{d.config.widgets.length !== 1 ? 's' : ''}</span>
