@@ -109,6 +109,18 @@ export function mayChangeVisibilityWith(actor: { id: string }, permissions: Item
 }
 
 /**
+ * Which of Hand over and Take over a screen offers on an item, from the permissions a page handed down. Both
+ * are for Shared items only: a Personal item offers neither, to its owner or anyone else. Hand over is the
+ * same decision as `mayTransferItem`. Take over is that decision too, left off an item that is already the
+ * person's own, where it would change nothing.
+ */
+export function transferControlsWith(actor: { id: string }, permissions: ItemPermissions, item: OwnedItem): { handOver: boolean; takeOver: boolean } {
+  if (item.visibility !== 'shared' || !canOpenItem(actor, item)) return { handOver: false, takeOver: false };
+  const own = isOwnItem(actor, item);
+  return { handOver: (own && permissions.write) || permissions.manage, takeOver: !own && permissions.manage };
+}
+
+/**
  * The two sections of a list: "Yours" (everything the person owns, Personal or Shared) and "Shared by others"
  * (the Shared items they do not own, an ownerless one included). A Personal item of someone else is in
  * neither: the caller is not meant to hold one.

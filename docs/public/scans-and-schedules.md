@@ -134,7 +134,8 @@ and Unshare are logged as `view.share` and `view.unshare`, the unshare with the 
 Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
 longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
-Hand over gives a Shared view to another person, chosen from a list of names and emails only. The list
+Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
+to another person, chosen from a list of names and emails only. The list
 holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server
 checks the choice again and refuses anyone else with "That person cannot take this over. Choose someone
 else." The owner can hand over their own view. An Admin, or an Editor on Everything, can hand over any

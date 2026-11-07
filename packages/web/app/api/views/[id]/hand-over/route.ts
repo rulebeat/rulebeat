@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
+import { parseJsonBody } from '@/lib/api-body';
 import { getSavedView, transferSavedView } from '@/lib/db/saved-views';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
@@ -24,7 +25,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (before.visibility !== 'shared') return Response.json({ error: staleStateMessage('view') }, { status: 409 });
 
     // Eligibility is asked again here, from the same list the picker was given, never taken from the page.
-    const body = await request.json().catch(() => null) as { userId?: unknown } | null;
+    const body = await parseJsonBody<{ userId?: unknown } | null>(request);
+    if (body instanceof NextResponse) return body;
     const chosen = typeof body?.userId === 'string'
       ? (await handOverCandidates('view', before.owner?.id ?? null)).find(c => c.id === body.userId)
       : undefined;

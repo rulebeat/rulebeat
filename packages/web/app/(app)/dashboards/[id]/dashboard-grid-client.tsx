@@ -5,7 +5,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
-  ChevronDown, Save, MoreHorizontal, Star, Lock, Share2, Undo2,
+  ChevronDown, Save, MoreHorizontal, Star, Lock, Share2, Undo2, UserRoundCog, UserRoundCheck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -37,10 +37,11 @@ import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
-  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, type ItemPermissions,
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 
 type RGLLayout = LayoutItem;
 
@@ -137,6 +138,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
 export function DashboardGridClient({ dashboard: initial, outsideAccess, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
+  const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -452,6 +454,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
   const actor = { id: currentUserId };
   const canShare = dashboard.visibility === 'personal' && isOwnItem(actor, dashboard);
   const canUnshare = mayChangeVisibilityWith(actor, permissions, dashboard, 'unshare');
+  const { handOver: canHandOver, takeOver: canTakeOver } = transferControlsWith(actor, permissions, dashboard);
 
   const layout: RGLLayout[] = widgets.map(w => ({
     i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2,
@@ -594,6 +597,16 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
                 <Undo2 />Unshare
               </DropdownMenuItem>
             )}
+            {canHandOver && (
+              <DropdownMenuItem onClick={() => setTransfer('hand-over')}>
+                <UserRoundCog />Hand over
+              </DropdownMenuItem>
+            )}
+            {canTakeOver && (
+              <DropdownMenuItem onClick={() => setTransfer('take-over')}>
+                <UserRoundCheck />Take over
+              </DropdownMenuItem>
+            )}
             {canChange && (
               <DropdownMenuItem variant="destructive" onClick={handleDelete}>
                 <Trash2 />Delete dashboard
@@ -676,6 +689,20 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       )}
       {addingWidget && (
         <AddWidgetPanel onAdd={addWidget} onClose={() => setAddingWidget(false)} />
+      )}
+      {transfer && (
+        <ItemTransferDialog
+          kind="dashboard"
+          mode={transfer}
+          id={dashboard.id}
+          name={dashboard.name}
+          onClose={() => setTransfer(null)}
+          onDone={item => {
+            const { owner, revision } = item as Pick<Dashboard, 'owner' | 'revision'>;
+            setDashboard(prev => ({ ...prev, owner, revision }));
+            router.refresh(); // what this person may now do with it is read on the server
+          }}
+        />
       )}
 
     </div>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
+import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, transferDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
@@ -23,7 +24,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (before.visibility !== 'shared') return Response.json({ error: staleStateMessage('dashboard') }, { status: 409 });
 
     // Eligibility is asked again here, from the same list the picker was given, never taken from the page.
-    const body = await request.json().catch(() => null) as { userId?: unknown } | null;
+    const body = await parseJsonBody<{ userId?: unknown } | null>(request);
+    if (body instanceof NextResponse) return body;
     const chosen = typeof body?.userId === 'string'
       ? (await handOverCandidates('dashboard', before.owner?.id ?? null)).find(c => c.id === body.userId)
       : undefined;

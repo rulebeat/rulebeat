@@ -270,12 +270,21 @@ for (const kind of [dashboards, views]) {
       expect(await auditOf(kind, 'hand_over')).toEqual([]);
     });
 
-    it('answers a body that is not JSON like any other ineligible choice', async () => {
+    it('refuses a body without a JSON Content-Type with 415, and malformed JSON with 400', async () => {
       const owner = await signInAs('editor');
       const shared = await sharedBy(kind, owner);
       const route = kind.label === 'dashboard' ? dashboardHandOver : viewHandOver;
-      const res = await route.POST(new Request('http://localhost/api/x', { method: 'POST', body: 'nope' }), ctx(shared.id));
-      expect(res.status).toBe(400);
+      const bare = await route.POST(new Request('http://localhost/api/x', { method: 'POST', body: 'nope' }), ctx(shared.id));
+      expect(bare.status).toBe(415);
+      const form = await route.POST(new Request('http://localhost/api/x', {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ userId: owner.id }),
+      }), ctx(shared.id));
+      expect(form.status).toBe(415);
+      const broken = await route.POST(new Request('http://localhost/api/x', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'nope',
+      }), ctx(shared.id));
+      expect(broken.status).toBe(400);
+      expect(await kind.stored(shared.id)).toMatchObject({ ownerId: owner.id, revision: shared.revision });
     });
 
     it('is for Shared items only: a Personal item gets 409 for its owner and 404 for anyone else', async () => {

@@ -96,7 +96,8 @@ it." Unsharing the Install default leaves the install without one. Each share an
 dashboard's revision on, and one the dashboard's current state no longer allows (someone shared or
 unshared it since the page loaded) answers 409 and asks you to reload.
 
-**Hand over** gives a Shared dashboard to another person, chosen from a list that shows names and emails
+**Hand over** and **Take over** sit in the dashboard's actions menu, on the gallery card and on the dashboard
+page. Hand over gives a Shared dashboard to another person, chosen from a list that shows names and emails
 only, never Roles or Scopes. The list holds Admins and people who hold an Editor Role at any Scope, and
 leaves out the current owner; the server checks the choice again and refuses anyone else with "That person
 cannot take this over. Choose someone else." The owner can hand over their own dashboard. An Admin, or an
