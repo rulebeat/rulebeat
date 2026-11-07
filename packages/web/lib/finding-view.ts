@@ -13,7 +13,7 @@ import type { Severity } from './types';
 import { resolveDateWindow, type DateWindow } from './date-window';
 import { findingRows, type FindingRow } from './finding-rows';
 import { subscriptionValue } from './placement';
-import { parseCategoryParam } from './scans-link';
+import { matchesFirstSeenAge, parseFirstSeenAge } from './first-seen-age';
 import { SEVERITY_ORDER } from './severity';
 import {
   EXPLORER_SEVERITIES, matchesExplorerFilters, parseExplorerStatus,
@@ -24,15 +24,26 @@ import {
 
 export const BUILTIN_FIELDS = [
   'rule', 'kind', 'category', 'severity', 'status', 'subscription', 'resourceGroup', 'location',
-  'resourceType', 'resourceName', 'tags', 'firstSeen', 'lastSeen',
+  'resourceType', 'resourceName', 'tags', 'firstSeen', 'lastSeen', 'resourceId', 'firstSeenAge',
 ] as const;
 export type BuiltinField = (typeof BUILTIN_FIELDS)[number];
+/** The built-in fields with no option list: a resource id has as many values as there are resources,
+ *  and a rolling range is typed, not picked. They filter, and show as a chip, and nothing offers them. */
+export const OPTIONLESS_FIELDS: readonly BuiltinField[] = ['resourceId', 'firstSeenAge'];
+export type FacetField = Exclude<BuiltinField, 'status' | 'resourceId' | 'firstSeenAge'>;
+/** The built-in fields that have a facet: an option list counted over the findings. */
+export function isFacetField(field: BuiltinField): field is FacetField {
+  return field !== 'status' && !OPTIONLESS_FIELDS.includes(field);
+}
+export const FACET_FIELDS: readonly FacetField[] = BUILTIN_FIELDS.filter(isFacetField);
 export type RowField = `row.${string}`;
 export type ViewField = BuiltinField | RowField;
 
 /** A set of accepted values on a built-in field. Empty accepts everything. `rule` holds rule ids,
  *  `status` one of open/new/fixed/all, `resourceName` the subject the Resource column shows (see
- *  `findingSubject`), `firstSeen` and `lastSeen` day keys (YYYY-MM-DD). */
+ *  `findingSubject`), `firstSeen` and `lastSeen` day keys (YYYY-MM-DD), `resourceId` full resource ids
+ *  (matched exactly, ignoring case) and `firstSeenAge` rolling ranges in whole UTC days (see
+ *  lib/first-seen-age.ts), resolved when the request is made. */
 export interface BuiltinFilter { field: BuiltinField; values: string[] }
 /** A filter on a returned column: a set of accepted values, compared as text. An empty set
  *  accepts everything. */
@@ -72,6 +83,9 @@ export interface ViewContext {
   suppressedFingerprints?: ReadonlySet<string>;
   showSuppressed?: boolean;
   range?: { from: string; to: string };
+  /** The moment the request is made: what `window` and a `firstSeenAge` range count back from. The
+   *  clock when absent. */
+  now?: Date;
 }
 
 export type ViewFinding = FilterableFinding & {
@@ -276,7 +290,8 @@ export function filterFindings<T extends ViewFinding>(
   const except = opts.except;
   const builtin = spec.filters.filter((f): f is BuiltinFilter => !isRowFilter(f) && !except?.has(f.field));
   const values = (field: BuiltinField) => new Set(filterValues(builtin, field));
-  const range = ctx.range ?? resolveDateWindow(spec.window);
+  const now = ctx.now ?? new Date();
+  const range = ctx.range ?? resolveDateWindow(spec.window, now);
 
   const state: ExplorerFilterState = {
     showSuppressed: ctx.showSuppressed ?? false,
@@ -299,6 +314,11 @@ export function filterFindings<T extends ViewFinding>(
   const names = values('resourceName');
   const firstSeen = values('firstSeen');
   const lastSeen = values('lastSeen');
+  const resourceIds = new Set([...values('resourceId')].map(id => id.toLowerCase()));
+  // A value that is not a range is ignored, but a filter holding nothing else keeps nothing, like a returned
+  // column no finding has: the chip stays in view for the viewer to remove.
+  const ageValues = [...values('firstSeenAge')];
+  const ages = ageValues.flatMap(v => parseFirstSeenAge(v) ?? []);
   const rowFilters = activeRowFilters(spec.filters, except);
 
   return findings.filter(f =>
@@ -308,6 +328,8 @@ export function filterFindings<T extends ViewFinding>(
     && (names.size === 0 || names.has(findingSubject(f)))
     && (firstSeen.size === 0 || firstSeen.has(f.firstSeenAt.slice(0, 10)))
     && (lastSeen.size === 0 || lastSeen.has(f.lastSeenAt.slice(0, 10)))
+    && (resourceIds.size === 0 || resourceIds.has((f.resourceId ?? '').toLowerCase()))
+    && (ageValues.length === 0 || matchesFirstSeenAge(f.firstSeenAt, ages, now))
     && (rowFilters.length === 0 || matchingRows(f, rowFilters).length > 0),
   );
 }
@@ -333,8 +355,9 @@ function sortValue(item: ViewItem<ViewFinding>, field: ViewField): string | numb
     case 'resourceType': return f.resourceType;
     case 'resourceName': return findingSubject(f);
     case 'tags': return (f.ruleTags ?? []).join(',');
-    case 'firstSeen': return f.firstSeenAt;
+    case 'firstSeen': case 'firstSeenAge': return f.firstSeenAt;
     case 'lastSeen': return f.lastSeenAt;
+    case 'resourceId': return f.resourceId;
   }
 }
 
@@ -413,8 +436,9 @@ export function builtinFieldValues(f: ViewFinding, field: BuiltinField): string[
     case 'resourceType': return [f.resourceType ?? ''];
     case 'resourceName': return [findingSubject(f)];
     case 'tags': return f.ruleTags ?? [];
-    case 'firstSeen': return [f.firstSeenAt.slice(0, 10)];
+    case 'firstSeen': case 'firstSeenAge': return [f.firstSeenAt.slice(0, 10)];
     case 'lastSeen': return [f.lastSeenAt.slice(0, 10)];
+    case 'resourceId': return [f.resourceId ?? ''];
   }
 }
 
@@ -677,7 +701,20 @@ function readNamedValues(raw: string): { name: string; values: string[] } | unde
   return rest.length > 0 && name !== '' ? { name, values: readValues(rest.join('=')) } : undefined;
 }
 
+/** The value of one `f` param: `field=v1|v2`. The one writer, so a link built outside this file reads back. */
+export function genericFilterParam(field: BuiltinField, values: readonly string[]): string {
+  return `${field}=${values.map(esc).join('|')}`;
+}
+
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Splits the `?category=` searchParam into a list, the same comma-list convention `?severity=`
+ *  and every other multi-value filter param already use: shared between scans/page.tsx's own
+ *  initializer and the test suite (cross-surface-filters.test.ts) so the two can't drift apart.
+ *  Re-exported by lib/scans-link.ts. */
+export function parseCategoryParam(sectionParam: string | undefined): string[] {
+  return sectionParam ? sectionParam.split(',').filter(v => v && v !== 'all') : [];
+}
 
 /** A View as query params, with `base` (params the page itself owns, such as `tab`) kept first.
  *  Defaults are left out, so a default view is an empty query. */
@@ -695,7 +732,7 @@ export function viewToSearchParams(view: View, base?: ParamSource): URLSearchPar
   if (status !== 'open') params.set('status', status);
 
   for (const field of GENERIC_FIELDS) {
-    if (builtin(field).length > 0) params.append('f', `${field}=${builtin(field).map(esc).join('|')}`);
+    if (builtin(field).length > 0) params.append('f', genericFilterParam(field, builtin(field)));
   }
 
   if (view.window.mode === 'custom') {
