@@ -387,6 +387,7 @@ export const postureSnapshots = sqliteTable('posture_snapshots', {
   // 1 = pre-spec-030 (possibly backfilled) posture formula, 2 = honest spec-030 formula: lets a
   // baseline comparison exclude rows it can't honestly compare against (spec 033).
   formulaVersion: integer('formula_version').notNull().default(1),
+  findingCountVersion: integer('finding_count_version').notNull().default(0), // which version of the finding count computed active_findings/severity_counts; 0 = not recorded
   activeFindings: integer('active_findings').notNull().default(0),
   severityCounts: text('severity_counts').notNull().default('{}'), // JSON Record<Severity, number>
   updatedAt: text('updated_at').notNull(),
