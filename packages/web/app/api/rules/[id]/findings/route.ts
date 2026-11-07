@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
+import { serverError } from '@/lib/api-error';
 import { loadRules } from '@/lib/rules';
 import { deleteFindingsForRule } from '@/lib/db/findings';
 import { writeAudit } from '@/lib/db/audit';
@@ -32,7 +33,12 @@ export async function DELETE(
   const rule = (await loadRules()).find(r => r.id === id);
   if (!rule) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const deleted = await deleteFindingsForRule(id);
+  let deleted: number;
+  try {
+    deleted = await deleteFindingsForRule(id);
+  } catch (err) {
+    return serverError('Could not clear the rule\'s findings', err);
+  }
 
   await writeAudit({
     actor,

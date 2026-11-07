@@ -95,6 +95,9 @@ export type SeedAction =
   | { action: 'retire'; ruleId: string }
   | { action: 'unretire'; ruleId: string };
 
+/** The rule a seed action is about. */
+export const seedActionRuleId = (a: SeedAction): string => ('rule' in a ? a.rule.id : a.ruleId);
+
 export interface SeedPlanInput {
   catalogue: ShippedCatalogue;
   rows: StoredRuleRow[];

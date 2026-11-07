@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
+import { serverError } from '@/lib/api-error';
 import { loadRules, loadRule, createRule, copiedOrigin, ruleNameTakenError, resolveKind } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
@@ -53,7 +54,12 @@ export async function POST(req: Request) {
     kind: resolveKind(queryBackend, body.kind),
     ...(source ? copiedOrigin(source) : {}),
   };
-  const result = await createRule(rule);
+  let result: Awaited<ReturnType<typeof createRule>>;
+  try {
+    result = await createRule(rule);
+  } catch (err) {
+    return serverError('Could not create the rule', err);
+  }
   if (!result.ok) {
     return NextResponse.json(ruleNameTakenError(rule.name), { status: 409 });
   }

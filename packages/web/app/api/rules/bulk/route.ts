@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
-import { setRulesEnabled } from '@/lib/rules';
+import { serverError } from '@/lib/api-error';
+import { setRulesEnabledBulk } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 
 /**
@@ -18,8 +19,13 @@ export async function PATCH(req: Request) {
   const enableIds = body.enable ?? [];
   const disableIds = body.disable ?? [];
 
-  const enabledResult = await setRulesEnabled(enableIds, true);
-  const disabledResult = await setRulesEnabled(disableIds, false);
+  let results: Awaited<ReturnType<typeof setRulesEnabledBulk>>;
+  try {
+    results = await setRulesEnabledBulk(enableIds, disableIds);
+  } catch (err) {
+    return serverError('Could not update the rules', err);
+  }
+  const { enabled: enabledResult, disabled: disabledResult } = results;
 
   const updated = enabledResult.updatedIds.length + disabledResult.updatedIds.length;
   const notFound = [...enabledResult.notFoundIds, ...disabledResult.notFoundIds];
