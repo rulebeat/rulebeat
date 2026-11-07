@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   if (body instanceof NextResponse) return body;
 
   if (body.template === 'starter') {
-    const dashboard = await createStarterDashboard();
+    const dashboard = await createStarterDashboard(actor.id);
     await writeAudit({
       actor,
       action: 'dashboard.create',
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     name,
     description: body.description,
     config: body.config ?? { autoRefresh: 0, widgets: [] },
-  });
+  }, actor.id);
 
   if (!result.ok) {
     const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);

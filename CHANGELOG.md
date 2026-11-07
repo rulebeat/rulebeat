@@ -6,6 +6,12 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Two people editing the same dashboard no longer overwrite each other silently. Every dashboard carries a revision that each save raises by one, and the page sends the revision it read, so the second Save is refused and the page says who changed the dashboard and when. A dashboard also records who last saved it and when. Existing dashboards start at revision 1 with their layout, filters and default flag exactly as stored.
+- A dashboard Save is now validated. Each widget type takes only the widths its row of the size table allows, x, y and h must be whole numbers of 0 or more, and widget ids must be unique. A widget of a type this version does not know is kept as stored but cannot be added or changed. A layout saved before these checks is not rewritten or rejected when it is opened; the page moves each width to the nearest allowed one when it next saves.
+- Each Save that changes a dashboard's widgets, name, description or refresh interval writes one audit entry that names the changed fields and never their values.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

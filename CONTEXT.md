@@ -134,6 +134,11 @@ One number, chart or list on a dashboard. Every count it shows opens the same co
 trend-only widget says on its definition line why it opens none.
 _Avoid_: tile, card, panel
 
+**Revision**:
+The number a dashboard carries that every write raises by one. A Save sends the revision it read, and
+a Save made on an older one is refused with who changed the dashboard and when.
+_Avoid_: version (that is a rule's), etag
+
 **Editing**:
 The explicit period in which a dashboard's layout and settings change, ended by Save or Cancel.
 Code may say "editing session"; UI copy says only "Editing".

@@ -302,7 +302,12 @@ export function runMigrations(sqlite: Database.Database): void {
       description TEXT,
       config TEXT NOT NULL,
       is_default INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      owner_id TEXT,
+      visibility TEXT NOT NULL DEFAULT 'shared',
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      updated_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -632,6 +637,15 @@ export function runMigrations(sqlite: Database.Database): void {
       updated_at TEXT NOT NULL
     );
   `);
+
+  // #419: a dashboard carries an owner, a visibility, a revision that each write bumps, and who made
+  // the last write and when. All additive: an existing row stays Shared with no owner at revision 1,
+  // its config and default flag untouched, and the last editor is unknown (null) until it is written.
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN owner_id TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared'`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN updated_by TEXT`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN updated_at TEXT`); } catch { /* already exists */ }
 
   // Drop columns that moved from notification_channels to schedule_notification_channels.
   // Idempotent: SQLite allows DROP COLUMN since 3.35.0; the try/catch handles "no such column".

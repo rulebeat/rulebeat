@@ -25,7 +25,11 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   admin: 'Everything an editor can do, plus switching rule versions, users, sign-in configuration, the Azure connection, notifications and the audit log.',
 };
 
-const VIEWER_ACTIONS = ['read'] as const;
+const VIEWER_ACTIONS = [
+  'read',
+  // A Personal dashboard is its owner's alone, so every Role may change their own.
+  'dashboards:personal',
+] as const;
 
 const EDITOR_ACTIONS = [
   ...VIEWER_ACTIONS,
@@ -106,6 +110,7 @@ export const ACTION_CLASS: Record<Action, ActionClass> = {
   'rules:personal': 'scoped',
   'scans:run': 'scoped',
   'account:self': 'outside',
+  'dashboards:personal': 'outside',
 };
 
 /**

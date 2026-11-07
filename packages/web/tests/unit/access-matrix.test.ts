@@ -17,8 +17,8 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetDb } from '../helpers/db';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execRaw, resetDb } from '../helpers/db';
 import { createUser, getUser } from '@/lib/db/users';
 import { createRule, loadRule, loadRules, saveRules } from '@/lib/rules';
 import { createCategory, listCategories } from '@/lib/db/categories';
@@ -36,6 +36,7 @@ import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
 import { createLibraryRequest } from '@/lib/db/library-requests';
+import { createDashboard } from '@/lib/db/dashboards';
 import {
   createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
   SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
@@ -2192,4 +2193,73 @@ describe('suppressing needs a Role that allows it at a Scope containing the find
       expect((await remove(userIds['Editor on Everything']!, second)).status).toBe(204);
     });
   });
+});
+
+// ---- Saving a dashboard: the Personal name space (#419) ----
+
+describe('renaming a Personal dashboard follows the Personal name space for every person', () => {
+  const userIds: Record<string, string> = {};
+  let sharedName: string;
+  let counter = 0;
+
+  /** A Personal dashboard owned by `ownerId`, written directly: nothing in the app creates one yet. */
+  async function personalDashboard(ownerId: string, name: string): Promise<string> {
+    const id = `matrix-personal-${++counter}`;
+    await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at, owner_id, visibility) VALUES ('${id}', '${name}', '{"widgets":[]}', FALSE, '2026-06-01T00:00:00.000Z', '${ownerId}', 'personal')`);
+    return id;
+  }
+  const rename = async (person: string, id: string, name: string): Promise<{ status: number; reason: string | undefined }> => {
+    mockAuth.mockResolvedValue({ user: { uid: person } });
+    const res = await (await import('@/app/api/dashboards/[id]/route')).PUT(
+      sendJson(`/api/dashboards/${id}`, 'PUT', { name, revision: 1 }), ctxFor({ id }));
+    return { status: res.status, reason: ((await res.json()) as { reason?: string }).reason };
+  };
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    const shared = await createDashboard({ name: 'Matrix shared name', config: { widgets: [] } });
+    if (!shared.ok) throw new Error(shared.reason);
+    sharedName = shared.dashboard.name;
+  });
+
+  afterAll(async () => { await execRaw(`DELETE FROM dashboards WHERE id LIKE 'matrix-personal-%' OR name = 'Matrix shared name'`); });
+
+  for (const person of PEOPLE) {
+    describe(person.name, () => {
+      const me = () => userIds[person.name]!;
+
+      it('gets 200 renaming a Personal dashboard to another person\'s Personal name', async () => {
+        const stranger = userIds[person.name === 'Admin' ? 'No Scope' : 'Admin']!;
+        const theirs = `Their plans for ${person.name}`;
+        await personalDashboard(stranger, theirs);
+        const mine = await personalDashboard(me(), `My dashboard of ${person.name}`);
+
+        expect(await rename(me(), mine, theirs)).toEqual({ status: 200, reason: undefined });
+      });
+
+      it('gets name-taken renaming it to a Shared name, in any case', async () => {
+        const mine = await personalDashboard(me(), `Mine to share ${person.name}`);
+
+        expect(await rename(me(), mine, sharedName.toUpperCase())).toEqual({ status: 409, reason: 'name-taken' });
+      });
+
+      it('gets name-taken renaming it to one of their own Personal names', async () => {
+        const first = `First of ${person.name}`;
+        await personalDashboard(me(), first);
+        const second = await personalDashboard(me(), `Second of ${person.name}`);
+
+        expect(await rename(me(), second, first)).toEqual({ status: 409, reason: 'name-taken' });
+      });
+
+      it('gets 404 for another person\'s Personal dashboard, as for one that does not exist', async () => {
+        const other = userIds[person.name === 'Admin' ? 'No Scope' : 'Admin']!;
+        const theirs = await personalDashboard(other, `Not for ${person.name}`);
+
+        const refused = await rename(me(), theirs, 'Taken over');
+        expect(refused.status).toBe(404);
+        expect(await rename(me(), 'no-such-dashboard', 'Taken over')).toEqual(refused);
+      });
+    });
+  }
 });

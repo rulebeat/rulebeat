@@ -62,6 +62,21 @@ rules in scope shows an empty posture rather than 0% or 100%.
 Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
 Restore starter to recreate the seeded Overview layout. Every dashboard is deletable including the
 default; deleting it promotes the oldest remaining one. Layouts save per dashboard. Creating,
-renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
-and would bury real changes. Viewers see every dashboard, editing needs the editor role
+renaming and deleting is audited, and so is every Save that changes the widgets, the name, the
+description or the refresh interval: one entry names the fields it changed, never what they held.
+Dragging and resizing is not an entry of its own, since every drag would bury real changes; only the
+Save that follows is. Viewers see every dashboard, editing needs the editor role
 ([`rbac.md`](rbac.md)).
+
+Every dashboard has a revision that each write raises by one, and a Save carries the revision it
+read. If someone saved first, your Save is refused and the page names who changed the dashboard and
+when, or says they are no longer in RuleBeat, so two people can no longer overwrite each other
+without knowing. Reload to see their version, then make your change again. A name already in use by
+another Shared dashboard is refused too, after the revision is checked.
+
+A Save is checked before it is written. Each widget type takes only the widths its row of the size
+table allows (a stat card is 3, 4 or 6 columns wide, for example), x, y and h are whole numbers of 0
+or more, and no two widgets share an id. A widget of a type this version does not know is kept as it
+is, at 6 or 12 columns, and cannot be added or changed. A dashboard with no widgets is a valid Save.
+A layout stored before these checks is never rewritten or rejected when you open it; it is held to
+them on its next Save, and the page moves each width to the nearest allowed one when it saves.
