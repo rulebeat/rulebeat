@@ -253,10 +253,11 @@
   /* Series colours for a chart comparing several categories. Deliberately not the
      severity ramp: that ramp is hot-to-neutral, so one category would be drawn as
      if it were critical. These five are quiet, distinguishable, and none of them is
-     the red. Black is not among them either: a black line reads as the total or the
+     the red, and none is a green: green is the colour of "ok", and a chart colour
+     is a measurement. Black is not among them either: a black line reads as the total or the
      axis rather than as one series of five. */
   --chart-1: #1F5F8B;
-  --chart-2: #3E7C6A;
+  --chart-2: #A8649A;
   --chart-3: #9A6A2F;
   --chart-4: #7B5EA7;
   --chart-5: #5A6570;
@@ -361,7 +362,7 @@
   --track: #26282A;
   /* Same five roles as light, lifted to hold their own against the dark ground. */
   --chart-1: #6BA9D6;
-  --chart-2: #6FC0A9;
+  --chart-2: #A85C95;
   --chart-3: #D6A45C;
   --chart-4: #B79BE0;
   --chart-5: #98A3AE;
