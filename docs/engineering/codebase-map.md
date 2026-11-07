@@ -179,6 +179,8 @@
 | `packages/web/app/(app)/rules/new/page.tsx` | New rule form. `?copyFrom=<id>` pre-fills it (duplicate-as-draft) |
 | `packages/web/lib/schema-cache.ts` | Schema cache read/write + `COMMON_RESOURCE_TYPES`. Backed by the `schema_cache` and `resource_types_cache` tables (7d / 1d TTL), not files; the old `data/schemas/` JSON is imported once by `migrate.ts` |
 | `packages/web/lib/db/snapshots.ts` | `upsertDailySnapshot`, `getSnapshots`/`getBaselineSnapshots`, `backfillSnapshots`. See the Dashboards architecture note in `CLAUDE.md` |
+| `packages/web/lib/posture-math.ts` | `posturePct()`, `postureDelta()`, `pointsLabel()`: the one percentage and delta every posture reader uses |
+| `packages/web/lib/posture-baseline.ts` | `BaselineGap` and `baselineGapMessage()`: what a withheld baseline says, naming the date needed and the earliest usable |
 | `packages/web/lib/date-window.ts` | `DateWindow` type + `resolveDateWindow()`, which resolves at query time, not save time |
 | `packages/web/lib/dashboard-filters.ts` | `WidgetFilters` type + `mergeWidgetFilters()`, where per-widget replaces and never intersects |
 | `packages/web/lib/trend-version-equality.ts` | Pure, client-safe, no database imports (ADR 0013): the version-equality table, the only place equality of two trend points is decided. Per level, which formula versions and which finding-count versions count as equal (install-wide per category: formula 2 and 3, subscription and Directory: formula 3, finding-count version 1 at every level). Every reader of a stored trend point asks it. The "When two counts are compared" table in `docs/public/posture.md` is kept in step with it by a test |

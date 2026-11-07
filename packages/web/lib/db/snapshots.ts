@@ -1,4 +1,4 @@
-import { eq, and, inArray, gte, lte, lt, desc, sql, type SQL } from 'drizzle-orm';
+import { eq, and, inArray, gte, lte, lt, desc, min, sql, type SQL } from 'drizzle-orm';
 import { db } from './client';
 import { postureSnapshots as snapshotsTable, findings as findingsTable } from './tables';
 import { many, run } from './exec';
@@ -178,8 +178,9 @@ function subscriptionCondition(access: Access, subscriptionId: string | undefine
 
 /** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
  *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline.
- *  Narrowed like `getSnapshots`. */
-export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string): Promise<DailySnapshot[]> {
+ *  Narrowed like `getSnapshots`. With `formulaVersions`, only rows of those formula versions are
+ *  considered, so a category's latest row is its latest comparable one (trend-version-equality.ts). */
+export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string, formulaVersions?: readonly number[]): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
   const subscription = subscriptionCondition(access, subscriptionId);
   if (!subscription) return [];
@@ -188,6 +189,7 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
       inArray(snapshotsTable.category, categories),
       subscription,
       lte(snapshotsTable.date, onOrBefore),
+      ...(formulaVersions ? [inArray(snapshotsTable.formulaVersion, [...formulaVersions])] : []),
     ))
     .orderBy(desc(snapshotsTable.date)));
 
@@ -199,6 +201,25 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
     out.push(rowToSnapshot(row));
   }
   return out;
+}
+
+/** The date of each category's oldest row of one of `formulaVersions`, narrowed like `getSnapshots`.
+ *  A category with no such row is absent. Tells a withheld baseline how far back a comparison could
+ *  ever reach. */
+export async function getFirstSnapshotDates(categories: string[], access: Access, subscriptionId: string | undefined, formulaVersions: readonly number[]): Promise<Map<string, string>> {
+  const first = new Map<string, string>();
+  const subscription = subscriptionCondition(access, subscriptionId);
+  if (categories.length === 0 || !subscription) return first;
+  const rows = await many(db.select({ category: snapshotsTable.category, first: min(snapshotsTable.date) })
+    .from(snapshotsTable)
+    .where(and(
+      inArray(snapshotsTable.category, categories),
+      subscription,
+      inArray(snapshotsTable.formulaVersion, [...formulaVersions]),
+    ))
+    .groupBy(snapshotsTable.category));
+  for (const row of rows) if (row.first) first.set(row.category, row.first);
+  return first;
 }
 
 /** When each category's install-wide snapshot was last written, on or before `onOrBefore`. Only the

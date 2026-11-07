@@ -2,7 +2,10 @@ import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityO
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, getLastSnapshotTimes, SNAPSHOT_FORMULA_VERSION, type DailySnapshot } from './db/snapshots';
+import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, getLastSnapshotTimes, type DailySnapshot } from './db/snapshots';
+import { posturePct, postureDelta } from './posture-math';
+import { equalFormulaVersions } from './trend-version-equality';
+import type { BaselineGap } from './posture-baseline';
 import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
 import { listScanMetas } from './scan-history';
@@ -23,6 +26,10 @@ function isWithinRange(iso: string | undefined, from: string, to: string): boole
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function dayBefore(dateKey: string): string {
+  return new Date(new Date(`${dateKey}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
 }
 
 function daysAgo(days: number): string {
@@ -132,7 +139,7 @@ function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string;
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, e]) => ({
       date,
-      pct: e.total === 0 ? null : Math.round((e.passing / e.total) * 100),
+      pct: posturePct(e.passing, e.total),
       findings: e.findings,
       passing: e.passing,
       total: e.total,
@@ -142,7 +149,7 @@ function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string;
 function groupSnapshotsByCategory(snaps: DailySnapshot[]): Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> {
   const map: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> = {};
   for (const s of snaps) {
-    (map[s.category] ??= []).push({ date: s.date, pct: s.posturePct, findings: s.activeFindings, passing: s.passingRules, total: s.totalRules });
+    (map[s.category] ??= []).push({ date: s.date, pct: posturePct(s.passingRules, s.totalRules), findings: s.activeFindings, passing: s.passingRules, total: s.totalRules });
   }
   for (const key of Object.keys(map)) map[key].sort((a, b) => a.date.localeCompare(b.date));
   return map;
@@ -211,7 +218,12 @@ export interface WidgetSummary {
   /** `date` is the oldest per-category baseline row's date actually reached (categories can each
    *  land on a different snapshot date), always show this, not an assumed "N days ago". */
   baseline: { pct: number | null; date: string } | null;
+  /** Points of change from `baseline` to the live number, from the unrounded ratios and rounded once
+   *  (lib/posture-math.ts). Null when there is no baseline. */
   deltaPct: number | null;
+  /** Why `baseline` is null although a trend is served: some category has no point the version-equality
+   *  table counts equal on or before `needed`. Null when a baseline was built or no trend is served. */
+  baselineGap: BaselineGap | null;
   trend: Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>;
   trendByCategory?: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>>;
   /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters, i.e.
@@ -289,7 +301,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     activityRuleCount = activity;
   }
 
-  const pct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
+  const pct = posturePct(passingRules, totalRules);
 
   const newInWindow = activeFindings.filter(f => isWithinRange(f.firstSeenAt, from, to)).length;
   const fixedFindings = (await queryFixedFindings(filters, access)).filter(countsInFindingTotals);
@@ -311,7 +323,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
     const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
-    const catPct = catTotal === 0 ? null : Math.round((catPassing / catTotal) * 100);
+    const catPct = posturePct(catPassing, catTotal);
     // A high posture % is misleading if the scan behind it didn't finish. The coverage-freshness
     // widget must show that alongside recency, not just "how long ago" (spec 004).
     const [lastScan] = await listScanMetas(cat.id, access, 1);
@@ -350,7 +362,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const { passing } = splitRuleOutcomes(scopedRuleIds, subFindings, ruleById);
     return {
       subscriptionId: subId,
-      pct: total === 0 ? null : Math.round((passing / total) * 100),
+      pct: posturePct(passing, total),
       activeFindings: subFindings.length,
       totalRules: total,
       passingRules: passing,
@@ -403,7 +415,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   if (hasUnsupportedTrendFilter) {
     return {
-      current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
+      current, suppressedIncluded, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
@@ -413,7 +425,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trendScope = trendScopeOf(access, filters.subscriptions);
   if (!trendScope.available) {
     return {
-      current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
+      current, suppressedIncluded, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
@@ -423,30 +435,35 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trend = aggregateSnapshotsByDate(snaps);
   const trendByCategory = groupSnapshotsByCategory(snaps);
 
-  // Only compare against baseline rows written under the same formula this scope's live `pct` is
-  // computed under, otherwise a category whose baseline predates spec 030 (or was backfilled)
-  // gets blended in as if it were an honest number, producing a delta that doesn't mean anything
-  // (the "-75% vs baseline" bug). A category with no honest baseline yet is excluded from the
-  // blend entirely rather than blanking the whole widget; it reappears once enough days of
-  // honest-formula snapshots accumulate.
-  const honestBaselineSnaps = (await getBaselineSnapshots(trendCategoryIds, from, access, trendSubscriptionId))
-    .filter(s => s.formulaVersion === SNAPSHOT_FORMULA_VERSION);
+  // The baseline is each category's newest point that the version-equality table counts equal, on or
+  // before the day before the window's first day. If any category has none, there is no baseline:
+  // building one from the rest would compare two different sets of rules, so the delta is withheld
+  // and the gap names the date needed and the earliest date every category could be compared from.
+  const level = trendSubscriptionId ? 'subscription' : 'install';
+  const equalFormulas = equalFormulaVersions(level);
+  const needed = dayBefore(from);
+  const baselineSnaps = await getBaselineSnapshots(trendCategoryIds, needed, access, trendSubscriptionId, equalFormulas);
   let baseline: WidgetSummary['baseline'] = null;
   let deltaPct: number | null = null;
-  if (honestBaselineSnaps.length > 0) {
-    const baselineSnaps = honestBaselineSnaps;
+  let baselineGap: BaselineGap | null = null;
+  if (trendCategoryIds.length > 0 && baselineSnaps.length === trendCategoryIds.length) {
     const baselinePassing = baselineSnaps.reduce((s, x) => s + x.passingRules, 0);
     const baselineTotal = baselineSnaps.reduce((s, x) => s + x.totalRules, 0);
-    const basePct = baselineTotal === 0 ? null : Math.round((baselinePassing / baselineTotal) * 100);
     // Categories can each land on a different snapshot date (missed scans, backfill drift). The
     // oldest is the honest bound for "how far back does this comparison actually reach".
     const oldestDate = baselineSnaps.reduce((min, x) => (x.date < min ? x.date : min), baselineSnaps[0].date);
-    baseline = { pct: basePct, date: oldestDate };
-    deltaPct = (pct !== null && basePct !== null) ? pct - basePct : null;
+    baseline = { pct: posturePct(baselinePassing, baselineTotal), date: oldestDate };
+    deltaPct = postureDelta({ passing: passingRules, total: totalRules }, { passing: baselinePassing, total: baselineTotal });
+  } else if (trendCategoryIds.length > 0) {
+    const firstDates = await getFirstSnapshotDates(trendCategoryIds, access, trendSubscriptionId, equalFormulas);
+    const earliest = firstDates.size === trendCategoryIds.length
+      ? [...firstDates.values()].reduce((max, d) => (d > max ? d : max))
+      : null;
+    baselineGap = { needed, earliest, level };
   }
 
   return {
-    current, suppressedIncluded, baseline, deltaPct, deltaFindings,
+    current, suppressedIncluded, baseline, deltaPct, baselineGap, deltaFindings,
     perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
