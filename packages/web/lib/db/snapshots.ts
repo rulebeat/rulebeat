@@ -219,6 +219,16 @@ export async function getLastSnapshotTimes(categories: string[], onOrBefore: str
   return times;
 }
 
+/** The days an install-wide snapshot exists on or after `sinceDate`, oldest first. Only dates: a date
+ *  carries no count, so it is the same for everyone and a chart of event counts can tell a day with
+ *  nothing to report from a day nobody recorded, whatever filter or Scope narrows the counts. */
+export async function getRecordedSnapshotDays(sinceDate: string): Promise<string[]> {
+  const rows = await many(db.selectDistinct({ date: snapshotsTable.date }).from(snapshotsTable)
+    .where(and(eq(snapshotsTable.subscriptionId, ''), gte(snapshotsTable.date, sinceDate)))
+    .orderBy(snapshotsTable.date));
+  return rows.map(r => r.date);
+}
+
 // --- one-time backfill from existing scan-blob history ---
 
 /** Approximates historical daily snapshots from the scan-blob history (last scan of each day

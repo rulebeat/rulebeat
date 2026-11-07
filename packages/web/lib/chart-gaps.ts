@@ -80,8 +80,7 @@ export type CountRow<K extends string> = { date: string; gap: GapReason | null }
 
 /** Rows for a bar chart of daily counts. A day outside `recordedDays` with no counts is a gap
  *  (every count `null`); a recorded day with nothing in it keeps its zeros. `recordedDays` is
- *  `null` when the server has no record of scan days for this filter, in which case every day
- *  counts as recorded. A day with a count above zero is always recorded. */
+ *  `null` only while the summary has not loaded, in which case every day counts as recorded. A day with a count above zero is always recorded. */
 export function countRows<K extends string>(
   counts: ReadonlyArray<{ date: string } & Record<K, number>>,
   keys: readonly K[],

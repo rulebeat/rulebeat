@@ -12,7 +12,7 @@ import { db } from '@/lib/db/client';
 import { run } from '@/lib/db/exec';
 import { postureSnapshots } from '@/lib/db/tables';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
-import { everythingAccess } from '@/lib/access-model';
+import { buildAccess, everythingAccess } from '@/lib/access-model';
 
 async function summary(filters: Record<string, unknown> = {}) {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -47,7 +47,17 @@ describe('the summary trend and the days it records', () => {
     expect((await summary()).recordedDays).toEqual(['2026-06-01', '2026-06-02', '2026-06-04']);
   });
 
-  it('lists no recorded days when the filter keeps no snapshots', async () => {
-    expect((await summary({ severities: ['high'] })).recordedDays).toBeNull();
+  it('still lists the days the install recorded when the filter keeps no snapshots', async () => {
+    expect((await summary({ severities: ['high'] })).recordedDays).toEqual(['2026-06-01', '2026-06-02', '2026-06-04']);
+    expect((await summary({ subscriptions: ['00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b'] })).recordedDays)
+      .toEqual(['2026-06-01', '2026-06-02', '2026-06-04']);
+  });
+
+  it('lists them for a person who holds no whole subscription, as dates carry no count', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
+    const access = buildAccess([{ tenantId: 't', scope: { kind: 'subscription', path: '/subscriptions/00000000-0000-0000-0000-00000000000a' }, role: 'viewer' }], null);
+    const { recordedDays } = await computeWidgetSummary({ dateWindow: { mode: 'relative', days: 7 } }, 30, access);
+    expect(recordedDays).toEqual(['2026-06-01', '2026-06-02', '2026-06-04']);
   });
 });
