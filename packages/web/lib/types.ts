@@ -237,6 +237,14 @@ export interface DashboardConfig {
   };
 }
 
+/** Who a dashboard or saved view belongs to (ADR 0012), as the person is now. */
+export interface ItemOwner {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+/** Personal: its Owner only. Shared: everyone on the install, each seeing what their Access allows. */
 export type ItemVisibility = 'personal' | 'shared';
 
 export interface Dashboard {
@@ -246,11 +254,10 @@ export interface Dashboard {
   config: DashboardConfig;
   isDefault: boolean;
   createdAt: string;
-  /** Who owns it. A Shared dashboard may have no owner. */
-  ownerId: string | null;
-  /** A Personal dashboard is its owner's alone; a Shared one is the same for everyone. */
+  /** Null for a Shared item with no Owner, which includes every dashboard from before owners. */
+  owner: ItemOwner | null;
   visibility: ItemVisibility;
-  /** Starts at 1; every write to the row bumps it. A save sends the one it read. */
+  /** Starts at 1 and goes up by one on every write. */
   revision: number;
   /** Who made the last write, or null when no write has named anyone. */
   updatedBy: string | null;

@@ -68,7 +68,7 @@ describe('upgrading to dashboards with an owner, a revision and a last editor', 
     const bare = (await product.getDashboard('bare'))!;
 
     for (const d of [layout, bare]) {
-      expect(d).toMatchObject({ ownerId: null, visibility: 'shared', revision: 1, updatedBy: null, updatedAt: null, createdAt: '2026-01-01T00:00:00.000Z' });
+      expect(d).toMatchObject({ owner: null, visibility: 'shared', revision: 1, updatedBy: null, updatedAt: null, createdAt: '2026-01-01T00:00:00.000Z' });
     }
     expect([layout.isDefault, bare.isDefault]).toEqual([true, false]);
     expect(layout.config).toEqual(LAYOUT);

@@ -9,6 +9,7 @@ import { parseManualAccess } from '@/lib/access-model';
 import { assignmentsFor } from '@/lib/manual-access';
 import { writeAudit } from '@/lib/db/audit';
 import { isRole } from '@/lib/rbac';
+import { ownedItemsAuditSentence } from '@/lib/owned-items-copy';
 
 export async function PUT(
   req: Request,
@@ -83,13 +84,21 @@ export async function DELETE(
     return NextResponse.json({ error: 'This is the only admin. Promote someone else to admin first.' }, { status: 409 });
   }
 
+  // Counts only, never the names of what was deleted: a Personal item's name is its owner's alone.
+  const owned = {
+    deletedDashboards: result.dashboards.deleted,
+    deletedViews: result.views.deleted,
+    releasedDashboards: result.dashboards.released,
+    releasedViews: result.views.released,
+  };
+  const ownedSentence = ownedItemsAuditSentence(owned);
   await writeAudit({
     actor,
     action: 'user.remove',
     entityType: 'user',
     entityId: id,
-    summary: `Removed ${before?.email ?? id} (was ${before?.role ?? 'unknown'})`,
-    ...(before ? { details: { changed: removedAccessFields(before) } } : {}),
+    summary: `Removed ${before?.email ?? id} (was ${before?.role ?? 'unknown'})${ownedSentence ? `. ${ownedSentence}` : ''}`,
+    ...(before || ownedSentence ? { details: { ...(before ? { changed: removedAccessFields(before) } : {}), ...(ownedSentence ? { ownedItems: owned } : {}) } } : {}),
   });
   // The person's open Library requests were withdrawn in the same transaction as their removal.
   if (result.withdrawnRequests > 0) {

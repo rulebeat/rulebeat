@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
+import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { sameJson } from '@/lib/dashboard-config-validation';
 import type { Dashboard, DashboardConfig } from '@/lib/types';
@@ -13,7 +14,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   const d = await getDashboard(id);
-  if (!d) return Response.json({ error: 'Not found' }, { status: 404 });
+  const refused = guardItem(actor, 'dashboard', d, 'open');
+  if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
   return Response.json(markedDashboard(actor.access, d));
 }
 
@@ -35,20 +37,13 @@ interface PutBody { name?: unknown; description?: unknown; config?: DashboardCon
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Every Role holds the Personal action, so this only gets the person in: which action the change needs
-  // depends on the dashboard, which is checked next. The 409 body below goes only to someone who got past that.
+  // depends on the dashboard's owner and visibility, which guardItem() checks next. The 409 body below goes only to someone who got past that.
   const actor = await requireRole('dashboards:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   const before = await getDashboard(id);
-  if (!before) return Response.json({ error: 'Not found' }, { status: 404 });
-  // A row with no owner is Shared whatever its visibility says, so it stays install-wide (and `updateDashboard` names it so).
-  const isPersonal = before.visibility === 'personal' && before.ownerId !== null;
-  if (isPersonal) {
-    // A Personal dashboard is its owner's alone: anyone else, an Admin included, is answered as if it did not exist.
-    if (before.ownerId !== actor.id) return Response.json({ error: 'Not found' }, { status: 404 });
-  } else if (!mayAct(actor.access, 'dashboards:write')) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const refused = guardItem(actor, 'dashboard', before, 'change');
+  if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
 
   const body = await parseJsonBody<PutBody>(req);
   if (body instanceof NextResponse) return body;
@@ -57,8 +52,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   const { name, description, config } = body as { name?: string; description?: string; config?: DashboardConfig };
 
-  if (body.isDefault && isPersonal) {
-    return Response.json({ error: 'Only a Shared dashboard can be the default.' }, { status: 400 });
+  if (body.isDefault) {
+    // The Install default is a curation call (ADR 0012): an Admin or an Editor on Everything, and a Shared dashboard.
+    if (!mayAct(actor.access, 'dashboards:manage')) return Response.json({ error: 'Forbidden' }, { status: 403 });
+    if (before.visibility !== 'shared') return Response.json({ error: 'Only a Shared dashboard can be the Install default.' }, { status: 400 });
   }
 
   let current = before;
@@ -92,7 +89,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     // bar persists its own state through here) is not a Save worth an entry.
     const changed = changedFields(before, current);
     if (changed.length > 0) {
-      const label = isPersonal ? 'a Personal dashboard' : changed.includes('name') ? 'a dashboard' : `dashboard "${current.name}"`;
+      const label = before.visibility === 'personal' ? 'a Personal dashboard' : changed.includes('name') ? 'a dashboard' : `dashboard "${current.name}"`;
       await writeAudit({
         actor,
         action: 'dashboard.update',
@@ -114,11 +111,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const actor = await requireRole('dashboards:write');
+  const actor = await requireRole('dashboards:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
   const before = await getDashboard(id);
-  const ok = await deleteDashboard(id, actor.id);
+  const refused = guardItem(actor, 'dashboard', before, 'change');
+  if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+  const ok = await deleteDashboard(id);
   if (!ok) return Response.json({ error: 'Not found' }, { status: 404 });
 
   await writeAudit({
@@ -126,7 +125,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     action: 'dashboard.delete',
     entityType: 'dashboard',
     entityId: id,
-    summary: `Deleted dashboard "${before?.name ?? id}"`,
+    summary: before.visibility === 'personal' ? 'Deleted a Personal dashboard' : `Deleted dashboard "${before.name}"`,
   });
 
   return new Response(null, { status: 204 });

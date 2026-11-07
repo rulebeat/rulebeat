@@ -20,15 +20,16 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  viewer: 'Read and export everything. Cannot change anything.',
-  editor: 'Author rules, run scans, manage schedules, categories, dashboards, saved views and suppressions.',
+  viewer: 'Read and export everything. Keeps their own Personal dashboards and saved views, and cannot change anything else.',
+  editor: 'Author rules, run scans, manage schedules, categories, suppressions, and the Shared dashboards and saved views they own. Changing anyone else\'s Shared dashboards and saved views needs Everything.',
   admin: 'Everything an editor can do, plus switching rule versions, users, sign-in configuration, the Azure connection, notifications and the audit log.',
 };
 
 const VIEWER_ACTIONS = [
   'read',
-  // A Personal dashboard is its owner's alone, so every Role may change their own.
+  // A Personal dashboard or saved view is its owner's alone (ADR 0012), so every Role may keep them.
   'dashboards:personal',
+  'views:personal',
 ] as const;
 
 const EDITOR_ACTIONS = [
@@ -43,6 +44,8 @@ const EDITOR_ACTIONS = [
   'suppressions:write',
   'dashboards:write',
   'views:write',
+  'dashboards:manage',
+  'views:manage',
   'schemas:refresh',
 ] as const;
 
@@ -101,16 +104,19 @@ export const ACTION_CLASS: Record<Action, ActionClass> = {
   'rules:delete': 'install-wide',
   'schedules:write': 'install-wide',
   'categories:write': 'install-wide',
-  'dashboards:write': 'install-wide',
-  'views:write': 'install-wide',
+  'dashboards:manage': 'install-wide',
+  'views:manage': 'install-wide',
   'schemas:refresh': 'install-wide',
   'suppressions:write': 'placed',
   'read': 'scoped',
   'rules:validate': 'scoped',
   'rules:personal': 'scoped',
   'scans:run': 'scoped',
+  'dashboards:write': 'scoped',
+  'views:write': 'scoped',
   'account:self': 'outside',
   'dashboards:personal': 'outside',
+  'views:personal': 'outside',
 };
 
 /**

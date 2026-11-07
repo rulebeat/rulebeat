@@ -1,13 +1,18 @@
 import { db } from '@/lib/db/client';
 import { savedViews } from '@/lib/db/tables';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from '@/lib/db/exec';
+import { loadItemOwners, readVisibility } from '@/lib/db/item-owners';
+import type { ItemOwner } from '@/lib/types';
 import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 
 /**
- * Saved views: a View kept under a name and shared with everyone on the install.
+ * Saved views: a View kept under a name. A new one is Personal, its owner's alone; a Shared one is open to
+ * everyone on the install (ADR 0012).
  *
- * A name is unique case-insensitively (ignoring surrounding spaces), but there is no unique index:
+ * A Personal name is unique among its owner's Personal views, a Shared name among Shared views, both
+ * case-insensitively (ignoring surrounding spaces), and no check reads another person's Personal names.
+ * There is no unique index:
  * an index would make a clash a startup failure on any install that ever held two names differing
  * only by case, and an upgrade must never disturb existing data. The check lives here instead, in
  * the same transaction as the write, the way rule and dashboard names do. On SQLite
@@ -18,7 +23,7 @@ const SAVED_VIEW_NAME_LOCK_KEY = 7194826112;
 
 type Row = typeof savedViews.$inferSelect;
 
-function rowToView(row: Row): SavedView {
+function rowToView(row: Row, owners: Map<string, ItemOwner>): SavedView {
   return {
     id: row.id,
     name: row.name,
@@ -29,7 +34,15 @@ function rowToView(row: Row): SavedView {
     createdAt: row.createdAt,
     updatedBy: row.updatedBy ?? null,
     updatedAt: row.updatedAt,
+    owner: (row.ownerId && owners.get(row.ownerId)) || null,
+    visibility: readVisibility(row.visibility),
+    revision: row.revision,
   };
+}
+
+async function toViews(rows: Row[], handle: DbHandle = db): Promise<SavedView[]> {
+  const owners = await loadItemOwners(rows.map(r => r.ownerId), handle);
+  return rows.map(row => rowToView(row, owners));
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -38,41 +51,53 @@ const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().t
  *  Postgres, whose collations differ, list them in the same order. */
 export async function listSavedViews(): Promise<SavedView[]> {
   const rows = await many(db.select().from(savedViews));
-  return rows
-    .map(rowToView)
+  return (await toViews(rows))
     .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id));
 }
 
 export async function getSavedView(id: string): Promise<SavedView | null> {
   const row = await one(db.select().from(savedViews).where(eq(savedViews.id, id)));
-  return row ? rowToView(row) : null;
+  return row ? (await toViews([row]))[0] : null;
 }
 
-async function isNameTaken(tx: DbHandle, name: string, excludeId?: string): Promise<boolean> {
-  const all = await many(tx.select({ id: savedViews.id, name: savedViews.name }).from(savedViews));
-  return all.some(v => v.id !== excludeId && sameName(v.name, name));
+type NameSpace = { visibility: 'personal'; ownerId: string } | { visibility: 'shared' };
+
+/** The name space a stored row's name has to be free in. A Personal row with no owner is read as Shared. */
+const spaceOf = (row: { visibility: string; ownerId: string | null }): NameSpace =>
+  readVisibility(row.visibility) === 'personal' && row.ownerId ? { visibility: 'personal', ownerId: row.ownerId } : { visibility: 'shared' };
+
+async function isNameTaken(tx: DbHandle, name: string, space: NameSpace, excludeId?: string): Promise<boolean> {
+  const all = await many(tx.select({ id: savedViews.id, name: savedViews.name, ownerId: savedViews.ownerId, visibility: savedViews.visibility }).from(savedViews));
+  return all.some(v => v.id !== excludeId && sameName(v.name, name) && (
+    space.visibility === 'personal'
+      ? readVisibility(v.visibility) === 'personal' && v.ownerId === space.ownerId
+      : readVisibility(v.visibility) === 'shared'
+  ));
 }
 
 export type CreateSavedViewResult =
   | { ok: true; view: SavedView }
   | { ok: false; reason: 'name-taken' };
 
+/** Creates a Personal saved view owned by `actorId`. */
 export async function createSavedView(
   data: SavedViewFields,
-  actorId: string | null,
+  actorId: string,
 ): Promise<CreateSavedViewResult> {
   const name = data.name.trim();
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
-    if (await isNameTaken(tx, name)) return { ok: false, reason: 'name-taken' } as const;
+    if (await isNameTaken(tx, name, { visibility: 'personal', ownerId: actorId })) return { ok: false, reason: 'name-taken' } as const;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await run(tx.insert(savedViews).values({
       id, name, tab: data.tab, query: data.query,
+      // Spelled out so no insert depends on the column default.
+      ownerId: actorId, visibility: 'personal', revision: 1,
       createdBy: actorId, createdAt: now, updatedBy: actorId, updatedAt: now,
     }));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
-    return { ok: true, view: rowToView(stored!) } as const;
+    return { ok: true, view: (await toViews([stored!], tx))[0] } as const;
   });
 }
 
@@ -92,7 +117,7 @@ export async function updateSavedView(
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' } as const;
     const name = data.name?.trim();
-    if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, id)) {
+    if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, spaceOf(existing), id)) {
       return { ok: false, reason: 'name-taken' } as const;
     }
     await run(tx.update(savedViews).set({
@@ -101,9 +126,11 @@ export async function updateSavedView(
       ...(data.query !== undefined && { query: data.query }),
       updatedBy: actorId,
       updatedAt: new Date().toISOString(),
+      revision: sql`${savedViews.revision} + 1`,
     }).where(eq(savedViews.id, id)));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
-    return { ok: true, view: rowToView(stored!), before: rowToView(existing) } as const;
+    const [view, before] = await toViews([stored!, existing], tx);
+    return { ok: true, view, before } as const;
   });
 }
 
@@ -113,6 +140,6 @@ export async function deleteSavedView(id: string): Promise<SavedView | null> {
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return null;
     await run(tx.delete(savedViews).where(eq(savedViews.id, id)));
-    return rowToView(existing);
+    return (await toViews([existing], tx))[0];
   });
 }

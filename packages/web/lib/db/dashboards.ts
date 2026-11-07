@@ -1,16 +1,16 @@
 import { db } from './client';
 import { dashboards, users } from './tables';
-import { eq, ne, and, asc, sql } from 'drizzle-orm';
+import { eq, ne, and, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
-import type { Dashboard, DashboardConfig, ItemVisibility } from '@/lib/types';
+import type { Dashboard, DashboardConfig, ItemOwner } from '@/lib/types';
+import { loadItemOwners, readVisibility } from './item-owners';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
 import { dashboardConfigProblem } from '@/lib/dashboard-config-validation';
 
-/** `visibility` as stored. A value other than 'shared' reads as Personal, so a row written some other way never widens who sees it. */
-const readVisibility = (value: string): ItemVisibility => (value === 'shared' ? 'shared' : 'personal');
+type Row = typeof dashboards.$inferSelect;
 
-function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
+function rowToDashboard(row: Row, owners: Map<string, ItemOwner>): Dashboard {
   return {
     id: row.id,
     name: row.name,
@@ -18,7 +18,7 @@ function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
     config: migrateDashboardConfig(JSON.parse(row.config) as DashboardConfig),
     isDefault: row.isDefault ?? false,
     createdAt: row.createdAt,
-    ownerId: row.ownerId ?? null,
+    owner: (row.ownerId && owners.get(row.ownerId)) || null,
     visibility: readVisibility(row.visibility),
     revision: row.revision,
     updatedBy: row.updatedBy ?? null,
@@ -26,14 +26,18 @@ function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
   };
 }
 
+async function toDashboards(rows: Row[], handle: DbHandle = db): Promise<Dashboard[]> {
+  const owners = await loadItemOwners(rows.map(r => r.ownerId), handle);
+  return rows.map(row => rowToDashboard(row, owners));
+}
+
 export async function listDashboards(): Promise<Dashboard[]> {
-  const rows = await many(db.select().from(dashboards));
-  return rows.map(rowToDashboard);
+  return toDashboards(await many(db.select().from(dashboards)));
 }
 
 export async function getDashboard(id: string): Promise<Dashboard | null> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
-  return row ? rowToDashboard(row) : null;
+  return row ? (await toDashboards([row]))[0] : null;
 }
 
 /**
@@ -41,8 +45,7 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
  * spaces), but there is no unique index, since an existing install can already hold names that
  * differ only by case or spacing and an upgrade must never disturb those rows. The check lives in
  * the application instead, in the same transaction as the write, the way rule names do (see
- * `lib/rules.ts`). The same transaction reads whether the table is empty, so two first creates
- * cannot both become the default.
+ * `lib/rules.ts`).
  *
  * On SQLite `inTransaction()` already serializes every writer through a process-wide lock. On
  * Postgres (READ COMMITTED) two open transactions cannot see each other's uncommitted row, so every
@@ -53,17 +56,18 @@ const DASHBOARD_NAME_LOCK_KEY = 7194826034;
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
- * Where a name has to be free. A Shared name among the Shared dashboards, so a clash never tells
- * anyone what another person keeps Personal. A Personal name among the Shared dashboards and its
- * owner's own Personal ones, so it never reads like a Shared dashboard and never clashes with another
- * person's Personal name.
+ * Where a name has to be free (ADR 0012): a Personal name among its owner's Personal items, a Shared
+ * name among Shared items install-wide. No check reads another person's Personal names, so a clash
+ * never tells anyone what someone else keeps.
  */
-export type NameSpace = { visibility: 'personal'; ownerId: string } | { visibility: 'shared' };
+type NameSpace = { visibility: 'personal'; ownerId: string } | { visibility: 'shared' };
 
 export async function isNameTaken(name: string, space: NameSpace, excludeId?: string, handle: DbHandle = db): Promise<boolean> {
   const rows = await many(handle.select({ id: dashboards.id, name: dashboards.name, ownerId: dashboards.ownerId, visibility: dashboards.visibility }).from(dashboards));
   return rows.some(d => d.id !== excludeId && sameName(d.name, name) && (
-    readVisibility(d.visibility) === 'shared' || (space.visibility === 'personal' && d.ownerId === space.ownerId)
+    space.visibility === 'personal'
+      ? readVisibility(d.visibility) === 'personal' && d.ownerId === space.ownerId
+      : readVisibility(d.visibility) === 'shared'
   ));
 }
 
@@ -72,29 +76,28 @@ export function dashboardNameTakenMessage(name: string): string {
   return `A dashboard named "${name}" already exists.`;
 }
 
-// Inserts one row on `tx`, which the caller has already locked and checked a free name on. The very
-// first dashboard in an empty table is the default, so a fresh empty-state "Create dashboard"
-// always produces a usable one.
-async function insertDashboard(tx: DbHandle, data: { name: string; description?: string; config: DashboardConfig }, actorId: string | null): Promise<Dashboard> {
+// Inserts one Personal row on `tx`, which the caller has already locked and checked a free name on.
+// Nothing becomes the Install default by being first (ADR 0012): an Admin or an Editor on Everything
+// chooses it, from the Shared dashboards.
+async function insertDashboard(tx: DbHandle, ownerId: string, data: { name: string; description?: string; config: DashboardConfig }): Promise<Dashboard> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const isFirstDashboard = (await many(tx.select({ id: dashboards.id }).from(dashboards).limit(1))).length === 0;
   await run(tx.insert(dashboards).values({
     id,
     name: data.name.trim(),
     description: data.description ?? null,
     config: JSON.stringify(data.config),
-    isDefault: isFirstDashboard,
+    isDefault: false,
     createdAt: now,
     // Spelled out so no insert depends on the column default.
-    ownerId: null,
-    visibility: 'shared',
+    ownerId,
+    visibility: 'personal',
     revision: 1,
-    updatedBy: actorId,
+    updatedBy: ownerId,
     updatedAt: now,
   }));
   const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-  return rowToDashboard(stored!);
+  return (await toDashboards([stored!], tx))[0];
 }
 
 export type CreateDashboardResult =
@@ -102,16 +105,17 @@ export type CreateDashboardResult =
   | { ok: false; reason: 'empty-name' }
   | { ok: false; reason: 'name-taken' };
 
-export async function createDashboard(data: { name: string; description?: string; config: DashboardConfig }, actorId: string | null = null): Promise<CreateDashboardResult> {
+/** Creates a Personal dashboard owned by `ownerId`. */
+export async function createDashboard(data: { name: string; description?: string; config: DashboardConfig }, ownerId: string): Promise<CreateDashboardResult> {
   if (!data.name.trim()) return { ok: false, reason: 'empty-name' };
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
-    if (await isNameTaken(data.name, { visibility: 'shared' }, undefined, tx)) return { ok: false, reason: 'name-taken' };
-    return { ok: true, dashboard: await insertDashboard(tx, data, actorId) };
+    if (await isNameTaken(data.name, { visibility: 'personal', ownerId }, undefined, tx)) return { ok: false, reason: 'name-taken' };
+    return { ok: true, dashboard: await insertDashboard(tx, ownerId, data) };
   });
 }
 
-// What every write to an existing row sets besides its own fields: the next revision, and who wrote it and when.
+// What every write to an existing row sets: the next revision, and who wrote it and when.
 const stamp = (actorId: string | null) => ({
   revision: sql`${dashboards.revision} + 1`,
   updatedBy: actorId,
@@ -120,17 +124,17 @@ const stamp = (actorId: string | null) => ({
 
 /** Who last wrote a dashboard and when, as a conflict tells the person whose save was refused. */
 export interface LastEdit {
-  /** The editor's display name, or null for someone no longer in RuleBeat (or a row no write has named). */
+  /** The editor's display name, or null for someone no longer in RuleBeat (or a row no save has named). */
   editor: string | null;
-  /** When it was last written. A row no write has touched since the upgrade falls back to when it was created. */
+  /** When it was last written. A row no save has touched since the upgrade falls back to when it was created. */
   at: string;
 }
 
 export type UpdateDashboardResult =
   | { ok: true; dashboard: Dashboard }
   | { ok: false; reason: 'not-found' }
-  | { ok: false; reason: 'empty-name' }
   | { ok: false; reason: 'revision-conflict'; lastEdit: LastEdit }
+  | { ok: false; reason: 'empty-name' }
   | { ok: false; reason: 'invalid-config'; message: string }
   | { ok: false; reason: 'name-taken' };
 
@@ -143,8 +147,8 @@ async function editorName(tx: DbHandle, userId: string | null): Promise<string |
 /**
  * The one write path for a dashboard's name, description and config. `write.revision` is the revision
  * the caller read; a row that has moved on answers `revision-conflict` and is not touched. The reasons
- * come in a fixed order: an empty name, then the revision, then the config, then a taken name, so a
- * caller working from a stale copy is told that before anything about what it sent.
+ * come in a fixed order: the revision first, so a caller working from a stale copy is told that before
+ * anything about what it sent, then an empty name, then the config, then a taken name.
  *
  * The name is only checked when it actually changes (compared case-insensitively, after trimming,
  * against the stored one): an install can already hold a pre-existing duplicate pair, and saving
@@ -155,7 +159,6 @@ export async function updateDashboard(
   data: Partial<{ name: string; description: string; config: DashboardConfig }>,
   write: { revision: number; actorId: string },
 ): Promise<UpdateDashboardResult> {
-  if (data.name !== undefined && !data.name.trim()) return { ok: false, reason: 'empty-name' };
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
@@ -163,6 +166,7 @@ export async function updateDashboard(
     if (existing.revision !== write.revision) {
       return { ok: false, reason: 'revision-conflict', lastEdit: { editor: await editorName(tx, existing.updatedBy ?? null), at: existing.updatedAt ?? existing.createdAt } };
     }
+    if (data.name !== undefined && !data.name.trim()) return { ok: false, reason: 'empty-name' };
     if (data.config !== undefined) {
       // The stored config as it is stored, not migrated: an unknown widget type is matched against what the row holds.
       const message = dashboardConfigProblem(data.config, JSON.parse(existing.config));
@@ -171,10 +175,15 @@ export async function updateDashboard(
     if (data.name !== undefined) {
       const trimmed = data.name.trim();
       const renamed = !sameName(trimmed, existing.name);
-      const space: NameSpace = readVisibility(existing.visibility) === 'personal' && existing.ownerId
-        ? { visibility: 'personal', ownerId: existing.ownerId }
-        : { visibility: 'shared' };
-      if (renamed && await isNameTaken(trimmed, space, id, tx)) return { ok: false, reason: 'name-taken' };
+      const space: NameSpace = readVisibility(existing.visibility) === 'shared' || !existing.ownerId
+        ? { visibility: 'shared' }
+        : { visibility: 'personal', ownerId: existing.ownerId };
+      // A Personal rename also keeps clear of the Shared names, so a saved Personal dashboard never reads like a Shared one.
+      const taken = renamed && (
+        await isNameTaken(trimmed, space, id, tx) ||
+        (space.visibility === 'personal' && await isNameTaken(trimmed, { visibility: 'shared' }, id, tx))
+      );
+      if (taken) return { ok: false, reason: 'name-taken' };
       data = { ...data, name: trimmed };
     }
     await run(tx.update(dashboards).set({
@@ -184,23 +193,16 @@ export async function updateDashboard(
       ...stamp(write.actorId),
     }).where(eq(dashboards.id, id)));
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-    return { ok: true, dashboard: rowToDashboard(stored!) };
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
   });
 }
 
-// Every dashboard is now deletable, including the default. If the deleted row was the default
-// and other dashboards remain, the oldest remaining one is promoted to default in the same
-// transaction. If none remain, the table is left empty (handled by an empty-state UI elsewhere).
-export async function deleteDashboard(id: string, actorId: string | null = null): Promise<boolean> {
+// Every dashboard is deletable, including the default. Deleting the default leaves the install with
+// none: no other dashboard is promoted for being the oldest (ADR 0012).
+export async function deleteDashboard(id: string): Promise<boolean> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
   if (!row) return false;
-  await inTransaction(async (tx) => {
-    await run(tx.delete(dashboards).where(eq(dashboards.id, id)));
-    if (row.isDefault) {
-      const oldest = await one(tx.select().from(dashboards).orderBy(asc(dashboards.createdAt)).limit(1));
-      if (oldest) await run(tx.update(dashboards).set({ isDefault: true, ...stamp(actorId) }).where(eq(dashboards.id, oldest.id)));
-    }
-  });
+  await run(db.delete(dashboards).where(eq(dashboards.id, id)));
   return true;
 }
 
@@ -212,51 +214,52 @@ export async function setDefaultDashboard(id: string, actorId: string | null = n
   await inTransaction(async (tx) => {
     // Only the rows whose flag actually changes are written, so only they move to a new revision.
     await run(tx.update(dashboards).set({ isDefault: false, ...stamp(actorId) })
-      .where(and(ne(dashboards.id, id), eq(dashboards.isDefault, true))));
+      .where(and(eq(dashboards.isDefault, true), ne(dashboards.id, id))));
     await run(tx.update(dashboards).set({ isDefault: true, ...stamp(actorId) })
       .where(and(eq(dashboards.id, id), eq(dashboards.isDefault, false))));
   });
   return true;
 }
 
-// Picks the first free name among `base`, then `suffix(2)`, `suffix(3)`, ... on `tx`. The caller
-// holds the name lock, so the name it gets back is still free when it inserts.
-async function nextFreeName(tx: DbHandle, base: string, suffix: (n: number) => string): Promise<string> {
+// Picks the first name free among `ownerId`'s Personal names out of `base`, then `suffix(2)`,
+// `suffix(3)`, ... on `tx`. The caller holds the name lock, so the name it gets back is still free
+// when it inserts.
+async function nextFreeName(tx: DbHandle, ownerId: string, base: string, suffix: (n: number) => string): Promise<string> {
   let name = base;
   let n = 2;
-  while (await isNameTaken(name, { visibility: 'shared' }, undefined, tx)) name = suffix(n++);
+  while (await isNameTaken(name, { visibility: 'personal', ownerId }, undefined, tx)) name = suffix(n++);
   return name;
 }
 
+// Copies a dashboard the person can open into a Personal one of their own: neither the Install default
+// flag nor the owner is carried over, and widget config (a `savedViewId` included) is copied as it is.
 // Picks the copy's name and inserts it in one locked transaction, so concurrent duplicates of one
 // dashboard each land on a different name.
-export async function duplicateDashboard(id: string, actorId: string | null = null): Promise<Dashboard | null> {
+export async function duplicateDashboard(id: string, ownerId: string): Promise<Dashboard | null> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!row) return null;
-    const src = rowToDashboard(row);
-    const name = await nextFreeName(tx, `${src.name} (copy)`, n => `${src.name} (copy ${n})`);
-    return insertDashboard(tx, {
+    const src = (await toDashboards([row], tx))[0];
+    const name = await nextFreeName(tx, ownerId, `${src.name} (copy)`, n => `${src.name} (copy ${n})`);
+    return insertDashboard(tx, ownerId, {
       name,
       description: src.description,
       config: JSON.parse(JSON.stringify(src.config)) as DashboardConfig,
-    }, actorId);
+    });
   });
 }
 
-// Restores the original starter dashboard as a new row, e.g. from the gallery's empty state
-// after a user has deleted every dashboard. Named like duplicateDashboard's own dedupe loop.
-// insertDashboard already auto-defaults the very first dashboard in an empty table, so this
-// relies on that rather than calling setDefaultDashboard itself.
-export async function createStarterDashboard(actorId: string | null = null): Promise<Dashboard> {
+// Restores the original starter dashboard as a new Personal row, e.g. from the gallery's empty state
+// after a person has deleted every dashboard of their own. Named like duplicateDashboard's own dedupe loop.
+export async function createStarterDashboard(ownerId: string): Promise<Dashboard> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
-    const name = await nextFreeName(tx, STARTER_DASHBOARD.name, n => `${STARTER_DASHBOARD.name} (${n})`);
-    return insertDashboard(tx, {
+    const name = await nextFreeName(tx, ownerId, STARTER_DASHBOARD.name, n => `${STARTER_DASHBOARD.name} (${n})`);
+    return insertDashboard(tx, ownerId, {
       name,
       description: STARTER_DASHBOARD.description,
       config: JSON.parse(JSON.stringify(STARTER_DASHBOARD.config)) as DashboardConfig,
-    }, actorId);
+    });
   });
 }

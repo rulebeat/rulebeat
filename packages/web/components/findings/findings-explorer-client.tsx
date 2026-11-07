@@ -57,6 +57,7 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import type { ItemPermissions } from '@/lib/item-access-model';
 import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
@@ -103,7 +104,9 @@ interface FindingsExplorerClientProps {
    *  applying one means starting the explorer again from that view. */
   savedViews?: {
     tab: SavedViewTab;
-    canWrite: boolean;
+    /** The person, and what they may do with saved views, for the sections and the controls on the open view. */
+    currentUserId: string;
+    permissions: ItemPermissions;
     /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
      *  the URL, and the explorer never keeps its own copy. */
     openId: string | null;
@@ -817,7 +820,28 @@ export function FindingsExplorerClient({
   // in the widget, then a failed read, then loading, then the empty state, so a failure is never
   // drawn as "no findings".
   const screen = screenOf({ noAccess, mode, suppressionsFailed, failure, data });
-  if (screen === 'no-access') return <NoAccessState />;
+  if (screen === 'no-access') {
+    // Saved views are the person's own to keep and Shared ones are open to everyone, so the menu stays
+    // even when there are no findings to read.
+    return (
+      <>
+        {mode === 'page' && savedViews && (
+          <div className="flex items-center bg-surface px-5 py-3">
+            <SavedViewsMenu
+              tab={savedViews.tab}
+              currentUserId={savedViews.currentUserId}
+              permissions={savedViews.permissions}
+              openId={openViewId}
+              onOpenIdChange={setOpenViewId}
+              onOpen={savedViews.onOpen}
+              currentQuery={savedViewQuery}
+            />
+          </div>
+        )}
+        <NoAccessState />
+      </>
+    );
+  }
   if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
   }
@@ -1277,7 +1301,8 @@ export function FindingsExplorerClient({
         {mode === 'page' && savedViews && (
           <SavedViewsMenu
             tab={savedViews.tab}
-            canWrite={savedViews.canWrite}
+            currentUserId={savedViews.currentUserId}
+            permissions={savedViews.permissions}
             openId={openViewId}
             onOpenIdChange={setOpenViewId}
             onOpen={savedViews.onOpen}

@@ -143,14 +143,14 @@ CREATE TABLE IF NOT EXISTS dashboards (
   created_at TEXT NOT NULL,
   owner_id TEXT,
   visibility TEXT NOT NULL DEFAULT 'shared',
-  revision INTEGER NOT NULL DEFAULT 1,
-  updated_by TEXT,
-  updated_at TEXT
+  revision INTEGER NOT NULL DEFAULT 1
 );
--- #419: owner, visibility, revision and last editor, for a database bootstrapped before they shipped.
+-- ADR 0012: an owner, a visibility and a revision, for a database bootstrapped before they shipped. Every
+-- existing dashboard is Shared at revision 1 with no owner.
 ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS owner_id TEXT;
 ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'shared';
 ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+-- #419: who made the last write and when, nullable for every existing row.
 ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS updated_by TEXT;
 ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
@@ -202,6 +202,8 @@ CREATE TABLE IF NOT EXISTS users (
   mirror_last_success_at TEXT,
   mirror_last_attempt_at TEXT,
   mirror_error TEXT,
+  default_dashboard_id TEXT,
+  default_dashboard_unavailable BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TEXT NOT NULL,
   last_seen_at TEXT
 );
@@ -212,6 +214,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS linked_object_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_last_success_at TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_last_attempt_at TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mirror_error TEXT;
+-- My default (ADR 0012). Nobody has one after the upgrade.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_dashboard_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_dashboard_unavailable BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS role_assignments (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -593,8 +598,27 @@ CREATE TABLE IF NOT EXISTS saved_views (
   created_by TEXT,
   created_at TEXT NOT NULL,
   updated_by TEXT,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  owner_id TEXT,
+  visibility TEXT NOT NULL DEFAULT 'shared',
+  revision INTEGER NOT NULL DEFAULT 1
 );
+-- ADR 0012. A saved view is owned by its creator while that person still exists. The backfill runs only in
+-- the boot that adds owner_id: afterwards a null owner is a fact (a Shared view whose person was removed),
+-- and a later boot must not hand it back to its creator. The whole bootstrap is one transaction.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema() AND table_name = 'saved_views' AND column_name = 'owner_id'
+  ) THEN
+    ALTER TABLE saved_views ADD COLUMN owner_id TEXT;
+    UPDATE saved_views SET owner_id = created_by WHERE created_by IN (SELECT id FROM users);
+  END IF;
+END
+$$;
+ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'shared';
+ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
 `;
 
 /**

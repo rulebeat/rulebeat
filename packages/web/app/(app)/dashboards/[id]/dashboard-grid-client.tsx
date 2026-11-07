@@ -44,6 +44,10 @@ interface Props {
   dashboard: Dashboard;
   /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** Whether the person may change this dashboard (rename, edit, delete). Anyone who can open it may Duplicate it. */
+  canChange: boolean;
+  /** Whether the person may choose the Install default, which is a Shared dashboard. */
+  canSetDefault: boolean;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -121,7 +125,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, canChange, canSetDefault }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -164,6 +168,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
   useEffect(() => {
     if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
     setRefreshKey(k => k + 1);
+    // Someone who cannot change the dashboard still filters what they see, but nothing is saved for anyone else.
+    if (!canChange) return;
     const t = setTimeout(() => {
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
@@ -515,7 +521,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
               <Plus className="size-3.5" />Add Widget
             </Button>
           </>
-        ) : (
+        ) : canChange && (
           <>
             {dirty && (
               <Button size="sm" className="gap-1.5" onClick={() => save()} disabled={saving}>
@@ -539,10 +545,12 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
             }
           />
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => { setTitleValue(dashboard.name); setEditingTitle(true); }}>
-              <Pencil />Rename
-            </DropdownMenuItem>
-            {!dashboard.isDefault && (
+            {canChange && (
+              <DropdownMenuItem onClick={() => { setTitleValue(dashboard.name); setEditingTitle(true); }}>
+                <Pencil />Rename
+              </DropdownMenuItem>
+            )}
+            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isDefault && (
               <DropdownMenuItem onClick={handleSetDefault}>
                 <Star />Set as default
               </DropdownMenuItem>
@@ -550,9 +558,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
             <DropdownMenuItem onClick={handleDuplicate}>
               <Copy />Duplicate
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onClick={handleDelete}>
-              <Trash2 />Delete dashboard
-            </DropdownMenuItem>
+            {canChange && (
+              <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+                <Trash2 />Delete dashboard
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -581,9 +591,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         {widgets.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-4 border border-dashed border-rule-strong">
             <p className="text-sm text-ink-muted">No widgets yet</p>
-            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
-              <Plus className="size-3.5" />Add your first widget
-            </Button>
+            {canChange && (
+              <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
+                <Plus className="size-3.5" />Add your first widget
+              </Button>
+            )}
           </div>
         ) : (
           <GridLayout

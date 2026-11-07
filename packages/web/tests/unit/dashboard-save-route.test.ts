@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser, deleteUser } from '@/lib/db/users';
-import { createDashboard, getDashboard } from '@/lib/db/dashboards';
+import { createDashboard, getDashboard, setDefaultDashboard } from '@/lib/db/dashboards';
 import { listAuditEntries } from '@/lib/db/audit';
 import type { Dashboard, DashboardConfig } from '@/lib/types';
 
@@ -35,10 +35,12 @@ async function person(email: string, role: 'viewer' | 'editor' | 'admin', name?:
   return made.user.id;
 }
 
-async function shared(name: string, config: DashboardConfig = configOf(widget()), actorId: string | null = null): Promise<Dashboard> {
-  const made = await createDashboard({ name, config }, actorId);
+/** A Shared dashboard with no owner, as an upgrade leaves one: made Personal through the repository, then shared. */
+async function shared(name: string, config: DashboardConfig = configOf(widget())): Promise<Dashboard> {
+  const made = await createDashboard({ name, config }, 'seed-owner');
   if (!made.ok) throw new Error(made.reason);
-  return made.dashboard;
+  await execRaw(`UPDATE dashboards SET visibility = 'shared', owner_id = NULL, updated_by = NULL, updated_at = NULL WHERE id = '${made.dashboard.id}'`);
+  return (await getDashboard(made.dashboard.id))!;
 }
 
 async function personal(name: string, ownerId: string): Promise<Dashboard> {
@@ -151,6 +153,17 @@ describe('the revision', () => {
     expect((await res.json()).reason).toBe('revision-conflict');
   });
 
+  it('is checked before an empty name, so a stale save is told that first', async () => {
+    const d = await shared(unique('Order D'));
+    await put(d.id, { description: 'moved on', revision: 1 });
+
+    for (const name of ['', '   ']) {
+      const res = await put(d.id, { name, revision: 1 });
+      expect(res.status, JSON.stringify(name)).toBe(409);
+      expect((await res.json()).reason).toBe('revision-conflict');
+    }
+  });
+
   it('is checked before the config, so a stale save is told that first', async () => {
     const d = await shared(unique('Order C'));
     await put(d.id, { description: 'moved on', revision: 1 });
@@ -162,7 +175,7 @@ describe('the revision', () => {
   });
 
   it('is not given to someone who cannot edit the dashboard', async () => {
-    const d = await shared(unique('Hidden'), configOf(), editor);
+    const d = await shared(unique('Hidden'), configOf());
     signIn(viewer);
 
     const asViewer = await put(d.id, { description: 'x', revision: 99 });
@@ -406,16 +419,7 @@ describe('who may save', () => {
 
   it('keeps a row with no owner Shared, so an Editor saves it and a Viewer is refused', async () => {
     const d = await shared(unique('Ownerless'));
-    expect(d).toMatchObject({ ownerId: null, visibility: 'shared' });
-    signIn(viewer);
-    expect((await put(d.id, { description: 'x', revision: 1 })).status).toBe(403);
-    signIn(editor);
-    expect((await put(d.id, { description: 'x', revision: 1 })).status).toBe(200);
-  });
-
-  it('keeps a row marked Personal that has no owner install-wide', async () => {
-    const d = await shared(unique('Orphaned'));
-    await execRaw(`UPDATE dashboards SET visibility = 'personal', owner_id = NULL WHERE id = '${d.id}'`);
+    expect(d).toMatchObject({ owner: null, visibility: 'shared' });
     signIn(viewer);
     expect((await put(d.id, { description: 'x', revision: 1 })).status).toBe(403);
     signIn(editor);
@@ -459,18 +463,17 @@ describe('making a dashboard the default', () => {
   it('moves the flag and answers the dashboard as it now stands', async () => {
     const first = await shared(unique('First'));
     const second = await shared(unique('Second'));
-    expect(first.isDefault).toBe(true);
+    await setDefaultDashboard(first.id);
 
     const res = await put(second.id, { isDefault: true });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ id: second.id, isDefault: true, revision: 2 });
-    expect((await getDashboard(first.id))).toMatchObject({ isDefault: false, revision: 2 });
+    expect((await getDashboard(first.id))).toMatchObject({ isDefault: false, revision: 3 });
   });
 
   it('is not offered to a Personal dashboard', async () => {
-    const mine = await personal(unique('Personal default'), viewer);
-    signIn(viewer);
+    const mine = await personal(unique('Personal default'), editor);
     expect((await put(mine.id, { isDefault: true })).status).toBe(400);
   });
 

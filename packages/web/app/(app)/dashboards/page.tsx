@@ -2,6 +2,8 @@ import { Header } from '@/components/layout/header';
 import { listDashboards } from '@/lib/db/dashboards';
 import { getCurrentUser } from '@/lib/api-auth';
 import { redirect } from 'next/navigation';
+import { resolveAccess } from '@/lib/access';
+import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
 import { DashboardsGallery } from './dashboards-gallery';
 
 export default async function DashboardsPage() {
@@ -10,12 +12,13 @@ export default async function DashboardsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
 
-  const dashboards = await listDashboards();
+  const dashboards = openableItems(user, await listDashboards());
+  const permissions = itemPermissionsFor(await resolveAccess(user), 'dashboard');
 
   return (
     <>
       <Header title="Dashboards" description="Manage and create custom dashboards" />
-      <DashboardsGallery initialDashboards={dashboards} />
+      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} />
     </>
   );
 }

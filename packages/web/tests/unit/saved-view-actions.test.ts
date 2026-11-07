@@ -4,6 +4,7 @@ import type { SavedView } from '@/lib/saved-view-query';
 
 const view = (id: string, name: string): SavedView => ({
   id, name, tab: 'results', query: '', createdBy: null, createdAt: '2026-01-01T00:00:00.000Z', updatedBy: null, updatedAt: '2026-01-01T00:00:00.000Z',
+  owner: null, visibility: 'shared', revision: 1,
 });
 
 function fake(status: number, body?: unknown, opts: { redirected?: boolean } = {}) {
