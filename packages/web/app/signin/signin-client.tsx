@@ -26,6 +26,8 @@ export function SignInClient({
 }) {
   const searchParams = useSearchParams();
   const oauthError = searchParams.get('error');
+  // Auth.js and the route guard put the page someone asked for here; both actions validate it.
+  const callbackUrl = searchParams.get('callbackUrl');
   const passwordChanged = searchParams.get('passwordChanged') === '1';
   // The button appears as soon as something is configured, whether or not it has been proven by a
   // real sign-in yet. A misconfigured tenant, client id or secret surfaces as `?error=` on this
@@ -57,6 +59,7 @@ export function SignInClient({
 
           {showMicrosoft && (
             <form action={signInWithMicrosoft}>
+              {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
               <Button type="submit" className="w-full" size="lg">
                 <MicrosoftIcon />
                 Sign in with Microsoft
@@ -74,6 +77,7 @@ export function SignInClient({
 
           {showLocalForm && (
             <form action={formAction} className="space-y-3">
+              {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
               {formError && <Callout tone="error">{formError}</Callout>}
               <div className="space-y-1.5">
                 <Label htmlFor="signin-email">Email</Label>
