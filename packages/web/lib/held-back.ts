@@ -7,6 +7,7 @@
  * This is the client-safe half: the label, the shape of a count and the words and lookups the components
  * share. What decides which values are held back, a findings query included, is lib/db/held-back.ts.
  */
+import { isRowField, viewFromSearchParams } from './finding-view';
 
 /** What a chip, a select or an empty widget reads in place of a value outside the person's Access. */
 export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
@@ -23,6 +24,12 @@ export interface HeldBack {
   id: string;
   dimension: string;
   count: number;
+}
+
+/** The revision a save names: the one of the copy the person was sent, which the save is made on. */
+export function claimedRevision(body: unknown): number | undefined {
+  const revision = (body as { revision?: unknown } | null)?.revision;
+  return typeof revision === 'number' && Number.isInteger(revision) ? revision : undefined;
 }
 
 /** The held-back count for one place and dimension, 0 when there is none. */
@@ -96,4 +103,12 @@ export function widgetHeldBackReason(
     }
   }
   return null;
+}
+
+/** Whether a query holds the placeholder `OUTSIDE_ACCESS_LABEL` as a value of a Scope, resource name or returned
+ *  column, which only a copy sent out with every value of that dimension held back carries. It is never a value to store. */
+export function carriesPlaceholder(query: string): boolean {
+  return viewFromSearchParams(new URLSearchParams(query)).filters.some(
+    f => (f.field === 'subscription' || f.field === 'resourceGroup' || f.field === 'resourceName' || isRowField(f.field)) && f.values.includes(OUTSIDE_ACCESS_LABEL),
+  );
 }

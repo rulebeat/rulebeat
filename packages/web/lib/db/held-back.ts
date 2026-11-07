@@ -242,7 +242,7 @@ const heldOf = (held: HeldValues, dimension: string, values: unknown) =>
  * The query a person saves back, with the stored values their Access does not reach put back. What they were sent
  * never held those values, and the placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in
  * full is not a value: it is dropped. What they changed among the values they could see is kept. `restored` says
- * whether the stored query held anything back from them, which is when the write should be made on the revision read.
+ * whether the stored query held anything back from them, which is when the write needs the revision the copy was read at.
  */
 export async function restoreHeldBackView(
   access: Access, stored: { id: string; query: string }, incoming: string,

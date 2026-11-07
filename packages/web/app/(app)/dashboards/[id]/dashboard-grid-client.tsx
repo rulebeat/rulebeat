@@ -175,10 +175,17 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
+        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined }, revision: dashboard.revision }),
       })
-        .then(res => res.ok ? res.json() as Promise<HeldBackDashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
+        .then(async res => {
+          if (res.ok) { setError(null); return await res.json() as HeldBackDashboard; }
+          // A 409 means the dashboard changed after this copy was read: say so rather than dropping the filter silently.
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          setError(body.error ?? 'Failed to save the filters.');
+          return null;
+        })
+        .then(d => { if (d) setDashboard(d); })
+        .catch(() => setError('Failed to save the filters.'));
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -345,12 +352,17 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
           // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
           // That persistence is independent (see the debounced effect above).
           config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+          revision: dashboard.revision,
         }),
       });
       if (res.ok) {
         const d = await res.json() as HeldBackDashboard;
         setDashboard(d);
         setDirty(false);
+        setError(null);
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to save the dashboard.');
       }
     } finally { setSaving(false); }
   }

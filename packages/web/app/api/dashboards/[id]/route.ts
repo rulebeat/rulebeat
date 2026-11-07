@@ -4,9 +4,12 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { claimedRevision } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import type { DashboardConfig } from '@/lib/types';
+
+const STALE_COPY = 'This dashboard changed while you were editing it. Reload it and try again.';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
@@ -28,7 +31,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: boolean }>(req);
+  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: boolean; revision?: number }>(req);
   if (body instanceof NextResponse) return body;
 
   if (body.isDefault) {
@@ -46,14 +49,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   // What the person was sent never held the stored values outside their Access, so they go back in before the
-  // save, on the revision they were read at: a save made from a trimmed copy must not lose them for everyone else.
+  // save. The write is made on the revision of the copy they were sent, not the one read just now: a copy the
+  // dashboard has moved on from is refused, since it would put back values that are no longer there.
+  const revision = claimedRevision(body);
   const restored = body.config === undefined ? null : await restoreHeldBackDashboard(actor.access, before, body.config);
+  if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
   const result = await updateDashboard(
-    id, restored ? { ...body, config: restored.config } : body, restored?.restored ? { ifRevision: before.revision } : {},
+    id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },
   );
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
-    if (result.reason === 'conflict') return Response.json({ error: 'This dashboard changed while you were editing it. Reload it and try again.' }, { status: 409 });
+    if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
     return Response.json({ error }, { status: 409 });
   }

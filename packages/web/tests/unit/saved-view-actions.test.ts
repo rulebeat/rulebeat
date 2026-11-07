@@ -31,6 +31,12 @@ describe('requestSavedViewChange', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"name":"B"}' }));
   });
 
+  it('names the revision of the copy it was sent, so the server can refuse a save made after the view changed', async () => {
+    const fetchImpl = fake(200, view('v1', 'B'));
+    await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { query: 'q=x' }, revision: 3 }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3}' }));
+  });
+
   it('deletes with no body and returns no view', async () => {
     const fetchImpl = fake(204);
     const outcome = await requestSavedViewChange({ kind: 'delete', id: 'v1' }, fetchImpl);
