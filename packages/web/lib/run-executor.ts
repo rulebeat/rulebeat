@@ -4,6 +4,7 @@ import { DEMO_UNANSWERED_RULE_REASON, unansweredDemoQueries } from './demo/unans
 import { isRecordingPresentation } from './demo/config';
 import { listCategories } from './db/categories';
 import { startRun, finishRun, recordCategoryProgress, heartbeatRun, getRun, type RunTriggeredBy, type ScheduleRun } from './schedule-runs';
+import { categoryFailureMessage } from './category-failure';
 import { runCategoryScan } from './scan-runner';
 import { resolveCategoriesForSchedule, resolveRulesForSchedule } from './schedule-target';
 import type { ScheduleTargetType } from './db/schedules';
@@ -132,7 +133,7 @@ export async function executeTarget(
         // Never put String(err) in a message that reaches the browser. An Azure SDK error carries
         // the full request URL (tenant and subscription ids). Run History renders run.error directly.
         console.error(`[RuleBeat] category ${categoryId} failed in scan run ${run.id}:`, err);
-        errors.push(`${categoryId}: scan failed. Check the RuleBeat server logs for details`);
+        errors.push(categoryFailureMessage(categoryId));
       }
     }
 

@@ -167,7 +167,10 @@ the category, the list says so and offers to clear the filter.
 Each run lists the categories it attempted, each marked **Complete** or **Partial**. A category is Partial
 when one or more of its rules did not end in success (the query failed, or its result was capped or
 had rows with no resource id) or when the whole category scan failed, and Complete when every rule did.
-A run still in progress marks only the categories it has scanned so far. One run can show both: a run that
+A run still in progress marks only the categories it has scanned so far. Scans are kept for the 90 most recent
+runs of each category, so on an older run the mark is read from the run itself: a category of a successful run is
+Complete, a category the run recorded as failed is Partial, and a category of a partly complete run that
+the run does not name as failed has no mark, because the scan that listed its rules is gone. One run can show both: a run that
 attempted Security and Cost can be Complete for Security and Partial for Cost. Hover a Partial mark for how
 many rules did not complete, or open the run to see which. The list always shows every category the run
 attempted, not only the ones the filter asked for.

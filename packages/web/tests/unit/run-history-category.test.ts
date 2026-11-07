@@ -8,9 +8,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
 import { scans as scansTable } from '@/lib/db/tables';
-import { many } from '@/lib/db/exec';
+import { many, run as run_ } from '@/lib/db/exec';
 import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/access-model';
 import { finishRun, listRunHistory, startRun } from '@/lib/schedule-runs';
+import { categoryFailureMessage } from '@/lib/category-failure';
 import { saveScanResult } from '@/lib/scan-history';
 import { emptySeverityCounts } from '@/lib/severity';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
@@ -40,10 +41,13 @@ function scan(
   };
 }
 
-async function recordRun(categories: string[], at: string, scans: ReturnType<typeof scan>[]): Promise<string> {
+async function recordRun(
+  categories: string[], at: string, scans: ReturnType<typeof scan>[],
+  end: { status: 'success' | 'partial'; error?: string } = { status: 'success' },
+): Promise<string> {
   const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories, now: new Date(at) });
   for (const s of scans) await saveScanResult(s.module, s, { runId: run.id });
-  await finishRun(run.id, { status: 'success', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date(at) });
+  await finishRun(run.id, { ...end, totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date(at) });
   return run.id;
 }
 
@@ -133,7 +137,7 @@ describe('listRunHistory · a category that threw', () => {
   beforeAll(async () => {
     await resetDb();
     // `cost` threw before it saved a scan, so the run has a scan for `security` only.
-    partlyFailed = await recordRun(['security', 'cost'], '2026-07-01T00:00:00.000Z', [scan('security', '2026-07-01T00:00:00.000Z', [])]);
+    partlyFailed = await recordRun(['security', 'cost'], '2026-07-01T00:00:00.000Z', [scan('security', '2026-07-01T00:00:00.000Z', [])], { status: 'partial', error: categoryFailureMessage('cost') });
     // An error run: every category threw, nothing was saved.
     const failed = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['cost'], now: new Date('2026-07-02T00:00:00.000Z') });
     await finishRun(failed.id, { status: 'error', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-02T00:00:00.000Z') });
@@ -170,6 +174,44 @@ describe('listRunHistory · a category that threw', () => {
   it('does not mark a category of a run still in progress', async () => {
     const running = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date('2026-07-03T00:00:00.000Z') });
     const run = (await listRunHistory(EVERYTHING)).find(r => r.id === running.id)!;
+    expect(run.categoryCoverage).toEqual([]);
+  });
+});
+
+describe('listRunHistory · a category whose scan history has since expired', () => {
+  const FINISH = { totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1 };
+
+  // A run as the executor leaves it, then the way history keeps only the newest scans of a category:
+  // its scan rows go, the run stays.
+  async function expiredRun(status: 'success' | 'partial' | 'error', error: string | undefined, at: string): Promise<string> {
+    const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date(at) });
+    await saveScanResult('security', scan('security', at, []), { runId: run.id });
+    await saveScanResult('cost', scan('cost', at, []), { runId: run.id });
+    await finishRun(run.id, { ...FINISH, status, error, now: new Date(at) });
+    await run_(db.delete(scansTable).where(eq(scansTable.runId, run.id)));
+    return run.id;
+  }
+
+  beforeAll(async () => { await resetDb(); });
+
+  it('shows Complete for the categories of a successful run, never Partial', async () => {
+    const id = await expiredRun('success', undefined, '2026-08-01T00:00:00.000Z');
+    const run = (await listRunHistory(EVERYTHING, { categories: ['security'] })).find(r => r.id === id)!;
+    expect(run.categoryCoverage).toEqual([
+      { category: 'security', coverage: 'complete', incompleteRules: [] },
+      { category: 'cost', coverage: 'complete', incompleteRules: [] },
+    ]);
+  });
+
+  it('still shows Partial for a category the run recorded as failed', async () => {
+    const id = await expiredRun('partial', categoryFailureMessage('cost'), '2026-08-02T00:00:00.000Z');
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === id)!;
+    expect(run.categoryCoverage).toEqual([{ category: 'cost', coverage: 'partial', incompleteRules: [] }]);
+  });
+
+  it('marks nothing for a category of a partial run when the scan that said so is gone', async () => {
+    const id = await expiredRun('partial', 'security: one or more rules did not complete. See the category\'s scan for details', '2026-08-03T00:00:00.000Z');
+    const run = (await listRunHistory(EVERYTHING)).find(r => r.id === id)!;
     expect(run.categoryCoverage).toEqual([]);
   });
 });

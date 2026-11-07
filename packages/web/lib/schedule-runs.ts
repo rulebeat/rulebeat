@@ -12,6 +12,7 @@ import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './co
 import { recountRuns } from './db/run-recount';
 import { chunk } from './db/chunk';
 import type { IncompleteRule } from './types';
+import { categoryFailureMessage } from './category-failure';
 
 // Raised from the original per-schedule audit-log cap (50) to match scan-history retention (90)
 // now that this table also backs the user-facing Run History list, not just internal bookkeeping.
@@ -319,10 +320,13 @@ export interface CategoryCoverage {
 }
 
 /** The coverage of every category each run attempted, in the order the scans started. A category with a saved
- *  scan reads its own `incompleteRules`. A category the run asked for that saved no scan threw before it
- *  could, so it is Partial with no rule to name, listed after the scanned ones; a run still in progress has
- *  not yet reached some of its categories and gets no such entry. Rule names are the install's, the same
- *  ones a scan's detail already lists to anyone. */
+ *  scan reads its own `incompleteRules`. A category with no saved scan is read from the run, because history
+ *  keeps only the newest scans of a category and an older run outlives them: one the run recorded as failed,
+ *  or any category of an `error` run, is Partial with no rule to name, listed after the scanned ones; one of
+ *  a `success` run completed, since a successful run has neither a failed nor a partial category; one of a
+ *  `partial` run that the run does not name as failed is left out, as the scan that said which rules did not
+ *  complete is gone. A run still in progress has not yet reached some of its categories and gets no such
+ *  entry. Rule names are the install's, the same ones a scan's detail already lists to anyone. */
 async function categoryCoverageForRuns(runs: readonly ScheduleRun[]): Promise<Map<string, CategoryCoverage[]>> {
   const byRun = new Map<string, CategoryCoverage[]>();
   for (const ids of chunk(runs.map(r => r.id))) {
@@ -341,8 +345,11 @@ async function categoryCoverageForRuns(runs: readonly ScheduleRun[]): Promise<Ma
   for (const r of runs) {
     if (r.status === 'running') continue;
     const list = byRun.get(r.id) ?? [];
+    const failures = (r.error ?? '').split('; ');
     for (const category of r.categories) {
-      if (!list.some(c => c.category === category)) list.push({ category, coverage: 'partial', incompleteRules: [] });
+      if (list.some(c => c.category === category)) continue;
+      if (r.status === 'error' || failures.includes(categoryFailureMessage(category))) list.push({ category, coverage: 'partial', incompleteRules: [] });
+      else if (r.status === 'success') list.push({ category, coverage: 'complete', incompleteRules: [] });
     }
     if (list.length > 0) byRun.set(r.id, list);
   }
