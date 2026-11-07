@@ -22,7 +22,7 @@ you see them.
 | **Top Violating Rules** | The rules producing the most open findings. |
 | **Category Scorecard** | One row per category: passing, open findings, delta. |
 | **Recent Findings** | The newest findings, with category, severity and first-seen date. |
-| **Severity Breakdown** | A donut of open findings by severity. |
+| **Severity Breakdown** | One stacked bar of open findings by severity, with a legend of counts that each open the matching findings on Scans. |
 | **Subscription Scorecard** | One row per subscription, graded against the rules that apply to it. |
 | **Top Offending Resources** | The resources with the most open findings. |
 | **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against your threshold. |
@@ -56,6 +56,12 @@ trend is not available rather than drawing a misleading blended line
 filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
 data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled
 rules in scope shows an empty posture rather than 0% or 100%.
+
+Charts draw a day with no record as a gap, never as a carried value or a zero, and the tooltip says
+why: "No record for this day", or "Recorded under an earlier posture formula" for a trend day whose
+snapshot was written before the current formula. A day that was recorded and had nothing in it is a
+real zero. Changes read in ink with a sign, an arrow and words ("+12% since 30 days ago"). Each chart
+has a hidden table of its dated values for screen readers.
 
 ## Managing dashboards
 

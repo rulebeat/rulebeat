@@ -66,6 +66,7 @@ const EXEMPT: Record<string, Record<string, string>> = {
   'lib/db/snapshots.ts': {
     upsertDailySnapshot: 'write: stores an install-wide value, so it is computed under the system access',
     getLastSnapshotTimes: 'returns only a time, which is the same for everyone and holds no count',
+    getRecordedSnapshotDays: 'returns only dates, which are the same for everyone and hold no count',
     backfillSnapshots: 'write: startup backfill, under the system access',
   },
   'lib/db/column-catalogue.ts': {

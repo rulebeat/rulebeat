@@ -2,7 +2,7 @@ import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityO
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, getLastSnapshotTimes, SNAPSHOT_FORMULA_VERSION, type DailySnapshot } from './db/snapshots';
+import { getSnapshots, getBaselineSnapshots, getRecordedSnapshotDays, getLastSnapshotTimes, SNAPSHOT_FORMULA_VERSION, type DailySnapshot } from './db/snapshots';
 import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
 import { listScanMetas } from './scan-history';
@@ -119,13 +119,19 @@ async function queryFixedFindings(filters: WidgetFilters, access: Access): Promi
   return narrow(await listFindingSummaries(access, { status: 'fixed' }), filters, access);
 }
 
-function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }> {
-  const byDate = new Map<string, { passing: number; total: number; findings: number }>();
+/** One day of a posture trend. `earlierFormula` marks a day whose rows were written under a posture
+ *  formula this release no longer uses, which the chart draws as a gap rather than as a number
+ *  that means something different from its neighbours. */
+export interface TrendPointData { date: string; pct: number | null; findings: number; passing: number; total: number; earlierFormula: boolean }
+
+function aggregateSnapshotsByDate(snaps: DailySnapshot[]): TrendPointData[] {
+  const byDate = new Map<string, { passing: number; total: number; findings: number; earlierFormula: boolean }>();
   for (const s of snaps) {
-    const e = byDate.get(s.date) ?? { passing: 0, total: 0, findings: 0 };
+    const e = byDate.get(s.date) ?? { passing: 0, total: 0, findings: 0, earlierFormula: false };
     e.passing += s.passingRules;
     e.total += s.totalRules;
     e.findings += s.activeFindings;
+    if (s.formulaVersion !== SNAPSHOT_FORMULA_VERSION) e.earlierFormula = true;
     byDate.set(s.date, e);
   }
   return Array.from(byDate.entries())
@@ -136,13 +142,17 @@ function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string;
       findings: e.findings,
       passing: e.passing,
       total: e.total,
+      earlierFormula: e.earlierFormula,
     }));
 }
 
-function groupSnapshotsByCategory(snaps: DailySnapshot[]): Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> {
-  const map: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> = {};
+function groupSnapshotsByCategory(snaps: DailySnapshot[]): Record<string, TrendPointData[]> {
+  const map: Record<string, TrendPointData[]> = {};
   for (const s of snaps) {
-    (map[s.category] ??= []).push({ date: s.date, pct: s.posturePct, findings: s.activeFindings, passing: s.passingRules, total: s.totalRules });
+    (map[s.category] ??= []).push({
+      date: s.date, pct: s.posturePct, findings: s.activeFindings, passing: s.passingRules, total: s.totalRules,
+      earlierFormula: s.formulaVersion !== SNAPSHOT_FORMULA_VERSION,
+    });
   }
   for (const key of Object.keys(map)) map[key].sort((a, b) => a.date.localeCompare(b.date));
   return map;
@@ -212,8 +222,12 @@ export interface WidgetSummary {
    *  land on a different snapshot date), always show this, not an assumed "N days ago". */
   baseline: { pct: number | null; date: string } | null;
   deltaPct: number | null;
-  trend: Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>;
-  trendByCategory?: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>>;
+  trend: TrendPointData[];
+  trendByCategory?: Record<string, TrendPointData[]>;
+  /** The days a posture snapshot exists for this scope, so a chart of event counts can tell a day
+   *  with nothing to report from a day nobody recorded. Install-wide, so it holds under any
+   *  filter or Scope, including those that keep no trend of their own. */
+  recordedDays: string[];
   /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters, i.e.
    *  anything beyond category + at most one subscription (RG/tag/severity/rule, or more than one
    *  subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
@@ -394,6 +408,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // per-subscription totals (each rule's pass/fail would need to be evaluated across the union of
   // subscriptions, which isn't recoverable from the stored per-day counts). Directory is not a
   // subscription and no snapshot is recorded for it, so choosing it is unsupported too.
+  const recordedDays = await getRecordedSnapshotDays(daysAgo(trendDays));
   const hasUnsupportedTrendFilter = Boolean(
     filters.resourceGroups?.length || filters.tags?.length ||
     filters.severities?.length || filters.ruleIds?.length ||
@@ -404,7 +419,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (hasUnsupportedTrendFilter) {
     return {
       current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
+      perCategory, perSubscription, trend: [], recordedDays, newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
   }
@@ -414,7 +429,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (!trendScope.available) {
     return {
       current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
+      perCategory, perSubscription, trend: [], recordedDays, newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
   }
@@ -447,7 +462,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   return {
     current, suppressedIncluded, baseline, deltaPct, deltaFindings,
-    perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
+    perCategory, perSubscription, trend, trendByCategory, recordedDays, newVsFixedTrend, activityTrend, lastScanAt,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

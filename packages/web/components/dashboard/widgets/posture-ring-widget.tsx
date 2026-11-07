@@ -7,6 +7,7 @@ import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CATEGORY_LABELS, postureColor } from '@/components/dashboard/dashboard-constants';
+import { sinceLabel } from '@/lib/date-window';
 import { Delta } from '@/components/dashboard/widgets/delta';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -106,7 +107,8 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
         {config.showDelta && result.delta !== null && (
           <Delta
             value={result.delta}
-            suffix="% vs baseline"
+            suffix="%"
+            since={result.baselineDate ? sinceLabel(result.baselineDate) : 'vs baseline'}
             title={result.baselineDate ? `score today vs baseline since ${result.baselineDate}` : undefined}
             size="xs"
             display="inline-flex"
