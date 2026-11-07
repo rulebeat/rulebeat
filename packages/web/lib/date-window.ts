@@ -30,10 +30,19 @@ export function resolveDateWindow(w: DateWindow, now: Date = new Date()): { from
 
 const RELATIVE_LABELS: Record<number, string> = { 1: '24h', 7: '7d', 30: '30d' };
 
-function formatDateKey(dateKey: string): string {
+function formatKey(dateKey: string, withYear: boolean): string {
   // Parse as UTC to avoid the browser's local timezone shifting a YYYY-MM-DD date by a day.
   const d = new Date(`${dateKey}T00:00:00Z`);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' as const } : {}), timeZone: 'UTC' });
+}
+
+function formatDateKey(dateKey: string): string {
+  return formatKey(dateKey, false);
+}
+
+/** `formatDateKey` with the year ("Dec 20, 2025"), for a place that has to say which year a range is in. */
+export function formatDateKeyWithYear(dateKey: string): string {
+  return formatKey(dateKey, true);
 }
 
 /** Human label for display: relative windows use the familiar "24h"/"7d"/"30d" short form
@@ -50,4 +59,14 @@ export function dateWindowLabel(w: DateWindow): string {
 export function dateWindowPhrase(w: DateWindow): string {
   const label = dateWindowLabel(w);
   return w.mode === 'relative' ? `in the last ${label}` : `during ${label}`;
+}
+
+/** `dateWindowLabel` with the year on each end of a custom range, so a range that crosses a year
+ *  reads unambiguously on the stamp. A custom range is labelled with the dates `resolveDateWindow`
+ *  gives for `now` (clamped, never the stored ones), so the label and the resolved dates agree.
+ *  Relative windows read the same as in `dateWindowLabel`. */
+export function dateWindowLabelWithYear(w: DateWindow, now: Date = new Date()): string {
+  if (w.mode === 'relative') return dateWindowLabel(w);
+  const { from, to } = resolveDateWindow(w, now);
+  return `${formatDateKeyWithYear(from)} – ${formatDateKeyWithYear(to)}`;
 }

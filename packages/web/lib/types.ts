@@ -237,6 +237,24 @@ export interface DashboardConfig {
   };
 }
 
+/** The "As seen by" stamp data `GET /api/dashboards/[id]` returns beside the definition, computed under the
+ *  same Access as the numbers. It never carries the Role, and never names a value held back. */
+export type StampAccessKind = 'directory' | 'managementGroup' | 'subscription' | 'resourceGroup';
+export type StampFilterDimension = 'category' | 'rule' | 'subscription' | 'resourceGroup' | 'tag' | 'severity';
+
+export interface AsSeenByStamp {
+  /** The display name, or the email when there is no name. */
+  person: string;
+  /** Everything, or counts per Scope kind in the fixed order Directory, management groups, subscriptions,
+   *  resource groups (empty kinds left out). `label` reads "Everything", the counts, or "No access". */
+  access: { everything: boolean; counts: { kind: StampAccessKind; count: number }[]; label: string };
+  /** Each effective filter dimension that holds a value, with the values the person holds, named, and how
+   *  many were held back as outside their access. Subscription values are ids, not names. */
+  filters: { dimension: StampFilterDimension; values: string[]; heldBack: number }[];
+  /** The window's label and the dates `resolveDateWindow()` used for this response. */
+  dateWindow: { label: string; from: string; to: string };
+}
+
 export interface Dashboard {
   id: string;
   name: string;

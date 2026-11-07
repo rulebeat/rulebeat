@@ -667,9 +667,42 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: dashboardExpected,
   };
+  // #338: the "As seen by" stamp rides in the same response, under the same Access. It is read under a fixed
+  // clock because the window is rolling. The seeded dashboard is filtered to subscription two, so what differs
+  // is who is named, how their Access counts, and whether the subscription is named or held back.
+  const stampOf = (
+    person: number, access: { everything: boolean; counts: { kind: string; count: number }[]; label: string }, values: string[], heldBack: number,
+  ) => ({
+    person: `person${person}@example.com`,
+    access,
+    filters: [{ dimension: 'subscription', values, heldBack }],
+    dateWindow: { label: '7d', from: '2026-06-03', to: '2026-06-10' },
+  });
+  const EVERYTHING = { everything: true, counts: [], label: 'Everything' };
+  const heldOne = (kind: string, label: string) => ({ everything: false, counts: [{ kind, count: 1 }], label });
+  const STAMPS: Record<string, unknown> = {
+    'Admin': stampOf(0, EVERYTHING, [SUB_TWO], 0),
+    'Editor on Everything': stampOf(1, EVERYTHING, [SUB_TWO], 0),
+    'Viewer on the management group': stampOf(2, heldOne('managementGroup', '1 management group'), [SUB_TWO], 0),
+    'Viewer on one subscription': stampOf(3, heldOne('subscription', '1 subscription'), [], 1),
+    'Viewer on one resource group': stampOf(4, heldOne('resourceGroup', '1 resource group'), [], 1),
+    'Directory only': stampOf(5, heldOne('directory', '1 Directory'), [], 1),
+    'No Scope': stampOf(6, { everything: false, counts: [], label: 'No access' }, [], 1),
+  };
   const dashboardById: Matrix = {
-    probe: async seed => dashboardOf(await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as never),
-    expected: dashboardExpected,
+    probe: async seed => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(MATRIX_NOW));
+      try {
+        const body = await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as
+          { config: never; outsideAccess: unknown; stamp: unknown };
+        return { ...dashboardOf(body as never), stamp: body.stamp };
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    expected: Object.fromEntries(Object.entries(dashboardExpected).map(([person, byTab]) =>
+      [person, same({ ...(byTab.results as object), stamp: STAMPS[person] })])),
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
