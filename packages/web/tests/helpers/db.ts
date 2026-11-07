@@ -69,6 +69,19 @@ export async function resetDb(): Promise<void> {
   db.run(sql`PRAGMA foreign_keys = ON`);
 }
 
+/** Stamps every subscription-level trend point as written under formula 3. The version-equality table
+ *  (ADR 0013) counts only formula 3 equal at a subscription, and the writer still stamps formula 2, so a
+ *  suite that needs a subscription baseline stands in for the writer here until it stamps formula 3. */
+export async function stampSubscriptionPointsFormula3(): Promise<void> {
+  const update = sql.raw("UPDATE posture_snapshots SET formula_version = 3 WHERE subscription_id <> ''");
+  if (dbKind === 'pg') {
+    await dbReady;
+    await pgDb!.execute(update);
+    return;
+  }
+  db.run(update);
+}
+
 /** Empties the rules table, for suites asserting exact rule counts. */
 export async function clearRules(): Promise<void> {
   if (dbKind === 'pg') {

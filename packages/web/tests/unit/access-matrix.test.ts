@@ -528,7 +528,8 @@ function dashboardMatrix(): Record<string, Matrix> {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(MATRIX_NOW));
       try {
-        const body = await widget('summary', '?trendDays=30') as {
+        // One category: a delta is withheld unless every category in scope has a comparable point, and only security has any.
+        const body = await widget('summary', '?trendDays=30&categories=security') as {
           current: { activeFindings: number; severityCounts: { high: number } };
           perSubscription: { subscriptionId: string; activeFindings: number }[];
           trend: { date: string; findings: number }[];
