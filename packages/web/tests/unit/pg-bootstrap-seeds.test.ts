@@ -81,8 +81,10 @@ describe('seeded baseline (both backends)', () => {
   });
 
   it('the starter dashboard and its marker exist', async () => {
-    const dash = await rows(`SELECT id FROM dashboards WHERE id = 'default'`);
+    const dash = await rows(`SELECT id, updated_at FROM dashboards WHERE id = 'default'`);
     expect(dash).toHaveLength(1);
+    // Every dashboard write stamps updated_at, the seed included; no person made it, so updated_by stays null.
+    expect(typeof dash[0]!.updated_at).toBe('string');
     const marker = await rows(`SELECT value FROM meta WHERE key = 'dashboards-seeded-v1'`);
     expect(marker).toHaveLength(1);
   });

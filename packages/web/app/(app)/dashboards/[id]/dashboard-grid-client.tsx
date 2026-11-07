@@ -35,7 +35,7 @@ import type { Dashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
-import { saveBody, saveFailureMessage, type RefusedSave } from '@/lib/dashboard-save';
+import { createDashboardSaver, saveFailureMessage } from '@/lib/dashboard-save';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
@@ -128,6 +128,12 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
 export function DashboardGridClient({ dashboard: initial, outsideAccess, canChange, canSetDefault }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
+  // Every save goes through this: one at a time, each carrying the revision the last one returned.
+  const [saver] = useState(() => createDashboardSaver(initial, (id, body) => fetch(`/api/dashboards/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  })));
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -171,18 +177,13 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
     // Someone who cannot change the dashboard still filters what they see, but nothing is saved for anyone else.
     if (!canChange) return;
     const t = setTimeout(() => {
-      fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: saveBody(dashboard, { config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
-      })
-        .then(async res => {
-          if (res.ok) return res.json() as Promise<Dashboard>;
-          const refused = await res.json().catch(() => ({})) as RefusedSave;
-          setError(saveFailureMessage(refused, 'Failed to save the filters.'));
-          return null;
-        })
-        .then(d => { if (d) { setDashboard(d); setError(null); } });
+      // The change is built when the save is sent, from the dashboard as it is then, so a Save or
+      // rename inside the debounce window cannot leave this one with a stale revision or config.
+      void saver.save(current => ({ config: { ...current.config, filters: dashFilters, dateWindow, windowDays: undefined } }))
+        .then(result => {
+          if (result.ok) { setDashboard(result.dashboard); setError(null); }
+          else setError(saveFailureMessage(result.refused, 'Failed to save the filters.'));
+        });
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -318,21 +319,16 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
   async function saveTitle(newName: string) {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === dashboard.name) { setEditingTitle(false); setTitleValue(dashboard.name); return; }
-    const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: saveBody(dashboard, { name: trimmed }),
-    });
-    if (res.ok) {
-      const d = await res.json() as Dashboard;
+    const result = await saver.save(() => ({ name: trimmed }));
+    if (result.ok) {
+      const d = result.dashboard;
       setDashboard(d);
       setTitleValue(d.name);
       setTitleError('');
       setEditingTitle(false);
       router.refresh(); // update server-rendered Header
     } else {
-      const body = await res.json().catch(() => ({})) as RefusedSave;
-      setTitleError(saveFailureMessage(body, 'Failed to rename.'));
+      setTitleError(saveFailureMessage(result.refused, 'Failed to rename.'));
       titleInputRef.current?.focus();
     }
   }
@@ -341,24 +337,18 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
   async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: saveBody(dashboard, {
-          name: updatedName,
-          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
-          // That persistence is independent (see the debounced effect above).
-          config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
-        }),
-      });
-      if (res.ok) {
-        const d = await res.json() as Dashboard;
-        setDashboard(d);
+      const result = await saver.save(current => ({
+        name: updatedName,
+        // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
+        // That persistence is independent (see the debounced effect above).
+        config: { ...current.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+      }));
+      if (result.ok) {
+        setDashboard(result.dashboard);
         setDirty(false);
         setError(null);
       } else {
-        const refused = await res.json().catch(() => ({})) as RefusedSave;
-        setError(saveFailureMessage(refused, 'Failed to save the dashboard.'));
+        setError(saveFailureMessage(result.refused, 'Failed to save the dashboard.'));
       }
     } finally { setSaving(false); }
   }
@@ -401,6 +391,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
     });
     if (res.ok) {
       const d = await res.json() as Dashboard;
+      saver.adopt(d);
       setDashboard(d);
       router.refresh(); // invalidate cached server data so sidebar / gallery update
     }

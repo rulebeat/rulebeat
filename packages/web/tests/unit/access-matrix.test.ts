@@ -2330,11 +2330,11 @@ describe('the dashboard and saved view routes answer each person by who owns the
       it(`${route}: ${person} creates a Personal item and lists exactly what they may open`, async () => {
         const ids = Object.fromEntries(await Promise.all(ITEM_KINDS.map(async which => [which, await seedItem(route === 'dashboards' ? 'dashboard' : 'view', which, person)])));
         mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
-        const module = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
-        const listed = (await (await module.GET()).json() as { id: string }[]).map(i => i.id);
+        const routes = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
+        const listed = (await (await routes.GET()).json() as { id: string }[]).map(i => i.id);
         for (const which of ITEM_KINDS) expect(listed.includes(ids[which]!), which).toBe(LISTED[which]);
 
-        const res = await module.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
+        const res = await routes.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
           ? { name: `created ${++ownedCounter}` } : { name: `created ${++ownedCounter}`, tab: 'results', query: '' }));
         expect(res.status).toBe(201);
         expect(await res.json()).toMatchObject({ visibility: 'personal', owner: { id: userIds[person] } });

@@ -1911,15 +1911,18 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
 
       const existing = sqlite.prepare('SELECT COUNT(*) as n FROM dashboards').get() as { n: number };
       if (existing.n === 0) {
+        const now = new Date().toISOString();
+        // No person made the starter dashboard, so updated_by stays null; updated_at is stamped like any write.
         sqlite.prepare(`
-          INSERT OR IGNORE INTO dashboards (id, name, description, config, is_default, created_at, owner_id, visibility, revision)
-          VALUES (?, ?, ?, ?, 1, ?, NULL, 'shared', 1)
+          INSERT OR IGNORE INTO dashboards (id, name, description, config, is_default, created_at, owner_id, visibility, revision, updated_by, updated_at)
+          VALUES (?, ?, ?, ?, 1, ?, NULL, 'shared', 1, NULL, ?)
         `).run(
           'default',
           STARTER_DASHBOARD.name,
           STARTER_DASHBOARD.description,
           JSON.stringify(STARTER_DASHBOARD.config),
-          new Date().toISOString(),
+          now,
+          now,
         );
       }
 

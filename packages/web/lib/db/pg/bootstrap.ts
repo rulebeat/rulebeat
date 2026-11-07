@@ -143,7 +143,9 @@ CREATE TABLE IF NOT EXISTS dashboards (
   created_at TEXT NOT NULL,
   owner_id TEXT,
   visibility TEXT NOT NULL DEFAULT 'shared',
-  revision INTEGER NOT NULL DEFAULT 1
+  revision INTEGER NOT NULL DEFAULT 1,
+  updated_by TEXT,
+  updated_at TEXT
 );
 -- ADR 0012: an owner, a visibility and a revision, for a database bootstrapped before they shipped. Every
 -- existing dashboard is Shared at revision 1 with no owner.

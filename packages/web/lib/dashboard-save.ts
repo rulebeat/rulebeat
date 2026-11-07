@@ -35,3 +35,39 @@ export function saveFailureMessage(body: RefusedSave, fallback: string): string 
   }
   return body.error ?? fallback;
 }
+
+export type SaveResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; refused: RefusedSave };
+
+/**
+ * Every save the dashboard page makes goes through one of these. Saves run one at a time, and each
+ * is built from the dashboard as it stands when it is sent, so the revision it carries is the one the
+ * previous save returned. A filter save waiting out its debounce, a rename and an auto-refresh pick
+ * can then overlap without any of them sending a revision the person's own earlier save already
+ * moved, which the PUT would refuse as another editor's write.
+ */
+export function createDashboardSaver(initial: Dashboard, put: (id: string, body: string) => Promise<Response>) {
+  let current = initial;
+  let tail: Promise<unknown> = Promise.resolve();
+
+  async function send(change: (current: Dashboard) => { name?: string; config?: DashboardConfig }): Promise<SaveResult> {
+    const res = await put(current.id, saveBody(current, change(current)));
+    if (res.ok) {
+      current = await res.json() as Dashboard;
+      return { ok: true, dashboard: current };
+    }
+    return { ok: false, refused: await res.json().catch(() => ({})) as RefusedSave };
+  }
+
+  return {
+    latest: () => current,
+    /** Takes a dashboard returned by some other write (making it the default) as the one to save against. */
+    adopt(next: Dashboard) { current = next; },
+    save(change: (current: Dashboard) => { name?: string; config?: DashboardConfig }): Promise<SaveResult> {
+      const run = tail.then(() => send(change));
+      tail = run.catch(() => undefined);
+      return run;
+    },
+  };
+}
