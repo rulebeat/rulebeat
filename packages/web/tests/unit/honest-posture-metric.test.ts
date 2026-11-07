@@ -15,6 +15,7 @@ import { syncScanFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { SNAPSHOT_FORMULA_VERSION } from '@/lib/db/snapshots';
 import { resetDb, clearRules } from '../helpers/db';
+import { recordScan } from '../helpers/record-scan';
 import type { Finding } from '@/lib/types';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
@@ -84,6 +85,8 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
       findings: [finding(RULE_WITH_FINDING, 'vm-1')],
       finishedAt: new Date().toISOString(),
     });
+    // The newest scan ran the passing rule to the end, failed the second and never ran the third (formula v3, #402).
+    await recordScan(CATEGORY, { ranRuleIds: [RULE_PASSING, RULE_UNKNOWN_FAILED, RULE_WITH_FINDING, RULE_ACTIVITY], incompleteRuleIds: [RULE_UNKNOWN_FAILED, RULE_WITH_FINDING] });
   });
 
   it('a rule with zero findings but a failed or never-run last status counts as unknown, never passing', async () => {
@@ -155,6 +158,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('security', 10, 10, 1);
     await baselineRow('cost', 1, 4, SNAPSHOT_FORMULA_VERSION);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
+    await recordScan('security', { ranRuleIds: [RULE_PASSING] });
 
     const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 
@@ -166,6 +170,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
   it('when the only baseline row is already honest, the delta still computes exactly as before', async () => {
     await baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
+    await recordScan('security', { ranRuleIds: [RULE_PASSING] });
 
     const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
 

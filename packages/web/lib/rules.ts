@@ -102,7 +102,10 @@ export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<
   const notFoundIds = ids.filter(id => !existingSet.has(id));
 
   if (existingIds.length > 0) {
-    await run(db.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)));
+    // Only a rule that changes state is written, so switching on a rule that is already on keeps the date it was
+    // switched on (#402): a scan that finished before that date cannot pass it.
+    await run(db.update(rulesTable).set({ enabled, enabledAt: enabled ? new Date().toISOString() : null })
+      .where(and(inArray(rulesTable.id, existingIds), eq(rulesTable.enabled, !enabled))));
   }
 
   return { updatedIds: existingIds, notFoundIds };
@@ -163,7 +166,8 @@ export type CreateRuleResult =
  */
 export async function insertRuleOn(tx: DbHandle, rule: Rule): Promise<CreateRuleResult> {
   if (await isNameTaken(rule.name, undefined, tx)) return { ok: false, reason: 'name-taken' };
-  await run(tx.insert(rulesTable).values(ruleToRow(rule)));
+  // A new rule that starts enabled is switched on now (#402); it cannot have been proven by a scan that finished before it existed.
+  await run(tx.insert(rulesTable).values(ruleToRow({ ...rule, enabledAt: rule.enabled ? new Date().toISOString() : undefined })));
   // The stored row, not the input: a field the table has no column for is not echoed back.
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
   return { ok: true, rule: rowToRule(stored!) };
@@ -183,7 +187,7 @@ export async function createRule(rule: Rule): Promise<CreateRuleResult> {
  * out and `updateRule()` ignores them if a cast sneaks them in; `id` is the key.
  */
 export type RuleChanges = Partial<Omit<Rule,
-  'id' | 'lastRunStatus' | 'lastRunAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion' | 'libraryRequestId'>>;
+  'id' | 'lastRunStatus' | 'lastRunAt' | 'enabledAt' | 'version' | 'retiredAt' | 'originRuleId' | 'originVersion' | 'libraryRequestId'>>;
 
 // The columns `updateRule()` will write, by the Rule field that feeds each. `kind` is resolved from
 // `queryBackend` and the kind asked for; the run-outcome and version columns are never in here, on purpose.
@@ -202,7 +206,7 @@ const UPDATABLE_FIELDS = [
  * must keep working. Only the fields present in `changes` are written (a key set to `undefined`
  * clears that column), so a column the caller did not mention keeps whatever value it has now,
  * including one a scan or another editor wrote after the caller last read the rule.
- * `lastRunStatus`/`lastRunAt` are never written here.
+ * `lastRunStatus`/`lastRunAt` are never written here. `enabledAt` is written when `enabled` changes.
  */
 export type UpdateRuleResult =
   | { ok: true; rule: Rule }
@@ -242,6 +246,9 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
     if (field in changes && row[field] !== undefined) set[field] = row[field];
   }
   if ('queryBackend' in changes || 'kind' in changes) set.kind = row.kind;
+  if (changes.enabled !== undefined && changes.enabled !== Boolean(current.enabled)) {
+    set.enabledAt = changes.enabled ? new Date().toISOString() : null;
+  }
 
   if (Object.keys(set).length > 0) {
     await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
@@ -481,6 +488,7 @@ function rowToRule(row: Row): Rule {
     libraryRequestId: row.libraryRequestId ?? undefined,
     lastRunStatus: (row.lastRunStatus as RuleExecutionStatus | null) ?? undefined,
     lastRunAt: row.lastRunAt ?? undefined,
+    enabledAt: row.enabledAt ?? undefined,
   };
 }
 
@@ -516,5 +524,6 @@ function ruleToRow(r: Rule): typeof rulesTable.$inferInsert {
     libraryRequestId: r.libraryRequestId ?? null,
     lastRunStatus: r.lastRunStatus ?? null,
     lastRunAt: r.lastRunAt ?? null,
+    enabledAt: r.enabledAt ?? null,
   };
 }

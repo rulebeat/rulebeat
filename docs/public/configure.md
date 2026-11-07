@@ -264,6 +264,8 @@ alongside the URL ([Running with no persistent volume](#running-with-no-persiste
 ## Scan history retention
 
 `SCAN_HISTORY_LIMIT` caps how many runs are kept per category in Run History, defaulting to 90, with
-older runs pruned as new ones complete. The findings lifecycle is unaffected: first-seen, last-seen
+older runs pruned as new ones complete. Beyond that limit, Run History also keeps the newest run for
+each scope a category's runs covered (a run with no recorded scope counts as Everything), so a scope
+scanned less often than the rest is not left without a run. The findings lifecycle is unaffected: first-seen, last-seen
 and fixed state live in their own table, so pruning run records never changes the posture number or a
 finding's age.

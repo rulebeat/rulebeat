@@ -25,6 +25,7 @@ export const rules = sqliteTable('rules', {
   visualQuery: text('visual_query'),          // JSON: VisualQuery | null: visual builder state; rawKql stores the generated KQL
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null. This rule's outcome the last time a scan actually ran it
   lastRunAt: text('last_run_at'),             // ISO timestamp of that outcome; null = never run
+  enabledAt: text('enabled_at'),              // ISO timestamp the rule was last switched on (#402); null = enabled since before it was recorded, or disabled
   version: text('version'),                   // the rule version this row currently runs; null for a custom rule
   retiredAt: text('retired_at'),              // ISO timestamp; set when no pack ships this built-in any more (it keeps running)
   originRuleId: text('origin_rule_id'),       // custom rule only: the shipped rule it was made from (same id when converted in place)
@@ -61,6 +62,7 @@ export const scans = sqliteTable('scans', {
   coverage: text('coverage').notNull().default('complete'), // 'complete' | 'partial'
   incompleteRules: text('incomplete_rules').notNull().default('[]'), // JSON: IncompleteRule[]
   coveredScope: text('covered_scope'), // JSON: { tenantId, path }[], what the run covered (#276); null reads as Everything
+  ranRuleIds: text('ran_rule_ids'), // JSON: string[], the rules the scan ran (#402); null for a scan saved before it was recorded
   hasRecords: integer('has_records').notNull().default(0), // 1 once scan_findings holds this scan's records (ADR 0008); a release that does not know the column saves 0, so its scans convert on the next start
 });
 
