@@ -25,7 +25,7 @@ import { db } from '@/lib/db/client';
 import { run as execRun, many as execMany } from '@/lib/db/exec';
 import { findingEvents as findingEventsTable } from '@/lib/db/tables';
 import { syncScanFindings, listFindings, deleteFindingsForRule } from '@/lib/db/findings';
-import { queryActiveFindings } from '@/lib/dashboard-data';
+import { computeWidgetSummary, queryActiveFindings, queryActiveFindingsWithRows } from '@/lib/dashboard-data';
 import { saveSuppressions } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import type { Finding, Suppression } from '@/lib/types';
@@ -319,11 +319,15 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
   });
 
-  it('filters.includeSuppressed bypasses even a permanent suppression', async () => {
+  it('a permanently suppressed finding never appears in any dashboard read', async () => {
     const f = finding('vm-1');
     await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: '2026-01-01T00:00:00.000Z' });
     await saveSuppressions([suppression({ fingerprint: f.fingerprint, resourceId: f.resourceId })]);
 
-    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
+    expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    expect((await queryActiveFindingsWithRows(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
+    const summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+    expect(summary.current.activeFindings).toBe(0);
+    expect(summary.current.severityCounts).toEqual({ critical: 0, high: 0, medium: 0, low: 0, info: 0 });
   });
 });

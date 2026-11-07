@@ -17,7 +17,9 @@ import { findings as findingsTable, rules as rulesTable } from '@/lib/db/tables'
 import { getCategory } from '@/lib/db/categories';
 import { listFindings } from '@/lib/db/findings';
 import { runCategoryScan } from '@/lib/scan-runner';
-import { queryActiveFindings, queryActiveFindingsWithRows } from '@/lib/dashboard-data';
+import { queryActiveFindings } from '@/lib/dashboard-data';
+import { queryFindingRows, queryView } from '@/lib/db/finding-views';
+import { emptyView } from '@/lib/finding-view';
 import { saveSuppressions } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { resetDb } from '../helpers/db';
@@ -143,7 +145,12 @@ describe('Resource Graph rules', () => {
     await scan([ARG_RULE], { rows: [{ ...VM_ONE, retirement: 'a' }, { ...VM_ONE, retirement: 'b' }] }, 24);
 
     expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(f => f.fingerprint)).not.toContain(fingerprint);
-    expect((await queryActiveFindingsWithRows({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).find(f => f.fingerprint === fingerprint)!.rows).toHaveLength(2);
+    const listed = async (showSuppressed: boolean) =>
+      (await queryView(emptyView(), { tab: 'results', showSuppressed }, EVERYTHING_ACCESS)).items.map(i => i.finding.fingerprint);
+    expect(await listed(false)).not.toContain(fingerprint);
+    expect(await listed(true)).toContain(fingerprint);
+    const rows = await queryFindingRows(emptyView(), { tab: 'results', showSuppressed: true, fingerprint, rowsPage: 0 }, EVERYTHING_ACCESS);
+    expect(rows!.rowCount).toBe(2);
   });
 
   it('keeps the same resource found by two rules as two findings, each with its own rows', async () => {

@@ -12,6 +12,9 @@ import { emptySeverityCounts } from './severity';
 import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 import type { Access } from './access-model';
+import { listHierarchyNodes } from './db/management-group-hierarchy';
+import type { HierarchyNode } from './management-group-tree';
+import { narrowScopes, ruleOverlapsScopes } from './rule-overlap';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -29,29 +32,42 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Mirrors the enabled-rule-set logic in db/snapshots.ts's upsertDailySnapshot. Only 'state' rules
- *  count toward the posture score: 'activity' rules (spec 030) have no meaningful "zero
- *  findings means passing" state, so they're split out as a count rather than folded into either
- *  side of the score.
- *
- *  `filters.severities`/`filters.tags` narrow the denominator the same way `matchesFilters` already
- *  narrows the numerator (spec 039 / RB-RM-015). A widget scoped to "high severity" should count
- *  only high-severity rules as "in scope", not the whole category. `resourceGroups`/`subscriptions`
- *  are deliberately NOT applied here: neither is a property of a `Rule`, so narrowing by them would
- *  need real per-subscription/RG resource-type applicability (out of scope, see spec 039 §2). */
-function enabledRuleIdsForCategory(
-  category: Category,
-  allRules: Rule[],
-  filters?: Pick<WidgetFilters, 'severities' | 'tags'>,
-): { stateRuleIds: Set<string>; activityRuleCount: number } {
+/** The Scopes the live posture is read over (formula v3): the viewer's Access intersected with the
+ *  subscription filter. A resource group filter names groups by name only, so it narrows through the
+ *  subscriptions the viewer's own findings place those groups in: a group nothing sits in is looked at
+ *  by no rule. */
+async function postureScopes(filters: WidgetFilters, access: Access): Promise<Access> {
+  let subscriptions = filters.subscriptions?.length ? filters.subscriptions : undefined;
+  if (filters.resourceGroups?.length) {
+    const inGroups = new Set((await listFindingSummaries(access, { status: 'active' }))
+      .filter(f => f.resourceGroup && filters.resourceGroups!.includes(f.resourceGroup))
+      .map(f => f.subscriptionId.toLowerCase()));
+    subscriptions = (subscriptions ?? [...inGroups]).filter(s => inGroups.has(s.toLowerCase()));
+  }
+  return narrowScopes(access, subscriptions);
+}
+
+/** The enabled rules of a category that match the rule-level filters (rule ids and the rule's own
+ *  tags). A Severity filter is not one: it decides which findings make a rule fail, not which rules
+ *  are counted. `resourceGroups`/`subscriptions` act through the Scopes instead, because neither is a
+ *  property of a `Rule`. A rule id missing from the rule list matches nothing. */
+function enabledRulesOfCategory(category: Category, allRules: Rule[], filters: Pick<WidgetFilters, 'tags' | 'ruleIds'>): Rule[] {
   let enabled = allRules.filter(r => r.enabled && r.category === category.id);
-  if (filters?.severities?.length) {
-    enabled = enabled.filter(r => filters.severities!.includes(r.severity));
-  }
-  if (filters?.tags?.length) {
-    enabled = enabled.filter(r => (r.tags ?? []).some(t => filters.tags!.includes(t)));
-  }
-  const stateRuleIds = new Set(enabled.filter(countsTowardPosture).map(r => r.id));
+  if (filters.ruleIds?.length) enabled = enabled.filter(r => filters.ruleIds!.includes(r.id));
+  if (filters.tags?.length) enabled = enabled.filter(r => (r.tags ?? []).some(t => filters.tags!.includes(t)));
+  return enabled;
+}
+
+/** The rules posture counts for a category: enabled Problem rules that match the rule-level filters
+ *  and whose own scope overlaps the Scopes. 'activity' rules (spec 030) have no meaningful "zero
+ *  findings means passing" state, so they are split out as a count rather than folded into either
+ *  side of the score. */
+function countedRulesForCategory(
+  category: Category, allRules: Rule[], filters: Pick<WidgetFilters, 'tags' | 'ruleIds'>,
+  scopes: Access, hierarchy: readonly HierarchyNode[],
+): { stateRuleIds: Set<string>; activityRuleCount: number } {
+  const enabled = enabledRulesOfCategory(category, allRules, filters);
+  const stateRuleIds = new Set(enabled.filter(r => countsTowardPosture(r) && ruleOverlapsScopes(r, scopes, hierarchy)).map(r => r.id));
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
@@ -91,16 +107,14 @@ function matchesFilters(
   return true;
 }
 
-async function suppressedFingerprintSet(filters: WidgetFilters, access: Access): Promise<Set<string>> {
-  if (filters.includeSuppressed) return new Set();
+async function suppressedFingerprintSet(access: Access): Promise<Set<string>> {
   return new Set((await loadSuppressions(access)).filter(isActiveSuppression).map(s => s.fingerprint));
 }
 
-/** Active findings matching every dimension in `filters`. Excludes actively-suppressed
- *  fingerprints unless `filters.includeSuppressed`. */
+/** Findings matching every dimension in `filters`, never an actively-suppressed one. */
 async function narrow<T extends FindingSummary>(all: T[], filters: WidgetFilters, access: Access): Promise<T[]> {
   const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
-  const suppressed = await suppressedFingerprintSet(filters, access);
+  const suppressed = await suppressedFingerprintSet(access);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
 }
 
@@ -167,11 +181,6 @@ export interface WidgetSummary {
     newInWindow: number;
     fixedInWindow: number;
   };
-  /** Whether actively-suppressed findings were counted in the numbers above (spec 039 /
-   *  RB-RM-016): mirrors `filters.includeSuppressed ?? false`. No dashboard control can set this
-   *  true yet (no widget exposes the toggle), but the response is self-describing the moment one
-   *  does, rather than requiring every future consumer to separately track which mode it asked for. */
-  suppressedIncluded: boolean;
   /** Net lifecycle change over the window (newInWindow − fixedInWindow). A count, not a level
    *  comparison against a past snapshot. See DATA-SOURCE-UNIFICATION-PLAN.md §3. */
   deltaFindings: number | null;
@@ -248,45 +257,25 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     if (f.severity in severityCounts) severityCounts[f.severity]++;
   }
 
-  let totalRules: number;
-  let passingRules: number;
-  let unknownRules: number;
-  let activityRuleCount: number;
-  let scopedRuleIds: Set<string>;
+  // The tree is read only when a counted rule could need it: below Everything, a rule that names a
+  // management group is expanded over the stored copy.
+  const scopes = await postureScopes(filters, access);
+  const hierarchy = !scopes.everything && allRules.some(r => r.scope.managementGroups?.length) ? await listHierarchyNodes() : [];
 
-  if (filters.ruleIds?.length) {
-    // Rule-scoped widget (replaces the old policy-data route): pct is selected-rules
-    // passing/total, computed live: rule-level history isn't tracked in posture_snapshots.
-    // Excluded here too, not just in the category-wide branch below.
-    // A ruleId not found in ruleById (stale selection) defaults to 'state', same as the predicate's
-    // own default for an absent kind.
-    const stateSelected = filters.ruleIds.filter(id => countsTowardPosture(ruleById.get(id) ?? { kind: 'state' }));
-    scopedRuleIds = new Set(stateSelected);
-    totalRules = scopedRuleIds.size;
-    activityRuleCount = filters.ruleIds.filter(id => ruleById.has(id) && isActivityRule(ruleById.get(id)!)).length;
-    const outcome = splitRuleOutcomes(scopedRuleIds, activeFindings, ruleById);
-    passingRules = outcome.passing;
-    unknownRules = outcome.unknown;
-  } else {
-    scopedRuleIds = new Set();
-    let total = 0;
-    let passing = 0;
-    let unknown = 0;
-    let activity = 0;
-    for (const cat of targetCategories) {
-      const { stateRuleIds, activityRuleCount: catActivity } = enabledRuleIdsForCategory(cat, allRules, filters);
-      for (const id of stateRuleIds) scopedRuleIds.add(id);
-      total += stateRuleIds.size;
-      activity += catActivity;
-      const catFindings = activeFindings.filter(f => f.category === cat.id);
-      const outcome = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
-      passing += outcome.passing;
-      unknown += outcome.unknown;
-    }
-    totalRules = total;
-    passingRules = passing;
-    unknownRules = unknown;
-    activityRuleCount = activity;
+  const countedByCategory = new Map(targetCategories.map(cat => [cat.id, countedRulesForCategory(cat, allRules, filters, scopes, hierarchy)]));
+  const scopedRuleIds = new Set<string>();
+  let totalRules = 0;
+  let passingRules = 0;
+  let unknownRules = 0;
+  let activityRuleCount = 0;
+  for (const cat of targetCategories) {
+    const { stateRuleIds, activityRuleCount: catActivity } = countedByCategory.get(cat.id)!;
+    for (const id of stateRuleIds) scopedRuleIds.add(id);
+    totalRules += stateRuleIds.size;
+    activityRuleCount += catActivity;
+    const outcome = splitRuleOutcomes(stateRuleIds, activeFindings.filter(f => f.category === cat.id), ruleById);
+    passingRules += outcome.passing;
+    unknownRules += outcome.unknown;
   }
 
   const pct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
@@ -307,7 +296,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const lastSnapshotAt = await getLastSnapshotTimes(categoryIds, today());
 
   const perCategory = await Promise.all(targetCategories.map(async cat => {
-    const { stateRuleIds } = enabledRuleIdsForCategory(cat, allRules, filters);
+    const { stateRuleIds } = countedByCategory.get(cat.id)!;
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
     const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
@@ -339,7 +328,6 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     activeFindings: activeFindings.length,
     severityCounts, newInWindow, fixedInWindow,
   };
-  const suppressedIncluded = filters.includeSuppressed ?? false;
 
   // Only subscriptions with at least one active finding are knowable without a live ARM call:
   // see WidgetSummary's perSubscription doc comment.
@@ -403,7 +391,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   if (hasUnsupportedTrendFilter) {
     return {
-      current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
+      current, baseline: null, deltaPct: null, deltaFindings,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
@@ -413,7 +401,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trendScope = trendScopeOf(access, filters.subscriptions);
   if (!trendScope.available) {
     return {
-      current, suppressedIncluded, baseline: null, deltaPct: null, deltaFindings,
+      current, baseline: null, deltaPct: null, deltaFindings,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
@@ -446,7 +434,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   }
 
   return {
-    current, suppressedIncluded, baseline, deltaPct, deltaFindings,
+    current, baseline, deltaPct, deltaFindings,
     perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };

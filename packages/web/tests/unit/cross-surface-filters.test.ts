@@ -79,10 +79,8 @@ function finding(overrides: Partial<Finding> & { ruleId: string; category: strin
 async function toExplorerState(filters: WidgetFilters): Promise<ExplorerFilterState> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   return {
-    showSuppressed: !!filters.includeSuppressed,
-    suppressedFingerprints: filters.includeSuppressed
-      ? new Set()
-      : new Set((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint)),
+    showSuppressed: false,
+    suppressedFingerprints: new Set((await loadSuppressions(EVERYTHING_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint)),
     categories: new Set(filters.categories ?? []),
     severities: new Set(filters.severities ?? []),
     status: 'open',
@@ -204,12 +202,12 @@ describe('dashboard vs. explorer agreement', () => {
     expect(sorted(dash)).toEqual([fpCritical]); // fpHigh is RULE_A too, but suppressed
   });
 
-  it('includeSuppressed brings the suppressed finding back on both surfaces', async () => {
-    const filters = widgetFilters({ includeSuppressed: true });
+  it('?suppressed=1 on a widget route is ignored: the suppressed finding stays out on both surfaces', async () => {
+    const filters = parseWidgetFiltersFromSearchParams(new URLSearchParams('suppressed=1&window=7'));
+    expect(filters).not.toHaveProperty('includeSuppressed');
     const dash = await dashboardFingerprints(filters);
-    const exp = await explorerFingerprints(filters);
-    expect(sorted(dash)).toEqual(sorted(exp));
-    expect(dash.has(fpHigh)).toBe(true);
+    expect(sorted(dash)).toEqual(sorted(await explorerFingerprints(filters)));
+    expect(dash.has(fpHigh)).toBe(false);
   });
 
   it('a combined multi-dimension filter (as a real widget would build) still agrees', async () => {
@@ -309,7 +307,6 @@ describe('WidgetFilters serialization round-trips', () => {
     const original = widgetFilters({
       categories: ['security', 'cost'], subscriptions: ['sub-1', 'sub-2'], resourceGroups: ['rg-1'],
       tags: ['baseline', 'cost-hygiene'], severities: ['critical', 'high'], ruleIds: [RULE_A, RULE_B],
-      includeSuppressed: true,
     });
     const params = buildSummaryParams(original);
     const roundTripped = parseWidgetFiltersFromSearchParams(params);
