@@ -650,13 +650,16 @@ export function ScansClient({
                         )}
 
                         {outcome && (
+                          // Red text on the sunken fill falls under the 4.5:1 contrast floor, so a failing
+                          // outcome keeps ink text and carries the red as a marker beside it.
                           <span
                             className={cn(
-                              'inline-flex w-fit shrink-0 items-center bg-surface-sunken px-1.5 py-0.5 text-xs font-medium',
-                              outcome === 'failing' ? 'text-destructive' : 'text-ink-2',
+                              'inline-flex w-fit shrink-0 items-center gap-1.5 bg-surface-sunken px-1.5 py-0.5 text-xs',
+                              outcome === 'failing' ? 'font-semibold text-ink' : 'font-medium text-ink-2',
                             )}
                             title={OUTCOME_DESCRIPTION[outcome]}
                           >
+                            {outcome === 'failing' && <span aria-hidden className="size-1.5 shrink-0 bg-destructive" />}
                             {OUTCOME_LABEL[outcome]}
                           </span>
                         )}
