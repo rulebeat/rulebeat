@@ -13,11 +13,26 @@ export const FINDING_PLACEMENTS = [
 ] as const;
 export type FindingPlacement = (typeof FINDING_PLACEMENTS)[number];
 
-/** What the view engine's `subscription` field holds for a Directory finding. */
-export const DIRECTORY_SUBSCRIPTION = 'directory';
-
 /** What a Directory finding is called wherever a subscription would be named. */
 export const DIRECTORY_LABEL = 'Directory';
+
+/** What each placement is called on screen. Typed over every placement, so a new one without a label fails the type check. */
+export const PLACEMENT_LABEL: Record<FindingPlacement, string> = {
+  resource: 'Resource',
+  subscription: 'Subscription',
+  'management-group': 'Management group',
+  directory: DIRECTORY_LABEL,
+  workspace: 'Workspace',
+  unplaceable: 'Not placed',
+};
+
+/** What a value of the view engine's `placement` field is called: its label, else the value as stored. */
+export function placementValueLabel(value: string): string {
+  return (FINDING_PLACEMENTS as readonly string[]).includes(value) ? PLACEMENT_LABEL[value as FindingPlacement] : value;
+}
+
+/** What the view engine's `subscription` field holds for a Directory finding. */
+export const DIRECTORY_SUBSCRIPTION = 'directory';
 
 interface Placed { placement?: FindingPlacement | string; subscriptionId: string }
 

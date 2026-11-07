@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Scans can filter, group and show findings by where they are placed ("Placed at").
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
