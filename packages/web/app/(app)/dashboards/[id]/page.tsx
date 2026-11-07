@@ -25,7 +25,9 @@ export default async function DashboardPage({ params }: Props) {
   const access = user ? await resolveAccess(user) : NO_ACCESS;
   // The page reaches the browser, so what it holds is trimmed the way the API's answer is.
   const dashboards = await holdBackDashboards(access, openableItems({ id: user?.id ?? '' }, await listDashboards()));
+  // The stored config never goes to the browser, so a dashboard the list no longer holds is gone, not shown untrimmed.
   const held = dashboards.find(d => d.id === dashboard.id);
+  if (!held) notFound();
   const permissions = itemPermissionsFor(access, 'dashboard');
   const ownsPersonal = dashboard.visibility === 'personal' && isOwnItem({ id: user?.id ?? '' }, dashboard);
 
@@ -40,7 +42,7 @@ export default async function DashboardPage({ params }: Props) {
           {holdsNoScope(access) && !ownsPersonal
             ? <NoAccessState />
             : <DashboardGridClient
-                dashboard={held ?? { ...dashboard, heldBack: [] }}
+                dashboard={held}
                 canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
                 canSetDefault={permissions.manage}
               />}

@@ -159,9 +159,11 @@ describe('a saved view as the routes return it', () => {
     ]);
   });
 
-  it('drops a filter whose values are all held back, and says how many', async () => {
+  it('keeps a placeholder no finding carries for a filter whose values are all held back, and says how many', async () => {
     const [result] = await holdBackSavedViews(oneSubscription, [view(`subscription=${SUB_TWO},${SUB_THREE}`)]);
-    expect(result!.query).toBe('');
+    expect(viewFromSearchParams(new URLSearchParams(result!.query)).filters).toEqual([{ field: 'subscription', values: [OUTSIDE_ACCESS_LABEL] }]);
+    expect(result!.query).not.toContain(SUB_TWO);
+    expect(result!.query).not.toContain(SUB_THREE);
     expect(result!.heldBack).toEqual([{ place: 'savedView', id: 'view-1', dimension: 'subscription', count: 2 }]);
   });
 

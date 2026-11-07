@@ -81,8 +81,17 @@ async function read(person: string, query: string) {
 describe('a saved view filtered to subscription two, opened by the Viewer on subscription one', () => {
   it('opens without the subscription and counts it', async () => {
     const view = await open(ONE_SUBSCRIPTION);
-    expect(view.query).toBe('');
+    expect(view.query).not.toContain(SUB_TWO);
     expect(view.heldBack).toEqual([{ place: 'savedView', id: seed.savedViewId, dimension: 'subscription', count: 1 }]);
+  });
+
+  it('matches nothing when it is opened on Scans, never the whole of the viewer\'s Access', async () => {
+    const view = await open(ONE_SUBSCRIPTION);
+    const { filters } = viewFromSearchParams(new URLSearchParams(view.query));
+    expect(filters).toEqual([{ field: 'subscription', values: [OUTSIDE_ACCESS_LABEL] }]);
+    const result = await read(ONE_SUBSCRIPTION, view.query);
+    expect(result.total).toBe(0);
+    expect(result.items).toEqual([]);
   });
 
   it('is returned exactly as stored, with no count, to the Admin', async () => {
@@ -94,7 +103,12 @@ describe('a saved view filtered to subscription two, opened by the Viewer on sub
   it('counts a resource, and a returned-column value only another subscription has, without naming them', async () => {
     const view = await open(ONE_SUBSCRIPTION, richViewId);
     const { filters } = viewFromSearchParams(new URLSearchParams(view.query));
-    expect(filters).toEqual([{ field: 'resourceName', values: ['vm-one'] }]);
+    // A dimension that is held back in full keeps the placeholder, so the view lists nothing for it.
+    expect(filters).toEqual([
+      { field: 'subscription', values: [OUTSIDE_ACCESS_LABEL] },
+      { field: 'resourceName', values: ['vm-one'] },
+      { field: 'row.otherSubColumn', values: [OUTSIDE_ACCESS_LABEL] },
+    ]);
     expect(view.heldBack).toEqual([
       { place: 'savedView', id: richViewId, dimension: 'subscription', count: 1 },
       { place: 'savedView', id: richViewId, dimension: 'resourceName', count: 1 },
@@ -105,7 +119,7 @@ describe('a saved view filtered to subscription two, opened by the Viewer on sub
   it('keeps a resource the person can see only when a finding inside their Access carries it', async () => {
     const view = await open(ONE_GROUP, richViewId);
     // vm-one is in `rg-one`, which this person holds.
-    expect(viewFromSearchParams(new URLSearchParams(view.query)).filters).toEqual([{ field: 'resourceName', values: ['vm-one'] }]);
+    expect(viewFromSearchParams(new URLSearchParams(view.query)).filters).toContainEqual({ field: 'resourceName', values: ['vm-one'] });
   });
 });
 

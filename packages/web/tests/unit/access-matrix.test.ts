@@ -680,14 +680,16 @@ function dashboardMatrix(): Record<string, Matrix> {
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
   const viewOf = (body: { id: string; query: string; tab: string; heldBack: { id: string }[] }) =>
     ({ tab: body.tab, query: body.query, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  // The held subscription leaves as a placeholder no finding carries, so the view lists nothing for them.
+  const VIEW_MATCHES_NOTHING = `subscription=${encodeURIComponent('Outside your access').replace(/%20/g, '+')}`;
   const VIEW_HELD = [{ place: 'savedView', id: SELF, dimension: 'subscription', count: 1 }];
   const viewExpected = heldByPerson(
     { tab: 'results', query: VIEW_QUERY, heldBack: [] },
     { tab: 'results', query: VIEW_QUERY, heldBack: [] },
-    { tab: 'results', query: '', heldBack: VIEW_HELD },
-    { tab: 'results', query: '', heldBack: VIEW_HELD },
-    { tab: 'results', query: '', heldBack: VIEW_HELD },
-    { tab: 'results', query: '', heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
   );
   const views: Matrix = {
     probe: async seed => {

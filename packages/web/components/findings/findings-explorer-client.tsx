@@ -59,7 +59,7 @@ import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
-import type { HeldBack } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL, type HeldBack } from '@/lib/held-back';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -668,10 +668,14 @@ export function FindingsExplorerClient({
   // The open saved view's stored values this person's Access does not reach, counted beside the filters
   // they sit with. The values themselves never arrive.
   const [openHeldBack, setOpenHeldBack] = useState<HeldBack[]>([]);
-  const heldChips = useMemo<HeldFilterChip[]>(() => openHeldBack.map(h => ({
-    dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count,
-    visible: filterValues(filters, h.dimension as ViewField).length,
-  })), [openHeldBack, filters, fieldLabel]);
+  // A dimension held back in full arrives holding the placeholder `OUTSIDE_ACCESS_LABEL`, which lists nothing and
+  // already has a filter chip of its own, so it gets no count chip beside it.
+  const heldChips = useMemo<HeldFilterChip[]>(() => openHeldBack.flatMap(h => {
+    const values = filterValues(filters, h.dimension as ViewField);
+    return values.includes(OUTSIDE_ACCESS_LABEL) ? [] : [{
+      dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count, visible: values.length,
+    }];
+  }), [openHeldBack, filters, fieldLabel]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;

@@ -16,7 +16,7 @@
  * value in an item they change does not survive the save.
  */
 import type { Access } from '../access-model';
-import type { HeldBack, HeldBackPlace } from '../held-back';
+import { OUTSIDE_ACCESS_LABEL, type HeldBack, type HeldBackPlace } from '../held-back';
 import { markOutsideAccess } from '../outside-access';
 import {
   findingSubject, isRowField, readPath, rowPath, valueText, viewFromSearchParams, viewToSearchParams,
@@ -211,7 +211,7 @@ function viewValues(id: string, view: View): StoredValues[] {
 }
 
 /** Saved views as the routes return them: each query without the stored values `access` does not reach, and
- *  a count per dimension. A query with nothing held back is returned exactly as stored. */
+ *  a count per dimension. A dimension with every value held back keeps the placeholder `OUTSIDE_ACCESS_LABEL`. A query with nothing held back is returned exactly as stored. */
 export async function holdBackSavedViews<T extends { id: string; query: string }>(
   access: Access, views: readonly T[],
 ): Promise<(T & { heldBack: HeldBack[] })[]> {
@@ -221,9 +221,13 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
   return views.map((v, i) => {
     const heldBack = countsOf(stored[i]!, held);
     if (heldBack.length === 0) return { ...v, heldBack };
-    const filters = parsed[i]!.filters
-      .map((f): ViewFilter => (isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f))
-      .filter(f => f.values.length > 0);
+    // A dimension whose values are all held back keeps one placeholder that no finding carries, so opening the
+    // view lists nothing for this person. Dropping the filter instead would list the whole of their Access.
+    const filters = parsed[i]!.filters.map((f): ViewFilter => {
+      if (!isHeldDimension(f.field)) return f;
+      const values = f.values.filter(value => !isHeld(held, f.field, value));
+      return { ...f, values: values.length > 0 || f.values.length === 0 ? values : [OUTSIDE_ACCESS_LABEL] } as ViewFilter;
+    }).filter(f => f.values.length > 0);
     return { ...v, query: viewToSearchParams({ ...parsed[i]!, filters }).toString(), heldBack };
   });
 }
