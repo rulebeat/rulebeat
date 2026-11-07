@@ -42,6 +42,7 @@ const CLEARABLE = [
   'personal_rules',
   'library_requests',
   'saved_views',
+  'scope_sets',
 ] as const;
 
 /** The `meta` rows a test can create. `meta` is not cleared wholesale, but the management group tree's

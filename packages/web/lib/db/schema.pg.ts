@@ -506,3 +506,9 @@ export const savedViews = pgTable('saved_views', {
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull(),
 });
+
+export const scopeSets = pgTable('scope_sets', {
+  hash: text('hash').primaryKey(),
+  paths: text('paths').notNull(),
+  createdAt: text('created_at').notNull(),
+});

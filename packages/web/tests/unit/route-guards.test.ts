@@ -33,6 +33,16 @@ const UNGUARDED_BY_DESIGN = new Set([
   join('health', 'route.ts'),
 ]);
 
+/**
+ * Mutating routes that are guarded by plain `read` on purpose, each with the reason. A POST that only
+ * stores a row nobody can edit or see unless they already hold the paths in it changes nothing for anyone.
+ * - `/api/scope-sets` stores an immutable, content-addressed Scope list (ADR 0016) and checks the caller
+ *   holds every path in it (`scope-sets/route.ts`, `access-matrix.test.ts`).
+ */
+const READ_GUARDED_MUTATIONS = new Set([
+  join('scope-sets', 'route.ts'),
+]);
+
 function findRouteFiles(dir: string): string[] {
   const found: string[] = [];
   // `readdirSync` handles Next.js's literal `[id]` directories fine; PowerShell's Get-ChildItem
@@ -100,7 +110,7 @@ describe('TS-04 · every API route is guarded', () => {
     for (const r of guarded) {
       const verbs = exportedVerbs(r.source);
       const mutates = verbs.some(v => v !== 'GET');
-      if (!mutates) continue;
+      if (!mutates || READ_GUARDED_MUTATIONS.has(r.rel)) continue;
 
       const actions = declaredActions(r.source);
       // A mutating route whose only guard is 'read' would let a Viewer change data.
@@ -193,6 +203,9 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['library-requests/[id]/preview/route.ts', 'rules:write'],
     ['library-requests/[id]/approve/route.ts', 'rules:write'],
     ['library-requests/[id]/reject/route.ts', 'rules:write'],
+    // A Scope list too long for an address is stored as a content-addressed set (ADR 0016). Any signed-in
+    // reader may ask, and the route itself refuses a path the caller does not hold.
+    ['scope-sets/route.ts', 'read'],
   ];
 
   for (const [route, action] of PINNED) {

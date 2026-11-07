@@ -57,6 +57,7 @@ export const personalRules = pick('personalRules');
 export const personalRuleResults = pick('personalRuleResults');
 export const libraryRequests = pick('libraryRequests');
 export const savedViews = pick('savedViews');
+export const scopeSets = pick('scopeSets');
 
 /**
  * Insertion-order tiebreaks, for ORDER BY clauses that must stay stable when rapid inserts share

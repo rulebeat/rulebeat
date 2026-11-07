@@ -367,6 +367,10 @@ table schema_cache
   fields TEXT NOT NULL
   cached_at TEXT NOT NULL
   field_count INTEGER NOT NULL
+table scope_sets
+  hash TEXT PK(1)
+  paths TEXT NOT NULL
+  created_at TEXT NOT NULL
 table sso_providers
   id TEXT PK(1)
   provider TEXT NOT NULL
@@ -449,6 +453,7 @@ schedule_notification_channels: 0
 schedule_runs: 1
 schedules: 2
 schema_cache: 0
+scope_sets: 0
 sso_providers: 0
 suppressions: 1
 users: 1
@@ -880,6 +885,10 @@ table schema_cache
   fields TEXT NOT NULL
   cached_at TEXT NOT NULL
   field_count INTEGER NOT NULL
+table scope_sets
+  hash TEXT PK(1)
+  paths TEXT NOT NULL
+  created_at TEXT NOT NULL
 table sso_providers
   id TEXT PK(1)
   provider TEXT NOT NULL
@@ -962,6 +971,7 @@ schedule_notification_channels: 0
 schedule_runs: 0
 schedules: 0
 schema_cache: 0
+scope_sets: 0
 sso_providers: 0
 suppressions: 0
 users: 1
@@ -1380,6 +1390,10 @@ table schema_cache
   fields TEXT NOT NULL
   cached_at TEXT NOT NULL
   field_count INTEGER NOT NULL
+table scope_sets
+  hash TEXT PK(1)
+  paths TEXT NOT NULL
+  created_at TEXT NOT NULL
 table sso_providers
   id TEXT PK(1)
   provider TEXT NOT NULL
@@ -1462,6 +1476,7 @@ schedule_notification_channels: 0
 schedule_runs: 0
 schedules: 0
 schema_cache: 0
+scope_sets: 0
 sso_providers: 0
 suppressions: 1
 users: 1
@@ -1889,6 +1904,10 @@ table schema_cache
   fields TEXT NOT NULL
   cached_at TEXT NOT NULL
   field_count INTEGER NOT NULL
+table scope_sets
+  hash TEXT PK(1)
+  paths TEXT NOT NULL
+  created_at TEXT NOT NULL
 table sso_providers
   id TEXT PK(1)
   provider TEXT NOT NULL
@@ -1971,6 +1990,7 @@ schedule_notification_channels: 0
 schedule_runs: 0
 schedules: 0
 schema_cache: 0
+scope_sets: 0
 sso_providers: 0
 suppressions: 1
 users: 1
@@ -2399,6 +2419,10 @@ table schema_cache
   fields TEXT NOT NULL
   cached_at TEXT NOT NULL
   field_count INTEGER NOT NULL
+table scope_sets
+  hash TEXT PK(1)
+  paths TEXT NOT NULL
+  created_at TEXT NOT NULL
 table sso_providers
   id TEXT PK(1)
   provider TEXT NOT NULL
@@ -2481,6 +2505,7 @@ schedule_notification_channels: 0
 schedule_runs: 0
 schedules: 0
 schema_cache: 0
+scope_sets: 0
 sso_providers: 0
 suppressions: 1
 users: 1
