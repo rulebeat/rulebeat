@@ -14,6 +14,8 @@ import {
   createPeople, MANAGEMENT_GROUP, MATRIX_TENANT, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
 import { SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON } from '@/lib/write-controls';
+import { loadRules, saveRules } from '@/lib/rules';
+import type { Rule } from '@rulebeat/core';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -61,6 +63,21 @@ describe('the pages narrow what they hand to client components', () => {
     await inTransaction(tx => replaceAssignmentsOn(tx, scopedEditor, [{ tenantId: MATRIX_TENANT, scope: SCOPE_SUBSCRIPTION, role: 'editor' }]));
   });
 
+  /** Runs `check` with the seed's two rules saved beside the scoped one, since the Rules tab lists the rules that exist. */
+  async function withSeededRules(check: () => Promise<void>) {
+    const before = await loadRules();
+    const rule = (id: string, kind: 'state' | 'advisory') => ({
+      id, name: id, description: 'a rule of the seed', category: 'security', severity: 'high', enabled: true, type: 'custom', kind,
+      scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: 'resources | project id',
+    }) as unknown as Rule;
+    await saveRules([...before, rule('matrix-rule', 'state'), rule('matrix-advisory-rule', 'advisory')]);
+    try { await check(); } finally { await saveRules(before); }
+  }
+
+  /** The "resources affected" the Rules tab lists for each rule that has some. */
+  const countsOf = (props: Props) => Object.fromEntries(
+    (props.ruleList as { entries: { id: string; findingCount: number }[] }).entries.filter(e => e.findingCount > 0).map(e => [e.id, e.findingCount]),
+  );
   const scopeOf = (rules: unknown, id: string) => (rules as { id: string; scope: unknown }[]).find(r => r.id === id)?.scope;
   const HELD_ONLY = { level: 'subscription', subscriptions: [SUB_ONE], outsideAccess: 2 };
   const FULL = { level: 'subscription', subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] };
@@ -124,22 +141,26 @@ describe('the pages narrow what they hand to client components', () => {
   it('Scans: sends the policies narrowed, the Rules tab counts inside the Scopes, and the controls off with the reason', async () => {
     signIn(scopedEditor);
     const { default: ScansPage } = await import('@/app/(app)/scans/page');
-    const props = propsOf(await ScansPage({ searchParams: Promise.resolve({ tab: 'rules' }) }), 'ScansClient');
-    expect(scopeOf(props.policies, SCOPED_RULE_ID)).toEqual(HELD_ONLY);
-    expect(props.ruleFindingCounts).toEqual({ 'matrix-rule': 2, 'matrix-advisory-rule': 1 });
-    expect(props.controls).toMatchObject({ rulesWrite: false, schedulesWrite: false, suppress: true, reason: SCOPED_WRITE_REASON });
-    const text = JSON.stringify(props);
-    expect(text).not.toContain(SUB_TWO);
-    expect(text).not.toContain(MANAGEMENT_GROUP);
+    await withSeededRules(async () => {
+      const props = propsOf(await ScansPage({ searchParams: Promise.resolve({ tab: 'rules' }) }), 'ScansClient');
+      expect(scopeOf(props.policies, SCOPED_RULE_ID)).toEqual(HELD_ONLY);
+      expect(countsOf(props)).toEqual({ 'matrix-rule': 2, 'matrix-advisory-rule': 1 });
+      expect(props.controls).toMatchObject({ rulesWrite: false, schedulesWrite: false, suppress: true, reason: SCOPED_WRITE_REASON });
+      const text = JSON.stringify(props);
+      expect(text).not.toContain(SUB_TWO);
+      expect(text).not.toContain(MANAGEMENT_GROUP);
+    });
   });
 
   it('Scans: sends the Admin the policies and counts in full', async () => {
     signIn(userIds['Admin']!);
     const { default: ScansPage } = await import('@/app/(app)/scans/page');
-    const props = propsOf(await ScansPage({ searchParams: Promise.resolve({ tab: 'rules' }) }), 'ScansClient');
-    expect(scopeOf(props.policies, SCOPED_RULE_ID)).toEqual(FULL);
-    expect(props.ruleFindingCounts).toEqual({ 'matrix-rule': 6, 'matrix-advisory-rule': 2 });
-    expect(props.controls).toMatchObject({ rulesWrite: true, schedulesWrite: true, suppress: true });
+    await withSeededRules(async () => {
+      const props = propsOf(await ScansPage({ searchParams: Promise.resolve({ tab: 'rules' }) }), 'ScansClient');
+      expect(scopeOf(props.policies, SCOPED_RULE_ID)).toEqual(FULL);
+      expect(countsOf(props)).toEqual({ 'matrix-rule': 6, 'matrix-advisory-rule': 2 });
+      expect(props.controls).toMatchObject({ rulesWrite: true, schedulesWrite: true, suppress: true });
+    });
   });
 
   it('Suppressions: sends only the suppressions inside the Scopes, and edit on for an Editor in one', async () => {

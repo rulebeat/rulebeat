@@ -9,6 +9,8 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Added
 
 - Run History keeps the newest scan for each scope it covered.
+- The Rules tab reads kind, outcome and enabled filters from the URL and shows each rule's outcome for the Scope you filter to. Category, tags, severity and Enabled/Disabled now filter on the server, so a link opens the list behind a number, and a rule hidden by a filter leaves the bulk selection.
+- Scans record which rules they ran, so a scan from before a rule was enabled leaves that rule's outcome unknown.
 
 ## [0.13.1] - 2026-10-16
 

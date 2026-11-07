@@ -618,7 +618,7 @@ export function pageGroupItems<T>(items: readonly ViewItem<T>[], page: number, p
 
 // ---- URL ----
 
-type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
+export type ParamSource = URLSearchParams | Record<string, string | string[] | undefined>;
 
 /** The builtin fields with a short param of their own, kept exactly as the page has always read them. */
 const LIST_PARAMS: Partial<Record<BuiltinField, string>> = {
@@ -631,7 +631,7 @@ export const GENERIC_FIELDS: readonly BuiltinField[] = BUILTIN_FIELDS.filter(f =
 
 const MAX_URL_PAGE = 1_000_000;
 
-function readParam(source: ParamSource, name: string): string | undefined {
+export function readParam(source: ParamSource, name: string): string | undefined {
   return readParams(source, name)[0];
 }
 function readParams(source: ParamSource, name: string): string[] {
@@ -644,7 +644,7 @@ function readParams(source: ParamSource, name: string): string[] {
 // escapes the three delimiters, and the backslash itself, with a backslash. Nothing is
 // percent-encoded here: URLSearchParams does that once when the query is written and undoes it
 // when it is read, so a plain space is `+` and a hand-written value with a bare `%` is kept as typed.
-function esc(text: string): string {
+export function esc(text: string): string {
   return text.replace(/[\\,|=]/g, '\\$&');
 }
 function unesc(piece: string): string {
@@ -667,7 +667,7 @@ function splitEscaped(text: string, delimiter: string): string[] {
 function readValues(text: string): string[] {
   return splitEscaped(text, '|').map(unesc);
 }
-function splitList(value: string | undefined): string[] {
+export function splitList(value: string | undefined): string[] {
   return value ? splitEscaped(value, ',').map(unesc).filter(Boolean) : [];
 }
 /** `name=values` as written by `esc(name)=esc(v1)|esc(v2)`. A value may hold a bare `=`, as typed by hand. */

@@ -453,6 +453,8 @@ ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS changed_findings TEXT;
 -- The Scope a run covered (#276), on the run and on each category's scan. NULL reads as Everything.
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS covered_scope TEXT;
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS covered_scope TEXT;
+-- The rules a scan ran (#402). NULL on a scan saved before it was recorded.
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS ran_rule_ids TEXT;
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id TEXT PRIMARY KEY,

@@ -101,7 +101,8 @@ describe('the library and schedule controls of a scoped Editor', () => {
   });
 
   const scans = (controls: WriteControls) => renderToStaticMarkup(createElement(ScansClient, {
-    policies: [RULE], categories: [], role: 'editor', activeTab: 'rules', controls, ruleFindingCounts: { 'rule-1': 2 },
+    policies: [RULE], categories: [], role: 'editor', activeTab: 'rules', controls,
+    ruleList: { entries: [{ id: 'rule-1', outcome: 'failing', findingCount: 2 }], scope: { kind: 'access', count: 1 } },
     initialView: emptyView(),
   }));
 

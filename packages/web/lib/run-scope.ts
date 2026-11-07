@@ -21,7 +21,7 @@ import { can, type Role } from '@/lib/rbac';
 import type { FindingPlacement } from '@/lib/placement';
 
 const ACTION = 'scans:run';
-const MANAGEMENT_GROUP_PATH = '/providers/Microsoft.Management/managementGroups/';
+export const MANAGEMENT_GROUP_PATH = '/providers/Microsoft.Management/managementGroups/';
 
 // --- The Scope a run covered, as stored ---
 
@@ -183,13 +183,13 @@ export interface RequestScope {
   managementGroups?: string[];
 }
 
-interface GroupExpansion {
+export interface GroupExpansion {
   groups: Set<string>;
   subscriptions: Set<string>;
 }
 
 /** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it. */
-function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
+export function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
   const out: GroupExpansion = { groups: new Set(), subscriptions: new Set() };
   const grants: ScopeGrant[] = [...new Set(hierarchy.map(n => n.tenantId))].map(tenantId => ({
     tenantId, scope: { kind: 'managementGroup', path: `${MANAGEMENT_GROUP_PATH}${id}` }, role: 'viewer' as Role,

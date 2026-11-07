@@ -164,6 +164,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
   for await (const event of runLawRules(lawRules, ctx)) handleEvent(event);
   for await (const event of runRules(argRules, ctx)) handleEvent(event);
   const ranRuleIds = successRuleIds;
+  const attemptedRuleIds = enabledRules.map(r => r.id);
 
   const finishedAt = opts.now ?? new Date();
   // A rule that returns several rows for one resource (two retirements on one VM, three failing
@@ -195,7 +196,7 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
     incompleteRules,
   };
 
-  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId, coveredScope: coveredEntries });
+  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId, coveredScope: coveredEntries, ranRuleIds: attemptedRuleIds });
 
   const { created, reactivated, changed, affectedCategories } = await syncScanFindingsDetailed({
     scanId,

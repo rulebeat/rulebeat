@@ -78,6 +78,7 @@ export const scans = pgTable('scans', {
   coverage: text('coverage').notNull().default('complete'),
   incompleteRules: text('incomplete_rules').notNull().default('[]'),
   coveredScope: text('covered_scope'),
+  ranRuleIds: text('ran_rule_ids'),
   hasRecords: integer('has_records').notNull().default(0),
 });
 
