@@ -51,7 +51,7 @@ import { RuleSourceFilter, ScopeFilter, ScopeFunnel } from '@/components/filters
 import { useFilterOptions } from '@/lib/hooks/use-filter-options';
 import { listedPaths, subscriptionNames } from '@/lib/scope-options';
 import { ruleOptionLabel } from '@/lib/filter-options';
-import { commitScopePicks, currentScopePicks, heldPickPaths } from '@/lib/scope-picks-write';
+import { commitScopePicks, currentScopePicks, leftOutMessage, unheldPickPaths } from '@/lib/scope-picks-write';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
@@ -697,12 +697,12 @@ export function FindingsExplorerClient({
     setScopeBusy(true);
     let written;
     try {
-      written = await commitScopePicks(picks, undefined, heldPickPaths(answeredStates?.scope ?? []));
+      written = await commitScopePicks(picks, undefined, unheldPickPaths(answeredStates?.scope ?? []));
     } finally {
       setScopeBusy(false);
     }
     if (!written.ok) { setScopeError(written.message); return; }
-    setScopeError(null);
+    setScopeError(leftOutMessage(written.leftOut));
     setScope(written.scope);
     setScopeSet(written.scopeSet);
     setPage(0);

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { clearFunnelPicks, funnelOptions, funnelSelected, toggleScopePick } from '@/lib/scope-funnels';
-import { commitScopePicks, currentScopePicks, heldPickPaths, requestScopeSet } from '@/lib/scope-picks-write';
+import { commitScopePicks, currentScopePicks, leftOutMessage, requestScopeSet, unheldPickPaths } from '@/lib/scope-picks-write';
 import { SCOPE_INLINE_BUDGET } from '@/lib/finding-view';
 import type { ScopePickState } from '@/lib/filter-states';
 
@@ -134,30 +134,59 @@ describe('currentScopePicks', () => {
   });
 });
 
-describe('heldPickPaths', () => {
-  it('holds the lower-case paths of the picks held in full, and not those held in part or not at all', () => {
-    const states: ScopePickState[] = [held('/A'), { value: '/b', access: 'outside', label: null }, { value: '/c', access: 'narrowed', label: 'c' }];
-    expect([...heldPickPaths(states)]).toEqual(['/a']);
+describe('unheldPickPaths', () => {
+  it('holds the lower-case paths of the picks not held in full, and not those held in full', () => {
+    const states: ScopePickState[] = [held('/A'), { value: '/B', access: 'outside', label: null }, { value: '/c', access: 'narrowed', label: 'c' }, { value: '/d', access: 'outside-narrowed', label: null }];
+    expect([...unheldPickPaths(states)]).toEqual(['/b', '/c', '/d']);
   });
 });
 
 describe('a set is made of the picks the viewer holds', () => {
-  const heldPaths = new Set(longPicks.slice(1).map(p => p.toLowerCase()));
+  const unheld = new Set([longPicks[0]!.toLowerCase()]);
 
-  it('leaves out a pick the viewer holds none of, which matches nothing for them either way', async () => {
+  it('leaves out a pick the server answered as not held in full, and names it in the result', async () => {
     const create = vi.fn(async () => ({ ok: true as const, hash: 'e'.repeat(64) }));
-    await commitScopePicks(longPicks, create, heldPaths);
+    const written = await commitScopePicks(longPicks, create, unheld);
     expect(create).toHaveBeenCalledWith(longPicks.slice(1));
+    expect(written).toEqual({ ok: true, scope: undefined, scopeSet: 'e'.repeat(64), leftOut: [longPicks[0]] });
+  });
+
+  it('sends a pick just ticked, which no answer has described yet, with the rest of an over-budget list', async () => {
+    const create = vi.fn(async () => ({ ok: true as const, hash: 'e'.repeat(64) }));
+    const added = `/subscriptions/${SUB_B}/resourceGroups/the-pick-just-ticked`;
+    await commitScopePicks([...longPicks, added], create, unheld);
+    expect(create).toHaveBeenCalledWith([...longPicks.slice(1), added]);
+  });
+
+  it('sends the pick that takes an inline list over the budget', async () => {
+    const create = vi.fn(async () => ({ ok: true as const, hash: 'e'.repeat(64) }));
+    let picks: string[] = [];
+    for (const pick of longPicks) {
+      picks = [...picks, pick];
+      if (picks.join(',').length > SCOPE_INLINE_BUDGET) break;
+    }
+    expect(picks.length).toBeLessThan(longPicks.length);
+    await commitScopePicks(picks, create, new Set());
+    expect(create).toHaveBeenCalledWith(picks);
   });
 
   it('sends the list as it is when no pick is held, and the server\'s refusal is the answer', async () => {
     const create = vi.fn(async () => ({ ok: false as const, message: 'A path in the list is outside the Scopes you hold.' }));
-    expect(await commitScopePicks(longPicks, create, new Set())).toEqual({ ok: false, message: 'A path in the list is outside the Scopes you hold.' });
+    expect(await commitScopePicks(longPicks, create, new Set(longPicks.map(p => p.toLowerCase())))).toEqual({ ok: false, message: 'A path in the list is outside the Scopes you hold.' });
     expect(create).toHaveBeenCalledWith(longPicks);
   });
 
   it('keeps a short list whole, outside picks included, so the filter still says they match nothing', async () => {
     const picks = [`/subscriptions/${SUB_A}`, `/subscriptions/${SUB_B}`];
-    expect(await commitScopePicks(picks, vi.fn(), new Set([picks[0]!.toLowerCase()]))).toEqual({ ok: true, scope: picks, scopeSet: undefined });
+    expect(await commitScopePicks(picks, vi.fn(), new Set([picks[1]!.toLowerCase()]))).toEqual({ ok: true, scope: picks, scopeSet: undefined });
+  });
+});
+
+describe('leftOutMessage', () => {
+  it('says nothing when nothing was left out, and counts what was', () => {
+    expect(leftOutMessage(undefined)).toBeNull();
+    expect(leftOutMessage([])).toBeNull();
+    expect(leftOutMessage(['/a'])).toBe('1 pick you do not hold in full was left out of the saved list.');
+    expect(leftOutMessage(['/a', '/b'])).toBe('2 picks you do not hold in full were left out of the saved list.');
   });
 });

@@ -10,7 +10,7 @@ import type { ScopePickState } from './filter-states';
 export type ScopeSetReply = { ok: true; hash: string } | { ok: false; message: string };
 
 export type ScopeWrite =
-  | { ok: true; scope: string[] | undefined; scopeSet: string | undefined }
+  | { ok: true; scope: string[] | undefined; scopeSet: string | undefined; leftOut?: string[] }
   | { ok: false; message: string };
 
 export const SCOPE_SET_FAILED_MESSAGE = 'Could not save this list of Scopes. Try again.';
@@ -31,20 +31,36 @@ export async function requestScopeSet(paths: readonly string[], fetchFn: FetchFn
 
 /**
  * The state to hold for `picks`: the list itself while it fits in an address, otherwise the hash of its set.
- * The server refuses a set naming a Scope the sender does not hold in full, so a set is made of `held` picks alone
- * when some are given. That cannot widen the view, since a pick the viewer holds none of matches nothing for them;
- * a list with no held pick is sent as it is and the server's refusal is the answer.
+ * The server refuses a set naming a Scope the sender does not hold in full, so a set leaves out the picks in
+ * `unheld`, those the server has answered for as not held in full. A pick no answer has described yet (one just
+ * ticked) is sent, and the server's refusal is the answer if it was not held. Leaving a pick out cannot widen the
+ * view, since a pick the viewer holds none of matches nothing for them, and `leftOut` names what was dropped so
+ * the page can say so. A list with no held pick is sent as it is.
  */
 export async function commitScopePicks(
   picks: readonly string[], create: (paths: string[]) => Promise<ScopeSetReply> = paths => requestScopeSet(paths),
-  held?: ReadonlySet<string>,
+  unheld?: ReadonlySet<string>,
 ): Promise<ScopeWrite> {
   if (picks.length === 0) return { ok: true, scope: undefined, scopeSet: undefined };
   const list = [...picks];
   if (!encodeView({ ...emptyView(), scope: list }).needsScopeSet) return { ok: true, scope: list, scopeSet: undefined };
-  const heldPicks = held ? list.filter(pick => held.has(pick.toLowerCase())) : list;
-  const reply = await create(heldPicks.length > 0 ? heldPicks : list);
-  return reply.ok ? { ok: true, scope: undefined, scopeSet: reply.hash } : reply;
+  const heldPicks = unheld ? list.filter(pick => !unheld.has(pick.toLowerCase())) : list;
+  if (heldPicks.length === 0) {
+    const reply = await create(list);
+    return reply.ok ? { ok: true, scope: undefined, scopeSet: reply.hash } : reply;
+  }
+  const reply = await create(heldPicks);
+  if (!reply.ok) return reply;
+  const leftOut = list.filter(pick => !heldPicks.includes(pick));
+  return { ok: true, scope: undefined, scopeSet: reply.hash, ...(leftOut.length > 0 ? { leftOut } : {}) };
+}
+
+/** What the page says when a set was made without some picks, or null when it holds them all. */
+export function leftOutMessage(leftOut: readonly string[] | undefined): string | null {
+  if (!leftOut || leftOut.length === 0) return null;
+  return leftOut.length === 1
+    ? '1 pick you do not hold in full was left out of the saved list.'
+    : `${leftOut.length} picks you do not hold in full were left out of the saved list.`;
 }
 
 /**
@@ -56,7 +72,7 @@ export function currentScopePicks(scope: readonly string[] | undefined, scopeSet
   return [...(scope ?? [])];
 }
 
-/** The lower-case paths of the picks the viewer holds in full: what a set may be made of. */
-export function heldPickPaths(states: readonly ScopePickState[]): Set<string> {
-  return new Set(states.filter(s => s.access === 'held').map(s => s.value.toLowerCase()));
+/** The lower-case paths of the picks the viewer does not hold in full: what a set leaves out. */
+export function unheldPickPaths(states: readonly ScopePickState[]): Set<string> {
+  return new Set(states.filter(s => s.access !== 'held').map(s => s.value.toLowerCase()));
 }
