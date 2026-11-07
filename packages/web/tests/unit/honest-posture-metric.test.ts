@@ -4,7 +4,7 @@
  * findings alone is not proof: a rule that has never run, or whose last run errored, goes into
  * unknownRules instead. Activity-kind rules (log-analytics, spec 029) have no "zero findings means
  * passing" state at all and are counted separately. See splitRuleOutcomes() and
- * enabledRuleIdsForCategory() in lib/dashboard-data.ts.
+ * countedRulesForCategory() in lib/dashboard-data.ts.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';

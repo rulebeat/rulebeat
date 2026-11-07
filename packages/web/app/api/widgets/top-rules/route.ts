@@ -5,6 +5,7 @@ import { loadRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
 import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
 import { countsInFindingTotals } from '@/lib/finding-kinds';
+import { SEVERITY_ORDER } from '@/lib/severity';
 import type { Severity } from '@/lib/types';
 
 export async function GET(req: Request) {
@@ -24,6 +25,8 @@ export async function GET(req: Request) {
     const existing = ruleMap.get(f.ruleId);
     if (existing) {
       existing.count++;
+      // The rule reads at its highest open severity, not at whichever finding came first.
+      if (SEVERITY_ORDER.indexOf(f.severity) < SEVERITY_ORDER.indexOf(existing.severity)) existing.severity = f.severity;
     } else {
       ruleMap.set(f.ruleId, {
         ruleId: f.ruleId,

@@ -13,7 +13,6 @@ export interface WidgetFilters {
   severities?: Severity[];
   ruleIds?: string[];
   dateWindow: DateWindow;
-  includeSuppressed?: boolean;
 }
 
 /** Per-widget config values, when present, REPLACE the matching dashboard-level dimension
@@ -107,7 +106,6 @@ export function parseWidgetFiltersFromSearchParams(searchParams: URLSearchParams
     severities: parseList(searchParams.get('severities')) as Severity[] | undefined,
     ruleIds: parseList(searchParams.get('ruleIds')) ?? parseList(searchParams.get('policyIds')),
     dateWindow,
-    includeSuppressed: searchParams.get('suppressed') === '1',
   };
 }
 
@@ -123,7 +121,6 @@ export function buildSummaryParams(filters: WidgetFilters): URLSearchParams {
   if (filters.tags?.length) params.set('tags', filters.tags.join(','));
   if (filters.severities?.length) params.set('severities', filters.severities.join(','));
   if (filters.ruleIds?.length) params.set('ruleIds', filters.ruleIds.join(','));
-  if (filters.includeSuppressed) params.set('suppressed', '1');
   if (filters.dateWindow.mode === 'custom') {
     params.set('from', filters.dateWindow.from);
     params.set('to', filters.dateWindow.to);
