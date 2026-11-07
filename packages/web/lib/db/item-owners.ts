@@ -61,7 +61,7 @@ export interface OwnedItemsRemoved {
 export async function releaseOwnedItemsOn(tx: DbHandle, ownerId: string): Promise<OwnedItemsRemoved> {
   const counts = await countOwnedItems(ownerId, tx);
   await run(tx.delete(dashboards).where(and(eq(dashboards.ownerId, ownerId), eq(dashboards.visibility, 'personal'))));
-  await run(tx.update(dashboards).set({ ownerId: null, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.ownerId, ownerId)));
+  await run(tx.update(dashboards).set({ ownerId: null, revision: sql`${dashboards.revision} + 1`, updatedBy: null, updatedAt: new Date().toISOString() }).where(eq(dashboards.ownerId, ownerId)));
   await run(tx.delete(savedViews).where(and(eq(savedViews.ownerId, ownerId), eq(savedViews.visibility, 'personal'))));
   await run(tx.update(savedViews).set({ ownerId: null, revision: sql`${savedViews.revision} + 1` }).where(eq(savedViews.ownerId, ownerId)));
   return {

@@ -38,7 +38,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds ownership columns to an exist
     const layout = (await getDashboard('layout'))!;
     const bare = (await getDashboard('bare'))!;
     for (const d of [layout, bare]) {
-      expect(d).toMatchObject({ ownerId: null, visibility: 'shared', revision: 1, updatedBy: null, updatedAt: null });
+      expect(d).toMatchObject({ owner: null, visibility: 'shared', revision: 1, updatedBy: null, updatedAt: null });
     }
     expect([layout.isDefault, bare.isDefault]).toEqual([true, false]);
     expect(layout.config).toEqual(LAYOUT);

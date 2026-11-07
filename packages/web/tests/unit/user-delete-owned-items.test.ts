@@ -60,6 +60,23 @@ describe('DELETE /api/users/[id] for a person who owns dashboards and saved view
     expect((await listSavedViews())[0]).toMatchObject({ id: sharedViewId, visibility: 'shared', owner: null });
   });
 
+  it('stamps a released Shared dashboard with the time and no editor, so a later Save names the removal and not an earlier editor', async () => {
+    const admin = await makeUser('admin');
+    const owner = await makeUser('viewer');
+    const { sharedDashboardId } = await seedOwner(owner.id);
+    await execRaw(`UPDATE dashboards SET updated_by = '${owner.id}', updated_at = '2026-01-01T00:00:00.000Z' WHERE id = '${sharedDashboardId}'`);
+    const before = (await getDashboard(sharedDashboardId))!;
+    mockAuth.mockResolvedValue({ user: { uid: admin.id } });
+
+    await remove(owner.id);
+
+    const after = (await getDashboard(sharedDashboardId))!;
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.updatedBy).toBeNull();
+    expect(after.updatedAt).not.toBeNull();
+    expect(after.updatedAt).not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
   it('writes the counts into the audit entry, and no name of any item', async () => {
     const admin = await makeUser('admin');
     const owner = await makeUser('viewer');
