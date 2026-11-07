@@ -58,7 +58,7 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
   {
     type: 'severity-breakdown',
     title: 'Severity Breakdown',
-    description: 'Donut chart of open findings by severity.',
+    description: 'Stacked bar of open findings by severity.',
     defaultConfig: {},
     defaultW: 4, defaultH: 6,
   },

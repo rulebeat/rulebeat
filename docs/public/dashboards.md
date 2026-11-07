@@ -22,7 +22,7 @@ you see them.
 | **Top Violating Rules** | The rules producing the most open findings. |
 | **Category Scorecard** | One row per category: passing, open findings, delta. |
 | **Recent Findings** | The newest findings, with category, severity and first-seen date. |
-| **Severity Breakdown** | A donut of open findings by severity. |
+| **Severity Breakdown** | One stacked bar of open findings by severity, with a legend of counts that each open the matching findings on Scans. |
 | **Subscription Scorecard** | One row per subscription, graded against the rules that apply to it. |
 | **Top Offending Resources** | The resources with the most open findings. |
 | **Scan Coverage** | Last scan time per category, badged fresh, recent, stale or never against your threshold. |
