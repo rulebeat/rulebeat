@@ -1,5 +1,6 @@
 import type { WidgetFilters } from './dashboard-filters';
 import type { ExplorerStatusFilter } from './explorer-filters';
+import type { FindingPlacement } from './placement';
 
 /** Metric-appropriate overrides layered on top of a widget's inherited `WidgetFilters` when
  *  building a click-through link to the Scans Results tab: see `buildScansHref`. */
@@ -18,6 +19,9 @@ export interface ScansLinkOverrides {
   /** Single rule id to link to (e.g. a top-rules row): takes precedence over any inherited
    *  `filters.ruleIds`. */
   ruleId?: string;
+  /** Placements to link to (a `FindingPlacement` each): written as the generic `f=placement=a|b`
+   *  param, since the field has no short param of its own. */
+  placements?: readonly FindingPlacement[];
   search?: string;
 }
 
@@ -50,6 +54,7 @@ export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverr
   } else {
     params.set('window', String(filters.dateWindow.days));
   }
+  if (overrides.placements?.length) params.append('f', `placement=${overrides.placements.join('|')}`);
   if (overrides.search) params.set('q', overrides.search);
 
   return `/scans?${params.toString()}`;

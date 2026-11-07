@@ -10,6 +10,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - Posture no longer reads 100% while a rule is failing or unknown, and the baseline no longer blends categories or subtracts rounded numbers.
 
+### Changed
+
+- Scans can filter, group and show findings by where they are placed ("Placed at").
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

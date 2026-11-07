@@ -209,6 +209,7 @@ const RESULTS_VIEWS: Case[] = [
   { name: 'a rule tag', view: make({ filters: [f('tags', 'finops')] }) },
   { name: 'the Activity kind', view: make({ filters: [f('kind', 'activity')] }) },
   { name: 'a resource type', view: make({ filters: [f('resourceType', 'microsoft.compute/virtualmachines')] }) },
+  { name: 'a placement', view: make({ filters: [f('placement', 'resource')] }) },
   { name: 'a resource name', view: make({ filters: [f('resourceName', 'vm-alpha')] }) },
   { name: 'the first-seen day of the oldest scan', view: make({ filters: [f('firstSeen', dayKey('T0'))] }) },
   { name: 'the last-seen day of the newest scan', view: make({ filters: [f('lastSeen', dayKey('T2'))] }) },
@@ -292,6 +293,7 @@ const RESULTS_VIEWS: Case[] = [
   { name: 'grouped by resource, the second page of groups', view: make({ groupBy: ['resourceName'], page: 2 }) },
   { name: 'grouped by category, items sorted by resource with ties', view: make({ groupBy: ['category'], sort: { field: 'subscription', dir: 'asc' } }) },
   { name: 'grouped by location, the empty value last', view: make({ groupBy: ['location'], groupSort: { by: 'value', dir: 'desc' } }) },
+  { name: 'grouped by placement', view: make({ groupBy: ['placement'] }) },
   { name: 'grouped by resource type, groups by count', view: make({ groupBy: ['resourceType'], groupSort: { by: 'count', dir: 'asc' } }) },
   { name: 'grouped and sorted by a returned column', view: make({ groupBy: ['category'], sort: { field: 'row.zone', dir: 'asc' } }) },
 ];

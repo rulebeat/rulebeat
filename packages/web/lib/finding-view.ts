@@ -24,14 +24,14 @@ import {
 
 export const BUILTIN_FIELDS = [
   'rule', 'kind', 'category', 'severity', 'status', 'subscription', 'resourceGroup', 'location',
-  'resourceType', 'resourceName', 'tags', 'firstSeen', 'lastSeen',
+  'resourceType', 'resourceName', 'tags', 'firstSeen', 'lastSeen', 'placement',
 ] as const;
 export type BuiltinField = (typeof BUILTIN_FIELDS)[number];
 export type RowField = `row.${string}`;
 export type ViewField = BuiltinField | RowField;
 
 /** A set of accepted values on a built-in field. Empty accepts everything. `rule` holds rule ids,
- *  `status` one of open/new/fixed/all, `resourceName` the subject the Resource column shows (see
+ *  `status` one of open/new/fixed/all, `placement` a `FindingPlacement` (lib/placement.ts), `resourceName` the subject the Resource column shows (see
  *  `findingSubject`), `firstSeen` and `lastSeen` day keys (YYYY-MM-DD). */
 export interface BuiltinFilter { field: BuiltinField; values: string[] }
 /** A filter on a returned column: a set of accepted values, compared as text. An empty set
@@ -299,6 +299,7 @@ export function filterFindings<T extends ViewFinding>(
   const names = values('resourceName');
   const firstSeen = values('firstSeen');
   const lastSeen = values('lastSeen');
+  const placements = values('placement');
   const rowFilters = activeRowFilters(spec.filters, except);
 
   return findings.filter(f =>
@@ -308,6 +309,7 @@ export function filterFindings<T extends ViewFinding>(
     && (names.size === 0 || names.has(findingSubject(f)))
     && (firstSeen.size === 0 || firstSeen.has(f.firstSeenAt.slice(0, 10)))
     && (lastSeen.size === 0 || lastSeen.has(f.lastSeenAt.slice(0, 10)))
+    && (placements.size === 0 || placements.has(f.placement ?? ''))
     && (rowFilters.length === 0 || matchingRows(f, rowFilters).length > 0),
   );
 }
@@ -335,6 +337,7 @@ function sortValue(item: ViewItem<ViewFinding>, field: ViewField): string | numb
     case 'tags': return (f.ruleTags ?? []).join(',');
     case 'firstSeen': return f.firstSeenAt;
     case 'lastSeen': return f.lastSeenAt;
+    case 'placement': return f.placement;
   }
 }
 
@@ -415,6 +418,7 @@ export function builtinFieldValues(f: ViewFinding, field: BuiltinField): string[
     case 'tags': return f.ruleTags ?? [];
     case 'firstSeen': return [f.firstSeenAt.slice(0, 10)];
     case 'lastSeen': return [f.lastSeenAt.slice(0, 10)];
+    case 'placement': return [f.placement ?? ''];
   }
 }
 
@@ -522,7 +526,7 @@ const compareText = (a: string, b: string) => a.localeCompare(b, undefined, { nu
 /** Built-in fields whose stored value is an id or a code, not what the header says. Groups of these
  *  order by the label. The others read the same on screen as they are stored (a day is ISO, so it
  *  orders as the date it shows), and a returned column is shown as it is stored. */
-const LABELLED_FIELDS: ReadonlySet<ViewField> = new Set<ViewField>(['rule', 'kind', 'category', 'subscription']);
+const LABELLED_FIELDS: ReadonlySet<ViewField> = new Set<ViewField>(['rule', 'kind', 'category', 'subscription', 'placement']);
 
 /** Orders two non-empty group values the way the header shows them: severity by the ramp the flat
  *  sort uses (anything off the ramp last), a labelled field by its label, the rest by the value. Ties
