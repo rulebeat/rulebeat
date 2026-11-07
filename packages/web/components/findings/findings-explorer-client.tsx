@@ -107,6 +107,8 @@ interface FindingsExplorerClientProps {
     /** The person, and what they may do with saved views, for the sections and the controls on the open view. */
     currentUserId: string;
     permissions: ItemPermissions;
+    /** Whether Share is on for a saved view, and why not when it is off. */
+    shareControl?: { allowed: boolean; reason?: string };
     /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
      *  the URL, and the explorer never keeps its own copy. */
     openId: string | null;
@@ -831,6 +833,7 @@ export function FindingsExplorerClient({
               tab={savedViews.tab}
               currentUserId={savedViews.currentUserId}
               permissions={savedViews.permissions}
+              shareControl={savedViews.shareControl}
               openId={openViewId}
               onOpenIdChange={setOpenViewId}
               onOpen={savedViews.onOpen}
@@ -1303,6 +1306,7 @@ export function FindingsExplorerClient({
             tab={savedViews.tab}
             currentUserId={savedViews.currentUserId}
             permissions={savedViews.permissions}
+            shareControl={savedViews.shareControl}
             openId={openViewId}
             onOpenIdChange={setOpenViewId}
             onOpen={savedViews.onOpen}

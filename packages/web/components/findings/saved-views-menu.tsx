@@ -13,7 +13,12 @@ import {
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
-import { mayChangeItemWith, ownerLabel, sectionsOf, type ItemPermissions } from '@/lib/item-access-model';
+import {
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, type ItemPermissions,
+} from '@/lib/item-access-model';
+import { shareConfirmation } from '@/lib/item-sharing';
+import { SHARE_REASON } from '@/lib/write-controls';
+import { requestVisibilityChange } from '@/lib/item-sharing-client';
 
 interface SavedViewsMenuProps {
   /** Which tab the explorer is on: only that tab's views are listed, and a new view opens there. */
@@ -22,6 +27,8 @@ interface SavedViewsMenuProps {
    *  their own; changing a Shared view depends on who owns it. */
   currentUserId: string;
   permissions: ItemPermissions;
+  /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
+  shareControl?: { allowed: boolean; reason?: string };
   /** The view the URL says is open, if any. */
   openId: string | null;
   /** Asks for the URL's open view to change: set after a save, cleared after a delete or when the
@@ -34,10 +41,10 @@ interface SavedViewsMenuProps {
 }
 
 /** What the dialog is for. */
-type ViewAction = 'save' | 'update' | 'rename' | 'delete';
+type ViewAction = 'save' | 'update' | 'rename' | 'delete' | 'share' | 'unshare';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: SavedView[] }
 
-export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpenIdChange, onOpen, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onOpen, currentQuery }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
@@ -54,7 +61,12 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
   const views = state.views.filter(v => v.tab === tab);
   const open = views.find(v => v.id === openId) ?? null;
   const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, views);
-  const canChangeOpen = open !== null && mayChangeItemWith({ id: currentUserId }, permissions, open);
+  const shareControl = shareControlProp ?? (permissions.write ? { allowed: true } : { allowed: false, reason: SHARE_REASON });
+  const actor = { id: currentUserId };
+  const canChangeOpen = open !== null && mayChangeItemWith(actor, permissions, open);
+  const canShareOpen = open !== null && open.visibility === 'personal' && isOwnItem(actor, open);
+  const canUnshareOpen = open !== null && mayChangeVisibilityWith(actor, permissions, open, 'unshare');
+  const demotedOpen = open !== null && isDemotedOwner(actor, permissions, open);
 
   // A view someone else deleted, or a stale link, leaves nothing to update or rename.
   useEffect(() => {
@@ -65,6 +77,15 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
    *  null when it worked. */
   async function applyAction(kind: ViewAction, name: string): Promise<string | null> {
     let change: SavedViewChange;
+    if (kind === 'share' || kind === 'unshare') {
+      if (!open) return null;
+      const outcome = await requestVisibilityChange('view', open.id, kind);
+      if (!outcome.ok) return outcome.error;
+      // The answer is the view, or only its id, visibility and revision after someone else's unshare.
+      const changed = outcome.item as Partial<SavedView>;
+      setState(prev => ({ status: prev.status, views: openableItems(actor, prev.views.map(v => (v.id === open.id ? { ...v, ...changed } : v))) }));
+      return null;
+    }
     if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
     else if (!open || !canChangeOpen) return null;
     else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name } };
@@ -137,7 +158,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
               </>
             )}
           </DropdownMenuGroup>
-          {(permissions.personal || canChangeOpen) && (
+          {(permissions.personal || canChangeOpen || canShareOpen || canUnshareOpen || demotedOpen) && (
             <>
               <DropdownMenuSeparator />
               {permissions.personal && <DropdownMenuItem onClick={() => setAction('save')}>Save current view</DropdownMenuItem>}
@@ -148,6 +169,14 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
                   <DropdownMenuItem variant="destructive" onClick={() => setAction('delete')}>Delete</DropdownMenuItem>
                 </>
               )}
+              {canShareOpen && (
+                <DropdownMenuItem disabled={!shareControl.allowed} onClick={() => setAction('share')}>Share</DropdownMenuItem>
+              )}
+              {canShareOpen && !shareControl.allowed && shareControl.reason && (
+                <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
+              )}
+              {canUnshareOpen && <DropdownMenuItem onClick={() => setAction('unshare')}>Unshare</DropdownMenuItem>}
+              {demotedOpen && <p className="px-3 py-1.5 text-xs text-ink-2">{DEMOTED_OWNER_NOTE}</p>}
             </>
           )}
         </DropdownMenuContent>
@@ -172,6 +201,8 @@ const COPY: Record<ViewAction, { title: string; confirm: string; busy: string }>
   update: { title: 'Update saved view', confirm: 'Update', busy: 'Updating…' },
   rename: { title: 'Rename saved view', confirm: 'Rename', busy: 'Renaming…' },
   delete: { title: 'Delete saved view', confirm: 'Delete', busy: 'Deleting…' },
+  share: { title: 'Share saved view', confirm: 'Share', busy: 'Sharing…' },
+  unshare: { title: 'Unshare saved view', confirm: 'Unshare', busy: 'Unsharing…' },
 };
 
 /** One saved view in the list: a check where it is open, its name, and a quiet tag on the right. */
@@ -255,6 +286,8 @@ function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
                 {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now.${shared ? ' Everyone who opens it will see the change.' : ''}`}
                 {kind === 'rename' && (shared ? 'Everyone who uses this install sees the new name.' : 'Only you see the new name.')}
                 {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.`}
+                {kind === 'share' && shareConfirmation('view', viewName)}
+                {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.`}
               </p>
 
               {error && <p className="text-xs font-medium text-sev-critical">{error}</p>}

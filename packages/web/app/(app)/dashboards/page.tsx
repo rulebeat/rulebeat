@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { redirect } from 'next/navigation';
 import { resolveAccess } from '@/lib/access';
 import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
+import { shareControlFor } from '@/lib/write-controls';
 import { DashboardsGallery } from './dashboards-gallery';
 
 export default async function DashboardsPage() {
@@ -13,12 +14,13 @@ export default async function DashboardsPage() {
   if (!user) redirect('/signin');
 
   const dashboards = openableItems(user, await listDashboards());
-  const permissions = itemPermissionsFor(await resolveAccess(user), 'dashboard');
+  const access = await resolveAccess(user);
+  const permissions = itemPermissionsFor(access, 'dashboard');
 
   return (
     <>
       <Header title="Dashboards" description="Manage and create custom dashboards" />
-      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} />
+      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} shareControl={shareControlFor(access, 'dashboard')} />
     </>
   );
 }

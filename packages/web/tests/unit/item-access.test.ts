@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, type Access } from '@/lib/access-model';
 import { guardItem } from '@/lib/item-access';
 import {
-  canOpenItem, itemPermissionsFor, mayChangeItemWith, openableItems, ownerLabel, sectionsOf, type ItemKind, type OwnedItem,
+  canOpenItem, DEMOTED_OWNER_NOTE, isDemotedOwner, itemPermissionsFor, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, type ItemKind, type OwnedItem,
 } from '@/lib/item-access-model';
 import type { Role } from '@/lib/rbac';
 
@@ -51,6 +51,34 @@ describe('guardItem', () => {
         });
         it(`${kind}: ${person} opening ${label}`, () => {
           expect(guardItem(actor, kind, item, 'open')?.status ?? null).toBe(label === 'other Personal' ? NOT_FOUND : OK);
+        });
+      }
+    }
+  }
+
+  // Sharing: your own Personal item needs `*:write`; unsharing needs `*:write` on your own item or `*:manage` on any.
+  const SHARE: Record<string, Record<string, number | null>> = {
+    'Viewer': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'scoped Editor': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+  };
+  const UNSHARE: Record<string, Record<string, number | null>> = {
+    'Viewer': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'scoped Editor': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+  };
+  for (const kind of ['dashboard', 'view'] as ItemKind[]) {
+    for (const [person, actor] of Object.entries(PEOPLE)) {
+      for (const [label, item] of Object.entries(ITEMS)) {
+        it(`${kind}: ${person} sharing ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'share')?.status ?? null).toBe(SHARE[person]![label]);
+        });
+        it(`${kind}: ${person} unsharing ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'unshare')?.status ?? null).toBe(UNSHARE[person]![label]);
         });
       }
     }
@@ -110,5 +138,29 @@ describe('itemPermissionsFor and mayChangeItemWith', () => {
         expect(mayChangeItemWith(actor, permissions, item)).toBe(guardItem(actor, 'dashboard', item, 'change') === null);
       }
     }
+  });
+});
+
+describe('sharing controls from the permissions a page hands down', () => {
+  it('decide the same as the guard for sharing and unsharing, for every person and item', () => {
+    for (const actor of Object.values(PEOPLE)) {
+      const permissions = itemPermissionsFor(actor.access, 'view');
+      for (const item of Object.values(ITEMS)) {
+        for (const intent of ['share', 'unshare'] as const) {
+          expect(mayChangeVisibilityWith(actor, permissions, item, intent)).toBe(guardItem(actor, 'view', item, intent) === null);
+        }
+      }
+    }
+  });
+
+  it('tells the owner of a Shared item they can no longer change, and no one else', () => {
+    const owned = PEOPLE['Viewer']!;
+    const permissions = itemPermissionsFor(owned.access, 'dashboard');
+    expect(isDemotedOwner(owned, permissions, ITEMS['own Shared']!)).toBe(true);
+    expect(isDemotedOwner(owned, permissions, ITEMS['own Personal']!)).toBe(false);
+    expect(isDemotedOwner(owned, permissions, ITEMS['other Shared']!)).toBe(false);
+    const editor = PEOPLE['scoped Editor']!;
+    expect(isDemotedOwner(editor, itemPermissionsFor(editor.access, 'dashboard'), ITEMS['own Shared']!)).toBe(false);
+    expect(DEMOTED_OWNER_NOTE).toBe('Your access no longer lets you change Shared items. Duplicate it, or ask an Admin to take it over.');
   });
 });

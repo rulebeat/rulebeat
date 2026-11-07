@@ -42,6 +42,17 @@ export function categoryControlFor(access: Access): { allowed: boolean; reason?:
   return { allowed, ...(heldButScoped ? { reason: SCOPED_CATEGORY_REASON } : {}) };
 }
 
+export const SHARE_REASON = 'Sharing needs an Editor Role at some Scope.';
+
+/**
+ * The Share control on a dashboard or saved view: `allowed` from `mayAct` on the kind's write action, and the
+ * reason it is off when it is not. Its own field, so a screen shows why without working it out from the Role.
+ */
+export function shareControlFor(access: Access, kind: 'dashboard' | 'view'): { allowed: boolean; reason?: string } {
+  const allowed = mayAct(access, kind === 'dashboard' ? 'dashboards:write' : 'views:write');
+  return allowed ? { allowed } : { allowed, reason: SHARE_REASON };
+}
+
 const INSTALL_WIDE_WRITES = ['rules:write', 'rules:delete', 'schedules:write'] as const;
 
 export function writeControlsFor(access: Access): WriteControls {

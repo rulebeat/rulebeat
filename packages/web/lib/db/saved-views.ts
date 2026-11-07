@@ -134,6 +134,56 @@ export async function updateSavedView(
   });
 }
 
+export type ShareSavedViewResult =
+  | { ok: true; view: SavedView }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+
+/**
+ * Makes a Personal saved view Shared, if it still is Personal and its name is free among Shared names
+ * install-wide. The checks and the write are one locked transaction, so a second click or a concurrent share
+ * finds the state already changed and gets `wrong-state`.
+ */
+export async function shareSavedView(id: string): Promise<ShareSavedViewResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' } as const;
+    if (readVisibility(existing.visibility) !== 'personal') return { ok: false, reason: 'wrong-state' } as const;
+    if (await isNameTaken(tx, existing.name, { visibility: 'shared' }, id)) return { ok: false, reason: 'name-taken' } as const;
+    await run(tx.update(savedViews).set({ visibility: 'shared', revision: sql`${savedViews.revision} + 1` }).where(eq(savedViews.id, id)));
+    const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    return { ok: true, view: (await toViews([stored!], tx))[0] } as const;
+  });
+}
+
+export type UnshareSavedViewResult =
+  | { ok: true; view: SavedView; sharedName: string }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' };
+
+/**
+ * Makes a Shared saved view Personal again, to its owner. The owner's own unshare is refused when the name
+ * clashes with one of their Personal names; anyone else's unshare gives it the next free name instead, so it
+ * never fails on a clash. `view` holds the new name, so the caller returns it only to the owner; `sharedName` is the name it had while Shared.
+ */
+export async function unshareSavedView(id: string, actorId: string): Promise<UnshareSavedViewResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' } as const;
+    if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'wrong-state' } as const;
+    if (!existing.ownerId) return { ok: false, reason: 'no-owner' } as const;
+    const space: NameSpace = { visibility: 'personal', ownerId: existing.ownerId };
+    let name = existing.name;
+    if (await isNameTaken(tx, name, space, id)) {
+      if (existing.ownerId === actorId) return { ok: false, reason: 'name-taken' } as const;
+      for (let n = 2; await isNameTaken(tx, name, space, id); n++) name = `${existing.name} (${n})`;
+    }
+    await run(tx.update(savedViews).set({ name, visibility: 'personal', revision: sql`${savedViews.revision} + 1` }).where(eq(savedViews.id, id)));
+    const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    return { ok: true, view: (await toViews([stored!], tx))[0], sharedName: existing.name } as const;
+  });
+}
+
 /** Removes a saved view. Returns the view that was removed, or null when there was none. */
 export async function deleteSavedView(id: string): Promise<SavedView | null> {
   return inTransaction(async (tx) => {

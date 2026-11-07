@@ -713,7 +713,48 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
+  // Sharing and unsharing answer with the item, so each person is shown the same marks they are on the item itself.
+  // Only an Admin or an Editor on Everything holds the write action in this matrix (the other people are Viewers),
+  // so a probe is a fresh item of the asking person's own: a Personal one to share, a Shared one to unshare.
+  const ROUTES = {
+    dashboard: { share: () => import('@/app/api/dashboards/[id]/share/route'), unshare: () => import('@/app/api/dashboards/[id]/unshare/route') },
+    view: { share: () => import('@/app/api/views/[id]/share/route'), unshare: () => import('@/app/api/views/[id]/unshare/route') },
+  };
+  /** What a reply holds that depends on the person: the stored filters (a dashboard) or query (a view), and the marks. */
+  const stored = (kind: 'dashboard' | 'view') => (kind === 'dashboard' ? { filters: { subscriptions: [SUB_TWO] } } : { query: VIEW_QUERY });
+  const refusedShare = { status: 403 };
+  const sharingExpected = (kind: 'dashboard' | 'view') => {
+    const shared = same({ status: 200, ...stored(kind), marks: NOTHING_MARKED });
+    return byPerson(shared, same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare));
+  };
+  const ownItem = async (kind: 'dashboard' | 'view', visibility: 'personal' | 'shared') => {
+    const uid = ((await mockAuth()) as { user: { uid: string } }).user.uid;
+    const name = `sharing probe ${Math.random().toString(36).slice(2)}`;
+    if (kind === 'dashboard') {
+      const made = await createDashboard({ name, config: { autoRefresh: 0, widgets: [], filters: { subscriptions: [SUB_TWO] } } }, uid);
+      if (!made.ok) throw new Error(made.reason);
+      if (visibility === 'shared') await execRaw(`UPDATE dashboards SET visibility = 'shared' WHERE id = '${made.dashboard.id}'`);
+      return made.dashboard.id;
+    }
+    const made = await createSavedView({ name, tab: 'results', query: VIEW_QUERY }, uid);
+    if (!made.ok) throw new Error(made.reason);
+    if (visibility === 'shared') await execRaw(`UPDATE saved_views SET visibility = 'shared' WHERE id = '${made.view.id}'`);
+    return made.view.id;
+  };
+  const shareMatrix = (kind: 'dashboard' | 'view', action: 'share' | 'unshare'): Matrix => ({
+    probe: async () => {
+      const id = await ownItem(kind, action === 'share' ? 'personal' : 'shared');
+      const res = await (await ROUTES[kind][action]()).POST(new Request(`http://localhost/api/${kind}s/x/${action}`, { method: 'POST' }), { params: Promise.resolve({ id }) });
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { outsideAccess: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), marks: reply.outsideAccess };
+    },
+    expected: sharingExpected(kind),
+  });
+
   return {
+    'dashboards/[id]/share': shareMatrix('dashboard', 'share'), 'dashboards/[id]/unshare': shareMatrix('dashboard', 'unshare'),
+    'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
     'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
     'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
     'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
@@ -2227,6 +2268,22 @@ const changing = (ok: number): Record<ItemPerson, PerKind<number>> => ({
   'Admin': perKind(ok, 404, ok, ok, ok),
   'No Scope': perKind(ok, 404, 403, 403, 403),
 });
+/** Sharing and unsharing, by what each person holds: `*:write` on their own item, `*:manage` on any Shared one. A call
+ *  the item's state no longer allows answers 409, and an unshare of an item with no owner does too. */
+const sharing: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403),
+  'Editor on one subscription': perKind(200, 404, 409, 403, 403),
+  'Editor on Everything': perKind(200, 404, 409, 403, 403),
+  'Admin': perKind(200, 404, 409, 403, 403),
+  'No Scope': perKind(403, 404, 403, 403, 403),
+};
+const unsharing: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403),
+  'Editor on one subscription': perKind(409, 404, 200, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 409),
+  'Admin': perKind(409, 404, 200, 200, 409),
+  'No Scope': perKind(403, 404, 403, 403, 403),
+};
 /** Whether an item shows in the list, and in the owner's own "Yours" section: shared ones and one's own Personal. */
 const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true };
 
@@ -2258,6 +2315,22 @@ const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
   'dashboards/[id]/duplicate': [
     { kind: 'dashboard', expected: sameForAll(DUPLICATES),
       call: async id => (await (await import('@/app/api/dashboards/[id]/duplicate/route')).POST(new Request(`http://localhost/api/dashboards/${id}/duplicate`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/share': [
+    { kind: 'dashboard', expected: sharing,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/share/route')).POST(new Request(`http://localhost/api/dashboards/${id}/share`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/unshare': [
+    { kind: 'dashboard', expected: unsharing,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/unshare/route')).POST(new Request(`http://localhost/api/dashboards/${id}/unshare`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/share': [
+    { kind: 'view', expected: sharing,
+      call: async id => (await (await import('@/app/api/views/[id]/share/route')).POST(new Request(`http://localhost/api/views/${id}/share`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/unshare': [
+    { kind: 'view', expected: unsharing,
+      call: async id => (await (await import('@/app/api/views/[id]/unshare/route')).POST(new Request(`http://localhost/api/views/${id}/unshare`, { method: 'POST' }), ctxFor({ id }))).status },
   ],
   'views/[id]': [
     { kind: 'view', expected: sameForAll(OPENS),
