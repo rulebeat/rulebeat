@@ -9,12 +9,24 @@ vi.mock('@/auth', () => ({
   signOut: vi.fn(),
 }));
 
-const { signInWithPassword } = await import('@/lib/actions');
+const mockHeaders = new Headers({ host: 'rulebeat.example.com', 'x-forwarded-proto': 'https' });
+vi.mock('next/headers', () => ({
+  headers: async () => mockHeaders,
+}));
 
-function formData(email: string, password: string): FormData {
+const { signInWithMicrosoft, signInWithPassword } = await import('@/lib/actions');
+
+function formData(email: string, password: string, callbackUrl?: string): FormData {
   const data = new FormData();
   data.set('email', email);
   data.set('password', password);
+  if (callbackUrl !== undefined) data.set('callbackUrl', callbackUrl);
+  return data;
+}
+
+function callbackForm(callbackUrl?: string): FormData {
+  const data = new FormData();
+  if (callbackUrl !== undefined) data.set('callbackUrl', callbackUrl);
   return data;
 }
 
@@ -50,5 +62,65 @@ describe('signInWithPassword', () => {
     mockSignIn.mockResolvedValue(undefined);
     const result = await signInWithPassword(null, formData('someone@example.com', 'CorrectPassword1!'));
     expect(result).toBeNull();
+  });
+});
+
+describe('signInWithPassword callbackUrl', () => {
+  it('redirects to a relative callbackUrl, keeping search and hash', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithPassword(null, formData('a@example.com', 'x', '/scans?tab=history#r1'));
+    expect(mockSignIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ redirectTo: '/scans?tab=history#r1' }));
+  });
+
+  it('redirects to the same-origin absolute form the proxy writes, as path, search and hash', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithPassword(null, formData('a@example.com', 'x', 'https://rulebeat.example.com/scans?tab=history#r1'));
+    expect(mockSignIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ redirectTo: '/scans?tab=history#r1' }));
+  });
+
+  it.each([
+    ['foreign absolute', 'https://evil.example.net/x'],
+    ['protocol-relative', '//evil.example.net/x'],
+    ['backslash', '/\\evil.example.net/x'],
+  ])('falls back to /dashboard for a %s callbackUrl', async (_label, raw) => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithPassword(null, formData('a@example.com', 'x', raw));
+    expect(mockSignIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ redirectTo: '/dashboard' }));
+  });
+
+  it('falls back to /dashboard with no callbackUrl', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithPassword(null, formData('a@example.com', 'x'));
+    expect(mockSignIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ redirectTo: '/dashboard' }));
+  });
+});
+
+describe('signInWithMicrosoft callbackUrl', () => {
+  it('redirects to a relative callbackUrl', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithMicrosoft(callbackForm('/scans?tab=history#r1'));
+    expect(mockSignIn).toHaveBeenCalledWith('microsoft-entra-id', { redirectTo: '/scans?tab=history#r1' });
+  });
+
+  it('redirects to the same-origin absolute form as path, search and hash', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithMicrosoft(callbackForm('https://rulebeat.example.com/scans?tab=history#r1'));
+    expect(mockSignIn).toHaveBeenCalledWith('microsoft-entra-id', { redirectTo: '/scans?tab=history#r1' });
+  });
+
+  it.each([
+    ['foreign absolute', 'https://evil.example.net/x'],
+    ['protocol-relative', '//evil.example.net/x'],
+    ['backslash', '/\\evil.example.net/x'],
+  ])('falls back to /dashboard for a %s callbackUrl', async (_label, raw) => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithMicrosoft(callbackForm(raw));
+    expect(mockSignIn).toHaveBeenCalledWith('microsoft-entra-id', { redirectTo: '/dashboard' });
+  });
+
+  it('falls back to /dashboard with no callbackUrl', async () => {
+    mockSignIn.mockResolvedValue(undefined);
+    await signInWithMicrosoft(callbackForm());
+    expect(mockSignIn).toHaveBeenCalledWith('microsoft-entra-id', { redirectTo: '/dashboard' });
   });
 });
