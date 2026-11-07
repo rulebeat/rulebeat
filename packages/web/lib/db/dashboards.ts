@@ -222,6 +222,9 @@ export type DeleteDashboardResult =
  */
 export async function deleteDashboardAs(id: string, mayRemoveInstallDefault: boolean): Promise<DeleteDashboardResult> {
   return inTransaction(async (tx) => {
+    // The same lock `chooseInstallDefault()` takes: without it, on Postgres, a delete could read the
+    // flag as unset while a choice commits, and then remove the new Install default unchecked.
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!row) return { ok: false, reason: 'not-found' };
     const wasInstallDefault = (row.isDefault ?? false) && readVisibility(row.visibility) === 'shared';
