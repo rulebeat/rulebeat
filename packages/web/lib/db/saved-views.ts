@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client';
 import { savedViews } from '@/lib/db/tables';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from '@/lib/db/exec';
 import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 
@@ -29,6 +29,7 @@ function rowToView(row: Row): SavedView {
     createdAt: row.createdAt,
     updatedBy: row.updatedBy ?? null,
     updatedAt: row.updatedAt,
+    revision: row.revision,
   };
 }
 
@@ -101,6 +102,7 @@ export async function updateSavedView(
       ...(data.query !== undefined && { query: data.query }),
       updatedBy: actorId,
       updatedAt: new Date().toISOString(),
+      revision: sql`${savedViews.revision} + 1`,
     }).where(eq(savedViews.id, id)));
     const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     return { ok: true, view: rowToView(stored!), before: rowToView(existing) } as const;

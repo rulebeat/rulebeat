@@ -33,6 +33,8 @@ export interface SavedView extends SavedViewFields {
   createdAt: string;
   updatedBy: string | null;
   updatedAt: string;
+  /** Starts at 1; every write to the row bumps it. */
+  revision: number;
 }
 
 export function isSavedViewTab(value: unknown): value is SavedViewTab {

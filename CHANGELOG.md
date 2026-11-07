@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Every dashboard and saved view now carries a revision number that each save raises by one, so a later save can tell the row changed underneath it. Existing dashboards and saved views start at revision 1 on upgrade, and their filters, date window and saved queries are kept exactly as stored.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed
