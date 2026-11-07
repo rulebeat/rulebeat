@@ -1421,6 +1421,68 @@ describe('the findings routes show each person only what their Scopes cover', ()
     }
   }
 
+  // #387: the Scope filter on the four routes that list findings (`view`, `group`, `column-values`, `export`).
+  // Every person picks the management group, the widest Scope the seed has short of Everything, and gets what
+  // they hold of it: the pick narrows and never widens. The filter's own state for the pick is what the chip
+  // reads, so a pick the person holds only part of is counted and never named.
+  describe('a Scope filter on the findings routes is intersected with each person\'s Scopes', () => {
+    const PICK = `scope=${encodeURIComponent(SCOPE_MANAGEMENT_GROUP)}`;
+    const wide: Record<ViewTab, string[]> = {
+      results: ['management-group-level', 'subscription-level', 'vm-one', 'vm-other-sub'],
+      advisories: ['advisory-one', 'advisory-other-sub'],
+      activity: ['workspace-user'],
+    };
+    const inSubscription: Record<ViewTab, string[]> = { results: ['subscription-level', 'vm-one'], advisories: ['advisory-one'], activity: ['workspace-user'] };
+    const inGroup: Record<ViewTab, string[]> = { results: ['vm-one'], advisories: ['advisory-one'], activity: ['workspace-user'] };
+    const none: Record<ViewTab, string[]> = { results: [], advisories: [], activity: [] };
+    const listedBy: Record<string, Record<ViewTab, string[]>> = {
+      'Admin': wide,
+      'Editor on Everything': wide,
+      'Viewer on the management group': wide,
+      'Viewer on one subscription': inSubscription,
+      'Viewer on one resource group': inGroup,
+      'Directory only': none,
+      'No Scope': none,
+    };
+    const stateBy: Record<string, string> = {
+      'Admin': 'held', 'Editor on Everything': 'held', 'Viewer on the management group': 'held',
+      'Viewer on one subscription': 'outside-narrowed', 'Viewer on one resource group': 'outside-narrowed',
+      'Directory only': 'outside', 'No Scope': 'outside',
+    };
+    const get = async (route: string, query: string) => {
+      const handler = await import(`@/app/api/${route}/route`) as { GET(req: Request): Promise<Response> };
+      return BODY(await handler.GET(new Request(`http://localhost/api/${route}?${query}`)));
+    };
+
+    for (const person of PEOPLE.map(p => p.name)) {
+      for (const tab of VIEW_TABS) {
+        it(`${person}, ${tab} tab`, async () => {
+          mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+          const expected = listedBy[person]![tab];
+          const view = await get('findings/view', `${tabParams(tab)}&${PICK}`) as {
+            items: { finding: { fingerprint: string } }[]; total: number; tiles: { total: number };
+            filterStates: { scope: { access: string; label: string | null }[] };
+          };
+          expect(namesOf(seed, view.items.map(i => i.finding))).toEqual(expected);
+          expect([view.total, view.tiles.total]).toEqual([expected.length, expected.length]);
+          expect(view.filterStates.scope.map(s => s.access)).toEqual([stateBy[person]]);
+          // A pick the person holds only part of, or none of, is never named.
+          if (stateBy[person] !== 'held') expect(view.filterStates.scope[0]!.label).toBeNull();
+
+          const grouped = tabParams(tab, { groupBy: ['category'] });
+          const inside = await get('findings/group', `${grouped}&${PICK}&groupPath=%5B%22security%22%5D`) as { items: { finding: { fingerprint: string } }[] };
+          expect(namesOf(seed, inside.items.map(i => i.finding))).toEqual(expected);
+
+          const values = await get('findings/column-values', `${tabParams(tab)}&${PICK}&column=row.zone`) as { values: { value: string; count: number }[] };
+          expect(values.values).toEqual(expected.length === 0 ? [] : [{ value: 'a', count: expected.length }]);
+
+          const exportedList = await get('findings/export', `${tabParams(tab)}&${PICK}&format=json`) as { fingerprint: string }[];
+          expect(namesOf(seed, exportedList)).toEqual(expected);
+        });
+      }
+    }
+  });
+
   /** A new Viewer holding exactly these Scopes, signed in, and what the Results and Advisories tabs list for them. */
   async function listedFor(...scopes: string[]): Promise<{ results: string[]; advisories: string[] }> {
     const created = await createUser({ email: `extra${scopes.length}-${Math.random().toString(36).slice(2)}@example.com`, role: 'viewer' });

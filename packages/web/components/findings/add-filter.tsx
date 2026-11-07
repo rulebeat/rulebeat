@@ -111,10 +111,14 @@ export function AddFilter({
 }
 
 export interface FilterChip {
-  field: ViewField;
+  /** A field of the view's filters, or the name of a dimension the view holds beside them (`scope`, `source`, `age`). */
+  field: string;
   value: string;
+  /** Empty when the chip's own words already say what it filters, such as an age. */
   fieldLabel: string;
   valueLabel: string;
+  /** What removing the chip does, when it is not to drop `value` from the filters on `field`. */
+  remove?: () => void;
 }
 
 /** The active filters, one soft-filled chip per value, each removable. */
@@ -125,12 +129,12 @@ export function FilterChips({ chips, onRemove }: { chips: FilterChip[]; onRemove
       {chips.map(chip => (
         <li key={`${chip.field}\u0000${chip.value}`}>
           <Badge variant="secondary" className="h-7 max-w-full gap-1 pr-1">
-            <span className="text-ink-2">{chip.fieldLabel}</span>
+            {chip.fieldLabel !== '' && <span className="text-ink-2">{chip.fieldLabel}</span>}
             <span className="min-w-0 truncate" title={chip.valueLabel}>{chip.valueLabel === '' ? 'Empty' : chip.valueLabel}</span>
             <button
               type="button"
-              onClick={() => onRemove(chip)}
-              aria-label={`Remove filter ${chip.fieldLabel}: ${chip.valueLabel === '' ? 'Empty' : chip.valueLabel}`}
+              onClick={() => (chip.remove ? chip.remove() : onRemove(chip))}
+              aria-label={`Remove filter ${chip.fieldLabel === '' ? '' : `${chip.fieldLabel}: `}${chip.valueLabel === '' ? 'Empty' : chip.valueLabel}`}
               className="flex size-5 shrink-0 items-center justify-center text-ink-2 outline-none transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             >
               <X className="size-3" aria-hidden="true" />

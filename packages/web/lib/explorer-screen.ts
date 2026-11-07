@@ -9,6 +9,9 @@ import { groupUrl, type Loaded, type ViewRequest } from './explorer-session';
 import { NO_VALUE_LABEL, type ColumnValuesResponse, type ViewResponse } from './view-response';
 import { filterValues, type ViewField, type ViewFilter } from './finding-view';
 import { filterOutsideDimension, outsideAwareLabel, type OutsideAccess } from './outside-access';
+import {
+  DELETED_NOTE, NO_LONGER_EXISTS, dimensionMatchingNothing, markedLabel, type FilterStates, type MatchesNothing,
+} from './filter-states';
 
 // ---- The screen ----
 
@@ -42,28 +45,38 @@ export type ListBody = 'unavailable' | 'empty' | 'rows';
 
 /** Why a list with no rows is empty, when the explorer must say which: `access` when the filters the
  *  person is looking through name only subscriptions (or only resource groups) outside their access,
- *  so nothing in them could ever be shown, `filters` for every other empty list. No Scope at all is the
- *  no-access screen, decided before the list. A scoped person whose own estate is clean gets `filters`. */
-export type EmptyReason = 'access' | 'filters';
+ *  so nothing in them could ever be shown, a dimension whose every value matches nothing (a Scope filter
+ *  outside the Access or one that could not be opened, a Rule source or tags that no rule has any more),
+ *  and `filters` for every other empty list. No Scope at all is the no-access screen, decided before the
+ *  list. A scoped person whose own estate is clean gets `filters`. */
+export type EmptyReason = 'access' | 'filters' | MatchesNothing;
 
 export function emptyReasonOf(state: {
   noAccess?: boolean;
   filters: readonly ViewFilter[];
   outsideAccess: OutsideAccess | undefined;
+  filterStates?: FilterStates;
 }): EmptyReason {
   if (state.noAccess) return 'access';
   const dimension = filterOutsideDimension({
     subscriptions: filterValues(state.filters, 'subscription'),
     resourceGroups: filterValues(state.filters, 'resourceGroup'),
   }, state.outsideAccess);
-  return dimension ? 'access' : 'filters';
+  if (dimension) return 'access';
+  const nothing = state.filterStates ? dimensionMatchingNothing(state.filterStates, filterValues(state.filters, 'tags').length) : null;
+  return nothing ?? 'filters';
 }
 
 /** The words an empty list shows for its reason. */
 export function emptyListCopy(reason: EmptyReason, subject: 'findings' | 'rules'): string {
-  return reason === 'access'
-    ? `These filters name a subscription or resource group outside your Access, so no ${subject} can be listed`
-    : `No ${subject} match your filters`;
+  switch (reason) {
+    case 'access': return `These filters name a subscription or resource group outside your Access, so no ${subject} can be listed`;
+    case 'scope-outside': return `The Scope filter names only Scopes outside your Access, so no ${subject} can be listed`;
+    case 'scope-unresolved': return `The Scope filter refers to a list of Scopes this install cannot open, so no ${subject} can be listed`;
+    case 'source': return `The Rule source filter names only packs that no longer exist, so no ${subject} can be listed`;
+    case 'tags': return `The tags filter names only tags that no longer exist, so no ${subject} can be listed`;
+    default: return `No ${subject} match your filters`;
+  }
 }
 
 /** What a filter chip reads: "Outside your access" for a marked subscription or resource group, with
@@ -74,6 +87,18 @@ export function filterChipLabel(
   if (field === 'subscription') return outsideAwareLabel(outsideAccess, 'subscription', value, named);
   if (field === 'resourceGroup') return outsideAwareLabel(outsideAccess, 'resourceGroup', value, named);
   return named(value);
+}
+
+/** `filterChipLabel`, and a tag no rule carries or a deleted category marked as such. The mark follows the
+ *  name, so a value that is gone is still named, never dropped. */
+export function filterValueLabel(
+  field: ViewField, value: string, outsideAccess: OutsideAccess | undefined, states: FilterStates | undefined,
+  named: (value: string) => string,
+): string {
+  const label = filterChipLabel(field, value, outsideAccess, named);
+  if (field === 'tags' && states?.missingTags.includes(value)) return markedLabel(label, NO_LONGER_EXISTS);
+  if (field === 'category' && states?.deletedCategories.includes(value)) return markedLabel(label, DELETED_NOTE);
+  return label;
 }
 
 /** What fills the list's place: the failure, a message that nothing matches, or the rows. The By rule

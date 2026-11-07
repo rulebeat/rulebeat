@@ -6,6 +6,14 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Scans filters by Scope, Rule source and how long ago a finding was first seen, on the Results, Advisories and Activity tabs and in their export, from `scope=`, `source=` and `age=` in the address. A Scope pick (a management group, a subscription, a resource group or the Directory) is matched the way Access is and then narrowed to what you hold, so it never shows a finding your Access hides. A pick you hold only in part says it is narrowed to what you hold, and a pick you hold none of is counted as outside your access and never named. A pick of a management group the stored tree does not know still matches the findings placed at it. Rule source matches each pack, Community and Custom (a copy of a built-in is Custom, a retired rule keeps its pack) from the rule as it is now. The age chip reads "First seen 31 to 90 days ago" in whole UTC days and is separate from the window, the status and the First seen funnel. A tag or pack no rule carries is named and marked "no longer exists", a deleted category is named and marked, and a list emptied only by such filters says why. Links with `subscription=` and `rg=` open as before.
+
+### Changed
+
+- A pack file whose rules resolve to the pack id `community` or `custom` is refused at startup with a warning, because those ids are the Rule source filter's own values. The pack is recorded as unreadable, so the rules it shipped before are not retired.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

@@ -1,0 +1,132 @@
+/**
+ * What the Results, Advisories and Activity tabs know about the values of a view's filters that the
+ * address alone does not say: how each Scope pick sits against the viewer's Access, whether a Rule source,
+ * tag or category still exists, and how a chip reads for each. The server works the states out
+ * (lib/db/view-filters.ts) and the explorer draws these words, so the two cannot word a chip differently.
+ * Client-safe: no Node, no database.
+ */
+import type { AgeRange } from './finding-view';
+import { PACK_LABELS } from './pack-labels';
+
+/** How one Scope pick sits against the viewer's Access (ADR 0015):
+ *  - `held`: the viewer holds all of it, so it is named;
+ *  - `narrowed`: a subscription they hold only in part, still named;
+ *  - `outside-narrowed`: a pick they hold only in part and cannot read the name of (a management group);
+ *  - `outside`: none of it is theirs, so it is counted and never named, and matches nothing. */
+export type ScopePickAccess = 'held' | 'narrowed' | 'outside-narrowed' | 'outside';
+
+export interface ScopePickState {
+  /** The pick as the address holds it. */
+  value: string;
+  access: ScopePickAccess;
+  /** What the pick is called. Null when the viewer may not be told. */
+  label: string | null;
+}
+
+export interface SourceValueState {
+  value: string;
+  label: string;
+  /** False for a pack no rule carries any more. */
+  exists: boolean;
+}
+
+export interface FilterStates {
+  scope: ScopePickState[];
+  /** The `scopeset=` reference could not be opened here, so the Scope filter matches nothing. */
+  scopeUnresolved: boolean;
+  source: SourceValueState[];
+  /** Tags in the filter that no rule carries. They match nothing. */
+  missingTags: string[];
+  /** Categories in the filter that were deleted. They still match the findings recorded under them. */
+  deletedCategories: string[];
+}
+
+export const NO_FILTER_STATES: FilterStates = Object.freeze({
+  scope: Object.freeze([]) as unknown as ScopePickState[],
+  scopeUnresolved: false,
+  source: Object.freeze([]) as unknown as SourceValueState[],
+  missingTags: Object.freeze([]) as unknown as string[],
+  deletedCategories: Object.freeze([]) as unknown as string[],
+});
+
+export const COMMUNITY_SOURCE = 'community';
+export const CUSTOM_SOURCE = 'custom';
+
+export const NARROWED_NOTE = 'narrowed to what you hold';
+export const NO_LONGER_EXISTS = 'no longer exists';
+export const DELETED_NOTE = 'deleted';
+
+/** What a Rule source value is called: a pack by its label, or its id when it has none. */
+export function sourceLabel(value: string): string {
+  if (value === COMMUNITY_SOURCE) return 'Community';
+  if (value === CUSTOM_SOURCE) return 'Custom';
+  return PACK_LABELS[value] ?? value;
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The chip for an age range: "First seen 31 to 90 days ago". */
+export function ageChipLabel(age: AgeRange): string {
+  if (age.max === null) return `First seen ${plural(age.min, 'day', 'days')} ago or more`;
+  if (age.max === age.min) return `First seen ${plural(age.min, 'day', 'days')} ago`;
+  return `First seen ${age.min} to ${plural(age.max, 'day', 'days')} ago`;
+}
+
+/** One chip of the Scope filter. `values` are the picks it stands for, which removing the chip drops. */
+export interface ScopeChip {
+  key: string;
+  label: string;
+  values: string[];
+}
+
+/**
+ * The chips a Scope filter shows. A pick the viewer holds is named, a partly held subscription says it is
+ * narrowed, and picks the viewer may not be told the name of are counted in a chip of their own, never
+ * named: "2 Scopes outside your access", or "1 Scope outside your access, narrowed to what you hold" for
+ * those they hold a part of.
+ */
+export function scopeChips(picks: readonly ScopePickState[]): ScopeChip[] {
+  const chips: ScopeChip[] = [];
+  for (const pick of picks) {
+    if (pick.access === 'held') chips.push({ key: pick.value, label: pick.label ?? pick.value, values: [pick.value] });
+    else if (pick.access === 'narrowed') chips.push({ key: pick.value, label: `${pick.label ?? pick.value} (${NARROWED_NOTE})`, values: [pick.value] });
+  }
+  const outside = picks.filter(p => p.access === 'outside');
+  if (outside.length > 0) {
+    chips.push({ key: 'outside', label: `${plural(outside.length, 'Scope', 'Scopes')} outside your access`, values: outside.map(p => p.value) });
+  }
+  const narrowedOutside = picks.filter(p => p.access === 'outside-narrowed');
+  if (narrowedOutside.length > 0) {
+    chips.push({
+      key: 'outside-narrowed',
+      label: `${plural(narrowedOutside.length, 'Scope', 'Scopes')} outside your access, ${NARROWED_NOTE}`,
+      values: narrowedOutside.map(p => p.value),
+    });
+  }
+  return chips;
+}
+
+/** `list` without `drop`, ignoring case, or undefined when nothing is left: a filter with no values is no
+ *  filter on a plain address. */
+export function dropValues(list: readonly string[] | undefined, drop: readonly string[]): string[] | undefined {
+  const gone = new Set(drop.map(v => v.toLowerCase()));
+  const kept = (list ?? []).filter(v => !gone.has(v.toLowerCase()));
+  return kept.length > 0 ? kept : undefined;
+}
+
+/** A value that no longer exists reads as its name with the mark after it. */
+export function markedLabel(name: string, note: string): string {
+  return `${name} (${note})`;
+}
+
+/** The dimension, if any, whose every value matches nothing, which an empty list says rather than the
+ *  words for a list that is genuinely empty. A Scope filter is checked first. */
+export type MatchesNothing = 'scope-outside' | 'scope-unresolved' | 'source' | 'tags';
+
+export function dimensionMatchingNothing(states: FilterStates, tagCount: number): MatchesNothing | null {
+  if (states.scopeUnresolved) return 'scope-unresolved';
+  if (states.scope.length > 0 && states.scope.every(p => p.access === 'outside')) return 'scope-outside';
+  if (states.source.length > 0 && states.source.every(s => !s.exists)) return 'source';
+  if (tagCount > 0 && states.missingTags.length >= tagCount) return 'tags';
+  return null;
+}
