@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Run History filters by category and shows coverage per category. The Category menu on the list writes `?tab=history&category=` to the address (one or more categories), so a filtered list can be linked to, and each run marks every category it scanned as Complete or Partial from that category's own incomplete rules.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

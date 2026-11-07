@@ -4,7 +4,7 @@ import { queryRuleFindingCounts } from '@/lib/db/finding-views';
 import { getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
-import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
+import { listRunHistory, getRun, getLatestRun } from '@/lib/schedule-runs';
 import { listSchedules } from '@/lib/db/schedules';
 import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listChannels } from '@/lib/db/notification-channels';
@@ -103,7 +103,8 @@ export default async function ScansPage({
         initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}
         initialSavedViewId={initialSavedViewId}
-        runs={activeTab === 'history' ? await listAllRuns(access, 50) : undefined}
+        runs={activeTab === 'history' ? await listRunHistory(access, { categories: initialCategoryFilter, limit: 50 }) : undefined}
+        historyCategories={initialCategoryFilter}
         runDetail={runDetail}
         snapshotScanId={snapshotScanId}
         snapshotQuery={snapshotScanId ? snapshotQueryFromParams(params) : undefined}
