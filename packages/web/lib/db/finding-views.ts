@@ -257,13 +257,14 @@ async function returnedColumns(tx: DbHandle, access: Access, slim: readonly Slim
  * The Rules tab's "N resources affected" per rule id: the active findings of a kind that resolves
  * (`countsAsAffected`) that sit inside `access`, leaving out the ones an active suppression covers. A
  * person who does not hold Everything is counted only the findings inside their Scopes, so a rule's figure
- * never tells them about a resource they cannot see.
+ * never tells them about a resource they cannot see. `within` narrows the count further to the Scopes it
+ * holds (the Rules tab's Scope filter, #402), on top of `access` and never instead of it.
  */
-export function queryRuleFindingCounts(access: Access): Promise<Record<string, number>> {
+export function queryRuleFindingCounts(access: Access, within?: Access): Promise<Record<string, number>> {
   return inReadTransaction(async (tx) => {
     const t = findingsTable;
     const stored = await many(tx.select({ fingerprint: t.fingerprint, ruleId: t.ruleId }).from(t).where(and(
-      eq(t.status, 'active'), inArray(t.kind, [...RESOLVABLE_KINDS]), accessFilterSql(access),
+      eq(t.status, 'active'), inArray(t.kind, [...RESOLVABLE_KINDS]), accessFilterSql(access), within && accessFilterSql(within),
     )));
     const suppressed = await readSuppressedFingerprints(tx);
     const counts: Record<string, number> = {};

@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS rules (
   visual_query TEXT,
   last_run_status TEXT,
   last_run_at TEXT,
+  enabled_at TEXT,
   version TEXT,
   retired_at TEXT,
   origin_rule_id TEXT,
@@ -78,6 +79,7 @@ ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_rule_id TEXT;
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS origin_version TEXT;
 -- The Library request a rule was approved from (#282), for a database bootstrapped before it shipped.
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS library_request_id TEXT;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS enabled_at TEXT;
 
 CREATE TABLE IF NOT EXISTS rule_versions (
   rule_id TEXT NOT NULL,
@@ -105,7 +107,8 @@ CREATE TABLE IF NOT EXISTS scans (
   run_id TEXT,
   coverage TEXT NOT NULL DEFAULT 'complete',
   incomplete_rules TEXT NOT NULL DEFAULT '[]',
-  has_records INTEGER NOT NULL DEFAULT 0
+  has_records INTEGER NOT NULL DEFAULT 0,
+  ran_rule_ids TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_scans_module_started ON scans(module, started_at DESC);
 -- ADR 0008: 1 once scan_findings holds this scan's records. A release that predates the column saves 0,
@@ -453,6 +456,8 @@ ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS changed_findings TEXT;
 -- The Scope a run covered (#276), on the run and on each category's scan. NULL reads as Everything.
 ALTER TABLE schedule_runs ADD COLUMN IF NOT EXISTS covered_scope TEXT;
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS covered_scope TEXT;
+-- The rules a scan ran (#402). NULL on a scan saved before it was recorded.
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS ran_rule_ids TEXT;
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id TEXT PRIMARY KEY,
