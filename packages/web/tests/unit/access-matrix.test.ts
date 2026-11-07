@@ -859,6 +859,65 @@ function runHistoryMatrix(): Record<string, Matrix> {
   };
 }
 
+/**
+ * #388: the options read behind the shared filter component. The categories, rules, tags and Rule sources are the
+ * same for everyone, since a rule's definition is; what differs is the Scope tree (the held part of RuleBeat's copy
+ * of the tree, with the resource groups the person's findings sit in) and where those findings are placed. A node
+ * is written as its Scope path with its children's paths under it. Written by hand from the seed: subscription one
+ * holds rg-one and rg-two, subscription two holds rg-one, both under `mg-example` under the tenant root.
+ */
+const OPTIONS_RG_ONE = `${SCOPE_SUBSCRIPTION}/resourceGroups/rg-one`;
+const OPTIONS_RG_TWO = `${SCOPE_SUBSCRIPTION}/resourceGroups/rg-two`;
+const OPTIONS_SUB_TWO = `/subscriptions/${SUB_TWO}`;
+const OPTIONS_SUB_TWO_RG_ONE = `${OPTIONS_SUB_TWO}/resourceGroups/rg-one`;
+const TENANT_ROOT = `/providers/Microsoft.Management/managementGroups/${MATRIX_TENANT}`;
+const optionsEntry: Matrix = {
+  probe: async () => {
+    const body = await BODY(await (await import('@/app/api/filters/options/route')).GET()) as {
+      scopes: { listing: string; directory: boolean; tree: unknown[] };
+      placements: { subscriptions: string[]; resourceGroups: { subscription: string; name: string }[] };
+      rules: unknown[]; tags: string[]; severities: string[];
+    };
+    const paths = (items: { key: string; children?: unknown[] }[]): unknown[] =>
+      items.map(i => (i.children?.length ? { [i.key]: paths(i.children as never) } : i.key));
+    return {
+      listing: body.scopes.listing,
+      directory: body.scopes.directory,
+      tree: paths(body.scopes.tree as never),
+      subscriptions: body.placements.subscriptions,
+      resourceGroups: body.placements.resourceGroups.map(g => `${g.subscription}/${g.name}`).sort(),
+      hasRules: body.rules.length > 0,
+      severities: body.severities,
+    };
+  },
+  expected: (() => {
+    const shared = { listing: 'listed', hasRules: true, severities: ['critical', 'high', 'medium', 'low', 'info'] };
+    const ALL_GROUPS = [`${SUB_ONE}/rg-one`, `${SUB_ONE}/rg-two`, `${SUB_TWO}/rg-one`];
+    const everything = same({
+      ...shared, directory: true, subscriptions: [SUB_ONE, SUB_TWO, 'directory'], resourceGroups: ALL_GROUPS,
+      tree: [{ [TENANT_ROOT]: [{ [SCOPE_MANAGEMENT_GROUP]: [{ [SCOPE_SUBSCRIPTION]: [OPTIONS_RG_ONE, OPTIONS_RG_TWO] }, { [OPTIONS_SUB_TWO]: [OPTIONS_SUB_TWO_RG_ONE] }] }] }],
+    });
+    return {
+      'Admin': everything,
+      'Editor on Everything': everything,
+      'Viewer on the management group': same({
+        ...shared, directory: false, subscriptions: [SUB_ONE, SUB_TWO], resourceGroups: ALL_GROUPS,
+        tree: [{ [SCOPE_MANAGEMENT_GROUP]: [{ [SCOPE_SUBSCRIPTION]: [OPTIONS_RG_ONE, OPTIONS_RG_TWO] }, { [OPTIONS_SUB_TWO]: [OPTIONS_SUB_TWO_RG_ONE] }] }],
+      }),
+      'Viewer on one subscription': same({
+        ...shared, directory: false, subscriptions: [SUB_ONE], resourceGroups: [`${SUB_ONE}/rg-one`, `${SUB_ONE}/rg-two`],
+        tree: [{ [SCOPE_SUBSCRIPTION]: [OPTIONS_RG_ONE, OPTIONS_RG_TWO] }],
+      }),
+      'Viewer on one resource group': same({
+        ...shared, directory: false, subscriptions: [SUB_ONE], resourceGroups: [`${SUB_ONE}/rg-one`],
+        tree: [{ [SCOPE_SUBSCRIPTION]: [OPTIONS_RG_ONE] }],
+      }),
+      'Directory only': same({ ...shared, directory: true, subscriptions: ['directory'], resourceGroups: [], tree: [] }),
+      'No Scope': same({ ...shared, directory: false, subscriptions: [], resourceGroups: [], tree: [] }),
+    };
+  })(),
+};
+
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
   'suppressions': suppressionsList,
@@ -869,6 +928,7 @@ const FINDINGS_MATRIX: Record<string, Matrix> = {
   'findings/column-values': columnValues,
   'findings/export': exported,
   'findings/rows': rows,
+  'filters/options': optionsEntry,
   ...dashboardMatrix(),
   ...runHistoryMatrix(),
 };

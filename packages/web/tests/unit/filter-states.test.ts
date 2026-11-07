@@ -160,3 +160,12 @@ describe('an empty list says why', () => {
     expect(emptyListCopy('tags', 'findings')).toContain('no longer');
   });
 });
+
+describe('sourceLabel with a manifest', () => {
+  it('takes the manifest\'s label before the built-in one, and the id when neither has one', () => {
+    expect(sourceLabel('aprl-v2')).toBe('APRL v2');
+    expect(sourceLabel('aprl-v2', { 'aprl-v2': { label: 'From the manifest' } })).toBe('From the manifest');
+    expect(sourceLabel('zzz-pack', { 'aprl-v2': { label: 'x' } })).toBe('zzz-pack');
+    expect(sourceLabel('community', { community: { label: 'ignored' } })).toBe('Community');
+  });
+});

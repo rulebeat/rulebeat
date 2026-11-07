@@ -18,9 +18,12 @@ import { many } from './exec';
 import type { DbHandle } from './exec';
 import { findings as findingsTable, managementGroupHierarchy as hierarchyTable, rules as rulesTable } from './tables';
 import { accessFilterSql } from './access-filter';
+import { expandScopeSetOn } from './scope-sets';
 import type { HierarchyNode } from '../management-group-tree';
 import { filterValues, type AgeRange, type View } from '../finding-view';
 import { COMMUNITY_SOURCE, CUSTOM_SOURCE, sourceLabel, type FilterStates, type SourceValueState } from '../filter-states';
+import type { PackManifestLabels } from '../pack-labels';
+import packManifest from '@/data/packs/pack-manifest.json';
 import { picksAsAccess, readPicks, scopePickStates } from '../scope-picks';
 import { CORE_PACK } from '../shipped-catalogue';
 import type { ExplorerCategory, RuleDetails } from '../view-response';
@@ -69,7 +72,7 @@ async function sourceStates(tx: DbHandle, values: readonly string[]): Promise<So
   const packs = await readPacks(tx);
   return values.map(value => ({
     value,
-    label: sourceLabel(value),
+    label: sourceLabel(value, packManifest as PackManifestLabels),
     exists: value === COMMUNITY_SOURCE || value === CUSTOM_SOURCE || packs.has(value),
   }));
 }
@@ -110,16 +113,19 @@ export async function planViewFilters(
   const conditions: SQL[] = [];
   const states: FilterStates = { scope: [], scopeUnresolved: false, source: [], missingTags: [], deletedCategories: [] };
 
-  if (view.scopeSet) {
-    // Nothing opens a Scope set yet, and an unopened one is not the same as no pick (ADR 0016).
+  // A long Scope list arrives as a hash and only the server opens it (ADR 0016). A hash no row holds is not the
+  // same as no pick, which would show everything held: it matches nothing.
+  const expansion = view.scopeSet ? await expandScopeSetOn(tx, view.scopeSet) : null;
+  const scope = expansion ? (expansion.status === 'resolved' ? expansion.paths : undefined) : view.scope;
+  if (expansion?.status === 'unresolved') {
     states.scopeUnresolved = true;
     conditions.push(NOTHING);
-  } else if (view.scope && view.scope.length > 0) {
+  } else if (scope && scope.length > 0) {
     const nodes = await readHierarchy(tx);
-    const picks = readPicks(view.scope);
+    const picks = readPicks(scope);
     const picked = picks.length === 0 ? undefined : accessFilterSql(picksAsAccess(picks, nodes));
     conditions.push(picked ?? NOTHING);
-    states.scope = scopePickStates(access, view.scope, nodes);
+    states.scope = scopePickStates(access, scope, nodes);
   }
 
   if (view.source && view.source.length > 0) {
