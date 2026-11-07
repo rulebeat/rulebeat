@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Header } from '@/components/layout/header';
-import { getDashboard, listDashboards } from '@/lib/db/dashboards';
+import { listDashboards } from '@/lib/db/dashboards';
+import { getOpenableDashboard } from '@/lib/dashboard-visibility';
 import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { getCurrentUser } from '@/lib/api-auth';
@@ -17,10 +18,10 @@ export default async function DashboardPage({ params }: Props) {
   // never collide with this string, so it's a safe, deterministic way to exercise the route's
   // error boundary without a dedicated test-only route.
   if (id === '__e2e-throw__') throw new Error('e2e-triggered render error');
-  const dashboard = await getDashboard(id);
+  const user = await getCurrentUser();
+  const dashboard = await getOpenableDashboard(user, id);
   if (!dashboard) notFound();
   const dashboards = await listDashboards();
-  const user = await getCurrentUser();
   const access = user ? await resolveAccess(user) : NO_ACCESS;
 
   return (
@@ -40,6 +41,6 @@ export default async function DashboardPage({ params }: Props) {
 
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
-  const dashboard = await getDashboard(id);
+  const dashboard = await getOpenableDashboard(await getCurrentUser(), id);
   return { title: dashboard ? `${dashboard.name} · RuleBeat` : 'Dashboard · RuleBeat' };
 }

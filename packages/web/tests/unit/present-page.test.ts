@@ -162,7 +162,7 @@ describe('who may present', () => {
     expect(await outcome(() => present(dashboard.id))).toBe('404');
   });
 
-  it('is the same decision for a Viewer as for the ordinary page', async () => {
+  it('lets a Viewer present', async () => {
     const dashboard = await makeDashboard();
     await signInAs('viewer');
     expect(await outcome(() => present(dashboard.id))).toBe('rendered');
