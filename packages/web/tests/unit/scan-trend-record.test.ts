@@ -223,6 +223,10 @@ describe('a failed record write fails the scan', () => {
 describe.runIf(dbKind === 'pg')('two syncs touching one key at once', () => {
   it('both end correct, because the record lock is taken just before the recount', async () => {
     const realRecount = (await vi.importActual<typeof import('@/lib/db/trend-record')>('@/lib/db/trend-record')).recountTrend;
+    // beforeEach inserts RULE_B raw and the syncs never touch it, so its fact is recorded first. Otherwise the final
+    // full recount would write that fact whatever the lock does. It runs before the gate is installed: through the
+    // gate it would count as an arrival and wait out the timeout alone.
+    await recount(at(0));
     let arrived = 0;
     // For each sync, how many had reached the recount when it was let through. Two means the syncs met there.
     const arrivedWhenLetThrough: number[] = [];
@@ -246,10 +250,6 @@ describe.runIf(dbKind === 'pg')('two syncs touching one key at once', () => {
     const sync = (id: string, f: Finding) => syncScanFindings({
       scanId: id, category: CATEGORY, ranRuleIds: [], findings: [f], finishedAt: at(1).toISOString(),
     });
-
-    // beforeEach inserts RULE_B raw and the syncs never touch it, so its fact is recorded first. Otherwise the final
-    // full recount would write that fact whatever the lock does.
-    await recount(at(0));
 
     try {
       await Promise.all([sync('s1', finding('vm-one')), sync('s2', finding('vm-two'))]);
