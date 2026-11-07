@@ -193,14 +193,33 @@ describe('dashboard denominator honesty: a resource group filter counts the rule
     expect(summary.current.totalRules).toBe(3);
   });
 
-  it('a resource group no finding sits in is looked at by no rule, rather than by all of them', async () => {
+  it('a resource group no finding has ever sat in is looked at by every rule the viewer holds, not by none', async () => {
     const summary = await computeWidgetSummary(
       { categories: [CATEGORY], resourceGroups: ['rg-nobody-has'], dateWindow: { mode: 'relative', days: 7 } },
       30, EVERYTHING_ACCESS,
     );
 
-    expect(summary.current.totalRules).toBe(0);
-    expect(summary.current.pct).toBeNull();
+    expect(summary.current.totalRules).toBe(2);
+    expect(summary.current.passingRules).toBe(2);
+  });
+
+  it('fixing the last finding in a resource group keeps its rules counted and turns the tile to all passing', async () => {
+    await insertRule('test-rule-elsewhere', { scope: { level: 'subscription', subscriptions: ['sub-2'] } });
+    await syncScanFindings({
+      scanId: 's2',
+      category: CATEGORY,
+      ranRuleIds: [RULE_HIGH, RULE_MEDIUM],
+      findings: [],
+      finishedAt: new Date().toISOString(),
+    });
+
+    const summary = await computeWidgetSummary(
+      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
+      30, EVERYTHING_ACCESS,
+    );
+
+    expect(summary.current.totalRules).toBe(2);
+    expect(summary.current.passingRules).toBe(2);
   });
 });
 

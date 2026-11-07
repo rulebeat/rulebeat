@@ -11,7 +11,7 @@ import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
 import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
-import type { Access } from './access-model';
+import { accessReach, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import { narrowScopes, ruleOverlapsScopes } from './rule-overlap';
@@ -34,15 +34,21 @@ function daysAgo(days: number): string {
 
 /** The Scopes the live posture is read over (formula v3): the viewer's Access intersected with the
  *  subscription filter. A resource group filter names groups by name only, so it narrows through the
- *  subscriptions the viewer's own findings place those groups in: a group nothing sits in is looked at
- *  by no rule. */
+ *  subscriptions those groups are known to sit in: any finding the viewer can see, of any status or
+ *  kind, suppressed or not, and the groups they hold. A group no subscription is known for narrows
+ *  nothing, so every rule that looks at the viewer's Scopes still counts for it. */
 async function postureScopes(filters: WidgetFilters, access: Access): Promise<Access> {
   let subscriptions = filters.subscriptions?.length ? filters.subscriptions : undefined;
   if (filters.resourceGroups?.length) {
-    const inGroups = new Set((await listFindingSummaries(access, { status: 'active' }))
-      .filter(f => f.resourceGroup && filters.resourceGroups!.includes(f.resourceGroup))
-      .map(f => f.subscriptionId.toLowerCase()));
-    subscriptions = (subscriptions ?? [...inGroups]).filter(s => inGroups.has(s.toLowerCase()));
+    const wanted = new Set(filters.resourceGroups.map(g => g.toLowerCase()));
+    const known = new Set<string>();
+    for (const f of await listFindingSummaries(access)) {
+      if (f.resourceGroup && wanted.has(f.resourceGroup.toLowerCase())) known.add(f.subscriptionId.toLowerCase());
+    }
+    for (const [sub, groups] of accessReach(access).resourceGroups) {
+      if ([...groups].some(g => wanted.has(g.toLowerCase()))) known.add(sub.toLowerCase());
+    }
+    if (known.size > 0) subscriptions = (subscriptions ?? [...known]).filter(s => known.has(s.toLowerCase()));
   }
   return narrowScopes(access, subscriptions);
 }
