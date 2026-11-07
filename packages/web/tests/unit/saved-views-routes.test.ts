@@ -1,11 +1,10 @@
 /**
- * Saved views (#196): the routes, through the real repository, database and audit log. A saved
- * view is shared with everyone on the install, so the contract is who can read it (anyone signed
- * in), who can change it (editor and admin), and that nothing the person typed lands in the audit
- * log.
+ * Saved views (#196, ADR 0012): the routes, through the real repository, database and audit log. A saved
+ * view is Personal (its owner's alone) or Shared (open to everyone signed in), so the contract is who can
+ * read it, who can change it, and that nothing the person typed lands in the audit log.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetDb } from '../helpers/db';
+import { execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
@@ -20,12 +19,16 @@ vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 const { GET: LIST, POST } = await import('@/app/api/views/route');
 const { GET: READ, PATCH, DELETE } = await import('@/app/api/views/[id]/route');
 
-async function signInAs(role: Role): Promise<void> {
+async function signInAs(role: Role): Promise<string> {
   const result = await createUser({ email: `${role}-${Math.random().toString(36).slice(2)}@example.com`, role });
   if ('error' in result) throw new Error(result.error);
   await setPassword(result.user.id, 'irrelevant-hash', { mustChangePassword: false });
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
+  return result.user.id;
 }
+
+/** Sharing is a later change; until it ships a test writes the row the way it would be stored. */
+const share = (id: string) => execRaw(`UPDATE saved_views SET visibility = 'shared' WHERE id = '${id}'`);
 
 function json(method: string, payload: unknown): Request {
   return new Request('http://localhost/api/views', {
@@ -56,8 +59,9 @@ describe('saved views routes', () => {
   });
 
   describe('who can do what', () => {
-    it('lets a viewer list and open a view but refuses every write', async () => {
+    it('lets a viewer list and open a Shared view, keep Personal views of their own, and refuses a change to the Shared one', async () => {
       const view = await created('Critical only');
+      await share(view.id);
       await signInAs('viewer');
 
       const list = await LIST();
@@ -65,16 +69,22 @@ describe('saved views routes', () => {
       expect((await list.json() as SavedView[]).map(v => v.name)).toEqual(['Critical only']);
       expect((await read(view.id)).status).toBe(200);
 
-      expect((await post({ name: 'Mine', tab: 'results', query: '' })).status).toBe(403);
       expect((await patch(view.id, { name: 'Renamed' })).status).toBe(403);
       expect((await remove(view.id)).status).toBe(403);
       expect((await listSavedViews()).map(v => v.name)).toEqual(['Critical only']);
+
+      const mine = await created('Mine');
+      expect(mine).toMatchObject({ visibility: 'personal' });
+      expect((await patch(mine.id, { name: 'Mine, renamed' })).status).toBe(200);
+      expect((await remove(mine.id)).status).toBe(204);
     });
 
-    it('lets an editor and an admin write', async () => {
+    it('lets an editor change a Shared view they own, and an admin change anyone\'s Shared view', async () => {
       const view = await created('From the editor');
-      await signInAs('admin');
+      await share(view.id);
+      expect((await patch(view.id, { name: 'Edited by its owner' })).status).toBe(200);
 
+      await signInAs('admin');
       expect((await patch(view.id, { name: 'From the admin' })).status).toBe(200);
       expect((await post({ name: 'Second', tab: 'advisories', query: '' })).status).toBe(201);
       expect((await remove(view.id)).status).toBe(204);
@@ -86,11 +96,13 @@ describe('saved views routes', () => {
       expect((await post({ name: 'x', tab: 'results', query: '' })).status).toBe(401);
     });
 
-    it('shares a view with everyone: another person sees what an editor saved', async () => {
-      await created('Shared one');
+    it('keeps a Personal view to its owner, and shows a Shared one to everyone signed in', async () => {
+      const view = await created('Only mine');
       await signInAs('editor');
-      const names = (await (await LIST()).json() as SavedView[]).map(v => v.name);
-      expect(names).toEqual(['Shared one']);
+      expect((await (await LIST()).json() as SavedView[]).map(v => v.name)).toEqual([]);
+
+      await share(view.id);
+      expect((await (await LIST()).json() as SavedView[]).map(v => v.name)).toEqual(['Only mine']);
     });
   });
 
@@ -186,6 +198,7 @@ describe('saved views routes', () => {
 
     it('updates the query and tab and records who and when', async () => {
       const view = await created('Moves');
+      await share(view.id);
       await signInAs('admin');
       const res = await patch(view.id, { tab: 'advisories', query: 'severity=high' });
       const updated = await res.json() as SavedView;
@@ -263,5 +276,69 @@ describe('saved views routes', () => {
       expect((await patch(view.id, { name: 'Same', query: 'severity=critical' })).status).toBe(200);
       expect(await viewAudit()).toHaveLength(before);
     });
+  });
+});
+
+describe('Personal saved views (ADR 0012)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    mockAuth.mockReset();
+  });
+
+  it('are created Personal and owned by the actor, whatever their Role', async () => {
+    for (const role of ['viewer', 'editor', 'admin'] as Role[]) {
+      const actor = await signInAs(role);
+      const view = await created(`Made by ${role}`);
+      expect(view).toMatchObject({ visibility: 'personal', owner: { id: actor } });
+    }
+  });
+
+  it('answers someone else\'s Personal view like an unknown id on every path, an Admin included', async () => {
+    await signInAs('editor');
+    const view = await created('Theirs');
+    await signInAs('admin');
+
+    const unknown = [await read('nope'), await patch('nope', { name: 'x' }), await remove('nope')];
+    const theirs = [await read(view.id), await patch(view.id, { name: 'x' }), await remove(view.id)];
+    expect(theirs.map(r => r.status)).toEqual([404, 404, 404]);
+    expect(await Promise.all(theirs.map(r => r.json()))).toEqual(await Promise.all(unknown.map(r => r.json())));
+    expect((await listSavedViews()).map(v => v.name)).toEqual(['Theirs']);
+  });
+
+  it('keeps a Personal name unique among the owner\'s Personal views, and never reads another person\'s', async () => {
+    await signInAs('editor');
+    await created('Critical');
+    const clash = await post({ name: ' critical', tab: 'results', query: '' });
+    expect(clash.status).toBe(409);
+
+    await signInAs('editor');
+    expect((await post({ name: 'Critical', tab: 'results', query: '' })).status).toBe(201);
+  });
+
+  it('checks a Shared rename install-wide, and not against another person\'s Personal names', async () => {
+    const owner = await signInAs('editor');
+    const a = await created('Alpha');
+    const b = await created('Beta');
+    await share(a.id);
+    await share(b.id);
+    expect((await patch(a.id, { name: 'beta' })).status).toBe(409);
+
+    await signInAs('editor');
+    await created('Gamma');
+    mockAuth.mockResolvedValue({ user: { uid: owner } });
+    expect((await patch(a.id, { name: 'gamma' })).status).toBe(200);
+  });
+
+  it('logs a Personal create, rename and delete by id and kind, with no name', async () => {
+    await signInAs('viewer');
+    const view = await created('Quarterly numbers', { query: 'q=hunter2' });
+    await patch(view.id, { name: 'Annual numbers' });
+    await remove(view.id);
+
+    const entries = await viewAudit();
+    expect(entries.map(e => e.action).sort()).toEqual(['view.create', 'view.delete', 'view.rename']);
+    expect(entries.every(e => e.entityId === view.id)).toBe(true);
+    const text = JSON.stringify(entries.map(e => [e.summary, e.details]));
+    for (const value of ['Quarterly', 'Annual', 'hunter2']) expect(text).not.toContain(value);
   });
 });

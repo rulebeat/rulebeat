@@ -35,6 +35,7 @@ import type { Dashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
+import { createDashboardSaver, saveFailureMessage } from '@/lib/dashboard-save';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
@@ -43,6 +44,10 @@ interface Props {
   dashboard: Dashboard;
   /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** Whether the person may change this dashboard (rename, edit, delete). Anyone who can open it may Duplicate it. */
+  canChange: boolean;
+  /** Whether the person may choose the Install default, which is a Shared dashboard. */
+  canSetDefault: boolean;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -120,9 +125,15 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, canChange, canSetDefault }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
+  // Every save goes through this: one at a time, each carrying the revision the last one returned.
+  const [saver] = useState(() => createDashboardSaver(initial, (id, body) => fetch(`/api/dashboards/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  })));
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -163,14 +174,16 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
   useEffect(() => {
     if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
     setRefreshKey(k => k + 1);
+    // Someone who cannot change the dashboard still filters what they see, but nothing is saved for anyone else.
+    if (!canChange) return;
     const t = setTimeout(() => {
-      fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
-      })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
+      // The change is built when the save is sent, from the dashboard as it is then, so a Save or
+      // rename inside the debounce window cannot leave this one with a stale revision or config.
+      void saver.save(current => ({ config: { ...current.config, filters: dashFilters, dateWindow, windowDays: undefined } }))
+        .then(result => {
+          if (result.ok) { setDashboard(result.dashboard); setError(null); }
+          else setError(saveFailureMessage(result.refused, 'Failed to save the filters.'));
+        });
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,21 +319,16 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
   async function saveTitle(newName: string) {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === dashboard.name) { setEditingTitle(false); setTitleValue(dashboard.name); return; }
-    const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed }),
-    });
-    if (res.ok) {
-      const d = await res.json() as Dashboard;
+    const result = await saver.save(() => ({ name: trimmed }));
+    if (result.ok) {
+      const d = result.dashboard;
       setDashboard(d);
       setTitleValue(d.name);
       setTitleError('');
       setEditingTitle(false);
       router.refresh(); // update server-rendered Header
     } else {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      setTitleError(body.error ?? 'Failed to rename.');
+      setTitleError(saveFailureMessage(result.refused, 'Failed to rename.'));
       titleInputRef.current?.focus();
     }
   }
@@ -329,20 +337,18 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
   async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: updatedName,
-          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
-          // That persistence is independent (see the debounced effect above).
-          config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
-        }),
-      });
-      if (res.ok) {
-        const d = await res.json() as Dashboard;
-        setDashboard(d);
+      const result = await saver.save(current => ({
+        name: updatedName,
+        // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
+        // That persistence is independent (see the debounced effect above).
+        config: { ...current.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+      }));
+      if (result.ok) {
+        setDashboard(result.dashboard);
         setDirty(false);
+        setError(null);
+      } else {
+        setError(saveFailureMessage(result.refused, 'Failed to save the dashboard.'));
       }
     } finally { setSaving(false); }
   }
@@ -385,6 +391,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
     });
     if (res.ok) {
       const d = await res.json() as Dashboard;
+      saver.adopt(d);
       setDashboard(d);
       router.refresh(); // invalidate cached server data so sidebar / gallery update
     }
@@ -505,7 +512,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
               <Plus className="size-3.5" />Add Widget
             </Button>
           </>
-        ) : (
+        ) : canChange && (
           <>
             {dirty && (
               <Button size="sm" className="gap-1.5" onClick={() => save()} disabled={saving}>
@@ -529,10 +536,12 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
             }
           />
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => { setTitleValue(dashboard.name); setEditingTitle(true); }}>
-              <Pencil />Rename
-            </DropdownMenuItem>
-            {!dashboard.isDefault && (
+            {canChange && (
+              <DropdownMenuItem onClick={() => { setTitleValue(dashboard.name); setEditingTitle(true); }}>
+                <Pencil />Rename
+              </DropdownMenuItem>
+            )}
+            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isDefault && (
               <DropdownMenuItem onClick={handleSetDefault}>
                 <Star />Set as default
               </DropdownMenuItem>
@@ -540,9 +549,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
             <DropdownMenuItem onClick={handleDuplicate}>
               <Copy />Duplicate
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onClick={handleDelete}>
-              <Trash2 />Delete dashboard
-            </DropdownMenuItem>
+            {canChange && (
+              <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+                <Trash2 />Delete dashboard
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -571,9 +582,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         {widgets.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-4 border border-dashed border-rule-strong">
             <p className="text-sm text-ink-muted">No widgets yet</p>
-            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
-              <Plus className="size-3.5" />Add your first widget
-            </Button>
+            {canChange && (
+              <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
+                <Plus className="size-3.5" />Add your first widget
+              </Button>
+            )}
           </div>
         ) : (
           <GridLayout

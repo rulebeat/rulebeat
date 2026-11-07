@@ -115,7 +115,7 @@ query returned. A rule never says how its findings are viewed.
 _Avoid_: report, perspective, group column
 
 **Saved view**:
-A view kept under a name. Every saved view is shared with everyone on the install.
+A view kept under a name. A saved view is Personal or Shared, and has an Owner.
 _Avoid_: favourite, bookmark, preset
 
 ## Dashboards
@@ -133,6 +133,11 @@ _Avoid_: starter, preset, audience dashboard
 One number, chart or list on a dashboard. Every count it shows opens the same count on Scans; a
 trend-only widget says on its definition line why it opens none.
 _Avoid_: tile, card, panel
+
+**Revision**:
+The number a dashboard carries that every write raises by one. A Save sends the revision it read, and
+a Save made on an older one is refused with who changed the dashboard and when.
+_Avoid_: version (that is a rule's), etag
 
 **Editing**:
 The explicit period in which a dashboard's layout and settings change, ended by Save or Cancel.
@@ -210,6 +215,35 @@ _Avoid_: draft rule, private rule, sandbox
 A request to copy a Personal rule into the library, or to update the rule it became there. An Admin
 or an Editor on Everything approves it or rejects it with a reason.
 _Avoid_: pull request, promotion, submission
+
+**Owner**:
+The person an item belongs to. A Shared item may have no owner after an upgrade, after its owner is
+deleted, or when it is the seeded starter.
+_Avoid_: creator, author
+
+**Personal**:
+An item only its owner can open. Anyone else, an Admin included, is answered as if it did not exist.
+_Avoid_: private
+
+**Shared**:
+An item everyone signed in can open. Its owner, or an Admin or an Editor on Everything, changes it.
+_Avoid_: public
+
+**Install default**:
+The Shared dashboard people land on when they have no My default. It is chosen by an Admin or an
+Editor on Everything, and there may be none.
+_Avoid_: global default, home dashboard
+
+**My default**:
+The dashboard one person chose to land on, their own Personal item or any Shared one.
+_Avoid_: home dashboard
+
+**Held-back value**:
+A stored filter value outside the viewer's Access. A Scope value is held back when the viewer holds
+no Scope covering it and none inside it. A resourceName or row value is held back unless a finding
+inside the viewer's Access carries it. The value stays stored, is counted but never shown, matches
+nothing for that viewer, and is dropped only by Remove N values.
+_Avoid_: hidden value, redacted value
 
 **Install administration**:
 Running the RuleBeat install itself: people and their Access, sign-in, the Azure connection,

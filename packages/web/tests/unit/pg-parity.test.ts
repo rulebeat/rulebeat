@@ -212,39 +212,41 @@ describe('users repository parity', () => {
     // With a second admin present, deletion goes through.
     const second = await createUser({ email: 'second@example.com', role: 'admin' });
     if ('error' in second) throw new Error(second.error);
-    expect(await deleteUser(admin.id)).toEqual({ withdrawnRequests: 0 });
+    expect(await deleteUser(admin.id)).toEqual({
+      withdrawnRequests: 0, dashboards: { deleted: 0, released: 0 }, views: { deleted: 0, released: 0 },
+    });
     expect((await listUsers()).map(u => u.email)).toEqual(['second@example.com']);
   });
 });
 
 describe('dashboards repository parity', () => {
-  it('first row defaults, name collisions refuse, duplicate copies config, delete promotes', async () => {
+  it('no row defaults, name collisions refuse per owner, duplicate copies config, deleting the default promotes nothing', async () => {
     await clearDashboards();
 
-    const a = await createDashboard({ name: 'Parity A', description: 'first', config: { widgets: [] } });
+    const a = await createDashboard({ name: 'Parity A', description: 'first', config: { widgets: [] } }, 'parity-owner');
     if (!a.ok) throw new Error(a.reason);
-    expect(a.dashboard.isDefault).toBe(true); // very first dashboard in an empty table
+    expect(a.dashboard).toMatchObject({ isDefault: false, visibility: 'personal' }); // the first row is no longer the default
 
-    const b = await createDashboard({ name: 'Parity B', config: { widgets: [], autoRefresh: 30 } });
+    const b = await createDashboard({ name: 'Parity B', config: { widgets: [], autoRefresh: 30 } }, 'parity-owner');
     if (!b.ok) throw new Error(b.reason);
     expect(b.dashboard.isDefault).toBe(false);
 
     // Collisions are case-insensitive, on create and rename alike.
-    expect(await createDashboard({ name: 'parity a', config: { widgets: [] } })).toEqual({ ok: false, reason: 'name-taken' });
-    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' })).toEqual({ ok: false, reason: 'name-taken' });
+    expect(await createDashboard({ name: 'parity a', config: { widgets: [] } }, 'parity-owner')).toEqual({ ok: false, reason: 'name-taken' });
+    expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' }, { revision: 1, actorId: 'parity-owner' })).toEqual({ ok: false, reason: 'name-taken' });
 
-    const dup = await duplicateDashboard(a.dashboard.id);
+    const dup = await duplicateDashboard(a.dashboard.id, 'parity-owner');
     expect(dup).not.toBeNull();
     expect(dup!.id).not.toBe(a.dashboard.id);
     expect(dup!.name).toBe('Parity A (copy)');
     expect(dup!.config).toEqual(a.dashboard.config);
 
-    // Deleting the default promotes exactly one remaining dashboard, in the same transaction.
+    // Deleting a dashboard promotes nothing to the default (ADR 0012).
     expect(await deleteDashboard(a.dashboard.id)).toBe(true);
     expect(await getDashboard(a.dashboard.id)).toBeNull();
     const remaining = await listDashboards();
     expect(remaining).toHaveLength(2);
-    expect(remaining.filter(d => d.isDefault)).toHaveLength(1);
+    expect(remaining.filter(d => d.isDefault)).toHaveLength(0);
   });
 });
 

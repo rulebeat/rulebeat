@@ -1,8 +1,8 @@
 /**
- * Issue #161: two dashboards could end up with the same name, or two could both become the
- * default, when requests landed at the same moment. The name check (and for a first create the
- * "is the table empty" read) used to run in steps separate from the write, so two concurrent
- * requests could both pass the check before either wrote its row.
+ * Issue #161: two dashboards could end up with the same name when requests landed at the same
+ * moment. The name check used to run in a step separate from the write, so two concurrent
+ * requests could both pass the check before either wrote its row. (Nothing becomes the default
+ * by being first any more, ADR 0012.)
  *
  * Nothing here parks a request on a gate: the repository's steps are plain awaits on a synchronous
  * database, so two requests started together advance in lockstep and both finish their checks
@@ -60,7 +60,7 @@ function sameName(list: Dashboard[], name: string): Dashboard[] {
   return list.filter(d => d.name.trim().toLowerCase() === name.trim().toLowerCase());
 }
 
-describe('dashboard name uniqueness and first-default under concurrent writes', () => {
+describe('dashboard name uniqueness under concurrent writes', () => {
   beforeEach(async () => {
     await resetDb();
     await clearDashboards();
@@ -89,7 +89,7 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
     const b = await created(unique('Rename B'));
     const shared = unique('Shared Name');
 
-    const [resA, resB] = await Promise.all([put(a.id, { name: shared }), put(b.id, { name: shared.toUpperCase() })]);
+    const [resA, resB] = await Promise.all([put(a.id, { name: shared, revision: a.revision }), put(b.id, { name: shared.toUpperCase(), revision: b.revision })]);
 
     expect([resA.status, resB.status].sort()).toEqual([200, 409]);
     const aFailed = resA.status === 409;
@@ -116,13 +116,13 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
     expect(names).toEqual([STARTER_DASHBOARD.name, `${STARTER_DASHBOARD.name} (2)`].sort());
   });
 
-  it('makes exactly one dashboard the default when two creates land on an empty table', async () => {
+  it('makes no dashboard the default when two creates land on an empty table', async () => {
     const responses = await Promise.all([post({ name: unique('First A') }), post({ name: unique('First B') })]);
 
     expect(responses.map(r => r.status)).toEqual([201, 201]);
     const all = await listDashboards();
     expect(all).toHaveLength(2);
-    expect(all.filter(d => d.isDefault)).toHaveLength(1);
+    expect(all.filter(d => d.isDefault)).toHaveLength(0);
   });
 
   it('lets an update that keeps an existing duplicate pair\'s name succeed', async () => {
@@ -131,7 +131,7 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
     await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-older', '${shared}', '${config}', TRUE, '2024-01-01T00:00:00.000Z')`);
     await execRaw(`INSERT INTO dashboards (id, name, config, is_default, created_at) VALUES ('dup-newer', '${shared.toUpperCase()}', '${config}', FALSE, '2024-02-01T00:00:00.000Z')`);
 
-    const res = await put('dup-older', { name: shared, description: 'edited without renaming' });
+    const res = await put('dup-older', { name: shared, description: 'edited without renaming', revision: 1 });
 
     expect(res.status).toBe(200);
     const updated = (await listDashboards()).find(d => d.id === 'dup-older');
@@ -143,11 +143,11 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
     const a = await created(unique('Keep A'));
     const b = await created(unique('Keep B'));
 
-    const clash = await put(b.id, { name: a.name.toUpperCase() });
+    const clash = await put(b.id, { name: a.name.toUpperCase(), revision: b.revision });
     expect(clash.status).toBe(409);
     expect((await clash.json()).error).toBe(TAKEN_MESSAGE(a.name.toUpperCase()));
 
-    expect((await put('no-such-dashboard', { name: unique('Anything') })).status).toBe(404);
+    expect((await put('no-such-dashboard', { name: unique('Anything'), revision: 1 })).status).toBe(404);
     expect((await duplicate('no-such-dashboard')).status).toBe(404);
   });
 });

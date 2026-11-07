@@ -60,8 +60,51 @@ rules in scope shows an empty posture rather than 0% or 100%.
 ## Managing dashboards
 
 Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
-Restore starter to recreate the seeded Overview layout. Every dashboard is deletable including the
-default; deleting it promotes the oldest remaining one. Layouts save per dashboard. Creating,
-renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
-and would bury real changes. Viewers see every dashboard, editing needs the editor role
+Restore starter to recreate the seeded Overview layout. Layouts save per dashboard. Creating,
+renaming and deleting is audited, and so is every Save that changes the widgets, the name, the
+description or the refresh interval: one entry names the fields it changed, never what they held.
+Dragging and resizing is not an entry of its own, since every drag would bury real changes; only the
+Save that follows is.
+
+### Personal and Shared
+
+Every dashboard is **Personal** or **Shared**, and has an owner. Anything you make is Personal: a new
+dashboard, a Duplicate, one made from a template, and Restore starter. A Personal dashboard is yours
+alone. Anyone else, an Admin included, gets "not found" for it, in the address bar and from the API.
+Everyone signed in can keep Personal dashboards, a Viewer and a person with no Scope too.
+
+A Shared dashboard opens at `/dashboards/<id>` for anyone signed in, each person seeing what their own
+access allows. A person who holds no Scope sees a message that they have been given no access in place of the widgets, since every widget would read empty. Its owner can change it if they are an Editor. An Admin, or an Editor on Everything, can
+change any Shared dashboard, including one with no owner (every dashboard from before owners has none).
+Anyone who can open a dashboard can Duplicate it: the copy is a Personal dashboard of their own, it is
+never the default, and its widgets keep any saved view they point at.
+
+The gallery has two sections. **Yours** lists everything you own, each tagged Personal or Shared.
+**Shared by others** lists the Shared dashboards you do not own, with the owner's name, or their email
+when they have no name yet, or "No owner". Your own Shared dashboards appear only under Yours.
+
+A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
+else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
+Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names
+that already clash from before keep working.
+
+The Install default is a Shared dashboard chosen by an Admin or an Editor on Everything. Nothing becomes
+the default by being first or by being the oldest left: deleting the default leaves the install without
+one until it is set again. A new dashboard is never the default.
+
+Creating, renaming and deleting a Personal dashboard is audited by its id and kind only, with no name.
+Removing a person deletes their Personal dashboards and leaves their Shared ones Shared with no owner
 ([`rbac.md`](rbac.md)).
+
+A Save carries the revision it read. If someone saved first, your Save is refused and the page names who changed the dashboard and
+when, or says they are no longer in RuleBeat, so two people can no longer overwrite each other
+without knowing. Reload to see their version, then make your change again. A name already in use is
+refused too, after the revision is checked: a Personal dashboard cannot take a Shared name or one of
+your other Personal names, though another person's Personal name is free to take.
+
+A Save is checked before it is written. Each widget type takes only the widths its row of the size
+table allows (a stat card is 3, 4 or 6 columns wide, for example), x, y and h are whole numbers of 0
+or more, and no two widgets share an id. A widget of a type this version does not know is kept as it
+is, at 6 or 12 columns, and cannot be added or changed. A dashboard with no widgets is a valid Save.
+A layout stored before these checks is never rewritten or rejected when you open it; it is held to
+them on its next Save, and the page moves each width to the nearest allowed one when it saves.

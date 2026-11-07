@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
+import { openableItems } from '@/lib/item-access';
 import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
@@ -11,14 +12,14 @@ export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
   try {
-    return Response.json((await listSavedViews()).map(v => markedSavedView(actor.access, v)));
+    return Response.json(openableItems(actor, await listSavedViews()).map(v => markedSavedView(actor.access, v)));
   } catch (err) {
     return serverError('Could not load saved views', err);
   }
 }
 
 export async function POST(req: Request) {
-  const actor = await requireRole('views:write');
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
 
   const body = await parseJsonBody<unknown>(req);
@@ -35,7 +36,8 @@ export async function POST(req: Request) {
       action: 'view.create',
       entityType: 'saved_view',
       entityId: result.view.id,
-      summary: `Saved view "${result.view.name}"`,
+      // A Personal item is logged by id and kind only: its name is its owner's alone.
+      summary: 'Saved a Personal view',
       details: { fields: SAVED_VIEW_FIELDS },
     });
     return Response.json(markedSavedView(actor.access, result.view), { status: 201 });

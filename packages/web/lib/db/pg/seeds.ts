@@ -192,13 +192,20 @@ async function seedDefaultDashboard(db: PgDb): Promise<void> {
 
     const [{ n }] = await tx.select({ n: count() }).from(dashboards);
     if (n === 0) {
+      const now = new Date().toISOString();
       await tx.insert(dashboards).values({
         id: 'default',
         name: STARTER_DASHBOARD.name,
         description: STARTER_DASHBOARD.description,
         config: JSON.stringify(STARTER_DASHBOARD.config),
         isDefault: true,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        ownerId: null,
+        visibility: 'shared',
+        revision: 1,
+        // No person made the starter dashboard, so updatedBy stays null.
+        updatedBy: null,
+        updatedAt: now,
       }).onConflictDoNothing();
     }
 

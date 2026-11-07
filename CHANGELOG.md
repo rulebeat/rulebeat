@@ -6,6 +6,23 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Anyone signed in, a Viewer and a person who holds no Scope included, can create, edit and delete their own Personal dashboards and saved views. Everything you make is Personal: a new dashboard, a Duplicate, one from a template, Restore starter and a saved view. Someone else's Personal dashboard or saved view answers as not found, an Admin included. A Shared one opens for everyone signed in, and only its owner or an Admin or Editor on Everything can change it. The dashboards gallery and the Scans Views menu list "Yours" (each item tagged Personal or Shared) and "Shared by others" (with the owner). Removing a person deletes their Personal dashboards and saved views and leaves their Shared ones with no owner, and the confirmation and the audit entry give the counts only. A person with no Scope can still open the Scans Views menu to keep their own saved views and open Shared ones, and sees the no-access message in place of the widgets on a Shared dashboard.
+
+### Changed
+
+- A new dashboard is no longer the default for being the first on the install, and deleting the default no longer promotes the oldest remaining dashboard. The Install default is a Shared dashboard chosen by an Admin or an Editor on Everything.
+- A Personal name is unique among your own Personal dashboards (or saved views) and nobody else's are checked. Renaming a Personal dashboard is also refused when the new name is a Shared dashboard's, while Create and Duplicate still accept a Shared name. Renaming a Shared item checks Shared names across the install. Creating, renaming and deleting a Personal item is audited by id and kind, with no name.
+- An Editor who holds only part of the install can now change the Shared dashboards and saved views they own. Changing anyone else's still needs an Admin or an Editor on Everything.
+- The upgrade records an owner, a visibility (Personal or Shared) and a revision on every dashboard and saved view, and a My default on every person. Every existing item stays Shared, a saved view is owned by its creator while that person still exists, a dashboard has no owner, and the current default stays the install default. Nothing you see changes yet.
+
+### Fixed
+
+- Two people editing the same dashboard no longer overwrite each other silently. The page sends the revision it read with every Save, so the second Save is refused and the page says who changed the dashboard and when. A dashboard also records who last saved it and when; existing dashboards start with neither, and keep their layout, filters and default flag exactly as stored.
+- A dashboard Save is now validated. Each widget type takes only the widths its row of the size table allows, x, y and h must be whole numbers of 0 or more, and widget ids must be unique. A widget of a type this version does not know is kept as stored but cannot be added or changed. A layout saved before these checks is not rewritten or rejected when it is opened; the page moves each width to the nearest allowed one when it next saves.
+- Each Save that changes a dashboard's widgets, name, description or refresh interval writes one audit entry that names the changed fields and never their values.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

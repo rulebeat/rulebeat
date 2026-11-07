@@ -102,20 +102,30 @@ a field name.
 
 ### Saved views
 
-The Views button in the toolbar keeps the current view under a name, and the view is shared with
-everyone on the install. A saved view holds the tab it was saved on (Results or Advisories) and
+The Views button in the toolbar keeps the current view under a name. A saved view is **Personal** or
+**Shared**, and has an owner. Saving one makes it Personal: only you can open it, and anyone else, an
+Admin included, gets "not found" for it. A saved view holds the tab it was saved on (Results or Advisories) and
 everything the address carries: filters, search, window, picked columns, sort and grouping. It does not hold
 the page you were on, which findings are suppressed, or the By resource and By rule choice. Choose
 a saved view in the menu to open it. The menu lists the views for the tab you are on, and opening
 one puts its filters in the address, so the link still reproduces what you see.
 
-Viewers can open saved views. Editors and admins can also save the current view, replace an open
-view's filters with the current ones (Update with current view), rename it and delete it. A name
-is unique whatever its case, and saving a name already in use says so. A saved view stores the
+The menu has two sections for the tab you are on. **Yours** lists every view you own, each tagged
+Personal or Shared. **Shared by others** lists the Shared views you do not own, with the owner's name,
+or their email, or "No owner". Your own Shared views appear only under Yours.
+
+Everyone signed in, a Viewer included, can save the current view and can replace an open Personal
+view's filters with the current ones (Update with current view), rename it and delete it. A Shared view
+opens for everyone. Its owner can change it if they are an Editor, and an Admin or an Editor on
+Everything can change any Shared view. A name is unique among your own Personal views, whatever its
+case, and saving a name already in use says so. Nobody else's Personal names are checked. Renaming a
+Shared view checks the names of Shared views across the install. A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
-names of the fields that changed, never their values.
+names of the fields that changed, never their values. For a Personal view it records the id and kind
+only, with no name. Removing a person deletes their Personal views and leaves their Shared ones Shared
+with no owner.
 
 ## Disable, clear findings, or suppress
 

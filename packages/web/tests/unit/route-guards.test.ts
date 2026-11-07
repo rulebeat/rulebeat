@@ -158,10 +158,19 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['onboarding/route.ts', 'azure:manage'],
     ['settings/notifications/route.ts', 'notifications:manage'],
     ['settings/notifications/test/route.ts', 'notifications:manage'],
-    // Saved views are shared with everyone on the install, so a write is an editor's call and a
-    // viewer only reads.
-    ['views/route.ts', 'views:write'],
-    ['views/[id]/route.ts', 'views:write'],
+    // Dashboards and saved views are Personal or Shared (ADR 0012). Every Role may keep Personal ones, so a write
+    // names the Personal action to get in, and the owner and visibility check in lib/item-access.ts decides what
+    // the person may do to this item: `*:write` for their own Shared one, `*:manage` for anyone else's. Reads name
+    // `read` and answer someone else's Personal item like an unknown id.
+    ['dashboards/route.ts', 'read'],
+    ['dashboards/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/route.ts', 'read'],
+    ['dashboards/[id]/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/duplicate/route.ts', 'dashboards:personal'],
+    ['views/route.ts', 'read'],
+    ['views/route.ts', 'views:personal'],
+    ['views/[id]/route.ts', 'read'],
+    ['views/[id]/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],

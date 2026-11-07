@@ -171,7 +171,7 @@ describe('deleteUser: Personal rules go with their owner', () => {
     const ownerRule = await seedPersonalRule(owner.id, 'Owner rule');
     const otherRule = await seedPersonalRule(other.id, 'Other rule');
 
-    expect(await deleteUser(owner.id)).toEqual({ withdrawnRequests: 0 });
+    expect(await deleteUser(owner.id)).toMatchObject({ withdrawnRequests: 0 });
 
     expect(await listPersonalRules(owner.id)).toEqual([]);
     expect(await countRows('personal_rules')).toBe(1);
@@ -199,7 +199,7 @@ describe('deleteUser: open Library requests are withdrawn with their author', ()
     await rejectLibraryRequest(rejected.id, reviewer.id, 'Not yet.');
     const othersOpen = await sentBy(other.id, 'Someone else\'s');
 
-    expect(await deleteUser(author.id)).toEqual({ withdrawnRequests: 1 });
+    expect(await deleteUser(author.id)).toMatchObject({ withdrawnRequests: 1 });
 
     expect(await getLibraryRequest(open.id)).toMatchObject({ status: 'withdrawn', authorId: author.id, personalRuleId: undefined });
     expect(await getLibraryRequest(rejected.id)).toMatchObject({ status: 'rejected', rejectionReason: 'Not yet.', personalRuleId: undefined });
@@ -209,6 +209,6 @@ describe('deleteUser: open Library requests are withdrawn with their author', ()
 
   it('reports none withdrawn for a person with no open request', async () => {
     const author = await makeUser('request-none@example.com', 'editor');
-    expect(await deleteUser(author.id)).toEqual({ withdrawnRequests: 0 });
+    expect(await deleteUser(author.id)).toMatchObject({ withdrawnRequests: 0 });
   });
 });

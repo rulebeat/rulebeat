@@ -9,6 +9,7 @@
  * knowing the View's shape.
  */
 import { viewFromSearchParams, viewToSearchParams } from './finding-view';
+import type { ItemOwner, ItemVisibility } from './types';
 
 export const SAVED_VIEW_TABS = ['results', 'advisories', 'activity'] as const;
 export type SavedViewTab = (typeof SAVED_VIEW_TABS)[number];
@@ -33,6 +34,11 @@ export interface SavedView extends SavedViewFields {
   createdAt: string;
   updatedBy: string | null;
   updatedAt: string;
+  /** Null for a Shared view with no Owner: its creator was removed, or it has none on record. */
+  owner: ItemOwner | null;
+  visibility: ItemVisibility;
+  /** Starts at 1 and goes up by one on every write. */
+  revision: number;
 }
 
 export function isSavedViewTab(value: unknown): value is SavedViewTab {

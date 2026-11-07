@@ -12,6 +12,9 @@ switched on.
 - **Signed in automatically, as an admin.** A Visitor opens the URL and is already in the console,
   able to create and edit rules, run scans, suppress findings, and change schedules, dashboards and
   notification channels. Every Visitor is the same account, so what one changes, the next one sees.
+- **Personal items are not private.** A dashboard or saved view a Visitor makes is Personal to that
+  Visitor's account, and every Visitor is the same account. So every Visitor sees every Personal
+  dashboard and saved view, until the next Reset removes them.
 - **Some surfaces are locked.** The Azure connection, sign-in configuration and users are visible
   but cannot be changed. The Azure connection and sign-in say why on the Settings page, and users
   say why on the Access page. The sign-in page sends a Visitor straight to the console.

@@ -93,6 +93,12 @@ export const dashboards = sqliteTable('dashboards', {
   config: text('config').notNull(),         // JSON: DashboardConfig
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
+  // ADR 0012. No SQL-level FK, like every other table here: a deleted person leaves the row behind.
+  ownerId: text('owner_id'),
+  visibility: text('visibility').notNull().default('shared'),  // 'personal' | 'shared'
+  revision: integer('revision').notNull().default(1),          // +1 on every write
+  updatedBy: text('updated_by'),                               // null until a save names the person
+  updatedAt: text('updated_at'),
 });
 
 export const categories = sqliteTable('categories', {
@@ -163,6 +169,10 @@ export const users = sqliteTable('users', {
   // invalidate every outstanding JWT for this account: see spec 020. A token's `epoch` claim must
   // match this value or getCurrentUser() treats the session as signed out.
   sessionEpoch: integer('session_epoch').notNull().default(0),
+  // My default (ADR 0012): the dashboard this person opens first. No SQL-level FK. The flag records that
+  // the dashboard they chose is no longer there for them, so the page can say so.
+  defaultDashboardId: text('default_dashboard_id'),
+  defaultDashboardUnavailable: integer('default_dashboard_unavailable', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   lastSeenAt: text('last_seen_at'),
 });
@@ -598,4 +608,7 @@ export const savedViews = sqliteTable('saved_views', {
   createdAt: text('created_at').notNull(),
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull(),
+  ownerId: text('owner_id'),                 // ADR 0012; no SQL-level FK
+  visibility: text('visibility').notNull().default('shared'),  // 'personal' | 'shared'
+  revision: integer('revision').notNull().default(1),          // +1 on every write
 });
