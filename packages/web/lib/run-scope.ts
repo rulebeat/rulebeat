@@ -15,7 +15,7 @@ import {
   EVERYTHING_SCOPE_PATH, EVERYTHING_TENANT_ID, accessReach, buildAccess, grantCovers, managementGroupIdOf, parseScope,
   type Access, type AccessReach, type ScopeGrant,
 } from '@/lib/access-model';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 import { expandManagementGroups, type HierarchyNode } from '@/lib/management-group-tree';
 import { can, type Role } from '@/lib/rbac';
 import type { FindingPlacement } from '@/lib/placement';

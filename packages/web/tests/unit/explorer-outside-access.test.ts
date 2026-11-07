@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyListCopy, emptyReasonOf, filterChipLabel } from '@/lib/explorer-screen';
 import type { ViewFilter } from '@/lib/finding-view';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 
 const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
 const SUB_TWO = '00000000-0000-0000-0000-00000000000b';

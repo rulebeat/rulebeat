@@ -52,13 +52,12 @@ import {
   NO_VALUE_LABEL, groupCountText, tabResolves, tabStatusOptions,
   type ExplorerCategory, type GroupHeader, type GroupResponse, type ResponseFinding, type ViewItemResponse, type ViewTab,
 } from '@/lib/view-response';
-import { AddFilter, FilterChips, type AddFilterField, type FilterChip, type HeldFilterChip } from '@/components/findings/add-filter';
+import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
 import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
-import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
-import type { HeldBack } from '@/lib/held-back';
+import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -109,7 +108,7 @@ interface FindingsExplorerClientProps {
      *  the URL, and the explorer never keeps its own copy. */
     openId: string | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
-    onOpen: (view: HeldBackSavedView) => void;
+    onOpen: (view: SavedView) => void;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -661,14 +660,6 @@ export function FindingsExplorerClient({
       valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
     }))),
   [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
-
-  // The open saved view's stored values this person's Access does not reach, counted beside the filters
-  // they sit with. The values themselves never arrive.
-  const [openHeldBack, setOpenHeldBack] = useState<HeldBack[]>([]);
-  const heldChips = useMemo<HeldFilterChip[]>(() => openHeldBack.map(h => ({
-    dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count,
-    visible: filterValues(filters, h.dimension as ViewField).length,
-  })), [openHeldBack, filters, fieldLabel]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;
@@ -1290,7 +1281,6 @@ export function FindingsExplorerClient({
             openId={openViewId}
             onOpenIdChange={setOpenViewId}
             onOpen={savedViews.onOpen}
-            onHeldBackChange={setOpenHeldBack}
             currentQuery={savedViewQuery}
           />
         )}
@@ -1333,7 +1323,7 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
-      <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
+      <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (
         <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />

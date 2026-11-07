@@ -1,10 +1,9 @@
 /**
  * The view engine (ADR 0006): one pure function that takes findings with their rows and a View and
  * returns the page to show. The Results tab, the Advisories tab and the Advisories widget all read
- * through it, and so does the URL: `encodeView` (and its wrapper `viewToSearchParams`) and
- * `viewFromSearchParams` are the only place a View is turned into query params and back, so the
- * server page and the explorer cannot drift. The shared filter model (the seven dimensions, `age`,
- * and `findingsLink`) lives here too. Client-safe: no Node, no database, no framework imports.
+ * through it, and so does the URL: `viewToSearchParams` and `viewFromSearchParams` are the only
+ * place a View is turned into query params and back, so the server page and the explorer cannot
+ * drift. Client-safe: no Node, no database, no framework imports.
  *
  * A field is a built-in finding field or a column the rule's query returned, named `row.<path>`
  * with a dot path into a row. A filter on a built-in field keeps or drops the whole finding. A
@@ -12,14 +11,13 @@
  */
 import type { Severity } from './types';
 import { resolveDateWindow, type DateWindow } from './date-window';
-import { parseScope, sameScopePath, scopeCovers } from './access-model';
 import { findingRows, type FindingRow } from './finding-rows';
 import { subscriptionValue } from './placement';
 import { parseCategoryParam } from './scans-link';
 import { SEVERITY_ORDER } from './severity';
 import {
   EXPLORER_SEVERITIES, matchesExplorerFilters, parseExplorerStatus,
-  type ExplorerFilterDim, type ExplorerFilterState, type ExplorerStatusFilter, type FilterableFinding,
+  type ExplorerFilterDim, type ExplorerFilterState, type FilterableFinding,
 } from './explorer-filters';
 
 // ---- Types ----
@@ -31,9 +29,6 @@ export const BUILTIN_FIELDS = [
 export type BuiltinField = (typeof BUILTIN_FIELDS)[number];
 export type RowField = `row.${string}`;
 export type ViewField = BuiltinField | RowField;
-
-/** Days since a finding was first seen, from `min` to `max` inclusive. A null `max` is open ended. */
-export interface AgeRange { min: number; max: number | null }
 
 /** A set of accepted values on a built-in field. Empty accepts everything. `rule` holds rule ids,
  *  `status` one of open/new/fixed/all, `resourceName` the subject the Resource column shows (see
@@ -56,21 +51,6 @@ export interface View {
   search: string;
   /** What "new" and "fixed" mean for the status filter. */
   window: DateWindow;
-  /** Set by `viewFromSearchParams` when the address asked for more than `MAX_WINDOW_DAYS` back and
-   *  the window was cut to fit. Never written to an address. */
-  windowShortened?: boolean;
-  /** The Scopes the view is narrowed to, as paths in their original casing. Absent is no filter and
-   *  empty is Any (over a base). Matched like Access (ADR 0015), so the in-memory filter here does
-   *  not read it; the server does. */
-  scope?: string[];
-  /** The content-addressed set a long Scope list travels as (ADR 0016), lower-case sha256. Written
-   *  instead of `scope` when the list is over `SCOPE_INLINE_BUDGET`. A value that is not a sha256 is kept
-   *  as read: the server resolves it to nothing, which is not the same as no Scope filter. */
-  scopeSet?: string;
-  /** Rule sources: each Pack, Community and Custom. Absent is no filter and empty is Any. */
-  source?: string[];
-  /** How long ago a finding was first seen, in days. Absent is no filter and null is Any. */
-  age?: AgeRange | null;
   /** Returned-column paths to show after the built-in columns, in display order. */
   columns: string[];
   /** Null reads as DEFAULT_SORT. */
@@ -118,11 +98,6 @@ export interface ViewPage<T> {
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_WINDOW_DAYS = 7;
-/** The furthest back a window reaches, a preset or a custom range. */
-export const MAX_WINDOW_DAYS = 365;
-/** The longest `scope=` value written inline, counted on what is written. Past it the list travels
- *  as `scopeset=`, so an address stays well under the smallest request line a host allows (8 KB). */
-export const SCOPE_INLINE_BUDGET = 1500;
 export const DEFAULT_SORT: ViewSort = { field: 'severity', dir: 'asc' };
 export const DEFAULT_GROUP_SORT: GroupSort = { by: 'value', dir: 'asc' };
 
@@ -703,40 +678,10 @@ function readNamedValues(raw: string): { name: string; values: string[] } | unde
 }
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_AGE_DAYS = 36_500;
 
-/** The built-in fields whose short param can also be written empty, which is Any over a base. */
-const ANY_FIELDS: ReadonlySet<BuiltinField> = new Set<BuiltinField>(['category', 'rule', 'severity', 'tags']);
-
-function formatAge(age: AgeRange): string {
-  return `${age.min}-${age.max ?? ''}`;
-}
-/** `MIN-MAX`, MAX optional. Anything else, or a range that runs backwards, is no range. */
-function parseAge(raw: string | undefined): AgeRange | undefined {
-  const match = /^(\d+)-(\d*)$/.exec(raw ?? '');
-  if (!match) return undefined;
-  const min = Number(match[1]);
-  const max = match[2] === '' ? null : Number(match[2]);
-  if (min > MAX_AGE_DAYS || (max !== null && (max < min || max > MAX_AGE_DAYS))) return undefined;
-  return { min, max };
-}
-
-/** `list` deduplicated ignoring case, the first spelling kept: Scope paths compare case-insensitively
- *  and are never lower-cased. */
-function distinctIgnoringCase(list: readonly string[]): string[] {
-  const seen = new Set<string>();
-  return list.filter(item => {
-    const key = item.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-/** A View as query params, and whether the address is missing a Scope filter because the list is too
- *  long to write inline. Give the View a `scopeSet` (the server's answer for the list) and write it
- *  again to get `scopeset=` in its place. */
-export function encodeView(view: View, base?: ParamSource): { params: URLSearchParams; needsScopeSet: boolean } {
+/** A View as query params, with `base` (params the page itself owns, such as `tab`) kept first.
+ *  Defaults are left out, so a default view is an empty query. */
+export function viewToSearchParams(view: View, base?: ParamSource): URLSearchParams {
   const params = new URLSearchParams();
   if (base instanceof URLSearchParams) base.forEach((v, k) => params.append(k, v));
   else if (base) for (const [k, v] of Object.entries(base)) for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) params.append(k, one);
@@ -744,9 +689,7 @@ export function encodeView(view: View, base?: ParamSource): { params: URLSearchP
   const builtin = (field: BuiltinField) => filterValues(view.filters, field);
   for (const field of BUILTIN_FIELDS) {
     const name = LIST_PARAMS[field];
-    if (!name) continue;
-    if (builtin(field).length > 0) params.set(name, builtin(field).map(esc).join(','));
-    else if (ANY_FIELDS.has(field) && view.filters.some(f => f.field === field)) params.set(name, '');
+    if (name && builtin(field).length > 0) params.set(name, builtin(field).map(esc).join(','));
   }
   const status = parseExplorerStatus(builtin('status')[0]);
   if (status !== 'open') params.set('status', status);
@@ -754,18 +697,6 @@ export function encodeView(view: View, base?: ParamSource): { params: URLSearchP
   for (const field of GENERIC_FIELDS) {
     if (builtin(field).length > 0) params.append('f', `${field}=${builtin(field).map(esc).join('|')}`);
   }
-
-  let needsScopeSet = false;
-  if (view.scope) {
-    const written = distinctIgnoringCase(view.scope).map(esc).join(',');
-    if (written.length <= SCOPE_INLINE_BUDGET) params.set('scope', written);
-    else if (view.scopeSet) params.set('scopeset', view.scopeSet.toLowerCase());
-    else needsScopeSet = true;
-  } else if (view.scopeSet) {
-    params.set('scopeset', view.scopeSet.toLowerCase());
-  }
-  if (view.source) params.set('source', view.source.map(esc).join(','));
-  if (view.age !== undefined) params.set('age', view.age === null ? '' : formatAge(view.age));
 
   if (view.window.mode === 'custom') {
     params.set('from', view.window.from);
@@ -785,46 +716,13 @@ export function encodeView(view: View, base?: ParamSource): { params: URLSearchP
     params.append('rf', `${esc(rowPath(filter.field))}=${filter.values.map(esc).join('|')}`);
   }
   if (view.page > 1) params.set('page', String(view.page));
-  return { params, needsScopeSet };
-}
-
-/** A View as query params, with `base` (params the page itself owns, such as `tab`) kept first.
- *  Defaults are left out, so a default view is an empty query. A Scope list over the budget is left
- *  out too; `encodeView` is the one to ask when that matters. */
-export function viewToSearchParams(view: View, base?: ParamSource): URLSearchParams {
-  return encodeView(view, base).params;
-}
-
-/** How a query is read. `overBase` is for an address that sits over a base (saved filters, a saved
- *  view, a widget override): there an empty value is Any, which the View keeps as an empty value set
- *  (`null` for age). On a plain address an empty value is no filter. `limitWindow` cuts the window to
- *  `MAX_WINDOW_DAYS` back and sets `windowShortened`; it is off until the surfaces that link with a
- *  wider window (the snapshot's link to a finding fixed long ago) move to the shared limit. `now` is
- *  the day the limit is measured from. */
-export interface ReadOptions { overBase?: boolean; limitWindow?: boolean; now?: Date }
-
-/** The window an address holds, cut to `MAX_WINDOW_DAYS` back from `limit` when there is one.
- *  `shortened` says a cut was made. */
-function readWindow(source: ParamSource, limit: Date | null): { window?: DateWindow; shortened: boolean } {
-  const days = Number(readParam(source, 'window'));
-  const from = readParam(source, 'from');
-  const to = readParam(source, 'to');
-  if (from && to && DAY_KEY.test(from) && DAY_KEY.test(to)) {
-    const earliest = limit ? resolveDateWindow({ mode: 'relative', days: MAX_WINDOW_DAYS }, limit).from : from;
-    if (from >= earliest) return { window: { mode: 'custom', from, to }, shortened: false };
-    return { window: { mode: 'custom', from: earliest, to: to < earliest ? earliest : to }, shortened: true };
-  }
-  if (Number.isInteger(days) && days > 0) {
-    const shortened = limit !== null && days > MAX_WINDOW_DAYS;
-    return { window: { mode: 'relative', days: shortened ? MAX_WINDOW_DAYS : days }, shortened };
-  }
-  return { shortened: false };
+  return params;
 }
 
 /** The View a query holds. Anything unknown or malformed is ignored rather than rejected, so an old
  *  or hand-edited link still opens. Filters come back built-in fields first, in BUILTIN_FIELDS
- *  order, then returned columns in the order they were given. `suppressed` is not part of a View. */
-export function viewFromSearchParams(source: ParamSource, options: ReadOptions = {}): View {
+ *  order, then returned columns in the order they were given. */
+export function viewFromSearchParams(source: ParamSource): View {
   const view = emptyView();
   const filters: ViewFilter[] = [];
   const lists: Record<string, string[]> = {
@@ -836,7 +734,6 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
     location: splitList(readParam(source, 'location')),
     tags: splitList(readParam(source, 'tags')),
   };
-  const isAny = (name: string) => options.overBase === true && readParam(source, name) === '';
   const status = parseExplorerStatus(readParam(source, 'status'));
   lists.status = status === 'open' ? [] : [status];
   for (const raw of readParams(source, 'f')) {
@@ -847,7 +744,6 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
   }
   for (const field of BUILTIN_FIELDS) {
     if (lists[field]?.length) filters.push({ field, values: lists[field] });
-    else if (ANY_FIELDS.has(field) && isAny(LIST_PARAMS[field]!)) filters.push({ field, values: [] });
   }
 
   for (const raw of readParams(source, 'rf')) {
@@ -856,21 +752,11 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
   }
   view.filters = filters;
 
-  const scopeSet = readParam(source, 'scopeset');
-  const scope = distinctIgnoringCase(splitList(readParam(source, 'scope')));
-  const sources = [...new Set(splitList(readParam(source, 'source')))];
-  if (scopeSet) view.scopeSet = scopeSet.toLowerCase();
-  else if (scope.length > 0 || isAny('scope')) view.scope = scope;
-  if (sources.length > 0 || isAny('source')) view.source = sources;
-  if (isAny('age')) view.age = null;
-  else {
-    const age = parseAge(readParam(source, 'age'));
-    if (age) view.age = age;
-  }
-
-  const { window, shortened } = readWindow(source, options.limitWindow ? options.now ?? new Date() : null);
-  if (window) view.window = window;
-  if (shortened) view.windowShortened = true;
+  const days = Number(readParam(source, 'window'));
+  const from = readParam(source, 'from');
+  const to = readParam(source, 'to');
+  if (from && to && DAY_KEY.test(from) && DAY_KEY.test(to)) view.window = { mode: 'custom', from, to };
+  else if (Number.isInteger(days) && days > 0) view.window = { mode: 'relative', days };
   view.search = readParam(source, 'q') ?? '';
 
   view.columns = [...new Set(splitList(readParam(source, 'cols')))];
@@ -889,140 +775,4 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
   const page = Number(readParam(source, 'page'));
   if (Number.isInteger(page) && page > 1 && page <= MAX_URL_PAGE) view.page = page;
   return view;
-}
-
-// ---- Links ----
-
-/** The shared dimensions as a widget holds them or a metric asks for them. Absent and empty both
- *  mean the dimension is not narrowed. */
-export interface LinkFilters {
-  category?: string[];
-  scope?: string[];
-  source?: string[];
-  tags?: string[];
-  severity?: string[];
-  rule?: string[];
-  window?: DateWindow;
-  age?: AgeRange;
-}
-
-/** What a link cannot know alone: which Scopes a management group holds, read from the stored tree. */
-export interface ScopeHierarchy {
-  /** Whether the management group at `managementGroupPath` holds the management group, subscription
-   *  or resource group at `path`, at any depth. */
-  contains(managementGroupPath: string, path: string): boolean;
-}
-
-export interface LinkOptions {
-  tab?: 'results' | 'advisories' | 'activity';
-  status?: ExplorerStatusFilter;
-  /** Free text, as typed. */
-  q?: string;
-  /** Without it a management group is taken to hold nothing but itself. */
-  hierarchy?: ScopeHierarchy;
-  /** The server's set for a Scope list over `SCOPE_INLINE_BUDGET`, written in its place. */
-  scopeSet?: string;
-}
-
-export type FindingsLink =
-  | { kind: 'link'; href: string }
-  /** The widget's filters and the metric share no value on these dimensions, so no finding is in both. */
-  | { kind: 'outside-filters'; dimensions: LinkDimension[] }
-  /** The Scope list is too long for an address: ask the server for a set and link again with it. */
-  | { kind: 'needs-scope-set'; scope: string[] };
-
-export type LinkDimension = 'category' | 'scope' | 'source' | 'tags' | 'severity' | 'rule' | 'age';
-
-function narrows(list: readonly string[] | undefined): list is string[] {
-  return list !== undefined && list.length > 0;
-}
-
-/** Whether `outer` holds `inner`: the same path, a subscription and a resource group in it, or a
- *  management group and what `hierarchy` says it holds. */
-function holds(outer: string, inner: string, hierarchy: ScopeHierarchy | undefined): boolean {
-  const outerScope = parseScope(outer);
-  const innerScope = parseScope(inner);
-  if (!outerScope || !innerScope) return sameScopePath(outer, inner);
-  if (outerScope.kind === 'managementGroup') return sameScopePath(outer, inner) || (hierarchy?.contains(outer, inner) ?? false);
-  return scopeCovers(outerScope, innerScope);
-}
-
-/** Where two lists of Scope picks overlap: the narrower of each pair where one holds the other. */
-function intersectScopes(widget: readonly string[], metric: readonly string[], hierarchy: ScopeHierarchy | undefined): string[] {
-  const overlap: string[] = [];
-  for (const w of widget) {
-    for (const m of metric) {
-      if (holds(w, m, hierarchy)) overlap.push(m);
-      else if (holds(m, w, hierarchy)) overlap.push(w);
-    }
-  }
-  const distinct = distinctIgnoringCase(overlap);
-  return distinct.filter(path => !distinct.some(other => other !== path && holds(other, path, hierarchy) && !holds(path, other, hierarchy)));
-}
-
-function intersectValues(widget: readonly string[], metric: readonly string[]): string[] {
-  return widget.filter(v => metric.includes(v));
-}
-
-function intersectAge(a: AgeRange, b: AgeRange): AgeRange | null {
-  const min = Math.max(a.min, b.min);
-  const max = a.max === null ? b.max : b.max === null ? a.max : Math.min(a.max, b.max);
-  return max !== null && max < min ? null : { min, max };
-}
-
-/** The Scans address for the findings behind a number. A widget's effective filters and the
- *  metric's own values combine as all-of per dimension: a value both name stays, a Scope is the
- *  narrower of each pair that overlaps (a subscription under a management group pick is that
- *  subscription; resource group picks inside a subscription are those picks), and a dimension only
- *  one names is taken as it is. A metric's window replaces the widget's. If a dimension has nothing
- *  left, no finding is in both, and the answer says so instead of linking to an empty view. Rule tags are the exception: a rule carries several and a tags
- *  filter matches any of them, so they never count as empty (see `mergeTags`). */
-export function findingsLink(widget: LinkFilters, metric: LinkFilters, options: LinkOptions = {}): FindingsLink {
-  const outside: LinkDimension[] = [];
-  const merge = (dimension: LinkDimension, a: string[] | undefined, b: string[] | undefined): string[] | undefined => {
-    if (!narrows(a)) return narrows(b) ? b : undefined;
-    if (!narrows(b)) return a;
-    const both = dimension === 'scope' ? intersectScopes(a, b, options.hierarchy) : intersectValues(a, b);
-    if (both.length === 0) outside.push(dimension);
-    return both;
-  };
-  // A rule carries several tags and a tags filter matches any of them, so two tag lists have no
-  // intersection to take: a rule can carry one tag from each side. When one list holds the other the
-  // narrower is exact; otherwise the metric's own tags are linked, which can show findings the
-  // widget's tags would have left out but never hides one the number counted.
-  const mergeTags = (a: string[] | undefined, b: string[] | undefined): string[] | undefined => {
-    if (!narrows(a)) return narrows(b) ? b : undefined;
-    if (!narrows(b)) return a;
-    if (a.every(v => b.includes(v))) return a;
-    return b;
-  };
-  const category = merge('category', widget.category, metric.category);
-  const scope = merge('scope', widget.scope, metric.scope);
-  const source = merge('source', widget.source, metric.source);
-  const tags = mergeTags(widget.tags, metric.tags);
-  const severity = merge('severity', widget.severity, metric.severity);
-  const rule = merge('rule', widget.rule, metric.rule);
-  let age = widget.age ?? metric.age;
-  if (widget.age && metric.age) {
-    age = intersectAge(widget.age, metric.age) ?? undefined;
-    if (!age) outside.push('age');
-  }
-  if (outside.length > 0) return { kind: 'outside-filters', dimensions: outside };
-
-  const filters: ViewFilter[] = [];
-  const addFilter = (field: BuiltinField, values: string[] | undefined) => { if (values) filters.push({ field, values }); };
-  addFilter('rule', rule);
-  addFilter('category', category);
-  addFilter('severity', severity);
-  if (options.status) filters.push({ field: 'status', values: [options.status] });
-  addFilter('tags', tags);
-  const view: View = { ...emptyView(), filters, search: options.q ?? '', window: metric.window ?? widget.window ?? emptyView().window };
-  if (scope) view.scope = scope;
-  if (options.scopeSet) view.scopeSet = options.scopeSet;
-  if (source) view.source = source;
-  if (age) view.age = age;
-
-  const { params, needsScopeSet } = encodeView(view, { tab: options.tab ?? 'results' });
-  if (needsScopeSet) return { kind: 'needs-scope-set', scope: scope ?? [] };
-  return { kind: 'link', href: `/scans?${params.toString()}` };
 }

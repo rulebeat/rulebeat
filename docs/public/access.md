@@ -148,44 +148,8 @@ Each finding records where it sits, and a person sees it when a Scope they hold 
 
 This narrows every list, count, filter option, column option, export and finding detail on the
 Results, Advisories and Activity tabs, the dashboards, saved views, suppressions and Run History. A
-saved view or dashboard filtered to something outside a person's access still opens, and the page
-says how much of it is held back.
-
-### Held-back values
-
-A **held-back value** is a value stored in a dashboard or a saved view that sits outside the
-viewer's Access. It is stored in the item, so everyone it is shared with sees the item, but the
-value itself never reaches the viewer's browser. The page shows only a count, as "N outside your
-access" beside the values the viewer can see, or "Outside your access" alone when every value in
-that filter is held back.
-
-- A subscription or resource group in a filter is held back when the viewer holds no Scope that
-  covers it and none inside it.
-- A resource name or a value of a returned column is held back unless a finding inside the viewer's
-  Access carries it, whether that finding is open, fixed or suppressed.
-- Search text, rules, categories, tags, severities and the date window are never held back.
-- A person who holds Everything has nothing held back.
-
-A held-back value matches nothing for that viewer. A filter whose values are all held back shows
-"Outside your access" in place of a number, never a posture computed over the viewer's whole Access.
-The counts appear in the dashboard filter bar, the widget editor and the Scans filter bar. They are
-a soft chip with no remove control: a viewer cannot clear a value they cannot see.
-
-The address of the Scans page is different. A subscription or resource group typed into the address
-bar is the viewer's own input, so it reads "Outside your access" on its chip and leaves the list empty.
-
-## The Scope filter is not access
-
-Dashboards, saved views, widgets and the Scans page can be narrowed by a **Scope filter**. It is not
-a way to get access, and it only ever narrows.
-
-- It is matched by the same table as Access, in [Where a finding sits](#where-a-finding-sits), so a
-  filter and your Access agree about whether a finding is inside a Scope.
-- It can only narrow what you hold.
-- The picker shows only the Scopes you hold. A pick nested inside another shows "Covered by" and the
-  Scope that covers it.
-- A pick you hold only in part applies as the part you hold, and the filter says it is "narrowed to
-  what you hold".
+saved view or dashboard filtered to something outside a person's access still opens: the filter
+reads "Outside your access" and can be cleared.
 
 ## What a scoped Editor can do
 

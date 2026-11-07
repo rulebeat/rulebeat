@@ -1,8 +1,6 @@
 import { Header } from '@/components/layout/header';
 import { listDashboards } from '@/lib/db/dashboards';
 import { getCurrentUser } from '@/lib/api-auth';
-import { resolveAccess } from '@/lib/access';
-import { holdBackDashboards } from '@/lib/db/held-back';
 import { redirect } from 'next/navigation';
 import { DashboardsGallery } from './dashboards-gallery';
 
@@ -12,7 +10,7 @@ export default async function DashboardsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
 
-  const dashboards = await holdBackDashboards(await resolveAccess(user), await listDashboards());
+  const dashboards = await listDashboards();
 
   return (
     <>

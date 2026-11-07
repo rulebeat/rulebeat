@@ -10,10 +10,6 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - `GET /api/dashboards/[id]` returns the data for the "As seen by" stamp with the dashboard: the person, their Access as counts by kind (or Everything, or No access), each filter with the values they hold and a count of the ones held back, and the date window with the dates it resolved to. The stamp is worked out under the same Access as the dashboard, and a custom range that crosses a year shows both years.
 
-### Changed
-
-- A dashboard or saved view no longer sends a stored subscription, resource group, resource name or returned-column value outside your Access to your browser. It comes back without those values and with a count for each place, and the dashboard filter bar, the widget editor and the Scans filter bar show a soft "N outside your access" chip (or "Outside your access" when every value in a filter is held back) in X
-
 ### Fixed
 
 - Signing in returns you to the page you asked for. Both sign-in actions ignored the `callbackUrl` and always landed on the dashboard, so a link to any other page was lost at sign-in. A relative path, or an absolute URL on the same origin, is now followed with its search and hash kept; anything else still lands on the dashboard.

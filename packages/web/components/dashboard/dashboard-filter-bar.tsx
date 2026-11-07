@@ -6,8 +6,7 @@ import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
 import { toggleInSet } from '@/lib/toggle-set';
-import { HeldBackChip } from '@/components/ui/held-back-chip';
-import { heldBackCount, type HeldBack } from '@/lib/held-back';
+import { withOutsideOptions, type OutsideAccess } from '@/lib/outside-access';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import type { DateWindow } from '@/lib/date-window';
 import type { Category, FilterOptionsResponse, Severity } from '@/lib/types';
@@ -28,16 +27,15 @@ interface Props {
   dateWindow: DateWindow;
   onFiltersChange: (next: DashboardFilters) => void;
   onDateWindowChange: (w: DateWindow) => void;
-  /** The dashboard whose filter bar this is, and the stored values of it the person's Access does not reach (#363). */
-  dashboardId: string;
-  heldBack?: HeldBack[];
+  /** Stored subscription and resource group values the person's access does not reach (#274). */
+  outsideAccess?: OutsideAccess;
 }
 
 /** Dashboard-level filter toolbar: Category/Rule/Subscription/Tags/Severity multi-selects plus a
  *  24h/7d/30d/custom window control. Persistence (debounced PUT) and refetch-triggering
  *  (refreshKey bump) both live in the parent (`dashboard-grid-client.tsx`); this component only
  *  reports changes upward via `onFiltersChange`/`onDateWindowChange`. */
-export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, dashboardId, heldBack }: Props) {
+export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, outsideAccess }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
@@ -60,10 +58,10 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
   }, []);
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.label }));
-  const subscriptionOptions = subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id }));
-  const resourceGroupOptions = resourceGroups.map(rg => ({ value: rg, label: rg }));
-  const heldSubscriptions = heldBackCount(heldBack, 'dashboard', dashboardId, 'subscription');
-  const heldResourceGroups = heldBackCount(heldBack, 'dashboard', dashboardId, 'resourceGroup');
+  const subscriptionOptions = withOutsideOptions(
+    subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id })), filters.subscriptions, outsideAccess, 'subscription');
+  const resourceGroupOptions = withOutsideOptions(
+    resourceGroups.map(rg => ({ value: rg, label: rg })), filters.resourceGroups, outsideAccess, 'resourceGroup');
   const tagOptions = tags.map(t => ({ value: t, label: t }));
   const severityOptions = SEVERITY_OPTIONS.map(s => ({ value: s, label: SEVERITY_LABEL[s] }));
   const ruleOptions = rules.map(r => ({ value: r.id, label: r.name }));
@@ -104,7 +102,6 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
         onToggle={v => toggle('subscriptions', v)}
         onClear={() => onFiltersChange({ ...filters, subscriptions: [] })}
       />
-      {heldSubscriptions > 0 && <HeldBackChip count={heldSubscriptions} visible={filters.subscriptions.length} />}
       <ChecklistDropdown
         label="Resource Group"
         options={resourceGroupOptions}
@@ -112,7 +109,6 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
         onToggle={v => toggle('resourceGroups', v)}
         onClear={() => onFiltersChange({ ...filters, resourceGroups: [] })}
       />
-      {heldResourceGroups > 0 && <HeldBackChip count={heldResourceGroups} visible={filters.resourceGroups.length} />}
       <ChecklistDropdown
         label="Tags"
         options={tagOptions}

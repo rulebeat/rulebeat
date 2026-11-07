@@ -3,13 +3,13 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackDashboards } from '@/lib/db/held-back';
+import { markedDashboard } from '@/lib/outside-access';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json(await holdBackDashboards(actor.access, await listDashboards()));
+  return Response.json((await listDashboards()).map(d => markedDashboard(actor.access, d)));
 }
 
 export async function POST(req: Request) {
@@ -28,8 +28,7 @@ export async function POST(req: Request) {
       entityId: dashboard.id,
       summary: `Restored the starter dashboard "${dashboard.name}"`,
     });
-    const [held] = await holdBackDashboards(actor.access, [dashboard]);
-    return Response.json(held, { status: 201 });
+    return Response.json(markedDashboard(actor.access, dashboard), { status: 201 });
   }
 
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
@@ -54,6 +53,5 @@ export async function POST(req: Request) {
     summary: `Created dashboard "${result.dashboard.name}"`,
   });
 
-  const [held] = await holdBackDashboards(actor.access, [result.dashboard]);
-  return Response.json(held, { status: 201 });
+  return Response.json(markedDashboard(actor.access, result.dashboard), { status: 201 });
 }

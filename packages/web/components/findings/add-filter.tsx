@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { HeldBackChip } from '@/components/ui/held-back-chip';
 import { ChecklistPanel, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import type { RemoteValues } from '@/lib/explorer-session';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -118,19 +117,9 @@ export interface FilterChip {
   valueLabel: string;
 }
 
-/** The stored values of a dimension the viewer's Access does not reach, counted. Not removable. */
-export interface HeldFilterChip {
-  dimension: string;
-  fieldLabel: string;
-  count: number;
-  /** How many values of the dimension the viewer can see, which decides how the chip reads. */
-  visible: number;
-}
-
-/** The active filters, one soft-filled chip per value, each removable, then one count chip per dimension
- *  with values held back. */
-export function FilterChips({ chips, held = [], onRemove }: { chips: FilterChip[]; held?: HeldFilterChip[]; onRemove: (chip: FilterChip) => void }) {
-  if (chips.length === 0 && held.length === 0) return null;
+/** The active filters, one soft-filled chip per value, each removable. */
+export function FilterChips({ chips, onRemove }: { chips: FilterChip[]; onRemove: (chip: FilterChip) => void }) {
+  if (chips.length === 0) return null;
   return (
     <ul className="flex flex-wrap items-center gap-1.5" aria-label="Active filters">
       {chips.map(chip => (
@@ -147,12 +136,6 @@ export function FilterChips({ chips, held = [], onRemove }: { chips: FilterChip[
               <X className="size-3" aria-hidden="true" />
             </button>
           </Badge>
-        </li>
-      ))}
-      {held.map(h => (
-        <li key={`held\u0000${h.dimension}`} className="flex items-center gap-1.5">
-          <span className="text-xs text-ink-2">{h.fieldLabel}</span>
-          <HeldBackChip count={h.count} visible={h.visible} className="h-7" />
         </li>
       ))}
     </ul>

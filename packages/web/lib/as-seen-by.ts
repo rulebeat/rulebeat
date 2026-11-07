@@ -7,8 +7,7 @@
  * `markOutsideAccess`, the one definition of "outside your access". The Role is never part of it.
  */
 import { holdsNoScope, type Access, type ScopeKind } from './access-model';
-import { dateWindowLabelWithYear, resolveDateWindow } from './date-window';
-import { viewFromSearchParams, type BuiltinField } from './finding-view';
+import { dateWindowLabelWithYear, resolveDateWindow, type DateWindow } from './date-window';
 import { isOutsideAccess, markOutsideAccess } from './outside-access';
 import type { WidgetFilters } from './dashboard-filters';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
@@ -84,12 +83,11 @@ function isCalendarDay(key: string | null): key is string {
 
 /**
  * The filters the page is showing: the dashboard's saved filter bar, then what the page's address changes.
- * The client sends only the differences, in the address's own names, read by the shared reader
- * (`viewFromSearchParams`, lib/finding-view.ts). A dimension present in the address replaces the saved one
- * whole (an empty one clears it), and the rest stay as saved. A window the address gives that cannot be read
- * (not real days, or neither a day count nor a pair of days) leaves the saved window alone.
+ * The client sends only the differences, named as `buildSummaryParams` names them. A dimension present in the
+ * address replaces the saved one whole (an empty one clears it), and the rest stay as saved. A window the
+ * address gives that cannot be read leaves the saved window alone.
  */
-export function effectiveStampFilters(config: DashboardConfig, url: URLSearchParams, now: Date = new Date()): WidgetFilters {
+export function effectiveStampFilters(config: DashboardConfig, url: URLSearchParams): WidgetFilters {
   const saved = config.filters ?? {};
   const effective: WidgetFilters = {
     categories: saved.categories,
@@ -101,24 +99,23 @@ export function effectiveStampFilters(config: DashboardConfig, url: URLSearchPar
     dateWindow: config.dateWindow ?? { mode: 'relative', days: config.windowDays ?? 7 },
   };
 
-  const params = new URLSearchParams(url);
-  const customRange = isCalendarDay(params.get('from')) && isCalendarDay(params.get('to'));
-  if (!customRange) { params.delete('from'); params.delete('to'); }
-  const days = Number(params.get('window'));
-  const windowGiven = customRange || (Number.isInteger(days) && days > 0);
-
-  const view = viewFromSearchParams(params, { overBase: true, limitWindow: true, now });
-  const values = (field: BuiltinField): string[] | undefined => {
-    const filter = view.filters.find(f => f.field === field);
-    return filter && filter.values.length > 0 ? filter.values : undefined;
+  const list = (param: string): string[] | undefined => {
+    const values = (url.get(param) ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    return values.length > 0 ? values : undefined;
   };
-  const replaces = (field: BuiltinField) => view.filters.some(f => f.field === field);
-  if (replaces('category')) effective.categories = values('category');
-  if (replaces('subscription')) effective.subscriptions = values('subscription');
-  if (replaces('resourceGroup')) effective.resourceGroups = values('resourceGroup');
-  if (replaces('tags')) effective.tags = values('tags');
-  if (replaces('severity')) effective.severities = values('severity') as Severity[] | undefined;
-  if (replaces('rule')) effective.ruleIds = values('rule');
-  if (windowGiven) effective.dateWindow = view.window;
+  if (url.has('categories')) effective.categories = list('categories');
+  if (url.has('subscriptions')) effective.subscriptions = list('subscriptions');
+  if (url.has('resourceGroups')) effective.resourceGroups = list('resourceGroups');
+  if (url.has('tags')) effective.tags = list('tags');
+  if (url.has('severities')) effective.severities = list('severities') as Severity[] | undefined;
+  if (url.has('ruleIds')) effective.ruleIds = list('ruleIds');
+
+  const from = url.get('from');
+  const to = url.get('to');
+  const days = Number.parseInt(url.get('window') ?? '', 10);
+  let dateWindow: DateWindow | null = null;
+  if (isCalendarDay(from) && isCalendarDay(to)) dateWindow = { mode: 'custom', from, to };
+  else if (Number.isFinite(days) && days > 0) dateWindow = { mode: 'relative', days };
+  if (dateWindow) effective.dateWindow = dateWindow;
   return effective;
 }

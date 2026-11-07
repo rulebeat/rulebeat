@@ -15,12 +15,10 @@ export async function loadDashboardStamp(
   url: URLSearchParams,
 ): Promise<AsSeenByStamp> {
   const [categories, rules] = await Promise.all([listCategories(), loadRules()]);
-  const now = new Date();
   return buildAsSeenByStamp({
     person: { name: actor.name, email: actor.email },
     access: actor.access,
-    filters: effectiveStampFilters(config, url, now),
-    now,
+    filters: effectiveStampFilters(config, url),
     categoryLabels: Object.fromEntries(categories.map(c => [c.id, c.label])),
     ruleNames: Object.fromEntries(rules.map(r => [r.id, r.name])),
   });

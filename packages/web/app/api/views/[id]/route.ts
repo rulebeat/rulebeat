@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackSavedViews } from '@/lib/db/held-back';
+import { markedSavedView } from '@/lib/outside-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
@@ -16,8 +16,7 @@ export async function GET(_: Request, { params }: Params) {
   try {
     const view = await getSavedView(id);
     if (!view) return Response.json({ error: 'Not found' }, { status: 404 });
-    const [held] = await holdBackSavedViews(actor.access, [view]);
-    return Response.json(held);
+    return Response.json(markedSavedView(actor.access, view));
   } catch (err) {
     return serverError('Could not load the saved view', err);
   }
@@ -58,8 +57,7 @@ export async function PATCH(req: Request, { params }: Params) {
         details: { fields: changed },
       });
     }
-    const [held] = await holdBackSavedViews(actor.access, [view]);
-    return Response.json(held);
+    return Response.json(markedSavedView(actor.access, view));
   } catch (err) {
     return serverError('Could not update the saved view', err);
   }
