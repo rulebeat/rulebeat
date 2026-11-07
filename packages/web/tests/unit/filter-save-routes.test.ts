@@ -15,7 +15,8 @@ import { SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_ONE, SUB_TWO } from '../h
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { createDashboard, getDashboard } from '@/lib/db/dashboards';
-import { createScopeSet } from '@/lib/db/scope-sets';
+import { createScopeSet, expandScopeSet } from '@/lib/db/scope-sets';
+import { createSavedView, getSavedView } from '@/lib/db/saved-views';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { buildAccess, parseScope, type Access } from '@/lib/access-model';
 import { prepareDashboardConfig, prepareSavedViewQuery } from '@/lib/filter-save';
@@ -27,11 +28,13 @@ vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 const { POST: CREATE_DASHBOARD } = await import('@/app/api/dashboards/route');
 const { PUT: UPDATE_DASHBOARD } = await import('@/app/api/dashboards/[id]/route');
 const { POST: CREATE_VIEW } = await import('@/app/api/views/route');
+const { PATCH: UPDATE_VIEW } = await import('@/app/api/views/[id]/route');
 
 const TENANT = '00000000-0000-0000-0000-0000000000f0';
 const SUB_TWO_PATH = `/subscriptions/${SUB_TWO}`;
 const NOT_HELD = 'A path in the list is outside the Scopes you hold.';
 
+const EVERYTHING = buildAccess([{ tenantId: TENANT, scope: parseScope('/')!, role: 'admin' as const }], 'manual');
 const holding = (...paths: string[]): Access =>
   buildAccess(paths.map(path => ({ tenantId: TENANT, scope: parseScope(path)!, role: 'editor' as const })), 'manual');
 
@@ -48,6 +51,7 @@ const json = (method: string, url: string, payload: unknown) =>
 const postDashboard = (payload: unknown) => CREATE_DASHBOARD(json('POST', '/api/dashboards', payload));
 const putDashboard = (id: string, payload: unknown) => UPDATE_DASHBOARD(json('PUT', `/api/dashboards/${id}`, payload), { params: Promise.resolve({ id }) });
 const postView = (payload: unknown) => CREATE_VIEW(json('POST', '/api/views', payload));
+const patchView = (id: string, payload: unknown) => UPDATE_VIEW(json('PATCH', `/api/views/${id}`, payload), { params: Promise.resolve({ id }) });
 
 const WIDGETS = [{ id: 'w1', type: 'stat-card', x: 0, y: 0, w: 3, h: 2, config: {} }] as DashboardConfig['widgets'];
 
@@ -218,6 +222,85 @@ describe('saving a view', () => {
     expect((await prepareSavedViewQuery(access, `severity=low&scopeset=${outside.hash}`, `scopeset=${outside.hash}`)).ok).toBe(true);
     expect(await prepareSavedViewQuery(access, `scopeset=${outside.hash}`, null)).toEqual({ ok: false, error: NOT_HELD });
     expect((await prepareSavedViewQuery(access, `scopeset=${'b'.repeat(64)}`, null)).ok).toBe(false);
+  });
+
+  it('keeps a name-only group as unresolved picks in a Scope set when there are too many to write inline, never as no Scope', async () => {
+    const names = Array.from({ length: 80 }, (_, n) => `rg-missing-${String(n).padStart(3, '0')}`);
+
+    const prepared = await prepareSavedViewQuery(EVERYTHING, `severity=high&rg=${names.join('%2C')}`, null);
+
+    if (!prepared.ok) throw new Error(prepared.error);
+    const params = new URLSearchParams(prepared.value);
+    expect(params.get('severity')).toBe('high');
+    expect(params.has('rg')).toBe(false);
+    const expanded = await expandScopeSet(params.get('scopeset')!);
+    expect(expanded).toEqual({ status: 'resolved', paths: names.map(n => `unresolved:resourceGroup/${n}`) });
+  });
+
+  it('keeps an unresolved pick beside the paths of a Scope set', async () => {
+    for (let n = 0; n < 60; n++) await seedPair(`30000000-0000-0000-0000-${String(n).padStart(12, '0')}`, 'rg-wide');
+
+    const prepared = await prepareSavedViewQuery(EVERYTHING, 'rg=rg-wide%2Crg-gone', null);
+
+    if (!prepared.ok) throw new Error(prepared.error);
+    const expanded = await expandScopeSet(new URLSearchParams(prepared.value).get('scopeset')!);
+    expect(expanded.status === 'resolved' && expanded.paths).toHaveLength(61);
+    expect(expanded.status === 'resolved' && expanded.paths).toContain('unresolved:resourceGroup/rg-gone');
+  });
+
+  it('reads the pairs on record only inside the Scopes the person holds', async () => {
+    await seedPair(SUB_ONE, 'rg-shared');
+    await seedPair(SUB_TWO, 'rg-shared');
+
+    const prepared = await prepareSavedViewQuery(holding(SCOPE_SUBSCRIPTION), 'rg=rg-shared', null);
+
+    expect(prepared.ok && new URLSearchParams(prepared.value).get('scope')).toBe(`${SCOPE_SUBSCRIPTION}/resourceGroups/rg-shared`);
+    const none = await prepareSavedViewQuery(holding(SCOPE_RESOURCE_GROUP), 'rg=rg-shared', null);
+    expect(none.ok && new URLSearchParams(none.value).get('scope')).toBe('unresolved:resourceGroup/rg-shared');
+  });
+});
+
+describe('updating a saved view', () => {
+  async function storedView(query: string): Promise<string> {
+    const created = await createSavedView({ name: `View ${made++}`, tab: 'results', query }, null);
+    if (!created.ok) throw new Error('could not create');
+    return created.view.id;
+  }
+
+  it('turns the subscription and resource group of the new query into Scope picks and writes no legacy param', async () => {
+    await signInAsEditor();
+    await seedPair(SUB_ONE, 'rg-one');
+    const id = await storedView('severity=low');
+
+    const res = await patchView(id, { query: `severity=high&rg=rg-one&subscription=${SUB_ONE}` });
+
+    expect(res.status).toBe(200);
+    const params = new URLSearchParams((await getSavedView(id))!.query);
+    expect(params.get('scope')).toBe(`${SCOPE_SUBSCRIPTION}/resourceGroups/rg-one`);
+    expect(params.has('subscription')).toBe(false);
+    expect(params.has('rg')).toBe(false);
+    expect(params.get('severity')).toBe('high');
+  });
+
+  it('keeps a name no record pairs as an unresolved pick, and a long one in a Scope set', async () => {
+    await signInAsEditor();
+    const id = await storedView('severity=low');
+    const names = Array.from({ length: 80 }, (_, n) => `rg-missing-${String(n).padStart(3, '0')}`);
+
+    expect((await patchView(id, { query: 'rg=rg-gone' })).status).toBe(200);
+    expect(new URLSearchParams((await getSavedView(id))!.query).get('scope')).toBe('unresolved:resourceGroup/rg-gone');
+
+    expect((await patchView(id, { query: `rg=${names.join('%2C')}` })).status).toBe(200);
+    expect(new URLSearchParams((await getSavedView(id))!.query).get('scopeset')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('answers 404 for a view that is not there, and leaves a rename alone without reading its query', async () => {
+    await signInAsEditor();
+    const id = await storedView('rg=rg-kept');
+
+    expect((await patchView('missing-id', { query: 'severity=high' })).status).toBe(404);
+    expect((await patchView(id, { name: 'Renamed' })).status).toBe(200);
+    expect((await getSavedView(id))!.query).toBe('rg=rg-kept');
   });
 });
 

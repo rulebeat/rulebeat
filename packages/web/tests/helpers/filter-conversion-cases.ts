@@ -352,6 +352,26 @@ export function defineFilterConversionCases(harness: () => ConversionHarness): v
       expect(params.get('rg')).toBe('rg-wide');
     });
 
+    it('keeps an unresolved pick in the Scope set a long saved view list becomes, and a long all-unresolved list as a set too', async () => {
+      await everything();
+      for (let n = 0; n < 60; n++) await finding(sub(n), 'rg-wide');
+      await savedView('conv-view-mixed', 'rg=rg-wide%2Crg-gone');
+      const names = Array.from({ length: 80 }, (_, n) => `rg-missing-${String(n).padStart(3, '0')}`);
+      await savedView('conv-view-missing', `severity=high&rg=${names.join('%2C')}`);
+
+      await h().startUp();
+
+      const mixed = new URLSearchParams(await query('conv-view-mixed'));
+      const mixedPaths = await scopeSetPaths(mixed.get('scopeset')!);
+      expect(mixed.has('scope')).toBe(false);
+      expect(mixedPaths).toHaveLength(61);
+      expect(mixedPaths).toContain('unresolved:resourceGroup/rg-gone');
+      const missing = new URLSearchParams(await query('conv-view-missing'));
+      expect(missing.get('severity')).toBe('high');
+      expect(missing.has('scope')).toBe(false);
+      expect(await scopeSetPaths(missing.get('scopeset')!)).toEqual(names.map(n => `unresolved:resourceGroup/${n}`));
+    });
+
     it('leaves a query that has a Scope, or neither list, exactly as it was', async () => {
       await everything();
       await recordPairs();

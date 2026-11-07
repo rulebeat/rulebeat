@@ -116,14 +116,21 @@ interface ScopeValue {
 }
 
 /**
- * How picks are stored: inline when short, else as a set of the paths (unresolved picks are no path a set
- * can hold, so they stay inline beside it where a dashboard can keep both). A list that is all unresolved
- * has no set to be, and stays inline whatever its length.
+ * How picks are stored: inline when short, else as a set (ADR 0016). A dashboard keeps the unresolved picks
+ * inline beside a set of the paths, and a list that is all unresolved stays inline whatever its length. A
+ * saved view's query holds a set or an inline list and never both, and an inline list over `SCOPE_INLINE_BUDGET`
+ * cannot be written, so there the set holds the unresolved picks too (`unresolvedInSet`). A set is a stored
+ * list the server wrote, so it may hold them; they match nothing, and whatever opens a set must show them.
  */
-function scopeValue(resolved: { paths: string[]; unresolved: string[] }): ScopeValue {
+function scopeValue(resolved: { paths: string[]; unresolved: string[] }, unresolvedInSet = false): ScopeValue {
   const all = [...resolved.paths, ...resolved.unresolved];
   if (all.length === 0) return {};
-  if (all.join(',').length <= SCOPE_INLINE_BUDGET || resolved.paths.length === 0) return { scope: all };
+  if (all.join(',').length <= SCOPE_INLINE_BUDGET) return { scope: all };
+  if (unresolvedInSet) {
+    const hash = scopeSetHash(all);
+    return { scopeSet: hash, set: { hash, paths: all } };
+  }
+  if (resolved.paths.length === 0) return { scope: all };
   const hash = scopeSetHash(resolved.paths);
   return {
     ...(resolved.unresolved.length > 0 && { scope: resolved.unresolved }),
@@ -195,7 +202,7 @@ export function convertDashboardConfig(
 
 /** `query` with the picks added as `scope=` or `scopeset=`, or null when no form of it fits the limit. The legacy
  *  `subscription=` and `rg=` stay in the first form, for a rollback; only a query that cannot fit with them loses them.
- *  A saved view holds a set or an inline list, not both, so the unresolved picks beside a set are dropped: they matched nothing. */
+ *  A saved view holds a set or an inline list, not both, so a set holds the unresolved picks too (`scopeValue`). */
 function withScope(query: string, value: ScopeValue, keepLegacy: boolean): { query: string; set?: { hash: string; paths: string[] } } | null {
   const added = value.set
     ? new URLSearchParams({ scopeset: value.set.hash })
@@ -222,7 +229,7 @@ export function convertSavedViewQuery(
   const subscriptions = filterValues(view.filters, 'subscription');
   const resourceGroups = filterValues(view.filters, 'resourceGroup');
   if (subscriptions.length === 0 && resourceGroups.length === 0) return null;
-  const value = scopeValue(resolveLegacyScope(subscriptions, resourceGroups, pairs));
+  const value = scopeValue(resolveLegacyScope(subscriptions, resourceGroups, pairs), true);
   return withScope(query, value, keepLegacy) ?? 'too-long';
 }
 

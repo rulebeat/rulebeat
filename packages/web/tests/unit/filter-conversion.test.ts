@@ -93,3 +93,29 @@ describe('planFilterConversion', () => {
     expect(plan.statements[0]!.params[2]).toBe(NOW);
   });
 });
+
+describe('convertSavedViewQuery keeps an unresolved pick visible', () => {
+  const wide = indexPairs(Array.from({ length: 60 }, (_, n) => ({ subscription_id: sub(n), resource_group: 'rg-wide' })));
+
+  it('holds the unresolved pick inside the set when a resolved list is long enough to become one', () => {
+    const converted = convertSavedViewQuery('rg=rg-wide%2Crg-gone', wide);
+
+    if (converted === null || converted === 'too-long') throw new Error('expected a conversion');
+    expect(new URLSearchParams(converted.query).get('scopeset')).toBe(converted.set!.hash);
+    expect(converted.set!.paths).toHaveLength(61);
+    expect(converted.set!.paths).toContain('unresolved:resourceGroup/rg-gone');
+  });
+
+  it('makes a Scope set of an all-unresolved list over the inline budget instead of leaving a Scope that cannot be written', () => {
+    const names = Array.from({ length: 80 }, (_, n) => `rg-missing-${String(n).padStart(3, '0')}`);
+
+    for (const keepLegacy of [true, false]) {
+      const converted = convertSavedViewQuery(`severity=high&rg=${names.join('%2C')}`, NO_PAIRS, keepLegacy);
+
+      if (converted === null || converted === 'too-long') throw new Error('expected a conversion');
+      const params = new URLSearchParams(converted.query);
+      expect(params.get('scopeset')).toBe(converted.set!.hash);
+      expect(converted.set!.paths).toEqual(names.map(n => `unresolved:resourceGroup/${n}`));
+    }
+  });
+});

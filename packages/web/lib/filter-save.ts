@@ -27,7 +27,7 @@ async function pathsOf(scope: readonly string[] | undefined, scopeSet: string | 
   const paths = (scope ?? []).filter(p => !isUnresolvedPick(p));
   if (scopeSet === undefined) return paths;
   const expansion = await expandScopeSet(scopeSet);
-  return expansion.status === 'resolved' ? [...paths, ...expansion.paths] : null;
+  return expansion.status === 'resolved' ? [...paths, ...expansion.paths.filter(p => !isUnresolvedPick(p))] : null;
 }
 
 /**
@@ -109,10 +109,10 @@ export async function prepareSavedViewQuery(
   access: Access, query: string, storedQuery: string | null,
 ): Promise<Result<string>> {
   let next = query;
-  const converted = convertSavedViewQuery(query, await readRecordedPairs(), false);
+  const converted = convertSavedViewQuery(query, await readRecordedPairs(access), false);
   if (converted === 'too-long') return { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` };
   if (converted) {
-    if (converted.set) await createScopeSet(converted.set.paths);
+    if (converted.set) await createScopeSet(converted.set.paths, { unresolved: true });
     next = normalizeViewQuery(converted.query);
     if (next.length > MAX_SAVED_VIEW_QUERY_LENGTH) return { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` };
   }
