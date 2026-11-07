@@ -111,7 +111,7 @@ export async function planViewFilters(
   now: Date = new Date(),
 ): Promise<ViewFilterPlan> {
   const conditions: SQL[] = [];
-  const states: FilterStates = { scope: [], scopeUnresolved: false, source: [], missingTags: [], deletedCategories: [] };
+  const states: FilterStates = { scope: [], scopeHidden: { outside: 0, outsideNarrowed: 0 }, scopeUnresolved: false, source: [], missingTags: [], deletedCategories: [] };
 
   // A long Scope list arrives as a hash and only the server opens it (ADR 0016). A hash no row holds is not the
   // same as no pick, which would show everything held: it matches nothing.
@@ -125,7 +125,17 @@ export async function planViewFilters(
     const picks = readPicks(scope);
     const picked = picks.length === 0 ? undefined : accessFilterSql(picksAsAccess(picks, nodes));
     conditions.push(picked ?? NOTHING);
-    states.scope = scopePickStates(access, scope, nodes);
+    const pickStates = scopePickStates(access, scope, nodes);
+    if (expansion) {
+      // A set is never sent to the browser whole: it names the picks the viewer holds and counts the rest.
+      states.scope = pickStates.filter(s => s.access === 'held' || s.access === 'narrowed');
+      states.scopeHidden = {
+        outside: pickStates.filter(s => s.access === 'outside').length,
+        outsideNarrowed: pickStates.filter(s => s.access === 'outside-narrowed').length,
+      };
+    } else {
+      states.scope = pickStates;
+    }
   }
 
   if (view.source && view.source.length > 0) {

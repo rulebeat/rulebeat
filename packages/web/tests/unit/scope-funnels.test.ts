@@ -135,16 +135,16 @@ describe('currentScopePicks', () => {
 });
 
 describe('unheldPickPaths', () => {
-  it('holds the lower-case paths of the picks not held in full, and not those held in full', () => {
+  it('holds the lower-case paths of the picks the viewer holds none of, and not those held in full or in part', () => {
     const states: ScopePickState[] = [held('/A'), { value: '/B', access: 'outside', label: null }, { value: '/c', access: 'narrowed', label: 'c' }, { value: '/d', access: 'outside-narrowed', label: null }];
-    expect([...unheldPickPaths(states)]).toEqual(['/b', '/c', '/d']);
+    expect([...unheldPickPaths(states)]).toEqual(['/b']);
   });
 });
 
 describe('a set is made of the picks the viewer holds', () => {
   const unheld = new Set([longPicks[0]!.toLowerCase()]);
 
-  it('leaves out a pick the server answered as not held in full, and names it in the result', async () => {
+  it('leaves out a pick the server answered as not held at all, and names it in the result', async () => {
     const create = vi.fn(async () => ({ ok: true as const, hash: 'e'.repeat(64) }));
     const written = await commitScopePicks(longPicks, create, unheld);
     expect(create).toHaveBeenCalledWith(longPicks.slice(1));
@@ -186,7 +186,7 @@ describe('leftOutMessage', () => {
   it('says nothing when nothing was left out, and counts what was', () => {
     expect(leftOutMessage(undefined)).toBeNull();
     expect(leftOutMessage([])).toBeNull();
-    expect(leftOutMessage(['/a'])).toBe('1 pick you do not hold in full was left out of the saved list.');
-    expect(leftOutMessage(['/a', '/b'])).toBe('2 picks you do not hold in full were left out of the saved list.');
+    expect(leftOutMessage(['/a'])).toBe('1 pick outside your access was left out of the saved list.');
+    expect(leftOutMessage(['/a', '/b'])).toBe('2 picks outside your access were left out of the saved list.');
   });
 });

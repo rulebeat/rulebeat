@@ -31,8 +31,18 @@ export interface SourceValueState {
   exists: boolean;
 }
 
+/** How many picks of a Scope set the server left out of `FilterStates.scope`: those the viewer holds none of, and
+ *  those they hold in part and may not read the name of. A set is opened only on the server, and its picks are
+ *  the author's to know, so what the viewer does not hold is counted and its path never sent (ADR 0016). */
+export interface HiddenScopePicks {
+  outside: number;
+  outsideNarrowed: number;
+}
+
 export interface FilterStates {
   scope: ScopePickState[];
+  /** Picks of a `scopeset=` that `scope` does not carry. Always zero for an inline list, which the address names. */
+  scopeHidden: HiddenScopePicks;
   /** The `scopeset=` reference could not be opened here, so the Scope filter matches nothing. */
   scopeUnresolved: boolean;
   source: SourceValueState[];
@@ -44,6 +54,7 @@ export interface FilterStates {
 
 export const NO_FILTER_STATES: FilterStates = Object.freeze({
   scope: Object.freeze([]) as unknown as ScopePickState[],
+  scopeHidden: Object.freeze({ outside: 0, outsideNarrowed: 0 }),
   scopeUnresolved: false,
   source: Object.freeze([]) as unknown as SourceValueState[],
   missingTags: Object.freeze([]) as unknown as string[],
@@ -119,21 +130,25 @@ function listedLabel(pick: ScopePickState, listing: ScopeListing | undefined): s
  * named: "2 Scopes outside your access", or "1 Scope outside your access, narrowed to what you hold" for
  * those they hold a part of.
  */
-export function scopeChips(picks: readonly ScopePickState[], listing?: ScopeListing): ScopeChip[] {
+export function scopeChips(
+  picks: readonly ScopePickState[], listing?: ScopeListing, hidden: HiddenScopePicks = NO_FILTER_STATES.scopeHidden,
+): ScopeChip[] {
   const chips: ScopeChip[] = [];
   for (const pick of picks) {
     if (pick.access === 'held') chips.push({ key: pick.value, label: listedLabel(pick, listing), values: [pick.value] });
     else if (pick.access === 'narrowed') chips.push({ key: pick.value, label: markedLabel(listedLabel(pick, listing), NARROWED_NOTE), values: [pick.value] });
   }
   const outside = picks.filter(p => p.access === 'outside');
-  if (outside.length > 0) {
-    chips.push({ key: 'outside', label: `${plural(outside.length, 'Scope', 'Scopes')} outside your access`, values: outside.map(p => p.value) });
+  const outsideCount = outside.length + hidden.outside;
+  if (outsideCount > 0) {
+    chips.push({ key: 'outside', label: `${plural(outsideCount, 'Scope', 'Scopes')} outside your access`, values: outside.map(p => p.value) });
   }
   const narrowedOutside = picks.filter(p => p.access === 'outside-narrowed');
-  if (narrowedOutside.length > 0) {
+  const narrowedCount = narrowedOutside.length + hidden.outsideNarrowed;
+  if (narrowedCount > 0) {
     chips.push({
       key: 'outside-narrowed',
-      label: `${plural(narrowedOutside.length, 'Scope', 'Scopes')} outside your access, ${NARROWED_NOTE}`,
+      label: `${plural(narrowedCount, 'Scope', 'Scopes')} outside your access, ${NARROWED_NOTE}`,
       values: narrowedOutside.map(p => p.value),
     });
   }
@@ -159,7 +174,8 @@ export type MatchesNothing = 'scope-outside' | 'scope-unresolved' | 'source' | '
 
 export function dimensionMatchingNothing(states: FilterStates, tagCount: number): MatchesNothing | null {
   if (states.scopeUnresolved) return 'scope-unresolved';
-  if (states.scope.length > 0 && states.scope.every(p => p.access === 'outside')) return 'scope-outside';
+  const picked = states.scope.length + states.scopeHidden.outside + states.scopeHidden.outsideNarrowed;
+  if (picked > 0 && states.scopeHidden.outsideNarrowed === 0 && states.scope.every(p => p.access === 'outside')) return 'scope-outside';
   if (states.source.length > 0 && states.source.every(s => !s.exists)) return 'source';
   if (tagCount > 0 && states.missingTags.length >= tagCount) return 'tags';
   return null;

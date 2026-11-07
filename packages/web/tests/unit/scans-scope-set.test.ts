@@ -6,7 +6,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { MATRIX_TENANT, SCOPE_DIRECTORY, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_TWO, matrixHierarchy, seedMatrix } from '../helpers/access-matrix';
+import { MATRIX_TENANT, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_TWO, matrixHierarchy, seedMatrix } from '../helpers/access-matrix';
 import { buildAccess, parseScope, type Access } from '@/lib/access-model';
 import { expandManagementGroups } from '@/lib/management-group-tree';
 import { createScopeSet } from '@/lib/db/scope-sets';
@@ -59,8 +59,31 @@ describe('a Scope set the server holds is opened on the server and filters like 
     const { hash } = await createScopeSet([SCOPE_SUBSCRIPTION, SUB_TWO_PATH, SCOPE_DIRECTORY]);
     const access = accessAt(SCOPE_SUBSCRIPTION);
     expect(await listed(withSet(hash), access)).toEqual(['subscription-level', 'vm-one', 'vm-two']);
-    const states = (await read(withSet(hash), access)).filterStates.scope;
-    expect(states.map(s => [s.value, s.access])).toEqual([[SCOPE_SUBSCRIPTION, 'held'], [SUB_TWO_PATH, 'outside'], [SCOPE_DIRECTORY, 'outside']]);
+  });
+
+  it('sends the browser only the picks the viewer holds, and counts the rest without naming them', async () => {
+    const { hash } = await createScopeSet([SCOPE_SUBSCRIPTION, SUB_TWO_PATH, SCOPE_DIRECTORY]);
+    const { filterStates } = await read(withSet(hash), accessAt(SCOPE_SUBSCRIPTION));
+    expect(filterStates.scope).toEqual([{ value: SCOPE_SUBSCRIPTION, access: 'held', label: 'Subscription one' }]);
+    expect(filterStates.scopeHidden).toEqual({ outside: 2, outsideNarrowed: 0 });
+    expect(JSON.stringify(filterStates)).not.toContain(SUB_TWO);
+  });
+
+  it('counts a pick held in part that the viewer may not read the name of, and does not send its path', async () => {
+    const { hash } = await createScopeSet([SCOPE_MANAGEMENT_GROUP]);
+    const { filterStates } = await read(withSet(hash), accessAt(SCOPE_SUBSCRIPTION));
+    expect(filterStates.scope).toEqual([]);
+    expect(filterStates.scopeHidden).toEqual({ outside: 0, outsideNarrowed: 1 });
+    expect(await listed(withSet(hash), accessAt(SCOPE_SUBSCRIPTION))).toEqual(await listed({ ...emptyView(), scope: [SCOPE_MANAGEMENT_GROUP] }, accessAt(SCOPE_SUBSCRIPTION)));
+  });
+
+  it('applies a subscription held in part as the part held, the same as the pick written inline', async () => {
+    const { hash } = await createScopeSet([SCOPE_SUBSCRIPTION]);
+    const access = accessAt(SCOPE_RESOURCE_GROUP);
+    const inline = await listed({ ...emptyView(), scope: [SCOPE_SUBSCRIPTION] }, access);
+    expect(inline.length).toBeGreaterThan(0);
+    expect(await listed(withSet(hash), access)).toEqual(inline);
+    expect((await read(withSet(hash), access)).filterStates.scope).toEqual([{ value: SCOPE_SUBSCRIPTION, access: 'narrowed', label: 'Subscription one' }]);
   });
 
   it('is the same set whatever the case of the hash in the address', async () => {
@@ -88,6 +111,7 @@ describe('a Scope set the server cannot open is an unresolved Scope filter', () 
     expect(response.total).toBe(0);
     expect(response.filterStates.scopeUnresolved).toBe(true);
     expect(response.filterStates.scope).toEqual([]);
+    expect(response.filterStates.scopeHidden).toEqual({ outside: 0, outsideNarrowed: 0 });
   });
 
   it('is unresolved for a hash that is a well-formed sha256 no row holds', async () => {

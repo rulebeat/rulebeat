@@ -3,11 +3,13 @@ import { requireRole } from '@/lib/api-auth';
 import { parseCappedJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { createScopeSet } from '@/lib/db/scope-sets';
-import { SCOPE_SET_MAX_BODY_BYTES, SCOPE_SET_MAX_PATHS, checkScopeSetShape, pathsOutsideAccess } from '@/lib/scope-sets';
+import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
+import { SCOPE_SET_MAX_BODY_BYTES, SCOPE_SET_MAX_PATHS, checkScopeSetShape, pathsHeldInNoPart } from '@/lib/scope-sets';
 
 /**
  * Turns a Scope list too long for an address into the hash it travels as (ADR 0016). The server checks
- * every path, takes only what the caller holds (Everything may send any) and computes the hash itself.
+ * every path, takes only what the caller holds, in whole or in part (Everything may send any), and computes the
+ * hash itself.
  * Nothing is changed for anyone else and the row is immutable, so there is no audit entry.
  */
 export async function POST(req: Request) {
@@ -24,7 +26,8 @@ export async function POST(req: Request) {
         : 'Send paths as a list of management group, subscription, resource group or Directory paths.',
     }, { status: 400 });
   }
-  if (pathsOutsideAccess(actor.access, shape.paths).length > 0) {
+  const nodes = actor.access.everything ? [] : await listHierarchyNodes();
+  if (pathsHeldInNoPart(actor.access, shape.paths, nodes).length > 0) {
     return Response.json({ error: 'A path in the list is outside the Scopes you hold.' }, { status: 400 });
   }
 

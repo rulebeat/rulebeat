@@ -1239,7 +1239,7 @@ const SCOPE_SET_EXPECTED: Matrix['expected'] = {
   'Editor on Everything': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_BOTH, malformed: SCOPE_SET_SHAPE }),
   'Viewer on the management group': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_BOTH, malformed: SCOPE_SET_SHAPE }),
   'Viewer on one subscription': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
-  'Viewer on one resource group': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
+  'Viewer on one resource group': same({ one: SCOPE_SET_ONE, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
   'Directory only': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
   'No Scope': same({ one: SCOPE_SET_HELD, both: SCOPE_SET_HELD, malformed: SCOPE_SET_SHAPE }),
 };

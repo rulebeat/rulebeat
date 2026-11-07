@@ -723,7 +723,7 @@ export function FindingsExplorerClient({
     // A set the server cannot open is one chip that says so, and a set it opened is chips of its picks.
     const scopeChipList: FilterChip[] = filterStates?.scopeUnresolved
       ? [{ field: 'scope', value: scopeSet ?? '', fieldLabel: 'Scope', valueLabel: UNRESOLVED_SCOPE_LABEL, remove: () => { void changeScope([]); } }]
-      : scopeChips(filterStates?.scope ?? [], scopeListing).map(chip => ({
+      : scopeChips(filterStates?.scope ?? [], scopeListing, filterStates?.scopeHidden).map(chip => ({
         field: 'scope', value: chip.key, fieldLabel: chip.key.startsWith('outside') ? '' : 'Scope', valueLabel: chip.label,
         remove: () => { void changeScope(dropValues(scopePicks, chip.values) ?? []); },
       }));

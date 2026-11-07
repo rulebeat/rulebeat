@@ -61,6 +61,13 @@ describe('scopeChips', () => {
   it('is empty without picks', () => {
     expect(scopeChips([])).toEqual([]);
   });
+
+  it('counts picks the server hid with the ones it named as outside, and never names them', () => {
+    const chips = scopeChips([pick('/o', 'outside'), pick('/a', 'held', 'Sub A')], undefined, { outside: 2, outsideNarrowed: 1 });
+    expect(chips.map(c => c.label)).toEqual(['Sub A', '3 Scopes outside your access', '1 Scope outside your access, narrowed to what you hold']);
+    expect(chips[1]!.values).toEqual(['/o']);
+    expect(scopeChips([], undefined, { outside: 1, outsideNarrowed: 0 }).map(c => c.label)).toEqual(['1 Scope outside your access']);
+  });
 });
 
 describe('source and marks', () => {
@@ -112,6 +119,12 @@ describe('dimensionMatchingNothing', () => {
   it('names the Scope filter when every pick is outside the Access, or the set could not be opened', () => {
     expect(dimensionMatchingNothing(states({ scope: [pick('/a', 'outside'), pick('/b', 'outside')] }), 0)).toBe('scope-outside');
     expect(dimensionMatchingNothing(states({ scopeUnresolved: true }), 0)).toBe('scope-unresolved');
+  });
+
+  it('names it when the picks left are all hidden ones outside the Access, but not while a hidden one is held in part', () => {
+    expect(dimensionMatchingNothing(states({ scopeHidden: { outside: 2, outsideNarrowed: 0 } }), 0)).toBe('scope-outside');
+    expect(dimensionMatchingNothing(states({ scopeHidden: { outside: 2, outsideNarrowed: 1 } }), 0)).toBeNull();
+    expect(dimensionMatchingNothing(states({ scope: [pick('/b', 'held', 'B')], scopeHidden: { outside: 2, outsideNarrowed: 0 } }), 0)).toBeNull();
   });
 
   it('does not, while any pick has a held part', () => {
