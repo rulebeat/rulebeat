@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Run History keeps the newest scan for each scope it covered.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

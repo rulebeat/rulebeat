@@ -7,7 +7,7 @@ import { chunk } from './db/chunk';
 import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
 import { accessReach, wholeSubscriptionIds, type Access } from './access-model';
-import { EVERYTHING_COVERED, type CoveredEntry } from './run-scope';
+import { EVERYTHING_COVERED, coveredScopeKey, type CoveredEntry } from './run-scope';
 import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './covered-scope-view';
 import { recountScans } from './db/run-recount';
 
@@ -160,14 +160,30 @@ export async function saveScanResult(
 
 // --- helpers ---
 
+/**
+ * Keeps a category's newest scans up to the history limit, and beyond it the newest finished scan for
+ * each distinct Scope the category's scans covered (a null Scope is Everything), so a Scope that is
+ * scanned less often than the rest never reads Unknown because its only scan was pruned. The extra
+ * rows are bounded by the number of distinct covered Scopes.
+ */
 async function pruneOldScans(module: string): Promise<void> {
   const rows = await many(db
-    .select({ id: scansTable.id })
+    .select({ id: scansTable.id, coveredScope: scansTable.coveredScope })
     .from(scansTable)
     .where(eq(scansTable.module, module))
     .orderBy(desc(scansTable.startedAt)));
 
-  const expired = rows.slice(SCAN_HISTORY_LIMIT).map(row => row.id);
+  // Newest first, so the first scan seen for a Scope is that Scope's newest.
+  const seenScopes = new Set<string>();
+  const protectedIds = new Set<string>();
+  for (const row of rows) {
+    const key = coveredScopeKey(parseCoveredScope(row.coveredScope));
+    if (seenScopes.has(key)) continue;
+    seenScopes.add(key);
+    protectedIds.add(row.id);
+  }
+
+  const expired = rows.slice(SCAN_HISTORY_LIMIT).map(row => row.id).filter(id => !protectedIds.has(id));
   if (expired.length === 0) return;
 
   // A scan goes with its records, in one transaction: one statement for each table, or one per
