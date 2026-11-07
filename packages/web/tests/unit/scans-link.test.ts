@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildScansHref, parseCategoryParam } from '@/lib/scans-link';
+import { viewFromSearchParams } from '@/lib/finding-view';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 
 function widgetFilters(overrides: Partial<WidgetFilters> = {}): WidgetFilters {
@@ -36,6 +37,26 @@ describe('buildScansHref · category param', () => {
     // overriding to its own single category regardless of how the dashboard filter bar is set.
     const href = buildScansHref(widgetFilters({ categories: ['security', 'cost'] }), { category: 'identity' });
     expect(new URLSearchParams(href.split('?')[1]).get('category')).toBe('identity');
+  });
+});
+
+describe('buildScansHref · placements override', () => {
+  const params = (href: string) => new URLSearchParams(href.split('?')[1]);
+
+  it('writes the generic f= param, with the values joined by a pipe', () => {
+    const href = buildScansHref(widgetFilters(), { placements: ['directory', 'management-group'] });
+    expect(params(href).getAll('f')).toEqual(['placement=directory|management-group']);
+    expect(params(href).has('placement')).toBe(false);
+  });
+
+  it('writes nothing when no placement is given', () => {
+    expect(params(buildScansHref(widgetFilters())).has('f')).toBe(false);
+    expect(params(buildScansHref(widgetFilters(), { placements: [] })).has('f')).toBe(false);
+  });
+
+  it('opens a view that filters on the same placements', () => {
+    const view = viewFromSearchParams(params(buildScansHref(widgetFilters(), { placements: ['workspace'] })));
+    expect(view.filters).toEqual([{ field: 'placement', values: ['workspace'] }]);
   });
 });
 

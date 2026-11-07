@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  GENERIC_FIELDS, applyView, classifyValue, clearFilter, columnCell, emptyView, fieldOptions, filterFindings, findingSubject, rowFieldOptions, rowLeafPaths,
+  GENERIC_FIELDS, applyGroupedView, applyView, classifyValue, clearFilter, columnCell, emptyView, fieldOptions, filterFindings, findingSubject, rowFieldOptions, rowLeafPaths,
   toggleFilterValue, viewFromSearchParams, viewToSearchParams,
   type View, type ViewFinding, type ViewFilter,
 } from '@/lib/finding-view';
@@ -89,6 +89,41 @@ describe('built-in filters', () => {
   it('searches resource, rule, type and resource id', () => {
     expect(shown(all, view({ search: 'storageaccounts' }))).toEqual(['vm2']);
     expect(shown(all, view({ search: 'RULE A' }))).toEqual(['vm1', 'vm3']);
+  });
+});
+
+describe('placement', () => {
+  const vm = f('vm', { placement: 'resource' });
+  const sub = f('sub', { placement: 'subscription' });
+  const mg = f('mg', { placement: 'management-group', subscriptionId: '' });
+  const dir = f('dir', { placement: 'directory', subscriptionId: '' });
+  const lost = f('lost', { placement: 'unplaceable', subscriptionId: '' });
+  const all = [vm, sub, mg, dir, lost];
+  const by = (...values: string[]) => shown(all, view({ filters: [{ field: 'placement', values }], sort: { field: 'resourceName', dir: 'asc' } }));
+
+  it('filters on where a finding is placed', () => {
+    expect(by('subscription')).toEqual(['sub']);
+    expect(by('directory', 'unplaceable')).toEqual(['dir', 'lost']);
+  });
+
+  it('counts the values as facet options', () => {
+    expect(fieldOptions(all, 'placement')).toEqual([
+      { value: 'directory', count: 1 }, { value: 'management-group', count: 1 }, { value: 'resource', count: 1 },
+      { value: 'subscription', count: 1 }, { value: 'unplaceable', count: 1 },
+    ]);
+  });
+
+  it('puts a finding with no placement in no group', () => {
+    const unplaced = f('old');
+    const page = applyGroupedView([vm, unplaced], view({ groupBy: ['placement'] }));
+    expect(page.groups.map(g => [g.value, g.findingCount])).toEqual([['resource', 1], [null, 1]]);
+  });
+
+  it('travels as the generic f= param, with no short param of its own', () => {
+    const v = view({ filters: [{ field: 'placement', values: ['resource', 'directory'] }] });
+    expect(viewToSearchParams(v).getAll('f')).toEqual(['placement=resource|directory']);
+    expect(viewFromSearchParams(new URLSearchParams('f=placement=resource|directory'))).toEqual(v);
+    expect(GENERIC_FIELDS).toContain('placement');
   });
 });
 
@@ -363,6 +398,7 @@ describe('the URL', () => {
       { field: 'resourceName', values: ['vm|1', 'a=b,c'] }, { field: 'tags', values: ['retirement'] },
       { field: 'firstSeen', values: ['2026-10-06'] }, { field: 'lastSeen', values: ['2026-10-07'] },
     ] }),
+    view({ filters: [{ field: 'placement', values: ['resource', 'management-group', 'unplaceable'] }], groupBy: ['placement'] }),
     view({ filters: [
       { field: 'row.feature', values: ['Basic IP', 'Old|API', 'a~b'] },
       { field: 'row.properties.sku', values: ['ba se'] },

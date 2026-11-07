@@ -24,7 +24,7 @@ import { useResizableColumns, ColumnResizeHandle } from '@/lib/hooks/use-resizab
 import { cn } from '@/lib/utils';
 import { resolveDateWindow, dateWindowLabel, type DateWindow } from '@/lib/date-window';
 import { toggleInSet } from '@/lib/toggle-set';
-import { subscriptionText } from '@/lib/placement';
+import { placementValueLabel, subscriptionText } from '@/lib/placement';
 import { Segmented, type SegmentedOption } from '@/components/ui/segmented';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import {
@@ -129,6 +129,7 @@ const FIELD_LABEL: Record<BuiltinField, string> = {
   rule: 'Rule', kind: 'Kind', category: 'Category', severity: 'Severity', status: 'Status',
   subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
   resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
+  placement: 'Placed at',
 };
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
 
@@ -604,6 +605,7 @@ export function FindingsExplorerClient({
       case 'category': return categories.find(c => c.id === value)?.label ?? value;
       case 'subscription': return subNames[value] ?? value;
       case 'kind': return KIND_LABEL[value] ?? value;
+      case 'placement': return placementValueLabel(value);
       case 'firstSeen':
       case 'lastSeen': return dayKeyLabel(value);
       default: return value;
