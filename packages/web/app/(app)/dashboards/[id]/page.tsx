@@ -6,7 +6,7 @@ import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
-import { markDashboardConfig } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem, isOwnItem } from '@/lib/item-access-model';
 import { DashboardGridClient } from './dashboard-grid-client';
 
@@ -22,8 +22,10 @@ export default async function DashboardPage({ params }: Props) {
   const dashboard = await getDashboard(id);
   // Someone else's Personal dashboard is a 404 like an unknown id, an Admin included.
   if (!dashboard || !canOpenItem({ id: user?.id ?? '' }, dashboard)) notFound();
-  const dashboards = openableItems({ id: user?.id ?? '' }, await listDashboards());
   const access = user ? await resolveAccess(user) : NO_ACCESS;
+  // The page reaches the browser, so what it holds is trimmed the way the API's answer is.
+  const dashboards = await holdBackDashboards(access, openableItems({ id: user?.id ?? '' }, await listDashboards()));
+  const held = dashboards.find(d => d.id === dashboard.id);
   const permissions = itemPermissionsFor(access, 'dashboard');
   const ownsPersonal = dashboard.visibility === 'personal' && isOwnItem({ id: user?.id ?? '' }, dashboard);
 
@@ -38,8 +40,7 @@ export default async function DashboardPage({ params }: Props) {
           {holdsNoScope(access) && !ownsPersonal
             ? <NoAccessState />
             : <DashboardGridClient
-                dashboard={dashboard}
-                outsideAccess={markDashboardConfig(access, dashboard.config)}
+                dashboard={held ?? { ...dashboard, heldBack: [] }}
                 canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
                 canSetDefault={permissions.manage}
               />}

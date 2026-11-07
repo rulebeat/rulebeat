@@ -33,7 +33,7 @@ import type { WriteControls } from '@/lib/write-controls';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { Category, Rule, Severity, Suppression } from '@/lib/types';
 import type { View } from '@/lib/finding-view';
-import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
 import { OwnUrlWrites } from '@/lib/own-url-writes';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
@@ -185,7 +185,7 @@ export function ScansClient({
     currentUserId: savedViewAccess?.userId ?? '',
     permissions: viewPermissions,
     openId: initialSavedViewId ?? null,
-    onOpen: (saved: SavedView) => {
+    onOpen: (saved: HeldBackSavedView) => {
       ownWrites.forget();
       router.push(savedViewHref(saved));
     },

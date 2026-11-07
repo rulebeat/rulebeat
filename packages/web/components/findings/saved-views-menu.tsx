@@ -11,7 +11,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
-import { MAX_SAVED_VIEW_NAME_LENGTH, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
+import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
+import type { HeldBack } from '@/lib/held-back';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import { mayChangeItemWith, ownerLabel, sectionsOf, type ItemPermissions } from '@/lib/item-access-model';
 
@@ -28,23 +29,25 @@ interface SavedViewsMenuProps {
    *  open view is gone. */
   onOpenIdChange: (id: string | null) => void;
   /** Opens a saved view. */
-  onOpen: (view: SavedView) => void;
+  onOpen: (view: HeldBackSavedView) => void;
+  /** Told which of the open view's stored values are held back from this person, or none when no view is open. */
+  onHeldBackChange?: (heldBack: HeldBack[]) => void;
   /** The explorer's current View as the query a saved view stores. */
   currentQuery: string;
 }
 
 /** What the dialog is for. */
 type ViewAction = 'save' | 'update' | 'rename' | 'delete';
-interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: SavedView[] }
+interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: HeldBackSavedView[] }
 
-export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpenIdChange, onOpen, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
 
   useEffect(() => {
     let live = true;
-    fetchJson<SavedView[]>('/api/views').then(result => {
+    fetchJson<HeldBackSavedView[]>('/api/views').then(result => {
       if (!live) return;
       setState(prev => (result.ok ? { status: 'ready', views: result.data } : { status: 'error', views: prev.views }));
     });
@@ -55,6 +58,9 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
   const open = views.find(v => v.id === openId) ?? null;
   const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, views);
   const canChangeOpen = open !== null && mayChangeItemWith({ id: currentUserId }, permissions, open);
+
+  const openHeldBack = open?.heldBack;
+  useEffect(() => { onHeldBackChange?.(openHeldBack ?? []); }, [openHeldBack, onHeldBackChange]);
 
   // A view someone else deleted, or a stale link, leaves nothing to update or rename.
   useEffect(() => {
@@ -175,7 +181,7 @@ const COPY: Record<ViewAction, { title: string; confirm: string; busy: string }>
 };
 
 /** One saved view in the list: a check where it is open, its name, and a quiet tag on the right. */
-function ViewItem({ view, openId, onOpen, tag }: { view: SavedView; openId: string | null; onOpen: (view: SavedView) => void; tag: string }) {
+function ViewItem({ view, openId, onOpen, tag }: { view: HeldBackSavedView; openId: string | null; onOpen: (view: HeldBackSavedView) => void; tag: string }) {
   return (
     <DropdownMenuItem onClick={() => onOpen(view)}>
       <span className="flex size-3.5 shrink-0 items-center justify-center">

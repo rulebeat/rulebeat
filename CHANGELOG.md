@@ -16,6 +16,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - A Personal name is unique among your own Personal dashboards (or saved views) and nobody else's are checked. Renaming a Shared item checks Shared names across the install. Creating, renaming and deleting a Personal item is audited by id and kind, with no name.
 - An Editor who holds only part of the install can now change the Shared dashboards and saved views they own. Changing anyone else's still needs an Admin or an Editor on Everything.
 - The upgrade records an owner, a visibility (Personal or Shared) and a revision on every dashboard and saved view, and a My default on every person. Every existing item stays Shared, a saved view is owned by its creator while that person still exists, a dashboard has no owner, and the current default stays the install default. Nothing you see changes yet.
+- A dashboard or saved view no longer sends a stored subscription, resource group, resource name or returned-column value outside your Access to your browser. It comes back without those values and with a count for each place, and the dashboard filter bar, the widget editor and the Scans filter bar show a soft "N outside your access" chip (or "Outside your access" when every value in a filter is held back) in their place. A widget filtered only to values you cannot see says so instead of drawing a number. People who hold Everything see every value as before.
 
 ## [0.13.1] - 2026-10-16
 

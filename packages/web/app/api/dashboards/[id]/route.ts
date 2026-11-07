@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import type { DashboardConfig } from '@/lib/types';
@@ -15,7 +15,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const d = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', d, 'open');
   if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(markedDashboard(actor.access, d));
+  const [held] = await holdBackDashboards(actor.access, [d]);
+  return Response.json(held);
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,7 +42,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
     // isDefault-only request: return the (now-updated) dashboard without touching other fields.
     const updated = await getDashboard(id);
-    return Response.json(updated && markedDashboard(actor.access, updated));
+    return Response.json(updated && (await holdBackDashboards(actor.access, [updated]))[0]);
   }
 
   const result = await updateDashboard(id, body);
@@ -70,7 +71,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  return Response.json(markedDashboard(actor.access, result.dashboard));
+  const [held] = await holdBackDashboards(actor.access, [result.dashboard]);
+  return Response.json(held);
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

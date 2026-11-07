@@ -1,8 +1,9 @@
 import { Header } from '@/components/layout/header';
 import { listDashboards } from '@/lib/db/dashboards';
 import { getCurrentUser } from '@/lib/api-auth';
-import { redirect } from 'next/navigation';
 import { resolveAccess } from '@/lib/access';
+import { holdBackDashboards } from '@/lib/db/held-back';
+import { redirect } from 'next/navigation';
 import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
 import { DashboardsGallery } from './dashboards-gallery';
 
@@ -12,8 +13,9 @@ export default async function DashboardsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
 
-  const dashboards = openableItems(user, await listDashboards());
-  const permissions = itemPermissionsFor(await resolveAccess(user), 'dashboard');
+  const access = await resolveAccess(user);
+  const dashboards = await holdBackDashboards(access, openableItems(user, await listDashboards()));
+  const permissions = itemPermissionsFor(access, 'dashboard');
 
   return (
     <>
