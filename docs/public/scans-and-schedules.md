@@ -134,6 +134,17 @@ and Unshare are logged as `view.share` and `view.unshare`, the unshare with the 
 Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
 longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+Hand over gives a Shared view to another person, chosen from a list of names and emails only. The list
+holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server
+checks the choice again and refuses anyone else with "That person cannot take this over. Choose someone
+else." The owner can hand over their own view. An Admin, or an Editor on Everything, can hand over any
+Shared view, one with no owner included, to an eligible person, and can take over any Shared view with
+Take over. Both act only on Shared views, never on a Personal one. The view stays Shared and keeps its
+search text under the new owner, nobody is notified, and both check the names of Shared views across the
+install. A hand-over or take-over the view's current state no longer allows answers 409 and asks for a
+reload. They are logged as `view.hand_over`, naming both people by display name, else email, and
+`view.take_over`.
+
 A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved

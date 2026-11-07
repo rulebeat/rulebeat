@@ -71,6 +71,34 @@ describe('guardItem', () => {
     'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
     'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
   };
+  // Handing over: `*:write` on your own item or `*:manage` on any; taking over: `*:manage` alone. Whether the item is
+  // Shared is the write's check, so a Personal item of your own passes the guard and is refused there with a 409.
+  const HAND_OVER: Record<string, Record<string, number | null>> = {
+    'Viewer': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'scoped Editor': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+  };
+  const TAKE_OVER: Record<string, Record<string, number | null>> = {
+    'Viewer': HAND_OVER['Viewer']!,
+    'scoped Editor': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': HAND_OVER['Editor on Everything']!,
+    'Admin': HAND_OVER['Admin']!,
+    'person with no Scope': HAND_OVER['person with no Scope']!,
+  };
+  for (const kind of ['dashboard', 'view'] as ItemKind[]) {
+    for (const [person, actor] of Object.entries(PEOPLE)) {
+      for (const [label, item] of Object.entries(ITEMS)) {
+        it(`${kind}: ${person} handing over ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'hand-over')?.status ?? null).toBe(HAND_OVER[person]![label]);
+        });
+        it(`${kind}: ${person} taking over ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'take-over')?.status ?? null).toBe(TAKE_OVER[person]![label]);
+        });
+      }
+    }
+  }
   for (const kind of ['dashboard', 'view'] as ItemKind[]) {
     for (const [person, actor] of Object.entries(PEOPLE)) {
       for (const [label, item] of Object.entries(ITEMS)) {

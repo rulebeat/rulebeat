@@ -55,6 +55,19 @@ export function mayChangeVisibility(actor: { id: string; access: Access }, kind:
   return intent === 'share' ? ownsAndMayWrite : ownsAndMayWrite || mayAct(actor.access, actions.manage);
 }
 
+/**
+ * May the person hand a Shared item to someone else, or take it over. Handing over is the owner's call
+ * (`*:write` on their own item) or anyone's who manages Shared items (`*:manage`), an item with no owner
+ * included. Taking over is for `*:manage` alone. Whether the item is Shared is the state the write checks:
+ * a Personal item is refused there with a 409, so a page that went stale gets the reload message.
+ */
+export function mayTransferItem(actor: { id: string; access: Access }, kind: ItemKind, item: OwnedItem, intent: 'hand-over' | 'take-over'): boolean {
+  if (!canOpenItem(actor, item)) return false;
+  const actions = ACTIONS[kind];
+  const ownsAndMayWrite = isOwnItem(actor, item) && mayAct(actor.access, actions.write);
+  return intent === 'hand-over' ? ownsAndMayWrite || mayAct(actor.access, actions.manage) : mayAct(actor.access, actions.manage);
+}
+
 /** What a Shared item's owner is told when their access no longer lets them change it. */
 export const DEMOTED_OWNER_NOTE = 'Your access no longer lets you change Shared items. Duplicate it, or ask an Admin to take it over.';
 

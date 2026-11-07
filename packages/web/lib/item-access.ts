@@ -12,7 +12,7 @@
  */
 import { NextResponse } from 'next/server';
 import type { Access } from '@/lib/access-model';
-import { canOpenItem, mayChangeItem, mayChangeVisibility, type ItemKind, type OwnedItem } from '@/lib/item-access-model';
+import { canOpenItem, mayChangeItem, mayChangeVisibility, mayTransferItem, type ItemKind, type OwnedItem } from '@/lib/item-access-model';
 
 export { canOpenItem, openableItems, type ItemKind, type OwnedItem } from '@/lib/item-access-model';
 
@@ -24,11 +24,14 @@ export const itemNotFound = (): NextResponse => NextResponse.json({ error: 'Not 
 /**
  * Null when the person may do `intent` to `item`, else the response to return. A missing item is a 404
  * like someone else's Personal one; an item the person may open but not do that to is a 403. `share` and
- * `unshare` change who sees the item, not its content (`mayChangeVisibility`).
+ * `unshare` change who sees the item, not its content (`mayChangeVisibility`); `hand-over` and `take-over` change
+ * who owns it (`mayTransferItem`).
  */
-export function guardItem(actor: ItemActor, kind: ItemKind, item: OwnedItem | null, intent: 'open' | 'change' | 'share' | 'unshare'): NextResponse | null {
+export function guardItem(actor: ItemActor, kind: ItemKind, item: OwnedItem | null, intent: 'open' | 'change' | 'share' | 'unshare' | 'hand-over' | 'take-over'): NextResponse | null {
   if (!item || !canOpenItem(actor, item)) return itemNotFound();
   if (intent === 'open') return null;
-  const allowed = intent === 'change' ? mayChangeItem(actor, kind, item) : mayChangeVisibility(actor, kind, item, intent);
+  const allowed = intent === 'change' ? mayChangeItem(actor, kind, item)
+    : intent === 'share' || intent === 'unshare' ? mayChangeVisibility(actor, kind, item, intent)
+    : mayTransferItem(actor, kind, item, intent);
   return allowed ? null : NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 }
