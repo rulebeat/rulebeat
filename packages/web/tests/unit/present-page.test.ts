@@ -150,6 +150,18 @@ describe('who may present', () => {
     expect((client?.props.dashboard as { id: string }).id).toBe(dashboard.id);
   });
 
+  // Blocked by the sharing ticket (owners, visibility, the Personal 404): a dashboard has no owner yet, so
+  // getOpenableDashboard cannot refuse anyone and nothing here can mark a dashboard Personal. The test
+  // states the outcome that ticket must deliver; remove the marker when it lands and mark the dashboard
+  // Personal to its owner where the comment says.
+  it.fails('answers 404 for another person\'s Personal dashboard', async () => {
+    const dashboard = await makeDashboard('Mine');
+    await signInAs('editor', 'owner@example.com');
+    // Sharing: make `dashboard` Personal to the editor above.
+    await signInAs('admin', 'other@example.com');
+    expect(await outcome(() => present(dashboard.id))).toBe('404');
+  });
+
   it('is the same decision for a Viewer as for the ordinary page', async () => {
     const dashboard = await makeDashboard();
     await signInAs('viewer');
@@ -164,6 +176,20 @@ describe('what the page hands its client', () => {
     const page = await present(dashboard.id, { severities: 'high', refresh: '30s' });
     const client = findElement(page, 'PresentGrid');
     expect(client?.props.filters).toMatchObject({ categories: ['security'], severities: ['high'] });
+  });
+
+  it('hands Exit every URL filter as it came, repeated ones included, and not ?refresh=', async () => {
+    const dashboard = await makeDashboard();
+    await signInAs('admin');
+    const page = await present(dashboard.id, { severities: ['high', 'low'], window: '30', refresh: '30s' });
+    expect(findElement(page, 'PresentFrame')?.props.exitHref).toBe(`/dashboards/${dashboard.id}?severities=high&severities=low&window=30`);
+  });
+
+  it('hands Exit the plain dashboard address when the URL has no filters', async () => {
+    const dashboard = await makeDashboard();
+    await signInAs('admin');
+    const page = await present(dashboard.id, { refresh: '30s' });
+    expect(findElement(page, 'PresentFrame')?.props.exitHref).toBe(`/dashboards/${dashboard.id}`);
   });
 
   it('writes no audit entry', async () => {

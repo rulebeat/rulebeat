@@ -101,8 +101,9 @@ export function offersFullScreen(doc: FullScreenState): boolean {
  */
 export function escapeAction(
   event: { key: string; defaultPrevented?: boolean },
-  doc: Pick<FullScreenState, 'fullscreenElement'>,
+  doc: { fullscreenElement?: Element | null },
 ): 'exit' | 'none' {
   if (event.key !== 'Escape' || event.defaultPrevented) return 'none';
-  return doc.fullscreenElement === null ? 'exit' : 'none';
+  // Not `=== null`: a browser without the unprefixed Fullscreen API reports `undefined`, and is never in it.
+  return doc.fullscreenElement ? 'none' : 'exit';
 }

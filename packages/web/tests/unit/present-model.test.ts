@@ -131,6 +131,10 @@ describe('escapeAction', () => {
     expect(escapeAction({ key: 'Escape' }, { fullscreenElement: {} as Element })).toBe('none');
   });
 
+  it('leaves Present on Esc where the browser has no Fullscreen API (the element is undefined)', () => {
+    expect(escapeAction({ key: 'Escape' }, { fullscreenElement: undefined })).toBe('exit');
+  });
+
   it('ignores every other key and an Esc something else already handled', () => {
     expect(escapeAction({ key: 'Enter' }, { fullscreenElement: null })).toBe('none');
     expect(escapeAction({ key: 'Escape', defaultPrevented: true }, { fullscreenElement: null })).toBe('none');
