@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LayoutDashboard, Plus, Clock, Star, MoreHorizontal, Copy, Trash2, RotateCcw, Share2, Undo2 } from 'lucide-react';
+import { LayoutDashboard, Plus, Clock, Star, MoreHorizontal, Copy, Trash2, RotateCcw, Share2, Undo2, UserRoundCog, UserRoundCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,10 +13,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { NewDashboardDialog } from '@/components/dashboard/new-dashboard-dialog';
 import {
-  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, ownerLabel, sectionsOf, type ItemPermissions,
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 import type { Dashboard } from '@/lib/types';
 
 interface Props {
@@ -34,6 +35,7 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   const [showDialog, setShowDialog] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transfer, setTransfer] = useState<{ dashboard: Dashboard; mode: 'hand-over' | 'take-over' } | null>(null);
 
   function refreshList() {
     fetch('/api/dashboards')
@@ -140,6 +142,7 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
     const canSetDefault = permissions.manage && d.visibility === 'shared' && !d.isDefault;
     const canShare = d.visibility === 'personal' && isOwnItem(actor, d);
     const canUnshare = mayChangeVisibilityWith(actor, permissions, d, 'unshare');
+    const { handOver: canHandOver, takeOver: canTakeOver } = transferControlsWith(actor, permissions, d);
     return (
       <Card key={d.id} className="relative h-full overflow-visible transition-colors hover:border-ink">
         <Link href={`/dashboards/${d.id}`} className="absolute inset-0 z-0 cursor-pointer" aria-label={d.name} />
@@ -190,6 +193,16 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
                   {canUnshare && (
                     <DropdownMenuItem onClick={() => void handleVisibility(d, 'unshare')}>
                       <Undo2 />Unshare
+                    </DropdownMenuItem>
+                  )}
+                  {canHandOver && (
+                    <DropdownMenuItem onClick={() => setTransfer({ dashboard: d, mode: 'hand-over' })}>
+                      <UserRoundCog />Hand over
+                    </DropdownMenuItem>
+                  )}
+                  {canTakeOver && (
+                    <DropdownMenuItem onClick={() => setTransfer({ dashboard: d, mode: 'take-over' })}>
+                      <UserRoundCheck />Take over
                     </DropdownMenuItem>
                   )}
                   {canChange && (
@@ -280,6 +293,20 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
             )}
           </section>
         </>
+      )}
+
+      {transfer && (
+        <ItemTransferDialog
+          kind="dashboard"
+          mode={transfer.mode}
+          id={transfer.dashboard.id}
+          name={transfer.dashboard.name}
+          onClose={() => setTransfer(null)}
+          onDone={() => {
+            refreshList();
+            router.refresh(); // the sidebar and the other tabs read the list from the server
+          }}
+        />
       )}
 
       {showDialog && (

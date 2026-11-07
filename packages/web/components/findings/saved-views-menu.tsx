@@ -14,11 +14,12 @@ import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
-  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, type ItemPermissions,
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { SHARE_REASON } from '@/lib/write-controls';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 
 interface SavedViewsMenuProps {
   /** Which tab the explorer is on: only that tab's views are listed, and a new view opens there. */
@@ -48,6 +49,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
+  const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -67,6 +69,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const canShareOpen = open !== null && open.visibility === 'personal' && isOwnItem(actor, open);
   const canUnshareOpen = open !== null && mayChangeVisibilityWith(actor, permissions, open, 'unshare');
   const demotedOpen = open !== null && isDemotedOwner(actor, permissions, open);
+  const { handOver: canHandOverOpen, takeOver: canTakeOverOpen } = open ? transferControlsWith(actor, permissions, open) : { handOver: false, takeOver: false };
 
   // A view someone else deleted, or a stale link, leaves nothing to update or rename.
   useEffect(() => {
@@ -158,7 +161,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
               </>
             )}
           </DropdownMenuGroup>
-          {(permissions.personal || canChangeOpen || canShareOpen || canUnshareOpen || demotedOpen) && (
+          {(permissions.personal || canChangeOpen || canShareOpen || canUnshareOpen || canHandOverOpen || canTakeOverOpen || demotedOpen) && (
             <>
               <DropdownMenuSeparator />
               {permissions.personal && <DropdownMenuItem onClick={() => setAction('save')}>Save current view</DropdownMenuItem>}
@@ -176,11 +179,24 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
                 <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
               )}
               {canUnshareOpen && <DropdownMenuItem onClick={() => setAction('unshare')}>Unshare</DropdownMenuItem>}
+              {canHandOverOpen && <DropdownMenuItem onClick={() => setTransfer('hand-over')}>Hand over</DropdownMenuItem>}
+              {canTakeOverOpen && <DropdownMenuItem onClick={() => setTransfer('take-over')}>Take over</DropdownMenuItem>}
               {demotedOpen && <p className="px-3 py-1.5 text-xs text-ink-2">{DEMOTED_OWNER_NOTE}</p>}
             </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {transfer && open && (
+        <ItemTransferDialog
+          kind="view"
+          mode={transfer}
+          id={open.id}
+          name={open.name}
+          onClose={() => setTransfer(null)}
+          onDone={() => setReloadKey(k => k + 1)}
+        />
+      )}
 
       {action && (
         <ViewDialog

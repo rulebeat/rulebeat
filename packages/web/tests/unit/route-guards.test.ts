@@ -171,12 +171,20 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     // and guardItem() asks `*:write` for the owner's own item or `*:manage` to unshare anyone else's.
     ['dashboards/[id]/share/route.ts', 'dashboards:personal'],
     ['dashboards/[id]/unshare/route.ts', 'dashboards:personal'],
+    // Handing over and taking over change who owns a Shared item: they get in on the Personal action too, and
+    // guardItem() asks `*:write` for the owner's hand-over, `*:manage` for anyone else's and for every take-over.
+    ['dashboards/[id]/hand-over/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/hand-over-candidates/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/take-over/route.ts', 'dashboards:personal'],
     ['views/route.ts', 'read'],
     ['views/route.ts', 'views:personal'],
     ['views/[id]/route.ts', 'read'],
     ['views/[id]/route.ts', 'views:personal'],
     ['views/[id]/share/route.ts', 'views:personal'],
     ['views/[id]/unshare/route.ts', 'views:personal'],
+    ['views/[id]/hand-over/route.ts', 'views:personal'],
+    ['views/[id]/hand-over-candidates/route.ts', 'views:personal'],
+    ['views/[id]/take-over/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],
