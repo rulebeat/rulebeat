@@ -86,7 +86,8 @@ _Avoid_: result (ambiguous), record, evidence
 What a rule's results mean: a Problem rule, an Activity rule or an Advisory rule. Kind is separate
 from severity, category and query backend. A Logs rule is always an Activity rule. A custom rule
 is a Problem rule unless someone sets it to Advisory, and it can be switched back. A built-in
-rule's kind is set by RuleBeat with its version and cannot be changed on an install.
+rule's kind is set by RuleBeat with its version and cannot be changed on an install. A dashboard
+number counts one kind: it never adds problems, advisories and activity into one figure.
 _Avoid_: rule type (that is builtin, community or custom), mode
 
 **Problem rule**:
@@ -106,6 +107,29 @@ keeps a severity. It differs from a problem only in what it counts toward, never
 stored, shown or grouped.
 _Avoid_: notice, recommendation (that is what Azure Advisor calls its own rows), info finding
 
+**Checked**:
+A rule that is passing or failing, so its Outcome is known. An Activity rule is checked or unknown,
+never passing, because activity is not a pass or a fail.
+_Avoid_: scanned, evaluated, healthy
+
+**Outcome**:
+What a rule's last run says about it: passing, failing or unknown (an Activity rule: checked or
+unknown). Only an enabled rule has an outcome. An outcome
+belongs to a rule at a Scope, not to the rule alone: the same rule can pass in one subscription
+and fail in another.
+_Avoid_: rule status (status is a finding's Open, New or Fixed), result
+
+**Finding age**:
+How long a finding has been open: from its first-seen date to now, in whole UTC days. A finding
+that is fixed and then reactivated keeps its first-seen date, so its age does not start again.
+_Avoid_: time open, days open, lifetime
+
+**New and Fixed (in a window)**:
+New counts the findings that are open and were first seen inside the window. Fixed counts the
+findings that were fixed inside the window. They are the same lists Scans shows with status=new and
+status=fixed over that window.
+_Avoid_: added and resolved, opened and closed
+
 ## Views
 
 **View**:
@@ -117,6 +141,48 @@ _Avoid_: report, perspective, group column
 **Saved view**:
 A view kept under a name. Every saved view is shared with everyone on the install.
 _Avoid_: favourite, bookmark, preset
+
+## Dashboards
+
+**Dashboard**:
+A page of widgets that answers five questions: are we OK and improving, where is it worst, are we
+keeping up, can I trust these numbers, and what should I know that is not a failure. It is never a
+second findings explorer: finding lists are read on Scans.
+_Avoid_: report, overview (that is the name of the starter dashboard)
+
+**Widget**:
+A count or summary of a list Scans can show (Results, Advisories, Activity, Rules or Run History),
+or a labelled trend. A count or summary links to the Scans list it was computed from.
+_Avoid_: tile, card, panel
+
+**Definition line**:
+The five sentences a widget carries to say what it counts: what it counts, which rule kinds, out of
+what, over which window and under which filters.
+_Avoid_: tooltip, caption, footnote
+
+**Partial and Stale**:
+Dashboard markers on a widget. Partial marks a number that leaves out unknown rules. Stale marks a
+number that includes a category not scanned within Stale after. Neither is a scan's coverage
+"partial", which is a fact about one run.
+_Avoid_: incomplete, outdated
+
+**Set on this widget**:
+A widget's own value for a filter level, which replaces the dashboard's value for that level
+rather than adding to it.
+_Avoid_: scoped, override
+
+**Retired widget**:
+A widget type the catalogue no longer offers. It keeps its stored row and shows no number. Unlike a
+Retired rule, it does not keep running; the shared word means RuleBeat no longer offers it and
+leaves it where it is.
+_Avoid_: deleted widget, removed widget, deprecated widget
+
+**Trend point**:
+One recorded day's value on a trend. It is never a link, because no Scans list holds the past.
+_Avoid_: snapshot (that is a scan's findings, see Snapshot), data point
+
+Terms for the filters a dashboard, a saved view and Scans share belong to the one filter model and
+are defined with it, not here.
 
 ## Run History
 
