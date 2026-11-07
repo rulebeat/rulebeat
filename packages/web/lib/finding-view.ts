@@ -667,8 +667,12 @@ function splitEscaped(text: string, delimiter: string): string[] {
 function readValues(text: string): string[] {
   return splitEscaped(text, '|').map(unesc);
 }
+/** The pieces of a `a,b` list, empty ones included. */
+function listPieces(value: string): string[] {
+  return splitEscaped(value, ',').map(unesc);
+}
 function splitList(value: string | undefined): string[] {
-  return value ? splitEscaped(value, ',').map(unesc).filter(Boolean) : [];
+  return value ? listPieces(value).filter(Boolean) : [];
 }
 /** `name=values` as written by `esc(name)=esc(v1)|esc(v2)`. A value may hold a bare `=`, as typed by hand. */
 function readNamedValues(raw: string): { name: string; values: string[] } | undefined {
@@ -775,4 +779,112 @@ export function viewFromSearchParams(source: ParamSource): View {
   const page = Number(readParam(source, 'page'));
   if (Number.isInteger(page) && page > 1 && page <= MAX_URL_PAGE) view.page = page;
   return view;
+}
+
+// ---- Dashboard filter changes in the URL (ADR 0013) ----
+
+/** The dimensions a dashboard filters by. `includeSuppressed` is not one: it is the viewer's
+ *  toggle and never travels in an address. */
+export interface DashboardFilters {
+  category: string[];
+  subscription: string[];
+  resourceGroup: string[];
+  tags: string[];
+  rule: string[];
+  severity: string[];
+  window: DateWindow;
+}
+
+/** A layer of changes on top of the saved filters. A dimension that is present replaces the saved
+ *  value (an empty list is the explicit "any"), and one that is missing inherits it. */
+export type DashboardFilterChanges = Partial<DashboardFilters>;
+
+type DashboardListDim = Exclude<keyof DashboardFilters, 'window'>;
+
+/** The /scans param each dashboard dimension is written under. */
+const DASHBOARD_LIST_PARAMS: Record<DashboardListDim, string> = {
+  category: 'category', subscription: 'subscription', resourceGroup: 'rg', tags: 'tags', rule: 'ruleId', severity: 'severity',
+};
+const DASHBOARD_LIST_DIMS = Object.keys(DASHBOARD_LIST_PARAMS) as DashboardListDim[];
+/** The params that carry `includeSuppressed`. They never travel in a dashboard address, so a base that holds one loses it. */
+const VIEWER_TOGGLE_PARAMS = ['suppressed', 'includeSuppressed'];
+const DASHBOARD_PARAMS = [...Object.values(DASHBOARD_LIST_PARAMS), 'window', 'from', 'to'];
+
+/** Whether a value can be named by a dashboard dimension; the rest are ignored, as in `/scans`. */
+const DASHBOARD_VALUE_OK: Partial<Record<DashboardListDim, (value: string) => boolean>> = {
+  category: value => value !== 'all',
+  severity: value => (EXPLORER_SEVERITIES as string[]).includes(value),
+};
+
+/** `undefined` inherits. An empty param is "any" (`[]`). A param that holds only values the
+ *  dimension cannot use counts as missing, never as "any". */
+function readDashboardList(source: ParamSource, dim: DashboardListDim): string[] | undefined {
+  const raw = readParam(source, DASHBOARD_LIST_PARAMS[dim]);
+  if (raw === undefined) return undefined;
+  if (raw === '') return [];
+  const ok = DASHBOARD_VALUE_OK[dim];
+  const values = [...new Set(listPieces(raw).filter(v => v !== '' && (!ok || ok(v))))];
+  return values.length > 0 ? values : undefined;
+}
+
+function readDashboardWindow(source: ParamSource): DateWindow | undefined {
+  const from = readParam(source, 'from');
+  const to = readParam(source, 'to');
+  if (from && to && DAY_KEY.test(from) && DAY_KEY.test(to)) return { mode: 'custom', from, to };
+  const days = Number(readParam(source, 'window'));
+  return Number.isInteger(days) && days > 0 ? { mode: 'relative', days } : undefined;
+}
+
+/** Values compare as sets: duplicates and order do not count. */
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every(v => right.has(v));
+}
+
+function sameWindow(a: DateWindow, b: DateWindow): boolean {
+  return a.mode === 'custom' ? b.mode === 'custom' && a.from === b.from && a.to === b.to : b.mode === 'relative' && a.days === b.days;
+}
+
+/** The reader and writer of a dashboard's filter changes, against the filters saved on it. */
+export function dashboardAddress(saved: DashboardFilters): {
+  /** The changes an address holds. Anything unknown or malformed is ignored. */
+  read(source: ParamSource): DashboardFilterChanges;
+  /** The changes as query params, with `base` (params the page owns, such as `tab`) kept first. A
+   *  dimension equal to its saved value is left out, and so is any dashboard param `base` carries. */
+  write(changes: DashboardFilterChanges, base?: ParamSource): URLSearchParams;
+} {
+  return {
+    read(source) {
+      const changes: DashboardFilterChanges = {};
+      for (const dim of DASHBOARD_LIST_DIMS) {
+        const values = readDashboardList(source, dim);
+        if (values) changes[dim] = values;
+      }
+      const window = readDashboardWindow(source);
+      if (window) changes.window = window;
+      return changes;
+    },
+    write(changes, base) {
+      const params = new URLSearchParams();
+      if (base instanceof URLSearchParams) base.forEach((v, k) => params.append(k, v));
+      else if (base) for (const [k, v] of Object.entries(base)) for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) params.append(k, one);
+      for (const name of [...DASHBOARD_PARAMS, ...VIEWER_TOGGLE_PARAMS]) params.delete(name);
+
+      for (const dim of DASHBOARD_LIST_DIMS) {
+        const values = changes[dim];
+        if (values && !sameSet(values, saved[dim])) params.set(DASHBOARD_LIST_PARAMS[dim], [...new Set(values)].map(esc).join(','));
+      }
+      const window = changes.window;
+      if (window && !sameWindow(window, saved.window)) {
+        if (window.mode === 'custom') {
+          params.set('from', window.from);
+          params.set('to', window.to);
+        } else {
+          params.set('window', String(window.days));
+        }
+      }
+      return params;
+    },
+  };
 }
