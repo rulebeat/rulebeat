@@ -1146,6 +1146,11 @@ export function runMigrations(sqlite: Database.Database): void {
   // nothing is backfilled, since which rules an old scan ran is not known.
   try { sqlite.exec(`ALTER TABLE scans ADD COLUMN ran_rule_ids TEXT`); } catch { /* already exists */ }
 
+  // #402: when a rule was last switched on, so a scan that finished before then cannot pass it. NULL on every
+  // existing rule, which reads as enabled since before it was recorded: nothing is backfilled, since the date
+  // is not known and a guess would move rules to Unknown that a scan has proven.
+  try { sqlite.exec(`ALTER TABLE rules ADD COLUMN enabled_at TEXT`); } catch { /* already exists */ }
+
   // Scheduled scans: replace the first-cut cron-preset model with a structured Outlook-style
   // recurrence + rule/tag/category targeting model. Add the new columns, best-effort-migrate any
   // rows created under the old model (disabling them: the old fields don't map 1:1 onto the new

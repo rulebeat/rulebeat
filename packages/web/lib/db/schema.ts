@@ -25,6 +25,7 @@ export const rules = sqliteTable('rules', {
   visualQuery: text('visual_query'),          // JSON: VisualQuery | null: visual builder state; rawKql stores the generated KQL
   lastRunStatus: text('last_run_status'),     // RuleExecutionStatus | null. This rule's outcome the last time a scan actually ran it
   lastRunAt: text('last_run_at'),             // ISO timestamp of that outcome; null = never run
+  enabledAt: text('enabled_at'),              // ISO timestamp the rule was last switched on (#402); null = enabled since before it was recorded, or disabled
   version: text('version'),                   // the rule version this row currently runs; null for a custom rule
   retiredAt: text('retired_at'),              // ISO timestamp; set when no pack ships this built-in any more (it keeps running)
   originRuleId: text('origin_rule_id'),       // custom rule only: the shipped rule it was made from (same id when converted in place)

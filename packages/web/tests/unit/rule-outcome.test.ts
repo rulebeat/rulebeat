@@ -45,6 +45,20 @@ describe('ruleOutcome', () => {
     expect(ruleOutcome(RULE, { hasOpenFinding: false, scans: [scanOf({ ranRuleIds: ['another-rule'] })] })).toBe('unknown');
   });
 
+  it('is unknown when the rule was switched on after the covering scan finished, even though that scan ran it', () => {
+    const earlier = scanOf({ finishedAt: '2026-06-01T00:00:00.000Z' });
+    const reenabled = { ...RULE, enabledAt: '2026-06-01T12:00:00.000Z' };
+    expect(ruleOutcome(reenabled, { hasOpenFinding: false, scans: [earlier] })).toBe('unknown');
+    expect(ruleOutcome(reenabled, { hasOpenFinding: false, scans: [scanOf({ finishedAt: '2026-06-01T12:00:00.000Z' })] })).toBe('passing');
+    expect(ruleOutcome({ ...reenabled, kind: 'activity' }, { hasOpenFinding: false, scans: [earlier] })).toBe('unknown');
+  });
+
+  it('is unknown for a scan that recorded no rule list when the rule was switched on after it', () => {
+    const recorded = scanOf({ ranRuleIds: null, finishedAt: '2026-06-01T00:00:00.000Z' });
+    const reenabled = { ...RULE, lastRunAt: '2026-06-02T00:00:00.000Z', enabledAt: '2026-06-01T12:00:00.000Z' };
+    expect(ruleOutcome(reenabled, { hasOpenFinding: false, scans: [recorded] })).toBe('unknown');
+  });
+
   it('reads a scan that recorded no rule list by the rule\'s own last run: ran only if the rule ran at or after it', () => {
     const recorded = scanOf({ ranRuleIds: null, finishedAt: '2026-06-02T00:00:00.000Z' });
     expect(ruleOutcome(RULE, { hasOpenFinding: false, scans: [recorded] })).toBe('passing');

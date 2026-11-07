@@ -1,15 +1,15 @@
 /**
  * A rule's Outcome at a Scope (#402), by formula v3's definition of passing. The one function for it: the
- * Rules tab calls it, and live posture calls it too once it moves to formula v3 (#328), so a rule never
- * reads passing in one place and unknown in another. Until then live posture still counts a rule as passing
- * by its last run's status. Pure, no DB or Node imports.
+ * Rules tab and live posture (the dashboard summary and the daily snapshots, both through
+ * `lib/outcome-reader.ts`) call it, so a rule never reads passing in one place and unknown in another.
+ * Pure, no DB or Node imports.
  *
  *  - Only an enabled rule has an Outcome.
  *  - Failing: an open finding inside the Scope and the reader's Access. It holds even when the rule's last
  *    run was capped or failed, because the finding is still there.
  *  - Passing: no such finding, and the newest finished scan covering the Scope (`lib/scan-coverage.ts`) ran
  *    the rule without listing it in `incompleteRules`. A covering scan from before the rule existed or was
- *    enabled did not run it, so it leaves the rule unknown, as does anything else.
+ *    last switched on (`enabledAt`) does not count, so it leaves the rule unknown, as does anything else.
  *  - An Activity rule is checked or unknown, never passing or failing: activity is not a pass or a fail.
  *
  * The caller finds the open findings and the covering scan; this decides what they say.
@@ -27,6 +27,8 @@ export interface OutcomeRule {
   kind?: RuleKind;
   /** When a scan last ran the rule (`rules.last_run_at`), the one thing a scan that recorded no rule list can be read by. */
   lastRunAt?: string;
+  /** When the rule was last switched on. Absent: enabled since before that was recorded. */
+  enabledAt?: string;
 }
 
 export interface OutcomeScan extends CoverageScan {
@@ -44,12 +46,15 @@ export interface OutcomeEvidence {
 }
 
 /**
- * Whether the scan ran the rule and it completed. A scan that listed what it ran is read by that list. An
- * earlier scan did not, so it is read by the rule's own last run: the rule ran in it only when it last ran
- * at or after the scan finished, and a rule that never ran was not in any scan.
+ * Whether the scan ran the rule and it completed, and finished after the rule was last switched on. A scan
+ * that listed what it ran is read by that list. An earlier scan did not, so it is read by the rule's own last
+ * run: the rule ran in it only when it last ran at or after the scan finished, and a rule that never ran was
+ * not in any scan.
  */
 function ranCleanly(rule: OutcomeRule, scan: OutcomeScan): boolean {
   if (scan.incompleteRuleIds.includes(rule.id)) return false;
+  // A scan that finished before the rule was last switched on proves nothing now, even if it ran the rule then.
+  if (rule.enabledAt !== undefined && scan.finishedAt < rule.enabledAt) return false;
   if (scan.ranRuleIds) return scan.ranRuleIds.includes(rule.id);
   return rule.lastRunAt !== undefined && rule.lastRunAt >= scan.finishedAt;
 }

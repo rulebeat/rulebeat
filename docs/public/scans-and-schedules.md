@@ -36,7 +36,7 @@ the whole install:
 |---|---|
 | **Failing** | The rule has an open finding inside the Scope that is not suppressed. This holds even when its last run was capped or failed. |
 | **Passing** | No open finding inside the Scope, and the newest finished scan that covered the Scope ran the rule to the end. |
-| **Unknown** | Anything else: no scan covered the Scope, the covering scan capped or failed the rule, or it came before the rule existed or was enabled. |
+| **Unknown** | Anything else: no scan covered the Scope, the covering scan capped or failed the rule, or it finished before the rule existed or was last switched on. Switching a rule off and on again leaves it Unknown until the next scan runs it. |
 | **Checked** | An Activity rule that a covering scan ran to the end. Activity is not a pass or a fail, so an Activity rule is only checked or unknown. |
 
 Only an enabled rule has an Outcome. The same rule can pass in one subscription and fail in

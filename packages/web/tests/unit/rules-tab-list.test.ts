@@ -12,7 +12,7 @@ import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { buildAccess, parseScope, type Access } from '@/lib/access-model';
 import { expandManagementGroups } from '@/lib/management-group-tree';
 import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
-import { saveRules, setRulesLastRunStatus } from '@/lib/rules';
+import { createRule, saveRules, setRulesEnabled, setRulesLastRunStatus, updateRule } from '@/lib/rules';
 import { saveScanResult } from '@/lib/scan-history';
 import { EVERYTHING_COVERED, type CoveredEntry } from '@/lib/run-scope';
 import { listRulesTab } from '@/lib/rules-tab-list';
@@ -183,6 +183,42 @@ describe('what leaves a rule Unknown or Failing', () => {
     await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['some-other-rule'] });
     expect(await outcomes({ subscriptions: [SUB_A] })).toEqual({ 'rule-1': 'unknown' });
     expect(await outcomes()).toEqual({ 'rule-1': 'unknown' });
+  });
+
+  it('leaves a rule Unknown when it was disabled and enabled again after the scan that ran it', async () => {
+    await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1'] });
+    expect(await outcomes()).toEqual({ 'rule-1': 'passing' });
+    await setRulesEnabled(['rule-1'], false);
+    await setRulesEnabled(['rule-1'], true);
+    expect(await outcomes()).toEqual({ 'rule-1': 'unknown' });
+    expect(await outcomes({ subscriptions: [SUB_A] })).toEqual({ 'rule-1': 'unknown' });
+  });
+
+  it('leaves a rule Unknown when an edit disables it and a later edit enables it again', async () => {
+    await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1'] });
+    await updateRule('rule-1', { enabled: false });
+    await updateRule('rule-1', { enabled: true });
+    expect(await outcomes()).toEqual({ 'rule-1': 'unknown' });
+  });
+
+  it('leaves a new rule Unknown against a scan that finished before it was created', async () => {
+    await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1', 'rule-new'] });
+    await createRule(ruleOf('rule-new'));
+    expect((await outcomes())['rule-new']).toBe('unknown');
+  });
+
+  it('keeps a rule Passing when it is switched on again while already enabled', async () => {
+    await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1'] });
+    await setRulesEnabled(['rule-1'], true);
+    expect(await outcomes()).toEqual({ 'rule-1': 'passing' });
+  });
+
+  it('returns to Passing once a scan after the rule was enabled again ran it', async () => {
+    await scan({ id: 'scan-1', finishedAt: T1, subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1'] });
+    await setRulesEnabled(['rule-1'], false);
+    await setRulesEnabled(['rule-1'], true);
+    await scan({ id: 'scan-2', finishedAt: new Date(Date.now() + 60_000).toISOString(), subscriptionsScanned: [SUB_A], ranRuleIds: ['rule-1'] });
+    expect(await outcomes()).toEqual({ 'rule-1': 'passing' });
   });
 
   it('reads a scan saved before scans recorded their rules by the rule\'s own last run', async () => {

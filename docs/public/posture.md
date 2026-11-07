@@ -10,8 +10,8 @@ Take every **enabled** rule in the scope you are looking at. Each is in exactly 
 | State | Condition |
 |---|---|
 | **failing** | At least one active finding that is not suppressed. |
-| **passing** | Zero active unsuppressed findings **and** a most recent run that finished `success`. |
-| **unknown** | Everything else: never run, or last run ended `failed`, `capped` or `invalid` with no active findings to show for it. |
+| **passing** | Zero active unsuppressed findings **and** the newest finished scan that covered the scope ran the rule to the end, without capping or failing it. A scan that finished before the rule existed or was last switched on does not count. |
+| **unknown** | Everything else: no covering scan has run it, or that scan ended it `failed`, `capped` or `invalid`, with no active findings to show for it. |
 
 ```
 posture % = round(passing / (passing + failing + unknown) * 100)
@@ -30,6 +30,11 @@ Active findings come from the live findings table rather than the last scan's bl
 scheduled run cannot move rules it did not touch. The Rules tab shows each rule's last outcome as a
 chip: "not yet run", "query failed", "result capped", "no resource id"
 ([`how-it-works.md`](how-it-works.md#one-outcome-per-rule)).
+
+The Rules tab reads a rule's state through the same function, so `outcome=passing` opens the list behind
+the passing count at every scope ([`scans-and-schedules.md`](scans-and-schedules.md#the-rules-tab)).
+A rule can pass in one subscription and be unknown in another, because the scan that covered one
+did not cover the other.
 
 ## Advisory rules are not counted
 

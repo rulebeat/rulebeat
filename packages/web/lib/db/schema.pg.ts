@@ -43,6 +43,7 @@ export const rules = pgTable('rules', {
   visualQuery: text('visual_query'),
   lastRunStatus: text('last_run_status'),
   lastRunAt: text('last_run_at'),
+  enabledAt: text('enabled_at'),
   version: text('version'),
   retiredAt: text('retired_at'),
   originRuleId: text('origin_rule_id'),

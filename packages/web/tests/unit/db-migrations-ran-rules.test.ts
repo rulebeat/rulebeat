@@ -82,3 +82,18 @@ describe('upgrading to a database that records the rules a scan ran', () => {
     expect(all(db, `SELECT id FROM scans WHERE ran_rule_ids IS NOT NULL`)).toEqual([]);
   });
 });
+
+describe('upgrading to a database that records when a rule was switched on (#402)', () => {
+  // What each rule kept through an upgrade is recorded by the golden snapshots (db-migrations-golden.test.ts).
+  it.each(SHAPES)('a %s database gains the column, NULL on every rule it kept', async shape => {
+    const sample = makeSample(shape);
+    upgradeInProcess(sample);
+    await startProductOn(sample.file);
+
+    const db = sqlite = open(sample.file);
+    expect(columns(db, 'rules')).toContain('enabled_at');
+    // NULL reads as enabled since before it was recorded: no rule moves to Unknown because of the upgrade.
+    expect(all(db, `SELECT id FROM rules WHERE enabled_at IS NOT NULL`)).toEqual([]);
+    expect(all(db, `SELECT COUNT(*) AS n FROM rules`)[0]!.n).toBeGreaterThan(0);
+  });
+});
