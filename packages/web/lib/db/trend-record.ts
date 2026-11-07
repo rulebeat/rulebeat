@@ -44,6 +44,18 @@ export interface CoveredEntry {
   ruleIds: string[] | null;
 }
 
+/** What a writer throws when the record could not be written. The transaction it was thrown in rolls back, so the
+ *  action it recorded is not saved either (ADR 0012); the cause is logged by whoever reports it, never shown. */
+export class TrendRecordWriteError extends Error {
+  constructor(cause: unknown) {
+    super('The trend record could not be written.', { cause });
+    this.name = 'TrendRecordWriteError';
+  }
+}
+
+/** What Run History says of a scan whose record write failed. */
+export const TREND_RECORD_FAILED_MESSAGE = 'Trend history could not be recorded, so this scan\'s results were not saved.';
+
 export interface RecountResult {
   /** Cell rows written. */
   cells: number;

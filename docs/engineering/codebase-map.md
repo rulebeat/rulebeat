@@ -244,7 +244,7 @@
 | `packages/web/app/api/settings/notifications/test/route.ts` | "Send test": saved channel (`{id}`) or typed-but-unsaved (`{type, url}`) |
 | `packages/web/app/api/settings/notifications/history/route.ts` | `GET ?channelId=`: recent delivery attempts for one channel, `notifications:manage` guard |
 | `packages/web/app/(app)/settings/notifications-section.tsx` | Settings → Notifications card: channel list, add/edit form, per-row send-test, "View history" expandable panel (lazy-fetched, explicit empty state) |
-| `packages/web/lib/scan-runner.ts` | `runCategoryScan()`: shared scan execution path for manual and scheduled runs. Partitions a category's rules by `queryBackend` into the three engines, syncs findings, then refreshes the touched categories' snapshots after the commit |
+| `packages/web/lib/scan-runner.ts` | `runCategoryScan()`: shared scan execution path for manual and scheduled runs. Partitions a category's rules by `queryBackend` into the three engines, saves the scan and syncs findings in one transaction (the sync writes the trend record and the rules' last-run status, so a failed record write saves nothing), then refreshes the touched categories' snapshots after the commit |
 | `packages/core/src/engine/graph-runner.ts` | `runGraphRules()`: standalone Microsoft Graph engine, per-rule `try/catch` isolation, `'capped'` on `GraphTruncatedError` |
 | `packages/web/lib/graph-rule-validation.ts` | `validateGraphQueryShape()`/`isAllowedGraphPath()`: server-side enforcement of the 7-path Graph resource allowlist, the real security boundary |
 | `packages/web/lib/schedule-runs.ts` | Unified runs repository (manual + scheduled), powers Run History |

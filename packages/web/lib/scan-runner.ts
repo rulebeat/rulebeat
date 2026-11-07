@@ -11,13 +11,15 @@ import {
   type TenantContext,
 } from '@rulebeat/core';
 import { createScanContext } from './scan-context';
-import { loadRules, setRulesLastRunStatus } from './rules';
+import { loadRules } from './rules';
 import { saveScanResult } from './scan-history';
 import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
+import { inTransaction } from './db/exec';
+import type { CoveredEntry as RecordedCoverage } from './db/trend-record';
 import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';
-import type { Access } from './access-model';
+import { EVERYTHING_SCOPE_PATH, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import {
@@ -195,15 +197,41 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
     incompleteRules,
   };
 
-  await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId, coveredScope: coveredEntries });
+  // What this scan observed about each rule it ran, persisted so a future "zero findings" can be told apart from
+  // "this rule has never successfully run" (spec 030). Grouped by status since every rule sharing an outcome gets
+  // the same UPDATE; rules outside this scan's scope (disabled, or excluded by a targeted run) are never touched.
+  // The status is the rule's across the install, so only a run covering Everything writes it: a scoped run's
+  // success says nothing about the rest of the tenant, and its failure is in its own Run History.
+  const lastRunStatuses = scoped ? undefined : [
+    { status: 'success' as const, ruleIds: successRuleIds },
+    ...(['failed', 'capped', 'invalid'] as const).map(status => ({
+      status, ruleIds: incompleteRules.filter(r => r.status === status).map(r => r.ruleId),
+    })),
+  ].filter(group => group.ruleIds.length > 0);
 
-  const { created, reactivated, changed, affectedCategories } = await syncScanFindingsDetailed({
-    scanId,
+  // What the trend record says this scan covered (ADR 0012): the whole category, or just the rules of a targeted
+  // run. A partial scan covered what it covered; a scan that errored never gets here, so adds nothing.
+  const recordedCoverage: RecordedCoverage[] = coveredEntries.map(entry => ({
     category: category.id,
-    ranRuleIds,
-    findings: mergedFindings,
-    finishedAt: summary.finishedAt,
-    covered: scoped ? covered : undefined,
+    tenantId: entry.tenantId,
+    path: entry.path === EVERYTHING_SCOPE_PATH ? null : entry.path,
+    ruleIds: opts.ruleIds ? enabledRules.map(r => r.id) : null,
+  }));
+
+  // One transaction for the saved scan and its sync, so a sync whose trend record write fails (ADR 0012) leaves
+  // no trace of the scan: the sync's own transaction joins this one.
+  const { created, reactivated, changed, affectedCategories } = await inTransaction(async () => {
+    await saveScanResult(category.id, summary, { triggeredBy: opts.triggeredBy, scheduleId: opts.scheduleId, id: scanId, runId: opts.runId, coveredScope: coveredEntries });
+    return syncScanFindingsDetailed({
+      scanId,
+      category: category.id,
+      ranRuleIds,
+      findings: mergedFindings,
+      finishedAt: summary.finishedAt,
+      covered: scoped ? covered : undefined,
+      lastRunStatuses,
+      recordedCoverage,
+    });
   });
   const newFingerprints = new Set([...created, ...reactivated]);
   const newFindings = mergedFindings.filter(f => newFingerprints.has(f.fingerprint));
@@ -211,20 +239,6 @@ export async function runCategoryScan(category: Category, opts: RunScanOptions):
   const changedFindings: ChangedFindingDetail[] = mergedFindings
     .filter(f => addedRowsByFingerprint.has(f.fingerprint))
     .map(f => ({ ...f, addedRows: addedRowsByFingerprint.get(f.fingerprint)! }));
-
-  // Persist what this scan actually observed about each rule it ran, so a future "zero findings"
-  // can be told apart from "this rule has never successfully run" (spec 030). Grouped by status
-  // since every rule sharing an outcome gets the same UPDATE; rules outside this scan's scope
-  // (disabled, or excluded by a targeted run) are never touched. The status is the rule's across the
-  // install, so only a run covering Everything writes it: a scoped run's success says nothing about the
-  // rest of the tenant, and its failure is in its own Run History.
-  if (!scoped) {
-    await setRulesLastRunStatus(successRuleIds, 'success', summary.finishedAt);
-    for (const status of ['failed', 'capped', 'invalid'] as const) {
-      const ids = incompleteRules.filter(r => r.status === status).map(r => r.ruleId);
-      await setRulesLastRunStatus(ids, status, summary.finishedAt);
-    }
-  }
 
   // After the sync's transaction has committed. A rule moved to another category leaves findings
   // recorded under its old one, so every category the sync touched is refreshed, not only this one.
