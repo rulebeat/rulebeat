@@ -14,12 +14,15 @@ import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
 import type { HeldBack } from '@/lib/held-back';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
+import { mayChangeItemWith, ownerLabel, sectionsOf, type ItemPermissions } from '@/lib/item-access-model';
 
 interface SavedViewsMenuProps {
   /** Which tab the explorer is on: only that tab's views are listed, and a new view opens there. */
   tab: SavedViewTab;
-  /** Whether the viewer may save, update, rename and delete. Everyone can open a view. */
-  canWrite: boolean;
+  /** The person asking, and what they may do with saved views. Everyone can open a Shared view and keep
+   *  their own; changing a Shared view depends on who owns it. */
+  currentUserId: string;
+  permissions: ItemPermissions;
   /** The view the URL says is open, if any. */
   openId: string | null;
   /** Asks for the URL's open view to change: set after a save, cleared after a delete or when the
@@ -37,7 +40,7 @@ interface SavedViewsMenuProps {
 type ViewAction = 'save' | 'update' | 'rename' | 'delete';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: HeldBackSavedView[] }
 
-export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
@@ -53,6 +56,8 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
 
   const views = state.views.filter(v => v.tab === tab);
   const open = views.find(v => v.id === openId) ?? null;
+  const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, views);
+  const canChangeOpen = open !== null && mayChangeItemWith({ id: currentUserId }, permissions, open);
 
   const openHeldBack = open?.heldBack;
   useEffect(() => { onHeldBackChange?.(openHeldBack ?? []); }, [openHeldBack, onHeldBackChange]);
@@ -67,7 +72,7 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
   async function applyAction(kind: ViewAction, name: string): Promise<string | null> {
     let change: SavedViewChange;
     if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
-    else if (!open) return null;
+    else if (!open || !canChangeOpen) return null;
     else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name } };
     else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery } };
     else change = { kind: 'delete', id: open.id };
@@ -117,25 +122,32 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
             )}
             {state.status === 'ready' && views.length === 0 && (
               <p className="px-3 py-1.5 text-sm text-ink-2">
-                {canWrite
-                  ? 'No saved views yet. Save the current filters to share them.'
-                  : 'No one has saved a view here yet.'}
+                {permissions.personal
+                  ? 'No saved views yet. Save the current filters to keep them.'
+                  : 'No saved views here yet.'}
               </p>
             )}
-            {views.map(view => (
-              <DropdownMenuItem key={view.id} onClick={() => onOpen(view)}>
-                <span className="flex size-3.5 shrink-0 items-center justify-center">
-                  {view.id === openId && <Check className="size-3.5" aria-label="Open" />}
-                </span>
-                <span className="truncate">{view.name}</span>
-              </DropdownMenuItem>
-            ))}
+            {views.length > 0 && (
+              <>
+                <DropdownMenuLabel>Yours</DropdownMenuLabel>
+                {yours.length === 0 && <p className="px-3 py-1.5 text-sm text-ink-2">You have no saved views here.</p>}
+                {yours.map(view => (
+                  <ViewItem key={view.id} view={view} openId={openId} onOpen={onOpen}
+                    tag={view.visibility === 'shared' ? 'Shared' : 'Personal'} />
+                ))}
+                <DropdownMenuLabel>Shared by others</DropdownMenuLabel>
+                {sharedByOthers.length === 0 && <p className="px-3 py-1.5 text-sm text-ink-2">No one else has shared a view here.</p>}
+                {sharedByOthers.map(view => (
+                  <ViewItem key={view.id} view={view} openId={openId} onOpen={onOpen} tag={ownerLabel(view.owner)} />
+                ))}
+              </>
+            )}
           </DropdownMenuGroup>
-          {canWrite && (
+          {(permissions.personal || canChangeOpen) && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setAction('save')}>Save current view</DropdownMenuItem>
-              {open && (
+              {permissions.personal && <DropdownMenuItem onClick={() => setAction('save')}>Save current view</DropdownMenuItem>}
+              {canChangeOpen && (
                 <>
                   <DropdownMenuItem onClick={() => setAction('update')}>Update with current view</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setAction('rename')}>Rename</DropdownMenuItem>
@@ -152,6 +164,7 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
           key={action}
           kind={action}
           viewName={open?.name ?? ''}
+          shared={open?.visibility === 'shared'}
           onClose={() => setAction(null)}
           onConfirm={name => applyAction(action, name)}
         />
@@ -167,9 +180,24 @@ const COPY: Record<ViewAction, { title: string; confirm: string; busy: string }>
   delete: { title: 'Delete saved view', confirm: 'Delete', busy: 'Deleting…' },
 };
 
-function ViewDialog({ kind, viewName, onClose, onConfirm }: {
+/** One saved view in the list: a check where it is open, its name, and a quiet tag on the right. */
+function ViewItem({ view, openId, onOpen, tag }: { view: HeldBackSavedView; openId: string | null; onOpen: (view: HeldBackSavedView) => void; tag: string }) {
+  return (
+    <DropdownMenuItem onClick={() => onOpen(view)}>
+      <span className="flex size-3.5 shrink-0 items-center justify-center">
+        {view.id === openId && <Check className="size-3.5" aria-label="Open" />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{view.name}</span>
+      <span className="max-w-24 shrink-0 truncate text-xs text-ink-muted">{tag}</span>
+    </DropdownMenuItem>
+  );
+}
+
+function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
   kind: ViewAction;
   viewName: string;
+  /** Whether the open view is Shared: what the dialog says about who sees the change. */
+  shared: boolean;
   onClose: () => void;
   /** Returns the message to show, or null when it worked. */
   onConfirm: (name: string) => Promise<string | null>;
@@ -229,10 +257,10 @@ function ViewDialog({ kind, viewName, onClose, onConfirm }: {
                 </div>
               )}
               <p className="text-xs text-ink-2">
-                {kind === 'save' && 'Everyone who uses this install can open a saved view. It keeps the filters, search, window, columns, sort and grouping you have now.'}
-                {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now. Everyone who opens it will see the change.`}
-                {kind === 'rename' && 'Everyone who uses this install sees the new name.'}
-                {kind === 'delete' && `Delete "${viewName}" for everyone on this install. Findings are not affected.`}
+                {kind === 'save' && 'Only you can open this saved view. It keeps the filters, search, window, columns, sort and grouping you have now.'}
+                {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now.${shared ? ' Everyone who opens it will see the change.' : ''}`}
+                {kind === 'rename' && (shared ? 'Everyone who uses this install sees the new name.' : 'Only you see the new name.')}
+                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.`}
               </p>
 
               {error && <p className="text-xs font-medium text-sev-critical">{error}</p>}

@@ -1358,6 +1358,35 @@ export function runMigrations(sqlite: Database.Database): void {
   try { sqlite.exec(`ALTER TABLE library_requests ADD COLUMN target_rule_id TEXT`); } catch { /* already exists */ }
   try { sqlite.exec(`ALTER TABLE library_requests ADD COLUMN target_definition TEXT`); } catch { /* already exists */ }
 
+  // ADR 0012 (#352): an owner, a visibility and a revision on every dashboard and saved view, and a My
+  // default on every person. Every existing item is Shared at revision 1 and the default flag stays
+  // where it was, so nobody sees anything change. A saved view is owned by its creator while that person
+  // still exists. A dashboard has no owner. The columns, the backfill and the check that decides whether
+  // the backfill runs share one transaction. The owner backfill runs only when `owner_id` is being added:
+  // once the column exists a null owner is a fact (a Shared item whose person was removed), and a later
+  // start must not hand it back to its creator.
+  try {
+    const hasColumn = (table: string, column: string) =>
+      sqlite.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(column) !== undefined;
+    sqlite.transaction(() => {
+      for (const table of ['dashboards', 'saved_views']) {
+        const addOwner = !hasColumn(table, 'owner_id');
+        if (addOwner) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN owner_id TEXT`);
+        if (!hasColumn(table, 'visibility')) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared'`);
+        if (!hasColumn(table, 'revision')) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`);
+        if (addOwner && table === 'saved_views') {
+          sqlite.exec(`UPDATE saved_views SET owner_id = created_by WHERE created_by IN (SELECT id FROM users)`);
+        }
+      }
+      if (!hasColumn('users', 'default_dashboard_id')) sqlite.exec(`ALTER TABLE users ADD COLUMN default_dashboard_id TEXT`);
+      if (!hasColumn('users', 'default_dashboard_unavailable')) {
+        sqlite.exec(`ALTER TABLE users ADD COLUMN default_dashboard_unavailable INTEGER NOT NULL DEFAULT 0`);
+      }
+    })();
+  } catch (err) {
+    console.error('[migrate] could not add owners, visibility and revisions to dashboards and saved views:', err);
+  }
+
   // Last, after every rule rename has settled the rule ids the fingerprints are derived from.
   rekeyFingerprintCase(sqlite);
   // After the rekey, so the rows are copied under the fingerprints the findings end up with.
@@ -1878,8 +1907,8 @@ export function runSeeds(sqlite: Database.Database, dataDir: string, opts: SeedO
       const existing = sqlite.prepare('SELECT COUNT(*) as n FROM dashboards').get() as { n: number };
       if (existing.n === 0) {
         sqlite.prepare(`
-          INSERT OR IGNORE INTO dashboards (id, name, description, config, is_default, created_at)
-          VALUES (?, ?, ?, ?, 1, ?)
+          INSERT OR IGNORE INTO dashboards (id, name, description, config, is_default, created_at, owner_id, visibility, revision)
+          VALUES (?, ?, ?, ?, 1, ?, NULL, 'shared', 1)
         `).run(
           'default',
           STARTER_DASHBOARD.name,

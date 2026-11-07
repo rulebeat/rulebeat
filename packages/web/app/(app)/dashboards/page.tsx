@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { holdBackDashboards } from '@/lib/db/held-back';
 import { redirect } from 'next/navigation';
+import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
 import { DashboardsGallery } from './dashboards-gallery';
 
 export default async function DashboardsPage() {
@@ -12,12 +13,14 @@ export default async function DashboardsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/signin');
 
-  const dashboards = await holdBackDashboards(await resolveAccess(user), await listDashboards());
+  const access = await resolveAccess(user);
+  const dashboards = await holdBackDashboards(access, openableItems(user, await listDashboards()));
+  const permissions = itemPermissionsFor(access, 'dashboard');
 
   return (
     <>
       <Header title="Dashboards" description="Manage and create custom dashboards" />
-      <DashboardsGallery initialDashboards={dashboards} />
+      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} />
     </>
   );
 }

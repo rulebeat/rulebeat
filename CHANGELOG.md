@@ -6,8 +6,16 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Anyone signed in, a Viewer and a person who holds no Scope included, can create, edit and delete their own Personal dashboards and saved views. Everything you make is Personal: a new dashboard, a Duplicate, one from a template, Restore starter and a saved view. Someone else's Personal dashboard or saved view answers as not found, an Admin included. A Shared one opens for everyone signed in, and only its owner or an Admin or Editor on Everything can change it. The dashboards gallery and the Scans Views menu list "Yours" (each item tagged Personal or Shared) and "Shared by others" (with the owner). Removing a person deletes their Personal dashboards and saved views and leaves their Shared ones with no owner, and the confirmation and the audit entry give the counts only. A person with no Scope can still open the Scans Views menu to keep their own saved views and open Shared ones, and sees the no-access message in place of the widgets on a Shared dashboard.
+
 ### Changed
 
+- A new dashboard is no longer the default for being the first on the install, and deleting the default no longer promotes the oldest remaining dashboard. The Install default is a Shared dashboard chosen by an Admin or an Editor on Everything.
+- A Personal name is unique among your own Personal dashboards (or saved views) and nobody else's are checked. Renaming a Shared item checks Shared names across the install. Creating, renaming and deleting a Personal item is audited by id and kind, with no name.
+- An Editor who holds only part of the install can now change the Shared dashboards and saved views they own. Changing anyone else's still needs an Admin or an Editor on Everything.
+- The upgrade records an owner, a visibility (Personal or Shared) and a revision on every dashboard and saved view, and a My default on every person. Every existing item stays Shared, a saved view is owned by its creator while that person still exists, a dashboard has no owner, and the current default stays the install default. Nothing you see changes yet.
 - A dashboard or saved view no longer sends a stored subscription, resource group, resource name or returned-column value outside your Access to your browser. It comes back without those values and with a count for each place, and the dashboard filter bar, the widget editor and the Scans filter bar show a soft "N outside your access" chip (or "Outside your access" when every value in a filter is held back) in their place. A widget filtered only to values you cannot see says so instead of drawing a number. People who hold Everything see every value as before.
 
 ## [0.13.1] - 2026-10-16

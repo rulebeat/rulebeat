@@ -6,7 +6,7 @@
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { createPeople, seedMatrix, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
+import { createPeople, MATRIX_OWNER, seedMatrix, share, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
 import { createSavedView } from '@/lib/db/saved-views';
 import { createDashboard } from '@/lib/db/dashboards';
 import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
@@ -43,8 +43,9 @@ beforeAll(async () => {
   seed = await seedMatrix();
   const view = await createSavedView({
     name: 'Rich view', tab: 'results', query: viewToSearchParams({ ...emptyView(), filters: RICH_FILTERS }).toString(),
-  }, null);
+  }, MATRIX_OWNER);
   if (!view.ok) throw new Error(view.reason);
+  await share('saved_views', view.view.id);
   richViewId = view.view.id;
   const dashboard = await createDashboard({
     name: 'Rich dashboard',
@@ -52,8 +53,9 @@ beforeAll(async () => {
       filters: { subscriptions: [SUB_TWO, SUB_ONE], resourceGroups: ['rg-two'] },
       widgets: [{ id: 'rich-widget', type: 'stat-card', title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: [SUB_TWO] } }],
     },
-  });
+  }, MATRIX_OWNER);
   if (!dashboard.ok) throw new Error(dashboard.reason);
+  await share('dashboards', dashboard.dashboard.id);
   richDashboardId = dashboard.dashboard.id;
 });
 

@@ -35,6 +35,9 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
+import { createDashboard } from '@/lib/db/dashboards';
+import { createSavedView } from '@/lib/db/saved-views';
+import { execRaw } from '../helpers/db';
 import { createLibraryRequest } from '@/lib/db/library-requests';
 import {
   createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
@@ -698,18 +701,26 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: viewExpected,
   };
 
-  // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
-  const FORBIDDEN = { status: 403, filters: undefined, heldBack: undefined };
+  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It stores the
+  // filters as they are and answers with what the person's Access reaches, so each person is held back the same
+  // values as on the dashboard itself. The copy's own id is new, so the counts are compared without it.
+  const COPY_HELD_SUBSCRIPTION = { place: 'dashboard', dimension: 'subscription', count: 1 };
+  const COPY_HELD_GROUP = { place: 'widget', dimension: 'resourceGroup', count: 1 };
+  const duplicated = (subscriptions: string[], heldBack: object[]) => same({ status: 201, filters: { subscriptions }, heldBack });
   const duplicate: Matrix = {
     probe: async seed => {
       const route = await import('@/app/api/dashboards/[id]/duplicate/route');
       const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
-      const body = await res.json() as { heldBack?: unknown; config?: { filters?: unknown } };
-      return { status: res.status, filters: body.config?.filters, heldBack: body.heldBack };
+      const body = await res.json() as { heldBack?: { place: string; dimension: string; count: number }[]; config?: { filters?: unknown } };
+      return {
+        status: res.status, filters: body.config?.filters,
+        heldBack: body.heldBack?.map(({ place, dimension, count }) => ({ place, dimension, count })),
+      };
     },
     expected: byPerson(
-      same({ status: 201, filters: { subscriptions: [SUB_TWO] }, heldBack: [] }),
-      same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN),
+      duplicated([SUB_TWO], []), duplicated([SUB_TWO], []),
+      duplicated([], [COPY_HELD_SUBSCRIPTION]),
+      duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]),
     ),
   };
 
@@ -2196,4 +2207,150 @@ describe('suppressing needs a Role that allows it at a Scope containing the find
       expect((await remove(userIds['Editor on Everything']!, second)).status).toBe(204);
     });
   });
+});
+
+// ---- Dashboards and saved views: the owner and visibility check (ADR 0012, #355) ----
+
+/**
+ * Five people against the five kinds of item. Each cell seeds a fresh item of that kind, so a delete in one cell
+ * leaves the next untouched. "Own" means the person owns it; "other" means a sixth person does; an ownerless Shared
+ * item is what an upgrade leaves. Written by hand from the rules: your own Personal item needs `*:personal`, your own
+ * Shared item `*:write`, anyone else's Shared item `*:manage`, and someone else's Personal item answers like an
+ * unknown id, an Admin included.
+ */
+const ITEM_PEOPLE = ['Viewer on one subscription', 'Editor on one subscription', 'Editor on Everything', 'Admin', 'No Scope'] as const;
+type ItemPerson = typeof ITEM_PEOPLE[number];
+const ITEM_KINDS = ['own Personal', 'other Personal', 'own Shared', 'other Shared', 'ownerless Shared'] as const;
+type ItemKindName = typeof ITEM_KINDS[number];
+
+type PerKind<T> = Record<ItemKindName, T>;
+const perKind = (ownPersonal: number, otherPersonal: number, ownShared: number, otherShared: number, ownerless: number): PerKind<number> =>
+  ({ 'own Personal': ownPersonal, 'other Personal': otherPersonal, 'own Shared': ownShared, 'other Shared': otherShared, 'ownerless Shared': ownerless });
+
+/** What each person gets for opening an item, and for Duplicate: all but someone else's Personal item. */
+const OPENS = perKind(200, 404, 200, 200, 200);
+const DUPLICATES = perKind(201, 404, 201, 201, 201);
+/** What each person gets for changing an item, by what they hold. A change that works answers `ok`. */
+const changing = (ok: number): Record<ItemPerson, PerKind<number>> => ({
+  'Viewer on one subscription': perKind(ok, 404, 403, 403, 403),
+  'Editor on one subscription': perKind(ok, 404, ok, 403, 403),
+  'Editor on Everything': perKind(ok, 404, ok, ok, ok),
+  'Admin': perKind(ok, 404, ok, ok, ok),
+  'No Scope': perKind(ok, 404, 403, 403, 403),
+});
+/** Whether an item shows in the list, and in the owner's own "Yours" section: shared ones and one's own Personal. */
+const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true };
+
+type OwnedKind = 'dashboard' | 'view';
+interface OwnedRoute {
+  kind: OwnedKind;
+  /** Calls the route for one item and answers its status. */
+  call: (id: string) => Promise<number>;
+  expected: Record<ItemPerson, PerKind<number>>;
+}
+
+let ownedCounter = 0;
+const putRequest = (url: string, method: string, body: unknown) =>
+  new Request(`http://localhost${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+const sameForAll = (by: PerKind<number>): Record<ItemPerson, PerKind<number>> =>
+  Object.fromEntries(ITEM_PEOPLE.map(p => [p, by])) as Record<ItemPerson, PerKind<number>>;
+
+/** One entry for each route file under `app/api/dashboards` and `app/api/views`, written by hand. */
+const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
+  'dashboards/[id]': [
+    { kind: 'dashboard', expected: sameForAll(OPENS),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).GET(new Request('http://localhost/api/dashboards/x'), ctxFor({ id }))).status },
+    { kind: 'dashboard', expected: changing(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).PUT(putRequest(`/api/dashboards/${id}`, 'PUT', { name: `renamed dashboard ${++ownedCounter}` }), ctxFor({ id }))).status },
+    { kind: 'dashboard', expected: changing(204),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).DELETE(new Request(`http://localhost/api/dashboards/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/duplicate': [
+    { kind: 'dashboard', expected: sameForAll(DUPLICATES),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/duplicate/route')).POST(new Request(`http://localhost/api/dashboards/${id}/duplicate`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]': [
+    { kind: 'view', expected: sameForAll(OPENS),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).GET(new Request('http://localhost/api/views/x'), ctxFor({ id }))).status },
+    { kind: 'view', expected: changing(200),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).PATCH(putRequest(`/api/views/${id}`, 'PATCH', { name: `renamed view ${++ownedCounter}` }), ctxFor({ id }))).status },
+    { kind: 'view', expected: changing(204),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).DELETE(new Request(`http://localhost/api/views/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
+  ],
+};
+
+/** The collection routes: create answers 201 to everyone, and the list holds what each person may open. */
+const OWNED_COLLECTION_ROUTES = ['dashboards', 'views'] as const;
+
+describe('the dashboard and saved view routes answer each person by who owns the item and whether it is Shared', () => {
+  const userIds: Record<string, string> = {};
+  let strangerId: string;
+
+  async function seedItem(kind: OwnedKind, which: ItemKindName, person: ItemPerson): Promise<string> {
+    const owner = which.startsWith('own') ? userIds[person]! : strangerId;
+    const name = `owned item ${++ownedCounter}`;
+    let id: string;
+    if (kind === 'dashboard') {
+      const made = await createDashboard({ name, config: { autoRefresh: 0, widgets: [] } }, owner);
+      if (!made.ok) throw new Error(made.reason);
+      id = made.dashboard.id;
+    } else {
+      const made = await createSavedView({ name, tab: 'results', query: '' }, owner);
+      if (!made.ok) throw new Error(made.reason);
+      id = made.view.id;
+    }
+    const table = kind === 'dashboard' ? 'dashboards' : 'saved_views';
+    if (which.endsWith('Shared')) await execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
+    if (which === 'ownerless Shared') await execRaw(`UPDATE ${table} SET owner_id = NULL WHERE id = '${id}'`);
+    return id;
+  }
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    const editor = await createUser({ email: 'owned-items-editor@example.com', role: 'editor' });
+    if ('error' in editor) throw new Error(editor.error);
+    await inTransaction(tx => replaceAssignmentsOn(tx, editor.user.id, [{ tenantId: MATRIX_TENANT, scope: SCOPE_SUBSCRIPTION, role: 'editor' }]));
+    userIds['Editor on one subscription'] = editor.user.id;
+    const stranger = await createUser({ email: 'owned-items-stranger@example.com', role: 'editor' });
+    if ('error' in stranger) throw new Error(stranger.error);
+    strangerId = stranger.user.id;
+  });
+
+  it('has an entry for every route file under dashboards and views', () => {
+    const onDisk = [...diskRoutes.keys()].filter(r => r.startsWith('dashboards') || r.startsWith('views')).sort();
+    expect(onDisk).toEqual([...OWNED_COLLECTION_ROUTES, ...Object.keys(OWNED_ITEM_MATRIX)].sort());
+  });
+
+  for (const [route, calls] of Object.entries(OWNED_ITEM_MATRIX)) {
+    for (const [index, entry] of calls.entries()) {
+      for (const person of ITEM_PEOPLE) {
+        for (const which of ITEM_KINDS) {
+          it(`${route} #${index + 1}: ${person}, ${which}`, async () => {
+            const id = await seedItem(entry.kind, which, person);
+            mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+            expect(await entry.call(id)).toBe(entry.expected[person][which]);
+          });
+        }
+      }
+    }
+  }
+
+  for (const route of OWNED_COLLECTION_ROUTES) {
+    for (const person of ITEM_PEOPLE) {
+      it(`${route}: ${person} creates a Personal item and lists exactly what they may open`, async () => {
+        const ids = Object.fromEntries(await Promise.all(ITEM_KINDS.map(async which => [which, await seedItem(route === 'dashboards' ? 'dashboard' : 'view', which, person)])));
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        const module = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
+        const listed = (await (await module.GET()).json() as { id: string }[]).map(i => i.id);
+        for (const which of ITEM_KINDS) expect(listed.includes(ids[which]!), which).toBe(LISTED[which]);
+
+        const res = await module.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
+          ? { name: `created ${++ownedCounter}` } : { name: `created ${++ownedCounter}`, tab: 'results', query: '' }));
+        expect(res.status).toBe(201);
+        expect(await res.json()).toMatchObject({ visibility: 'personal', owner: { id: userIds[person] } });
+      });
+    }
+  }
 });

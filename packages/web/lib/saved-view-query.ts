@@ -10,6 +10,7 @@
  */
 import { viewFromSearchParams, viewToSearchParams } from './finding-view';
 import type { HeldBack } from './held-back';
+import type { ItemOwner, ItemVisibility } from './types';
 
 export const SAVED_VIEW_TABS = ['results', 'advisories', 'activity'] as const;
 export type SavedViewTab = (typeof SAVED_VIEW_TABS)[number];
@@ -34,6 +35,11 @@ export interface SavedView extends SavedViewFields {
   createdAt: string;
   updatedBy: string | null;
   updatedAt: string;
+  /** Null for a Shared view with no Owner: its creator was removed, or it has none on record. */
+  owner: ItemOwner | null;
+  visibility: ItemVisibility;
+  /** Starts at 1 and goes up by one on every write. */
+  revision: number;
 }
 
 /** A saved view as the routes return it: `query` leaves out the stored values outside the viewer's Access,

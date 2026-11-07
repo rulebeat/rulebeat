@@ -17,7 +17,7 @@ import { buildAccess, everythingAccess, parseScope, type Access } from '@/lib/ac
 const EXPECTED: Record<Role, Action[]> = {
   // account:self (manage your own password) sits outside the read/write ladder. Every real role
   // gets it, so it's listed on all three rather than folded into 'read'.
-  viewer: ['read', 'account:self'],
+  viewer: ['read', 'account:self', 'dashboards:personal', 'views:personal'],
   editor: [
     'read',
     'account:self',
@@ -29,8 +29,12 @@ const EXPECTED: Record<Role, Action[]> = {
     'schedules:write',
     'categories:write',
     'suppressions:write',
+    'dashboards:personal',
+    'views:personal',
     'dashboards:write',
     'views:write',
+    'dashboards:manage',
+    'views:manage',
     'schemas:refresh',
   ],
   admin: [
@@ -43,8 +47,12 @@ const EXPECTED: Record<Role, Action[]> = {
     'scans:run',
     'schedules:write',
     'suppressions:write',
+    'dashboards:personal',
+    'views:personal',
     'dashboards:write',
     'views:write',
+    'dashboards:manage',
+    'views:manage',
     'schemas:refresh',
     'categories:write',
     'users:manage',
@@ -86,9 +94,9 @@ describe('TS-04 · the role → action grid', () => {
 });
 
 describe('TS-04 · role escalation is impossible through the model itself', () => {
-  it('04-01 · a viewer may only read and manage their own password', async () => {
+  it('04-01 · a viewer may only read, manage their own password and keep their own Personal dashboards and saved views', async () => {
     const granted = ALL_ACTIONS.filter(a => can('viewer', a));
-    expect(granted.sort()).toEqual(['account:self', 'read']);
+    expect(granted.sort()).toEqual(['account:self', 'dashboards:personal', 'read', 'views:personal']);
   });
 
   it('04-11 · an editor may not manage users or the audit log, and may manage categories (install-wide, #275)', async () => {
@@ -138,15 +146,19 @@ describe('every role is presentable in the UI', () => {
       expect(ROLE_DESCRIPTIONS[role]).toBeTruthy();
     }
   });
+
+  it('says a Viewer keeps their own Personal dashboards and saved views', () => {
+    expect(ROLE_DESCRIPTIONS.viewer).toMatch(/Personal dashboards and saved views/);
+  });
 });
 
 describe('action classes (#269)', () => {
   const EXPECTED_CLASS: Record<string, string[]> = {
     'install-administration': ['rules:version', 'users:manage', 'audit:read', 'azure:manage', 'auth:manage', 'notifications:manage'],
-    'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'dashboards:write', 'views:write', 'schemas:refresh'],
+    'install-wide': ['rules:write', 'rules:delete', 'schedules:write', 'categories:write', 'dashboards:manage', 'views:manage', 'schemas:refresh'],
     placed: ['suppressions:write'],
-    scoped: ['read', 'rules:validate', 'rules:personal', 'scans:run'],
-    outside: ['account:self'],
+    scoped: ['read', 'rules:validate', 'rules:personal', 'scans:run', 'dashboards:write', 'views:write'],
+    outside: ['account:self', 'dashboards:personal', 'views:personal'],
   };
 
   it('gives every action exactly one class, as the model states it', () => {

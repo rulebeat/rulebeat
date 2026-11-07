@@ -11,8 +11,9 @@
  *  - **Everything** holds nothing back and is never queried for it.
  *  - Free-text search and the rule, category, tag, severity and date-window values are never held back.
  *
- * The stored item is not changed: this only decides what leaves the server. Writing a dashboard or a saved
- * view is install-wide today (`mayAct()`), so everyone who can write holds Everything and is trimmed of nothing.
+ * The stored item is not changed: this only decides what leaves the server. A person who saves a trimmed item
+ * back (their own Personal one, or a Shared one they may change) writes what they were sent, so a held-back
+ * value in an item they change does not survive the save.
  */
 import type { Access } from '../access-model';
 import type { HeldBack, HeldBackPlace } from '../held-back';
