@@ -49,6 +49,18 @@ export function onlyHeldBack(
   return visible === 0 && heldBackCount(heldBack, place, id, dimension) > 0;
 }
 
+/**
+ * The values of a filter the Scans bar draws as chips of their own. A saved view whose dimension is held back in
+ * full opens holding the placeholder `OUTSIDE_ACCESS_LABEL`, which keeps the list empty for this viewer. It is not a
+ * value they chose and cannot drop: the held-back chip stands for it, with no remove control.
+ */
+export function valuesWithoutPlaceholder(
+  heldBack: readonly HeldBack[] | undefined, dimension: string, values: readonly string[],
+): string[] {
+  const held = heldBack?.some(h => h.dimension === dimension) ?? false;
+  return held ? values.filter(value => value !== OUTSIDE_ACCESS_LABEL) : [...values];
+}
+
 const SCOPE_DIMENSIONS = [
   { key: 'subscriptions', dimension: 'subscription', noun: 'subscriptions' },
   { key: 'resourceGroups', dimension: 'resourceGroup', noun: 'resource groups' },
@@ -79,7 +91,7 @@ export function widgetHeldBackReason(
     if (heldOnly) {
       return {
         title: OUTSIDE_ACCESS_LABEL,
-        detail: `This widget is filtered to ${noun} your Access does not include, so it has nothing to count for you. Clear the filter to see your own.`,
+        detail: `This widget is filtered to ${noun} your Access does not include, so it has nothing to count for you. Add one of your ${noun} to its filter to count it.`,
       };
     }
   }

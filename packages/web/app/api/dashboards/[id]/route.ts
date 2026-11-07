@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackDashboards } from '@/lib/db/held-back';
+import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import type { DashboardConfig } from '@/lib/types';
@@ -45,9 +45,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json(updated && (await holdBackDashboards(actor.access, [updated]))[0]);
   }
 
-  const result = await updateDashboard(id, body);
+  // What the person was sent never held the stored values outside their Access, so they go back in before the
+  // save, on the revision they were read at: a save made from a trimmed copy must not lose them for everyone else.
+  const restored = body.config === undefined ? null : await restoreHeldBackDashboard(actor.access, before, body.config);
+  const result = await updateDashboard(
+    id, restored ? { ...body, config: restored.config } : body, restored?.restored ? { ifRevision: before.revision } : {},
+  );
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+    if (result.reason === 'conflict') return Response.json({ error: 'This dashboard changed while you were editing it. Reload it and try again.' }, { status: 409 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
     return Response.json({ error }, { status: 409 });
   }

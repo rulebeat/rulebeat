@@ -11,9 +11,9 @@
  *  - **Everything** holds nothing back and is never queried for it.
  *  - Free-text search and the rule, category, tag, severity and date-window values are never held back.
  *
- * The stored item is not changed: this only decides what leaves the server. A person who saves a trimmed item
- * back (their own Personal one, or a Shared one they may change) writes what they were sent, so a held-back
- * value in an item they change does not survive the save.
+ * The stored item is not changed by reading. A person who saves a trimmed item back (their own Personal one, or a
+ * Shared one they may change) has the held-back values put back first (`restoreHeldBackView`,
+ * `restoreHeldBackDashboard`), so a save made from a trimmed copy cannot lose them for everyone else.
  */
 import type { Access } from '../access-model';
 import { OUTSIDE_ACCESS_LABEL, type HeldBack, type HeldBackPlace } from '../held-back';
@@ -230,4 +230,67 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
     }).filter(f => f.values.length > 0);
     return { ...v, query: viewToSearchParams({ ...parsed[i]!, filters }).toString(), heldBack };
   });
+}
+
+// ---- Saving back ----
+
+const withHeld = (visible: readonly string[], held: readonly string[]) => [...new Set([...visible, ...held])];
+const heldOf = (held: HeldValues, dimension: string, values: unknown) =>
+  (stringsOf(values) ?? []).filter(value => isHeld(held, dimension, value));
+
+/**
+ * The query a person saves back, with the stored values their Access does not reach put back. What they were sent
+ * never held those values, and the placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in
+ * full is not a value: it is dropped. What they changed among the values they could see is kept. `restored` says
+ * whether the stored query held anything back from them, which is when the write should be made on the revision read.
+ */
+export async function restoreHeldBackView(
+  access: Access, stored: { id: string; query: string }, incoming: string,
+): Promise<{ query: string; restored: boolean }> {
+  const before = viewFromSearchParams(new URLSearchParams(stored.query));
+  const held = await heldBackValues(access, viewValues(stored.id, before));
+  const heldFilters = before.filters.map(f => ({ field: f.field, values: heldOf(held, f.field, f.values) })).filter(f => f.values.length > 0);
+  if (heldFilters.length === 0) return { query: incoming, restored: false };
+
+  const after = viewFromSearchParams(new URLSearchParams(incoming));
+  const filters = [...after.filters];
+  for (const { field, values } of heldFilters) {
+    const index = filters.findIndex(f => f.field === field);
+    const kept = index < 0 ? [] : filters[index]!.values.filter(value => value !== OUTSIDE_ACCESS_LABEL);
+    const merged = { field, values: withHeld(kept, values) } as ViewFilter;
+    if (index < 0) filters.push(merged);
+    else filters[index] = merged;
+  }
+  return { query: viewToSearchParams({ ...after, filters }).toString(), restored: true };
+}
+
+/**
+ * The config a person saves back, with the stored subscriptions and resource groups their Access does not reach put
+ * back into the filter bar and into each widget's override that is still there. A widget they removed takes its held-back
+ * values with it. `restored` is as for `restoreHeldBackView`.
+ */
+export async function restoreHeldBackDashboard(
+  access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig,
+): Promise<{ config: DashboardConfig; restored: boolean }> {
+  const held = await heldBackValues(access, dashboardValues(stored.id, stored.config));
+  if (held.size === 0) return { config: incoming, restored: false };
+
+  const restoreInto = (own: Record<string, unknown> | undefined, before: Record<string, unknown> | undefined) => {
+    const out = { ...own };
+    for (const [key, dimension] of DASHBOARD_KEYS) {
+      const back = heldOf(held, dimension, before?.[key]);
+      if (back.length > 0) out[key] = withHeld(stringsOf(own?.[key]) ?? [], back);
+    }
+    return out;
+  };
+
+  const config: DashboardConfig = { ...incoming };
+  if (stored.config.filters && DASHBOARD_KEYS.some(([key, dimension]) => heldOf(held, dimension, stored.config.filters?.[key]).length > 0)) {
+    config.filters = restoreInto(incoming.filters, stored.config.filters) as DashboardConfig['filters'];
+  }
+  config.widgets = (incoming.widgets ?? []).map(widget => {
+    const before = stored.config.widgets?.find(w => w.id === widget.id);
+    return before ? { ...widget, config: restoreInto(widget.config, before.config) } : widget;
+  });
+  return { config, restored: true };
 }

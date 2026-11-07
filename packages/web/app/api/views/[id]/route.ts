@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackSavedViews } from '@/lib/db/held-back';
+import { holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -38,11 +38,21 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const refused = guardItem(actor, 'view', await getSavedView(id), 'change');
-    if (refused) return refused;
-    const result = await updateSavedView(id, fields.value, actor.id);
+    const current = await getSavedView(id);
+    const refused = guardItem(actor, 'view', current, 'change');
+    if (refused || !current) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    // What the person was sent never held the stored values outside their Access, so they go back in before the
+    // save, on the revision they were read at: a save made from a trimmed copy must not lose them for everyone else.
+    const restored = fields.value.query === undefined
+      ? { query: undefined, restored: false }
+      : await restoreHeldBackView(actor.access, current, fields.value.query);
+    const result = await updateSavedView(
+      id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
+      restored.restored ? { ifRevision: current.revision } : {},
+    );
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+      if (result.reason === 'conflict') return Response.json({ error: 'This saved view changed while you were editing it. Reload it and try again.' }, { status: 409 });
       return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
     }
 

@@ -171,7 +171,12 @@ a soft chip with no remove control: a viewer cannot clear a value they cannot se
 
 Opening a saved view whose filter has every value held back lists nothing for that viewer. The filter
 stays on the Scans page as an "Outside your access" chip in place of the values, so the list is empty
-and does not widen to the viewer's whole Access. Removing that chip is the viewer's own choice.
+and does not widen to the viewer's whole Access. The chip has no remove control.
+
+Saving never loses a held-back value. A person who saves a Personal item, or a Shared item they may
+change, from the copy they were sent has the values outside their Access put back first, so everyone
+else the item is shared with still gets them. What they changed among the values they can see is kept.
+If the item changed while they were editing it, the save is refused and they reload it.
 
 The address of the Scans page is different. A subscription or resource group typed into the address
 bar is the viewer's own input, so it reads "Outside your access" on its chip and leaves the list empty.

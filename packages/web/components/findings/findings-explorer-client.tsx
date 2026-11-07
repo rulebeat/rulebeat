@@ -59,7 +59,7 @@ import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
-import { OUTSIDE_ACCESS_LABEL, type HeldBack } from '@/lib/held-back';
+import { valuesWithoutPlaceholder, type HeldBack } from '@/lib/held-back';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -657,23 +657,24 @@ export function FindingsExplorerClient({
     (field: ViewField): ChecklistOption[] => (isRowField(field) ? [] : builtinOptions(field)),
     [builtinOptions],
   );
-  const chips = useMemo<FilterChip[]>(() => filters
-    .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
-    .flatMap(f => f.values.map(value => ({
-      field: f.field, value, fieldLabel: fieldLabel(f.field),
-      valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
-    }))),
-  [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
-
   // The open saved view's stored values this person's Access does not reach, counted beside the filters
   // they sit with. The values themselves never arrive.
   const [openHeldBack, setOpenHeldBack] = useState<HeldBack[]>([]);
-  // A dimension held back in full arrives holding the placeholder `OUTSIDE_ACCESS_LABEL`, which lists nothing and
-  // already has a filter chip of its own, so it gets no count chip beside it.
+  const chips = useMemo<FilterChip[]>(() => filters
+    .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
+    .flatMap(f => valuesWithoutPlaceholder(openHeldBack, f.field, f.values).map(value => ({
+      field: f.field, value, fieldLabel: fieldLabel(f.field),
+      valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
+    }))),
+  [filters, openHeldBack, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
+
+  // A dimension held back in full arrives holding the placeholder `OUTSIDE_ACCESS_LABEL`, which lists nothing. It is
+  // not drawn as a chip of its own: this one stands for it, reads only "Outside your access" and has no remove control.
   const heldChips = useMemo<HeldFilterChip[]>(() => openHeldBack.flatMap(h => {
     const values = filterValues(filters, h.dimension as ViewField);
-    return values.includes(OUTSIDE_ACCESS_LABEL) ? [] : [{
-      dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count, visible: values.length,
+    return values.length === 0 ? [] : [{
+      dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count,
+      visible: valuesWithoutPlaceholder(openHeldBack, h.dimension, values).length,
     }];
   }), [openHeldBack, filters, fieldLabel]);
 

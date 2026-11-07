@@ -11,7 +11,7 @@ import { resetDb } from '../helpers/db';
 import { seedMatrix, SUB_ONE as MATRIX_SUB_ONE, SUB_TWO as MATRIX_SUB_TWO } from '../helpers/access-matrix';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
-import { heldBackCount, heldBackNote, OUTSIDE_ACCESS_LABEL, onlyHeldBack, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { heldBackCount, heldBackNote, OUTSIDE_ACCESS_LABEL, onlyHeldBack, valuesWithoutPlaceholder, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import {
   heldBackValues, holdBackDashboards, holdBackSavedViews, type StoredValues,
 } from '@/lib/db/held-back';
@@ -266,6 +266,20 @@ describe('what the page says', () => {
     it('gives no reason when nothing is held back', () => {
       expect(widgetHeldBackReason([], 'd1', widget(), bar())).toBeNull();
       expect(widgetHeldBackReason(undefined, 'd1', widget(), bar())).toBeNull();
+    });
+  });
+
+  describe('the placeholder a dimension held back in full is opened with', () => {
+    const held: HeldBack[] = [{ place: 'savedView', id: 'v1', dimension: 'subscription', count: 2 }];
+
+    it('is not a value to draw as a chip of its own: the held-back chip stands for it', () => {
+      expect(valuesWithoutPlaceholder(held, 'subscription', [OUTSIDE_ACCESS_LABEL])).toEqual([]);
+      expect(valuesWithoutPlaceholder(held, 'subscription', [SUB_ONE, OUTSIDE_ACCESS_LABEL])).toEqual([SUB_ONE]);
+    });
+
+    it('is an ordinary value in a dimension nothing is held back from', () => {
+      expect(valuesWithoutPlaceholder(held, 'resourceName', [OUTSIDE_ACCESS_LABEL])).toEqual([OUTSIDE_ACCESS_LABEL]);
+      expect(valuesWithoutPlaceholder([], 'subscription', [OUTSIDE_ACCESS_LABEL])).toEqual([OUTSIDE_ACCESS_LABEL]);
     });
   });
 });
