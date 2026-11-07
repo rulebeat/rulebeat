@@ -1,6 +1,6 @@
 import { db } from './client';
 import { dashboards } from './tables';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, sql, and, ne } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
 import type { Dashboard, DashboardConfig } from '@/lib/types';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
@@ -14,6 +14,7 @@ function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
     config: migrateDashboardConfig(JSON.parse(row.config) as DashboardConfig),
     isDefault: row.isDefault ?? false,
     createdAt: row.createdAt,
+    revision: row.revision,
   };
 }
 
@@ -108,6 +109,7 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
       ...(data.name !== undefined && { name: data.name }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.config !== undefined && { config: JSON.stringify(data.config) }),
+      revision: sql`${dashboards.revision} + 1`,
     }).where(eq(dashboards.id, id)));
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     return { ok: true, dashboard: rowToDashboard(stored!) };
@@ -124,7 +126,7 @@ export async function deleteDashboard(id: string): Promise<boolean> {
     await run(tx.delete(dashboards).where(eq(dashboards.id, id)));
     if (row.isDefault) {
       const oldest = await one(tx.select().from(dashboards).orderBy(asc(dashboards.createdAt)).limit(1));
-      if (oldest) await run(tx.update(dashboards).set({ isDefault: true }).where(eq(dashboards.id, oldest.id)));
+      if (oldest) await run(tx.update(dashboards).set({ isDefault: true, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, oldest.id)));
     }
   });
   return true;
@@ -136,8 +138,12 @@ export async function setDefaultDashboard(id: string): Promise<boolean> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
   if (!row) return false;
   await inTransaction(async (tx) => {
-    await run(tx.update(dashboards).set({ isDefault: false }));
-    await run(tx.update(dashboards).set({ isDefault: true }).where(eq(dashboards.id, id)));
+    // Only the rows whose flag actually changes are written, so only they are bumped.
+    const bump = sql`${dashboards.revision} + 1`;
+    await run(tx.update(dashboards).set({ isDefault: false, revision: bump })
+      .where(and(ne(dashboards.id, id), eq(dashboards.isDefault, true))));
+    await run(tx.update(dashboards).set({ isDefault: true, revision: bump })
+      .where(and(eq(dashboards.id, id), eq(dashboards.isDefault, false))));
   });
   return true;
 }

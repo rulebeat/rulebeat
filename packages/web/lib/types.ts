@@ -244,6 +244,8 @@ export interface Dashboard {
   config: DashboardConfig;
   isDefault: boolean;
   createdAt: string;
+  /** Starts at 1; every write to the row bumps it. */
+  revision: number;
 }
 
 export interface Category {
