@@ -40,4 +40,9 @@ describe('AgeBandsChart', () => {
     expect(html).toContain('<td>10</td>');
     expect(html).not.toContain('role="img"');
   });
+
+  it('heads the hidden table label column with Age, not Date', () => {
+    expect(html).toContain('<th scope="col">Age</th>');
+    expect(html).not.toContain('>Date<');
+  });
 });

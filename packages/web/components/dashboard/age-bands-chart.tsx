@@ -35,6 +35,7 @@ export function AgeBandsChart({ bands }: { bands: readonly AgeBand[] }) {
       </ul>
       <ChartDataTable
         caption="Open findings by age"
+        labelColumn="Age"
         columns={['Open findings']}
         rows={bands.map(b => ({ label: b.label, cells: [String(b.count)] }))}
       />

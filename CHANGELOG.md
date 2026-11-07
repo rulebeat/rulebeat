@@ -8,7 +8,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Changed
 
-- Dashboard charts no longer use green for good or red for new findings. The second chart colour is plum in both themes, so New findings draw in the first chart colour and Fixed in plum, and a change in a score or a count reads in ink with a sign, an arrow and words, such as "+12% since 30 days ago". The posture trend, New vs. fixed and Activity occurrences charts leave a gap for a day with no record instead of carrying the last value or drawing a zero, give the reason in the tooltip ("No record for this day" or "Recorded under an earlier posture formula"), and share one 220px plot height. A day recorded under an earlier posture formula now draws as a gap in the trend rather than as a number that means something different. The severity breakdown is one stacked bar with a legend whose counts link to the findings they count. Every chart also carries a hidden table of its dated values for screen readers.
+- Dashboards: three templates, Estate overview, Operations and Application team. A fresh install adds them as Shared dashboards; an upgrade adds none. Anyone can make a Personal copy from New dashboard or Duplicate. Widgets sit on a fixed 12-column grid, each with a set width, and its content sets its height. Saved layouts look snapped but are not rewritten. Editing is a session you save, and a save is refused if someone else saved first. The Contoso demo now replays 120 days. Removed the react-grid-layout dependency.
 
 ## [0.13.1] - 2026-10-16
 
