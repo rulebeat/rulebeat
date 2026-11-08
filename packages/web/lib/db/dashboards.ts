@@ -6,7 +6,7 @@ import type { Dashboard, DashboardConfig, ItemOwner } from '@/lib/types';
 import { loadItemOwners, readVisibility } from './item-owners';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
-import { clearUnreachableMyDefaultsOn } from './default-dashboard';
+import { clearUnreachableMyDefaultsOn, DASHBOARD_NAME_LOCK_KEY } from './default-dashboard';
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -50,7 +50,7 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
  * Postgres (READ COMMITTED) two open transactions cannot see each other's uncommitted row, so every
  * write here takes `pgAdvisoryXactLock()` first, which is a no-op on SQLite.
  */
-const DASHBOARD_NAME_LOCK_KEY = 7194826034;
+// The key itself lives in default-dashboard.ts, which takes it too (My default is written under it).
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 

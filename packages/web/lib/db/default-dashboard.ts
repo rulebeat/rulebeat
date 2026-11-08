@@ -1,10 +1,13 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from './client';
 import { dashboards, users } from './tables';
-import { inTransaction, many, one, run, type DbHandle } from './exec';
+import { inTransaction, many, one, pgAdvisoryXactLock, run, type DbHandle } from './exec';
 import { chunk } from './chunk';
 import { canOpenItem } from '@/lib/item-access-model';
 import { readVisibility } from './item-owners';
+
+/** The one advisory lock every write to a dashboard, the Install default or a My default takes first. */
+export const DASHBOARD_NAME_LOCK_KEY = 7194826034;
 
 /**
  * My default (ADR 0012): the dashboard a person opens first. It lives on the person's own `users` row
@@ -30,6 +33,9 @@ export type SetMyDefaultResult = { ok: true } | { ok: false; reason: 'not-found'
  */
 export async function setMyDefault(userId: string, dashboardId: string): Promise<SetMyDefaultResult> {
   return inTransaction(async (tx) => {
+    // The lock an unshare or a delete takes before it clears the My defaults it strands: without it, on
+    // Postgres, that clearing can read `users` before this choice commits and miss it.
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const target = await one(tx.select({ ownerId: dashboards.ownerId, visibility: dashboards.visibility })
       .from(dashboards).where(eq(dashboards.id, dashboardId)));
     if (!target || !canOpenItem({ id: userId }, { owner: target.ownerId ? { id: target.ownerId } : null, visibility: readVisibility(target.visibility) })) {

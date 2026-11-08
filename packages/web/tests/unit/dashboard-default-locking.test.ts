@@ -1,6 +1,6 @@
 /**
  * On Postgres (READ COMMITTED) a check-then-write needs the dashboard advisory lock. Every writer that reads
- * whether a dashboard is the Install default and then changes it must take the same lock as
+ * whether a dashboard is the Install default, or whether it can be someone's My default, and then changes it must take the same lock as
  * `chooseInstallDefault()`, or a delete can read the flag as unset while a choice commits and then remove the
  * new Install default with no refusal and no audit. SQLite serialises writers, so the race cannot be driven
  * there; this records which key each writer locks on, before its first read.
@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createDashboard, shareDashboard, chooseInstallDefault, unshareDashboard, deleteDashboardAs } from '@/lib/db/dashboards';
+import { setMyDefault } from '@/lib/db/default-dashboard';
 import { createUser } from '@/lib/db/users';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -46,7 +47,7 @@ async function lockKeyOf(run: () => Promise<unknown>): Promise<string> {
   return events[first];
 }
 
-describe('the dashboards that read the Install default flag and then write', () => {
+describe('the dashboards that read the Install default flag or a My default and then write', () => {
   beforeEach(async () => { await resetDb(); events.length = 0; });
 
   it('lock on the same key as choosing the Install default, before their first read', async () => {
@@ -56,11 +57,15 @@ describe('the dashboards that read the Install default flag and then write', () 
     const a = await sharedDashboard(owner, 'A');
     const b = await sharedDashboard(owner, 'B');
     const c = await sharedDashboard(owner, 'C');
+    const d = await sharedDashboard(owner, 'D');
 
     const choose = await lockKeyOf(() => chooseInstallDefault(a));
     const unshare = await lockKeyOf(() => unshareDashboard(b, owner, true));
     const remove = await lockKeyOf(() => deleteDashboardAs(c, true));
 
+    const mine = await lockKeyOf(() => setMyDefault(owner, d));
+
+    expect(mine).toBe(choose);
     expect(unshare).toBe(choose);
     expect(remove).toBe(choose);
   });
