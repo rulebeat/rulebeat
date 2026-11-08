@@ -140,13 +140,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">Not available with a resource group/tag/severity/rule filter, or more than one subscription selected. Trend is tracked by category (and optionally a single subscription) only.</div>;
   }
   if (summary?.trendUnavailable) {
-    const { title, detail } = trendUnavailableMessage(summary.trendUnavailable);
-    return (
-      <div role="status" className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
-        <p className="text-sm font-semibold text-ink">{title}</p>
-        <p className="max-w-xs text-xs text-ink-2">{detail}</p>
-      </div>
-    );
+    return <WidgetUnavailable reason={trendUnavailableMessage(summary.trendUnavailable)} />;
   }
   if (!chartData.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No trend data yet. Run scans to build history.</div>;

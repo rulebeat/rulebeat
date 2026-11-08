@@ -4,7 +4,7 @@
  * are never added up. Live `current` numbers narrow by Scope for everyone, whatever the trend does.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { resetDb } from '../helpers/db';
+import { resetDb, stampSubscriptionPointsFormula3 } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { upsertDailySnapshot } from '@/lib/db/snapshots';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
@@ -21,10 +21,11 @@ const underGroup: Access = buildAccess(
   [{ tenantId: 't', path: GROUP, role: 'viewer', groups: ['mg-example'], subscriptions: [SUB_ONE, SUB_TWO] }],
 );
 
+// Security is the one category with snapshots, and a delta is withheld unless every category in scope has a comparable point.
 async function summary(access: Access, subscriptions?: string[]) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
-  const result = await computeWidgetSummary({ dateWindow: { mode: 'relative', days: 7 }, ...(subscriptions ? { subscriptions } : {}) }, 30, access);
+  const result = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 }, ...(subscriptions ? { subscriptions } : {}) }, 30, access);
   return {
     live: result.current.activeFindings,
     trend: result.trend.map(p => [p.date, p.findings]),
@@ -45,6 +46,7 @@ beforeAll(async () => {
   await upsertDailySnapshot('security', new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e2', finishedAt: '2026-06-02T10:00:00.000Z' });
   await upsertDailySnapshot('security', new Date('2026-06-02T10:00:00.000Z'));
+  await stampSubscriptionPointsFormula3();
 });
 
 describe('the summary trend for a person below Everything', () => {

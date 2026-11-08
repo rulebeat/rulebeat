@@ -6,6 +6,10 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Posture no longer reads 100% while a rule is failing or unknown, and the baseline no longer blends categories or subtracts rounded numbers.
+
 ### Changed
 
 - Dashboard posture now counts only the rules that can look at something you hold. Someone without the Directory no longer has Microsoft Graph rules in their number.

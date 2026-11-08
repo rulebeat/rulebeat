@@ -23,6 +23,7 @@ import type { Role } from '@/lib/rbac';
 import type { Finding, ScanSummary } from '@/lib/types';
 import { emptySeverityCounts } from '@/lib/severity';
 import { syntheticFinding } from './synthetic-findings';
+import { stampSubscriptionPointsFormula3 } from './db';
 import { fakeHierarchy, group, refreshFrom, subscription, type FakeHierarchy } from './fake-hierarchy';
 
 export const MATRIX_TENANT = '00000000-0000-0000-0000-0000000000f0';
@@ -235,6 +236,7 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   if (!dashboard.ok) throw new Error(dashboard.reason);
 
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
+  await stampSubscriptionPointsFormula3();
   return { scanIds, scopedScanId, scheduleId: created.schedule.id, runId: run.id, scopedRunId: scopedRun.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };
 }
 
