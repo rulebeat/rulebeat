@@ -148,24 +148,54 @@ type Kind =
   | 'upgrade'
   /** Only builds statements; the executors named run them and recount. */
   | 'plan'
+  /** Writes in the transaction its callers open; each function that calls it recounts in that same function. */
+  | 'caller-records'
   /** Nothing outside tests calls it. */
   | 'test-only'
   /** A benchmark or demo script that builds a database of its own. */
   | 'tooling';
 
-interface Writer { file: string; fn?: string; kind: Kind; reason: string; executors?: { file: string; uses: string }[] }
+/** `fns` names the functions that write, for the kinds that cover a file function by function: a write by a function not
+ *  named is unlisted, so a new one cannot ride on the entry of its neighbours. */
+interface Writer { file: string; fns?: string[]; kind: Kind; reason: string; executors?: { file: string; uses: string }[] }
+
+/** The kinds whose entry has to name its functions: they say what a function does about the record, so a new function
+ *  has to be read against that. */
+const PER_FUNCTION: Kind[] = ['records', 'upgrade', 'test-only', 'caller-records'];
 
 const WRITERS: Writer[] = [
   { file: 'lib/db/trend-record.ts', kind: 'record', reason: 'the one module that writes the record: cell and fact rows, the Recorded day marker and trend_state' },
-  { file: 'lib/db/findings.ts', kind: 'records', reason: 'the scan sync, a rule\'s cleared findings and the history backfill each recount their rules in their own transaction' },
-  { file: 'lib/suppressions.ts', fn: 'saveSuppressions', kind: 'test-only', reason: 'replaces the whole set for test fixtures; no route or job calls it' },
-  { file: 'lib/suppressions.ts', kind: 'records', reason: 'add and remove recount the rules of the finding they suppress in the same transaction' },
-  { file: 'lib/rules.ts', fn: 'saveRules', kind: 'test-only', reason: 'deletes and reinserts every rule for test fixtures; no route or job calls it' },
-  { file: 'lib/rules.ts', kind: 'records', reason: 'every rule write recounts the rules it changed in the same transaction' },
-  { file: 'lib/workspace-placement.ts', kind: 'records', reason: 'moves Logs findings to their workspace and recounts their rules in the same transaction' },
-  { file: 'lib/db/migrate.ts', kind: 'upgrade', reason: 'SQLite upgrade and seed steps: the placement and rekey steps recount their own change, and every start recounts every key (startTrendRecording)' },
-  { file: 'lib/db/pg/seeds.ts', kind: 'upgrade', reason: 'Postgres seed steps: rule seeding recounts what it touched, and every start recounts every key (startTrendRecordingPg)' },
-  { file: 'lib/db/pg/bootstrap.ts', kind: 'upgrade', reason: 'Postgres bootstrap steps: one recount of the moved findings after the last step, then the start that follows recounts every key' },
+  { file: 'lib/db/findings.ts', fns: ['syncScanFindingsDetailed', 'removeFindingRowsForRule'], kind: 'records', reason: 'the scan sync, a rule\'s cleared findings and the history backfill each recount their rules in their own transaction' },
+  {
+    file: 'lib/db/findings.ts', fns: ['moveFindingsToCategory'], kind: 'caller-records',
+    reason: 'a rule\'s findings follow its category inside the transaction that changes the rule; the rule writes that call it recount',
+    executors: [{ file: 'lib/rules.ts', uses: 'moveFindingsToCategory' }],
+  },
+  { file: 'lib/suppressions.ts', fns: ['saveSuppressions'], kind: 'test-only', reason: 'replaces the whole set for test fixtures; no route or job calls it' },
+  { file: 'lib/suppressions.ts', fns: ['addSuppression', 'removeSuppression'], kind: 'records', reason: 'add and remove recount the rules of the finding they suppress in the same transaction' },
+  { file: 'lib/rules.ts', fns: ['saveRules'], kind: 'test-only', reason: 'deletes and reinserts every rule for test fixtures; no route or job calls it' },
+  {
+    file: 'lib/rules.ts', kind: 'records',
+    fns: ['updateEnabled', 'insertRuleOn', 'updateRuleOn', 'switchRuleVersion', 'deleteRule', 'duplicateRule'],
+    reason: 'every rule write recounts the rules it changed in the same transaction',
+  },
+  {
+    file: 'lib/rules.ts', fns: ['setRulesLastRunStatus'], kind: 'caller-records',
+    reason: 'a scan stamps its rules\' last-run status inside the sync transaction; the sync recounts those rules',
+    executors: [{ file: 'lib/db/findings.ts', uses: 'setRulesLastRunStatus' }],
+  },
+  { file: 'lib/workspace-placement.ts', fns: ['placeWorkspaceFindings'], kind: 'records', reason: 'moves Logs findings to their workspace and recounts their rules in the same transaction' },
+  {
+    file: 'lib/db/migrate.ts', kind: 'upgrade',
+    fns: ['remapFingerprints', 'runMigrations', 'renameRuleIds', 'copyFindingRows', 'seedFromJson', 'seedRules'],
+    reason: 'SQLite upgrade and seed steps: the placement and rekey steps recount their own change, and every start recounts every key (startTrendRecording)',
+  },
+  {
+    file: 'lib/db/pg/seeds.ts', kind: 'upgrade',
+    fns: ['execute', 'seedCategories', 'seedDefaultDashboard', 'seedOnboardingState', 'seedOwnerAccount', 'seedInitialAdmin'],
+    reason: 'Postgres seed steps: rule seeding recounts what it touched, and every start recounts every key (startTrendRecordingPg)',
+  },
+  { file: 'lib/db/pg/bootstrap.ts', fns: ['copyFindingRows'], kind: 'upgrade', reason: 'Postgres bootstrap steps: one recount of the moved findings after the last step, then the start that follows recounts every key' },
   {
     file: 'lib/db/fingerprint-rekey.ts', kind: 'plan', reason: 'builds the rekey statements; its executors recount in the transaction that runs them',
     executors: [{ file: 'lib/db/migrate.ts', uses: 'planFingerprintRekey' }, { file: 'lib/db/pg/bootstrap.ts', uses: 'planFingerprintRekey' }],
@@ -184,7 +214,53 @@ const NOT_POSTURE_INPUTS: { file: string; reason: string }[] = [
   { file: 'lib/db/personal-rules.ts', reason: 'Personal rules and their results live in their own tables and are not counted by any cell' },
 ];
 
-const matches = (w: Writer, file: string, write: Write): boolean => w.file === file && (w.fn === undefined || w.fn === write.fn);
+const unlistedWrites = (file: string, source: string): string[] => findWrites(source)
+  .filter(w => !WRITERS.some(entry => matches(entry, file, w)))
+  .map(w => `${file}:${w.line} ${w.fn}() writes ${w.target} (${w.how})`);
+
+const matches = (w: Writer, file: string, write: Write): boolean => w.file === file && (w.fns === undefined || w.fns.includes(write.fn));
+
+/** The functions of a source that call `name`. */
+export function callersOf(source: string, name: string): string[] {
+  const file = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
+  const found = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === name) found.add(enclosingFunction(n));
+    ts.forEachChild(n, visit);
+  };
+  visit(file);
+  return [...found];
+}
+
+/**
+ * Whether a function of the file records its own writes: it calls a recount, or it calls a function of the file that
+ * does, or a function of the file that does calls it. Only calls to functions declared in the same file are followed.
+ */
+export function recordsInItsFile(source: string, fn: string): boolean {
+  const sf = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
+  const calls = new Map<string, Set<string>>();
+  const recounting = new Set<string>();
+  const collect = (n: ts.Node, owner?: string): void => {
+    let here = owner;
+    if (ts.isFunctionDeclaration(n) && n.name) here = n.name.text;
+    else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) here = n.name.text;
+    if (here !== undefined && !calls.has(here)) calls.set(here, new Set());
+    if (here !== undefined && ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      calls.get(here)!.add(n.expression.text);
+      if (RECOUNT_CALL.test(`${n.expression.text}(`)) recounting.add(here);
+    }
+    ts.forEachChild(n, c => collect(c, here));
+  };
+  collect(sf);
+  const reaches = (from: string, to: Set<string>, seen = new Set<string>()): boolean => {
+    if (to.has(from)) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return [...(calls.get(from) ?? [])].some(c => reaches(c, to, seen));
+  };
+  if (reaches(fn, recounting)) return true;
+  return [...recounting].some(r => reaches(r, new Set([fn])));
+}
 
 describe('the writer sweep', () => {
   it('finds the writers it should and the writes they make', () => {
@@ -198,9 +274,7 @@ describe('the writer sweep', () => {
   });
 
   it('every write to findings, suppressions or the rules\' posture columns is by a listed writer', () => {
-    const unlisted = SCANNED.flatMap(({ file, source }) => findWrites(source)
-      .filter(w => !WRITERS.some(entry => matches(entry, file, w)))
-      .map(w => `${file}:${w.line} ${w.fn}() writes ${w.target} (${w.how})`));
+    const unlisted = SCANNED.flatMap(({ file, source }) => unlistedWrites(file, source));
     expect(unlisted, 'write through lib/db/trend-record.ts in the same transaction, then list the writer in WRITERS').toEqual([]);
   });
 
@@ -208,7 +282,9 @@ describe('the writer sweep', () => {
     for (const w of WRITERS) {
       const entry = SCANNED.find(f => f.file === w.file);
       expect(entry, `${w.file} exists`).toBeDefined();
-      expect(findWrites(entry!.source).some(write => matches(w, w.file, write)), `${w.file}${w.fn ? `:${w.fn}` : ''} still writes`).toBe(true);
+      const writes = findWrites(entry!.source);
+      if (w.fns === undefined) expect(writes.some(write => matches(w, w.file, write)), `${w.file} still writes`).toBe(true);
+      for (const fn of w.fns ?? []) expect(writes.some(write => write.fn === fn), `${w.file}:${fn}() still writes`).toBe(true);
       expect(w.reason.length, `${w.file} has a reason`).toBeGreaterThan(20);
     }
   });
@@ -216,10 +292,21 @@ describe('the writer sweep', () => {
   it('a writer that records calls a recount, an upgrade step is followed by the start, and a planner has executors that recount', () => {
     for (const w of WRITERS) {
       const source = SCANNED.find(f => f.file === w.file)!.source;
-      if (w.kind === 'records') expect(RECOUNT_CALL.test(source), `${w.file} calls a recount`).toBe(true);
+      if (PER_FUNCTION.includes(w.kind)) expect(w.fns?.length, `${w.file} names the functions it covers`).toBeGreaterThan(0);
+      if (w.kind === 'records') {
+        for (const fn of w.fns!) expect(recordsInItsFile(source, fn), `${w.file}:${fn}() recounts, or is called by or calls a function that does`).toBe(true);
+      }
       if (w.kind === 'record') expect(writesAfterTheLock(source), `${w.file} writes only the record`).toEqual([]);
       if (w.kind === 'replaces') expect(source, `${w.file} skips no trend table`).toContain("const SKIPPED_TABLES = new Set(['meta'])");
       if (w.kind === 'upgrade') expect(/\b(?:startTrendRecording|startTrendRecordingPg)\(|\brecountTrend(?:Sqlite|Pg)\(/.test(source), `${w.file} starts or recounts the record`).toBe(true);
+      if (w.kind === 'caller-records') {
+        for (const e of w.executors!) {
+          const executor = SCANNED.find(f => f.file === e.file)!.source;
+          const callers = callersOf(executor, e.uses);
+          expect(callers.length, `${e.file} calls ${e.uses}`).toBeGreaterThan(0);
+          for (const caller of callers) expect(recordsInItsFile(executor, caller), `${e.file}:${caller}() recounts what ${e.uses}() moves`).toBe(true);
+        }
+      }
       if (w.kind === 'plan') {
         expect(w.executors?.length, `${w.file} names its executors`).toBeGreaterThan(0);
         for (const e of w.executors!) {
@@ -232,18 +319,18 @@ describe('the writer sweep', () => {
   });
 
   it('a test-only function is called by nothing outside tests', () => {
-    for (const w of WRITERS.filter(x => x.kind === 'test-only')) {
+    for (const fn of WRITERS.filter(x => x.kind === 'test-only').flatMap(x => x.fns!)) {
       const callers = SCANNED.flatMap(({ file, source }) => {
         const sf = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
         let count = 0;
         const visit = (n: ts.Node): void => {
-          if (ts.isIdentifier(n) && n.text === w.fn && !(ts.isFunctionDeclaration(n.parent) && n.parent.name === n)) count++;
+          if (ts.isIdentifier(n) && n.text === fn && !(ts.isFunctionDeclaration(n.parent) && n.parent.name === n)) count++;
           ts.forEachChild(n, visit);
         };
         visit(sf);
         return count > 0 ? [file] : [];
       });
-      expect(callers, `${w.fn} has a caller outside tests`).toEqual([]);
+      expect(callers, `${fn} has a caller outside tests`).toEqual([]);
     }
   });
 
@@ -272,6 +359,40 @@ describe('the writer sweep', () => {
       expect(/syncScanFindings|trend-record/.test(entry!.source), `${file} reaches the record`).toBe(false);
       expect(reason.length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('a new writer in a file that has listed ones', () => {
+  const NEW_WRITES: [string, string][] = [
+    ['lib/db/findings.ts', "export async function purgeEverything(tx) { await tx.delete(findingsTable); }"],
+    ['lib/suppressions.ts', "export async function dropAll(tx) { await tx.delete(suppressionsTable); }"],
+    ['lib/rules.ts', "export async function silence(tx) { await tx.update(rulesTable).set({ enabled: false }); }"],
+    ['lib/workspace-placement.ts', "export async function shove(tx) { await tx.update(findingsTable).set({ placement: 'x' }); }"],
+    ['lib/db/migrate.ts', "function wipeSuppressions(sqlite) { sqlite.prepare('DELETE FROM suppressions').run(); }"],
+    ['lib/db/pg/bootstrap.ts', "async function wipe(tx) { await tx.delete(findingsTable); }"],
+  ];
+
+  it.each(NEW_WRITES)('%s: a function not named in its entry is unlisted, whatever else the file does', (file, added) => {
+    const source = SCANNED.find(f => f.file === file)!.source;
+    expect(unlistedWrites(file, source)).toEqual([]);
+    expect(unlistedWrites(file, `${source}\n${added}\n`)).toHaveLength(1);
+  });
+});
+
+describe('recordsInItsFile', () => {
+  it('is true for a function that recounts, that calls one that does, or that a recounting function calls', () => {
+    expect(recordsInItsFile('async function a(tx) { await tx.delete(t); await recountTrend(tx, {}); }', 'a')).toBe(true);
+    expect(recordsInItsFile('async function a(tx) { await b(tx); }\nasync function b(tx) { await recountTrend(tx, {}); }', 'a')).toBe(true);
+    expect(recordsInItsFile('async function a(tx) { await tx.delete(t); }\nasync function b(tx) { await a(tx); await recountTrendPg(tx, {}); }', 'a')).toBe(true);
+  });
+
+  it('is false for a function that only writes, even when its neighbour recounts', () => {
+    expect(recordsInItsFile('async function a(tx) { await tx.delete(t); }\nasync function b(tx) { await recountTrend(tx, {}); }', 'a')).toBe(false);
+    expect(recordsInItsFile('async function a(tx) { await tx.delete(t); }', 'a')).toBe(false);
+  });
+
+  it('finds the functions that call a name', () => {
+    expect(callersOf('async function a(tx) { await move(tx); }\nconst b = async (tx) => { await move(tx); await other(tx); };', 'move').sort()).toEqual(['a', 'b']);
   });
 });
 
