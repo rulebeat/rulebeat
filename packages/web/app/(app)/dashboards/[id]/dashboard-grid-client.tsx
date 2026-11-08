@@ -38,6 +38,7 @@ import {
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
 import type { DashboardBarState } from '@/lib/dashboard-bar';
+import { incomingDashboard, noticeFor, seeRevision } from '@/lib/dashboard-revision';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
@@ -181,28 +182,38 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
 
   // The dashboard has one revision on this page. A counting response computed from a newer one means
   // the dashboard changed underneath it (the saved filters among other things): reload the bar and
-  // every number together, and say so. Nothing is saved, and the address stays as it is.
+  // every number together, and say so. Nothing is saved, and the address stays as it is. A layout edit
+  // that is open is not discarded: the page keeps showing the revision it holds, bar included, and
+  // takes the newer one when the edit ends.
+  const layoutEditOpen = editMode || dirty;
+  const layoutEditOpenRef = useRef(layoutEditOpen);
+  useEffect(() => { layoutEditOpenRef.current = layoutEditOpen; }, [layoutEditOpen]);
   const heldRevision = useRef(initial.revision);
   const handledRevision = useRef(initial.revision);
   useEffect(() => { heldRevision.current = dashboard.revision; }, [dashboard.revision]);
   const onRevision = useCallback((seen: number) => {
-    if (seen <= heldRevision.current || seen === handledRevision.current) return;
-    handledRevision.current = seen;
-    setNotice('This dashboard changed since you opened it. The filter bar and every number were reloaded. Your changes are still in the address.');
+    const { view, newer } = seeRevision({ held: heldRevision.current, handled: handledRevision.current }, seen);
+    if (!newer) return;
+    handledRevision.current = view.handled;
+    setNotice(noticeFor(layoutEditOpenRef.current ? 'defer' : 'adopt'));
     router.refresh();
   }, [router]);
 
-  // The reload above hands this component a newer dashboard. Take it unless a layout edit is open, which a
-  // reload must not discard. The save then sends the revision the edit started from.
   useEffect(() => {
-    if (initial.revision === dashboard.revision || dirty || editMode) return;
+    if (incomingDashboard({ held: dashboard.revision, incoming: initial.revision, layoutEditOpen }) !== 'adopt') return;
     // Adopting the reloaded dashboard from props after router.refresh(): an external sync, not derived state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDashboard(initial);
     setWidgets(initial.config.widgets);
     setRefreshKey(k => k + 1);
+    setNotice(noticeFor('adopt'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.revision]);
+  }, [initial.revision, layoutEditOpen]);
+
+  // The bar is the server's account of one revision. While a newer one waits behind a layout edit, keep
+  // showing the bar of the revision held, so the bar never describes different filters from the numbers.
+  const [shownBar, setShownBar] = useState(bar);
+  if (bar !== shownBar && bar.revision === dashboard.revision) setShownBar(bar);
 
   // Every widget below self-fetches from /api/widgets/summary (or its own route) keyed off
   // `refreshKey`: bumping it is the shared "refetch everything" signal for manual refresh and
@@ -576,7 +587,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       </div>
 
       {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
-      <DashboardFilterBar state={bar} saved={saved} marks={outsideAccess} />
+      <DashboardFilterBar state={shownBar} saved={saved} marks={outsideAccess} />
 
       {/* Edit mode banner */}
       {editMode && (

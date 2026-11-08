@@ -166,3 +166,18 @@ describe('the bar as drawn', () => {
     expect(bar).not.toContain(SUB_A);
   });
 });
+
+describe('the Saved line for a rule that was deleted', () => {
+  it('says a rule that no longer exists, never its id', () => {
+    const saved: DashboardFilters = { ...SAVED, rule: ['rule-9'] };
+    query = 'ruleId=rule-1';
+    const changes = dashboardAddress(saved).read(new URLSearchParams(query));
+    const { state, marks } = buildBarState({
+      revision: 1, saved, changes, access: EVERYTHING_ACCESS, widgets: [],
+      known: { rule: new Set(['rule-1']) },
+    });
+    const bar = renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved, marks }));
+    expect(bar).toContain('Saved: A rule that no longer exists');
+    expect(bar).not.toContain('rule-9');
+  });
+});

@@ -189,3 +189,16 @@ describe('a pick', () => {
     expect(dashboardAddress(SAVED).write(backToSaved(next, 'window')).toString()).toBe('');
   });
 });
+
+describe('a saved value that no longer exists', () => {
+  const known = { category: new Set(['cost']), rule: new Set(['rule-1']), tags: new Set<string>() };
+  const saved: DashboardFilters = { ...SAVED, rule: ['rule-9'], category: ['security'] };
+
+  it('is marked in the saved layer too, so the Saved line can say so', () => {
+    const { state: bar } = buildBarState({
+      revision: 1, saved, changes: dashboardAddress(saved).read(new URLSearchParams('severity=high')), access: M, widgets: [], known,
+    });
+    expect(bar.dimensions.rule.savedVanished).toEqual([{ value: 'rule-9', label: 'A rule that no longer exists', note: 'A rule that no longer exists' }]);
+    expect(bar.dimensions.category.savedVanished).toEqual([{ value: 'security', label: 'security', note: 'No longer exists' }]);
+  });
+});

@@ -7,7 +7,7 @@ import { ChecklistDropdown, type ChecklistOption } from '@/components/ui/checkli
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
 import {
-  ANY_WIDENS_REASON, BAR_LIST_DIMENSIONS, backToSaved, pickAny, toggleValue,
+  ANY_WIDENS_REASON, BAR_LIST_DIMENSIONS, backToSaved, pickAny, toggleValue, vanishedText,
   type BarDimension, type BarLayers, type BarListDimension, type DashboardBarState,
 } from '@/lib/dashboard-bar';
 import { dashboardAddress, type DashboardFilterChanges, type DashboardFilters } from '@/lib/finding-view';
@@ -72,7 +72,7 @@ export function dimensionControl(input: {
   const listed = new Set(input.options.map(o => o.value));
   const gone = dim.vanished
     .filter(v => !listed.has(v.value))
-    .map(v => ({ value: v.value, label: v.note === v.label ? v.label : `${nameOf(v.label)} (${v.note})` }));
+    .map(v => ({ value: v.value, label: vanishedText(v, nameOf) }));
   const known = [...input.options, ...gone].map(option => {
     if (!dim.effective.includes(option.value)) return option;
     const picked = toggleValue(layers, dimension, option.value);
@@ -167,7 +167,11 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
 
   const savedLine = (dimension: BarListDimension): string => {
     const dim = state.dimensions[dimension];
-    const named = dim.saved.map(v => nameOf[dimension]?.(v) ?? v);
+    const gone = new Map(dim.savedVanished.map(v => [v.value, v]));
+    const named = dim.saved.map(v => {
+      const vanished = gone.get(v);
+      return vanished ? vanishedText(vanished, nameOf[dimension]) : nameOf[dimension]?.(v) ?? v;
+    });
     const parts = dim.outside.saved > 0 ? [...named, outsideRowLabel(dim.outside.saved)] : named;
     return parts.length > 0 ? parts.join(', ') : 'Any';
   };

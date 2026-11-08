@@ -43,6 +43,13 @@ export interface BarDimensionState {
   outside: { saved: number; url: number };
   /** The effective values that match nothing now. They stay in the dimension until someone removes them. */
   vanished: VanishedValue[];
+  /** The same for the saved values the viewer holds, so the "Saved: ..." line marks them too. */
+  savedVanished: VanishedValue[];
+}
+
+/** How a value that no longer exists reads: a deleted rule has no name left, any other keeps its own. */
+export function vanishedText(vanished: VanishedValue, nameOf: (value: string) => string = v => v): string {
+  return vanished.note === vanished.label ? vanished.label : `${nameOf(vanished.label)} (${vanished.note})`;
 }
 
 export interface DashboardBarState {
@@ -119,7 +126,7 @@ export function buildBarState(input: BuildBarStateInput): { state: DashboardBarS
     const savedAll = saved[dim];
     const visible = (values: string[]) => values.filter(v => !heldBack(dim, v, withGone));
     const effective = visible(effectiveAll);
-    const vanished: VanishedValue[] = effective.filter(v => isGone(dim, known, v)).map(value => dim === 'rule'
+    const vanishedIn = (values: string[]): VanishedValue[] => values.filter(v => isGone(dim, known, v)).map(value => dim === 'rule'
       ? { value, label: VANISHED_RULE_NOTE, note: VANISHED_RULE_NOTE }
       : { value, label: value, note: VANISHED_NOTE });
     dimensions[dim] = {
@@ -131,7 +138,8 @@ export function buildBarState(input: BuildBarStateInput): { state: DashboardBarS
         saved: savedAll.length - visible(savedAll).length,
         url: inUrl ? changes[dim]!.length - visible(changes[dim]!).length : 0,
       },
-      vanished,
+      vanished: vanishedIn(effective),
+      savedVanished: vanishedIn(visible(savedAll)),
     };
   }
 

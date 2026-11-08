@@ -65,8 +65,16 @@ the filter for everyone else. It is allowed once the address itself carries the 
 such a dimension, says that it widens the link for others.
 
 **Values that no longer exist.** A category, tag or rule that was deleted stays in the filter, named, and is
-marked "No longer exists" (a deleted rule reads "A rule that no longer exists"). It matches nothing and is
-never removed on its own: remove it from the bar to change the address.
+marked "No longer exists" (a deleted rule reads "A rule that no longer exists"). The "Saved: ..." line marks
+them the same way. A subscription is called gone only when it has left the management group tree RuleBeat
+keeps, and only for someone with access to Everything; anyone else has it counted under "outside your
+access". A value that no longer exists matches nothing and is never removed on its own: remove it from the
+bar to change the address.
+
+**When the dashboard changes while you have it open.** A number that comes back computed from a newer
+revision reloads the filter bar and every widget together, and a notice says so. Your changes stay in the
+address. If you have a layout edit open, it is not discarded: the notice says so, and the reload happens
+once you save or cancel the edit.
 
 A widget that sets its own value for a dimension is not moved by your change. The bar says so under the
 dimension, for example "2 widgets use their own severity".

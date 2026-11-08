@@ -203,7 +203,8 @@
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar. A pick is written to the address with `router.replace` (`replaceChanges()`), never saved to the dashboard; `dimensionControl()` is what each dimension's checklist shows and does |
 | `packages/web/lib/dashboard-bar.ts` | The bar's rules, client-safe: `buildBarState()` (server, per viewer: effective and saved values the viewer holds, outside counts per layer, vanished values, Changed, widget overrides) and the picks (`toggleValue()`, `pickAny()`, `backToSaved()`) that refuse to widen a dimension |
-| `packages/web/lib/dashboard-known-values.ts` | `loadKnownValues()`: the categories, tags and rules that exist now, for the bar to mark a value that no longer exists |
+| `packages/web/lib/dashboard-known-values.ts` | `loadKnownValues()`: the categories, tags, rules and (from the stored management group tree, once it has been read) subscriptions that exist now, for the bar to mark a value that no longer exists |
+| `packages/web/lib/dashboard-revision.ts` | The page's one held revision: when a response from a newer revision calls for a reload, whether the reloaded dashboard is taken or waits behind an open layout edit, and the conflict notice |
 | `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode. Reads the address for the widgets' filter changes, holds one revision and reloads on a newer one; a layout save omits the saved filters |
 | `packages/web/components/dashboard/widget-config-panel.tsx` | Shared `ScopeSection` config drawer rendered for every widget type |
 | `packages/web/components/dashboard/slide-over-panel.tsx` | `SlideOverPanel`: shared right-drawer shell used by `add-widget-panel.tsx` and `widget-config-panel.tsx` |
