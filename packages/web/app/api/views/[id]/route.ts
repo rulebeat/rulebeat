@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
 import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
@@ -50,9 +50,13 @@ export async function PATCH(req: Request, { params }: Params) {
     const revision = claimedRevision(body);
     if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
     const opened = openedCopy(body);
+    // One findings query serves the restore and the answer: the answer's values are the stored ones and the incoming ones.
+    const held = fields.value.query === undefined
+      ? undefined
+      : await heldBackOfQueries(actor.access, [current, { id, query: fields.value.query }]);
     const restored = fields.value.query === undefined
       ? { query: undefined, restored: false }
-      : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined);
+      : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined, held);
     if (revision === undefined && restored.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
     const result = await updateSavedView(
       id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
@@ -85,8 +89,8 @@ export async function PATCH(req: Request, { params }: Params) {
         details: { fields: changed },
       });
     }
-    const [held] = await holdBackSavedViews(actor.access, [view]);
-    return Response.json(held);
+    const [answer] = await holdBackSavedViews(actor.access, [view], held);
+    return Response.json(answer);
   } catch (err) {
     return serverError('Could not update the saved view', err);
   }

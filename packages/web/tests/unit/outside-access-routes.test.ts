@@ -4,7 +4,7 @@
  * and no response body of any route holds a stored held-back value. The Scans page's own address filters keep
  * their marking (#274): a `subscription` the person holds no Scope in answers 200 with nothing and a mark.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createPeople, MATRIX_OWNER, MATRIX_TENANT, SCOPE_SUBSCRIPTION, seedMatrix, share, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
 import { createSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
@@ -16,6 +16,20 @@ import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/findi
 import { emptyListCopy, emptyReasonOf, filterChipLabel } from '@/lib/explorer-screen';
 import { OUTSIDE_ACCESS_LABEL, type HeldBack } from '@/lib/held-back';
 
+/** The SQL of every query run through `many`, so a test can count the selects made on the findings table. */
+const statements = vi.hoisted(() => [] as string[]);
+vi.mock('@/lib/db/exec', async importOriginal => {
+  const original = await importOriginal<typeof import('@/lib/db/exec')>();
+  return {
+    ...original,
+    many: <T,>(query: { all(): T[] }) => {
+      statements.push((query as unknown as { toSQL(): { sql: string } }).toSQL().sql);
+      return original.many(query);
+    },
+  };
+});
+const findingsSelects = () => statements.filter(sql => /\bfrom "findings"/.test(sql)).length;
+
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
@@ -26,6 +40,24 @@ const { GET: LIST_DASHBOARDS } = await import('@/app/api/dashboards/route');
 const { GET: VIEW } = await import('@/app/api/findings/view/route');
 const { PATCH: SAVE_VIEW } = await import('@/app/api/views/[id]/route');
 const { PUT: SAVE_DASHBOARD } = await import('@/app/api/dashboards/[id]/route');
+
+const { POST: CREATE_VIEW } = await import('@/app/api/views/route');
+const { POST: CREATE_DASHBOARD } = await import('@/app/api/dashboards/route');
+const { POST: DUPLICATE_DASHBOARD } = await import('@/app/api/dashboards/[id]/duplicate/route');
+const stateRoutes = {
+  view: {
+    share: (await import('@/app/api/views/[id]/share/route')).POST,
+    unshare: (await import('@/app/api/views/[id]/unshare/route')).POST,
+    handOver: (await import('@/app/api/views/[id]/hand-over/route')).POST,
+    takeOver: (await import('@/app/api/views/[id]/take-over/route')).POST,
+  },
+  dashboard: {
+    share: (await import('@/app/api/dashboards/[id]/share/route')).POST,
+    unshare: (await import('@/app/api/dashboards/[id]/unshare/route')).POST,
+    handOver: (await import('@/app/api/dashboards/[id]/hand-over/route')).POST,
+    takeOver: (await import('@/app/api/dashboards/[id]/take-over/route')).POST,
+  },
+};
 
 const ONE_SUBSCRIPTION = 'Viewer on one subscription';
 const ONE_GROUP = 'Viewer on one resource group';
@@ -140,6 +172,9 @@ function leaves(text: string): string[] {
   return out;
 }
 
+// A stored value appears in a body as a leaf (a dashboard's array) or inside a query string.
+const holds = (text: string, value: string) => leaves(text).some(leaf => leaf === value) || (value.length > 3 && text.includes(value));
+
 describe('no route response holds a stored held-back value', () => {
   async function bodies(person: string): Promise<string[]> {
     signIn(person);
@@ -152,8 +187,6 @@ describe('no route response holds a stored held-back value', () => {
       await (await LIST_DASHBOARDS()).text(),
     ];
   }
-  // A stored value appears in a body as a leaf (a dashboard's array) or inside a query string.
-  const holds = (text: string, value: string) => leaves(text).some(leaf => leaf === value) || (value.length > 3 && text.includes(value));
 
   it('leaves them out for a person who holds one subscription, but not what that person can see', async () => {
     const texts = await bodies(ONE_SUBSCRIPTION);
@@ -490,6 +523,182 @@ describe('saving an item back from the trimmed copy', () => {
       const stale = await patchView(id, { query: 'severity=high', revision: received.revision, opened: received.query });
       expect(stale.status).toBe(409);
       expect(await getSavedView(id)).toEqual(before);
+    });
+  });
+});
+
+/**
+ * Every route that returns a dashboard or a saved view, called by a person the stored values are held back from. The
+ * checks are on the bodies the routes answer with, whatever the status: a refusal must not name a value either.
+ */
+describe('every route that returns a dashboard or a saved view, for a person with values held back', () => {
+  const JSON_HEADERS = { 'content-type': 'application/json' };
+  const HELD = [SUB_TWO, 'vm-other-sub', 'x'];
+  const HELD_QUERY = viewToSearchParams({
+    ...emptyView(),
+    filters: [
+      { field: 'subscription', values: [SUB_TWO] },
+      { field: 'resourceName', values: ['vm-other-sub', 'vm-one'] },
+      { field: 'row.otherSubColumn', values: ['x'] },
+    ],
+  }).toString();
+  const heldConfig = (): DashboardConfigLike => ({
+    filters: { subscriptions: [SUB_ONE, SUB_TWO], resourceGroups: [] },
+    widgets: [{ id: 'w', type: 'stat-card', title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: [SUB_TWO] } }],
+  });
+  type DashboardConfigLike = Parameters<typeof createDashboard>[0]['config'];
+
+  let scoped: string;
+  let serial = 0;
+  const name = (label: string) => `${label} ${++serial}`;
+
+  beforeAll(async () => {
+    const created = await createUser({ email: 'body-check-editor@example.com', role: 'editor' });
+    if ('error' in created) throw new Error(created.error);
+    scoped = created.user.id;
+    await inTransaction(async tx => {
+      await deleteAssignmentsOn(tx, scoped);
+      await grantAssignmentOn(tx, scoped, MATRIX_TENANT, SCOPE_SUBSCRIPTION, 'editor');
+    });
+  });
+
+  const as = (person: string) => mockAuth.mockResolvedValue({ user: { uid: person === 'scoped' ? scoped : people[person] } });
+  const json = (method: string, body?: unknown) => ({ method, headers: JSON_HEADERS, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const req = (method = 'POST', body?: unknown) => new Request('http://localhost/api/x', json(method, body));
+
+  /** A Personal saved view or dashboard of `owner` that stores the held values. */
+  async function ownView(owner: string) {
+    const made = await createSavedView({ name: name('Body view'), tab: 'results', query: HELD_QUERY }, owner === 'scoped' ? scoped : people[owner]!);
+    if (!made.ok) throw new Error(made.reason);
+    return made.view;
+  }
+  async function ownDashboard(owner: string) {
+    const made = await createDashboard({ name: name('Body dashboard'), config: heldConfig() }, owner === 'scoped' ? scoped : people[owner]!);
+    if (!made.ok) throw new Error(made.reason);
+    return made.dashboard;
+  }
+
+  /** The text of a response, with the stored held-back values and the placeholder rules checked on it. */
+  async function clean(res: Response, status: number): Promise<{ text: string; body: Record<string, unknown> }> {
+    const text = await res.text();
+    expect(res.status, text).toBe(status);
+    for (const value of HELD) expect(holds(text, value), `${value} in ${text}`).toBe(false);
+    return { text, body: JSON.parse(text) as Record<string, unknown> };
+  }
+  const counted = (body: Record<string, unknown>) => expect((body.heldBack as HeldBack[]).length).toBeGreaterThan(0);
+
+  describe.each(['scoped', 'No Scope'])('%s: Personal items', person => {
+    it('POST /api/views answers the saved view without them', async () => {
+      as(person);
+      const { body } = await clean(await CREATE_VIEW(req('POST', { name: name('Created view'), tab: 'results', query: HELD_QUERY })), 201);
+      counted(body);
+    });
+
+    it('PATCH /api/views/[id] answers the saved view without them, for a rename and for a save of the received query', async () => {
+      const view = await ownView(person);
+      as(person);
+      const renamed = await clean(await SAVE_VIEW(req('PATCH', { name: name('Renamed view') }), ctx(view.id)), 200);
+      counted(renamed.body);
+      const current = (await getSavedView(view.id))!;
+      const saved = await clean(await SAVE_VIEW(req('PATCH', { query: `${HELD_QUERY}&severity=high`, revision: current.revision }), ctx(view.id)), 200);
+      counted(saved.body);
+    });
+
+    it('POST /api/dashboards answers the dashboard without them', async () => {
+      as(person);
+      const { body } = await clean(await CREATE_DASHBOARD(req('POST', { name: name('Created dashboard'), config: heldConfig() })), 201);
+      counted(body);
+    });
+
+    it('PUT /api/dashboards/[id] answers the dashboard without them, for a rename, for a config save and for isDefault alone', async () => {
+      const dashboard = await ownDashboard(person);
+      as(person);
+      const renamed = await clean(await SAVE_DASHBOARD(req('PUT', { name: name('Renamed dashboard') }), ctx(dashboard.id)), 200);
+      counted(renamed.body);
+      const current = (await getDashboard(dashboard.id))!;
+      const saved = await clean(await SAVE_DASHBOARD(req('PUT', { config: heldConfig(), revision: current.revision }), ctx(dashboard.id)), 200);
+      counted(saved.body);
+      // Choosing the Install default is the Manage action: a person who holds only part of the install is refused.
+      await clean(await SAVE_DASHBOARD(req('PUT', { isDefault: true }), ctx(dashboard.id)), 403);
+    });
+
+    it('POST /api/dashboards/[id]/duplicate answers the copy without them', async () => {
+      const dashboard = await ownDashboard(person);
+      as(person);
+      const { body } = await clean(await DUPLICATE_DASHBOARD(req(), ctx(dashboard.id)), 201);
+      counted(body);
+    });
+  });
+
+  describe('scoped: sharing and ownership', () => {
+    it('shares, unshares and hands over a saved view, answering each without them', async () => {
+      const view = await ownView('scoped');
+      as('scoped');
+      counted((await clean(await stateRoutes.view.share(req(), ctx(view.id)), 200)).body);
+      counted((await clean(await stateRoutes.view.unshare(req(), ctx(view.id)), 200)).body);
+      await stateRoutes.view.share(req(), ctx(view.id));
+      counted((await clean(await stateRoutes.view.handOver(req('POST', { userId: people.Admin }), ctx(view.id)), 200)).body);
+    });
+
+    it('shares, unshares and hands over a dashboard, answering each without them', async () => {
+      const dashboard = await ownDashboard('scoped');
+      as('scoped');
+      counted((await clean(await stateRoutes.dashboard.share(req(), ctx(dashboard.id)), 200)).body);
+      counted((await clean(await stateRoutes.dashboard.unshare(req(), ctx(dashboard.id)), 200)).body);
+      await stateRoutes.dashboard.share(req(), ctx(dashboard.id));
+      counted((await clean(await stateRoutes.dashboard.handOver(req('POST', { userId: people.Admin }), ctx(dashboard.id)), 200)).body);
+    });
+
+    it('refuses to take over a Shared item, and the refusal holds none of them', async () => {
+      const view = await ownView('Admin');
+      const dashboard = await ownDashboard('Admin');
+      await share('saved_views', view.id);
+      await share('dashboards', dashboard.id);
+      as('scoped');
+      await clean(await stateRoutes.view.takeOver(req(), ctx(view.id)), 403);
+      await clean(await stateRoutes.dashboard.takeOver(req(), ctx(dashboard.id)), 403);
+    });
+
+    it('answers the Admin\'s take-over with the item in full and nothing counted, since the Admin holds Everything', async () => {
+      const view = await ownView('scoped');
+      await share('saved_views', view.id);
+      as('Admin');
+      const res = await stateRoutes.view.takeOver(req(), ctx(view.id));
+      expect(res.status).toBe(200);
+      const body = await res.json() as { query: string; heldBack: HeldBack[] };
+      expect(body.heldBack).toEqual([]);
+      expect(body.query).toContain(SUB_TWO);
+    });
+  });
+
+  describe('Viewer with no Scope: sharing', () => {
+    it('is refused, and the refusal holds none of the values', async () => {
+      const view = await ownView('No Scope');
+      const dashboard = await ownDashboard('No Scope');
+      as('No Scope');
+      await clean(await stateRoutes.view.share(req(), ctx(view.id)), 403);
+      await clean(await stateRoutes.dashboard.share(req(), ctx(dashboard.id)), 403);
+    });
+  });
+
+  describe('one findings query per request', () => {
+    beforeEach(() => { statements.length = 0; });
+
+    it('PATCH /api/views/[id] reads findings once when it restores the held-back values and answers without them', async () => {
+      const view = await ownView('scoped');
+      as('scoped');
+      statements.length = 0;
+      const current = (await getSavedView(view.id))!;
+      const res = await SAVE_VIEW(req('PATCH', { query: `${HELD_QUERY}&severity=high`, revision: current.revision }), ctx(view.id));
+      expect(res.status).toBe(200);
+      expect(findingsSelects()).toBe(1);
+    });
+
+    it('GET /api/views reads findings once for every view it lists', async () => {
+      as('scoped');
+      statements.length = 0;
+      expect((await LIST_VIEWS()).status).toBe(200);
+      expect(findingsSelects()).toBe(1);
     });
   });
 });

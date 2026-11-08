@@ -6,7 +6,7 @@
  * (subscription one, `rg-two`, zone `b`, suppressed), `vm-other-sub` (subscription two, zone `a` and a column
  * `otherSubColumn` of `x` no other finding has) and the Directory, group and workspace findings.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { seedMatrix, SUB_ONE as MATRIX_SUB_ONE, SUB_TWO as MATRIX_SUB_TWO } from '../helpers/access-matrix';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
@@ -15,7 +15,23 @@ import { heldBackCount, heldBackNote, OUTSIDE_ACCESS_LABEL, onlyHeldBack, values
 import {
   heldBackValues, holdBackDashboards, holdBackSavedViews, type StoredValues,
 } from '@/lib/db/held-back';
+import { deleteMeta, getMeta, setMeta } from '@/lib/db/meta';
+import { FINDING_ROWS_COPY_MARKER } from '@/lib/db/finding-rows-copy';
 import type { DashboardConfig } from '@/lib/types';
+
+/** The SQL of every query run through `many`, so a test can count the selects made on the findings table. */
+const statements = vi.hoisted(() => [] as string[]);
+vi.mock('@/lib/db/exec', async importOriginal => {
+  const original = await importOriginal<typeof import('@/lib/db/exec')>();
+  return {
+    ...original,
+    many: <T,>(query: { all(): T[] }) => {
+      statements.push((query as unknown as { toSQL(): { sql: string } }).toSQL().sql);
+      return original.many(query);
+    },
+  };
+});
+const findingsSelects = () => statements.filter(sql => /\bfrom "findings"/.test(sql)).length;
 
 const SUB_ONE = MATRIX_SUB_ONE;
 const SUB_TWO = MATRIX_SUB_TWO;
@@ -137,6 +153,32 @@ describe('resourceName and row values', () => {
     const read = async () => { reads++; return { names: new Set(['vm-one']), rows: new Map<string, Set<string>>() }; };
     await heldBackValues(oneSubscription, [stored('resourceName', 'a'), stored('row.zone', 'a'), stored('row.sku', 'b'), stored('resourceName', 'c')], read);
     expect(reads).toBe(1);
+  });
+});
+
+describe('the findings query behind a request', () => {
+  const oneSubscription = holding([`/subscriptions/${SUB_ONE}`]);
+  const asked = [stored('resourceName', 'vm-one', 'vm-other-sub'), stored('row.zone', 'a'), stored('row.otherSubColumn', 'x')];
+  beforeEach(() => { statements.length = 0; });
+
+  it('selects from the findings table once when the rows are in finding_rows', async () => {
+    const held = await heldBackValues(oneSubscription, asked);
+    expect([...held.get('resourceName') ?? []]).toEqual(['vm-other-sub']);
+    expect(findingsSelects()).toBe(1);
+  });
+
+  describe('before the copy into finding_rows has been proven', () => {
+    let marker: string;
+    beforeAll(async () => { marker = (await getMeta(FINDING_ROWS_COPY_MARKER))!; await deleteMeta(FINDING_ROWS_COPY_MARKER); });
+    afterAll(async () => { await setMeta(FINDING_ROWS_COPY_MARKER, marker); });
+
+    it('still selects from the findings table once, and reads the rows from the old columns', async () => {
+      statements.length = 0;
+      const held = await heldBackValues(oneSubscription, asked);
+      expect([...held.get('row.otherSubColumn') ?? []]).toEqual(['x']);
+      expect(held.has('row.zone')).toBe(false);
+      expect(findingsSelects()).toBe(1);
+    });
   });
 });
 

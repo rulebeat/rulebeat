@@ -65,7 +65,11 @@ const isHeldDimension = (dimension: string) => isScopeDimension(dimension) || di
 const readCarried: CarriedReader = (access, wanted) => inReadTransaction(async (tx) => {
   const t = findingsTable;
   const where = accessFilterSql(access);
-  const inside = await many(tx.select({
+  // Until the copy into finding_rows is proven the rows are in the findings' own columns, so that one select
+  // takes them whole. Otherwise it takes only the columns the names are read from.
+  const legacy = wanted.rows.size > 0 && !(await rowsTableReady(tx));
+  const stored = legacy ? await many(tx.select().from(t).where(where)) : undefined;
+  const inside = stored ?? await many(tx.select({
     fingerprint: t.fingerprint, resourceName: t.resourceName, dimensionKey: t.dimensionKey, resourceId: t.resourceId,
   }).from(t).where(where));
 
@@ -90,8 +94,7 @@ const readCarried: CarriedReader = (access, wanted) => inReadTransaction(async (
     }
   };
 
-  if (!(await rowsTableReady(tx))) {
-    const stored = await many(tx.select().from(t).where(where));
+  if (stored) {
     for (const row of stored) for (const r of rowToRecordFromColumns(row).rows) read(r);
     return { names, rows };
   }
@@ -211,13 +214,15 @@ function viewValues(id: string, view: View): StoredValues[] {
 }
 
 /** Saved views as the routes return them: each query without the stored values `access` does not reach, and
- *  a count per dimension. A dimension with every value held back keeps the placeholder `OUTSIDE_ACCESS_LABEL`. A query with nothing held back is returned exactly as stored. */
+ *  a count per dimension. A dimension with every value held back keeps the placeholder `OUTSIDE_ACCESS_LABEL`. A query with nothing held back is returned exactly as stored.
+ *  `known` is what `heldBackOfQueries` already answered for these views' values, so a request that saves a view and
+ *  answers with it asks the findings once. */
 export async function holdBackSavedViews<T extends { id: string; query: string }>(
-  access: Access, views: readonly T[],
+  access: Access, views: readonly T[], known?: HeldValues,
 ): Promise<(T & { heldBack: HeldBack[] })[]> {
   const parsed = views.map(v => viewFromSearchParams(new URLSearchParams(v.query)));
   const stored = views.map((v, i) => viewValues(v.id, parsed[i]!));
-  const held = await heldBackValues(access, stored.flat());
+  const held = known ?? await heldBackValues(access, stored.flat());
   return views.map((v, i) => {
     const heldBack = countsOf(stored[i]!, held);
     if (heldBack.length === 0) return { ...v, heldBack };
@@ -233,6 +238,15 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
 }
 
 // ---- Saving back ----
+
+/**
+ * What is held back among the values of every query given, from one findings query. A save asks it for the stored
+ * query and the one coming in, then hands the answer to `restoreHeldBackView` and to `holdBackSavedViews` for the
+ * answer, whose values are among those two queries'.
+ */
+export function heldBackOfQueries(access: Access, queries: readonly { id: string; query: string }[]): Promise<HeldValues> {
+  return heldBackValues(access, queries.flatMap(q => viewValues(q.id, viewFromSearchParams(new URLSearchParams(withoutPlaceholder(q.query))))));
+}
 
 const withHeld = (visible: readonly string[], held: readonly string[]) => [...new Set([...visible, ...held])];
 
@@ -252,14 +266,14 @@ function leftOut(held: HeldValues, dimension: string, stored: unknown, opened: r
  * sent: what it did not hold is restored from the stored row, whatever their Access is now. What they changed among
  * the values it held is kept. The placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in full
  * is not a value and is never stored. `restored` says whether anything was put back, which is when the write needs
- * the revision the copy was read at.
+ * the revision the copy was read at. `known` is `heldBackOfQueries`' answer for the stored and the incoming query.
  */
 export async function restoreHeldBackView(
-  access: Access, stored: { id: string; query: string }, incoming: string, opened?: string,
+  access: Access, stored: { id: string; query: string }, incoming: string, opened?: string, known?: HeldValues,
 ): Promise<{ query: string; restored: boolean }> {
   const before = viewFromSearchParams(new URLSearchParams(stored.query));
   const sent = opened === undefined ? undefined : viewFromSearchParams(new URLSearchParams(opened));
-  const held = await heldBackValues(access, viewValues(stored.id, before));
+  const held = known ?? await heldBackValues(access, viewValues(stored.id, before));
   const back = before.filters.filter(f => isHeldDimension(f.field)).map(f => ({
     field: f.field,
     values: leftOut(held, f.field, f.values, sent && sent.filters.filter(o => o.field === f.field).flatMap(o => o.values)),
