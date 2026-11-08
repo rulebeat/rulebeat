@@ -1358,7 +1358,7 @@ export function FindingsExplorerClient({
 
       {savedChanged && (
         <Callout tone="warn" role="status">
-          <span>Someone updated this saved view after you opened it. The list above uses the new version.</span>
+          <span>Someone updated this saved view after you opened it. The list below uses the new version.</span>
           <Button variant="outline" size="xs" className="ml-3" onClick={savedViews?.onReload}>Reload saved view</Button>
         </Callout>
       )}

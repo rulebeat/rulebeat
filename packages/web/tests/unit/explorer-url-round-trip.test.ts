@@ -7,7 +7,7 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUser } from '@/lib/db/users';
-import { createSavedView } from '@/lib/db/saved-views';
+import { createSavedView, deleteSavedView } from '@/lib/db/saved-views';
 import { explorerAddress, viewQuery } from '@/lib/explorer-session';
 import { viewFromSearchParams, viewToSearchParams, type View } from '@/lib/finding-view';
 import { SAVED_VIEW_UNAVAILABLE, savedViewHref, type OpenSavedView } from '@/lib/saved-view-query';
@@ -161,12 +161,28 @@ describe('a saved view open in the address', () => {
     expect(explorerAddress(view, { extraParams: { tab: 'results' }, viewId, saved: saved!.view, lockedCategory: 'security' })).toBe(`tab=results&view=${viewId}`);
   });
 
-  it.each(['no-such-view', 'deleted'])('shows one notice for a view that is %s, with the link\'s other params kept', async name => {
-    const { view, saved, unavailable } = await open(`tab=advisories&view=${name}&severity=high&q=a`);
+  it('shows one notice for a view that never existed, with the link\'s other params kept', async () => {
+    const { view, saved, unavailable } = await open('tab=advisories&view=no-such-view&severity=high&q=a');
     expect(saved).toBeUndefined();
     expect(unavailable).toEqual({ keepHref: '/scans?tab=advisories&severity=high&q=a' });
     expect(view).toEqual(viewFromSearchParams(new URLSearchParams('severity=high&q=a')));
     expect(SAVED_VIEW_UNAVAILABLE).toBe('This saved view is not available to you');
+  });
+
+  it('shows the same notice and action for a view that was created and then deleted', async () => {
+    const created = await createSavedView({ name: 'Short lived', tab: 'advisories', query: 'severity=low' }, null);
+    if (!created.ok) throw new Error(created.reason);
+    const query = `tab=advisories&view=${created.view.id}&severity=high&q=a`;
+    const before = await open(query);
+    expect(before.saved).toMatchObject({ id: created.view.id });
+    expect(before.unavailable).toBeUndefined();
+
+    expect(await deleteSavedView(created.view.id)).not.toBeNull();
+
+    const { view, saved, unavailable } = await open(query);
+    expect(saved).toBeUndefined();
+    expect(unavailable).toEqual({ keepHref: '/scans?tab=advisories&severity=high&q=a' });
+    expect(view).toEqual(viewFromSearchParams(new URLSearchParams('severity=high&q=a')));
   });
 
   it('opens plain /scans with no view exactly as before', async () => {
