@@ -1,6 +1,5 @@
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
-import { queryRuleFindingCounts } from '@/lib/db/finding-views';
 import { getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
@@ -17,6 +16,8 @@ import { getPageAccess } from '@/lib/page-access';
 import { holdsNoScope } from '@/lib/access-model';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
+import { listRulesTab } from '@/lib/rules-tab-list';
+import { rulesQueryFromSearchParams } from '@/lib/rules-tab-query';
 import type { Rule, Suppression } from '@/lib/types';
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
@@ -44,6 +45,8 @@ export default async function ScansPage({
   const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions(access) as Suppression[];
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
+  // The Rules tab's own filters, read by the reader the controls write with.
+  const rulesQuery = rulesQueryFromSearchParams(params);
 
   let runDetail: { run: NonNullable<Awaited<ReturnType<typeof getRun>>>; scans: Awaited<ReturnType<typeof getScansForRun>> } | null = null;
   let snapshotScanId: string | undefined;
@@ -63,8 +66,9 @@ export default async function ScansPage({
     ? await listChannels()
     : undefined;
 
-  // Rules tab's "N resources affected" column: the findings inside the person's Scopes, per rule.
-  const ruleFindingCounts = activeTab === 'rules' ? await queryRuleFindingCounts(access) : undefined;
+  // The Rules tab's list: which rules the address lists, each with its Outcome at the Scope it names and its
+  // "N resources affected", inside the person's Scopes. The browser does not decide what is listed.
+  const ruleList = activeTab === 'rules' ? await listRulesTab(rulesQuery, access) : undefined;
 
   if (activeTab === 'history') {
     if (compare) {
@@ -100,7 +104,6 @@ export default async function ScansPage({
         role={role}
         activeTab={activeTab}
         initialSuppressions={initialSuppressions}
-        initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}
         initialSavedViewId={initialSavedViewId}
         runs={activeTab === 'history' ? await listRunHistory(access, { categories: initialCategoryFilter, limit: 50 }) : undefined}
@@ -115,7 +118,8 @@ export default async function ScansPage({
         initialSchedules={initialSchedules}
         controls={controls}
         notificationChannels={initialNotificationChannels}
-        ruleFindingCounts={ruleFindingCounts}
+        rulesQuery={rulesQuery}
+        ruleList={ruleList}
         tabEmpty={tabEmpty}
         noAccess={holdsNoScope(access)}
       />

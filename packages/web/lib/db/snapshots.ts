@@ -11,6 +11,7 @@ import { loadStoredScanBlobs } from './scan-blob-history';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
 import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
+import { loadOutcomeReader } from '../outcome-reader';
 import { countsTowardPosture, isActivityRule } from '../finding-kinds';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import type { Severity } from '../types';
@@ -20,7 +21,7 @@ const RETENTION_DAYS = 365;
 /** The posture formula a freshly-written row is computed under: bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and
  *  exclude what it can't honestly compare against, instead of silently blending the two. */
-export const SNAPSHOT_FORMULA_VERSION = 2;
+export const SNAPSHOT_FORMULA_VERSION = 3;
 
 export interface DailySnapshot {
   category: string;
@@ -95,6 +96,9 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   );
   const visible = activeRows.filter(f => !suppressedFingerprints.has(f.fingerprint));
 
+  // A stored snapshot is an install-wide value, so its Outcomes are read under SYSTEM_ACCESS too.
+  const outcomes = await loadOutcomeReader(SYSTEM_ACCESS);
+
   const date = toDateKey(now);
   const updatedAt = now.toISOString();
 
@@ -105,15 +109,17 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
       if (sev in severityCounts) severityCounts[sev]++;
     }
 
-    // A rule only counts as passing if it has zero findings here AND its last real run actually
-    // succeeded: zero findings from a rule whose query is silently erroring is not posture,
-    // it's a blind spot (spec 030's whole reason for existing).
+    // A rule only counts as passing if it has zero findings here AND the newest finished scan covering this
+    // Scope ran it to the end (formula v3, `ruleOutcome()`): zero findings from a rule whose query is silently
+    // erroring, or that no scan has run, is not posture, it's a blind spot (spec 030's whole reason for
+    // existing). The row is read through the same reader as the Rules tab, so the two agree.
+    const reading = outcomes.at({ subscriptions: subscriptionId === '' ? [] : [subscriptionId], resourceGroups: [], managementGroups: [] });
     const failingRuleIds = new Set(rows.map(f => f.ruleId).filter(id => stateRuleIds.has(id)));
     let passingRules = 0;
     let unknownRules = 0;
     for (const id of stateRuleIds) {
       if (failingRuleIds.has(id)) continue;
-      if (ruleById.get(id)?.lastRunStatus === 'success') passingRules++;
+      if (reading.outcome(ruleById.get(id)!, false) === 'passing') passingRules++;
       else unknownRules++;
     }
     const posturePct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);

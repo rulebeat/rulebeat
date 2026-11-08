@@ -12,6 +12,7 @@ import { emptySeverityCounts } from './severity';
 import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 import type { Access } from './access-model';
+import { loadOutcomeReader, type OutcomeReading } from './outcome-reader';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -55,18 +56,20 @@ function enabledRuleIdsForCategory(
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
-/** Splits a scope's rule ids by outcome against its findings: passing (zero findings, proven
- *  success), or unknown (zero findings but not a proven success, including never run). A rule
- *  with an active finding is skipped: it's implicitly failing, and never 'unknown' even if its
- *  last run technically errored, since the finding is real even if not exhaustive (spec 004's
- *  capped/failed distinction). */
-function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
+/** Splits a scope's rule ids by outcome against its findings: passing (zero findings, and the newest
+ *  covering scan ran the rule to the end), or unknown (zero findings but not proven, including never
+ *  run). Whether a rule is passing is `ruleOutcome()`'s answer, read at the Scope through the same reader
+ *  as the Rules tab's `outcome=passing` list, so the two never disagree. A rule with an active finding is
+ *  skipped: it's implicitly failing, and never 'unknown' even if its last run technically errored, since
+ *  the finding is real even if not exhaustive (spec 004's capped/failed distinction). */
+function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], ruleById: Map<string, Rule>, reading: OutcomeReading): { passing: number; unknown: number } {
   const failingIds = new Set(findings.map(f => f.ruleId).filter(id => ruleIds.has(id)));
   let passing = 0;
   let unknown = 0;
   for (const id of ruleIds) {
     if (failingIds.has(id)) continue;
-    if (ruleById.get(id)?.lastRunStatus === 'success') passing++;
+    const rule = ruleById.get(id);
+    if (rule && reading.outcome(rule, false) === 'passing') passing++;
     else unknown++;
   }
   return { passing, unknown };
@@ -235,6 +238,10 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const allCategories = await listCategories();
   const allRules = await loadRules();
   const ruleById = new Map(allRules.map(r => [r.id, r]));
+  const outcomes = await loadOutcomeReader(access);
+  const reading = outcomes.at({
+    subscriptions: filters.subscriptions ?? [], resourceGroups: filters.resourceGroups ?? [], managementGroups: [],
+  });
   const targetCategories = filters.categories?.length
     ? allCategories.filter(c => filters.categories!.includes(c.id))
     : allCategories;
@@ -264,7 +271,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     scopedRuleIds = new Set(stateSelected);
     totalRules = scopedRuleIds.size;
     activityRuleCount = filters.ruleIds.filter(id => ruleById.has(id) && isActivityRule(ruleById.get(id)!)).length;
-    const outcome = splitRuleOutcomes(scopedRuleIds, activeFindings, ruleById);
+    const outcome = splitRuleOutcomes(scopedRuleIds, activeFindings, ruleById, reading);
     passingRules = outcome.passing;
     unknownRules = outcome.unknown;
   } else {
@@ -279,7 +286,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       total += stateRuleIds.size;
       activity += catActivity;
       const catFindings = activeFindings.filter(f => f.category === cat.id);
-      const outcome = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
+      const outcome = splitRuleOutcomes(stateRuleIds, catFindings, ruleById, reading);
       passing += outcome.passing;
       unknown += outcome.unknown;
     }
@@ -310,7 +317,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const { stateRuleIds } = enabledRuleIdsForCategory(cat, allRules, filters);
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
-    const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
+    const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById, reading);
     const catPct = catTotal === 0 ? null : Math.round((catPassing / catTotal) * 100);
     // A high posture % is misleading if the scan behind it didn't finish. The coverage-freshness
     // widget must show that alongside recency, not just "how long ago" (spec 004).
@@ -347,7 +354,8 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const perSubscription = subIds.map(subId => {
     const subFindings = activeFindings.filter(f => f.subscriptionId === subId);
     const total = scopedRuleIds.size;
-    const { passing } = splitRuleOutcomes(scopedRuleIds, subFindings, ruleById);
+    const subReading = outcomes.at({ subscriptions: [subId], resourceGroups: filters.resourceGroups ?? [], managementGroups: [] });
+    const { passing } = splitRuleOutcomes(scopedRuleIds, subFindings, ruleById, subReading);
     return {
       subscriptionId: subId,
       pct: total === 0 ? null : Math.round((passing / total) * 100),

@@ -19,6 +19,7 @@ import { rules as rulesTable } from '@/lib/db/tables';
 import { syncScanFindings } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { resetDb, clearRules } from '../helpers/db';
+import { recordScan } from '../helpers/record-scan';
 import type { Finding, Severity } from '@/lib/types';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
@@ -83,6 +84,7 @@ describe('dashboard denominator honesty: severity/tag filters narrow rule scope,
       findings: [finding(RULE_HIGH, 'vm-1', 'high')],
       finishedAt: new Date().toISOString(),
     });
+    await recordScan(CATEGORY, { ranRuleIds: [RULE_HIGH, RULE_MEDIUM] });
   });
 
   it('with no severity filter, totalRules counts both rules and passingRules counts only the clean one', async () => {
@@ -133,6 +135,7 @@ describe('dashboard denominator honesty: tag filter narrows rule scope the same 
       findings: [],
       finishedAt: new Date().toISOString(),
     });
+    await recordScan(CATEGORY, { ranRuleIds: [RULE_TAGGED, RULE_UNTAGGED] });
   });
 
   it('filtering by tag narrows totalRules to just the tagged rule', async () => {

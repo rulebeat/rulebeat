@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SeverityBadge } from '@/components/findings/severity-badge';
@@ -20,14 +20,19 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ToggleChip } from '@/components/ui/toggle-chip';
 import { cn } from '@/lib/utils';
-import { matchesRuleSearch } from '@/lib/rule-filters';
-import { toggleInSet } from '@/lib/toggle-set';
 import { applyRuleToggle, requestRuleToggle } from '@/lib/rule-toggle';
 import {
   bulkChanges, headerCheckboxState, pruneSelection, toggleAllVisible, type BulkAction,
 } from '@/lib/rule-bulk-selection';
 import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } from '@/lib/rule-bulk-toggle';
+import { toggleInSet } from '@/lib/toggle-set';
 import { splitLearnMore } from '@/lib/rule-description';
+import { OUTCOME_DESCRIPTION, OUTCOME_LABEL, RULE_OUTCOMES } from '@/lib/rule-outcome';
+import type { RulesTabList } from '@/lib/rules-tab-list';
+import {
+  EMPTY_RULES_QUERY, RULES_KINDS, hasRulesFilter, rulesQueryToSearchParams, type RulesTabQuery,
+} from '@/lib/rules-tab-query';
+import { shownRules } from '@/lib/rules-tab-view';
 import { can, type Role } from '@/lib/rbac';
 import type { WriteControls } from '@/lib/write-controls';
 import type { Category, Rule, Severity, Suppression } from '@/lib/types';
@@ -47,6 +52,22 @@ const STATUS_OPTIONS = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const;
+const KIND_OPTIONS = [
+  { value: 'all', label: 'All kinds' },
+  ...RULES_KINDS.map(kind => ({ value: kind, label: kind === 'problem' ? 'Problems' : kind === 'advisory' ? 'Advisories' : 'Activity' })),
+];
+const OUTCOME_OPTIONS = [
+  { value: 'all', label: 'All outcomes' },
+  ...RULE_OUTCOMES.map(outcome => ({ value: outcome, label: OUTCOME_LABEL[outcome] })),
+];
+const toggleIn = <T extends string>(list: readonly T[], value: T): T[] => (list.includes(value) ? list.filter(v => v !== value) : [...list, value]);
+
+/** Who the Outcome column is read for, in the words the line above the list uses. */
+function outcomeScopeText(scope: RulesTabList['scope']): string {
+  if (scope.kind === 'everything') return 'Everything';
+  if (scope.kind === 'access') return scope.count === 1 ? 'the Scope you hold' : `the ${scope.count} Scopes you hold`;
+  return scope.count === 1 ? 'the Scope in the address' : `the ${scope.count} Scopes in the address`;
+}
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
@@ -81,7 +102,6 @@ export interface ScansClientProps {
   role: Role;
   activeTab: TabKey;
   initialSuppressions?: Suppression[];
-  initialCategoryFilter?: string[];
   /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
    *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
    *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
@@ -113,9 +133,11 @@ export interface ScansClientProps {
   notificationChannels?: NotificationChannelSummary[];
   /** The person holds no Scope: the Results, Advisories and Activity tabs say so instead of "No findings yet". */
   noAccess?: boolean;
-  /** Active-finding count per rule id, for the Rules tab's "N resources affected" column.
-   *  Undefined when the tab isn't active: server only computes this for ?tab=rules. */
-  ruleFindingCounts?: Record<string, number>;
+  /** The Rules tab's filters as the address holds them, read by `rulesQueryFromSearchParams`. */
+  rulesQuery?: RulesTabQuery;
+  /** The rules the address lists, each with its Outcome at the Scope it names and its "N resources affected".
+   *  Undefined when the tab isn't active: the server only computes this for ?tab=rules. */
+  ruleList?: RulesTabList;
   /** Why the Advisories or Activity tab is empty. Undefined on every other tab. */
   tabEmpty?: TabEmptyState;
 }
@@ -126,7 +148,6 @@ export function ScansClient({
   role,
   activeTab,
   initialSuppressions,
-  initialCategoryFilter,
   initialView,
   initialSavedViewId,
   runs,
@@ -141,7 +162,8 @@ export function ScansClient({
   initialSchedules,
   controls,
   notificationChannels = [],
-  ruleFindingCounts = {},
+  rulesQuery = EMPTY_RULES_QUERY,
+  ruleList,
   tabEmpty,
   noAccess,
 }: ScansClientProps) {
@@ -194,10 +216,18 @@ export function ScansClient({
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
-  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set(initialCategoryFilter ?? []));
+  const [listing, startListing] = useTransition();
+  const categoryFilter = useMemo(() => new Set(rulesQuery.categories), [rulesQuery.categories]);
+  const tagFilter = useMemo(() => new Set(rulesQuery.tags), [rulesQuery.tags]);
+
+  /** The Rules tab's filters live in the address and the server lists the rules, so a control writes the
+   *  address and the page reads it again. The params the page owns, and the Scope, are kept. */
+  function writeRulesQuery(next: RulesTabQuery) {
+    const written = rulesQueryToSearchParams(next, new URLSearchParams(searchString)).toString();
+    ownWrites.record(written);
+    startListing(() => { router.replace(`/scans?${written}`); });
+  }
+  const patchRulesQuery = (patch: Partial<RulesTabQuery>) => writeRulesQuery({ ...rulesQuery, ...patch });
 
   const explorerCategories = useMemo(() => categories.map(c => ({ id: c.id, label: c.label, color: c.color })), [categories]);
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
@@ -216,18 +246,15 @@ export function ScansClient({
       .map(([value, count]) => ({ value, label: categoryById.get(value)?.label ?? value, count }));
   }, [policies, categoryById]);
 
-  const visible = useMemo(() => policies.filter(p => {
-    if (tagFilter.size > 0 && !(p.tags ?? []).some(t => tagFilter.has(t))) return false;
-    if (severityFilter.size > 0 && !severityFilter.has(p.severity)) return false;
-    if (statusFilter === 'enabled'  && !p.enabled) return false;
-    if (statusFilter === 'disabled' &&  p.enabled) return false;
-    if (categoryFilter.size > 0 && !categoryFilter.has(p.category)) return false;
-    if (!matchesRuleSearch(p, search, categoryById.get(p.category)?.label)) return false;
-    return true;
-  }), [policies, tagFilter, severityFilter, statusFilter, categoryFilter, search, categoryById]);
+  // The server's list narrowed by free-text search, the one filter that stays in the browser.
+  const shown = useMemo(
+    () => shownRules(ruleList?.entries ?? [], policies, search, category => categoryById.get(category)?.label),
+    [ruleList, policies, search, categoryById],
+  );
+  const visible = useMemo(() => shown.map(s => s.policy), [shown]);
 
-  // A rule the filters hide leaves the selection for good, so widening the filters again cannot
-  // bring it back into a bulk action unseen. Syncing to the filtered list, not derivable state.
+  // A rule the list hides leaves the selection for good, so widening the filters again cannot
+  // bring it back into a bulk action unseen. Syncing to the server's list, not derivable state.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setSelection(s => pruneSelection(s, visible)); }, [visible]);
   // Also pruned at render, for the one pass before the effect above has run.
@@ -236,13 +263,15 @@ export function ScansClient({
   const headerState = headerCheckboxState(selected, visible);
 
   const enabledCount = policies.filter(p => p.enabled).length;
-  const hasActiveFilter = search.trim() !== '' || tagFilter.size > 0 || severityFilter.size > 0 || statusFilter !== 'all' || categoryFilter.size > 0;
+  const hasActiveFilter = search.trim() !== '' || hasRulesFilter(rulesQuery);
 
   async function toggleEnabled(policy: Rule) {
     setNotice(null);
     const outcome = await requestRuleToggle(policy);
     setPolicies(ps => applyRuleToggle(ps, outcome));
     if (!outcome.ok) setNotice({ tone: 'error', text: outcome.error });
+    // The server decides what is listed and each rule's Outcome, so it is asked again.
+    else router.refresh();
   }
 
   /** Sends only the selected rules this action changes. The selection clears on success and stays
@@ -258,6 +287,7 @@ export function ScansClient({
       if (outcome.ok) {
         setSelection(new Set());
         setNotice({ tone: 'success', text: bulkToggleMessage(outcome) });
+        router.refresh();
       } else {
         setNotice({ tone: 'error', text: outcome.error });
       }
@@ -303,8 +333,8 @@ export function ScansClient({
   // Run Scan target defaults to whatever the Rules tab's Category filter currently holds. The
   // most direct expression of "run what I'm looking at" without forcing Results' own (separate,
   // single-select) category tabs to double as a run target too.
-  const runDefaults = categoryFilter.size > 0
-    ? { targetType: 'categories' as const, targetValues: [...categoryFilter] }
+  const runDefaults = rulesQuery.categories.length > 0
+    ? { targetType: 'categories' as const, targetValues: rulesQuery.categories }
     : { targetType: 'all' as const, targetValues: [] as string[] };
 
   return (
@@ -421,8 +451,8 @@ export function ScansClient({
                   label="Category"
                   options={categoryOptions}
                   selected={categoryFilter}
-                  onToggle={v => setCategoryFilter(s => toggleInSet(s, v))}
-                  onClear={() => setCategoryFilter(new Set())}
+                  onToggle={v => patchRulesQuery({ categories: toggleIn(rulesQuery.categories, v) })}
+                  onClear={() => patchRulesQuery({ categories: [] })}
                 />
 
                 {tagOptions.length > 0 && (
@@ -430,8 +460,8 @@ export function ScansClient({
                     label="Tags"
                     options={tagOptions}
                     selected={tagFilter}
-                    onToggle={v => setTagFilter(s => toggleInSet(s, v))}
-                    onClear={() => setTagFilter(new Set())}
+                    onToggle={v => patchRulesQuery({ tags: toggleIn(rulesQuery.tags, v) })}
+                    onClear={() => patchRulesQuery({ tags: [] })}
                   />
                 )}
 
@@ -439,8 +469,8 @@ export function ScansClient({
                   {SEVERITY_ORDER.map(sev => (
                     <ToggleChip
                       key={sev}
-                      selected={severityFilter.has(sev)}
-                      onClick={() => setSeverityFilter(s => toggleInSet(s, sev))}
+                      selected={rulesQuery.severities.includes(sev)}
+                      onClick={() => patchRulesQuery({ severities: toggleIn(rulesQuery.severities, sev) })}
                       className="capitalize"
                     >
                       {sev}
@@ -451,10 +481,28 @@ export function ScansClient({
                 {/* The trigger fills its parent by design, so it needs a parent with a width. */}
                 <div className="w-36 shrink-0">
                   <Select
-                    value={statusFilter}
-                    onValueChange={v => setStatusFilter(v as typeof statusFilter)}
+                    value={rulesQuery.rules}
+                    onValueChange={v => patchRulesQuery({ rules: v as RulesTabQuery['rules'] })}
                     options={STATUS_OPTIONS}
                     aria-label="Filter by status"
+                  />
+                </div>
+
+                <div className="w-36 shrink-0">
+                  <Select
+                    value={rulesQuery.kind ?? 'all'}
+                    onValueChange={v => patchRulesQuery({ kind: v === 'all' ? undefined : v as RulesTabQuery['kind'] })}
+                    options={KIND_OPTIONS}
+                    aria-label="Filter by kind"
+                  />
+                </div>
+
+                <div className="w-36 shrink-0">
+                  <Select
+                    value={rulesQuery.outcome ?? 'all'}
+                    onValueChange={v => patchRulesQuery({ outcome: v === 'all' ? undefined : v as RulesTabQuery['outcome'] })}
+                    options={OUTCOME_OPTIONS}
+                    aria-label="Filter by outcome"
                   />
                 </div>
 
@@ -462,12 +510,22 @@ export function ScansClient({
                   <Button
                     variant="ghost"
                     className="shrink-0"
-                    onClick={() => { setSearch(''); setTagFilter(new Set()); setSeverityFilter(new Set()); setStatusFilter('all'); setCategoryFilter(new Set()); }}
+                    onClick={() => {
+                      setSearch('');
+                      // The Scope sets where the Outcome is read and hides no rule, so Clear keeps it.
+                      writeRulesQuery({ ...EMPTY_RULES_QUERY, subscriptions: rulesQuery.subscriptions, resourceGroups: rulesQuery.resourceGroups, managementGroups: rulesQuery.managementGroups });
+                    }}
                   >
                     Clear
                   </Button>
                 )}
               </div>
+
+              {ruleList && (
+                <p className="px-6 pt-3 text-xs text-ink-2">
+                  Outcome is read for {outcomeScopeText(ruleList.scope)}.
+                </p>
+              )}
 
               {notice && (
                 <div className="px-6 pt-4">
@@ -478,11 +536,13 @@ export function ScansClient({
               {visible.length === 0 ? (
                 <CardContent>
                   <p className="py-10 text-center text-sm text-ink-muted">
-                    {hasActiveFilter ? 'No rules match your filters' : 'No rules'}
+                    {rulesQuery.outcome && rulesQuery.rules === 'disabled'
+                      ? 'A disabled rule has no outcome, so no rule matches this outcome filter'
+                      : hasActiveFilter ? 'No rules match your filters' : 'No rules'}
                   </p>
                 </CardContent>
               ) : (
-                <div className="divide-y divide-border">
+                <div className="divide-y divide-border" aria-busy={listing}>
                   {/* Select-all row, and the action bar once anything is selected. Normal page
                       flow, not sticky: the page has one scroll region. */}
                   {(canEditRules || rulesOffReason) && (
@@ -537,8 +597,10 @@ export function ScansClient({
                       )}
                     </div>
                   )}
-                  {visible.map(policy => {
-                    const findingCount = ruleFindingCounts[policy.id] ?? 0;
+                  {shown.map(({ policy, entry }) => {
+                    const findingCount = entry.findingCount;
+                    // A rule switched off here has no outcome until the server reads the list again.
+                    const outcome = policy.enabled ? entry.outcome : null;
                     const statusLabel = ruleStatusLabel(policy.lastRunStatus);
                     return (
                       <div
@@ -588,6 +650,18 @@ export function ScansClient({
                         {findingCount > 0 && (
                           <span className="numeral-grid shrink-0 text-xs text-ink-muted">
                             {findingCount} resource{findingCount === 1 ? '' : 's'} affected
+                          </span>
+                        )}
+
+                        {outcome && (
+                          // Red text on the sunken chip is 4.04:1 in the light theme, under 4.5:1 at
+                          // 12px, so Failing carries its red as a swatch and keeps the chip's ink.
+                          <span
+                            className="inline-flex w-fit shrink-0 items-center gap-1.5 bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
+                            title={OUTCOME_DESCRIPTION[outcome]}
+                          >
+                            {outcome === 'failing' && <span className="h-2 w-2 shrink-0 bg-destructive" aria-hidden="true" />}
+                            {OUTCOME_LABEL[outcome]}
                           </span>
                         )}
 

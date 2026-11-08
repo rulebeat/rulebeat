@@ -316,6 +316,8 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: RuleExecutionStatus;
   lastRunAt?: string;
+  /** When the rule was last switched on (#402). Absent: enabled since before this was recorded, or disabled. */
+  enabledAt?: string;
   /** The rule version a shipped (`builtin`) rule currently runs. Absent on a custom rule. Only a
    *  version switch changes it, never an upgrade of an enabled rule (ADR 0004). */
   version?: string;

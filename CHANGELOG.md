@@ -9,6 +9,13 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Added
 
 - Run History filters by category and shows coverage per category. The Category menu on the list writes `?tab=history&category=` to the address (one or more categories), so a filtered list can be linked to, and each run marks every category it attempted as Complete or Partial, from that category's own incomplete rules, or Partial when the run recorded that the category scan failed. A category whose saved scan has expired and that the run does not name as failed shows no mark.
+- Run History keeps the newest scan for each scope it covered.
+- The Rules tab reads kind, outcome and enabled filters from the URL and shows each rule's outcome for the Scope you filter to. Category, tags, severity and Enabled/Disabled now filter on the server, so a link opens the list behind a number, and a rule hidden by a filter leaves the bulk selection.
+- Scans record which rules they ran, and a rule records when it was last switched on, so a scan from before a rule was enabled leaves that rule's outcome unknown, including a rule switched off and on again.
+
+### Changed
+
+- Posture counts a rule as passing only when the newest finished scan that covered the scope ran it to the end, the same test the Rules tab's outcome uses. Before, it counted the rule's last run status install-wide. The snapshot formula moves to version 3, so a trend baseline written under the old formula is not blended in.
 
 ## [0.13.1] - 2026-10-16
 

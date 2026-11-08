@@ -383,6 +383,8 @@ export interface Rule {
    *  findings only counts as passing when this is 'success' (spec 030). */
   lastRunStatus?: 'success' | 'failed' | 'capped' | 'invalid';
   lastRunAt?: string;
+  /** When the rule was last switched on (#402). Absent: enabled since before this was recorded, or disabled. */
+  enabledAt?: string;
   /** Rule version a shipped rule currently runs; absent on a custom rule. */
   version?: string;
   /** Set when no pack ships this built-in any more; the rule keeps running. */
