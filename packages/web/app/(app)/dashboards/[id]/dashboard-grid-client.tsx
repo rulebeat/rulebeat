@@ -5,7 +5,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
-  ChevronDown, Save, MoreHorizontal, Star, Lock,
+  ChevronDown, Save, MoreHorizontal, Star,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -34,10 +34,10 @@ import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboar
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
 import {
-  widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, dashboardFiltersOf, differencesFromSaved, type WidgetFilters,
+  widgetHasScopeOverrides, widgetScopeNote, savedFiltersOf, dashboardFiltersOf, differencesFromSaved, type WidgetFilters,
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
-import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
+import type { OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
@@ -67,7 +67,7 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, canPreview, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, scopeNote, refreshKey, editMode, canPreview, onRemove, onConfigure }: {
   widget: WidgetDef;
   /** The widget as saved on the dashboard, or undefined for one added in this edit. */
   stored: WidgetDef | undefined;
@@ -76,24 +76,17 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   changes: string;
   filters: WidgetFilters;
   filtered: boolean;
+  scopeNote: string;
   refreshKey: number;
   editMode: boolean;
   /** The person has the edit right, so a draft widget may be counted by the server. */
   canPreview: boolean;
-  outsideAccess: OutsideAccess;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
-  // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
-  // empty read would turn into a 100% posture or "No violations found".
-  const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
-  const inner = accessReason ? (
-    <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
-      <Lock className="size-5 text-ink-2" aria-hidden="true" />
-      <p className="text-sm font-semibold text-ink">{accessReason.title}</p>
-      <p className="max-w-xs text-xs text-ink-2">{accessReason.detail}</p>
-    </div>
-  ) : (() => {
+  // A widget with nothing to count for the person (a filter entirely outside their access, or on values
+  // that are gone) is answered by the server with the reason, which the widget shows in place of a number.
+  const inner = (() => {
     switch (widget.type) {
       case 'stat-card':
         return <StatCardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
@@ -102,25 +95,25 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
       case 'trend':
         return <TrendWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
       case 'top-rules':
-        return <TopRulesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <TopRulesWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'category-scorecard':
-        return <CategoryScorecardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <CategoryScorecardWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'recent-findings':
-        return <RecentFindingsWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <RecentFindingsWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'severity-breakdown':
-        return <SeverityBreakdownWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <SeverityBreakdownWidget refreshKey={refreshKey} />;
       case 'subscription-scorecard':
-        return <SubscriptionScorecardWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <SubscriptionScorecardWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'top-resources':
-        return <TopResourcesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <TopResourcesWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'coverage-freshness':
-        return <CoverageFreshnessWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <CoverageFreshnessWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'new-vs-fixed':
         return <NewVsFixedWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'activity-occurrences':
         return <ActivityOccurrencesWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'advisories':
-        return <AdvisoriesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <AdvisoriesWidget config={widget.config as never} refreshKey={refreshKey} />;
       default:
         return <div className="flex h-full items-center justify-center text-sm text-ink-muted">Unknown widget</div>;
     }
@@ -131,7 +124,7 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   const draft = canPreview && (!stored || JSON.stringify(stored.config) !== JSON.stringify(widget.config));
 
   return (
-    <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
+    <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} scopeNote={scopeNote} onRemove={onRemove} onConfigure={onConfigure}>
       <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
         {inner}
       </WidgetRequestProvider>
@@ -623,10 +616,10 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
                   changes={changes}
                   filters={filters}
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
+                  scopeNote={widgetScopeNote(w.config, hasActiveFilters)}
                   refreshKey={refreshKey}
                   editMode={editMode}
                   canPreview={edit.allowed}
-                  outsideAccess={outsideAccess}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />

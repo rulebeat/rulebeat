@@ -25,6 +25,11 @@ export interface AdvisoriesWidgetData {
   hasAdvisoryRules: boolean;
 }
 
+/** What the route answers: the list with the Scans link the server built for each Advisory. */
+export type AdvisoriesWidgetResponse = Omit<AdvisoriesWidgetData, 'items'> & {
+  items: Array<AdvisoryWidgetItem & { href: string }>;
+};
+
 export const ADVISORIES_WIDGET_DEFAULT_LIMIT = 10;
 export const ADVISORIES_WIDGET_MAX_LIMIT = 50;
 

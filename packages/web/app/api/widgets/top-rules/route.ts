@@ -38,7 +38,8 @@ export async function GET(req: Request) {
 
   const sorted = Array.from(ruleMap.values())
     .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(rule => ({ ...rule, href: widget.href({ ruleId: rule.ruleId }) }));
 
   return Response.json({ items: sorted, ...widget.meta });
 }

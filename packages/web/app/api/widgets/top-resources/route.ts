@@ -44,7 +44,8 @@ export async function GET(req: Request) {
 
   const sorted = Array.from(resourceMap.values())
     .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(resource => ({ ...resource, href: widget.href({ search: resource.resourceName }) }));
 
   return Response.json({ items: sorted, ...widget.meta });
 }

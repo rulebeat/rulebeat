@@ -1420,7 +1420,7 @@ describe('the findings routes show each person only what their Scopes cover', ()
     expect(await listedFor()).toEqual({ results: [], advisories: [] });
   });
 
-  it('answers a request filtered to a subscription outside the person\'s access with a 200 and an empty result', async () => {
+  it('answers a request filtered to a subscription outside the person\'s access with a 200 that says so and counts nothing', async () => {
     const ask = async (route: string, query: string) => {
       const handler = await import(`@/app/api/${route}/route`) as { GET(req: Request): Promise<Response> };
       const res = await handler.GET(new Request(`http://localhost/api/${route}?${query}`));
@@ -1430,13 +1430,12 @@ describe('the findings routes show each person only what their Scopes cover', ()
     for (const person of ['Viewer on one subscription', 'Viewer on one resource group']) {
       mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
       const outside = `dashboard=${seed.dashboardId}&widget=matrix-plain&subscription=${SUB_TWO}`;
-      const summary = await ask('widgets/summary', outside) as { current: { activeFindings: number }; perSubscription: unknown[] };
-      expect(summary.current.activeFindings, person).toBe(0);
-      expect(summary.perSubscription, person).toEqual([]);
-      expect((await ask('widgets/findings', outside) as { items: unknown[] }).items, person).toEqual([]);
-      expect((await ask('widgets/top-rules', outside) as { items: unknown[] }).items, person).toEqual([]);
-      expect((await ask('widgets/top-resources', outside) as { items: unknown[] }).items, person).toEqual([]);
-      expect((await ask('widgets/advisories', outside) as { total: number }).total, person).toBe(0);
+      for (const route of ['summary', 'findings', 'top-rules', 'top-resources', 'advisories']) {
+        const body = await ask(`widgets/${route}`, outside);
+        expect(body.noCount, `${person} ${route}`).toMatchObject({ kind: 'outside-access', title: 'Outside your access' });
+        expect(Object.keys(body).sort(), `${person} ${route}`).toEqual(['heldBack', 'noCount', 'revision']);
+        expect(JSON.stringify(body), `${person} ${route}`).not.toContain(SUB_TWO);
+      }
       await ask('widgets/filter-options', '');
       const view = await ask('findings/view', `subscription=${SUB_TWO}`) as { total: number; items: unknown[] };
       expect(view.total, person).toBe(0);

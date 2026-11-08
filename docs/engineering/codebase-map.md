@@ -183,11 +183,13 @@
 | `packages/web/lib/dashboard-filters.ts` | `WidgetFilters` type + `mergeWidgetFilters()`, where per-widget replaces and never intersects |
 | `packages/web/lib/effective-filters.ts` | `effectiveFilters()`: a widget's filters assembled on the server from the dashboard's saved filters, the address's filter changes and the widget override, plus the held-back count and the revision (ADR 0013) |
 | `packages/web/lib/widget-request.ts` | `readWidgetRequest()`: what every counting widget route reads (ids, filter changes, stored limit and trend length, edit-mode preview). Refuses assembled filter params with a 400 |
+| `packages/web/lib/widget-links.ts` | Client-safe: `viewerScansHref()` (a widget's Scans link built from what the viewer holds), `metricScansOverrides()`, the "nothing to count" reasons and the summary response shape |
+| `packages/web/lib/widget-gone.ts` | `goneDimension()`: whether every category, rule or tag a widget is filtered to has been deleted |
 | `packages/web/lib/widget-settings.ts` | Client-safe `periodToDays()` and the stored limit and trend length of a widget, with the 365 and 180 day caps |
 | `packages/web/components/dashboard/widget-request.tsx` | `WidgetRequestProvider` and `useWidgetUrl()`: the URL a widget asks a counting route for |
 | `packages/web/lib/dashboard-data.ts` | `queryActiveFindings`/`computeWidgetSummary`. See the Dashboards trend-limits note in `CLAUDE.md` |
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
-| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
+| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the Scans link builder. Widgets do not call it: the server builds their links through `viewerScansHref()` |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |

@@ -158,13 +158,14 @@ describe('the filter lists', () => {
 });
 
 describe('the Advisories widget', () => {
-  it('keeps its shape: items with eight keys, a total and the Advisory rules signal', async () => {
+  it('keeps its shape: items with nine keys, a total and the Advisory rules signal', async () => {
     const data = await widget('severity=low');
     expect(data).toEqual({
       items: [{
         fingerprint: expect.any(String), ruleId: ADV_LOW, ruleName: `Rule ${ADV_LOW}`,
         resourceId: expect.stringContaining('/virtualMachines/low-1'), resourceName: 'low-1',
         category: 'security', severity: 'low', lastSeenAt: NOW.toISOString(),
+        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&window=7&q=low-1`,
       }],
       total: 1,
       hasAdvisoryRules: true,
@@ -172,7 +173,7 @@ describe('the Advisories widget', () => {
       heldBack: 0,
     });
     expect(Object.keys(data.items[0]).sort()).toEqual([
-      'category', 'fingerprint', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
+      'category', 'fingerprint', 'href', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
     ]);
   });
 

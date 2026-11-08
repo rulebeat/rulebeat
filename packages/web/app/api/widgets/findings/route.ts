@@ -16,5 +16,6 @@ export async function GET(req: Request) {
   // Recent findings feed: newest-first by when each finding first appeared.
   all.sort((a, b) => new Date(b.firstSeenAt).getTime() - new Date(a.firstSeenAt).getTime());
 
-  return Response.json({ items: all.slice(0, limit), ...widget.meta });
+  const items = all.slice(0, limit).map(f => ({ ...f, href: widget.href({ ruleId: f.ruleId, search: f.resourceName }) }));
+  return Response.json({ items, ...widget.meta });
 }

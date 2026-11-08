@@ -1,26 +1,23 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
-import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
+import type { WidgetSummaryResponse } from '@/lib/widget-links';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { limit?: number; category?: string; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+interface Props { config: Config; refreshKey: number }
 
-export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Props) {
+export function SubscriptionScorecardWidget({ config, refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const subNames = useSubscriptionNames();
   const url = useWidgetUrl('summary');
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummaryResponse>(
     url,
     [refreshKey]
   );
@@ -31,6 +28,7 @@ export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Pro
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!summary) return null;
 
   const subs = config.limit ? summary.perSubscription.slice(0, config.limit) : summary.perSubscription;
@@ -57,7 +55,7 @@ export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Pro
             <button
               key={sub.subscriptionId}
               type="button"
-              onClick={() => router.push(buildScansHref(merged, { subscription: sub.subscriptionId }))}
+              onClick={() => router.push(sub.href)}
               className="flex flex-col gap-2 border border-border p-3 text-left transition-colors hover:border-ink hover:bg-surface-hover"
             >
               <span className="truncate text-xs font-semibold text-ink" title={label}>{label}</span>

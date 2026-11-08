@@ -3,9 +3,8 @@
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref, type ScansLinkOverrides } from '@/lib/scans-link';
+import type { WidgetSummaryResponse } from '@/lib/widget-links';
 import { dateWindowLabel, dateWindowPhrase } from '@/lib/date-window';
 import type { StatMetric } from '@/lib/types';
 import { Delta } from '@/components/dashboard/widgets/delta';
@@ -13,25 +12,7 @@ import { postureColor } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
-
-// Metric → /scans Results-tab overrides. Metrics with no obvious equivalent filter (posture %,
-// modules healthy, rules scanned) link to a plain Results tab scoped only by inherited filters.
-function metricOverrides(metric: StatMetric): ScansLinkOverrides {
-  switch (metric) {
-    case 'total-findings':
-      return { status: 'open' };
-    case 'new-findings':
-      return { status: 'new' };
-    case 'fixed-findings':
-      return { status: 'fixed' };
-    case 'critical-findings':
-      return { severity: 'critical' };
-    case 'high-findings':
-      return { severity: 'high' };
-    default:
-      return {};
-  }
-}
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { metric: StatMetric; category?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
@@ -40,7 +21,7 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('summary');
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummaryResponse>(
     url,
     [refreshKey]
   );
@@ -150,16 +131,15 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
     }
   }, [config.metric, summary, dateWindowKey, merged.ruleIds]);
 
-  const href = useMemo(() => buildScansHref(merged, metricOverrides(config.metric)), [merged, config.metric]);
-
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 
   if (failed) return <WidgetUnavailable onRetry={retry} />;
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
 
   return (
     <button
       type="button"
-      onClick={() => router.push(href)}
+      onClick={() => summary && router.push(summary.scansHref)}
       className="flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 px-5 py-4 text-left transition-colors hover:bg-surface-hover"
       title="View in Scans"
     >

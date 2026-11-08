@@ -1,23 +1,20 @@
 'use client';
 
-import { useMemo } from 'react';
 import Link from 'next/link';
 import { Loader2, CheckCircle2 } from 'lucide-react';
-import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
+import type { WidgetSummaryResponse } from '@/lib/widget-links';
 import { CATEGORY_COLORS } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { category?: string; policyIds?: string[]; categories?: string[] /* legacy multi-select, pre-ScopeSection */ }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+interface Props { config: Config; refreshKey: number }
 
-export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+export function CategoryScorecardWidget({ config, refreshKey }: Props) {
   const url = useWidgetUrl('summary');
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummaryResponse>(
     url,
     [refreshKey]
   );
@@ -28,6 +25,7 @@ export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) 
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!summary) return null;
 
   // `summary.perCategory` is already narrowed by the merged category filter server-side; the
@@ -48,7 +46,7 @@ export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) 
           return (
             <Link
               key={mod.category}
-              href={buildScansHref(merged, { category: mod.category })}
+              href={mod.href}
               className="group flex flex-col gap-2 border border-border p-3 transition-colors hover:border-ink hover:bg-surface-hover"
             >
               <div className="flex items-center gap-2">

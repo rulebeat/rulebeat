@@ -37,4 +37,16 @@ describe('every dashboard widget uses the shared unavailable-state contract', ()
     const source = readFileSync(join(WIDGETS_DIR, file), 'utf8');
     expect(source).not.toContain("from '@/lib/fetch-json'");
   });
+
+  it.each(widgetFiles)('%s shows the server\'s reason when it has nothing to count', (file) => {
+    const source = readFileSync(join(WIDGETS_DIR, file), 'utf8');
+    expect(source).toContain("from '@/components/dashboard/widgets/widget-no-count'");
+    expect(source).toMatch(/noCount/);
+  });
+
+  it.each(widgetFiles)('%s uses the Scans link the server built instead of building its own', (file) => {
+    const source = readFileSync(join(WIDGETS_DIR, file), 'utf8');
+    expect(source).not.toContain('buildScansHref');
+    expect(source).not.toContain("from '@/lib/scans-link'");
+  });
 });

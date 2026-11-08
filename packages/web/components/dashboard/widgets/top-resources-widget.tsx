@@ -1,31 +1,28 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import type { Severity } from '@/lib/types';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
-interface ResourceOffender { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: string; }
+interface ResourceOffender { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: string; href: string; }
 interface Config { category?: string; limit?: number; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
+interface Props { config: Config; refreshKey: number; }
 
 /** "These N resources carry the most findings". The resource-side counterpart to the top-
  *  violating-rules widget. Click → /scans filtered by the resource's name (Scans has no
  *  resource-id-scoped filter, so name search is the closest equivalent, same as the old
  *  findings-table row click used). */
-export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
+export function TopResourcesWidget({ config, refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('top-resources', { limit: config.limit ?? 10 });
-  const { data, loading, failed, retry } = useWidgetFetch<{ items: ResourceOffender[] }>(
+  const { data, loading, failed, noCount, retry } = useWidgetFetch<{ items: ResourceOffender[] }>(
     url,
     [refreshKey]
   );
@@ -37,6 +34,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!items.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No violations found</div>;
   }
@@ -47,6 +45,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
     resourceType: d.resourceType,
     count: d.count,
     maxSeverity: d.maxSeverity,
+    href: d.href,
   }));
 
   return (
@@ -75,7 +74,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
                 key={i}
                 fill="var(--color-fill)"
                 cursor="pointer"
-                onClick={() => router.push(buildScansHref(merged, { search: entry.fullName }))}
+                onClick={() => router.push(entry.href)}
               />
             ))}
           </Bar>

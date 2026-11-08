@@ -30,14 +30,16 @@ you see them.
 | **Activity Occurrences** | Daily findings from activity rules. Empty until the Log Analytics backend lands. |
 | **Advisories** | Open Advisories with rule, resource, severity and when each was last seen, most severe first and then most recently seen. Advisories are never counted as problems, so this is the one widget that lists them. A row opens the Advisories tab on Scans. |
 
-Widgets showing findings or rules click through to the Scans page with the same filters applied, so
-the list you land on is the list the number counted.
+Widgets showing findings or rules click through to the Scans page with the filters you see, so the
+list you land on is the list the number counted. RuleBeat builds each link for you from what your own
+access covers, so it never names a subscription or resource group you cannot see.
 
 ## Filters and scope
 
 A dashboard has one filter bar applied to every widget: categories, subscriptions, resource groups,
 tags, severities, rules, and a date window. A funnel indicator appears on the bar and on each widget
-title while a filter is active, so a scoped number never looks global. Tags here are **rule** tags
+title while a filter is active, so a scoped number never looks global. On a widget that sets
+dimensions of its own, the funnel names them, for example "This widget uses its own Severity". Tags here are **rule** tags
 (labels like `framework:iso27001`), not Azure resource tags.
 
 Each widget also has a **Scope** panel with the same dimensions. A value set there **replaces** the
@@ -53,7 +55,9 @@ Three limits a widget will tell you about. Trend needs snapshots at the right gr
 resource group, tag, severity or rule filter, or with two or more subscriptions selected, it says a
 trend is not available rather than drawing a misleading blended line
 ([`posture.md`](posture.md#snapshots-and-trend)); the open-findings delta keeps working under every
-filter. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
+filter. A widget filtered only to subscriptions or resource groups your access does not cover reads
+"Outside your access", with no number and no link. A widget filtered only to a category, rule or tag
+that no longer exists says it has nothing to count, so neither passes for a clean result. A failed data request shows "Couldn't load this widget" with a Retry, while genuinely absent
 data shows an empty state, so a broken dashboard cannot pass for a clean tenant. And no enabled
 rules in scope shows an empty posture rather than 0% or 100%.
 
