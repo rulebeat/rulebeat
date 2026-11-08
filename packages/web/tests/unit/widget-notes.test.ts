@@ -3,7 +3,7 @@
  * the quiet caption style and without a border. The server decides which notes apply; the wrapper
  * only draws the list it is given.
  */
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { WidgetWrapper } from '@/components/dashboard/widget-wrapper';
@@ -12,7 +12,7 @@ import type { WidgetDef } from '@/lib/types';
 const widget = { id: 'w1', type: 'posture-ring', title: 'Overall posture', config: {}, x: 0, y: 0, w: 3, h: 4 } as unknown as WidgetDef;
 
 const render = (notes?: string[]) => renderToStaticMarkup(
-  createElement(WidgetWrapper, { widget, editMode: false, notes, children: createElement('div', { id: 'content' }, 'The figure') }),
+  createElement(WidgetWrapper, { widget, editMode: false, notes } as ComponentProps<typeof WidgetWrapper>, createElement('div', { id: 'content' }, 'The figure')),
 );
 
 describe('WidgetWrapper notes', () => {
