@@ -12,7 +12,7 @@ import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chart
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 import { trendUnavailableMessage } from '@/lib/trend-scope';
-import { WIDGET_LIMITS } from '@/lib/widget-limits';
+import { PER_CATEGORY_TOTAL_NOTE, WIDGET_LIMITS } from '@/lib/widget-limits';
 
 interface Config { category?: string; period?: string; chartType?: string; showFindings?: boolean; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
@@ -160,7 +160,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   return (
     <div className="flex h-full flex-col px-2 py-3">
       {showSubscriptionDenominatorCaveat && (
-        <p className="px-2 pb-1 text-xs text-ink-muted">{WIDGET_LIMITS.w2}</p>
+        <p className="px-2 pb-1 text-xs text-ink-muted">{PER_CATEGORY_TOTAL_NOTE}</p>
       )}
       <ResponsiveContainer width="100%" height="100%" className="min-h-0 flex-1">
         {chartType === 'bar' ? (

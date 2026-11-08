@@ -10,6 +10,7 @@ import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { PER_CATEGORY_TOTAL_DETAIL, PER_CATEGORY_TOTAL_NOTE } from '@/lib/widget-limits';
 
 interface Config { limit?: number; category?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
@@ -43,11 +44,8 @@ export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Pro
       {/* data-widget-content marks the natural-height block the dashboard measures so it
           can shrink this widget's row span to fit. See dashboard-grid-client. */}
       <div data-widget-content className="grid content-start grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-5">
-        <p
-          className="col-span-full text-xs text-ink-muted"
-          title="Each subscription's total reflects every rule enabled for the category. It isn't narrowed to that subscription's own resources, so subscriptions with fewer applicable resource types will always show more headroom than they really have."
-        >
-          Totals are per category, not per subscription
+        <p className="col-span-full text-xs text-ink-muted" title={PER_CATEGORY_TOTAL_DETAIL}>
+          {PER_CATEGORY_TOTAL_NOTE}
         </p>
         {subs.map(sub => {
           const color = postureColor(sub.pct);

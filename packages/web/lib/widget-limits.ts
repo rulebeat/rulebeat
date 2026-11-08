@@ -30,6 +30,16 @@ export const WIDGET_LIMITS = {
   w5: (date: string) => `Counted differently before ${date}. Earlier points use an older definition: see docs/public/posture.md.`,
 } as const;
 
+/**
+ * The caveat on the Subscription scorecard and a single-subscription trend while a subscription is graded
+ * against its category's install-wide total. W2 replaces both once the per-subscription count changes.
+ */
+export const PER_CATEGORY_TOTAL_NOTE = 'Total is per category, not per subscription';
+
+/** The longer reading of PER_CATEGORY_TOTAL_NOTE, shown as the Subscription scorecard caption's tooltip. */
+export const PER_CATEGORY_TOTAL_DETAIL =
+  "Each subscription's total reflects every rule enabled for the category. It isn't narrowed to that subscription's own resources, so subscriptions with fewer applicable resource types will always show more headroom than they really have.";
+
 /** The note a posture figure carries about what "passing" means for the viewer reading it. */
 export function postureLimitNote(holdsEverything: boolean): string {
   return holdsEverything ? EVERYONE_LINE : `${WIDGET_LIMITS.w1} ${EDIT_SENTENCE}`;
