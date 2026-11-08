@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, type Access } from '@/lib/access-model';
 import { guardItem } from '@/lib/item-access';
 import {
-  canOpenItem, DEMOTED_OWNER_NOTE, isDemotedOwner, itemPermissionsFor, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, type ItemKind, type OwnedItem,
+  canOpenItem, DEMOTED_OWNER_NOTE, isDemotedOwner, itemPermissionsFor, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemKind, type OwnedItem,
 } from '@/lib/item-access-model';
 import type { Role } from '@/lib/rbac';
 
@@ -71,6 +71,34 @@ describe('guardItem', () => {
     'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
     'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
   };
+  // Handing over: `*:write` on your own item or `*:manage` on any; taking over: `*:manage` alone. Whether the item is
+  // Shared is the write's check, so a Personal item of your own passes the guard and is refused there with a 409.
+  const HAND_OVER: Record<string, Record<string, number | null>> = {
+    'Viewer': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'scoped Editor': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'Admin': { 'own Personal': OK, 'other Personal': NOT_FOUND, 'own Shared': OK, 'other Shared': OK, 'ownerless Shared': OK },
+    'person with no Scope': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+  };
+  const TAKE_OVER: Record<string, Record<string, number | null>> = {
+    'Viewer': HAND_OVER['Viewer']!,
+    'scoped Editor': { 'own Personal': FORBIDDEN, 'other Personal': NOT_FOUND, 'own Shared': FORBIDDEN, 'other Shared': FORBIDDEN, 'ownerless Shared': FORBIDDEN },
+    'Editor on Everything': HAND_OVER['Editor on Everything']!,
+    'Admin': HAND_OVER['Admin']!,
+    'person with no Scope': HAND_OVER['person with no Scope']!,
+  };
+  for (const kind of ['dashboard', 'view'] as ItemKind[]) {
+    for (const [person, actor] of Object.entries(PEOPLE)) {
+      for (const [label, item] of Object.entries(ITEMS)) {
+        it(`${kind}: ${person} handing over ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'hand-over')?.status ?? null).toBe(HAND_OVER[person]![label]);
+        });
+        it(`${kind}: ${person} taking over ${label}`, () => {
+          expect(guardItem(actor, kind, item, 'take-over')?.status ?? null).toBe(TAKE_OVER[person]![label]);
+        });
+      }
+    }
+  }
   for (const kind of ['dashboard', 'view'] as ItemKind[]) {
     for (const [person, actor] of Object.entries(PEOPLE)) {
       for (const [label, item] of Object.entries(ITEMS)) {
@@ -151,6 +179,30 @@ describe('sharing controls from the permissions a page hands down', () => {
         }
       }
     }
+  });
+
+  it('offers hand over and take over on Shared items only, exactly where the routes would allow them', () => {
+    for (const actor of Object.values(PEOPLE)) {
+      const permissions = itemPermissionsFor(actor.access, 'view');
+      for (const item of Object.values(ITEMS)) {
+        const offered = transferControlsWith(actor, permissions, item);
+        if (item.visibility === 'personal') {
+          expect(offered).toEqual({ handOver: false, takeOver: false });
+          continue;
+        }
+        expect(offered.handOver).toBe(guardItem(actor, 'view', item, 'hand-over') === null);
+        // Taking over what is already yours changes nothing, so it is not offered.
+        expect(offered.takeOver).toBe(item.owner?.id !== actor.id && guardItem(actor, 'view', item, 'take-over') === null);
+      }
+    }
+  });
+
+  it('gives an owner who may write a hand over but no take over, and an Admin both on an ownerless item', () => {
+    const editor = PEOPLE['scoped Editor']!;
+    expect(transferControlsWith(editor, itemPermissionsFor(editor.access, 'dashboard'), ITEMS['own Shared']!)).toEqual({ handOver: true, takeOver: false });
+    expect(transferControlsWith(editor, itemPermissionsFor(editor.access, 'dashboard'), ITEMS['other Shared']!)).toEqual({ handOver: false, takeOver: false });
+    const admin = PEOPLE['Admin']!;
+    expect(transferControlsWith(admin, itemPermissionsFor(admin.access, 'dashboard'), ITEMS['ownerless Shared']!)).toEqual({ handOver: true, takeOver: true });
   });
 
   it('tells the owner of a Shared item they can no longer change, and no one else', () => {

@@ -21,3 +21,6 @@ export function staleStateMessage(kind: ItemKind): string {
 
 /** The 409 for an unshare of an item with no owner: nobody's Personal list can take it back. */
 export const TAKE_OVER_BEFORE_UNSHARING = 'Take this over before unsharing it';
+
+/** The 400 for a hand-over to someone who cannot be given the item. One message for every reason, so it says nothing about the person. */
+export const NOT_ELIGIBLE_TO_OWN = 'That person cannot take this over. Choose someone else.';

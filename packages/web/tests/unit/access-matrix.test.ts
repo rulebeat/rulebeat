@@ -718,8 +718,8 @@ function dashboardMatrix(): Record<string, Matrix> {
   // Only an Admin or an Editor on Everything holds the write action in this matrix (the other people are Viewers),
   // so a probe is a fresh item of the asking person's own: a Personal one to share, a Shared one to unshare.
   const ROUTES = {
-    dashboard: { share: () => import('@/app/api/dashboards/[id]/share/route'), unshare: () => import('@/app/api/dashboards/[id]/unshare/route') },
-    view: { share: () => import('@/app/api/views/[id]/share/route'), unshare: () => import('@/app/api/views/[id]/unshare/route') },
+    dashboard: { share: () => import('@/app/api/dashboards/[id]/share/route'), unshare: () => import('@/app/api/dashboards/[id]/unshare/route'), 'hand-over': () => import('@/app/api/dashboards/[id]/hand-over/route'), 'take-over': () => import('@/app/api/dashboards/[id]/take-over/route') },
+    view: { share: () => import('@/app/api/views/[id]/share/route'), unshare: () => import('@/app/api/views/[id]/unshare/route'), 'hand-over': () => import('@/app/api/views/[id]/hand-over/route'), 'take-over': () => import('@/app/api/views/[id]/take-over/route') },
   };
   /** What a reply holds that depends on the person: the stored filters (a dashboard) or query (a view), and the marks. */
   const stored = (kind: 'dashboard' | 'view') => (kind === 'dashboard' ? { filters: { subscriptions: [SUB_TWO] } } : { query: VIEW_QUERY });
@@ -728,8 +728,8 @@ function dashboardMatrix(): Record<string, Matrix> {
     const shared = same({ status: 200, ...stored(kind), marks: NOTHING_MARKED });
     return byPerson(shared, same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare));
   };
-  const ownItem = async (kind: 'dashboard' | 'view', visibility: 'personal' | 'shared') => {
-    const uid = ((await mockAuth()) as { user: { uid: string } }).user.uid;
+  const ownItem = async (kind: 'dashboard' | 'view', visibility: 'personal' | 'shared', ownerId?: string) => {
+    const uid = ownerId ?? ((await mockAuth()) as { user: { uid: string } }).user.uid;
     const name = `sharing probe ${Math.random().toString(36).slice(2)}`;
     if (kind === 'dashboard') {
       const made = await createDashboard({ name, config: { autoRefresh: 0, widgets: [], filters: { subscriptions: [SUB_TWO] } } }, uid);
@@ -742,6 +742,27 @@ function dashboardMatrix(): Record<string, Matrix> {
     if (visibility === 'shared') await execRaw(`UPDATE saved_views SET visibility = 'shared' WHERE id = '${made.view.id}'`);
     return made.view.id;
   };
+  // Handing over and taking over answer with the item too. Only Shared items change owner: a hand-over probe is
+  // the asking person's own Shared item handed to an Admin, a take-over probe a Shared item of someone else's.
+  const person = async (role: 'admin' | 'editor') => {
+    const made = await createUser({ email: `transfer-${Math.random().toString(36).slice(2)}@example.com`, role });
+    if ('error' in made) throw new Error(made.error);
+    return made.user.id;
+  };
+  const transferMatrix = (kind: 'dashboard' | 'view', action: 'hand-over' | 'take-over'): Matrix => ({
+    probe: async () => {
+      const id = await ownItem(kind, 'shared', action === 'hand-over' ? undefined : await person('editor'));
+      const payload = action === 'hand-over' ? JSON.stringify({ userId: await person('admin') }) : undefined;
+      const res = await (await ROUTES[kind][action]()).POST(
+        new Request(`http://localhost/api/${kind}s/x/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload }),
+        { params: Promise.resolve({ id }) },
+      );
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { outsideAccess: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), marks: reply.outsideAccess };
+    },
+    expected: sharingExpected(kind),
+  });
   const shareMatrix = (kind: 'dashboard' | 'view', action: 'share' | 'unshare'): Matrix => ({
     probe: async () => {
       const id = await ownItem(kind, action === 'share' ? 'personal' : 'shared');
@@ -809,6 +830,8 @@ function dashboardMatrix(): Record<string, Matrix> {
     'dashboards/install-default': installDefault,
     'dashboards/[id]/share': shareMatrix('dashboard', 'share'), 'dashboards/[id]/unshare': shareMatrix('dashboard', 'unshare'),
     'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
+    'dashboards/[id]/hand-over': transferMatrix('dashboard', 'hand-over'), 'dashboards/[id]/take-over': transferMatrix('dashboard', 'take-over'),
+    'views/[id]/hand-over': transferMatrix('view', 'hand-over'), 'views/[id]/take-over': transferMatrix('view', 'take-over'),
     'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
     'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
     'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
@@ -2345,6 +2368,26 @@ const unsharing: Record<ItemPerson, PerKind<number>> = {
   'Admin': perKind(409, 404, 200, 200, 409, 200),
   'No Scope': perKind(403, 404, 403, 403, 403, 403),
 };
+/** Handing over by what each person holds: `*:write` on their own item, `*:manage` on any Shared one, and only a Shared item
+ *  changes hands, so a Personal one answers 409 to someone who may hand over. Choosing who to hand to answers 200 to the same people. */
+const handingOver = (ok: number): Record<ItemPerson, PerKind<number>> => ({
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(409, 404, ok, 403, 403, ok),
+  'Editor on Everything': perKind(409, 404, ok, ok, ok, ok),
+  'Admin': perKind(409, 404, ok, ok, ok, ok),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+});
+/** Taking over needs `*:manage`, so a scoped Editor cannot even on their own item, and no one takes over what they own already. */
+const takingOver: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 409, 200, 200, 409),
+  'Admin': perKind(409, 404, 409, 200, 200, 409),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+};
+/** The person every hand-over in the table hands to: eligible, and never the owner of a seeded item. */
+const handOverTarget = { id: '' };
+
 /** Whether an item shows in the list, and in the owner's own "Yours" section: shared ones and one's own Personal. */
 const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true, 'own Install default': true };
 
@@ -2406,6 +2449,30 @@ const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
     { kind: 'view', expected: unsharing,
       call: async id => (await (await import('@/app/api/views/[id]/unshare/route')).POST(new Request(`http://localhost/api/views/${id}/unshare`, { method: 'POST' }), ctxFor({ id }))).status },
   ],
+  'dashboards/[id]/hand-over': [
+    { kind: 'dashboard', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/hand-over/route')).POST(putRequest(`/api/dashboards/${id}/hand-over`, 'POST', { userId: handOverTarget.id }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/hand-over-candidates': [
+    { kind: 'dashboard', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/hand-over-candidates/route')).GET(new Request(`http://localhost/api/dashboards/${id}/hand-over-candidates`), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/take-over': [
+    { kind: 'dashboard', expected: takingOver,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/take-over/route')).POST(new Request(`http://localhost/api/dashboards/${id}/take-over`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/hand-over': [
+    { kind: 'view', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/views/[id]/hand-over/route')).POST(putRequest(`/api/views/${id}/hand-over`, 'POST', { userId: handOverTarget.id }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/hand-over-candidates': [
+    { kind: 'view', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/views/[id]/hand-over-candidates/route')).GET(new Request(`http://localhost/api/views/${id}/hand-over-candidates`), ctxFor({ id }))).status },
+  ],
+  'views/[id]/take-over': [
+    { kind: 'view', expected: takingOver,
+      call: async id => (await (await import('@/app/api/views/[id]/take-over/route')).POST(new Request(`http://localhost/api/views/${id}/take-over`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
   'views/[id]': [
     { kind: 'view', expected: sameForAll(OPENS),
       call: async id => (await (await import('@/app/api/views/[id]/route')).GET(new Request('http://localhost/api/views/x'), ctxFor({ id }))).status },
@@ -2456,6 +2523,9 @@ describe('the dashboard and saved view routes answer each person by who owns the
     const stranger = await createUser({ email: 'owned-items-stranger@example.com', role: 'editor' });
     if ('error' in stranger) throw new Error(stranger.error);
     strangerId = stranger.user.id;
+    const target = await createUser({ email: 'owned-items-target@example.com', role: 'editor' });
+    if ('error' in target) throw new Error(target.error);
+    handOverTarget.id = target.user.id;
   });
 
   it('has an entry for every route file under dashboards and views', () => {

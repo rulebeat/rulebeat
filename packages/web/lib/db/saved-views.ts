@@ -184,6 +184,31 @@ export async function unshareSavedView(id: string, actorId: string): Promise<Uns
   });
 }
 
+export type TransferSavedViewResult =
+  | { ok: true; view: SavedView }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+
+/**
+ * Gives a Shared saved view a new owner, for a hand-over or a take-over. It stays Shared and keeps its query.
+ * `expectedOwnerId` is who the caller judged the request against: if the view has changed hands or been
+ * unshared since, nothing is written and the answer is `wrong-state`. The name is checked among Shared names
+ * install-wide, the space it sits in.
+ */
+export async function transferSavedView(id: string, expectedOwnerId: string | null, newOwnerId: string): Promise<TransferSavedViewResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' } as const;
+    if (readVisibility(existing.visibility) !== 'shared' || (existing.ownerId ?? null) !== expectedOwnerId || existing.ownerId === newOwnerId) {
+      return { ok: false, reason: 'wrong-state' } as const;
+    }
+    if (await isNameTaken(tx, existing.name, { visibility: 'shared' }, id)) return { ok: false, reason: 'name-taken' } as const;
+    await run(tx.update(savedViews).set({ ownerId: newOwnerId, revision: sql`${savedViews.revision} + 1` }).where(eq(savedViews.id, id)));
+    const stored = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
+    return { ok: true, view: (await toViews([stored!], tx))[0] } as const;
+  });
+}
+
 /** Removes a saved view. Returns the view that was removed, or null when there was none. */
 export async function deleteSavedView(id: string): Promise<SavedView | null> {
   return inTransaction(async (tx) => {

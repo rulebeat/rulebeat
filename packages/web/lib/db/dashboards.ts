@@ -204,6 +204,31 @@ export async function unshareDashboard(id: string, actorId: string, mayRemoveIns
   });
 }
 
+export type TransferDashboardResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+
+/**
+ * Gives a Shared dashboard a new owner, for a hand-over or a take-over. It stays Shared and keeps its
+ * Install default flag and its config, held-back values included. `expectedOwnerId` is who the caller
+ * judged the request against: if the dashboard has changed hands or been unshared since, nothing is written
+ * and the answer is `wrong-state`. The name is checked among Shared names install-wide, the space it sits in.
+ */
+export async function transferDashboard(id: string, expectedOwnerId: string | null, newOwnerId: string): Promise<TransferDashboardResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (readVisibility(existing.visibility) !== 'shared' || (existing.ownerId ?? null) !== expectedOwnerId || existing.ownerId === newOwnerId) {
+      return { ok: false, reason: 'wrong-state' };
+    }
+    if (await isNameTaken(existing.name, { visibility: 'shared' }, id, tx)) return { ok: false, reason: 'name-taken' };
+    await run(tx.update(dashboards).set({ ownerId: newOwnerId, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
+  });
+}
+
 // Every dashboard is deletable, including the default. Deleting the default leaves the install with
 // none: no other dashboard is promoted for being the oldest (ADR 0012). A My default that pointed at
 // it is cleared in the same transaction.

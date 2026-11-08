@@ -96,6 +96,19 @@ it." Unsharing the Install default leaves the install without one. Each share an
 dashboard's revision on, and one the dashboard's current state no longer allows (someone shared or
 unshared it since the page loaded) answers 409 and asks you to reload.
 
+**Hand over** and **Take over** sit in the dashboard's actions menu, on the gallery card and on the dashboard
+page. Hand over gives a Shared dashboard to another person, chosen from a list that shows names and emails
+only, never Roles or Scopes. The list holds Admins and people who hold an Editor Role at any Scope, and
+leaves out the current owner; the server checks the choice again and refuses anyone else with "That person
+cannot take this over. Choose someone else." The owner can hand over their own dashboard. An Admin, or an
+Editor on Everything, can hand over any Shared dashboard, one with no owner included, straight to an
+eligible person. **Take over** makes you the owner of any Shared dashboard, one with no owner included, and
+needs the same Admin or Editor on Everything. Both act only on Shared dashboards: a Personal one offers
+neither, even to its owner. The dashboard stays Shared, stays the Install default if it was, and keeps its
+stored filter values, held-back ones included, under the new owner. Nobody is notified. Both check the names
+of Shared dashboards across the install, and each moves the revision on; a hand-over or take-over the
+dashboard's current state no longer allows answers 409 and asks you to reload.
+
 If your access no longer lets you change a Shared dashboard you own, the page says "Your access no longer
 lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
@@ -136,7 +149,8 @@ The gallery and the tab strip mark the Install default and your My default.
 Creating, renaming and deleting a Personal dashboard is audited by its id and kind only, with no name.
 Sharing writes `dashboard.share` and unsharing `dashboard.unshare`, each naming the dashboard (an unshare
 with the name it had while Shared). Choosing the Install default, and losing it by an unshare or a delete,
-write `dashboard.install_default`. Each save of a Shared dashboard writes one entry that names it and the
+write `dashboard.install_default`. Handing over writes `dashboard.hand_over`, naming the dashboard and both
+people by display name, else email, and taking over writes `dashboard.take_over`. Each save of a Shared dashboard writes one entry that names it and the
 fields that changed (name, description, filters, widgets, layout), never their values.
 Removing a person deletes their Personal dashboards and leaves their Shared ones Shared with no owner
 ([`rbac.md`](rbac.md)).

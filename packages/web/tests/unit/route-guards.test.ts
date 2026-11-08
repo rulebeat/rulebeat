@@ -175,12 +175,20 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     // Editor holds only on Everything. My default is the person's own preference, so it needs the Personal action.
     ['dashboards/install-default/route.ts', 'dashboards:manage'],
     ['account/default-dashboard/route.ts', 'dashboards:personal'],
+    // Handing over and taking over change who owns a Shared item: they get in on the Personal action too, and
+    // guardItem() asks `*:write` for the owner's hand-over, `*:manage` for anyone else's and for every take-over.
+    ['dashboards/[id]/hand-over/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/hand-over-candidates/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/take-over/route.ts', 'dashboards:personal'],
     ['views/route.ts', 'read'],
     ['views/route.ts', 'views:personal'],
     ['views/[id]/route.ts', 'read'],
     ['views/[id]/route.ts', 'views:personal'],
     ['views/[id]/share/route.ts', 'views:personal'],
     ['views/[id]/unshare/route.ts', 'views:personal'],
+    ['views/[id]/hand-over/route.ts', 'views:personal'],
+    ['views/[id]/hand-over-candidates/route.ts', 'views:personal'],
+    ['views/[id]/take-over/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],
