@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
-import type { HeldBack } from '@/lib/held-back';
+import { copiedViewNotice, type HeldBack } from '@/lib/held-back';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
@@ -53,6 +53,8 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
+  // Said once after a view is saved from an open one, until the next change to the open view.
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -95,18 +97,19 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
       setState(prev => ({ status: prev.status, views: openableItems(actor, prev.views.map(v => (v.id === open.id ? { ...v, ...changed } : v))) }));
       return null;
     }
-    if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
+    if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery }, from: open?.id };
     else if (!open || !canChangeOpen) return null;
     else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: open.revision, opened: open.query };
     else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: open.revision, opened: open.query };
     else change = { kind: 'delete', id: open.id };
 
+    setCopyNotice(null);
     const outcome = await requestSavedViewChange(change);
     if (!outcome.ok) return outcome.error;
     if (outcome.view) {
       const stored = outcome.view;
       setState(prev => ({ status: prev.status, views: upsertSavedView(prev.views, stored) }));
-      if (kind === 'save') onOpenIdChange(stored.id);
+      if (kind === 'save') { setCopyNotice(copiedViewNotice(outcome.widened)); onOpenIdChange(stored.id); }
     } else {
       setState(prev => ({ status: prev.status, views: prev.views.filter(v => v.id !== open?.id) }));
       onOpenIdChange(null);
@@ -192,6 +195,8 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {copyNotice && <p role="status" className="text-sm text-ink-2">{copyNotice}</p>}
 
       {transfer && open && (
         <ItemTransferDialog

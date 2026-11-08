@@ -33,7 +33,7 @@ import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboar
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { copiedDashboardHref, copiedDashboardNotice, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
@@ -57,6 +57,8 @@ interface Props {
   permissions: ItemPermissions;
   /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
   shareControl: { allowed: boolean; reason?: string };
+  /** How many widgets of a Duplicate show more than the original, read from the address when the copy opens. */
+  copiedWidened?: number;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -137,7 +139,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
+export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl, copiedWidened }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
@@ -404,8 +406,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   async function handleDuplicate() {
     const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
     if (res.ok) {
-      const copy = await res.json() as HeldBackDashboard;
-      router.push(`/dashboards/${copy.id}`);
+      const copy = await res.json() as HeldBackDashboard & { widened?: number };
+      router.push(copiedDashboardHref(copy.id, copy.widened));
       router.refresh();
     }
   }
@@ -650,6 +652,9 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
+      {copiedDashboardNotice(copiedWidened) && (
+        <Callout tone="info" className="shrink-0 border-b border-rule-strong">{copiedDashboardNotice(copiedWidened)}</Callout>
+      )}
       {isDemotedOwner(actor, permissions, dashboard) && (
         <Callout tone="info" className="shrink-0 border-b border-rule-strong">{DEMOTED_OWNER_NOTE}</Callout>
       )}

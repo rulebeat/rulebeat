@@ -1,5 +1,6 @@
 'use client';
 
+import { copiedDashboardHref } from '@/lib/held-back';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -73,8 +74,8 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
         setError(body.error ?? 'Failed to duplicate dashboard.');
         return;
       }
-      const copy = await res.json() as Dashboard;
-      router.push(`/dashboards/${copy.id}`);
+      const copy = await res.json() as Dashboard & { widened?: number };
+      router.push(copiedDashboardHref(copy.id, copy.widened));
       router.refresh();
     } catch {
       setError('Failed to duplicate dashboard.');

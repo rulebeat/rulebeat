@@ -26,6 +26,34 @@ export interface HeldBack {
   count: number;
 }
 
+/** What a copy says about how much more it shows than its original, or null when nothing widened. */
+export function copiedDashboardNotice(widgets: number | undefined): string | null {
+  if (!widgets || widgets < 1) return null;
+  const shows = widgets === 1 ? '1 widget shows' : `${widgets} widgets show`;
+  return `Copied as a Personal dashboard. ${shows} more than the original, because values outside your access were left out.`;
+}
+
+/** The address param that carries a Duplicate's count to the copy's page, which says it once. */
+export const COPIED_PARAM = 'copied';
+
+/** Where a Duplicate lands: the copy, with how many widgets show more than the original when any do. */
+export function copiedDashboardHref(id: string, widened: number | undefined): string {
+  return widened && widened > 0 ? `/dashboards/${id}?${COPIED_PARAM}=${widened}` : `/dashboards/${id}`;
+}
+
+/** The count in the address, or 0 when it is missing or not a whole number above 0. */
+export function widenedFromParam(value: string | string[] | undefined): number {
+  const n = typeof value === 'string' && /^\d{1,6}$/.test(value) ? Number(value) : 0;
+  return n > 0 ? n : 0;
+}
+
+/** The same for a saved view saved from an open one, counted in filter dimensions. */
+export function copiedViewNotice(filters: number | undefined): string | null {
+  if (!filters || filters < 1) return null;
+  const shows = filters === 1 ? '1 filter shows' : `${filters} filters show`;
+  return `Saved as a Personal view. ${shows} more than the original, because values outside your access were left out.`;
+}
+
 /** The revision a save names: the one of the copy the person was sent, which the save is made on. */
 export function claimedRevision(body: unknown): number | undefined {
   const revision = (body as { revision?: unknown } | null)?.revision;

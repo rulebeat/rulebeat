@@ -622,11 +622,13 @@ describe('every route that returns a dashboard or a saved view, for a person wit
       await clean(await SAVE_DASHBOARD(req('PUT', { isDefault: true }), ctx(dashboard.id)), 403);
     });
 
-    it('POST /api/dashboards/[id]/duplicate answers the copy without them', async () => {
+    it('POST /api/dashboards/[id]/duplicate answers a copy that stores none of them, so it counts none', async () => {
       const dashboard = await ownDashboard(person);
       as(person);
       const { body } = await clean(await DUPLICATE_DASHBOARD(req(), ctx(dashboard.id)), 201);
-      counted(body);
+      expect(body.heldBack).toEqual([]);
+      const copy = (await getDashboard(body.id as string))!;
+      for (const value of HELD) expect(holds(JSON.stringify(copy.config), value), `${value} in the stored copy`).toBe(false);
     });
   });
 

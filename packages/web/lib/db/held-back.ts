@@ -206,6 +206,26 @@ export async function holdBackDashboards<T extends { id: string; config: Dashboa
   });
 }
 
+/**
+ * The config a Duplicate gives `access`: the source's, without the values held back from the copier, and how
+ * many widgets then show more than the original did. A held-back value matches nothing for the copier, so a
+ * widget only shows more when the filter it was set up with (its own list, else the dashboard's, as
+ * `mergeWidgetFilters` picks it) held values and every one was held back: the copy then has no filter on that
+ * dimension. Everything holds nothing back, so its copy is the source and counts 0.
+ */
+export async function copyDashboardConfig(
+  access: Access, source: { id: string; config: DashboardConfig },
+): Promise<{ config: DashboardConfig; widened: number }> {
+  const held = await heldBackValues(access, dashboardValues(source.id, source.config));
+  if (held.size === 0) return { config: source.config, widened: 0 };
+  const allHeld = (values: string[] | undefined, dimension: string) => !!values?.length && values.every(v => isHeld(held, dimension, v));
+  const widened = (source.config.widgets ?? []).filter(widget => DASHBOARD_KEYS.some(([key, dimension]) => {
+    const own = stringsOf((widget.config ?? {})[key]);
+    return allHeld(own?.length ? own : stringsOf(source.config.filters?.[key]), dimension);
+  })).length;
+  return { config: trimConfig(source.config, held), widened };
+}
+
 // ---- Saved views ----
 
 /** The Scope, resource name and returned-column filters of a saved view, in the order the view lists them. */
@@ -235,6 +255,21 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
     }).filter(f => f.values.length > 0);
     return { ...v, query: viewToSearchParams({ ...parsed[i]!, filters }).toString(), heldBack };
   });
+}
+
+/**
+ * How many filter dimensions a view saved from `source` shows more on than the original did for `access`. The
+ * copy is the query the person was sent, which holds no value outside their Access, so a dimension widens when
+ * every value the source stored for it is held back and the copy holds none of its own. Values left beside
+ * others they can see never matched, so they widen nothing.
+ */
+export async function viewCopyWidened(access: Access, source: { id: string; query: string }, copyQuery: string): Promise<number> {
+  const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
+  const held = await heldBackValues(access, stored);
+  if (held.size === 0) return 0;
+  const kept = new Set(viewFromSearchParams(new URLSearchParams(withoutPlaceholder(copyQuery))).filters.filter(f => f.values.length > 0).map(f => f.field as string));
+  const dimensions = new Set(stored.filter(s => s.values.length > 0 && s.values.every(v => isHeld(held, s.dimension, v))).map(s => s.dimension));
+  return [...dimensions].filter(dimension => !kept.has(dimension)).length;
 }
 
 // ---- Saving back ----

@@ -703,26 +703,21 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: viewExpected,
   };
 
-  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It stores the
-  // filters as they are and answers with what the person's Access reaches, so each person is held back the same
-  // values as on the dashboard itself. The copy's own id is new, so the counts are compared without it.
-  const COPY_HELD_SUBSCRIPTION = { place: 'dashboard', dimension: 'subscription', count: 1 };
-  const COPY_HELD_GROUP = { place: 'widget', dimension: 'resourceGroup', count: 1 };
-  const duplicated = (subscriptions: string[], heldBack: object[]) => same({ status: 201, filters: { subscriptions }, heldBack });
+  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It stores only the
+  // values the person's Access reaches, so it holds nothing back, and it says how many widgets show more than the
+  // original did: the seeded widget takes the dashboard's subscription, and also overrides the resource group.
+  const duplicated = (subscriptions: string[], widened: number) => same({ status: 201, filters: { subscriptions }, heldBack: [], widened });
   const duplicate: Matrix = {
     probe: async seed => {
       const route = await import('@/app/api/dashboards/[id]/duplicate/route');
       const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
-      const body = await res.json() as { heldBack?: { place: string; dimension: string; count: number }[]; config?: { filters?: unknown } };
-      return {
-        status: res.status, filters: body.config?.filters,
-        heldBack: body.heldBack?.map(({ place, dimension, count }) => ({ place, dimension, count })),
-      };
+      const body = await res.json() as { heldBack?: unknown[]; widened?: number; config?: { filters?: unknown } };
+      return { status: res.status, filters: body.config?.filters, heldBack: body.heldBack, widened: body.widened };
     },
     expected: byPerson(
-      duplicated([SUB_TWO], []), duplicated([SUB_TWO], []),
-      duplicated([], [COPY_HELD_SUBSCRIPTION]),
-      duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]),
+      duplicated([SUB_TWO], 0), duplicated([SUB_TWO], 0),
+      duplicated([], 1),
+      duplicated([], 1), duplicated([], 1), duplicated([], 1),
     ),
   };
 

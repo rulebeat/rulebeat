@@ -25,6 +25,14 @@ describe('requestSavedViewChange', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ method: 'POST', body: JSON.stringify(fields) }));
   });
 
+  it('names the open view a new one is saved from, and hands back how many filters now show more', async () => {
+    const fetchImpl = fake(201, { ...view('v2', 'Copy'), widened: 2 });
+    const fields = { name: 'Copy', tab: 'results' as const, query: 'q=x' };
+    const outcome = await requestSavedViewChange({ kind: 'create', fields, from: 'v1' }, fetchImpl);
+    expect(outcome).toEqual({ ok: true, view: view('v2', 'Copy'), widened: 2 });
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ body: JSON.stringify({ ...fields, from: 'v1' }) }));
+  });
+
   it('patches only the fields it is given', async () => {
     const fetchImpl = fake(200, view('v1', 'B'));
     await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { name: 'B' } }, fetchImpl);

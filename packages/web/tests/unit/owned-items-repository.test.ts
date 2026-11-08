@@ -3,6 +3,7 @@
  * every insert path writes Shared explicitly, and every write moves the revision up by one. Runs on
  * whichever backend the suite is pointed at, through the repositories the app reads with.
  */
+import { SYSTEM_ACCESS } from '@/lib/system-access';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
@@ -44,7 +45,7 @@ describe('dashboards', () => {
 
   it('are Personal at revision 1 when duplicated or restored from the starter', async () => {
     const first = await dashboard('First');
-    expect(await duplicateDashboard(first.id, OWNER)).toMatchObject({ visibility: 'personal', revision: 1 });
+    expect((await duplicateDashboard(first.id, OWNER, SYSTEM_ACCESS))?.dashboard).toMatchObject({ visibility: 'personal', revision: 1 });
     expect(await createStarterDashboard(OWNER)).toMatchObject({ visibility: 'personal', revision: 1 });
   });
 

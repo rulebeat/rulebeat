@@ -134,6 +134,14 @@ and Unshare are logged as `view.share` and `view.unshare`, the unshare with the 
 Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
 longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+Saving a new view while a saved view is open counts as a Duplicate: the new view is Personal and holds
+only the values you can see, so a Scope, resource name or returned-column value that your access does not
+reach is not copied. When that leaves a filter that was held back in full with nothing in its place, the
+new view shows more than the original did for you, and the Views menu says so once: "Saved as a Personal
+view. N filters show more than the original, because values outside your access were left out." N counts
+filters (a Scope, resource name or returned column each counts once). Nothing is shown when N is 0, and
+someone who holds Everything has nothing left out.
+
 Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
 to another person, chosen from a list of names and emails only. The list
 holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server

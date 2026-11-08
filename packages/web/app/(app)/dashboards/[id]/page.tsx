@@ -7,14 +7,16 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
 import { holdBackDashboards } from '@/lib/db/held-back';
+import { COPIED_PARAM, widenedFromParam } from '@/lib/held-back';
 import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem, isOwnItem } from '@/lib/item-access-model';
 import { shareControlFor } from '@/lib/write-controls';
 import { DashboardGridClient } from './dashboard-grid-client';
 
-interface Props { params: Promise<{ id: string }> }
+interface Props { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }
 
-export default async function DashboardPage({ params }: Props) {
+export default async function DashboardPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const copiedWidened = widenedFromParam((await searchParams)?.[COPIED_PARAM]);
   // Sentinel id for spec 015's error.tsx e2e coverage. A real dashboard id is a UUID and can
   // never collide with this string, so it's a safe, deterministic way to exercise the route's
   // error boundary without a dedicated test-only route.
@@ -49,6 +51,7 @@ export default async function DashboardPage({ params }: Props) {
                 currentUserId={user?.id ?? ''}
                 permissions={permissions}
                 shareControl={shareControlFor(access, 'dashboard')}
+                copiedWidened={copiedWidened}
               />}
         </div>
       </div>
