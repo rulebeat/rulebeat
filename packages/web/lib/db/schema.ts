@@ -93,6 +93,7 @@ export const dashboards = sqliteTable('dashboards', {
   config: text('config').notNull(),         // JSON: DashboardConfig
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
+  revision: integer('revision').notNull().default(1),   // bumped by every write to the row
 });
 
 export const categories = sqliteTable('categories', {
@@ -598,4 +599,5 @@ export const savedViews = sqliteTable('saved_views', {
   createdAt: text('created_at').notNull(),
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull(),
+  revision: integer('revision').notNull().default(1),   // bumped by every write to the row
 });

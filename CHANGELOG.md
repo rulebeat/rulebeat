@@ -8,6 +8,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Changed
 
+- Every dashboard and saved view now carries a revision number that each save raises by one, so a later save can tell the row changed underneath it. Existing dashboards and saved views start at revision 1 on upgrade, and their filters, date window and saved queries are kept exactly as stored.
 - Dashboard filter changes can be read from and written to the address, using the same parameter names as the Scans page. A parameter that is present replaces the saved value, an empty one means any, and a missing one keeps the saved value. Nothing in the app reads this yet, so no page behaves differently.
 
 ## [0.13.1] - 2026-10-16

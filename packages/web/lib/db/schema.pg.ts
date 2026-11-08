@@ -110,6 +110,7 @@ export const dashboards = pgTable('dashboards', {
   config: text('config').notNull(),
   isDefault: boolean('is_default').notNull().default(false),
   createdAt: text('created_at').notNull(),
+  revision: integer('revision').notNull().default(1),
 });
 
 export const categories = pgTable('categories', {
@@ -505,4 +506,5 @@ export const savedViews = pgTable('saved_views', {
   createdAt: text('created_at').notNull(),
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull(),
+  revision: integer('revision').notNull().default(1),
 });

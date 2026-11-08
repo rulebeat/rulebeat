@@ -140,8 +140,11 @@ CREATE TABLE IF NOT EXISTS dashboards (
   description TEXT,
   config TEXT NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1
 );
+-- #334: a revision every write to the row bumps, for a database bootstrapped before it shipped.
+ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
@@ -582,8 +585,10 @@ CREATE TABLE IF NOT EXISTS saved_views (
   created_by TEXT,
   created_at TEXT NOT NULL,
   updated_by TEXT,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1
 );
+ALTER TABLE saved_views ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
 `;
 
 /**

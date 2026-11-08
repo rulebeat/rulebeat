@@ -302,7 +302,8 @@ export function runMigrations(sqlite: Database.Database): void {
       description TEXT,
       config TEXT NOT NULL,
       is_default INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -629,9 +630,15 @@ export function runMigrations(sqlite: Database.Database): void {
       created_by TEXT,
       created_at TEXT NOT NULL,
       updated_by TEXT,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1
     );
   `);
+
+  // #334: every dashboard and saved view carries a revision that each write bumps. Existing rows
+  // start at 1 and nothing else about them changes, so a dashboard's filters and window survive as stored.
+  try { sqlite.exec(`ALTER TABLE dashboards ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
+  try { sqlite.exec(`ALTER TABLE saved_views ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
 
   // Drop columns that moved from notification_channels to schedule_notification_channels.
   // Idempotent: SQLite allows DROP COLUMN since 3.35.0; the try/catch handles "no such column".
