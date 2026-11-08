@@ -138,9 +138,9 @@ describe('listRunHistory · a category that threw', () => {
     await resetDb();
     // `cost` threw before it saved a scan, so the run has a scan for `security` only.
     partlyFailed = await recordRun(['security', 'cost'], '2026-07-01T00:00:00.000Z', [scan('security', '2026-07-01T00:00:00.000Z', [])], { status: 'partial', error: categoryFailureMessage('cost') });
-    // An error run: every category threw, nothing was saved.
+    // An error run: every category threw, nothing was saved, and the run says so.
     const failed = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['cost'], now: new Date('2026-07-02T00:00:00.000Z') });
-    await finishRun(failed.id, { status: 'error', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-02T00:00:00.000Z') });
+    await finishRun(failed.id, { status: 'error', error: categoryFailureMessage('cost'), totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-02T00:00:00.000Z') });
     allFailed = failed.id;
   });
 
@@ -160,6 +160,27 @@ describe('listRunHistory · a category that threw', () => {
   it('shows Partial for every category of an error run', async () => {
     const run = (await listRunHistory(EVERYTHING)).find(r => r.id === allFailed)!;
     expect(run.categoryCoverage).toEqual([{ category: 'cost', coverage: 'partial', incompleteRules: [] }]);
+  });
+
+  it('shows Partial for a category the run names as failed even though its scan was saved', async () => {
+    // The scan is saved before the steps after it (syncing findings, snapshots) can throw, so a category
+    // can hold a scan with no incomplete rules and still be recorded as failed.
+    const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date('2026-07-05T00:00:00.000Z') });
+    await saveScanResult('security', scan('security', '2026-07-05T00:00:00.000Z', []), { runId: run.id });
+    await saveScanResult('cost', scan('cost', '2026-07-05T00:00:01.000Z', []), { runId: run.id });
+    await finishRun(run.id, { status: 'partial', error: categoryFailureMessage('cost'), totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-05T00:00:00.000Z') });
+    const entry = (await listRunHistory(EVERYTHING)).find(r => r.id === run.id)!;
+    expect(entry.categoryCoverage).toEqual([
+      { category: 'security', coverage: 'complete', incompleteRules: [] },
+      { category: 'cost', coverage: 'partial', incompleteRules: [] },
+    ]);
+  });
+
+  it('marks no category of an error run whose error does not name one and whose scans are gone', async () => {
+    const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date('2026-07-06T00:00:00.000Z') });
+    await finishRun(run.id, { status: 'error', error: 'Scan run failed. Check the RuleBeat server logs for details', totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date('2026-07-06T00:00:00.000Z') });
+    const entry = (await listRunHistory(EVERYTHING)).find(r => r.id === run.id)!;
+    expect(entry.categoryCoverage).toEqual([]);
   });
 
   it('matches a category id exactly, wildcard characters included', async () => {
@@ -213,6 +234,17 @@ describe('listRunHistory · a category whose scan history has since expired', ()
     const id = await expiredRun('partial', 'security: one or more rules did not complete. See the category\'s scan for details', '2026-08-03T00:00:00.000Z');
     const run = (await listRunHistory(EVERYTHING)).find(r => r.id === id)!;
     expect(run.categoryCoverage).toEqual([]);
+  });
+});
+
+describe('listRunHistory · an error run that names one category and has lost the scan of another', () => {
+  it('marks only the category it names', async () => {
+    await resetDb();
+    const at = '2026-09-01T00:00:00.000Z';
+    const run = await startRun({ scheduleId: '', triggeredBy: 'manual', categories: ['security', 'cost'], now: new Date(at) });
+    await finishRun(run.id, { status: 'error', error: categoryFailureMessage('cost'), totalFindings: 0, newFindings: 0, newFindingFingerprints: [], durationMs: 1, now: new Date(at) });
+    const entry = (await listRunHistory(EVERYTHING)).find(r => r.id === run.id)!;
+    expect(entry.categoryCoverage).toEqual([{ category: 'cost', coverage: 'partial', incompleteRules: [] }]);
   });
 });
 

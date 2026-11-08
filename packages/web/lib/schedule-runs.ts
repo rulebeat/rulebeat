@@ -320,13 +320,15 @@ export interface CategoryCoverage {
 }
 
 /** The coverage of every category each run attempted, in the order the scans started. A category with a saved
- *  scan reads its own `incompleteRules`. A category with no saved scan is read from the run, because history
- *  keeps only the newest scans of a category and an older run outlives them: one the run recorded as failed,
- *  or any category of an `error` run, is Partial with no rule to name, listed after the scanned ones; one of
- *  a `success` run completed, since a successful run has neither a failed nor a partial category; one of a
- *  `partial` run that the run does not name as failed is left out, as the scan that said which rules did not
- *  complete is gone. A run still in progress has not yet reached some of its categories and gets no such
- *  entry. Rule names are the install's, the same ones a scan's detail already lists to anyone. */
+ *  scan reads its own `incompleteRules`, except that a category the run's `error` names as failed is Partial
+ *  whatever the scan says, because the scan is saved before the steps after it that can throw. A category with
+ *  no saved scan is read from the run, because history keeps only the newest scans of a category and an older
+ *  run outlives them: one the run names as failed is Partial with no rule to name, listed after the scanned
+ *  ones; one of a `success` run completed, since a successful run has neither a failed nor a partial category;
+ *  any other is left out, as nothing records how it ended (a `partial` run's scan said which rules did not
+ *  complete, and an `error` run that names no category, such as one cut short by a restart, never said). A run
+ *  still in progress has not yet reached some of its categories and gets no such entry. Rule names are the
+ *  install's, the same ones a scan's detail already lists to anyone. */
 async function categoryCoverageForRuns(runs: readonly ScheduleRun[]): Promise<Map<string, CategoryCoverage[]>> {
   const byRun = new Map<string, CategoryCoverage[]>();
   for (const ids of chunk(runs.map(r => r.id))) {
@@ -347,8 +349,12 @@ async function categoryCoverageForRuns(runs: readonly ScheduleRun[]): Promise<Ma
     const list = byRun.get(r.id) ?? [];
     const failures = (r.error ?? '').split('; ');
     for (const category of r.categories) {
-      if (list.some(c => c.category === category)) continue;
-      if (r.status === 'error' || failures.includes(categoryFailureMessage(category))) list.push({ category, coverage: 'partial', incompleteRules: [] });
+      const failed = failures.includes(categoryFailureMessage(category));
+      const scanned = list.find(c => c.category === category);
+      if (scanned) {
+        // The run's own record wins: the scan is saved before the steps after it that can throw.
+        if (failed) scanned.coverage = 'partial';
+      } else if (failed) list.push({ category, coverage: 'partial', incompleteRules: [] });
       else if (r.status === 'success') list.push({ category, coverage: 'complete', incompleteRules: [] });
     }
     if (list.length > 0) byRun.set(r.id, list);

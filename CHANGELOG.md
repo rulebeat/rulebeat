@@ -8,7 +8,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
-- Run History filters by category and shows coverage per category. The Category menu on the list writes `?tab=history&category=` to the address (one or more categories), so a filtered list can be linked to, and each run marks every category it attempted as Complete or Partial, from that category's own incomplete rules, or Partial when the whole category scan failed.
+- Run History filters by category and shows coverage per category. The Category menu on the list writes `?tab=history&category=` to the address (one or more categories), so a filtered list can be linked to, and each run marks every category it attempted as Complete or Partial, from that category's own incomplete rules, or Partial when the run recorded that the category scan failed. A category whose saved scan has expired and that the run does not name as failed shows no mark.
 
 ## [0.13.1] - 2026-10-16
 
