@@ -3,6 +3,7 @@
  * note that applies to the viewer, the rule-scoped note, the measure under a Severity filter, and why
  * there is nothing to count (no access, then no rule that looks at what they hold, then the filter).
  */
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
@@ -85,6 +86,25 @@ describe('the note on a rule-scoped widget', () => {
 
     const some = await computeWidgetSummary({ ruleIds: ['counted'], dateWindow: window }, 30, EVERYTHING_ACCESS);
     expect(some.postureNotes.join('\n')).not.toContain('selected rule');
+  });
+
+  it('does not call a selected rule uncounted when a dashboard filter leaves it out', async () => {
+    await insertRule('plain');
+    const byTag = await computeWidgetSummary({ ruleIds: ['plain'], tags: ['prod'], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    expect(byTag.postureNotes).toEqual([EVERYONE_LINE]);
+
+    const byCategory = await computeWidgetSummary({ ruleIds: ['plain'], categories: ['other-category'], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    expect(byCategory.postureNotes).toEqual([EVERYONE_LINE]);
+
+    const byScope = await computeWidgetSummary({ ruleIds: ['plain'], subscriptions: ['sub-9'], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    expect(byScope.postureNotes).toEqual([EVERYONE_LINE]);
+  });
+
+  it('does not call a selected Activity rule uncounted', async () => {
+    await insertRule('activity');
+    await execRun(db.update(rulesTable).set({ kind: 'activity' }).where(eq(rulesTable.id, 'activity')));
+    const summary = await computeWidgetSummary({ ruleIds: ['activity'], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    expect(summary.postureNotes.join('\n')).not.toContain('selected rule');
   });
 
   it('adds nothing without a rule selection', async () => {

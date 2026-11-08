@@ -85,6 +85,14 @@ function countedRulesForCategory(
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
+/** Whether a selected rule is left out for one of the three reasons the note names: it no longer
+ *  exists, it is disabled, or it looks at nothing the viewer holds. Judged on the rule list before the
+ *  category, tag, Scope and kind filters narrow it, so a rule those filters drop is not blamed. */
+function selectedRuleIsUncounted(rule: Rule | undefined, access: Access, hierarchy: readonly HierarchyNode[]): boolean {
+  if (!rule || !rule.enabled) return true;
+  return countsTowardPosture(rule) && !ruleOverlapsScopes(rule, access, hierarchy);
+}
+
 /** Why a posture has nothing to count, in the order a viewer can act on it: they hold no Scope; no
  *  enabled Problem rule looks at anything they hold (whatever the filters); or the filters excluded
  *  every rule that does. A viewer on Everything with no counted rule at all is told there are no
@@ -326,7 +334,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const postureLimits = {
     postureNotes: [
       postureLimitNote(access.everything),
-      ...[ruleSelectionNote(selectedRuleIds.length, selectedRuleIds.filter(id => !scopedRuleIds.has(id)).length)].filter((n): n is string => n !== null),
+      ...[ruleSelectionNote(selectedRuleIds.length, selectedRuleIds.filter(id => selectedRuleIsUncounted(ruleById.get(id), access, hierarchy)).length)].filter((n): n is string => n !== null),
     ],
     measure: severityMeasure(filters.severities),
     emptyReason: totalRules > 0 ? null : emptyReasonFor(access, allCategories, allRules, hierarchy),
