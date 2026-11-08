@@ -127,6 +127,8 @@ export interface RuleRow {
 }
 
 export interface ViewResponse {
+  /** Which revision of the open saved view this answer read. Present only when a view is open. */
+  savedView?: { id: string; revision: number };
   tab: ViewTab;
   kinds: readonly RuleKind[];
   /** Findings that match the view, across every page. */

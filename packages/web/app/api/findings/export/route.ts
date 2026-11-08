@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { openExport } from '@/lib/db/finding-views';
 import { streamExport } from '@/lib/export-stream';
-import { parseExportFormat, parseViewRequest } from '@/lib/view-request';
+import { parseExportFormat, readViewRequest } from '@/lib/view-request';
 
 const CONTENT_TYPES = { csv: 'text/csv; charset=utf-8', json: 'application/json; charset=utf-8' } as const;
 
@@ -12,8 +12,8 @@ export async function GET(req: Request) {
   if (actor instanceof NextResponse) return actor;
 
   const params = new URL(req.url).searchParams;
-  const request = parseViewRequest(params);
-  if (!request.ok) return Response.json({ error: request.error }, { status: 400 });
+  const request = await readViewRequest(params);
+  if (!request.ok) return Response.json({ error: request.error }, { status: request.status });
   const format = parseExportFormat(params.get('format'));
   if (!format.ok) return Response.json({ error: format.error }, { status: 400 });
 

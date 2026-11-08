@@ -7,8 +7,10 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUser } from '@/lib/db/users';
+import { createSavedView } from '@/lib/db/saved-views';
 import { explorerAddress, viewQuery } from '@/lib/explorer-session';
-import { viewFromSearchParams, type View } from '@/lib/finding-view';
+import { viewFromSearchParams, viewToSearchParams, type View } from '@/lib/finding-view';
+import { SAVED_VIEW_UNAVAILABLE, savedViewHref, type OpenSavedView } from '@/lib/saved-view-query';
 import { resetDb } from '../helpers/db';
 
 const mockAuth = vi.fn();
@@ -50,7 +52,11 @@ const pairs = (query: string) => [...new URLSearchParams(query)].map(([k, v]) =>
 
 async function open(query: string) {
   const props = scansClientProps(await ScansPage({ searchParams: Promise.resolve(searchParamsOf(query)) }));
-  return { view: props.initialView as View, savedViewId: props.initialSavedViewId as string | undefined };
+  return {
+    view: props.initialView as View,
+    saved: props.openSavedView as OpenSavedView | undefined,
+    unavailable: props.savedViewUnavailable as { keepHref: string } | undefined,
+  };
 }
 
 // Each is a link the explorer itself writes, so it comes back out of the address unchanged.
@@ -84,10 +90,9 @@ describe.each(Object.entries(LINKS))('a link with %s', (_name, query) => {
 });
 
 describe('the address around the view', () => {
-  it('keeps the open saved view, and drops it when none is open', async () => {
-    const { view, savedViewId } = await open('tab=results&view=saved-1&severity=high');
-    expect(savedViewId).toBe('saved-1');
-    expect(pairs(explorerAddress(view, { extraParams: { tab: 'results' }, viewId: savedViewId }))).toEqual(
+  it('keeps the open saved view in the address, and drops it when none is open', async () => {
+    const { view } = await open('tab=results&severity=high');
+    expect(pairs(explorerAddress(view, { extraParams: { tab: 'results' }, viewId: 'saved-1' }))).toEqual(
       pairs('tab=results&view=saved-1&severity=high'),
     );
     expect(pairs(explorerAddress(view, { extraParams: { tab: 'results' }, viewId: null }))).toEqual(pairs('tab=results&severity=high'));
@@ -101,5 +106,73 @@ describe('the address around the view', () => {
   it('asks the server for suppressed findings only when they are shown', async () => {
     const { view } = await open('tab=results');
     expect(pairs(viewQuery({ view, tab: 'results', showSuppressed: true }))).toEqual(pairs('tab=results&suppressed=1'));
+  });
+});
+
+describe('a saved view open in the address', () => {
+  const SAVED_QUERY = 'category=security&severity=critical%2Chigh&status=all&window=30&q=vm&cols=zone&sort=rule%3Adesc&f=kind%3Dadvisory&rf=zone%3Da';
+  let viewId: string;
+  let savedAs: View;
+
+  beforeEach(async () => {
+    const created = await createSavedView({ name: 'Critical', tab: 'results', query: SAVED_QUERY }, null);
+    if (!created.ok) throw new Error(created.reason);
+    viewId = created.view.id;
+    savedAs = viewFromSearchParams(new URLSearchParams(SAVED_QUERY));
+  });
+
+  it('opens from only its tab and id as the saved view, and holds no difference', async () => {
+    const { view, saved } = await open(savedViewHref({ id: viewId, tab: 'results' }).split('?')[1]!);
+    expect(view).toEqual(savedAs);
+    expect(saved).toMatchObject({ id: viewId, revision: 1, view: savedAs });
+    expect(explorerAddress(view, { extraParams: { tab: 'results' }, viewId, saved: saved!.view })).toBe(`tab=results&view=${viewId}`);
+  });
+
+  it('writes only what the viewer changed, and reads it back as the same effective view', async () => {
+    const first = await open(`tab=results&view=${viewId}`);
+    const changed: View = {
+      ...first.view,
+      filters: first.view.filters.filter(f => f.field !== 'row.zone').map(f => (f.field === 'severity' ? { ...f, values: ['low'] } : f)),
+      search: '', window: { mode: 'relative', days: 7 }, page: 2,
+    };
+    const address = explorerAddress(changed, { extraParams: { tab: 'results' }, viewId, saved: first.saved!.view });
+    expect(pairs(address)).toEqual(pairs(`tab=results&view=${viewId}&severity=low&window=7&q=&rf=zone&page=2`));
+    expect((await open(address)).view).toEqual(changed);
+  });
+
+  it('is read from the server with the view\'s id and revision and the same differences', async () => {
+    const { view, saved } = await open(`tab=results&view=${viewId}&severity=low`);
+    expect(pairs(viewQuery({ view, tab: 'results', showSuppressed: false, saved }))).toEqual(
+      pairs(`tab=results&view=${viewId}&rev=1&severity=low`),
+    );
+  });
+
+  it('opens an old full-copy link as bookmarked, and the explorer then writes it as differences', async () => {
+    const old = `tab=results&view=${viewId}&${viewToSearchParams({ ...savedAs, search: 'storage' }).toString()}`;
+    const { view, saved } = await open(old);
+    expect(view).toEqual({ ...savedAs, search: 'storage' });
+    expect(pairs(explorerAddress(view, { extraParams: { tab: 'results' }, viewId, saved: saved!.view }))).toEqual(
+      pairs(`tab=results&view=${viewId}&q=storage`),
+    );
+  });
+
+  it('keeps a locked category out of the address, which is not an Any', async () => {
+    const { view, saved } = await open(`tab=results&view=${viewId}`);
+    expect(explorerAddress(view, { extraParams: { tab: 'results' }, viewId, saved: saved!.view, lockedCategory: 'security' })).toBe(`tab=results&view=${viewId}`);
+  });
+
+  it.each(['no-such-view', 'deleted'])('shows one notice for a view that is %s, with the link\'s other params kept', async name => {
+    const { view, saved, unavailable } = await open(`tab=advisories&view=${name}&severity=high&q=a`);
+    expect(saved).toBeUndefined();
+    expect(unavailable).toEqual({ keepHref: '/scans?tab=advisories&severity=high&q=a' });
+    expect(view).toEqual(viewFromSearchParams(new URLSearchParams('severity=high&q=a')));
+    expect(SAVED_VIEW_UNAVAILABLE).toBe('This saved view is not available to you');
+  });
+
+  it('opens plain /scans with no view exactly as before', async () => {
+    const { view, saved, unavailable } = await open('tab=results&severity=high');
+    expect(saved).toBeUndefined();
+    expect(unavailable).toBeUndefined();
+    expect(view).toEqual(viewFromSearchParams(new URLSearchParams('severity=high')));
   });
 });

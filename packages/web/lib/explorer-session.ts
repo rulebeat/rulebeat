@@ -10,12 +10,14 @@
  * not load and why, never an empty list. And the query string of a read is the explorer's address
  * (`viewToSearchParams`) plus the tab and the suppressed flag, so a link and a request cannot disagree.
  */
-import { isRowField, rowField, viewToSearchParams, type RowField, type View, type ViewField, type ViewFilter } from './finding-view';
+import {
+  isRowField, rowField, savedViewAddress, viewToSearchParams, type RowField, type View, type ViewField, type ViewFilter,
+} from './finding-view';
 import type { ExportFormat } from './findings-export';
 import {
   type ColumnValuesResponse, type FindingRowsResponse, type GroupResponse, type ViewResponse, type ViewTab,
 } from './view-response';
-import { OPEN_VIEW_PARAM } from './saved-view-query';
+import { OPEN_VIEW_PARAM, OPEN_VIEW_REVISION_PARAM, type OpenSavedView } from './saved-view-query';
 
 /** How long typing in the search box waits before the view is read again. Every other change reads at once. */
 export const SEARCH_DEBOUNCE_MS = 250;
@@ -25,18 +27,24 @@ export const READ_TIMEOUT_MS = 30_000;
 export type FetchFn = (url: string, init?: { signal?: AbortSignal }) => Promise<Response>;
 
 /** The view on screen with the two things a View does not hold: which tab, and whether suppressed
- *  findings are listed. */
-export interface ViewRequest { view: View; tab: ViewTab; showSuppressed: boolean }
+ *  findings are listed. With a saved view open, `saved` names it and a read carries only what `view`
+ *  changes on top of it. */
+export interface ViewRequest { view: View; tab: ViewTab; showSuppressed: boolean; saved?: OpenSavedView }
 
 // ---- The requests ----
 
 const ROUTE = '/api/findings';
 
-/** The query of a view read: the tab and the suppressed flag, then exactly what the address carries. */
+/** The query of a view read: the tab and the suppressed flag, then exactly what the address carries.
+ *  With a saved view open that is its id and revision and the differences from it, never a copy. */
 export function viewQuery(request: ViewRequest): string {
   const base: Record<string, string> = { tab: request.tab };
   if (request.showSuppressed) base.suppressed = '1';
-  return viewToSearchParams(request.view, base).toString();
+  const { saved } = request;
+  if (!saved) return viewToSearchParams(request.view, base).toString();
+  base[OPEN_VIEW_PARAM] = saved.id;
+  base[OPEN_VIEW_REVISION_PARAM] = String(saved.revision);
+  return savedViewAddress(saved.view).write(request.view, base).toString();
 }
 
 export const viewUrl = (request: ViewRequest) => `${ROUTE}/view?${viewQuery(request)}`;
@@ -49,13 +57,18 @@ export function filtersWithoutLockedCategory(filters: ViewFilter[], lockedCatego
 
 /** The query the explorer writes to the address for a view. `viewToSearchParams` is the one writer of
  *  every param `viewFromSearchParams` reads, so a deep link survives the first render, and a read of
- *  the view carries the same params. `viewId` is the saved view the address says is open. */
+ *  the view carries the same params. `viewId` is the saved view the address says is open. With the
+ *  saved view itself (`saved`) the address carries only the differences from it, written by
+ *  `savedViewAddress`, which `scans/page.tsx` reads back with the same object. A locked category is
+ *  the page's own and is left out of both sides, so it is never a difference. */
 export function explorerAddress(
   view: View,
-  opts: { extraParams?: Record<string, string>; viewId?: string | null; lockedCategory?: string } = {},
+  opts: { extraParams?: Record<string, string>; viewId?: string | null; saved?: View; lockedCategory?: string } = {},
 ): string {
   const base = opts.viewId ? { ...opts.extraParams, [OPEN_VIEW_PARAM]: opts.viewId } : opts.extraParams;
-  return viewToSearchParams({ ...view, filters: filtersWithoutLockedCategory(view.filters, opts.lockedCategory) }, base).toString();
+  const unlocked = (v: View): View => ({ ...v, filters: filtersWithoutLockedCategory(v.filters, opts.lockedCategory) });
+  if (opts.viewId && opts.saved) return savedViewAddress(unlocked(opts.saved)).write(unlocked(view), base).toString();
+  return viewToSearchParams(unlocked(view), base).toString();
 }
 
 /** The params the three lazy reads share. The page is the view's own position, which none of them

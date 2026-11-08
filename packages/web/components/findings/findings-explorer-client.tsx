@@ -38,14 +38,14 @@ import {
 } from '@/lib/explorer-filters';
 import {
   BUILTIN_FIELDS, DEFAULT_SORT, clearFilter, columnCell, emptyView, filterValues,
-  findingSubject, isRowField, rowField, rowPath, toggleFilterValue,
+  findingSubject, isRowField, rowField, rowPath, savedViewAddress, toggleFilterValue, viewFromSearchParams,
   type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
 import {
   explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
-import { emptyListCopy, emptyReasonOf, filterChipLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { emptyListCopy, emptyReasonOf, filterChipLabel, filtersRecoveryOf, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
 import { NoAccessState } from '@/components/findings/no-access-state';
 import { useExplorerSession, useLazyRead, useStore } from '@/lib/hooks/use-explorer-session';
 import {
@@ -57,7 +57,7 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
-import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import type { OpenSavedView, SavedView, SavedViewTab } from '@/lib/saved-view-query';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -104,11 +104,13 @@ interface FindingsExplorerClientProps {
   savedViews?: {
     tab: SavedViewTab;
     canWrite: boolean;
-    /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
-     *  the URL, and the explorer never keeps its own copy. */
-    openId: string | null;
+    /** The saved view the URL said was open when the explorer started (its `view` param), with the
+     *  View it saved, or null. The address then carries only what the viewer changes on top of it. */
+    open: OpenSavedView | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
     onOpen: (view: SavedView) => void;
+    /** Starts again from the address, for when the open saved view was changed by someone else. */
+    onReload: () => void;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -291,14 +293,14 @@ const NO_TILES: ExplorerStats = {
 
 /** The message a failed read shows in place of the list, with a way to try again. It names what could
  *  not load and why, and is never the "no findings" state. */
-function ViewUnavailable({ message, onRetry, onClear }: { message: string; onRetry: () => void; onClear?: () => void }) {
+function ViewUnavailable({ message, onRetry, recovery }: { message: string; onRetry: () => void; recovery?: { label: string; onClick: () => void } }) {
   return (
     <div role="alert" className="flex flex-col items-center justify-center bg-surface py-16 text-center">
       <h3 className="mb-1 font-heading text-base font-semibold text-ink">Findings could not be loaded</h3>
       <p className="max-w-md text-sm text-ink-2">{message}</p>
       <div className="mt-4 flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onRetry}>Try again</Button>
-        {onClear && <Button variant="outline" size="sm" onClick={onClear}>Clear filters</Button>}
+        {recovery && <Button variant="outline" size="sm" onClick={recovery.onClick}>{recovery.label}</Button>}
       </div>
     </div>
   );
@@ -460,7 +462,9 @@ export function FindingsExplorerClient({
   const router = useRouter();
   const session = useExplorerSession();
   const [initial] = useState<View>(() => initialView ?? emptyView());
-  const openViewId = savedViews?.openId ?? null;
+  // The saved view the address has open. It is kept here because saving, updating or deleting one
+  // changes it without a navigation; the address is rewritten from it by the URL sync below.
+  const [openSaved, setOpenSaved] = useState<OpenSavedView | null>(savedViews?.open ?? null);
 
   // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
   // the category tabs and the Add filter control all read and write it, and it is the View's own
@@ -575,7 +579,10 @@ export function FindingsExplorerClient({
     ...emptyView(),
     filters, search, window: dateWindow, columns, sort, groupBy, groupSort, page: page + 1,
   }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page]);
-  const request = useMemo<ViewRequest>(() => ({ view: findingView, tab, showSuppressed }), [findingView, tab, showSuppressed]);
+  const request = useMemo<ViewRequest>(
+    () => ({ view: findingView, tab, showSuppressed, ...(openSaved && { saved: openSaved }) }),
+    [findingView, tab, showSuppressed, openSaved],
+  );
   const requestQuery = useMemo(() => viewQuery(request), [request]);
   useEffect(() => { session.view.request(request); }, [session, request]);
 
@@ -761,21 +768,47 @@ export function FindingsExplorerClient({
   const urlView = useMemo<View>(() => ({ ...findingView, page: currentPage }), [findingView, currentPage]);
   const onUrlWrite = savedViews?.onUrlWrite;
   const hasSavedViews = !!savedViews;
-  const urlQueryFor = useCallback((viewId: string | null) => (
-    explorerAddress(urlView, { extraParams, viewId: hasSavedViews ? viewId : null, lockedCategory })
-  ), [urlView, extraParams, hasSavedViews, lockedCategory]);
+  // With a saved view open the address holds only the differences from it, which `scans/page.tsx` reads
+  // back with the same saved View; with none open it holds the whole view, as it always did.
+  const urlQuery = explorerAddress(urlView, {
+    extraParams, viewId: hasSavedViews ? openSaved?.id : null, saved: openSaved?.view, lockedCategory,
+  });
   const writeUrl = useCallback((query: string) => {
     onUrlWrite?.(query);
     router.replace(`${basePath}${query ? `?${query}` : ''}`, { scroll: false });
   }, [router, basePath, onUrlWrite]);
-  const urlQuery = urlQueryFor(openViewId);
+  // Saving, deleting or losing the open view changes `openSaved`, which changes the address, so the
+  // same effect rewrites it.
   useEffect(() => {
     if (mode !== 'page') return;
     writeUrl(urlQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlQuery, basePath]);
-  // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
-  const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
+  const adoptSavedView = useCallback((stored: SavedView | null) => {
+    setOpenSaved(stored && { id: stored.id, revision: stored.revision, view: { ...viewFromSearchParams(new URLSearchParams(stored.query)), page: 1 } });
+  }, []);
+
+  // Back to the open view's saved filters: every part the viewer changed returns to what it saved.
+  const saved = openSaved?.view;
+  const differsFromSaved = !!saved && savedViewAddress(saved).write({ ...findingView, page: 1 }).size > 0;
+  const backToSaved = useCallback(() => {
+    if (!saved) return;
+    setFilters(saved.filters);
+    setSearch(saved.search);
+    setDateWindow(saved.window);
+    setColumns(saved.columns);
+    setSort(saved.sort);
+    setGroupBy(saved.groupBy);
+    setGroupSort(saved.groupSort);
+    setExpandedGroups(new Set());
+    setGroupPages(new Map());
+    setPage(0);
+  }, [saved]);
+  const filtersRecovery = filtersRecoveryOf({ savedViewOpen: !!saved, hasActiveFilter, differsFromSaved });
+  const recoverFilters = saved ? backToSaved : clearFilters;
+  // Someone updated the open view after this page read it: the server read the new one, so the numbers
+  // are its, while the controls still show the version this page was opened on.
+  const savedChanged = !!openSaved && !!data?.savedView && data.savedView.id === openSaved.id && data.savedView.revision !== openSaved.revision;
 
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
@@ -823,7 +856,7 @@ export function FindingsExplorerClient({
   }
 
   if (screen === 'unavailable' && failure) {
-    return <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />;
+    return <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} recovery={filtersRecovery ? { label: filtersRecovery, onClick: recoverFilters } : undefined} />;
   }
 
   if (screen === 'loading' || !data) {
@@ -1278,8 +1311,8 @@ export function FindingsExplorerClient({
           <SavedViewsMenu
             tab={savedViews.tab}
             canWrite={savedViews.canWrite}
-            openId={openViewId}
-            onOpenIdChange={setOpenViewId}
+            openId={openSaved?.id ?? null}
+            onOpenChange={adoptSavedView}
             onOpen={savedViews.onOpen}
             currentQuery={savedViewQuery}
           />
@@ -1323,10 +1356,17 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
+      {savedChanged && (
+        <Callout tone="warn" role="status">
+          <span>Someone updated this saved view after you opened it. The list above uses the new version.</span>
+          <Button variant="outline" size="xs" className="ml-3" onClick={savedViews?.onReload}>Reload saved view</Button>
+        </Callout>
+      )}
+
       <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (
-        <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+        <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} recovery={filtersRecovery ? { label: filtersRecovery, onClick: recoverFilters } : undefined} />
       ) : layout === 'rule' ? (
         /* ---- By-rule pivot ---- */
         /* No height cap. This was `max-h-[65vh]`, which put a second scrollbar inside the
@@ -1348,7 +1388,14 @@ export function FindingsExplorerClient({
             {resolves && <span className="label-grid text-right">Fixed</span>}
           </div>
           {listBody === 'empty' ? (
-            <div className="py-16 text-center text-sm text-ink-muted">{emptyListCopy(emptyReason, 'rules')}</div>
+            <div className="py-16 text-center text-sm text-ink-muted">
+              {emptyListCopy(emptyReason, 'rules')}
+              {saved && filtersRecovery && (
+                <div className="mt-4">
+                  <Button variant="outline" size="sm" onClick={recoverFilters}>{filtersRecovery}</Button>
+                </div>
+              )}
+            </div>
           ) : ruleRows.map(r => {
             const isOpen = expandedRules.has(r.ruleId);
             return (
@@ -1472,9 +1519,16 @@ export function FindingsExplorerClient({
           </div>
 
           {listBody === 'unavailable' && failure ? (
-            <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+            <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} recovery={filtersRecovery ? { label: filtersRecovery, onClick: recoverFilters } : undefined} />
           ) : listBody === 'empty' ? (
-            <div className="py-16 text-center text-sm text-ink-muted">{emptyListCopy(emptyReason, 'findings')}</div>
+            <div className="py-16 text-center text-sm text-ink-muted">
+              {emptyListCopy(emptyReason, 'findings')}
+              {saved && filtersRecovery && (
+                <div className="mt-4">
+                  <Button variant="outline" size="sm" onClick={recoverFilters}>{filtersRecovery}</Button>
+                </div>
+              )}
+            </div>
           ) : (
             <div style={{ minWidth: rowMinWidth }}>
               {grouped ? renderGroups(grouped.groups) : paginated.map(item => renderFinding(item))}

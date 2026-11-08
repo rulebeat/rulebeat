@@ -599,3 +599,40 @@ describe('the export request', () => {
     expect(viewToSearchParams(view, { tab: 'results' }).toString()).not.toContain('pageSize');
   });
 });
+
+describe('the requests with a saved view open', () => {
+  const savedView: View = { ...withFilter('severity', ['critical', 'high']), search: 'vm', filters: [{ field: 'category', values: ['security'] }, { field: 'severity', values: ['critical', 'high'] }] };
+  const saved = { id: 'v1', revision: 4, view: savedView };
+  const query = (path: string) => new URLSearchParams(path.split('?')[1]);
+
+  it('name the view and its revision and carry nothing of the saved query', () => {
+    expect(viewQuery(request(savedView, { saved }))).toBe('tab=results&view=v1&rev=4');
+  });
+
+  it('carry only what the viewer changed, Any included', () => {
+    const view: View = { ...savedView, search: '', filters: [{ field: 'category', values: ['security'] }, { field: 'severity', values: ['low'] }], page: 2 };
+    expect(viewQuery(request(view, { saved, showSuppressed: true }))).toBe('tab=results&suppressed=1&view=v1&rev=4&severity=low&q=&page=2');
+  });
+
+  it('are the same for every read, so the list, a group, its rows, a column and the file agree', () => {
+    const view: View = { ...savedView, search: 'storage' };
+    const req = request(view, { saved });
+    for (const url of [
+      viewUrl(req), rowsUrl(req, 'fp', 1), groupUrl(req, ['security'], 1), columnValuesUrl(req, rowField('zone'), ''), exportUrl(req, 'csv'),
+    ]) {
+      const params = query(url);
+      expect([params.get('view'), params.get('rev'), params.get('q'), params.get('severity'), params.get('category')]).toEqual(['v1', '4', 'storage', null, null]);
+    }
+  });
+
+  it('read one rule\'s findings as the view with that rule on top, ungrouped', () => {
+    const params = query(ruleFindingsUrl(request(savedView, { saved }), 'rule-1', 2));
+    expect([params.get('view'), params.get('ruleId'), params.get('group'), params.get('page')]).toEqual(['v1', 'rule-1', null, '2']);
+  });
+
+  it('write the address as differences from the saved view', () => {
+    const view: View = { ...savedView, columns: ['zone'] };
+    const address = explorerAddress(view, { extraParams: { tab: 'results' }, viewId: 'v1', saved: savedView });
+    expect(address).toBe('tab=results&view=v1&cols=zone');
+  });
+});

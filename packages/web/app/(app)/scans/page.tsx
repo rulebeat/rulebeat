@@ -10,6 +10,8 @@ import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
+import { effectiveView } from '@/lib/effective-filters';
+import { OPEN_VIEW_PARAM, type OpenSavedView } from '@/lib/saved-view-query';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
@@ -18,6 +20,17 @@ import { holdsNoScope } from '@/lib/access-model';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
 import type { Rule, Suppression } from '@/lib/types';
+
+/** `/scans` with the link's params but `name`, a repeated param kept repeated. */
+function hrefWithout(params: Record<string, string | string[] | undefined>, name: string): string {
+  const kept = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === name) continue;
+    for (const one of Array.isArray(value) ? value : value === undefined ? [] : [value]) kept.append(key, one);
+  }
+  const query = kept.toString();
+  return query ? `/scans?${query}` : '/scans';
+}
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
@@ -33,15 +46,30 @@ export default async function ScansPage({
   const runId = one(params.run);
   const compare = one(params.compare);
   const compareCategory = one(params.compareCategory);
-  // Every filter, column, sort and page param is read by the one reader the explorer writes with.
-  const initialView = viewFromSearchParams(params);
-  const initialSavedViewId = one(params.view);
+  const savedViewId = one(params[OPEN_VIEW_PARAM]);
   const categories = await listCategories();
   const { user, access } = await getPageAccess();
   const role = user?.role ?? 'viewer';
   const controls = writeControlsFor(access);
 
   const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
+
+  // Every filter, column, sort and page param is read by the one reader the explorer writes with. With a
+  // saved view open the address holds only the differences from it, so the View is the saved view with
+  // those on top, assembled by the same function the reads use. A view that is unknown, deleted or not
+  // the person's to open shows no findings and one notice, whichever it is.
+  let initialView = viewFromSearchParams(params);
+  let openSavedView: OpenSavedView | undefined;
+  let savedViewUnavailable: { keepHref: string } | undefined;
+  if (savedViewId && (activeTab === 'results' || activeTab === 'advisories' || activeTab === 'activity')) {
+    const effective = await effectiveView({ viewId: savedViewId, changes: params });
+    if (effective.ok) {
+      initialView = effective.view;
+      openSavedView = effective.saved;
+    } else {
+      savedViewUnavailable = { keepHref: hrefWithout(params, OPEN_VIEW_PARAM) };
+    }
+  }
   const initialSuppressions = await loadSuppressions(access) as Suppression[];
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
 
@@ -102,7 +130,8 @@ export default async function ScansPage({
         initialSuppressions={initialSuppressions}
         initialCategoryFilter={initialCategoryFilter}
         initialView={initialView}
-        initialSavedViewId={initialSavedViewId}
+        openSavedView={openSavedView}
+        savedViewUnavailable={savedViewUnavailable}
         runs={activeTab === 'history' ? await listAllRuns(access, 50) : undefined}
         runDetail={runDetail}
         snapshotScanId={snapshotScanId}

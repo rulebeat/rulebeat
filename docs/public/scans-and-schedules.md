@@ -66,7 +66,7 @@ the current findings hold. Every active filter, from the toolbar, a column heade
 shows as a chip, and the chip's cross removes that value. A filter is a set of accepted values; a
 finding with several returned rows is kept when at least one row passes every returned-field filter,
 and only those rows are shown and exported. Empty values sort last in both directions, and numbers
-sort as numbers. The whole view is in the address, so a link reproduces it: `cols` for the columns,
+sort as numbers. On plain Scans, with no saved view open, the whole view is in the address, so a link reproduces it: `cols` for the columns,
 `sort` as `field:asc` or `field:desc` (a returned field is written `row.<name>`), `rf` for a
 returned-field filter (`rf=feature=Retiring|Preview` keeps rows whose value is one of those), `f`
 for the other built-in fields (`f=resourceName=vm1`, `f=firstSeen=2026-10-01`), and `page`. In a
@@ -103,11 +103,34 @@ a field name.
 ### Saved views
 
 The Views button in the toolbar keeps the current view under a name, and the view is shared with
-everyone on the install. A saved view holds the tab it was saved on (Results or Advisories) and
+everyone on the install. A saved view holds the tab it was saved on (Results, Advisories or Activity) and
 everything the address carries: filters, search, window, picked columns, sort and grouping. It does not hold
 the page you were on, which findings are suppressed, or the By resource and By rule choice. Choose
 a saved view in the menu to open it. The menu lists the views for the tab you are on, and opening
-one puts its filters in the address, so the link still reproduces what you see.
+one puts its link in the address, so the link still reproduces what you see.
+
+With a saved view open, the address carries only your differences from it: `?tab=results&view=<id>`
+is the view exactly as saved, and each change you make adds one part to the address, such as
+`severity=low` or `sort=rule:desc`. Because the link names the view instead of copying it, it
+follows the view's later updates: someone who opens it after an Editor updates the view sees the new
+filters with your differences on top. Every part a view saves is a layer that your address can
+change: each filter (including `f=` and `rf=` filters, keyed by field), the search, the status, the
+window (`window`, or `from` and `to` together), the columns, the sort and the grouping. A part you
+did not change is left out of the address and comes from the view. To remove a saved filter, search,
+column list or grouping on top of the view, the address names it with no value (`severity=`, `q=`,
+`cols=`, `group=`, `f=kind=`, and `rf=<field>` with no `=`; `rf=<field>=` still keeps the rows where
+that field is blank). Status, sort, the group sort and the window have no empty value, so a change is
+written in full (`status=open`, `sort=severity:asc`, `window=7`). The page is where you are in the
+list, so it is in the address but is never part of a view. Links made before this change, which
+carried a full copy of the view, still open as they were bookmarked and never widen the view.
+
+When a view is open, the could-not-be-loaded and no-results states offer Back to saved filters in
+place of Clear filters, since clearing would widen the view past what it saved. If the link names a
+view that was deleted or does not exist, the tab shows no findings and one
+notice, "This saved view is not available to you", whichever of the two it is. The action Open
+Scans with only this link's filters opens the same link without the view and keeps its other
+filters. If someone updates the view while you have it open, a notice says so and offers to reload
+it; the numbers already use the new version.
 
 Viewers can open saved views. Editors and admins can also save the current view, replace an open
 view's filters with the current ones (Update with current view), rename it and delete it. A name

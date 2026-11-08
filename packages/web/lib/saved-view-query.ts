@@ -6,9 +6,10 @@
  *
  * A saved view stores the tab it opens on and the View's query string exactly as
  * `viewToSearchParams` writes it, so everything the /scans URL carries is saved without this module
- * knowing the View's shape.
+ * knowing the View's shape. With a view open, the address carries only the differences from that
+ * query (`savedViewAddress` in lib/finding-view.ts).
  */
-import { viewFromSearchParams, viewToSearchParams } from './finding-view';
+import { viewFromSearchParams, viewToSearchParams, type View } from './finding-view';
 
 export const SAVED_VIEW_TABS = ['results', 'advisories', 'activity'] as const;
 export type SavedViewTab = (typeof SAVED_VIEW_TABS)[number];
@@ -18,6 +19,18 @@ export const MAX_SAVED_VIEW_NAME_LENGTH = 100;
 
 /** The /scans param that records which saved view is open. `viewFromSearchParams` ignores it. */
 export const OPEN_VIEW_PARAM = 'view';
+
+/** The param that carries the revision of the open saved view on a read, so the server can tell the
+ *  view the page was opened on from the one it holds now. */
+export const OPEN_VIEW_REVISION_PARAM = 'rev';
+
+/** The saved view an address has open: its id and revision, and the View it saved. The address
+ *  carries only differences from `view`, and the server puts the two back together. */
+export interface OpenSavedView { id: string; revision: number; view: View }
+
+/** What a link to a saved view that is unknown, deleted or not the person's to open says. One message
+ *  for all three, so none can be told from another. */
+export const SAVED_VIEW_UNAVAILABLE = 'This saved view is not available to you';
 
 /** What a person chooses when saving a view; the rest of a SavedView is bookkeeping. */
 export interface SavedViewFields {
@@ -42,15 +55,15 @@ export function isSavedViewTab(value: unknown): value is SavedViewTab {
 }
 
 /** The query a View has once it is read and written back, so two spellings of one View are one
- *  query and anything the reader does not know (a stale `tab`, a hand-typed param) is dropped. */
+ *  query and anything the reader does not know (a stale `tab`, a hand-typed param) is dropped. The
+ *  page is where the viewer happens to be, not part of what they set up, so it is dropped too. */
 export function normalizeViewQuery(query: string): string {
-  return viewToSearchParams(viewFromSearchParams(new URLSearchParams(query))).toString();
+  return viewToSearchParams({ ...viewFromSearchParams(new URLSearchParams(query)), page: 1 }).toString();
 }
 
-/** The link that opens a saved view: its tab, the view's id, then its query, the same param order
- *  the explorer writes, so opening a view and then touching nothing leaves the URL as it was. */
-export function savedViewHref(view: Pick<SavedView, 'id' | 'tab' | 'query'>, basePath = '/scans'): string {
-  const params = new URLSearchParams({ tab: view.tab, [OPEN_VIEW_PARAM]: view.id });
-  for (const [key, value] of new URLSearchParams(view.query)) params.append(key, value);
-  return `${basePath}?${params.toString()}`;
+/** The link that opens a saved view: its tab and its id, nothing else. The view's query is read from
+ *  the view, so the link follows a later update of it, and the explorer's address then carries only
+ *  what the viewer changes on top of it (`savedViewAddress`). */
+export function savedViewHref(view: Pick<SavedView, 'id' | 'tab'>, basePath = '/scans'): string {
+  return `${basePath}?${new URLSearchParams({ tab: view.tab, [OPEN_VIEW_PARAM]: view.id }).toString()}`;
 }
