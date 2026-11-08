@@ -1081,7 +1081,7 @@ export function RuleForm({
         <Button variant="ghost" onClick={() => router.back()}>
           Back
         </Button>
-        {initial?.id && !isReadOnly && <p className="text-xs text-ink-2">{RULE_FORM_SAVE_NOTE}</p>}
+        {initial?.id && !isReadOnly && !saveHandleRef && <p className="text-xs text-ink-2">{RULE_FORM_SAVE_NOTE}</p>}
       </div>
     </div>
   );

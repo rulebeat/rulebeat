@@ -12,6 +12,7 @@ import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chart
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 import { trendUnavailableMessage } from '@/lib/trend-scope';
+import { WIDGET_LIMITS } from '@/lib/widget-limits';
 
 interface Config { category?: string; period?: string; chartType?: string; showFindings?: boolean; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
@@ -137,7 +138,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
 
   if (summary?.trendIsCategoryScopedOnly) {
-    return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">Not available with a resource group/tag/severity/rule filter, or more than one subscription selected. Trend is tracked by category (and optionally a single subscription) only.</div>;
+    return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">{WIDGET_LIMITS.w4}</div>;
   }
   if (summary?.trendUnavailable) {
     return <WidgetUnavailable reason={trendUnavailableMessage(summary.trendUnavailable)} />;
@@ -159,12 +160,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   return (
     <div className="flex h-full flex-col px-2 py-3">
       {showSubscriptionDenominatorCaveat && (
-        <p
-          className="px-2 pb-1 text-xs text-ink-muted"
-          title="This subscription's total reflects every rule enabled for the category. It isn't narrowed to this subscription's own resources."
-        >
-          Total is per category, not per subscription
-        </p>
+        <p className="px-2 pb-1 text-xs text-ink-muted">{WIDGET_LIMITS.w2}</p>
       )}
       <ResponsiveContainer width="100%" height="100%" className="min-h-0 flex-1">
         {chartType === 'bar' ? (

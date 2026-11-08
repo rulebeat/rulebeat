@@ -5,9 +5,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ACTIVITY_RETENTION_NOTE, EVERYONE_LINE, NO_ACCESS_HEADING, RULE_FORM_SAVE_NOTE, RULE_FORM_SEVERITY_HELP,
-  TREND_RETENTION_NOTE, WIDGET_LIMITS, categoryEmptyLabel, postureEmptyReason, postureLimitNote,
-  ruleSelectionNote, severityMeasure,
+  EVERYONE_LINE, NO_ACCESS_HEADING, RULE_FORM_SAVE_NOTE, RULE_FORM_SEVERITY_HELP,
+  WIDGET_LIMITS, activityRetentionNote, categoryEmptyLabel, postureEmptyReason, postureLimitNote,
+  ruleSelectionNote, severityMeasure, trendRetentionNote,
 } from '@/lib/widget-limits';
 
 describe('the posture limit note', () => {
@@ -82,10 +82,28 @@ describe('the note on a rule-scoped widget', () => {
 });
 
 describe('the other wording the module holds', () => {
-  it('keeps W2 to W5 and the retention notes', () => {
+  it('keeps W2 to W4 as the spec words them', () => {
     expect(Object.keys(WIDGET_LIMITS)).toEqual(['w1', 'w2', 'w3', 'w4', 'w5']);
-    expect(TREND_RETENTION_NOTE).toBe('Trend points are kept for 365 days.');
-    expect(ACTIVITY_RETENTION_NOTE).toBe('Activity occurrences are kept for 180 days.');
+    expect(WIDGET_LIMITS.w2).toBe(
+      "A rule counts for every subscription or resource group its scope includes, even one with none of the resources it checks. A rule whose query picks subscriptions itself counts for all of them. Passing uses the rule's most recent run anywhere. A finding placed at a management group is counted in the footer, not against the subscriptions under it.",
+    );
+    expect(WIDGET_LIMITS.w3).toBe(
+      'A rule scoped to a management group counts for its subscriptions once RuleBeat has read the management group tree.',
+    );
+    expect(WIDGET_LIMITS.w4).toBe(
+      'A trend is not drawn with any filter other than category, the date window, or a single subscription or the Directory. Trend points are kept per category for the whole install, each subscription and the Directory.',
+    );
+  });
+
+  it('words W5 as the marker note, naming the date the counting changed', () => {
+    expect(WIDGET_LIMITS.w5('2026-03-04')).toBe(
+      'Counted differently before 2026-03-04. Earlier points use an older definition: see docs/public/posture.md.',
+    );
+  });
+
+  it('says in each retention note where the chart starts', () => {
+    expect(trendRetentionNote('2025-11-09')).toBe('Trend points are kept for 365 days, so this chart starts on 2025-11-09.');
+    expect(activityRetentionNote('2026-05-12')).toBe('Activity occurrences are kept for 180 days, so this chart starts on 2026-05-12.');
   });
 
   it('keeps the two rule form lines', () => {

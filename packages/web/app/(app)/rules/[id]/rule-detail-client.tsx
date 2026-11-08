@@ -2,11 +2,12 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pencil, Lock, Copy, Loader2 } from 'lucide-react';
+import { Pencil, Lock, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { CopyToPersonalButton } from '@/components/rules/copy-to-personal-button';
 import { cn } from '@/lib/utils';
+import { RuleSaveAction } from '@/components/rules/rule-save-action';
 import { RuleForm } from '@/components/rules/rule-form';
 import { RuleOrigin } from '@/components/rules/rule-origin';
 import type { OriginNote } from '@/lib/rule-version-markers';
@@ -86,15 +87,7 @@ export function RuleDetailClient({ rule, origin = null, kqlQuery, initialEditing
           </>
         )}
         {canAuthor && (
-          <Button
-            size="sm"
-            className="h-6 text-xs px-2 gap-1"
-            disabled={!dirty || saving}
-            onClick={() => saveHandleRef.current?.()}
-          >
-            {saving && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-            {saving ? 'Saving…' : 'Save changes'}
-          </Button>
+          <RuleSaveAction disabled={!dirty || saving} saving={saving} onSave={() => saveHandleRef.current?.()} />
         )}
         {canAuthor && canDuplicate && (
           <Button variant="outline" size="sm" className="h-7 text-xs px-2.5 gap-1.5 ml-auto" onClick={handleDuplicate}>

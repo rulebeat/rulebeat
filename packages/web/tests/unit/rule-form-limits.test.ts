@@ -20,7 +20,7 @@ const rule = {
   resourceTypes: [], conditions: [], rawKql: 'resources | where type == "microsoft.compute/virtualmachines"',
 } as unknown as Rule;
 
-const render = (initial?: Rule) => renderToStaticMarkup(createElement(RuleForm, { initial, canAuthor: true }))
+const render = (initial?: Rule, extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(RuleForm, { initial, canAuthor: true, ...extra }))
   .replace(/&#x27;/g, "'");
 
 describe('the rule form', () => {
@@ -33,5 +33,10 @@ describe('the rule form', () => {
     expect(render(rule)).toContain(RULE_FORM_SAVE_NOTE);
     expect(render(undefined)).not.toContain(RULE_FORM_SAVE_NOTE);
     expect(render({ ...rule, id: '' })).not.toContain(RULE_FORM_SAVE_NOTE);
+  });
+
+  it('leaves the note to the embedding page when that page draws Save itself', () => {
+    const saveHandleRef = { current: null as (() => void) | null };
+    expect(render(rule, { saveHandleRef })).not.toContain(RULE_FORM_SAVE_NOTE);
   });
 });

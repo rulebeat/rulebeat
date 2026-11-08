@@ -18,14 +18,16 @@ export const EVERYONE_LINE = `${PASS_SENTENCE} ${EDIT_SENTENCE}`;
 
 /**
  * Limits that qualify a single widget's number. W1 replaces the first sentence of the everyone line for
- * anyone without Everything; W2 to W5 are the Subscription Scorecard's and Scan Coverage's.
+ * anyone without Everything; W2 is the Subscription scorecard's and a single-subscription trend's; W3
+ * shows while a management group cannot be expanded; W4 says why a trend is not drawn; W5 is the marker
+ * note where a line's counting changed, so it takes the date.
  */
 export const WIDGET_LIMITS = {
   w1: 'A rule passes here when it has no open finding in your Access and its most recent run succeeded. That run may have covered a different part of the estate.',
-  w2: 'A rule counts for every subscription or resource group its scope includes, even one with none of the resources it checks. A rule whose query picks subscriptions itself counts for all of them. Passing uses the rule\'s most recent run anywhere.',
+  w2: 'A rule counts for every subscription or resource group its scope includes, even one with none of the resources it checks. A rule whose query picks subscriptions itself counts for all of them. Passing uses the rule\'s most recent run anywhere. A finding placed at a management group is counted in the footer, not against the subscriptions under it.',
   w3: 'A rule scoped to a management group counts for its subscriptions once RuleBeat has read the management group tree.',
-  w4: 'Scan coverage ignores the Scope, tag, rule and Severity filters.',
-  w5: 'Your resource groups only',
+  w4: 'A trend is not drawn with any filter other than category, the date window, or a single subscription or the Directory. Trend points are kept per category for the whole install, each subscription and the Directory.',
+  w5: (date: string) => `Counted differently before ${date}. Earlier points use an older definition: see docs/public/posture.md.`,
 } as const;
 
 /** The note a posture figure carries about what "passing" means for the viewer reading it. */
@@ -33,8 +35,15 @@ export function postureLimitNote(holdsEverything: boolean): string {
   return holdsEverything ? EVERYONE_LINE : `${WIDGET_LIMITS.w1} ${EDIT_SENTENCE}`;
 }
 
-export const TREND_RETENTION_NOTE = 'Trend points are kept for 365 days.';
-export const ACTIVITY_RETENTION_NOTE = 'Activity occurrences are kept for 180 days.';
+/** The note on a chart whose window reaches past the 365 days of trend points; `start` is the first day it draws. */
+export function trendRetentionNote(start: string): string {
+  return `Trend points are kept for 365 days, so this chart starts on ${start}.`;
+}
+
+/** The note on a chart whose window reaches past the 180 days of activity occurrences. */
+export function activityRetentionNote(start: string): string {
+  return `Activity occurrences are kept for 180 days, so this chart starts on ${start}.`;
+}
 
 export type PostureEmptyReasonKey = 'no-access' | 'no-rules-here' | 'no-enabled-rules' | 'filter-left-nothing';
 
