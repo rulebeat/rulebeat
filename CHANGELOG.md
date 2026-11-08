@@ -13,6 +13,8 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Changed
 
 - Dashboard posture now counts only the rules that can look at something you hold. Someone without the Directory no longer has Microsoft Graph rules in their number.
+- The Stat Card reads Rules counted and gives the posture change in points against a named date.
+- The Overall Posture ring, the posture Stat Card and the Category scorecard state what "passing" means for you inside the tile, and a posture with nothing to count says why instead of 0/0 or "No data". Category scorecard tiles say "All passing" only when every counted rule is proven, and the rule form says when a severity change or an edit reaches posture.
 - Top violating rules shows each rule's highest open severity.
 - Scans can filter, group and show findings by where they are placed ("Placed at").
 

@@ -7,11 +7,25 @@ import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CATEGORY_COLORS } from '@/components/dashboard/dashboard-constants';
+import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; policyIds?: string[]; categories?: string[] /* legacy multi-select, pre-ScopeSection */ }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+
+type Tile = WidgetSummary['perCategory'][number];
+
+/** Lowest unrounded passing ratio first, then more open findings, then name; a category with no counted
+ *  rule has no ratio and goes last. */
+function byWorstFirst(a: Tile, b: Tile): number {
+  if ((a.total > 0) !== (b.total > 0)) return a.total > 0 ? -1 : 1;
+  if (a.total > 0 && b.total > 0) {
+    const ratio = a.passing * b.total - b.passing * a.total;
+    if (ratio !== 0) return ratio;
+  }
+  return b.activeFindings - a.activeFindings || a.label.localeCompare(b.label);
+}
 
 export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
@@ -20,6 +34,8 @@ export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) 
     `/api/widgets/summary?${params}`,
     [refreshKey]
   );
+
+  useReportWidgetNotes(!loading && !failed && summary ? summary.postureNotes : []);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
@@ -35,13 +51,14 @@ export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) 
   const mods = config.categories?.length
     ? summary.perCategory.filter(m => config.categories!.includes(m.category))
     : summary.perCategory;
+  const tiles = [...mods].sort(byWorstFirst);
 
   return (
     <div className="grid h-full auto-rows-min gap-0 scroll-y">
       {/* data-widget-content marks the natural-height block the dashboard measures so it
           can shrink this widget's row span to fit. See dashboard-grid-client. */}
       <div data-widget-content className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-3 content-start">
-        {mods.map(mod => {
+        {tiles.map(mod => {
           const color = mod.color ?? CATEGORY_COLORS[mod.category] ?? 'var(--color-ink-faint)';
 
           return (
@@ -55,20 +72,25 @@ export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) 
                 <span className="truncate text-xs font-semibold text-ink">{mod.label}</span>
               </div>
 
-              {mod.pct !== null ? (
+              {mod.total > 0 ? (
                 <>
                   <span className="numeral-grid text-2xl font-bold leading-none text-ink">{mod.passing}/{mod.total}</span>
                   <span className="numeral-grid text-xs text-ink-muted">{mod.pct}%</span>
-                  {mod.activeFindings === 0 ? (
+                  {mod.passing === mod.total ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-ink-2">
                       <CheckCircle2 className="size-3" />All passing
                     </span>
                   ) : (
-                    <span className="text-xs text-ink">{mod.activeFindings} finding{mod.activeFindings !== 1 ? 's' : ''}</span>
+                    <>
+                      {mod.activeFindings > 0 && (
+                        <span className="text-xs text-ink">{mod.activeFindings} finding{mod.activeFindings !== 1 ? 's' : ''}</span>
+                      )}
+                      {mod.unknown > 0 && <span className="text-xs text-ink-2">{mod.unknown} not yet proven</span>}
+                    </>
                   )}
                 </>
               ) : (
-                <span className="text-xs text-ink-muted">No data</span>
+                <span className="text-xs text-ink-2">{mod.emptyLabel}</span>
               )}
             </Link>
           );

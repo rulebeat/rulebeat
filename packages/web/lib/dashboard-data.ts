@@ -14,10 +14,11 @@ import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
 import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
-import { accessReach, type Access } from './access-model';
+import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import { narrowScopes, ruleOverlapsScopes } from './rule-overlap';
+import { categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure } from './widget-limits';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -82,6 +83,17 @@ function countedRulesForCategory(
   const enabled = enabledRulesOfCategory(category, allRules, filters);
   const stateRuleIds = new Set(enabled.filter(r => countsTowardPosture(r) && ruleOverlapsScopes(r, scopes, hierarchy)).map(r => r.id));
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
+}
+
+/** Why a posture has nothing to count, in the order a viewer can act on it: they hold no Scope; no
+ *  enabled Problem rule looks at anything they hold (whatever the filters); or the filters excluded
+ *  every rule that does. A viewer on Everything with no counted rule at all is told there are no
+ *  enabled rules, since for them every rule looks at what they hold. */
+function emptyReasonFor(access: Access, categories: Category[], allRules: Rule[], hierarchy: readonly HierarchyNode[]): { title: string; detail: string } {
+  if (holdsNoScope(access)) return postureEmptyReason('no-access');
+  const anyCountable = categories.some(cat => countedRulesForCategory(cat, allRules, {}, access, hierarchy).stateRuleIds.size > 0);
+  if (anyCountable) return postureEmptyReason('filter-left-nothing');
+  return postureEmptyReason(access.everything ? 'no-enabled-rules' : 'no-rules-here');
 }
 
 /** Splits a scope's rule ids by outcome against its findings: passing (zero findings, proven
@@ -197,6 +209,13 @@ export interface WidgetSummary {
   /** Net lifecycle change over the window (newInWindow − fixedInWindow). A count, not a level
    *  comparison against a past snapshot. See DATA-SOURCE-UNIFICATION-PLAN.md §3. */
   deltaFindings: number | null;
+  /** Limit notes the ring, the posture Stat Card and the Category scorecard show: what "passing" means
+   *  for this viewer, then the rule-scoped note when some selected rules are left out of the count. */
+  postureNotes: string[];
+  /** What the posture measures under a Severity filter ("Rules with no High finding"), else null. */
+  measure: string | null;
+  /** Why there is nothing to count when `current.totalRules` is 0, else null. */
+  emptyReason: { title: string; detail: string } | null;
   perCategory: Array<{
     category: string; label: string; color?: string; pct: number | null; activeFindings: number;
     /** Same passing/total the pct is rounded from. The honest headline (spec 033), with pct as
@@ -208,6 +227,11 @@ export interface WidgetSummary {
      *  was capped, so its posture % may not reflect reality (spec 004). */
     lastScanCoverage: 'complete' | 'partial' | null;
     lastScanIncompleteRules: IncompleteRule[];
+    /** Counted rules with zero findings whose last run was not a proven success: the part of `total`
+     *  that is neither passing nor failing. */
+    unknown: number;
+    /** What the tile reads when `total` is 0, by whether the viewer holds Everything. Null otherwise. */
+    emptyLabel: string | null;
   }>;
   /** Per-subscription posture, derived live from findings (no schema change): only subscriptions
    *  with at least one active finding appear (there's no tenant-wide subscription list without a
@@ -298,6 +322,16 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   const pct = posturePct(passingRules, totalRules);
 
+  const selectedRuleIds = [...new Set(filters.ruleIds ?? [])];
+  const postureLimits = {
+    postureNotes: [
+      postureLimitNote(access.everything),
+      ...[ruleSelectionNote(selectedRuleIds.length, selectedRuleIds.filter(id => !scopedRuleIds.has(id)).length)].filter((n): n is string => n !== null),
+    ],
+    measure: severityMeasure(filters.severities),
+    emptyReason: totalRules > 0 ? null : emptyReasonFor(access, allCategories, allRules, hierarchy),
+  };
+
   const newInWindow = activeFindings.filter(f => isWithinRange(f.firstSeenAt, from, to)).length;
   const fixedFindings = (await queryFixedFindings(filters, access)).filter(countsInFindingTotals);
   const fixedInWindow = fixedFindings.filter(f => isWithinRange(f.resolvedAt, from, to)).length;
@@ -317,7 +351,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     const { stateRuleIds } = countedByCategory.get(cat.id)!;
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
-    const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
+    const { passing: catPassing, unknown: catUnknown } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
     const catPct = posturePct(catPassing, catTotal);
     // A high posture % is misleading if the scan behind it didn't finish. The coverage-freshness
     // widget must show that alongside recency, not just "how long ago" (spec 004).
@@ -333,6 +367,8 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       lastScanAt: lastSnapshotAt.get(cat.id) ?? null,
       lastScanCoverage: lastScan?.coverage ?? null,
       lastScanIncompleteRules: lastScan?.incompleteRules ?? [],
+      unknown: catUnknown,
+      emptyLabel: catTotal === 0 ? categoryEmptyLabel(access.everything) : null,
     };
   }));
 
@@ -409,7 +445,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   if (hasUnsupportedTrendFilter) {
     return {
-      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
+      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
@@ -419,7 +455,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trendScope = trendScopeOf(access, filters.subscriptions);
   if (!trendScope.available) {
     return {
-      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
+      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
@@ -457,7 +493,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   }
 
   return {
-    current, baseline, deltaPct, baselineGap, deltaFindings,
+    current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits,
     perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };

@@ -32,6 +32,7 @@ import { deriveDedicatedEditorFields } from '@/lib/rule-form-payload';
 import { RuleVersionSelector } from './rule-version-selector';
 import type { RuleVersionHistory } from '@/lib/types';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
+import { RULE_FORM_SAVE_NOTE, RULE_FORM_SEVERITY_HELP } from '@/lib/widget-limits';
 
 // Always-available ARG fields in the condition field autocomplete.
 const ARG_BASE_FIELDS = ['subscriptionId', 'resourceGroup', 'id', 'name', 'type', 'location', 'tags', 'kind', 'sku'];
@@ -716,6 +717,7 @@ export function RuleForm({
                     options={SEVERITY_OPTIONS}
                     aria-label="Severity"
                   />
+                  <p className="mt-1 text-xs text-ink-2">{RULE_FORM_SEVERITY_HELP}</p>
                 </div>
               </div>
               <div>
@@ -1079,6 +1081,7 @@ export function RuleForm({
         <Button variant="ghost" onClick={() => router.back()}>
           Back
         </Button>
+        {initial?.id && !isReadOnly && <p className="text-xs text-ink-2">{RULE_FORM_SAVE_NOTE}</p>}
       </div>
     </div>
   );

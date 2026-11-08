@@ -10,11 +10,13 @@ import { dateWindowLabel, dateWindowPhrase } from '@/lib/date-window';
 import type { StatMetric } from '@/lib/types';
 import { PostureDelta } from '@/components/dashboard/widgets/posture-delta';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
+import { postureEmptyReason } from '@/lib/widget-limits';
+import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 // Metric → /scans Results-tab overrides. Metrics with no obvious equivalent filter (posture %,
-// modules healthy, rules scanned) link to a plain Results tab scoped only by inherited filters.
+// modules healthy, rules counted) link to a plain Results tab scoped only by inherited filters.
 function metricOverrides(metric: StatMetric): ScansLinkOverrides {
   switch (metric) {
     case 'total-findings':
@@ -44,6 +46,9 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
     [refreshKey]
   );
   const dateWindowKey = JSON.stringify(merged.dateWindow);
+  // The metrics that read the posture formula carry its limits; the finding counts do not.
+  const countsRules = config.metric === 'posture-pct' || config.metric === 'rules-scanned' || config.metric === 'modules-healthy';
+  useReportWidgetNotes(countsRules && !loading && !failed && summary ? summary.postureNotes : []);
 
   const { value, label, subtext, color } = useMemo(() => {
     const fallback = { value: '-', label: '', subtext: 'No data', color: 'var(--color-ink-faint)' };
@@ -55,13 +60,11 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
     switch (config.metric) {
       case 'posture-pct':
         return {
-          value: current.pct !== null ? `${current.passingRules} of ${current.totalRules}` : '-',
-          label: 'checks passing',
-          subtext: current.pct === null
-            ? 'no checks enabled'
-            : current.unknownRules > 0
-              ? `${current.unknownRules} unknown · ${current.pct}%`
-              : `${current.pct}%`,
+          value: `${current.passingRules} of ${current.totalRules}`,
+          label: summary.measure ?? 'checks passing',
+          subtext: current.unknownRules > 0
+            ? `${current.unknownRules} unknown · ${current.pct}%`
+            : `${current.pct}%`,
           color: postureColor(current.pct),
         };
       case 'total-findings':
@@ -92,18 +95,18 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
       case 'rules-scanned':
         return {
           value: String(current.totalRules),
-          label: 'rules scanned',
-          subtext: `${current.passingRules} passing`,
+          label: 'Rules counted',
+          subtext: `${current.passingRules} passing · ${current.unknownRules} unknown`,
           color: 'var(--color-ink)',
         };
       case 'modules-healthy': {
-        const scanned = perCategory.filter(m => m.lastScanAt !== null);
-        const healthy = scanned.filter(m => m.activeFindings === 0).length;
+        const counted = perCategory.filter(m => m.total > 0);
+        const healthy = counted.filter(m => m.passing === m.total).length;
         return {
-          value: `${healthy}/${scanned.length}`,
+          value: `${healthy}/${counted.length}`,
           label: 'categories healthy',
-          subtext: 'categories with zero open findings',
-          color: healthy === scanned.length && scanned.length > 0 ? 'var(--color-ink)' : 'var(--color-status-warn)',
+          subtext: 'categories with every counted rule passing',
+          color: healthy === counted.length && counted.length > 0 ? 'var(--color-ink)' : 'var(--color-status-warn)',
         };
       }
       case 'new-findings':
@@ -130,6 +133,11 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 
   if (failed) return <WidgetUnavailable onRetry={retry} />;
+
+  // A posture with nothing to count says why, in place of "0 of 0".
+  if (config.metric === 'posture-pct' && summary && summary.current.pct === null) {
+    return <WidgetUnavailable reason={summary.emptyReason ?? postureEmptyReason('filter-left-nothing')} />;
+  }
 
   return (
     <button

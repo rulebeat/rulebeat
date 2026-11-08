@@ -34,6 +34,7 @@ import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
+import { WidgetNotesContext } from '@/lib/hooks/use-widget-notes';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
@@ -74,6 +75,8 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
   // empty read would turn into a 100% posture or "No violations found".
   const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
+  // The limit notes the widget inside reports once its data says which apply (useReportWidgetNotes).
+  const [notes, setNotes] = useState<string[]>([]);
   const inner = accessReason ? (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
       <Lock className="size-5 text-ink-2" aria-hidden="true" />
@@ -114,8 +117,8 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   })();
 
   return (
-    <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      {inner}
+    <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} notes={notes} onRemove={onRemove} onConfigure={onConfigure}>
+      <WidgetNotesContext.Provider value={setNotes}>{inner}</WidgetNotesContext.Provider>
     </WidgetWrapper>
   );
 }
@@ -236,7 +239,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
 
         // Measure the unused space rather than the widget chrome, so this never has
         // to know how tall a widget header is.
-        const slack = box.clientHeight - block.offsetHeight;
+        // The notes under a widget's content take room the content cannot use.
+        const notesHeight = box.querySelector<HTMLElement>('[data-widget-notes]')?.offsetHeight ?? 0;
+        const slack = box.clientHeight - notesHeight - block.offsetHeight;
         if (slack <= ROW_MARGIN) return w; // content fills the box, or overflows it
 
         const neededPx = item.offsetHeight - slack;
