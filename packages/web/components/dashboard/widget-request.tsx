@@ -13,10 +13,17 @@ export interface WidgetRequestScope {
   changes: string;
   /** Set while the widget's config differs from the saved one (edit mode): the draft the server counts instead. */
   preview?: { config: Record<string, unknown> };
+  /** Told the revision a counting response was computed from, so the page can tell when the dashboard changed underneath it. */
+  onRevision?: (revision: number) => void;
 }
 
 const WidgetRequestContext = createContext<WidgetRequestScope | null>(null);
 export const WidgetRequestProvider = WidgetRequestContext.Provider;
+
+/** The page's listener for the revision in a counting response, if the widget is rendered under one. */
+export function useRevisionReport(): ((revision: number) => void) | undefined {
+  return useContext(WidgetRequestContext)?.onRevision;
+}
 
 /**
  * The URL of one counting route for the widget it is rendered in. `limit` and `trendDays` travel only

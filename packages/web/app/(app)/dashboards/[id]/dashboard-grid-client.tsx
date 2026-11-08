@@ -30,23 +30,25 @@ import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage
 import { NewVsFixedWidget } from '@/components/dashboard/widgets/new-vs-fixed-widget';
 import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activity-occurrences-widget';
 import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
-import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
+import { DashboardFilterBar } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
 import {
-  widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, dashboardFiltersOf, differencesFromSaved, type WidgetFilters,
+  widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, applyChanges, widgetFiltersOf, type WidgetFilters,
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
+import type { DashboardBarState } from '@/lib/dashboard-bar';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
-import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
 
 interface Props {
   dashboard: Dashboard;
-  /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
+  /** Subscription and resource group values, saved, in the address or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** The filter bar for this person, worked out on the server from the address in the request. */
+  bar: DashboardBarState;
   /** Whether the person may edit the dashboard, and why not. Edit mode previews widget drafts, which the server refuses without the right. */
   edit: { allowed: boolean; reason?: string };
 }
@@ -56,18 +58,7 @@ interface Props {
 const ROW_HEIGHT = 80;
 const ROW_MARGIN = 8;
 
-function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
-  return {
-    categories: config.filters?.categories ?? [],
-    subscriptions: config.filters?.subscriptions ?? [],
-    resourceGroups: config.filters?.resourceGroups ?? [],
-    tags: config.filters?.tags ?? [],
-    severities: config.filters?.severities ?? [],
-    ruleIds: config.filters?.ruleIds ?? [],
-  };
-}
-
-function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, canPreview, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, canPreview, outsideAccess, onRevision, onRemove, onConfigure }: {
   widget: WidgetDef;
   /** The widget as saved on the dashboard, or undefined for one added in this edit. */
   stored: WidgetDef | undefined;
@@ -81,6 +72,7 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   /** The person has the edit right, so a draft widget may be counted by the server. */
   canPreview: boolean;
   outsideAccess: OutsideAccess;
+  onRevision: (revision: number) => void;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
@@ -132,37 +124,41 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
 
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
+      <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, onRevision, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
         {inner}
       </WidgetRequestProvider>
     </WidgetWrapper>
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }: Props) {
+/** The layout a save sends. The saved filters and window are not part of it: the server keeps them. */
+export function layoutConfig(config: Dashboard['config'], autoRefresh: number, widgets: WidgetDef[]): Dashboard['config'] {
+  const { filters: _filters, dateWindow: _dateWindow, windowDays: _windowDays, ...rest } = config;
+  return { ...rest, autoRefresh, widgets };
+}
+
+export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [dashFilters, setDashFilters] = useState<DashboardFilters>(filtersFromConfig(initial.config));
-  const [dateWindow, setDateWindow] = useState<DateWindow>(
-    initial.config.dateWindow ?? { mode: 'relative', days: initial.config.windowDays ?? 7 },
-  );
-  const filters: WidgetFilters = { ...dashFilters, dateWindow };
-  // What the widgets ask the server for: the changes in the address, with any bar change not saved yet
-  // laid over them. The server holds the saved filters, so only differences from them travel.
+  // What the widgets ask the server for is the address: the changes on top of the saved filters. The
+  // filter bar writes them there and nowhere else, so nothing a person picks is saved to the dashboard.
   const searchParams = useSearchParams();
+  const saved = useMemo(() => savedFiltersOf(dashboard.config), [dashboard.config]);
   const changes = useMemo(() => {
-    const saved = savedFiltersOf(dashboard.config);
     const address = dashboardAddress(saved);
-    const live = differencesFromSaved(saved, dashboardFiltersOf(dashFilters, dateWindow));
-    return address.write({ ...address.read(searchParams), ...live }).toString();
-  }, [dashboard.config, searchParams, dashFilters, dateWindow]);
-  const hasActiveFilters = dashFilters.categories.length > 0 || dashFilters.subscriptions.length > 0
-    || dashFilters.resourceGroups.length > 0 || dashFilters.tags.length > 0
-    || dashFilters.severities.length > 0 || dashFilters.ruleIds.length > 0;
+    return address.write(address.read(searchParams)).toString();
+  }, [saved, searchParams]);
+  const filters: WidgetFilters = useMemo(
+    () => widgetFiltersOf(applyChanges(saved, dashboardAddress(saved).read(searchParams))),
+    [saved, searchParams],
+  );
+  const hasActiveFilters = Boolean(
+    filters.categories || filters.subscriptions || filters.resourceGroups || filters.tags || filters.severities || filters.ruleIds,
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(dashboard.config.autoRefresh ?? 0);
   const [countdown, setCountdown] = useState(0);
@@ -172,6 +168,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   const [titleValue, setTitleValue] = useState(dashboard.name);
   const [titleError, setTitleError] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const widgetsRef = useRef(initial.config.widgets);
@@ -182,27 +179,30 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   useEffect(() => { widgetsRef.current = widgets; }, [widgets]);
   const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 });
 
-  // Filter-bar persistence: deliberately independent of the widget-layout `dirty`/edit-mode Save
-  // flow above: changing a filter bumps refreshKey immediately (all widgets refetch) and persists
-  // to the server debounced, with no explicit "Save" required and regardless of `editMode`. Built
-  // from `dashboard.config` (last-synced state), never the possibly-dirty `widgets` local state,
-  // so a filter change can never silently persist an unsaved layout edit as a side effect.
-  const filtersFirstRender = useRef(true);
+  // The dashboard has one revision on this page. A counting response computed from a newer one means
+  // the dashboard changed underneath it (the saved filters among other things): reload the bar and
+  // every number together, and say so. Nothing is saved, and the address stays as it is.
+  const heldRevision = useRef(initial.revision);
+  const handledRevision = useRef(initial.revision);
+  useEffect(() => { heldRevision.current = dashboard.revision; }, [dashboard.revision]);
+  const onRevision = useCallback((seen: number) => {
+    if (seen <= heldRevision.current || seen === handledRevision.current) return;
+    handledRevision.current = seen;
+    setNotice('This dashboard changed since you opened it. The filter bar and every number were reloaded. Your changes are still in the address.');
+    router.refresh();
+  }, [router]);
+
+  // The reload above hands this component a newer dashboard. Take it unless a layout edit is open, which a
+  // reload must not discard. The save then sends the revision the edit started from.
   useEffect(() => {
-    if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
+    if (initial.revision === dashboard.revision || dirty || editMode) return;
+    // Adopting the reloaded dashboard from props after router.refresh(): an external sync, not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDashboard(initial);
+    setWidgets(initial.config.widgets);
     setRefreshKey(k => k + 1);
-    const t = setTimeout(() => {
-      fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
-      })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
-    }, 500);
-    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashFilters, dateWindow]);
+  }, [initial.revision]);
 
   // Every widget below self-fetches from /api/widgets/summary (or its own route) keyed off
   // `refreshKey`: bumping it is the shared "refetch everything" signal for manual refresh and
@@ -337,7 +337,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
     const res = await fetch(`/api/dashboards/${dashboard.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed }),
+      body: JSON.stringify({ name: trimmed, revision: dashboard.revision }),
     });
     if (res.ok) {
       const d = await res.json() as Dashboard;
@@ -362,9 +362,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: updatedName,
-          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
-          // That persistence is independent (see the debounced effect above).
-          config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+          revision: dashboard.revision,
+          // A layout save never carries the saved filters or window. Those change only by an explicit save.
+          config: layoutConfig(dashboard.config, updatedAutoRefresh, updatedWidgets),
         }),
       });
       if (res.ok) {
@@ -575,14 +575,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
         </DropdownMenu>
       </div>
 
-      {/* Dashboard-level filter bar: persists independently of edit mode / layout Save */}
-      <DashboardFilterBar
-        filters={dashFilters}
-        dateWindow={dateWindow}
-        onFiltersChange={setDashFilters}
-        onDateWindowChange={setDateWindow}
-        outsideAccess={outsideAccess}
-      />
+      {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
+      <DashboardFilterBar state={bar} saved={saved} marks={outsideAccess} />
 
       {/* Edit mode banner */}
       {editMode && (
@@ -593,6 +587,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
+      {notice && <Callout tone="warn" className="shrink-0 border-b border-rule-strong">{notice}</Callout>}
 
       {/* Grid */}
       <div className="px-4 py-4" ref={gridContainerRef as React.RefObject<HTMLDivElement>}>
@@ -627,6 +622,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
                   editMode={editMode}
                   canPreview={edit.allowed}
                   outsideAccess={outsideAccess}
+                  onRevision={onRevision}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />

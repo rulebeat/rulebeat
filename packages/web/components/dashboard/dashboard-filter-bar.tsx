@@ -1,140 +1,250 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
-import { ChecklistDropdown } from '@/components/ui/checklist-dropdown';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Link2 } from 'lucide-react';
+import { ChecklistDropdown, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
-import { toggleInSet } from '@/lib/toggle-set';
-import { withOutsideOptions, type OutsideAccess } from '@/lib/outside-access';
+import {
+  ANY_WIDENS_REASON, BAR_LIST_DIMENSIONS, backToSaved, pickAny, toggleValue,
+  type BarDimension, type BarLayers, type BarListDimension, type DashboardBarState,
+} from '@/lib/dashboard-bar';
+import { dashboardAddress, type DashboardFilterChanges, type DashboardFilters } from '@/lib/finding-view';
+import { dateWindowLabel } from '@/lib/date-window';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
-import type { DateWindow } from '@/lib/date-window';
-import type { Category, FilterOptionsResponse, Severity } from '@/lib/types';
+import type { OutsideAccess } from '@/lib/outside-access';
+import type { FilterOptionsResponse } from '@/lib/types';
 
-export interface DashboardFilters {
-  categories: string[];
-  subscriptions: string[];
-  resourceGroups: string[];
-  tags: string[];
-  severities: Severity[];
-  ruleIds: string[];
+const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'info'];
+
+/** The row that stands for the values outside the viewer's Access. Its value is no value any filter can hold. */
+export const OUTSIDE_ROW = '\u0000outside';
+
+const DIMENSION_LABEL: Record<BarListDimension, string> = {
+  category: 'Category', rule: 'Rule', subscription: 'Subscription', resourceGroup: 'Resource group', tags: 'Tags', severity: 'Severity',
+};
+
+/** The noun a sentence uses for a dimension ("2 widgets use their own severity"). */
+const DIMENSION_NOUN: Record<BarDimension, string> = {
+  category: 'category', rule: 'rule', subscription: 'subscription', resourceGroup: 'resource group', tags: 'tags', severity: 'severity', window: 'date window',
+};
+
+export function outsideRowLabel(count: number): string {
+  return `${count} outside your access`;
 }
 
-const SEVERITY_OPTIONS: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+/** What the "N widgets use their own severity" line says. */
+export function overrideNote(dimension: BarDimension, count: number): string | null {
+  if (count === 0) return null;
+  return count === 1
+    ? `1 widget uses its own ${DIMENSION_NOUN[dimension]}`
+    : `${count} widgets use their own ${DIMENSION_NOUN[dimension]}`;
+}
+
+/**
+ * What one dimension's checklist shows and does. The ticked values are the effective ones the viewer
+ * holds; what is outside their Access is one row they cannot tick; a value that no longer exists
+ * stays ticked, named, and comes off like any other. A pick is written through `replace`, and one that
+ * would widen the dimension is shown off with its reason, so it is never offered to make.
+ */
+export function dimensionControl(input: {
+  dimension: BarListDimension;
+  state: DashboardBarState;
+  layers: BarLayers;
+  options: readonly ChecklistOption[];
+  replace: (changes: DashboardFilterChanges) => void;
+  /** The name a value reads as, for those that have one (a subscription's display name). */
+  nameOf?: (value: string) => string;
+}): {
+  options: ChecklistOption[];
+  selected: Set<string>;
+  count: number;
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  clearHint: string | undefined;
+} {
+  const { dimension, state, layers, replace } = input;
+  const dim = state.dimensions[dimension];
+  const nameOf = input.nameOf ?? ((value: string) => value);
+  const outside = dim.inUrl ? dim.outside.url : dim.outside.saved;
+
+  const listed = new Set(input.options.map(o => o.value));
+  const gone = dim.vanished
+    .filter(v => !listed.has(v.value))
+    .map(v => ({ value: v.value, label: v.note === v.label ? v.label : `${nameOf(v.label)} (${v.note})` }));
+  const known = [...input.options, ...gone].map(option => {
+    if (!dim.effective.includes(option.value)) return option;
+    const picked = toggleValue(layers, dimension, option.value);
+    return 'refused' in picked ? { ...option, disabledReason: picked.refused } : option;
+  });
+  const options: ChecklistOption[] = outside > 0
+    ? [...known, { value: OUTSIDE_ROW, label: outsideRowLabel(outside), disabledReason: 'They stay in the filter and are not named.' }]
+    : known;
+
+  return {
+    options,
+    selected: new Set(outside > 0 ? [...dim.effective, OUTSIDE_ROW] : dim.effective),
+    count: dim.effective.length + outside,
+    onToggle: value => {
+      if (value === OUTSIDE_ROW) return;
+      const picked = toggleValue(layers, dimension, value);
+      if ('changes' in picked) replace(picked.changes);
+    },
+    onClear: () => {
+      const picked = pickAny(layers, dimension);
+      if ('changes' in picked) replace(picked.changes);
+    },
+    clearHint: dim.outside.saved + dim.outside.url > 0 ? ANY_WIDENS_REASON : undefined,
+  };
+}
+
+/**
+ * Writes `changes` to the address: the dashboard's own params replaced, every other param kept. It is a
+ * `replace`, so a pick adds no history entry, and nothing about it saves to the dashboard.
+ */
+export function replaceChanges(
+  router: { replace: (href: string, options?: { scroll?: boolean }) => void },
+  pathname: string,
+  searchParams: URLSearchParams,
+  saved: DashboardFilters,
+  changes: DashboardFilterChanges,
+): void {
+  const query = dashboardAddress(saved).write(changes, searchParams).toString();
+  router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+}
 
 interface Props {
-  filters: DashboardFilters;
-  dateWindow: DateWindow;
-  onFiltersChange: (next: DashboardFilters) => void;
-  onDateWindowChange: (w: DateWindow) => void;
-  /** Stored subscription and resource group values the person's access does not reach (#274). */
-  outsideAccess?: OutsideAccess;
+  /** The bar for this viewer, computed on the server from the address in the request. */
+  state: DashboardBarState;
+  /** The filters the dashboard saved. The address holds only differences from them. */
+  saved: DashboardFilters;
+  /** The saved, address and widget values the viewer's Access does not reach. */
+  marks: OutsideAccess;
 }
 
-/** Dashboard-level filter toolbar: Category/Rule/Subscription/Tags/Severity multi-selects plus a
- *  24h/7d/30d/custom window control. Persistence (debounced PUT) and refetch-triggering
- *  (refreshKey bump) both live in the parent (`dashboard-grid-client.tsx`); this component only
- *  reports changes upward via `onFiltersChange`/`onDateWindowChange`. */
-export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, outsideAccess }: Props) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
+/** The dashboard's filter bar. A pick is written to the address with `router.replace`: nothing is saved
+ *  to the dashboard, no history entry is added and leaving the page asks nothing. The page and the
+ *  widgets read the same address, so the numbers and the bar change together. */
+export function DashboardFilterBar({ state, saved, marks }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const subNames = useSubscriptionNames();
-  const [resourceGroups, setResourceGroups] = useState<string[]>([]);
-  const [rules, setRules] = useState<Array<{ id: string; name: string }>>([]);
+  const [options, setOptions] = useState<FilterOptionsResponse | null>(null);
+  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
 
   useEffect(() => {
     fetch('/api/widgets/filter-options')
       .then(r => r.ok ? r.json() : null)
-      .then((d: FilterOptionsResponse | null) => {
-        if (!d) return;
-        setCategories(d.categories);
-        setTags(d.tags);
-        setSubscriptionIds(d.subscriptions);
-        setResourceGroups(d.resourceGroups);
-        setRules(d.rules);
-      })
+      .then((d: FilterOptionsResponse | null) => { if (d) setOptions(d); })
       .catch(() => {});
   }, []);
 
-  const categoryOptions = categories.map(c => ({ value: c.id, label: c.label }));
-  const subscriptionOptions = withOutsideOptions(
-    subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id })), filters.subscriptions, outsideAccess, 'subscription');
-  const resourceGroupOptions = withOutsideOptions(
-    resourceGroups.map(rg => ({ value: rg, label: rg })), filters.resourceGroups, outsideAccess, 'resourceGroup');
-  const tagOptions = tags.map(t => ({ value: t, label: t }));
-  const severityOptions = SEVERITY_OPTIONS.map(s => ({ value: s, label: SEVERITY_LABEL[s] }));
-  const ruleOptions = rules.map(r => ({ value: r.id, label: r.name }));
+  const address = dashboardAddress(saved);
+  const changes = address.read(searchParams);
+  const layers: BarLayers = { saved, changes, marks };
 
-  const hasActiveFilters = filters.categories.length > 0 || filters.subscriptions.length > 0
-    || filters.resourceGroups.length > 0 || filters.tags.length > 0
-    || filters.severities.length > 0 || filters.ruleIds.length > 0;
+  const replace = (next: DashboardFilterChanges) => replaceChanges(router, pathname, searchParams, saved, next);
 
-  function toggle(dim: keyof DashboardFilters, value: string) {
-    const next = toggleInSet(new Set(filters[dim] as string[]), value);
-    onFiltersChange({ ...filters, [dim]: Array.from(next) });
-  }
+  const categoryLabels = new Map((options?.categories ?? []).map(c => [c.id, c.label]));
+  const ruleNames = new Map((options?.rules ?? []).map(r => [r.id, r.name]));
+  const nameOfSubscription = (id: string) => subNames[id] ?? id;
+  const lists: Record<BarListDimension, ChecklistOption[]> = {
+    category: (options?.categories ?? []).map(c => ({ value: c.id, label: c.label })),
+    rule: (options?.rules ?? []).map(r => ({ value: r.id, label: r.name })),
+    subscription: (options?.subscriptions ?? []).map(id => ({ value: id, label: nameOfSubscription(id) })),
+    resourceGroup: (options?.resourceGroups ?? []).map(rg => ({ value: rg, label: rg })),
+    tags: (options?.tags ?? []).map(t => ({ value: t, label: t })),
+    severity: SEVERITY_OPTIONS.map(s => ({ value: s, label: SEVERITY_LABEL[s as keyof typeof SEVERITY_LABEL] ?? s })),
+  };
+  const nameOf: Partial<Record<BarListDimension, (value: string) => string>> = {
+    category: id => categoryLabels.get(id) ?? id,
+    rule: id => ruleNames.get(id) ?? id,
+    subscription: nameOfSubscription,
+    severity: s => SEVERITY_LABEL[s as keyof typeof SEVERITY_LABEL] ?? s,
+  };
 
-  function clearAll() {
-    onFiltersChange({ categories: [], subscriptions: [], resourceGroups: [], tags: [], severities: [], ruleIds: [] });
+  const savedLine = (dimension: BarListDimension): string => {
+    const dim = state.dimensions[dimension];
+    const named = dim.saved.map(v => nameOf[dimension]?.(v) ?? v);
+    const parts = dim.outside.saved > 0 ? [...named, outsideRowLabel(dim.outside.saved)] : named;
+    return parts.length > 0 ? parts.join(', ') : 'Any';
+  };
+
+  const anyChanged = BAR_LIST_DIMENSIONS.some(d => state.dimensions[d].changed) || state.window.changed;
+
+  async function copyLink() {
+    const query = address.write(changes).toString();
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${pathname}${query ? `?${query}` : ''}`);
+      setCopied('copied');
+    } catch {
+      setCopied('failed');
+    }
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-6 py-2.5">
-      <ChecklistDropdown
-        label="Category"
-        options={categoryOptions}
-        selected={new Set(filters.categories)}
-        onToggle={v => toggle('categories', v)}
-        onClear={() => onFiltersChange({ ...filters, categories: [] })}
-      />
-      <ChecklistDropdown
-        label="Rule"
-        options={ruleOptions}
-        selected={new Set(filters.ruleIds)}
-        onToggle={v => toggle('ruleIds', v)}
-        onClear={() => onFiltersChange({ ...filters, ruleIds: [] })}
-      />
-      <ChecklistDropdown
-        label="Subscription"
-        options={subscriptionOptions}
-        selected={new Set(filters.subscriptions)}
-        onToggle={v => toggle('subscriptions', v)}
-        onClear={() => onFiltersChange({ ...filters, subscriptions: [] })}
-      />
-      <ChecklistDropdown
-        label="Resource Group"
-        options={resourceGroupOptions}
-        selected={new Set(filters.resourceGroups)}
-        onToggle={v => toggle('resourceGroups', v)}
-        onClear={() => onFiltersChange({ ...filters, resourceGroups: [] })}
-      />
-      <ChecklistDropdown
-        label="Tags"
-        options={tagOptions}
-        selected={new Set(filters.tags)}
-        onToggle={v => toggle('tags', v)}
-        onClear={() => onFiltersChange({ ...filters, tags: [] })}
-      />
-      <ChecklistDropdown
-        label="Severity"
-        options={severityOptions}
-        selected={new Set(filters.severities)}
-        onToggle={v => toggle('severities', v)}
-        onClear={() => onFiltersChange({ ...filters, severities: [] })}
-      />
+    <div className="flex shrink-0 flex-wrap items-start gap-x-2 gap-y-2 border-b border-border bg-surface px-6 py-2.5">
+      {BAR_LIST_DIMENSIONS.map(dimension => {
+        const control = dimensionControl({
+          dimension, state, layers, options: lists[dimension], replace, nameOf: nameOf[dimension],
+        });
+        const dim = state.dimensions[dimension];
+        const note = overrideNote(dimension, state.overriddenBy[dimension]);
+        return (
+          <div key={dimension} className="flex min-w-0 flex-col items-start gap-1">
+            <ChecklistDropdown
+              label={DIMENSION_LABEL[dimension]}
+              options={control.options}
+              selected={control.selected}
+              count={control.count}
+              onToggle={control.onToggle}
+              onClear={control.onClear}
+              clearHint={control.clearHint}
+            />
+            {dim.changed && (
+              <div className="flex max-w-56 flex-col items-start gap-0.5 text-xs">
+                <span className="font-semibold text-ink">Changed</span>
+                <span className="break-words text-ink-2">Saved: {savedLine(dimension)}</span>
+                <button type="button" onClick={() => replace(backToSaved(changes, dimension))} className="text-ink underline underline-offset-2">
+                  Back to saved
+                </button>
+              </div>
+            )}
+            {note && <span className="max-w-56 text-xs text-ink-2">{note}</span>}
+          </div>
+        );
+      })}
 
-      {hasActiveFilters && (
-        <button
-          onClick={clearAll}
-          className="flex h-9 items-center gap-1 px-2.5 text-xs font-medium text-ink-2 transition-colors hover:text-ink"
-        >
-          <X className="h-3.5 w-3.5" />Clear
+      <div className="ml-auto flex min-w-0 flex-col items-end gap-1">
+        <DateRangePicker value={state.window.effective} onChange={w => replace({ ...changes, window: w })} />
+        {state.window.changed && (
+          <div className="flex flex-col items-end gap-0.5 text-xs">
+            <span className="font-semibold text-ink">Changed</span>
+            <span className="text-ink-2">Saved: {dateWindowLabel(state.window.saved)}</span>
+            <button type="button" onClick={() => replace(backToSaved(changes, 'window'))} className="text-ink underline underline-offset-2">
+              Back to saved
+            </button>
+          </div>
+        )}
+        {overrideNote('window', state.overriddenBy.window) && (
+          <span className="text-xs text-ink-2">{overrideNote('window', state.overriddenBy.window)}</span>
+        )}
+      </div>
+
+      <div className="flex basis-full flex-wrap items-center gap-3 text-xs text-ink-2">
+        {anyChanged && (
+          <button type="button" onClick={() => replace({})} className="font-medium text-ink underline underline-offset-2">
+            Reset to saved filters
+          </button>
+        )}
+        <button type="button" onClick={copyLink} className="flex items-center gap-1 font-medium text-ink underline underline-offset-2">
+          <Link2 className="size-3.5" aria-hidden="true" />Copy link
         </button>
-      )}
-
-      <div className="ml-auto">
-        <DateRangePicker value={dateWindow} onChange={onDateWindowChange} />
+        <span>
+          {copied === 'copied' ? 'Link copied. ' : copied === 'failed' ? 'The link could not be copied. Copy it from the address bar. ' : ''}The link carries only the changes. Each person sees what their own Access allows.
+        </span>
       </div>
     </div>
   );

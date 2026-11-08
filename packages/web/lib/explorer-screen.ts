@@ -99,7 +99,13 @@ export function openGroupUrl(open: boolean, request: ViewRequest, valuesPath: re
 
 // ---- A dropdown of values ----
 
-export interface ValueOption { value: string; label: string; count?: number }
+export interface ValueOption {
+  value: string;
+  label: string;
+  count?: number;
+  /** Set when the box cannot be changed: the reason, shown with the value. */
+  disabledReason?: string;
+}
 
 /** The values the server sent for a returned column, the empty value named. In the order sent. */
 export function valueOptionsOf(loaded: ColumnValuesResponse | null): ValueOption[] {

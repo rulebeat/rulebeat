@@ -7,7 +7,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { DashboardGridClient } from '@/app/(app)/dashboards/[id]/dashboard-grid-client';
 import { SCOPED_DASHBOARD_REASON } from '@/lib/write-controls';
+import { buildBarState } from '@/lib/dashboard-bar';
+import { savedFiltersOf } from '@/lib/dashboard-filters';
 import type { Dashboard } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => undefined, replace: () => undefined, refresh: () => undefined }),
@@ -20,8 +23,10 @@ const DASHBOARD = {
   config: { widgets: [], filters: {} },
 } as unknown as Dashboard;
 
+const BAR = buildBarState({ revision: 1, saved: savedFiltersOf(DASHBOARD.config), changes: {}, access: EVERYTHING_ACCESS, widgets: [] });
+
 const render = (edit: { allowed: boolean; reason?: string }) => renderToStaticMarkup(createElement(DashboardGridClient, {
-  dashboard: DASHBOARD, outsideAccess: { subscriptions: 0, resourceGroups: 0 } as never, edit,
+  dashboard: DASHBOARD, outsideAccess: BAR.marks, bar: BAR.state, edit,
 }));
 
 /** The `disabled` attribute, not the `disabled:` utility classes every button carries. */

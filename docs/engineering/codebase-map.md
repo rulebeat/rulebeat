@@ -189,7 +189,7 @@
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
 | `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
-| `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard, or `/dashboards` gallery if none exist |
+| `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard with its query passed through, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page |
 | `packages/web/lib/db/saved-views.ts` | Saved views repository: list, get, create, update, delete. A name is unique case-insensitively, checked in the write's transaction after a Postgres advisory lock, and a clash comes back as `name-taken` (409) |
@@ -201,8 +201,10 @@
 | `packages/web/components/findings/saved-views-menu.tsx` | The Views button on the Results and Advisories toolbar: list, open, and for editors save, update, rename, delete |
 | `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
-| `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |
-| `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode, merges filters into every widget fetch |
+| `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar. A pick is written to the address with `router.replace` (`replaceChanges()`), never saved to the dashboard; `dimensionControl()` is what each dimension's checklist shows and does |
+| `packages/web/lib/dashboard-bar.ts` | The bar's rules, client-safe: `buildBarState()` (server, per viewer: effective and saved values the viewer holds, outside counts per layer, vanished values, Changed, widget overrides) and the picks (`toggleValue()`, `pickAny()`, `backToSaved()`) that refuse to widen a dimension |
+| `packages/web/lib/dashboard-known-values.ts` | `loadKnownValues()`: the categories, tags and rules that exist now, for the bar to mark a value that no longer exists |
+| `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode. Reads the address for the widgets' filter changes, holds one revision and reloads on a newer one; a layout save omits the saved filters |
 | `packages/web/components/dashboard/widget-config-panel.tsx` | Shared `ScopeSection` config drawer rendered for every widget type |
 | `packages/web/components/dashboard/slide-over-panel.tsx` | `SlideOverPanel`: shared right-drawer shell used by `add-widget-panel.tsx` and `widget-config-panel.tsx` |
 | `packages/web/components/dashboard/widgets/delta.tsx` | Shared `Delta` trend indicator (Up/Down/flat), used by the stat-card and posture-ring widgets |
