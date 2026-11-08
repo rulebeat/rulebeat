@@ -8,6 +8,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Added
 
+- First-seen and exact-resource filters on Scans. `f=firstSeenAge=8-30` keeps findings first seen 8 to 30 UTC days ago (`91-` is more than 90 days ago, `-7` is up to 7 days ago), counted from the day the list is read, so a shared link keeps rolling. `f=resourceId=<id>` keeps the findings on one resource and no other. Both are in the address, show as chips, and work on the Results, Advisories and Activity tabs under your access.
 - Run History filters by category and shows coverage per category. The Category menu on the list writes `?tab=history&category=` to the address (one or more categories), so a filtered list can be linked to, and each run marks every category it attempted as Complete or Partial, from that category's own incomplete rules, or Partial when the run recorded that the category scan failed. A category whose saved scan has expired and that the run does not name as failed shows no mark.
 - Run History keeps the newest scan for each scope it covered.
 - The Rules tab reads kind, outcome and enabled filters from the URL and shows each rule's outcome for the Scope you filter to. Category, tags, severity and Enabled/Disabled now filter on the server, so a link opens the list behind a number, and a rule hidden by a filter leaves the bulk selection.
@@ -16,6 +17,10 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Changed
 
 - Posture counts a rule as passing only when the newest finished scan that covered the scope ran it to the end, the same test the Rules tab's outcome uses. Before, it counted the rule's last run status install-wide. The snapshot formula moves to version 3, so a trend baseline written under the old formula is not blended in.
+
+### Fixed
+
+- The Top resources and Recent findings links opened findings for resources with similar names. They searched the resource name as text, so a row for `vm1` also opened `vm10`; they now open the exact resource. Top resources also counts a resource once when its rules wrote its id in different case.
 
 ## [0.13.1] - 2026-10-16
 

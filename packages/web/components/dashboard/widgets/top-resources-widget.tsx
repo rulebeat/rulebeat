@@ -17,9 +17,8 @@ interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 
 /** "These N resources carry the most findings". The resource-side counterpart to the top-
- *  violating-rules widget. Click → /scans filtered by the resource's name (Scans has no
- *  resource-id-scoped filter, so name search is the closest equivalent, same as the old
- *  findings-table row click used). */
+ *  violating-rules widget. Click → /scans filtered to the resource's exact id, so the list it opens
+ *  holds the findings the bar counts and not those of a resource with a similar name. */
 export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
@@ -47,6 +46,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
   const chartData = items.map(d => ({
     name: d.resourceName.length > 28 ? d.resourceName.slice(0, 28) + '…' : d.resourceName,
     fullName: d.resourceName,
+    resourceId: d.resourceId,
     resourceType: d.resourceType,
     count: d.count,
     maxSeverity: d.maxSeverity,
@@ -78,7 +78,7 @@ export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
                 key={i}
                 fill="var(--color-fill)"
                 cursor="pointer"
-                onClick={() => router.push(buildScansHref(merged, { search: entry.fullName }))}
+                onClick={() => router.push(buildScansHref(merged, { resourceId: entry.resourceId }))}
               />
             ))}
           </Bar>

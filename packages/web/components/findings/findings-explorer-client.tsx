@@ -36,9 +36,10 @@ import {
   getRecencyStatus, parseExplorerStatus, EXPLORER_SEVERITIES,
   type ExplorerStatusFilter, type ExplorerStats,
 } from '@/lib/explorer-filters';
+import { firstSeenAgeLabel } from '@/lib/first-seen-age';
 import {
   BUILTIN_FIELDS, DEFAULT_SORT, clearFilter, columnCell, emptyView, filterValues,
-  findingSubject, isRowField, rowField, rowPath, toggleFilterValue,
+  findingSubject, isFacetField, isRowField, rowField, rowPath, toggleFilterValue,
   type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
 import {
@@ -129,6 +130,7 @@ const FIELD_LABEL: Record<BuiltinField, string> = {
   rule: 'Rule', kind: 'Kind', category: 'Category', severity: 'Severity', status: 'Status',
   subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
   resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
+  resourceId: 'Resource id', firstSeenAge: 'First seen',
 };
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
 
@@ -214,8 +216,9 @@ function RuleFindings({
 }
 
 const KIND_LABEL: Record<string, string> = { state: 'Problem', advisory: 'Advisory', activity: 'Activity' };
-/** Status has its own select in the toolbar, so the Add filter list leaves it out. */
-const ADD_FILTER_BUILTINS = BUILTIN_FIELDS.filter(f => f !== 'status');
+/** Status has its own select in the toolbar, so the Add filter list leaves it out. A resource id and a
+ *  rolling first-seen range come from a link and show as chips; there is no list of values to pick from. */
+const ADD_FILTER_BUILTINS = BUILTIN_FIELDS.filter(isFacetField);
 /** The filters the chip row shows. Status is the toolbar select, and a locked category is the page's own. */
 const NO_CHIP_FIELDS: readonly ViewField[] = ['status'];
 
@@ -606,6 +609,7 @@ export function FindingsExplorerClient({
       case 'kind': return KIND_LABEL[value] ?? value;
       case 'firstSeen':
       case 'lastSeen': return dayKeyLabel(value);
+      case 'firstSeenAge': return firstSeenAgeLabel(value);
       default: return value;
     }
   }, [ruleNames, categories, subNames]);
@@ -620,7 +624,7 @@ export function FindingsExplorerClient({
   // Option lists for a built-in field. The server counted each from every filter except that field's
   // own, so picking a value never makes the other options in the same list vanish.
   const builtinOptions = useCallback((field: BuiltinField): ChecklistOption[] => {
-    if (field === 'status' || !data) return [];
+    if (!isFacetField(field) || !data) return [];
     const options = data.facets[field].map(o => ({
       ...o,
       label: field === 'subscription' ? subNames[o.value] ?? o.label : field === 'firstSeen' || field === 'lastSeen' ? dayKeyLabel(o.value) : o.label,

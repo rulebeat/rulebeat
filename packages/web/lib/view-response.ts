@@ -20,9 +20,9 @@ import { ACTIVITY_KINDS, ADVISORY_KINDS, KIND_LABEL, RESOLVABLE_KINDS, RESULTS_K
 import { ROWS_PER_PAGE, findingRows, pageFindingRows, type FindingRow } from './finding-rows';
 import { countFindingsByRule, summarizeFindings, EXPLORER_SEVERITIES, type ExplorerStats, type RuleCounts } from './explorer-filters';
 import {
-  BUILTIN_FIELDS, DEFAULT_PAGE_SIZE, activeRowFilters, applyGroupedView, applyView, fieldOptions, filterFindings, isRowField, matchingRows,
+  DEFAULT_PAGE_SIZE, FACET_FIELDS, activeRowFilters, applyGroupedView, applyView, fieldOptions, filterFindings, isRowField, matchingRows,
   pageGroupItems, rowFieldOptions, rowPath,
-  type BuiltinField, type RowField, type View, type ViewContext, type ViewField, type ViewFinding, type ViewGroup, type ViewItem,
+  type FacetField, type RowField, type View, type ViewContext, type ViewField, type ViewFinding, type ViewGroup, type ViewItem,
 } from './finding-view';
 
 // ---- Tabs ----
@@ -141,7 +141,7 @@ export interface ViewResponse {
   tiles: ExplorerStats;
   /** Each built-in field's values with how many findings hold them, counted with every filter but its
    *  own. Status has none: its options are Open, New, Fixed and All, not the stored values. */
-  facets: Record<Exclude<BuiltinField, 'status'>, FacetOption[]>;
+  facets: Record<FacetField, FacetOption[]>;
   ruleRows: RuleRow[];
   /** The returned columns on offer: those the rules in play have returned, and the picked ones. */
   columns: string[];
@@ -260,8 +260,9 @@ function itemResponse(item: ViewItem<ExplorerFinding>): ViewItemResponse {
 }
 
 /** The view's context with its window resolved to dates, once, so every part agrees on them. */
-function resolved(view: View, ctx: ViewContext): ViewContext & { range: { from: string; to: string } } {
-  return { ...ctx, range: ctx.range ?? resolveDateWindow(view.window) };
+function resolved(view: View, ctx: ViewContext): ViewContext & { range: { from: string; to: string }; now: Date } {
+  const now = ctx.now ?? new Date();
+  return { ...ctx, now, range: ctx.range ?? resolveDateWindow(view.window, now) };
 }
 
 /** Every group of a view, with no paging at the top: the tree a group path is walked down. */
@@ -314,8 +315,7 @@ export function buildFacets(
   pool: (except: ViewField[]) => readonly ViewFinding[], label: (field: ViewField, value: string) => string,
 ): ViewResponse['facets'] {
   const facets = {} as ViewResponse['facets'];
-  for (const field of BUILTIN_FIELDS) {
-    if (field === 'status') continue;
+  for (const field of FACET_FIELDS) {
     const options = fieldOptions(pool([field]), field).map(o => ({ ...o, label: label(field, o.value) }));
     if (field === 'severity') options.sort((a, b) => EXPLORER_SEVERITIES.indexOf(a.value as never) - EXPLORER_SEVERITIES.indexOf(b.value as never));
     else if (field === 'firstSeen' || field === 'lastSeen') options.sort((a, b) => b.value.localeCompare(a.value));
