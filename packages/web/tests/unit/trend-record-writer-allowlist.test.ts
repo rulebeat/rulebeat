@@ -10,7 +10,8 @@
  *     executor named here runs; a test-only function has no caller outside tests.
  *  2. `backfillFindings()` ends with a recount, since the replay it runs writes with `noRecord`.
  *  3. After the record lock is taken (`takeRecordLock()` in `lib/db/trend-record.ts`), a transaction only reads, inserts
- *     record rows and updates `trend_state` (and the coverage of the day's marker).
+ *     record rows and updates `trend_state` (and the coverage of the day's marker). The same holds for the callers: in a
+ *     function that calls a recount, nothing after the call writes another table, so the lock is the last step.
  *
  * Personal rule runs are named as not a posture input, and the sweep checks they stay that way.
  */
@@ -164,7 +165,7 @@ const WRITERS: Writer[] = [
   { file: 'lib/workspace-placement.ts', kind: 'records', reason: 'moves Logs findings to their workspace and recounts their rules in the same transaction' },
   { file: 'lib/db/migrate.ts', kind: 'upgrade', reason: 'SQLite upgrade and seed steps: the placement and rekey steps recount their own change, and every start recounts every key (startTrendRecording)' },
   { file: 'lib/db/pg/seeds.ts', kind: 'upgrade', reason: 'Postgres seed steps: rule seeding recounts what it touched, and every start recounts every key (startTrendRecordingPg)' },
-  { file: 'lib/db/pg/bootstrap.ts', kind: 'upgrade', reason: 'Postgres bootstrap steps: the placement and rekey steps recount their own change, and the start that follows recounts every key' },
+  { file: 'lib/db/pg/bootstrap.ts', kind: 'upgrade', reason: 'Postgres bootstrap steps: one recount of the moved findings after the last step, then the start that follows recounts every key' },
   {
     file: 'lib/db/fingerprint-rekey.ts', kind: 'plan', reason: 'builds the rekey statements; its executors recount in the transaction that runs them',
     executors: [{ file: 'lib/db/migrate.ts', uses: 'planFingerprintRekey' }, { file: 'lib/db/pg/bootstrap.ts', uses: 'planFingerprintRekey' }],
@@ -325,29 +326,124 @@ describe('the analysis', () => {
 const RECORD_INSERTS = ['trendCells', 'trendRuleFacts', 'trendRecordedDays', 'trendState'];
 const RECORD_UPDATES = ['trendState', 'trendRecordedDays'];
 
-/** The writes in a source that a transaction holding the record lock may not make. */
-export function writesAfterTheLock(source: string): string[] {
-  const sf = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
-  const problems: string[] = [];
+interface LockedWrite { node: ts.Node; text: string }
+
+/** The writes under `root` that a transaction holding the record lock may not make. */
+function forbiddenWrites(sf: ts.SourceFile, root: ts.Node, ownTransactions = false): LockedWrite[] {
+  const found: LockedWrite[] = [];
   const visit = (n: ts.Node): void => {
+    // A transaction of its own ends, lock and all, before the code after it runs.
+    if (ownTransactions && n !== root && opensTransaction(n)) return;
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
       const verb = n.expression.name.text;
       const arg = n.arguments[0];
       const table = arg && (ts.isPropertyAccessExpression(arg) ? arg.name.text : ts.isIdentifier(arg) ? arg.text : arg.getText(sf));
-      const at = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-      if (verb === 'insert' && n.arguments.length === 1 && !RECORD_INSERTS.includes(table!)) problems.push(`line ${at}: inserts into ${table}`);
-      if (verb === 'update' && n.arguments.length === 1 && !RECORD_UPDATES.includes(table!)) problems.push(`line ${at}: updates ${table}`);
+      if (verb === 'insert' && n.arguments.length === 1 && !RECORD_INSERTS.includes(table!)) found.push({ node: n, text: `inserts into ${table}` });
+      if (verb === 'update' && n.arguments.length === 1 && !RECORD_UPDATES.includes(table!)) found.push({ node: n, text: `updates ${table}` });
       // A delete is any delete on a database handle; `seen.delete(key)` on a Map is not one.
-      if (verb === 'delete' && n.arguments.length === 1 && HANDLE.test(n.expression.expression.getText(sf))) problems.push(`line ${at}: deletes from ${table}`);
+      if (verb === 'delete' && n.arguments.length === 1 && HANDLE.test(n.expression.expression.getText(sf))) found.push({ node: n, text: `deletes from ${table}` });
     }
     if (ts.isStringLiteralLike(n) || ts.isTemplateExpression(n)) {
       const text = ts.isTemplateExpression(n) ? n.getText(sf) : n.text;
-      if (/\b(?:insert\s+into|update\s+\w+\s+set|delete\s+from)\b/i.test(text)) problems.push(`line ${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}: raw SQL write`);
+      if (/\b(?:insert\s+(?:or\s+\w+\s+)?into|update\s+\w+\s+set|delete\s+from)\b/i.test(text)) found.push({ node: n, text: 'raw SQL write' });
     }
     ts.forEachChild(n, visit);
   };
-  visit(sf);
-  return problems;
+  visit(root);
+  return found;
+}
+
+const lineOf = (sf: ts.SourceFile, n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+
+/** The writes in a source that a transaction holding the record lock may not make. */
+export function writesAfterTheLock(source: string): string[] {
+  const sf = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
+  return forbiddenWrites(sf, sf).map(w => `line ${lineOf(sf, w.node)}: ${w.text}`);
+}
+
+/** A call that opens a transaction of its own, which releases the record lock when it ends: on the database, never a
+ *  savepoint on the handle of a transaction already open (`tx.transaction(...)`). */
+const TRANSACTION_OWNER = /^(?:[\w.]+\.)?(?:db|database|pgDb|sqlite)$/;
+function opensTransaction(n: ts.Node): boolean {
+  if (!ts.isCallExpression(n)) return false;
+  const callee = n.expression;
+  if (ts.isIdentifier(callee)) return callee.text === 'inTransaction';
+  return ts.isPropertyAccessExpression(callee) && callee.name.text === 'transaction' && TRANSACTION_OWNER.test(callee.expression.getText());
+}
+
+/** The functions that take the record lock, by the call that does. SQLite has no such lock: its writer lock already
+ *  serialises, so `recountTrendSqlite` and `startTrendRecording` hold nothing past their own call. */
+const LOCK_CALLS = ['recountTrend', 'recountTrendPg', 'recordRecordedDay', 'sweepSuppressionExpiry', 'startTrendRecordingPg'];
+
+/**
+ * What a caller does after the record lock, in one source file. A call to a lock-taking function (the ones above, or one
+ * of the file's own that reaches them) holds the lock from its end to the end of the transaction, so in the function that
+ * made the call nothing after it may write another table, nor call a function of the file that does, nor sit in a loop
+ * whose other turns write. The analysis follows calls to a function declared in the same file only.
+ */
+export function callerWritesAfterTheLock(source: string): string[] {
+  const sf = ts.createSourceFile('x.ts', source, ts.ScriptTarget.Latest, true);
+  const isFunction = (n: ts.Node): n is ts.FunctionLikeDeclaration => ts.isFunctionDeclaration(n) || ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isMethodDeclaration(n);
+  const named = new Map<string, ts.Node>();
+  const collect = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name) named.set(n.name.text, n);
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && isFunction(n.initializer)) named.set(n.name.text, n.initializer);
+    ts.forEachChild(n, collect);
+  };
+  collect(sf);
+  const calledNames = (root: ts.Node): string[] => {
+    const names: string[] = [];
+    const visit = (n: ts.Node): void => {
+      if (n !== root && opensTransaction(n)) return;
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) names.push(n.expression.text);
+      ts.forEachChild(n, visit);
+    };
+    visit(root);
+    return names;
+  };
+  const writers = new Set([...named].filter(([, fn]) => forbiddenWrites(sf, fn, true).length > 0).map(([name]) => name));
+  const lockers = new Set(LOCK_CALLS);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, fn] of named) {
+      if (!lockers.has(name) && calledNames(fn).some(c => lockers.has(c))) { lockers.add(name); grew = true; }
+    }
+  }
+  // Writers that reach the lock too (a step that writes and then records) also count as a write when called.
+  const problems = new Set<string>();
+  const check = (fn: ts.Node): void => {
+    const events: { at: number; end: number; kind: 'lock' | 'write'; text: string; node: ts.Node }[] = [];
+    const visit = (n: ts.Node): void => {
+      if (n !== fn && opensTransaction(n)) return;
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+        const name = n.expression.text;
+        if (lockers.has(name)) events.push({ at: n.getStart(sf), end: n.getEnd(), kind: 'lock', text: name, node: n });
+        if (writers.has(name)) events.push({ at: n.getStart(sf), end: n.getEnd(), kind: 'write', text: `calls ${name}(), which writes`, node: n });
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(fn);
+    for (const w of forbiddenWrites(sf, fn, true)) events.push({ at: w.node.getStart(sf), end: w.node.getEnd(), kind: 'write', text: w.text, node: w.node });
+    for (const lock of events.filter(e => e.kind === 'lock')) {
+      for (const w of events.filter(e => e.kind === 'write' && e.at >= lock.end)) {
+        problems.add(`line ${lineOf(sf, w.node)}: ${w.text} after the record lock taken by ${lock.text}() on line ${lineOf(sf, lock.node)}`);
+      }
+      for (let a: ts.Node | undefined = lock.node.parent; a && a !== fn; a = a.parent) {
+        if (ts.isForStatement(a) || ts.isForOfStatement(a) || ts.isForInStatement(a) || ts.isWhileStatement(a) || ts.isDoStatement(a)) {
+          const loop = a;
+          for (const w of events.filter(e => e.kind === 'write' && e.at >= loop.getStart(sf) && e.end <= loop.getEnd())) {
+            problems.add(`line ${lineOf(sf, w.node)}: ${w.text} in a loop that takes the record lock on line ${lineOf(sf, lock.node)}`);
+          }
+        }
+      }
+    }
+  };
+  const walk = (n: ts.Node): void => {
+    if (isFunction(n)) check(n);
+    ts.forEachChild(n, walk);
+  };
+  walk(sf);
+  return [...problems].sort();
 }
 
 describe('after the record lock', () => {
@@ -368,3 +464,43 @@ describe('after the record lock', () => {
     expect(writesAfterTheLock('function* s(c) { yield* run(c.tx.insert(c.t.trendCells).values({})); yield* run(tx.update(trendState).set({})); seen.delete(key); }')).toEqual([]);
   });
 });
+
+describe('after the record lock, in the callers', () => {
+  it('no source file writes another table after taking the record lock', () => {
+    const offenders = SCANNED.filter(f => f.file !== 'lib/db/trend-record.ts')
+      .flatMap(({ file, source }) => callerWritesAfterTheLock(source).map(p => `${file}:${p}`));
+    expect(offenders, 'take the lock last: recount after the transaction\'s other writes').toEqual([]);
+  });
+
+  it('spots a write to another table right after a recount', () => {
+    const rule = 'async function f(tx) { await recountTrend(tx, {}); await run(tx.update(rulesTable).set({ name: "x" })); }';
+    expect(callerWritesAfterTheLock(rule)).toHaveLength(1);
+    expect(callerWritesAfterTheLock('async function f(tx) { await recountTrend(tx, {}); await run(tx.update(rulesTable).set({ enabled: false })); }')).toHaveLength(1);
+    expect(callerWritesAfterTheLock('async function f(tx) { await recordRecordedDay(tx); await tx.execute(sql.raw("UPDATE meta SET value = 1")); }')).toHaveLength(1);
+  });
+
+  it('spots a call to a function of the file that writes, and a lock taken by a helper', () => {
+    const source = `
+      async function write(tx) { await tx.insert(things).values({}); }
+      async function record(tx) { await recountTrendPg(tx, {}); }
+      async function boot(db) {
+        await db.transaction(async (tx) => {
+          await tx.transaction(async (sp) => { await record(sp); });
+          await tx.transaction(async (sp) => { await write(sp); });
+        });
+      }`;
+    expect(callerWritesAfterTheLock(source)).toHaveLength(1);
+  });
+
+  it('spots a loop that writes on the turns after its recount', () => {
+    expect(callerWritesAfterTheLock('async function f(tx, ids) { for (const id of ids) { await tx.insert(things).values({}); await recountTrend(tx, {}); } }'))
+      .toHaveLength(1);
+  });
+
+  it('lets a recount that comes last, and the record\'s own writes after it, through', () => {
+    expect(callerWritesAfterTheLock('async function f(tx) { await tx.update(rulesTable).set({ enabled: false }); await recountTrend(tx, {}); }')).toEqual([]);
+    expect(callerWritesAfterTheLock('async function f(tx) { await recountTrend(tx, {}); await tx.update(trendState).set({}); await tx.select().from(rulesTable); }')).toEqual([]);
+    expect(callerWritesAfterTheLock('async function f(tx, ids) { for (const id of ids) { await tx.insert(things).values({}); } await recountTrend(tx, {}); }')).toEqual([]);
+  });
+});
+

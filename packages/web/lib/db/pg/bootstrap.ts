@@ -654,10 +654,13 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
   await db.transaction(async (tx) => {
     await tx.execute(sql.raw(`SELECT pg_advisory_xact_lock(${BOOTSTRAP_LOCK_KEY})`));
     await tx.execute(sql.raw(DDL));
+    // Whether a step changed which cell a finding counts in. The record is written once, after the last step, since its
+    // lock is held to the end of this transaction and every step after it would queue other writers behind it.
+    let findingsChanged = false;
     // A savepoint, so a failure rolls back only the rekey and the schema bootstrap still commits:
     // a one-time data step must never stop the app booting. It is retried on the next start.
     try {
-      await tx.transaction(async (sp) => { await rekeyFingerprintCase(sp); });
+      await tx.transaction(async (sp) => { findingsChanged = await rekeyFingerprintCase(sp) || findingsChanged; });
     } catch (err) {
       console.error('[bootstrap] could not move finding fingerprints onto the case-insensitive formula:', err);
     }
@@ -690,7 +693,7 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     // savepoint a table, for the same reason as above.
     for (const table of PLACEMENT_TABLES) {
       try {
-        await tx.transaction(async (sp) => { await placeFindings(sp, table); });
+        await tx.transaction(async (sp) => { findingsChanged = await placeFindings(sp, table) || findingsChanged; });
       } catch (err) {
         console.error(`[bootstrap] could not place the findings in ${table}:`, err);
       }
@@ -703,11 +706,20 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not give existing people their access:', err);
     }
+    // Last, the one step that takes the record lock (ADR 0012): after it the transaction only reads, inserts record
+    // rows and updates trend_state. A failure costs a log line; the start recount that follows writes what is missing.
+    if (findingsChanged) {
+      try {
+        await tx.transaction(async (sp) => { await recordFindingChanges(sp); });
+      } catch (err) {
+        console.error('[bootstrap] could not record the moved findings in the trend history:', err);
+      }
+    }
   });
 }
 
 /** The Postgres half of migrate.ts's placeFindings(): the same plan, run on every boot. */
-async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number]): Promise<void> {
+async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number]): Promise<boolean> {
   const rows = (await tx.execute(sql.raw(placementRead(table)))).rows as unknown as PlacementRow[];
   let moved = 0;
   for (const s of planFindingPlacement(table, rows)) {
@@ -715,12 +727,12 @@ async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number])
     const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
     moved += (await tx.execute(sql.join(chunks, sql.raw('')))).rowCount ?? 0;
   }
-  // A finding that moved changes which cell it counts in, so the record follows in this savepoint.
-  if (table === 'findings' && moved > 0) await recordFindingChanges(tx);
+  // A finding that moved changes which cell it counts in, so the caller records it.
+  return table === 'findings' && moved > 0;
 }
 
-/** Recounts, inside the savepoint of an upgrade step that changed findings, the rules those findings belong to
- *  (ADR 0012). The record lock is taken last, after the step's own writes. */
+/** Recounts the rules the findings belong to after the upgrade steps that moved them (ADR 0012). Takes the record
+ *  lock, so bootstrapPg() calls it after its last write. */
 async function recordFindingChanges(tx: PgTx): Promise<void> {
   const ruleIds = ((await tx.execute(sql.raw(COUNTED_FINDING_RULES_READ))).rows as { rule_id: string }[]).map(r => r.rule_id);
   if (ruleIds.length > 0) await recountTrendPg(tx, { ruleIds });
@@ -733,9 +745,9 @@ type PgTx = Parameters<Parameters<NodePgDatabase<typeof pgSchema>['transaction']
  * bootstrap's own locked transaction so two booting containers cannot both apply it. Postgres
  * installs since 0.7.0 hold fingerprints from the case-sensitive formula too.
  */
-async function rekeyFingerprintCase(tx: PgTx): Promise<void> {
+async function rekeyFingerprintCase(tx: PgTx): Promise<boolean> {
   const marker = await tx.execute(sql`SELECT value FROM meta WHERE key = ${FINGERPRINT_CASE_MARKER}`);
-  if (marker.rows.length > 0) return;
+  if (marker.rows.length > 0) return false;
   const read = async <T>(query: string) => (await tx.execute(sql.raw(query))).rows as T[];
   const statements = planFingerprintRekey({
     findings: await read<RekeyFindingRow>(REKEY_READS.findings),
@@ -749,8 +761,8 @@ async function rekeyFingerprintCase(tx: PgTx): Promise<void> {
     await tx.execute(sql.join(chunks, sql.raw('')));
   }
   await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINGERPRINT_CASE_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
-  // Last, since it takes the record lock: merged findings and suppressions that follow their finding change what the cells count.
-  if (statements.length > 0) await recordFindingChanges(tx);
+  // Merged findings and suppressions that follow their finding change what the cells count, so the caller records it.
+  return statements.length > 0;
 }
 
 /** 1000 a statement keeps each well under Postgres's 65535 bind parameters. */

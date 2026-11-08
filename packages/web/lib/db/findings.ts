@@ -816,16 +816,17 @@ export async function backfillFindings(): Promise<void> {
         });
         currentRuleIds.forEach(id => touchedRuleIds.add(id));
 
-        // The record starts from what the findings are now: one recount of the rules the replay touched, dated now,
-        // and today's marker with no covered scope, since no scan covered anything. A later startup recount, which
-        // compares the record with live, then has nothing to write.
-        const recordedAt = new Date();
-        await recountTrend(tx, { ruleIds: [...touchedRuleIds], now: recordedAt });
-        await recordRecordedDay(tx, { now: recordedAt });
-
         // On the transaction's handle: setMeta() would write outside it on Postgres.
         await run(tx.insert(metaTable).values({ key: recordKey, value: '1' })
           .onConflictDoUpdate({ target: metaTable.key, set: { value: '1' } }));
+
+        // The record starts from what the findings are now: one recount of the rules the replay touched, dated now,
+        // and today's marker with no covered scope, since no scan covered anything. A later startup recount, which
+        // compares the record with live, then has nothing to write. Last, since it takes the record lock and the lock
+        // is held to the end of the transaction.
+        const recordedAt = new Date();
+        await recountTrend(tx, { ruleIds: [...touchedRuleIds], now: recordedAt });
+        await recordRecordedDay(tx, { now: recordedAt });
       });
     } catch (err) {
       // Reported rather than swallowed: this is history reconstruction, so degrading is acceptable,
