@@ -185,15 +185,13 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   // as a side effect. On a Shared dashboard a change applies to this page only, for the owner too: stored
   // filters change through Save in edit mode.
   const savesFilters = autoSavesFilters({ id: currentUserId }, dashboard);
+  // In edit mode of a Shared dashboard the filter bar is part of what Save stores, so a change counts as one to save.
+  const markFilterChange = () => { if (editMode && canChange && !savesFilters) setDirty(true); };
   const filtersFirstRender = useRef(true);
   useEffect(() => {
     if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
     setRefreshKey(k => k + 1);
-    if (!savesFilters) {
-      // In edit mode the filter bar is part of what Save stores, so it counts as a change to save.
-      if (editMode && canChange) setDirty(true);
-      return;
-    }
+    if (!savesFilters) return;
     const t = setTimeout(() => {
       autoSaveFilters({ id: currentUserId }, dashboard, dashFilters, dateWindow).then(outcome => {
         switch (outcome.kind) {
@@ -645,8 +643,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       <DashboardFilterBar
         filters={dashFilters}
         dateWindow={dateWindow}
-        onFiltersChange={setDashFilters}
-        onDateWindowChange={setDateWindow}
+        onFiltersChange={next => { setDashFilters(next); markFilterChange(); }}
+        onDateWindowChange={next => { setDateWindow(next); markFilterChange(); }}
         dashboardId={dashboard.id}
         heldBack={dashboard.heldBack}
         error={filterError}
