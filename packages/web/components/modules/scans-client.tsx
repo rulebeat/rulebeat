@@ -110,6 +110,8 @@ export interface ScansClientProps {
   /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
   initialSavedViewId?: string;
   runs?: ScanHistoryTabProps['runs'];
+  /** The categories `?category=` asks Run History to list; empty lists every run. */
+  historyCategories?: string[];
   runDetail?: ScanHistoryTabProps['runDetail'];
   /** The scan a `?scan=` link names, with what the address asks of it. The page sends no findings: the
    *  snapshot screen reads them from the server. */
@@ -149,6 +151,7 @@ export function ScansClient({
   initialView,
   initialSavedViewId,
   runs,
+  historyCategories,
   runDetail,
   snapshotScanId,
   snapshotQuery,
@@ -386,6 +389,7 @@ export function ScansClient({
           categories={categories}
           rules={policies}
           runs={runs ?? []}
+          categoryFilter={historyCategories}
           runDetail={runDetail}
           snapshotScanId={snapshotScanId}
           snapshotQuery={snapshotQuery}
@@ -650,16 +654,13 @@ export function ScansClient({
                         )}
 
                         {outcome && (
-                          // Red text on the sunken fill falls under the 4.5:1 contrast floor, so a failing
-                          // outcome keeps ink text and carries the red as a marker beside it.
+                          // Red text on the sunken chip is 4.04:1 in the light theme, under 4.5:1 at
+                          // 12px, so Failing carries its red as a swatch and keeps the chip's ink.
                           <span
-                            className={cn(
-                              'inline-flex w-fit shrink-0 items-center gap-1.5 bg-surface-sunken px-1.5 py-0.5 text-xs',
-                              outcome === 'failing' ? 'font-semibold text-ink' : 'font-medium text-ink-2',
-                            )}
+                            className="inline-flex w-fit shrink-0 items-center gap-1.5 bg-surface-sunken px-1.5 py-0.5 text-xs font-medium text-ink-2"
                             title={OUTCOME_DESCRIPTION[outcome]}
                           >
-                            {outcome === 'failing' && <span aria-hidden className="size-1.5 shrink-0 bg-destructive" />}
+                            {outcome === 'failing' && <span className="h-2 w-2 shrink-0 bg-destructive" aria-hidden="true" />}
                             {OUTCOME_LABEL[outcome]}
                           </span>
                         )}
