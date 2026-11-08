@@ -45,6 +45,25 @@ dashboard's value for that dimension on that widget; anything left on inherit ta
 Values never intersect, so if the dashboard is filtered to production and a widget's Scope names the
 sandbox subscription, that widget shows the sandbox.
 
+### Saving filters
+
+On your own **Personal** dashboard, a filter change is saved as you make it (after a short pause), so the
+dashboard stays as you left it. On a **Shared** dashboard a filter change applies to your page only, for
+everyone including the owner, and a line on the page says filter changes are not saved. The stored filters
+of a Shared dashboard change only through **Save** in edit mode, which stores the filter bar as it is on
+your page. Filters typed into the address on Scans and not saved behave as before.
+
+Every save of a dashboard, and of a saved view, carries the revision of the copy you opened. If someone
+else changed the item since, the save is refused with "changed while you were editing it. Reload it and try
+again." and the page shows a reload notice; nothing of theirs is overwritten. Values stored on the item that
+are outside your Access are put back from the current item on every save, so saving never drops them, and a
+widget keeps them when its type or fields change.
+
+A value you add that is outside your Access is refused with "No finding you can see has this value, so it
+can't be saved." The words are the same whether a finding outside your Access carries the value or none does,
+so the refusal tells you nothing about places you do not hold. Someone who holds Everything is never refused.
+On a Personal dashboard the refusal shows in the filter bar while the filter still applies to your page.
+
 The date window is a rolling preset (24 hours, 7 or 30 days) or a custom range. A preset is stored as
 "7 days" rather than two dates, so it keeps rolling. It drives anything that says new, fixed or
 delta, the Trend and New vs. Fixed charts, and "vs baseline". It does not change what counts as open.

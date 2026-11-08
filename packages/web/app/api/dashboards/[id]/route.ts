@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
-import { claimedRevision, openedCopy } from '@/lib/held-back';
+import { UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
@@ -58,6 +58,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const restored = body.config === undefined ? null : await restoreHeldBackDashboard(
     actor.access, before, body.config, opened && typeof opened === 'object' ? opened as DashboardConfig : undefined,
   );
+  if (restored?.unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
   if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
   const result = await updateDashboard(
     id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },

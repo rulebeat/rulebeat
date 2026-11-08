@@ -14,7 +14,7 @@ import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignment
 import { inTransaction } from '@/lib/db/exec';
 import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
 import { emptyListCopy, emptyReasonOf, filterChipLabel } from '@/lib/explorer-screen';
-import { OUTSIDE_ACCESS_LABEL, type HeldBack } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL, UNSEEN_VALUE_MESSAGE, type HeldBack } from '@/lib/held-back';
 
 /** The SQL of every query run through `many`, so a test can count the selects made on the findings table. */
 const statements = vi.hoisted(() => [] as string[]);
@@ -411,8 +411,10 @@ describe('saving an item back from the trimmed copy', () => {
     });
 
     it('refuses a save that names no revision while the stored item holds values back from the person', async () => {
-      await saveDashboard({ ...CONFIG, filters: { subscriptions: [SUB_TWO], resourceGroups: [] } });
+      // Only someone who holds the subscription can put it in: the Editor's own save of it would be refused.
       asAdmin();
+      const seeded = await putDashboard(dashboardId, { config: { ...CONFIG, filters: { subscriptions: [SUB_TWO], resourceGroups: [] } } });
+      expect(seeded.status).toBe(200);
       const stored = (await getDashboard(dashboardId))!;
       expect(stored.config.filters?.subscriptions).toEqual([SUB_TWO]);
 
@@ -421,7 +423,9 @@ describe('saving an item back from the trimmed copy', () => {
       expect(unversioned.status).toBe(409);
       expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([SUB_TWO]);
 
+      asAdmin();
       await patchView(viewId, { query: `subscription=${SUB_TWO}`, revision: (await getSavedView(viewId))!.revision });
+      asEditor();
       const viewUnversioned = await patchView(viewId, { query: 'severity=low' });
       expect(viewUnversioned.status).toBe(409);
       expect((await getSavedView(viewId))!.query).toBe(`subscription=${SUB_TWO}`);
@@ -435,6 +439,91 @@ describe('saving an item back from the trimmed copy', () => {
       const res = await patchView(viewId, { query: `severity=low&subscription=${OUTSIDE_ACCESS_LABEL.replaceAll(' ', '+')}` });
       expect(res.status).toBe(200);
       expect((await getSavedView(viewId))!.query).toBe('severity=low');
+    });
+  });
+
+  describe('a new value outside the saver\'s Access', () => {
+    const asAdmin = () => mockAuth.mockResolvedValue({ user: { uid: people.Admin } });
+    const UNKNOWN_SUBSCRIPTION = '00000000-0000-0000-0000-0000000000ff';
+    let ownViewId: string;
+    let ownDashboardId: string;
+
+    beforeAll(async () => {
+      const view = await createSavedView({ name: 'Unseen view', tab: 'results', query: 'severity=high' }, editor);
+      if (!view.ok) throw new Error(view.reason);
+      await share('saved_views', view.view.id);
+      ownViewId = view.view.id;
+      const dashboard = await createDashboard({ name: 'Unseen dashboard', config: { filters: { subscriptions: [SUB_ONE], resourceGroups: [] }, widgets: [] } }, editor);
+      if (!dashboard.ok) throw new Error(dashboard.reason);
+      await share('dashboards', dashboard.dashboard.id);
+      ownDashboardId = dashboard.dashboard.id;
+    });
+
+    async function attemptView(query: string) {
+      asEditor();
+      const revision = (await getSavedView(ownViewId))!.revision;
+      const res = await patchView(ownViewId, { query, revision, opened: 'severity=high' });
+      return { status: res.status, body: await res.json() as unknown };
+    }
+    async function attemptDashboard(subscriptions: string[], widgetSubscriptions: string[] = []) {
+      asEditor();
+      const current = (await getDashboard(ownDashboardId))!;
+      const config = {
+        filters: { subscriptions, resourceGroups: [] },
+        widgets: [{ id: 'unseen-widget', type: 'stat-card' as const, title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: widgetSubscriptions } }],
+      };
+      const res = await putDashboard(ownDashboardId, { config, revision: current.revision, opened: current.config });
+      return { status: res.status, body: await res.json() as unknown };
+    }
+    const named = (resource: string, subscription?: string) => viewToSearchParams({
+      ...emptyView(),
+      filters: [
+        { field: 'severity', values: ['high'] },
+        { field: 'resourceName', values: [resource] },
+        ...(subscription ? [{ field: 'subscription' as const, values: [subscription] }] : []),
+      ],
+    }).toString();
+    const refusal = { status: 400, body: { error: UNSEEN_VALUE_MESSAGE } };
+
+    it('refuses a saved view naming a resource that a finding outside their Access carries, and one that nothing carries, in the same words', async () => {
+      const carried = await attemptView(named('vm-other-sub'));
+      const nobody = await attemptView(named('vm-nobody-has'));
+      expect(carried).toEqual(refusal);
+      expect(nobody).toEqual(refusal);
+      expect((await getSavedView(ownViewId))!.query).toBe('severity=high');
+    });
+
+    it('refuses a saved view naming a subscription they hold no Scope in, whether it exists or not', async () => {
+      expect(await attemptView(`severity=high&subscription=${SUB_TWO}`)).toEqual(refusal);
+      expect(await attemptView(`severity=high&subscription=${UNKNOWN_SUBSCRIPTION}`)).toEqual(refusal);
+      expect((await getSavedView(ownViewId))!.query).toBe('severity=high');
+    });
+
+    it('refuses a dashboard naming a subscription outside their Access in its filter bar or a widget, whether it exists or not', async () => {
+      expect(await attemptDashboard([SUB_ONE, SUB_TWO])).toEqual(refusal);
+      expect(await attemptDashboard([SUB_ONE, UNKNOWN_SUBSCRIPTION])).toEqual(refusal);
+      expect(await attemptDashboard([SUB_ONE], [SUB_TWO])).toEqual(refusal);
+      expect((await getDashboard(ownDashboardId))!.config.filters?.subscriptions).toEqual([SUB_ONE]);
+    });
+
+    it('saves a resource a finding inside their Access carries, and a subscription they hold', async () => {
+      expect((await attemptView(named('vm-one'))).status).toBe(200);
+      expect((await attemptDashboard([SUB_ONE], [SUB_ONE])).status).toBe(200);
+    });
+
+    it('never refuses a person who holds Everything, for a value no finding carries', async () => {
+      for (const person of ['Admin', 'Editor on Everything']) {
+        mockAuth.mockResolvedValue({ user: { uid: people[person] } });
+        const view = (await getSavedView(ownViewId))!;
+        const savedView = await patchView(ownViewId, { query: named('vm-nobody-has', UNKNOWN_SUBSCRIPTION), revision: view.revision, opened: view.query });
+        expect(savedView.status).toBe(200);
+        const dashboard = (await getDashboard(ownDashboardId))!;
+        const savedDashboard = await putDashboard(ownDashboardId, {
+          config: { ...dashboard.config, filters: { subscriptions: [UNKNOWN_SUBSCRIPTION], resourceGroups: [] } }, revision: dashboard.revision, opened: dashboard.config,
+        });
+        expect(savedDashboard.status).toBe(200);
+      }
+      asAdmin();
     });
   });
 

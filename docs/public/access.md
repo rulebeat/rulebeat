@@ -182,6 +182,11 @@ they save is also put back. If the item changed after the person opened it, the 
 reload it. The words "Outside your access" stand in for values the person was not sent and are never
 stored: a save that carries them has them removed.
 
+A value the person adds that is outside their Access, and that the item does not already hold, is refused
+with "No finding you can see has this value, so it can't be saved." The refusal is worded the same whether a
+finding outside their Access carries the value or none does, so it never says whether such a place exists.
+Everything is never refused.
+
 The address of the Scans page is different. A subscription or resource group typed into the address
 bar is the viewer's own input, so it reads "Outside your access" on its chip and leaves the list empty.
 

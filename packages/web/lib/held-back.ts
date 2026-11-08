@@ -12,6 +12,12 @@ import { isRowField, viewFromSearchParams, viewToSearchParams } from './finding-
 /** What a chip, a select or an empty widget reads in place of a value outside the person's Access. */
 export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
 
+/**
+ * What a save is refused with (400) when it brings in a value outside the saver's Access that the item did not
+ * already store. The same words whether a finding outside their Access carries the value or none does.
+ */
+export const UNSEEN_VALUE_MESSAGE = "No finding you can see has this value, so it can't be saved.";
+
 export type HeldBackPlace = 'dashboard' | 'widget' | 'savedView';
 
 /**

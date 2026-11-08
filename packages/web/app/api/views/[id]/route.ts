@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
-import { claimedRevision, openedCopy } from '@/lib/held-back';
+import { UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -55,8 +55,9 @@ export async function PATCH(req: Request, { params }: Params) {
       ? undefined
       : await heldBackOfQueries(actor.access, [current, { id, query: fields.value.query }]);
     const restored = fields.value.query === undefined
-      ? { query: undefined, restored: false }
+      ? { query: undefined, restored: false, unseen: false }
       : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined, held);
+    if (restored.unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
     if (revision === undefined && restored.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
     const result = await updateSavedView(
       id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,

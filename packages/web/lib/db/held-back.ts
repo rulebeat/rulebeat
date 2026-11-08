@@ -248,6 +248,21 @@ export function heldBackOfQueries(access: Access, queries: readonly { id: string
   return heldBackValues(access, queries.flatMap(q => viewValues(q.id, viewFromSearchParams(new URLSearchParams(withoutPlaceholder(q.query))))));
 }
 
+/**
+ * Whether a save brings a value in that is outside the saver's Access and that the item did not already hold in
+ * that place and dimension. Such a value is one they could not have picked from anything they see, and saving it
+ * would let them write filters for places they do not hold. A value the item already stores stays as it is: it
+ * is put back, not added. The answer is the same whether a finding outside their Access carries the value or none
+ * does, since the question is only whether the value is theirs to see. Everything holds nothing back, so it is
+ * never refused.
+ */
+function bringsUnseenValue(held: HeldValues, incoming: readonly StoredValues[], stored: readonly StoredValues[]): boolean {
+  return incoming.some(s => {
+    const already = new Set(stored.filter(o => o.place === s.place && o.id === s.id && o.dimension === s.dimension).flatMap(o => o.values));
+    return s.values.some(value => isHeld(held, s.dimension, value) && !already.has(value));
+  });
+}
+
 const withHeld = (visible: readonly string[], held: readonly string[]) => [...new Set([...visible, ...held])];
 
 /**
@@ -265,24 +280,28 @@ function leftOut(held: HeldValues, dimension: string, stored: unknown, opened: r
  * The query a person saves back, with the stored values their copy left out put back. `opened` is the query they were
  * sent: what it did not hold is restored from the stored row, whatever their Access is now. What they changed among
  * the values it held is kept. The placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in full
- * is not a value and is never stored. `restored` says whether anything was put back, which is when the write needs
+ * is not a value and is never stored. `unseen` says the save brings a value in that is outside their Access and not
+ * already stored (`bringsUnseenValue`), which the route refuses. `restored` says whether anything was put back, which is when the write needs
  * the revision the copy was read at. `known` is `heldBackOfQueries`' answer for the stored and the incoming query.
  */
 export async function restoreHeldBackView(
   access: Access, stored: { id: string; query: string }, incoming: string, opened?: string, known?: HeldValues,
-): Promise<{ query: string; restored: boolean }> {
+): Promise<{ query: string; restored: boolean; unseen: boolean }> {
   const before = viewFromSearchParams(new URLSearchParams(stored.query));
   const sent = opened === undefined ? undefined : viewFromSearchParams(new URLSearchParams(opened));
-  const held = known ?? await heldBackValues(access, viewValues(stored.id, before));
+  const query = withoutPlaceholder(incoming);
+  const after = viewFromSearchParams(new URLSearchParams(query));
+  const storedValues = viewValues(stored.id, before);
+  const incomingValues = viewValues(stored.id, after);
+  const held = known ?? await heldBackValues(access, [...storedValues, ...incomingValues]);
+  const unseen = bringsUnseenValue(held, incomingValues, storedValues);
   const back = before.filters.filter(f => isHeldDimension(f.field)).map(f => ({
     field: f.field,
     values: leftOut(held, f.field, f.values, sent && sent.filters.filter(o => o.field === f.field).flatMap(o => o.values)),
   })).filter(f => f.values.length > 0);
 
-  const query = withoutPlaceholder(incoming);
-  if (back.length === 0) return { query, restored: false };
+  if (back.length === 0) return { query, restored: false, unseen };
 
-  const after = viewFromSearchParams(new URLSearchParams(query));
   const filters = [...after.filters];
   for (const { field, values } of back) {
     const index = filters.findIndex(f => f.field === field);
@@ -290,18 +309,21 @@ export async function restoreHeldBackView(
     if (index < 0) filters.push(merged);
     else filters[index] = merged;
   }
-  return { query: viewToSearchParams({ ...after, filters }).toString(), restored: true };
+  return { query: viewToSearchParams({ ...after, filters }).toString(), restored: true, unseen };
 }
 
 /**
  * The config a person saves back, with the stored subscriptions and resource groups their copy left out put back
  * into the filter bar and into each widget's override that is still there. `opened` is the config they were sent.
- * A widget they removed takes its held-back values with it. `restored` is as for `restoreHeldBackView`.
+ * A widget they removed takes its held-back values with it. `restored` and `unseen` are as for `restoreHeldBackView`.
  */
 export async function restoreHeldBackDashboard(
   access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig, opened?: DashboardConfig,
-): Promise<{ config: DashboardConfig; restored: boolean }> {
-  const held = await heldBackValues(access, dashboardValues(stored.id, stored.config));
+): Promise<{ config: DashboardConfig; restored: boolean; unseen: boolean }> {
+  const storedValues = dashboardValues(stored.id, stored.config);
+  const incomingValues = dashboardValues(stored.id, incoming);
+  const held = await heldBackValues(access, [...storedValues, ...incomingValues]);
+  const unseen = bringsUnseenValue(held, incomingValues, storedValues);
   let restored = false;
 
   const restoreInto = (
@@ -327,5 +349,5 @@ export async function restoreHeldBackDashboard(
     if (!before) return widget;
     return { ...widget, config: restoreInto(widget.config, before.config, opened?.widgets?.find(w => w.id === widget.id)?.config) };
   });
-  return { config, restored };
+  return { config, restored, unseen };
 }
