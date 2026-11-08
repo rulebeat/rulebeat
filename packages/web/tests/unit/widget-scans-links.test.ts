@@ -108,7 +108,21 @@ beforeEach(async () => {
   mockAuth.mockResolvedValue({ user: { uid: scopedId } });
 });
 
-async function ask(route: string, widgetId: string, extra = ''): Promise<Record<string, any>> {
+/** The parts of a counting response these tests read. */
+interface Row { href: string; count: number; name: string; ruleId: string }
+interface WidgetAnswer {
+  scansHref: string;
+  revision?: number;
+  heldBack?: unknown;
+  noCount?: { kind: string; title: string };
+  current: { activeFindings: number; severityCounts: Record<string, number> };
+  items: Row[];
+  perCategory: { category: string; href: string; activeFindings: number }[];
+  perSubscription: { subscriptionId: string; href: string; activeFindings: number }[];
+  severityHrefs: Record<string, string>;
+}
+
+async function ask(route: string, widgetId: string, extra = ''): Promise<WidgetAnswer> {
   const res = await handlers[route]!.GET(new Request(`http://localhost/api/widgets/${route}?dashboard=${dashboardId}&widget=${widgetId}${extra ? `&${extra}` : ''}`));
   expect(res.status).toBe(200);
   return res.json();
@@ -164,10 +178,10 @@ describe('the Scans link of a number', () => {
 
   it('is on every category, subscription and severity of the summary', async () => {
     const summary = await ask('summary', 'ring');
-    const security = summary.perCategory.find((c: { category: string }) => c.category === 'security');
+    const security = summary.perCategory.find(c => c.category === 'security')!;
     expect(security.href).toContain('category=security');
     expect((await opened(security.href)).total).toBe(security.activeFindings);
-    expect(summary.perSubscription.map((s: { subscriptionId: string }) => s.subscriptionId)).toEqual([SUB_B]);
+    expect(summary.perSubscription.map(s => s.subscriptionId)).toEqual([SUB_B]);
     for (const sub of summary.perSubscription) expect((await opened(sub.href)).total).toBe(sub.activeFindings);
     expect(summary.severityHrefs.high).toContain('severity=high');
     expect((await opened(summary.severityHrefs.high)).total).toBe(summary.current.severityCounts.high);
@@ -204,8 +218,8 @@ describe('a widget whose values for a dimension are all gone', () => {
     ['tags', 'gone-tag'],
   ])('says why it has nothing to count when the %s no longer exists', async (_dimension, widgetId) => {
     const body = await ask('summary', widgetId);
-    expect(body.noCount.kind).toBe('gone');
-    expect(body.noCount.title).not.toBe('Outside your access');
+    expect(body.noCount!.kind).toBe('gone');
+    expect(body.noCount!.title).not.toBe('Outside your access');
     expect(body.current).toBeUndefined();
     expect(body.scansHref).toBeUndefined();
   });

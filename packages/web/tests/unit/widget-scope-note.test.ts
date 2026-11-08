@@ -2,7 +2,7 @@
  * The funnel on a widget title names the dimensions the widget sets itself, so a person who changes
  * the filter bar knows why that widget did not follow.
  */
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { WidgetWrapper } from '@/components/dashboard/widget-wrapper';
@@ -39,9 +39,10 @@ describe('the funnel tooltip', () => {
 
   it('is what the widget title shows', () => {
     const widget = { id: 'w', type: 'stat-card', title: 'Open findings', x: 0, y: 0, w: 4, h: 4, config: { severities: ['high'] } } as WidgetDef;
-    const html = renderToString(createElement(WidgetWrapper, {
+    const props: ComponentProps<typeof WidgetWrapper> = {
       widget, editMode: false, filtered: true, scopeNote: widgetScopeNote(widget.config, false), children: null,
-    }));
+    };
+    const html = renderToString(createElement(WidgetWrapper, props));
     expect(html).toContain('This widget uses its own Severity.');
     expect(html).not.toContain('Scoped by dashboard or widget filters');
   });
