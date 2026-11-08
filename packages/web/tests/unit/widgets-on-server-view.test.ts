@@ -15,6 +15,8 @@ import { runCategoryScan } from '@/lib/scan-runner';
 import { addSuppression } from '@/lib/suppressions';
 import { listFindings } from '@/lib/db/findings';
 import { queryFilterOptions } from '@/lib/db/finding-views';
+import { createDashboard } from '@/lib/db/dashboards';
+import { queryAdvisoriesWidget } from '@/lib/advisories-widget-data';
 import type { AdvisoriesWidgetData } from '@/lib/advisories-widget';
 import type { ViewResponse } from '@/lib/view-response';
 import { clearRules, resetDb } from '../helpers/db';
@@ -56,9 +58,12 @@ async function scan(): Promise<void> {
   await runCategoryScan((await getCategory('security'))!, { access: EVERYTHING_ACCESS, ctx, ruleIds: [PROBLEM, ADV_HIGH, ADV_LOW] });
 }
 
-const widgetUrl = (query = '') => new Request(`http://localhost/api/widgets/advisories${query}`);
-async function widget(query = ''): Promise<AdvisoriesWidgetData> {
-  const res = await advisoriesWidget.GET(widgetUrl(query));
+let dashboardId: string;
+/** The Advisories widget stored with a limit of 50 (`wide`) or 2 (`narrow`), asked under these filter changes. */
+const widgetUrl = (changes = '', widgetId = 'wide') =>
+  new Request(`http://localhost/api/widgets/advisories?dashboard=${dashboardId}&widget=${widgetId}&${changes}`);
+async function widget(changes = '', widgetId = 'wide'): Promise<AdvisoriesWidgetData & { revision: number; heldBack: number }> {
+  const res = await advisoriesWidget.GET(widgetUrl(changes, widgetId));
   expect(res.status).toBe(200);
   return res.json();
 }
@@ -77,6 +82,18 @@ beforeEach(async () => {
     argRow({ name: 'a-two', subscriptionId: TEST_SUB_B, resourceGroup: 'rg-b' }),
     argRow({ name: 'a-three' }),
   ];
+  const created = await createDashboard({
+    name: `server view ${crypto.randomUUID()}`,
+    config: {
+      dateWindow: { mode: 'relative', days: 7 },
+      widgets: [
+        { id: 'wide', type: 'advisories', title: 'Advisories', x: 0, y: 0, w: 4, h: 4, config: { limit: 50 } },
+        { id: 'narrow', type: 'advisories', title: 'Advisories', x: 0, y: 0, w: 4, h: 4, config: { limit: 2 } },
+      ],
+    },
+  });
+  if (!created.ok) throw new Error(created.reason);
+  dashboardId = created.dashboard.id;
   const viewer = await createUser({ email: 'viewer@example.com', role: 'viewer' });
   if ('error' in viewer) throw new Error(viewer.error);
   mockAuth.mockResolvedValue({ user: { uid: viewer.user.id } });
@@ -142,7 +159,7 @@ describe('the filter lists', () => {
 
 describe('the Advisories widget', () => {
   it('keeps its shape: items with eight keys, a total and the Advisory rules signal', async () => {
-    const data = await widget('?severities=low');
+    const data = await widget('severity=low');
     expect(data).toEqual({
       items: [{
         fingerprint: expect.any(String), ruleId: ADV_LOW, ruleName: `Rule ${ADV_LOW}`,
@@ -151,6 +168,8 @@ describe('the Advisories widget', () => {
       }],
       total: 1,
       hasAdvisoryRules: true,
+      revision: expect.any(Number),
+      heldBack: 0,
     });
     expect(Object.keys(data.items[0]).sort()).toEqual([
       'category', 'fingerprint', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
@@ -162,33 +181,39 @@ describe('the Advisories widget', () => {
     await addSuppression({
       id: 'wv-sup', fingerprint: found.fingerprint, resourceId: found.resourceId, reason: 'accepted', suppressedAt: NOW.toISOString(),
     });
+    // The address and the Scans page share their param names, so one query serves both.
     const cases: [string, string][] = [
       ['', 'tab=advisories'],
-      ['?severities=high', 'tab=advisories&severity=high'],
-      ['?categories=reliability','tab=advisories&category=reliability'],
-      [`?subscriptions=${TEST_SUB_B}`, `tab=advisories&subscription=${TEST_SUB_B}`],
-      ['?resourceGroups=rg-low', 'tab=advisories&rg=rg-low'],
-      ['?tags=retirement', 'tab=advisories&tags=retirement'],
-      [`?ruleIds=${ADV_LOW}`, `tab=advisories&ruleId=${ADV_LOW}`],
-      ['?suppressed=1', 'tab=advisories&suppressed=1'],
+      ['severity=high', 'tab=advisories&severity=high'],
+      ['category=reliability', 'tab=advisories&category=reliability'],
+      [`subscription=${TEST_SUB_B}`, `tab=advisories&subscription=${TEST_SUB_B}`],
+      ['rg=rg-low', 'tab=advisories&rg=rg-low'],
+      ['tags=retirement', 'tab=advisories&tags=retirement'],
+      [`ruleId=${ADV_LOW}`, `tab=advisories&ruleId=${ADV_LOW}`],
     ];
     for (const [widgetQuery, viewQuery] of cases) {
-      const data = await widget(widgetQuery ? `${widgetQuery}&limit=50` : '?limit=50');
+      const data = await widget(widgetQuery);
       const response = await view(viewQuery);
       expect(data.total, widgetQuery).toBe(response.total);
       expect(data.items.map(i => i.fingerprint).sort(), widgetQuery)
         .toEqual(response.items.map(i => i.finding.fingerprint).sort());
     }
+
+    // Showing suppressed findings is the viewer's own toggle and never travels in an address, so it is asked of the read.
+    const withSuppressed = await queryAdvisoriesWidget({ dateWindow: { mode: 'relative', days: 7 }, includeSuppressed: true }, { limit: 50 }, EVERYTHING_ACCESS);
+    const suppressedView = await view('tab=advisories&suppressed=1');
+    expect(withSuppressed.total).toBe(suppressedView.total);
+    expect(withSuppressed.items.map(i => i.fingerprint).sort()).toEqual(suppressedView.items.map(i => i.finding.fingerprint).sort());
   });
 
   it('agrees with the Advisories tiles on how many are open', async () => {
     const response = await view('tab=advisories');
-    expect((await widget('?limit=50')).total).toBe(response.tiles.total);
+    expect((await widget()).total).toBe(response.tiles.total);
     expect(response.tiles.total).toBe(4);
   });
 
   it('orders by severity, then most recently seen, and keeps the full total behind a limit', async () => {
-    const data = await widget('?limit=2');
+    const data = await widget('', 'narrow');
     expect(data.items.map(i => i.severity)).toEqual(['high', 'high']);
     expect(data.total).toBe(4);
   });

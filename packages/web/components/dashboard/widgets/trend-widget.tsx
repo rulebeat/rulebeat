@@ -7,9 +7,11 @@ import {
 } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
-import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chartSeriesColor, formatTrendTooltipLabel, periodToDays } from '@/components/dashboard/dashboard-constants';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
+import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chartSeriesColor, formatTrendTooltipLabel } from '@/components/dashboard/dashboard-constants';
+import { periodToDays, TREND_CAP_DAYS } from '@/lib/widget-settings';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 import { trendUnavailableMessage } from '@/lib/trend-scope';
 
@@ -60,14 +62,10 @@ function CustomLegend({ series }: { series: Series[] }) {
 
 export function TrendWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const trendDays = periodToDays(config.period ?? '30d', 365);
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('trendDays', String(trendDays));
-    return p.toString();
-  }, [merged, trendDays]);
+  const trendDays = periodToDays(config.period ?? '30d', TREND_CAP_DAYS['trend']!);
+  const url = useWidgetUrl('summary', { trendDays });
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
-    `/api/widgets/summary?${params}`,
+    url,
     [refreshKey]
   );
 

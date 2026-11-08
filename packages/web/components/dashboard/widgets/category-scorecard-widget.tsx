@@ -4,10 +4,11 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CATEGORY_COLORS } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; policyIds?: string[]; categories?: string[] /* legacy multi-select, pre-ScopeSection */ }
@@ -15,9 +16,9 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
 export function CategoryScorecardWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = buildSummaryParams(merged).toString();
+  const url = useWidgetUrl('summary');
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
-    `/api/widgets/summary?${params}`,
+    url,
     [refreshKey]
   );
 

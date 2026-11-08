@@ -1,8 +1,8 @@
 /**
  * Codex review Phase 5, item 6: prove that dashboard widget counts, Results-tab (explorer)
  * filtering, and generated Scans click-through links agree on the same set of findings for every
- * filter dimension, and that the WidgetFilters serialization pair (buildSummaryParams /
- * parseWidgetFiltersFromSearchParams) round-trips.
+ * filter dimension, and that the filters a widget route assembles from a dashboard id and an
+ * address (effectiveFilters) recover what dashboardAddress wrote.
  *
  * Three real, independent implementations are exercised directly (never re-implemented here):
  *  - await queryActiveFindings() (lib/dashboard-data.ts): what a dashboard widget counts
@@ -30,12 +30,12 @@ import {
   type ExplorerFilterState,
 } from '@/lib/explorer-filters';
 import { buildScansHref, parseCategoryParam } from '@/lib/scans-link';
-import {
-  mergeWidgetFilters, parseWidgetFiltersFromSearchParams, buildSummaryParams,
-  type WidgetFilters,
-} from '@/lib/dashboard-filters';
+import { widgetFiltersOf, type WidgetFilters } from '@/lib/dashboard-filters';
+import { effectiveFilters } from '@/lib/effective-filters';
+import { dashboardAddress, type DashboardFilters } from '@/lib/finding-view';
+import { createDashboard } from '@/lib/db/dashboards';
 import { resolveDateWindow } from '@/lib/date-window';
-import type { Finding, Suppression } from '@/lib/types';
+import type { DashboardConfig, Finding, Suppression } from '@/lib/types';
 import { clearRules, resetDb } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
@@ -304,35 +304,49 @@ describe('widget click-throughs and multi-category dashboard filters (RB-QA-020,
   });
 });
 
-describe('WidgetFilters serialization round-trips', () => {
-  it('buildSummaryParams -> parseWidgetFiltersFromSearchParams recovers every dimension', async () => {
-    const original = widgetFilters({
-      categories: ['security', 'cost'], subscriptions: ['sub-1', 'sub-2'], resourceGroups: ['rg-1'],
-      tags: ['baseline', 'cost-hygiene'], severities: ['critical', 'high'], ruleIds: [RULE_A, RULE_B],
-      includeSuppressed: true,
+describe('the filters a widget route assembles', () => {
+  // The routes take a dashboard id, a widget id and filter changes (ADR 0013), so what a widget counts
+  // is whatever `effectiveFilters` assembles from the address. It must agree with the other surfaces.
+  async function assemble(saved: NonNullable<DashboardConfig['filters']>, widgetConfig: Record<string, unknown>, query = '', dateWindow?: DashboardConfig['dateWindow']): Promise<WidgetFilters> {
+    const created = await createDashboard({
+      name: `cross surface ${crypto.randomUUID()}`,
+      config: { filters: saved, dateWindow, widgets: [{ id: 'w', type: 'stat-card', title: 'w', x: 0, y: 0, w: 4, h: 4, config: widgetConfig }] },
     });
-    const params = buildSummaryParams(original);
-    const roundTripped = parseWidgetFiltersFromSearchParams(params);
-    expect(roundTripped).toEqual(original);
+    if (!created.ok) throw new Error(created.reason);
+    const result = await effectiveFilters({ dashboardId: created.dashboard.id, widgetId: 'w', changes: new URLSearchParams(query), access: EVERYTHING_ACCESS });
+    if (!result.ok) throw new Error(result.reason);
+    return result.filters;
+  }
+
+  it('recovers every dimension a dashboardAddress wrote', async () => {
+    const saved: DashboardFilters = {
+      category: [], subscription: [], resourceGroup: [], tags: [], rule: [], severity: [], window: { mode: 'relative', days: 7 },
+    };
+    const wanted: DashboardFilters = {
+      category: ['security', 'cost'], subscription: ['sub-1', 'sub-2'], resourceGroup: ['rg-1'],
+      tags: ['baseline', 'cost-hygiene'], severity: ['critical', 'high'], rule: [RULE_A, RULE_B], window: { mode: 'relative', days: 14 },
+    };
+    const query = dashboardAddress(saved).write(wanted).toString();
+    expect(await assemble({}, {}, query, saved.window)).toEqual(widgetFiltersOf(wanted));
   });
 
-  it('round-trips a custom date window', async () => {
-    const original = widgetFilters({ dateWindow: { mode: 'custom', from: '2026-02-01', to: '2026-02-14' } });
-    const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(original));
-    expect(roundTripped.dateWindow).toEqual(original.dateWindow);
+  it('recovers a custom date window', async () => {
+    const saved: DashboardFilters = {
+      category: [], subscription: [], resourceGroup: [], tags: [], rule: [], severity: [], window: { mode: 'relative', days: 7 },
+    };
+    const window = { mode: 'custom' as const, from: '2026-02-01', to: '2026-02-14' };
+    const query = dashboardAddress(saved).write({ window }).toString();
+    expect((await assemble({}, {}, query, saved.window)).dateWindow).toEqual(window);
   });
 
-  it('an empty filter set round-trips to the same effective (empty) filters', async () => {
-    const original = widgetFilters();
-    const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(original));
-    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual(sorted(await dashboardFingerprints(original)));
+  it('an empty filter set counts the same findings as the filters it was assembled from', async () => {
+    const assembled = await assemble({}, {}, '', { mode: 'relative', days: 7 });
+    expect(sorted(await dashboardFingerprints(assembled))).toEqual(sorted(await dashboardFingerprints(widgetFilters())));
   });
 
-  it('mergeWidgetFilters composed with the serialization round-trip still agrees with explorer filtering', async () => {
-    const dashboardLevel = widgetFilters({ subscriptions: ['sub-1'] });
-    const merged = mergeWidgetFilters(dashboardLevel, { category: 'security', severities: ['critical'] });
-    const roundTripped = parseWidgetFiltersFromSearchParams(buildSummaryParams(merged));
-    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual(sorted(await explorerFingerprints(roundTripped)));
-    expect(sorted(await dashboardFingerprints(roundTripped))).toEqual([fpCritical]);
+  it('layers saved filters, changes and a widget override, and still agrees with explorer filtering', async () => {
+    const assembled = await assemble({ subscriptions: ['sub-1'] }, { category: 'security', severities: ['critical'] }, '', { mode: 'relative', days: 7 });
+    expect(sorted(await dashboardFingerprints(assembled))).toEqual(sorted(await explorerFingerprints(assembled)));
+    expect(sorted(await dashboardFingerprints(assembled))).toEqual([fpCritical]);
   });
 });

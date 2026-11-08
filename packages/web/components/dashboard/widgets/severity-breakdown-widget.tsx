@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CHART_LEGEND_STYLE, SEVERITY_CHART_COLOR, SEVERITY_LABEL, SEV_ORDER } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; policyIds?: string[] }
@@ -17,9 +18,9 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = buildSummaryParams(merged).toString();
+  const url = useWidgetUrl('summary');
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
-    `/api/widgets/summary?${params}`,
+    url,
     [refreshKey]
   );
 

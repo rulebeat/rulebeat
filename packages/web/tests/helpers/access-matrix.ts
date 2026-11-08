@@ -229,7 +229,11 @@ export async function seedMatrix(): Promise<MatrixSeed> {
     name: DASHBOARD_NAME,
     config: {
       filters: { subscriptions: [SUB_TWO] },
-      widgets: [{ id: 'matrix-widget', type: 'stat-card', title: 'Findings', x: 0, y: 0, w: 4, h: 2, config: { resourceGroups: [WIDGET_RESOURCE_GROUP] } }],
+      widgets: [
+        { id: 'matrix-widget', type: 'stat-card', title: 'Findings', x: 0, y: 0, w: 4, h: 2, config: { resourceGroups: [WIDGET_RESOURCE_GROUP] } },
+        // No override of its own, so the widget routes can be asked for everything a person sees by changing the saved filter.
+        { id: 'matrix-plain', type: 'stat-card', title: 'All findings', x: 4, y: 0, w: 4, h: 2, config: {} },
+      ],
     },
   });
   if (!dashboard.ok) throw new Error(dashboard.reason);

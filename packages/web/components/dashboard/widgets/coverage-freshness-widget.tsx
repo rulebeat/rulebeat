@@ -4,10 +4,11 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { Loader2, CheckCircle2, AlertTriangle, Clock, HelpCircle } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { timeAgo } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { staleAfterHours?: number; category?: string; policyIds?: string[] }
@@ -38,9 +39,9 @@ const BADGE: Record<Freshness, { label: string; className: string; icon: typeof 
 export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const staleAfterHours = config.staleAfterHours ?? 168; // 7 days
-  const params = buildSummaryParams(merged).toString();
+  const url = useWidgetUrl('summary');
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
-    `/api/widgets/summary?${params}`,
+    url,
     [refreshKey]
   );
 

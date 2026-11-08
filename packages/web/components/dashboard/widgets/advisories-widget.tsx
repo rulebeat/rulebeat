@@ -7,13 +7,14 @@ import { SeverityBadge } from '@/components/findings/severity-badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import {
   advisoriesWidgetView, formatLastSeen, ADVISORIES_WIDGET_DEFAULT_LIMIT, ADVISORIES_WIDGET_EMPTY,
   type AdvisoriesWidgetData,
 } from '@/lib/advisories-widget';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
@@ -26,13 +27,9 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 export function AdvisoriesWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('limit', String(config.limit ?? ADVISORIES_WIDGET_DEFAULT_LIMIT));
-    return p.toString();
-  }, [merged, config.limit]);
+  const url = useWidgetUrl('advisories', { limit: config.limit ?? ADVISORIES_WIDGET_DEFAULT_LIMIT });
   const { data, loading, failed, retry } = useWidgetFetch<AdvisoriesWidgetData>(
-    `/api/widgets/advisories?${params}`,
+    url,
     [refreshKey]
   );
 

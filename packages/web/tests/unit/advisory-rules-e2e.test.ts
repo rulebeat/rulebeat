@@ -25,6 +25,7 @@ import type { RuleKind } from '@rulebeat/core';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+import { widgetDashboardQuery } from '../helpers/widget-dashboard';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -118,12 +119,13 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('counts only Problem findings in top rules, top resources and recent findings', async () => {
     await scan();
-    const rulesJson = await (await topRules.GET(new Request('http://localhost/api/widgets/top-rules'))).json();
+    const query = await widgetDashboardQuery();
+    const rulesJson = (await (await topRules.GET(new Request(`http://localhost/api/widgets/top-rules?${query}`))).json()).items;
     expect(rulesJson.map((r: { ruleId: string; count: number }) => [r.ruleId, r.count])).toEqual([[PROBLEM, 2]]);
-    const resources = await (await topResources.GET(new Request('http://localhost/api/widgets/top-resources'))).json();
+    const resources = (await (await topResources.GET(new Request(`http://localhost/api/widgets/top-resources?${query}`))).json()).items;
     expect(JSON.stringify(resources)).not.toContain('vm-a');
     expect(JSON.stringify(resources)).toContain('vm-p');
-    const recent = await (await recentFindings.GET(new Request('http://localhost/api/widgets/findings'))).json();
+    const recent = (await (await recentFindings.GET(new Request(`http://localhost/api/widgets/findings?${query}`))).json()).items;
     expect(JSON.stringify(recent)).not.toContain('vm-a');
     expect(JSON.stringify(recent)).toContain('vm-p');
   });

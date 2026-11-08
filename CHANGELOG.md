@@ -10,6 +10,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 - Every dashboard and saved view now carries a revision number that each save raises by one, so a later save can tell the row changed underneath it. Existing dashboards and saved views start at revision 1 on upgrade, and their filters, date window and saved queries are kept exactly as stored.
 - Dashboard filter changes can be read from and written to the address, using the same parameter names as the Scans page. A parameter that is present replaces the saved value, an empty one means any, and a missing one keeps the saved value. Nothing in the app reads this yet, so no page behaves differently.
+- Dashboard widgets now ask the server for their numbers with the dashboard and widget ids plus the filter changes, and the server assembles the filters: the filters saved on the dashboard, then the changes, then the widget's own override, each replacing the one before for a dimension it sets. A widget's row limit and trend length come from its saved config (a New vs. fixed or Activity occurrences period never counts past 180 days, the posture trend never past 365). The count and findings routes now answer with the dashboard's revision and with how many filter values are held back from the person asking, never naming them, and refuse assembled filter params with a 400 and an unknown dashboard with a 404. Numbers on screen are unchanged for the periods the widget settings offer.
 
 ## [0.13.1] - 2026-10-16
 
