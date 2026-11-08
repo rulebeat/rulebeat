@@ -7,7 +7,8 @@ import { many, one, run, inTransaction, type DbHandle } from './exec';
 import { CHUNK_SIZE, chunk } from './chunk';
 import { hasScanLeftOutOfHistory, loadStoredScanBlobs } from './scan-blob-history';
 import { FINDINGS_BACKFILL_MARKER, findingsBackfillCategoryKey } from './scan-findings-copy';
-import { loadRules } from '../rules';
+import { loadRules, setRulesLastRunStatus } from '../rules';
+import { recordRecordedDay, recountTrend, TrendRecordWriteError, type CoveredEntry as RecordedCoverage } from './trend-record';
 import { listCategories } from './categories';
 import { upsertDailySnapshot } from './snapshots';
 import { derivePlacement } from './finding-placement';
@@ -21,6 +22,7 @@ import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
 import type { FindingPlacement } from '../placement';
 import type { Finding, RuleKind, Severity } from '../types';
+import type { RuleExecutionStatus } from '@rulebeat/core';
 
 export interface FindingRecord extends Finding {
   /** Every row the rule's query returned for this resource, in query order. Always present on a
@@ -67,6 +69,14 @@ export interface SyncScanFindingsOptions {
    *  lib/run-scope.ts). The resolve step marks fixed only the findings inside it: a run that covered
    *  less than Everything never resolves another team's findings. Omitted is Everything. */
   covered?: Access;
+  /** What this scan observed about each rule it ran, written to the rules in this transaction so a rule's
+   *  last-run status and the trend record's cells and facts cannot disagree. Omitted writes none. */
+  lastRunStatuses?: { status: RuleExecutionStatus; ruleIds: string[] }[];
+  /** What the scan covered, added to its day's Recorded day marker. Omitted adds none. */
+  recordedCoverage?: RecordedCoverage[];
+  /** Writes nothing to the trend record: used by the history backfill, which observed none of what it
+   *  replays and records its own state once its category is rebuilt (`backfillFindings()`). */
+  noRecord?: boolean;
 }
 
 const EVENT_RETENTION_DAYS = 180;
@@ -268,7 +278,7 @@ export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<S
 /** syncScanFindings() plus the categories it touched, for the scan path that has to refresh their
  *  snapshots once the transaction has committed. */
 export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): Promise<DetailedSyncResult> {
-  const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent, covered } = opts;
+  const { scanId, category, ranRuleIds, findings: rawFindings, finishedAt, silent, covered, lastRunStatuses, recordedCoverage, noRecord } = opts;
   const insideCovered = covered ? accessFilterSql(covered) : undefined;
   const findings = mergeFindingsByFingerprint(rawFindings);
   const created: string[] = [];
@@ -485,6 +495,24 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
       const cutoff = new Date(Date.now() - EVENT_RETENTION_DAYS * 86_400_000).toISOString();
       await run(tx.delete(findingEventsTable).where(sql`${findingEventsTable.occurredAt} < ${cutoff}`));
     }
+
+    // 5. The trend record (ADR 0012), in this transaction: a write that fails rolls the whole sync back. The rules'
+    // last-run status moves in first, since it is one of the facts the recount reads. The record lock is taken inside
+    // `recountTrend()`, last, just before it reads, and held only until this transaction ends.
+    for (const { status, ruleIds } of lastRunStatuses ?? []) await setRulesLastRunStatus(ruleIds, status, finishedAt, tx);
+    if (!noRecord) {
+      const touched = new Set([
+        ...ranRuleIds, ...findings.map(f => f.ruleId), ...resolvedRuleByFp.values(),
+        ...(lastRunStatuses ?? []).flatMap(s => s.ruleIds),
+      ]);
+      const now = new Date(finishedAt);
+      try {
+        await recountTrend(tx, { ruleIds: [...touched], now });
+        await recordRecordedDay(tx, { now, covered: recordedCoverage });
+      } catch (err) {
+        throw new TrendRecordWriteError(err);
+      }
+    }
   });
 
   // A finding that only lost rows is not changed: only a gained row is news.
@@ -626,8 +654,13 @@ export async function getActivityOccurrenceCounts(opts: {
  *  second call for the same rule finds nothing and returns 0. Suppressions are keyed on the
  *  fingerprint and are deliberately left alone, so a finding that later regenerates re-attaches to
  *  its old suppression. */
-export async function deleteFindingsForRule(ruleId: string): Promise<number> {
-  const { deleted, categories } = await inTransaction(tx => removeFindingRowsForRule(tx, ruleId));
+export async function deleteFindingsForRule(ruleId: string, opts: { now?: Date } = {}): Promise<number> {
+  // The rule's trend cells go to 0 in the same transaction, dated at the clear; past days keep their counts (ADR 0012).
+  const { deleted, categories } = await inTransaction(async (tx) => {
+    const removed = await removeFindingRowsForRule(tx, ruleId);
+    await recountTrend(tx, { ruleIds: [ruleId], now: opts.now });
+    return removed;
+  });
   await refreshSnapshotsFor(categories);
   return deleted;
 }
@@ -779,11 +812,14 @@ export async function backfillFindings(): Promise<void> {
       // One transaction for the whole category: a replay that stops part way leaves nothing behind, so
       // the next start's replay does not count a scan twice.
       await inTransaction(async (tx) => {
+        // Every rule a replayed sync could have changed a finding of, for the one recount below.
+        const touchedRuleIds = new Set<string>();
         for (let i = 0; i < oldestFirst.length; i++) {
           const scan = oldestFirst[i];
           const isLast = i === oldestFirst.length - 1;
           const findings = restore(scan);
           const ranRuleIds = Array.from(new Set(findings.map(f => f.ruleId)));
+          ranRuleIds.forEach(id => touchedRuleIds.add(id));
           await syncScanFindings({
             scanId: crypto.randomUUID(),
             category: category.id,
@@ -794,6 +830,8 @@ export async function backfillFindings(): Promise<void> {
             // silent; only the most recent scan's transition reflects real current state, so it
             // gets a real event trail to seed alerting/audit history going forward.
             silent: !isLast,
+            // What a replay changes was never observed, so it is not recorded at the date it is replayed under.
+            noRecord: true,
           });
         }
 
@@ -808,7 +846,16 @@ export async function backfillFindings(): Promise<void> {
           findings: restore(latest),
           finishedAt: latest.finishedAt,
           silent: true,
+          noRecord: true,
         });
+        currentRuleIds.forEach(id => touchedRuleIds.add(id));
+
+        // The record starts from what the findings are now: one recount of the rules the replay touched, dated now,
+        // and today's marker with no covered scope, since no scan covered anything. A later startup recount, which
+        // compares the record with live, then has nothing to write.
+        const recordedAt = new Date();
+        await recountTrend(tx, { ruleIds: [...touchedRuleIds], now: recordedAt });
+        await recordRecordedDay(tx, { now: recordedAt });
 
         // On the transaction's handle: setMeta() would write outside it on Postgres.
         await run(tx.insert(metaTable).values({ key: recordKey, value: '1' })

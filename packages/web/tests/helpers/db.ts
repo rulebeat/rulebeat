@@ -42,6 +42,10 @@ const CLEARABLE = [
   'personal_rules',
   'library_requests',
   'saved_views',
+  'trend_cells',
+  'trend_rule_facts',
+  'trend_recorded_days',
+  'trend_state',
 ] as const;
 
 /** The `meta` rows a test can create. `meta` is not cleared wholesale, but the management group tree's

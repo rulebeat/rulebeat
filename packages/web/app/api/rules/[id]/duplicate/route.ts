@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
+import { serverError } from '@/lib/api-error';
 import { duplicateRule } from '@/lib/rules';
 import { writeAudit } from '@/lib/db/audit';
 
@@ -12,7 +13,12 @@ export async function POST(
 
   const { id: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const copy = await duplicateRule(id);
+  let copy: Awaited<ReturnType<typeof duplicateRule>>;
+  try {
+    copy = await duplicateRule(id);
+  } catch (err) {
+    return serverError('Could not duplicate the rule', err);
+  }
   if (!copy) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await writeAudit({

@@ -340,6 +340,58 @@ export const postureSnapshots = pgTable('posture_snapshots', {
   pk: primaryKey({ columns: [table.category, table.subscriptionId, table.date] }),
 }));
 
+/** The trend record (ADR 0012): see the SQLite twin in `schema.ts`. `seq` is a `bigserial` primary key here and an autoincrement one there. */
+export const trendCells = pgTable('trend_cells', {
+  seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  placement: text('placement').notNull(),
+  subscriptionId: text('subscription_id').notNull().default(''),
+  resourceGroup: text('resource_group').notNull().default(''),
+  managementGroupId: text('management_group_id').notNull().default(''),
+  severity: text('severity').notNull(),            // the finding's own severity
+  changedAt: text('changed_at').notNull(),
+  openCount: integer('open_count').notNull().default(0),
+  suppressedCount: integer('suppressed_count').notNull().default(0),
+});
+
+/** What a rule was on a day, one wide row whenever any fact changes, for every rule, enabled or not. The `last_*`
+ *  labels are filled only on the deletion row, so a deleted rule's past days still read. */
+export const trendRuleFacts = pgTable('trend_rule_facts', {
+  seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  changedAt: text('changed_at').notNull(),
+  enabled: boolean('enabled').notNull(),
+  kind: text('kind').notNull(),
+  severity: text('severity').notNull(),            // the rule's own
+  scope: text('scope').notNull(),                  // JSON: RuleScope, as stored
+  runningVersion: text('running_version'),
+  lastRunStatus: text('last_run_status'),          // null means never run
+  deleted: boolean('deleted').notNull().default(false),
+  lastName: text('last_name'),
+  lastCategory: text('last_category'),
+  lastCategoryLabel: text('last_category_label'),
+  lastTags: text('last_tags'),
+  lastSource: text('last_source'),
+});
+
+/** One row per UTC day RuleBeat was recording. A day with none is a gap on the trend. */
+export const trendRecordedDays = pgTable('trend_recorded_days', {
+  day: text('day').primaryKey(),                   // YYYY-MM-DD, UTC
+  recordVersion: integer('record_version').notNull().default(1),
+  firstRecordedAt: text('first_recorded_at').notNull(),
+  covered: text('covered').notNull().default('[]'), // JSON: { category, tenantId, path, ruleIds }[]; path null = Everything, ruleIds null = every enabled rule in the category
+});
+
+/** One row, id 1. Kept here and not in `meta`, which a Demo Reset skips. */
+export const trendState = pgTable('trend_state', {
+  id: integer('id').primaryKey(),
+  sweptThrough: text('swept_through'),             // ISO: the suppression expiry sweep has recounted up to here
+  eventsKeptSince: text('events_kept_since'),      // YYYY-MM-DD: the first day finding events can show
+  recountedAt: text('recounted_at'),               // ISO: the last full recount
+  recountCorrected: integer('recount_corrected'),  // how many rows that recount had to write
+  retainedThrough: text('retained_through'),       // YYYY-MM-DD: the last day retention ran
+});
+
 export const notificationChannels = pgTable('notification_channels', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

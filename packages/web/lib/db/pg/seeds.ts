@@ -5,13 +5,14 @@ import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as pgSchema from '../schema.pg';
 import {
-  definitionToColumns, planRuleSeeding, versionKey,
+  definitionToColumns, planRuleSeeding, seedActionRuleId, versionKey,
   type SeedAction, type StoredRuleRow,
 } from '../../rule-versions';
 import { loadShippedCatalogue, type ShippedCatalogue } from '../../shipped-catalogue';
 import { STARTER_DASHBOARD } from '../../dashboard-templates';
 import { hashPasswordSync } from '../../password';
 import { BUILTIN_CATEGORIES, OLD_SECURITY_RED, type SeedOptions } from '../migrate';
+import { recountTrendPg, startTrendRecordingPg } from '../trend-record';
 
 type PgDb = NodePgDatabase<typeof pgSchema>;
 
@@ -37,13 +38,16 @@ export async function seedPg(
   dataDir: string,
   opts: SeedOptions = {},
 ): Promise<string[]> {
-  const categoriesMoved = await seedRules(db, dataDir, opts.catalogue);
+  const categoriesMoved = await seedRules(db, dataDir, opts.catalogue, opts.now);
   await seedCategories(db);
   await seedDefaultDashboard(db);
   // Onboarding must be decided BEFORE the owner account exists (see runSeeds in migrate.ts).
   await seedOnboardingState(db);
   if (!opts.skipOwnerBootstrap) await seedOwnerAccount(db, dataDir);
   await seedInitialAdmin(db);
+  // Last, once the rules are in: the first start records the state of the moment, every later one recounts it
+  // (lib/db/trend-record.ts, ADR 0012). The twin of the call at the end of runSeeds().
+  await startTrendRecordingPg(db, opts.now);
   return categoriesMoved;
 }
 
@@ -53,7 +57,7 @@ export async function seedPg(
  * enabled rule runs (ADR 0004), bar the one-time move off the removed "Before versioning"
  * pseudo-version (ADR 0009).
  */
-async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined): Promise<string[]> {
+async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined, clock: Date | undefined): Promise<string[]> {
   const { rules, ruleVersions, findings, findingRows, findingEvents, columnCatalogue } = pgSchema;
   const shipped = catalogue ?? loadShippedCatalogue(dataDir);
   const now = new Date().toISOString();
@@ -156,13 +160,25 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
       }
     };
 
+    const touched = new Set<string>();
     for (const action of planRuleSeeding({ catalogue: shipped, rows, recorded })) {
       try {
         // A nested transaction is a savepoint: one rule that cannot be written (a malformed pack
         // entry) is skipped without aborting the rest, as a malformed pack file always was.
         await tx.transaction(async (savepoint) => execute(savepoint as unknown as typeof tx, action));
+        touched.add(seedActionRuleId(action));
       } catch (err) {
         console.warn(`[rulebeat] could not seed a rule (${action.action}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    // What the seeding changed in the trend record's inputs is recorded in the same transaction, so the start
+    // recount that follows finds nothing to correct (ADR 0012). In a savepoint, so a record that cannot be
+    // written costs a log line and not the boot: the start recount writes it.
+    if (touched.size > 0) {
+      try {
+        await tx.transaction(async (savepoint) => { await recountTrendPg(savepoint, { ruleIds: [...touched], now: clock }); });
+      } catch (err) {
+        console.warn(`[rulebeat] could not record the seeded rules in the trend history: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   });
