@@ -61,8 +61,8 @@ rules in scope shows an empty posture rather than 0% or 100%.
 
 Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
 Restore starter to recreate the seeded Overview layout. Layouts save per dashboard. Creating,
-renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
-and would bury real changes.
+renaming and deleting is audited. Saving a Shared dashboard is audited too (see below), but dragging
+and resizing a Personal one is not, since every drag would be an entry and would bury real changes.
 
 ### Personal and Shared
 
@@ -81,6 +81,37 @@ The gallery has two sections. **Yours** lists everything you own, each tagged Pe
 **Shared by others** lists the Shared dashboards you do not own, with the owner's name, or their email
 when they have no name yet, or "No owner". Your own Shared dashboards appear only under Yours.
 
+**Share** (in the More menu on the dashboard, and in the gallery's card menu) makes your own Personal
+dashboard Shared. It first asks: "Share <name> with everyone on this install? Its name, description,
+widget titles and search text will be visible to everyone, and its name will appear in the audit log."
+Only the owner shares, and only with an Editor Role at some Scope. A Viewer, and an Editor who holds no
+Scope, see Share switched off with "Sharing needs an Editor Role at some Scope." Sharing checks the names
+of Shared dashboards across the install and answers 409 when the name is taken. **Unshare** makes a Shared
+dashboard Personal again, to its owner. The owner can unshare their own; an Admin, or an Editor on
+Everything, can unshare any Shared dashboard. If the owner has a Personal dashboard with the same name,
+the owner's own unshare is refused with 409. Someone else's unshare never fails on a clash: the dashboard
+takes the next free name in the owner's Personal list (for example "Overview (2)"), and the answer does
+not say what that name is. A dashboard with no owner cannot be unshared: "Take this over before unsharing
+it." Unsharing the Install default leaves the install without one. Each share and unshare moves the
+dashboard's revision on, and one the dashboard's current state no longer allows (someone shared or
+unshared it since the page loaded) answers 409 and asks you to reload.
+
+**Hand over** and **Take over** sit in the dashboard's actions menu, on the gallery card and on the dashboard
+page. Hand over gives a Shared dashboard to another person, chosen from a list that shows names and emails
+only, never Roles or Scopes. The list holds Admins and people who hold an Editor Role at any Scope, and
+leaves out the current owner; the server checks the choice again and refuses anyone else with "That person
+cannot take this over. Choose someone else." The owner can hand over their own dashboard. An Admin, or an
+Editor on Everything, can hand over any Shared dashboard, one with no owner included, straight to an
+eligible person. **Take over** makes you the owner of any Shared dashboard, one with no owner included, and
+needs the same Admin or Editor on Everything. Both act only on Shared dashboards: a Personal one offers
+neither, even to its owner. The dashboard stays Shared, stays the Install default if it was, and keeps its
+stored filter values, held-back ones included, under the new owner. Nobody is notified. Both check the names
+of Shared dashboards across the install, and each moves the revision on; a hand-over or take-over the
+dashboard's current state no longer allows answers 409 and asks you to reload.
+
+If your access no longer lets you change a Shared dashboard you own, the page says "Your access no longer
+lets you change Shared items. Duplicate it, or ask an Admin to take it over."
+
 A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
 else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
 Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names
@@ -91,5 +122,9 @@ the default by being first or by being the oldest left: deleting the default lea
 one until it is set again. A new dashboard is never the default.
 
 Creating, renaming and deleting a Personal dashboard is audited by its id and kind only, with no name.
+Sharing writes `dashboard.share` and unsharing `dashboard.unshare`, each naming the dashboard (an unshare
+with the name it had while Shared). Handing over writes `dashboard.hand_over`, naming the dashboard and both
+people by display name, else email, and taking over writes `dashboard.take_over`. Each save of a Shared dashboard writes one entry that names it and the
+fields that changed (name, description, filters, widgets, layout), never their values.
 Removing a person deletes their Personal dashboards and leaves their Shared ones Shared with no owner
 ([`rbac.md`](rbac.md)).

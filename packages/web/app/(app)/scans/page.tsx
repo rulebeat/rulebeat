@@ -16,7 +16,7 @@ import { listCategories } from '@/lib/db/categories';
 import { getPageAccess } from '@/lib/page-access';
 import { holdsNoScope } from '@/lib/access-model';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
-import { writeControlsFor } from '@/lib/write-controls';
+import { shareControlFor, writeControlsFor } from '@/lib/write-controls';
 import { itemPermissionsFor } from '@/lib/item-access-model';
 import type { Rule, Suppression } from '@/lib/types';
 
@@ -114,7 +114,7 @@ export default async function ScansPage({
         compareQuery={compareIds ? compareQueryFromParams(params) : undefined}
         initialSchedules={initialSchedules}
         controls={controls}
-        savedViewAccess={user ? { userId: user.id, permissions: itemPermissionsFor(access, 'view') } : undefined}
+        savedViewAccess={user ? { userId: user.id, permissions: itemPermissionsFor(access, 'view'), shareControl: shareControlFor(access, 'view') } : undefined}
         notificationChannels={initialNotificationChannels}
         ruleFindingCounts={ruleFindingCounts}
         tabEmpty={tabEmpty}

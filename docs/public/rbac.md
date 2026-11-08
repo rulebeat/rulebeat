@@ -15,7 +15,9 @@ so on) rather than a role rank, so this table is the single place the mapping li
 | Suppress a finding | | ✅ | ✅ |
 | Create, edit, or delete your own Personal dashboards and saved views (`dashboards:personal`, `views:personal`) | ✅ | ✅ | ✅ |
 | Change a Shared dashboard or saved view you own (`dashboards:write`, `views:write`) | | ✅ | ✅ |
-| Change anyone else's Shared dashboard or saved view, or choose the Install default (`dashboards:manage`, `views:manage`), needs Everything | | ✅ | ✅ |
+| Share your own Personal dashboard or saved view, and unshare your own Shared one (`dashboards:write`, `views:write`) | | ✅ | ✅ |
+| Hand over your own Shared dashboard or saved view to another Editor or Admin (`dashboards:write`, `views:write`) | | ✅ | ✅ |
+| Change, unshare, hand over or take over anyone else's Shared dashboard or saved view (one with no owner too), or choose the Install default (`dashboards:manage`, `views:manage`), needs Everything | | ✅ | ✅ |
 | Refresh the resource-type schema cache | | ✅ | ✅ |
 | Create or edit categories | | | ✅ |
 | Manage users and their roles | | | ✅ |
@@ -47,8 +49,12 @@ item is the owner's alone: anyone else, an Admin included, is told it does not e
 for everyone signed in. Its owner changes it with `dashboards:write` or `views:write`, which an Editor
 holds at any Scope. Changing anyone else's Shared item (or one with no owner) needs
 `dashboards:manage` or `views:manage`, which only an Admin or an Editor on Everything holds, and so does
-choosing the Install default. A demoted owner keeps everything they made: a Viewer can still open and
-Duplicate a Shared item they own, but not change it. Removing a person deletes their Personal
+choosing the Install default. Sharing your own Personal item needs the same write action as changing a
+Shared one you own, so a Viewer, and an Editor who holds no Scope, see Share switched off with "Sharing
+needs an Editor Role at some Scope." Unsharing is the owner's, or anyone with the manage action for any
+Shared item, and an item with no owner is refused with "Take this over before unsharing it". Handing over is the owner's with the write action, or anyone's with the manage action, and taking over needs the manage action. Both act only on Shared items. The people a Shared item can be handed to are Admins and people who hold an Editor Role at any Scope, listed by name and email only, and the server checks the choice again. A demoted owner keeps everything they made: a Viewer can still open and
+Duplicate a Shared item they own, but not change or unshare it, and the page tells them so: "Your access
+no longer lets you change Shared items. Duplicate it, or ask an Admin to take it over." Removing a person deletes their Personal
 dashboards and saved views and leaves their Shared ones Shared, with no owner; the confirmation and the
 audit entry give the counts only. See [Dashboards](dashboards.md#managing-dashboards) and
 [Saved views](scans-and-schedules.md#saved-views).

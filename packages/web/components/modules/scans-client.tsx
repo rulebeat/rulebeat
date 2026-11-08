@@ -108,7 +108,7 @@ export interface ScansClientProps {
    *  Without it the Role alone decides, as it did before Scopes. */
   controls?: WriteControls;
   /** Who is asking and what they may do with saved views, from `itemPermissionsFor` on the server. */
-  savedViewAccess?: { userId: string; permissions: ItemPermissions };
+  savedViewAccess?: { userId: string; permissions: ItemPermissions; shareControl: { allowed: boolean; reason?: string } };
   /** Notification channel list for the Notifications section in the schedule form.
    *  Empty when the user lacks notifications:manage. The section is simply hidden. */
   notificationChannels?: NotificationChannelSummary[];
@@ -184,6 +184,7 @@ export function ScansClient({
     tab,
     currentUserId: savedViewAccess?.userId ?? '',
     permissions: viewPermissions,
+    shareControl: savedViewAccess?.shareControl,
     openId: initialSavedViewId ?? null,
     onOpen: (saved: HeldBackSavedView) => {
       ownWrites.forget();

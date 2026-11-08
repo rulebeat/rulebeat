@@ -8,6 +8,7 @@ import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
 import { holdBackDashboards } from '@/lib/db/held-back';
 import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem, isOwnItem } from '@/lib/item-access-model';
+import { shareControlFor } from '@/lib/write-controls';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props { params: Promise<{ id: string }> }
@@ -45,6 +46,9 @@ export default async function DashboardPage({ params }: Props) {
                 dashboard={held}
                 canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
                 canSetDefault={permissions.manage}
+                currentUserId={user?.id ?? ''}
+                permissions={permissions}
+                shareControl={shareControlFor(access, 'dashboard')}
               />}
         </div>
       </div>

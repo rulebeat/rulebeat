@@ -149,6 +149,82 @@ export async function updateDashboard(
   });
 }
 
+export type ShareDashboardResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+
+/**
+ * Makes a Personal dashboard Shared, if it still is Personal and its name is free among Shared names
+ * install-wide. Both checks and the write are one locked transaction, so a second click or a concurrent
+ * share finds the state already changed and gets `wrong-state`.
+ */
+export async function shareDashboard(id: string): Promise<ShareDashboardResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (readVisibility(existing.visibility) !== 'personal') return { ok: false, reason: 'wrong-state' };
+    if (await isNameTaken(existing.name, { visibility: 'shared' }, id, tx)) return { ok: false, reason: 'name-taken' };
+    await run(tx.update(dashboards).set({ visibility: 'shared', revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
+  });
+}
+
+export type UnshareDashboardResult =
+  | { ok: true; dashboard: Dashboard; sharedName: string }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' };
+
+/**
+ * Makes a Shared dashboard Personal again, to its owner. The owner's own unshare is refused when the name
+ * clashes with one of their Personal names; anyone else's unshare gives it the next free name instead, so it
+ * never fails on a clash. It stops being the Install default, which has to be Shared. `dashboard` holds
+ * the new name, so the caller returns it only to the owner; `sharedName` is the name it had while Shared.
+ */
+export async function unshareDashboard(id: string, actorId: string): Promise<UnshareDashboardResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'wrong-state' };
+    if (!existing.ownerId) return { ok: false, reason: 'no-owner' };
+    const space: NameSpace = { visibility: 'personal', ownerId: existing.ownerId };
+    let name = existing.name;
+    if (await isNameTaken(name, space, id, tx)) {
+      if (existing.ownerId === actorId) return { ok: false, reason: 'name-taken' };
+      name = await nextFreeName(tx, existing.ownerId, existing.name, n => `${existing.name} (${n})`);
+    }
+    await run(tx.update(dashboards).set({ name, visibility: 'personal', isDefault: false, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0], sharedName: existing.name };
+  });
+}
+
+export type TransferDashboardResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+
+/**
+ * Gives a Shared dashboard a new owner, for a hand-over or a take-over. It stays Shared and keeps its
+ * Install default flag and its config, held-back values included. `expectedOwnerId` is who the caller
+ * judged the request against: if the dashboard has changed hands or been unshared since, nothing is written
+ * and the answer is `wrong-state`. The name is checked among Shared names install-wide, the space it sits in.
+ */
+export async function transferDashboard(id: string, expectedOwnerId: string | null, newOwnerId: string): Promise<TransferDashboardResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (readVisibility(existing.visibility) !== 'shared' || (existing.ownerId ?? null) !== expectedOwnerId || existing.ownerId === newOwnerId) {
+      return { ok: false, reason: 'wrong-state' };
+    }
+    if (await isNameTaken(existing.name, { visibility: 'shared' }, id, tx)) return { ok: false, reason: 'name-taken' };
+    await run(tx.update(dashboards).set({ ownerId: newOwnerId, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
+  });
+}
+
 // Every dashboard is deletable, including the default. Deleting the default leaves the install with
 // none: no other dashboard is promoted for being the oldest (ADR 0012).
 export async function deleteDashboard(id: string): Promise<boolean> {

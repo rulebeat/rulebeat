@@ -44,6 +44,39 @@ export function mayChangeItem(actor: { id: string; access: Access }, kind: ItemK
 }
 
 /**
+ * May the person change this item's visibility. Sharing is the owner's call: it needs `*:write` on their own
+ * item. Unsharing is the owner's too, or anyone who may manage Shared items (`*:manage`). Someone else's
+ * Personal item is not the person's to open at all, so it never gets here.
+ */
+export function mayChangeVisibility(actor: { id: string; access: Access }, kind: ItemKind, item: OwnedItem, intent: 'share' | 'unshare'): boolean {
+  if (!canOpenItem(actor, item)) return false;
+  const actions = ACTIONS[kind];
+  const ownsAndMayWrite = isOwnItem(actor, item) && mayAct(actor.access, actions.write);
+  return intent === 'share' ? ownsAndMayWrite : ownsAndMayWrite || mayAct(actor.access, actions.manage);
+}
+
+/**
+ * May the person hand a Shared item to someone else, or take it over. Handing over is the owner's call
+ * (`*:write` on their own item) or anyone's who manages Shared items (`*:manage`), an item with no owner
+ * included. Taking over is for `*:manage` alone. Whether the item is Shared is the state the write checks:
+ * a Personal item is refused there with a 409, so a page that went stale gets the reload message.
+ */
+export function mayTransferItem(actor: { id: string; access: Access }, kind: ItemKind, item: OwnedItem, intent: 'hand-over' | 'take-over'): boolean {
+  if (!canOpenItem(actor, item)) return false;
+  const actions = ACTIONS[kind];
+  const ownsAndMayWrite = isOwnItem(actor, item) && mayAct(actor.access, actions.write);
+  return intent === 'hand-over' ? ownsAndMayWrite || mayAct(actor.access, actions.manage) : mayAct(actor.access, actions.manage);
+}
+
+/** What a Shared item's owner is told when their access no longer lets them change it. */
+export const DEMOTED_OWNER_NOTE = 'Your access no longer lets you change Shared items. Duplicate it, or ask an Admin to take it over.';
+
+/** Is this the person's own Shared item that they may no longer change: what `DEMOTED_OWNER_NOTE` is shown for. */
+export function isDemotedOwner(actor: { id: string }, permissions: ItemPermissions, item: OwnedItem): boolean {
+  return item.visibility === 'shared' && isOwnItem(actor, item) && !mayChangeItemWith(actor, permissions, item);
+}
+
+/**
  * What a person may do with items of one kind, as a client component needs it: computed on the server from
  * `mayAct`, so a control is off exactly when the route would refuse it.
  */
@@ -66,6 +99,25 @@ export function mayChangeItemWith(actor: { id: string }, permissions: ItemPermis
   if (!canOpenItem(actor, item)) return false;
   if (item.visibility === 'personal') return permissions.personal;
   return isOwnItem(actor, item) ? permissions.write : permissions.manage;
+}
+
+/** The same decision as `mayChangeVisibility`, from the permissions a page handed down. */
+export function mayChangeVisibilityWith(actor: { id: string }, permissions: ItemPermissions, item: OwnedItem, intent: 'share' | 'unshare'): boolean {
+  if (!canOpenItem(actor, item)) return false;
+  const ownsAndMayWrite = isOwnItem(actor, item) && permissions.write;
+  return intent === 'share' ? ownsAndMayWrite : ownsAndMayWrite || permissions.manage;
+}
+
+/**
+ * Which of Hand over and Take over a screen offers on an item, from the permissions a page handed down. Both
+ * are for Shared items only: a Personal item offers neither, to its owner or anyone else. Hand over is the
+ * same decision as `mayTransferItem`. Take over is that decision too, left off an item that is already the
+ * person's own, where it would change nothing.
+ */
+export function transferControlsWith(actor: { id: string }, permissions: ItemPermissions, item: OwnedItem): { handOver: boolean; takeOver: boolean } {
+  if (item.visibility !== 'shared' || !canOpenItem(actor, item)) return { handOver: false, takeOver: false };
+  const own = isOwnItem(actor, item);
+  return { handOver: (own && permissions.write) || permissions.manage, takeOver: !own && permissions.manage };
 }
 
 /**

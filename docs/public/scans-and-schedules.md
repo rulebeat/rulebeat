@@ -119,12 +119,39 @@ view's filters with the current ones (Update with current view), rename it and d
 opens for everyone. Its owner can change it if they are an Editor, and an Admin or an Editor on
 Everything can change any Shared view. A name is unique among your own Personal views, whatever its
 case, and saving a name already in use says so. Nobody else's Personal names are checked. Renaming a
-Shared view checks the names of Shared views across the install. A saved view stores the
+Shared view checks the names of Shared views across the install.
+
+Share, in the Views menu with a Personal view of yours open, makes it Shared. It first asks: "Share
+<name> with everyone on this install? Its name and search text will be visible to everyone, and its name
+will appear in the audit log." Only the owner shares, and only with an Editor Role at some Scope; for a
+Viewer, and an Editor who holds no Scope, Share is off with "Sharing needs an Editor Role at some Scope."
+Sharing checks the names of Shared views across the install and answers 409 when the name is taken.
+Unshare makes a Shared view Personal again. The owner can unshare their own view, and refuses with 409 when
+it clashes with one of their Personal names. An Admin, or an Editor on Everything, can unshare any
+Shared view: the view takes the next free name among its owner's Personal names, the answer does not say
+what that name is, and a view with no owner is refused with "Take this over before unsharing it." Share
+and Unshare are logged as `view.share` and `view.unshare`, the unshare with the name the view had while
+Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
+longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
+
+Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
+to another person, chosen from a list of names and emails only. The list
+holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server
+checks the choice again and refuses anyone else with "That person cannot take this over. Choose someone
+else." The owner can hand over their own view. An Admin, or an Editor on Everything, can hand over any
+Shared view, one with no owner included, to an eligible person, and can take over any Shared view with
+Take over. Both act only on Shared views, never on a Personal one. The view stays Shared and keeps its
+search text under the new owner, nobody is notified, and both check the names of Shared views across the
+install. A hand-over or take-over the view's current state no longer allows answers 409 and asks for a
+reload. They are logged as `view.hand_over`, naming both people by display name, else email, and
+`view.take_over`.
+
+A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
-names of the fields that changed, never their values. For a Personal view it records the id and kind
-only, with no name. Removing a person deletes their Personal views and leaves their Shared ones Shared
+names of the fields that changed, never their values, and writes nothing when a save changes nothing.
+For a Personal view it records the id and kind only, with no name. Removing a person deletes their Personal views and leaves their Shared ones Shared
 with no owner.
 
 ## Disable, clear findings, or suppress

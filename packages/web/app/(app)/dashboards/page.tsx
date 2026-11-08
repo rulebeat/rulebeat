@@ -5,6 +5,7 @@ import { resolveAccess } from '@/lib/access';
 import { holdBackDashboards } from '@/lib/db/held-back';
 import { redirect } from 'next/navigation';
 import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
+import { shareControlFor } from '@/lib/write-controls';
 import { DashboardsGallery } from './dashboards-gallery';
 
 export default async function DashboardsPage() {
@@ -20,7 +21,7 @@ export default async function DashboardsPage() {
   return (
     <>
       <Header title="Dashboards" description="Manage and create custom dashboards" />
-      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} />
+      <DashboardsGallery initialDashboards={dashboards} currentUserId={user.id} permissions={permissions} shareControl={shareControlFor(access, 'dashboard')} />
     </>
   );
 }

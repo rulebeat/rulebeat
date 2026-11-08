@@ -5,7 +5,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
-  ChevronDown, Save, MoreHorizontal, Star, Lock,
+  ChevronDown, Save, MoreHorizontal, Star, Lock, Share2, Undo2, UserRoundCog, UserRoundCheck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,12 @@ import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-fil
 import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
+import {
+  DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
+} from '@/lib/item-access-model';
+import { shareConfirmation } from '@/lib/item-sharing';
+import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 
 type RGLLayout = LayoutItem;
 
@@ -46,6 +52,11 @@ interface Props {
   canChange: boolean;
   /** Whether the person may choose the Install default, which is a Shared dashboard. */
   canSetDefault: boolean;
+  /** The person asking and what they may do with dashboards, for Share, Unshare and the note to an owner who lost access. */
+  currentUserId: string;
+  permissions: ItemPermissions;
+  /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
+  shareControl: { allowed: boolean; reason?: string };
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -126,9 +137,10 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault }: Props) {
+export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
+  const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -411,6 +423,25 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
     }
   }
 
+  async function handleVisibility(action: 'share' | 'unshare') {
+    if (action === 'share' && !confirm(shareConfirmation('dashboard', dashboard.name))) return;
+    setError(null);
+    const outcome = await requestVisibilityChange('dashboard', dashboard.id, action);
+    if (!outcome.ok) {
+      setError(outcome.error);
+      return;
+    }
+    // Someone else's unshare takes the dashboard out of this person's sight, so there is nothing left to show.
+    if (action === 'unshare' && !isOwnItem({ id: currentUserId }, dashboard)) {
+      router.push('/dashboards');
+      router.refresh();
+      return;
+    }
+    // The answer is the dashboard, or only its id, visibility and revision after someone else's unshare.
+    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) }));
+    router.refresh(); // the Header and the sidebar list are read on the server
+  }
+
   async function handleDelete() {
     if (!confirm(`Delete "${dashboard.name}"? This cannot be undone.`)) return;
     setError(null);
@@ -434,6 +465,11 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
     setAutoRefresh(val);
     save(widgets, val, titleValue);
   }
+
+  const actor = { id: currentUserId };
+  const canShare = dashboard.visibility === 'personal' && isOwnItem(actor, dashboard);
+  const canUnshare = mayChangeVisibilityWith(actor, permissions, dashboard, 'unshare');
+  const { handOver: canHandOver, takeOver: canTakeOver } = transferControlsWith(actor, permissions, dashboard);
 
   const layout: RGLLayout[] = widgets.map(w => ({
     i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2,
@@ -549,7 +585,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
               </Button>
             }
           />
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-56">
             {canChange && (
               <DropdownMenuItem onClick={() => { setTitleValue(dashboard.name); setEditingTitle(true); }}>
                 <Pencil />Rename
@@ -563,6 +599,29 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
             <DropdownMenuItem onClick={handleDuplicate}>
               <Copy />Duplicate
             </DropdownMenuItem>
+            {canShare && (
+              <DropdownMenuItem disabled={!shareControl.allowed} onClick={() => void handleVisibility('share')}>
+                <Share2 />Share
+              </DropdownMenuItem>
+            )}
+            {canShare && !shareControl.allowed && shareControl.reason && (
+              <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
+            )}
+            {canUnshare && (
+              <DropdownMenuItem onClick={() => void handleVisibility('unshare')}>
+                <Undo2 />Unshare
+              </DropdownMenuItem>
+            )}
+            {canHandOver && (
+              <DropdownMenuItem onClick={() => setTransfer('hand-over')}>
+                <UserRoundCog />Hand over
+              </DropdownMenuItem>
+            )}
+            {canTakeOver && (
+              <DropdownMenuItem onClick={() => setTransfer('take-over')}>
+                <UserRoundCheck />Take over
+              </DropdownMenuItem>
+            )}
             {canChange && (
               <DropdownMenuItem variant="destructive" onClick={handleDelete}>
                 <Trash2 />Delete dashboard
@@ -591,6 +650,9 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
+      {isDemotedOwner(actor, permissions, dashboard) && (
+        <Callout tone="info" className="shrink-0 border-b border-rule-strong">{DEMOTED_OWNER_NOTE}</Callout>
+      )}
 
       {/* Grid */}
       <div className="px-4 py-4" ref={gridContainerRef as React.RefObject<HTMLDivElement>}>
@@ -644,6 +706,20 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       )}
       {addingWidget && (
         <AddWidgetPanel onAdd={addWidget} onClose={() => setAddingWidget(false)} />
+      )}
+      {transfer && (
+        <ItemTransferDialog
+          kind="dashboard"
+          mode={transfer}
+          id={dashboard.id}
+          name={dashboard.name}
+          onClose={() => setTransfer(null)}
+          onDone={item => {
+            const { owner, revision } = item as Pick<HeldBackDashboard, 'owner' | 'revision'>;
+            setDashboard(prev => ({ ...prev, owner, revision }));
+            router.refresh(); // what this person may now do with it is read on the server
+          }}
+        />
       )}
 
     </div>
