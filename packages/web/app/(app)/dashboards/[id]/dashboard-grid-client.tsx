@@ -167,7 +167,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
+        // The bar speaks the old lists, so the stored dimensions are left out and the server converts the lists.
+        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined, dimensionFilters: undefined } }),
       })
         .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
         .then(d => { if (d) setDashboard(d); });

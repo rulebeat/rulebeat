@@ -9,10 +9,10 @@ import { viewFromSearchParams } from '@/lib/finding-view';
 import { isUnresolvedPick } from '@/lib/unresolved-pick';
 import { pathsOutsideAccess } from '@/lib/scope-sets';
 import { MAX_SAVED_VIEW_QUERY_LENGTH, normalizeViewQuery } from '@/lib/saved-view-query';
-import { convertSavedViewQuery } from '@/lib/db/filter-conversion';
+import { convertDashboardConfig, convertSavedViewQuery, legacyFiltersOf, sameLegacy } from '@/lib/db/filter-conversion';
 import { readRecordedPairs } from '@/lib/db/filter-pairs';
 import { createScopeSet, expandScopeSet } from '@/lib/db/scope-sets';
-import type { DashboardConfig, DashboardDimensionFilters } from '@/lib/types';
+import type { DashboardConfig, DashboardDimensionFilters, LegacyDashboardFilters } from '@/lib/types';
 
 export const OUTSIDE_ACCESS_ERROR = 'A path in the list is outside the Scopes you hold.';
 const MALFORMED_SCOPE_ERROR = 'A Scope pick is a management group, subscription, resource group or Directory path.';
@@ -71,10 +71,13 @@ function readDimensions(input: unknown): Result<DashboardDimensionFilters> {
 }
 
 /**
- * The config to store for a dashboard save. The legacy filter values and the record of what they were
- * converted from are the stored row's own, untouched, whatever the body says, so a rollback reads what it
- * read and the upgrade can tell a save under 0.13 from this release's. The dimensions are the body's, held to
- * the Scopes it adds, else the stored ones, so a save that only moves a widget keeps the filters.
+ * The config to store for a dashboard save. The dimensions are the body's, held to the Scopes it adds, else
+ * the stored ones, so a save that only moves a widget keeps the filters. A body with no dimensions and old
+ * filter lists that differ from the row's is the filter bar, which still speaks the old lists: they are
+ * converted the way the upgrade converts them, and stored as the legacy values and the record of what the
+ * dimensions came from too, since the dashboard still reads them and a rollback reads them. Otherwise the
+ * legacy values and the record are the stored row's own, whatever the body says, so a rollback reads what it
+ * read and the upgrade can tell a save under 0.13 from this release's.
  */
 export async function prepareDashboardConfig(
   access: Access, sent: DashboardConfig, stored: DashboardConfig | null,
@@ -89,6 +92,8 @@ export async function prepareDashboardConfig(
   }
 
   if (dimensionFilters === undefined) {
+    const barLists = legacyFiltersOf(sent);
+    if (!sameLegacy(barLists, legacyFiltersOf(stored ?? { widgets: [] }))) return convertBarLists(access, config, barLists, stored);
     if (stored?.dimensionFilters) config.dimensionFilters = stored.dimensionFilters;
     return { ok: true, value: config };
   }
@@ -100,9 +105,40 @@ export async function prepareDashboardConfig(
   return { ok: true, value: config };
 }
 
+/** `config` with the filter bar's old lists stored as dimensions, legacy values and record (see `prepareDashboardConfig`). */
+async function convertBarLists(
+  access: Access, config: DashboardConfig, lists: LegacyDashboardFilters, stored: DashboardConfig | null,
+): Promise<Result<DashboardConfig>> {
+  delete config.filters;
+  delete config.dateWindow;
+  delete config.windowDays;
+  delete config.convertedFrom;
+  Object.assign(config, lists, { convertedFrom: lists });
+  const converted = convertDashboardConfig({ widgets: [], ...lists }, await readRecordedPairs(access));
+  const dimensions = converted?.config.dimensionFilters ?? {};
+  const refused = await checkAdded(access, dimensions, stored?.dimensionFilters ?? {});
+  if (refused) return { ok: false, error: refused };
+  if (converted?.set) await createScopeSet(converted.set.paths, { unresolved: true });
+  config.dimensionFilters = dimensions;
+  return { ok: true, value: config };
+}
+
+/**
+ * The query without `subscription=` and `rg=` when it holds a Scope. The upgrade leaves them beside the Scope it
+ * made from them for a rollback, the Scans explorer sends every param it opened the view with, and a save writes
+ * only the new shape.
+ */
+function withoutLegacyScopeParams(query: string): string {
+  const params = new URLSearchParams(query);
+  if (!(params.has('scope') || params.has('scopeset')) || !(params.has('subscription') || params.has('rg'))) return query;
+  params.delete('subscription');
+  params.delete('rg');
+  return normalizeViewQuery(params.toString());
+}
+
 /**
  * The query to store for a saved view save: the subscription and resource group params of an old query
- * become Scope picks (a query with a Scope already is left alone), and the Scopes it adds are held to the
+ * become Scope picks (beside a Scope they are dropped, not converted again), and the Scopes it adds are held to the
  * person, leaving out those the stored query already held.
  */
 export async function prepareSavedViewQuery(
@@ -115,6 +151,8 @@ export async function prepareSavedViewQuery(
     if (converted.set) await createScopeSet(converted.set.paths, { unresolved: true });
     next = normalizeViewQuery(converted.query);
     if (next.length > MAX_SAVED_VIEW_QUERY_LENGTH) return { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` };
+  } else {
+    next = withoutLegacyScopeParams(query);
   }
   const sent = viewFromSearchParams(new URLSearchParams(next));
   const stored = storedQuery === null ? {} : viewFromSearchParams(new URLSearchParams(storedQuery));

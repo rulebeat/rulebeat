@@ -169,7 +169,7 @@ export function legacyFiltersOf(config: DashboardConfig): LegacyDashboardFilters
   return out;
 }
 
-const sameLegacy = (a: LegacyDashboardFilters, b: LegacyDashboardFilters) => JSON.stringify(a) === JSON.stringify(b);
+export const sameLegacy = (a: LegacyDashboardFilters, b: LegacyDashboardFilters) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * The dashboard with its filters converted, or null when it needs nothing: no legacy values and never

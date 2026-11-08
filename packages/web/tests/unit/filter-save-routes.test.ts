@@ -95,6 +95,58 @@ describe('saving a dashboard', () => {
     expect(stored.autoRefresh).toBe(30);
   });
 
+  it('converts a filter the bar sends as the old lists, so a change is stored and read back on reload', async () => {
+    await signInAsEditor();
+    await seedPair(SUB_ONE, 'rg-one');
+    const legacy = { subscriptions: [SUB_TWO] };
+    const id = await dashboardWith({
+      filters: legacy, windowDays: 7, convertedFrom: { filters: legacy, windowDays: 7 }, dimensionFilters: { scope: [SUB_TWO_PATH] },
+    });
+
+    // The filter bar: the whole config, the old lists changed, and no dimensions.
+    const res = await putDashboard(id, {
+      config: {
+        widgets: WIDGETS, filters: { subscriptions: [SUB_ONE], resourceGroups: ['rg-one'], severities: ['high'] },
+        dateWindow: { mode: 'relative', days: 30 },
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const stored = (await getDashboard(id))!.config;
+    expect(stored.dimensionFilters).toEqual({
+      scope: [`${SCOPE_SUBSCRIPTION}/resourceGroups/rg-one`], severity: ['high'], window: { mode: 'relative', days: 30 },
+    });
+    // What the dashboard reads and what a rollback reads is what the bar showed, and the upgrade has nothing to redo.
+    expect(stored.filters).toEqual({ subscriptions: [SUB_ONE], resourceGroups: ['rg-one'], severities: ['high'] });
+    expect(stored.dateWindow).toEqual({ mode: 'relative', days: 30 });
+    expect(stored.windowDays).toBeUndefined();
+    expect(stored.convertedFrom).toEqual({ filters: stored.filters, dateWindow: stored.dateWindow });
+  });
+
+  it('stores a cleared filter bar as no filters', async () => {
+    await signInAsEditor();
+    const legacy = { subscriptions: [SUB_TWO] };
+    const id = await dashboardWith({
+      filters: legacy, convertedFrom: { filters: legacy }, dimensionFilters: { scope: [SUB_TWO_PATH] },
+    });
+
+    await putDashboard(id, { config: { widgets: WIDGETS, filters: { subscriptions: [] }, dateWindow: { mode: 'relative', days: 7 } } });
+
+    const stored = (await getDashboard(id))!.config;
+    expect(stored.dimensionFilters).toEqual({ window: { mode: 'relative', days: 7 } });
+    expect(stored.filters).toBeUndefined();
+  });
+
+  it('keeps the stored dimensions when the old lists it is sent are the ones the row holds', async () => {
+    await signInAsEditor();
+    const legacy = { subscriptions: [SUB_ONE] };
+    const id = await dashboardWith({ filters: legacy, convertedFrom: { filters: legacy }, dimensionFilters: { scope: [SCOPE_SUBSCRIPTION], tags: ['t'] } });
+
+    await putDashboard(id, { config: { widgets: [], filters: legacy } });
+
+    expect((await getDashboard(id))!.config.dimensionFilters).toEqual({ scope: [SCOPE_SUBSCRIPTION], tags: ['t'] });
+  });
+
   it('keeps the stored dimensions when a save only moves widgets', async () => {
     await signInAsEditor();
     const id = await dashboardWith({ dimensionFilters: { scope: [SCOPE_SUBSCRIPTION] } });
@@ -280,6 +332,37 @@ describe('updating a saved view', () => {
     expect(params.has('subscription')).toBe(false);
     expect(params.has('rg')).toBe(false);
     expect(params.get('severity')).toBe('high');
+  });
+
+  it('writes no legacy param when a query already holds a Scope beside them, as a view the upgrade converted does', async () => {
+    await signInAsEditor();
+    const scope = `scope=${encodeURIComponent(SCOPE_SUBSCRIPTION)}`;
+    const upgraded = `severity=high&subscription=${SUB_ONE}&rg=rg-one&${scope}`;
+    const id = await storedView(upgraded);
+
+    // The explorer sends back every param it was opened with.
+    expect((await patchView(id, { query: `severity=low&subscription=${SUB_ONE}&rg=rg-one&${scope}` })).status).toBe(200);
+    const patched = new URLSearchParams((await getSavedView(id))!.query);
+    expect(patched.get('scope')).toBe(SCOPE_SUBSCRIPTION);
+    expect(patched.get('severity')).toBe('low');
+    expect(patched.has('subscription')).toBe(false);
+    expect(patched.has('rg')).toBe(false);
+
+    const created = await postView({ name: 'Copy', tab: 'results', query: upgraded });
+    const posted = new URLSearchParams((await created.json()).query);
+    expect(created.status).toBe(201);
+    expect(posted.get('scope')).toBe(SCOPE_SUBSCRIPTION);
+    expect(posted.has('subscription')).toBe(false);
+    expect(posted.has('rg')).toBe(false);
+  });
+
+  it('writes no legacy param beside a Scope set either', async () => {
+    const set = await createScopeSet([SCOPE_SUBSCRIPTION]);
+
+    const prepared = await prepareSavedViewQuery(EVERYTHING, `rg=rg-one&scopeset=${set.hash}`, null);
+
+    expect(prepared.ok && new URLSearchParams(prepared.value).has('rg')).toBe(false);
+    expect(prepared.ok && new URLSearchParams(prepared.value).get('scopeset')).toBe(set.hash);
   });
 
   it('keeps a name no record pairs as an unresolved pick, and a long one in a Scope set', async () => {
