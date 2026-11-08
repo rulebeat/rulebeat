@@ -1,30 +1,25 @@
 'use client';
 
-import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
-import { CHART_LEGEND_STYLE, CHART_TICK, periodToDays } from '@/components/dashboard/dashboard-constants';
+import { CHART_LEGEND_STYLE, CHART_TICK } from '@/components/dashboard/dashboard-constants';
+import { periodToDays, TREND_CAP_DAYS } from '@/lib/widget-settings';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; period?: string; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+interface Props { config: Config; refreshKey: number }
 
 /** Remediation velocity: findings created (incl. reactivated) vs. resolved per day, from
  *  finding_events: a platform team closing more than it opens is the story this chart tells.
  *  Works under every filter dimension (see getFindingEventCounts). */
-export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days. Anything longer is empty air
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('trendDays', String(trendDays));
-    return p.toString();
-  }, [merged, trendDays]);
+export function NewVsFixedWidget({ config, refreshKey }: Props) {
+  const trendDays = periodToDays(config.period ?? '30d', TREND_CAP_DAYS['new-vs-fixed']!);
+  const url = useWidgetUrl('summary', { trendDays });
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
-    `/api/widgets/summary?${params}`,
+    url,
     [refreshKey]
   );
 

@@ -21,6 +21,7 @@ import { emptyView } from '@/lib/finding-view';
 import { clearRules, resetDb } from '../helpers/db';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+import { widgetDashboardQuery } from '../helpers/widget-dashboard';
 
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
@@ -80,10 +81,11 @@ describe('reads that never look at a row', () => {
   });
 
   it('serve the recent findings feed without rows', async () => {
+    const query = await widgetDashboardQuery();
     await corruptStoredRows();
-    const res = await recentFindings.GET(new Request('http://localhost/api/widgets/findings'));
+    const res = await recentFindings.GET(new Request(`http://localhost/api/widgets/findings?${query}`));
     expect(res.status).toBe(200);
-    const body = await res.json() as Record<string, unknown>[];
+    const body = (await res.json() as { items: Record<string, unknown>[] }).items;
     expect(body.map(f => f.ruleId)).toEqual([RULE]);
     expect(body.every(f => !('rows' in f) && !('evidence' in f))).toBe(true);
   });

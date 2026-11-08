@@ -9,10 +9,11 @@ import { CategoryBadge } from '@/components/findings/category-badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import type { Finding, FilterOptionsResponse } from '@/lib/types';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
@@ -24,16 +25,12 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('limit', String(config.limit ?? 10));
-    return p.toString();
-  }, [merged, config.limit]);
-  const { data, loading, failed, retry } = useWidgetFetch<Finding[]>(
-    `/api/widgets/findings?${params}`,
+  const url = useWidgetUrl('findings', { limit: config.limit ?? 10 });
+  const { data, loading, failed, retry } = useWidgetFetch<{ items: Finding[] }>(
+    url,
     [refreshKey]
   );
-  const findings = data ?? [];
+  const findings = data?.items ?? [];
 
   const [categories, setCategories] = useState<FilterOptionsResponse['categories']>([]);
   useEffect(() => {

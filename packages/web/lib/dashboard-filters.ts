@@ -1,10 +1,11 @@
-import type { Severity } from './types';
+import type { DashboardConfig, Severity } from './types';
+import type { DashboardFilterChanges, DashboardFilters } from './finding-view';
 import type { DateWindow } from './date-window';
 
 /** Client-safe filter shape shared by every dashboard widget's data request. Dashboard-level
- *  filters (set by a future Phase 4 filter bar) flow down as a prop; each widget merges in its
- *  own per-widget overrides (category/policyIds/window from its config) before calling
- *  /api/widgets/summary. */
+ *  filters flow down as a prop for display and links; each widget merges in its own per-widget
+ *  overrides (category/policyIds/window from its config). The widget routes assemble the same
+ *  layers themselves (`lib/effective-filters.ts`) from ids and filter changes, never from this. */
 export interface WidgetFilters {
   categories?: string[];
   subscriptions?: string[];
@@ -79,56 +80,61 @@ export function widgetHasScopeOverrides(cfg: Record<string, unknown>): boolean {
   return windowDays === 1 || windowDays === 7 || windowDays === 30;
 }
 
-/** Parses the same query-string shape `buildSummaryParams` produces back into a `WidgetFilters`:
- *  the server-side counterpart, shared by every widget API route so a new filter dimension
- *  only needs to be wired in one place. `ruleIds`/`policyIds` both accepted for back-compat. */
-export function parseWidgetFiltersFromSearchParams(searchParams: URLSearchParams): WidgetFilters {
-  function parseList(param: string | null): string[] | undefined {
-    if (!param) return undefined;
-    const list = param.split(',').map(s => s.trim()).filter(Boolean);
-    return list.length > 0 ? list : undefined;
-  }
-
-  const fromParam = searchParams.get('from');
-  const toParam = searchParams.get('to');
-  let dateWindow: DateWindow;
-  if (fromParam && toParam) {
-    dateWindow = { mode: 'custom', from: fromParam, to: toParam };
-  } else {
-    const windowParam = parseInt(searchParams.get('window') ?? '7', 10);
-    dateWindow = { mode: 'relative', days: Number.isFinite(windowParam) && windowParam > 0 ? windowParam : 7 };
-  }
-
+/** The filters a dashboard saved, in the shape the address changes are differences from. The
+ *  window falls back to the legacy `windowDays`, then to 7 days, the way the dashboard page does. */
+export function savedFiltersOf(config: DashboardConfig): DashboardFilters {
   return {
-    categories: parseList(searchParams.get('categories')),
-    subscriptions: parseList(searchParams.get('subscriptions')),
-    resourceGroups: parseList(searchParams.get('resourceGroups')),
-    tags: parseList(searchParams.get('tags')),
-    severities: parseList(searchParams.get('severities')) as Severity[] | undefined,
-    ruleIds: parseList(searchParams.get('ruleIds')) ?? parseList(searchParams.get('policyIds')),
-    dateWindow,
-    includeSuppressed: searchParams.get('suppressed') === '1',
+    category: config.filters?.categories ?? [],
+    subscription: config.filters?.subscriptions ?? [],
+    resourceGroup: config.filters?.resourceGroups ?? [],
+    tags: config.filters?.tags ?? [],
+    rule: config.filters?.ruleIds ?? [],
+    severity: config.filters?.severities ?? [],
+    window: config.dateWindow ?? { mode: 'relative', days: config.windowDays ?? 7 },
   };
 }
 
-/** Builds the URLSearchParams for a /api/widgets/summary request from a merged WidgetFilters:
- *  shared by every widget that reads live posture/finding numbers, so a new filter dimension
- *  only needs to be wired in one place. Does not set `trendDays`: callers that need a trend
- *  chart period distinct from the delta window (e.g. TrendWidget) add that param themselves. */
-export function buildSummaryParams(filters: WidgetFilters): URLSearchParams {
-  const params = new URLSearchParams();
-  if (filters.categories?.length) params.set('categories', filters.categories.join(','));
-  if (filters.subscriptions?.length) params.set('subscriptions', filters.subscriptions.join(','));
-  if (filters.resourceGroups?.length) params.set('resourceGroups', filters.resourceGroups.join(','));
-  if (filters.tags?.length) params.set('tags', filters.tags.join(','));
-  if (filters.severities?.length) params.set('severities', filters.severities.join(','));
-  if (filters.ruleIds?.length) params.set('ruleIds', filters.ruleIds.join(','));
-  if (filters.includeSuppressed) params.set('suppressed', '1');
-  if (filters.dateWindow.mode === 'custom') {
-    params.set('from', filters.dateWindow.from);
-    params.set('to', filters.dateWindow.to);
-  } else {
-    params.set('window', String(filters.dateWindow.days));
+/** The saved filters with each dimension a change sets replacing the saved one. */
+export function applyChanges(saved: DashboardFilters, changes: DashboardFilterChanges): DashboardFilters {
+  return { ...saved, ...changes };
+}
+
+/** `WidgetFilters` is what the counting code reads. Empty lists are written as absent, as the widgets always did. */
+export function widgetFiltersOf(filters: DashboardFilters): WidgetFilters {
+  const list = (values: string[]) => (values.length > 0 ? values : undefined);
+  return {
+    categories: list(filters.category),
+    subscriptions: list(filters.subscription),
+    resourceGroups: list(filters.resourceGroup),
+    tags: list(filters.tags),
+    severities: list(filters.severity) as Severity[] | undefined,
+    ruleIds: list(filters.rule),
+    dateWindow: filters.window,
+  };
+}
+
+/** The filter bar's state as a dashboard's dimensions. */
+export function dashboardFiltersOf(bar: {
+  categories: string[]; subscriptions: string[]; resourceGroups: string[]; tags: string[]; severities: string[]; ruleIds: string[];
+}, window: DateWindow): DashboardFilters {
+  return {
+    category: bar.categories, subscription: bar.subscriptions, resourceGroup: bar.resourceGroups,
+    tags: bar.tags, rule: bar.ruleIds, severity: bar.severities, window,
+  };
+}
+
+function sameValues(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every(v => right.has(v));
+}
+
+/** Only the dimensions of `current` that are not what `saved` holds, as filter changes. */
+export function differencesFromSaved(saved: DashboardFilters, current: DashboardFilters): DashboardFilterChanges {
+  const changes: DashboardFilterChanges = {};
+  for (const dim of ['category', 'subscription', 'resourceGroup', 'tags', 'rule', 'severity'] as const) {
+    if (!sameValues(current[dim], saved[dim])) changes[dim] = current[dim];
   }
-  return params;
+  if (JSON.stringify(current.window) !== JSON.stringify(saved.window)) changes.window = current.window;
+  return changes;
 }

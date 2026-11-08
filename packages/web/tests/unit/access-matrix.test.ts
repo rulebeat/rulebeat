@@ -519,16 +519,20 @@ function dashboardMatrix(): Record<string, Matrix> {
     'advisories': () => import('@/app/api/widgets/advisories/route'),
     'filter-options': () => import('@/app/api/widgets/filter-options/route'),
   };
-  const widget = async (route: string, query = '') =>
-    BODY(await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}${query}`)));
+  // Every counting route is asked as the seed dashboard's `matrix-plain` widget, with the saved subscription
+  // filter changed to "any", so each probe counts everything the person can see.
+  const widget = async (route: string, seed?: MatrixSeed) =>
+    BODY(await (await loaders[route]!()).GET(new Request(
+      `http://localhost/api/widgets/${route}${seed ? `?dashboard=${seed.dashboardId}&widget=matrix-plain&subscription=` : ''}`,
+    )));
   const nameOf = (items: { fingerprint: string }[], seed: MatrixSeed) => namesOf(seed, items);
 
   const summary: Matrix = {
-    probe: async () => {
+    probe: async seed => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(MATRIX_NOW));
       try {
-        const body = await widget('summary', '?trendDays=30') as {
+        const body = await widget('summary', seed) as {
           current: { activeFindings: number; severityCounts: { high: number } };
           perSubscription: { subscriptionId: string; activeFindings: number }[];
           trend: { date: string; findings: number }[];
@@ -590,12 +594,12 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   const findings: Matrix = {
-    probe: async seed => nameOf(await widget('findings') as { fingerprint: string }[], seed),
+    probe: async seed => nameOf((await widget('findings', seed) as { items: { fingerprint: string }[] }).items, seed),
     expected: byPerson(same(SEEN.everything), same(SEEN.managementGroup), same(SEEN.subscription), same(SEEN.resourceGroup), same(SEEN.directory), same([])),
   };
 
   const topRules: Matrix = {
-    probe: async () => (await widget('top-rules') as { ruleId: string; count: number }[]).map(r => [r.ruleId, r.count]),
+    probe: async seed => (await widget('top-rules', seed) as { items: { ruleId: string; count: number }[] }).items.map(r => [r.ruleId, r.count]),
     expected: byPerson(
       same([['matrix-rule', 6]]), same([['matrix-rule', 4]]), same([['matrix-rule', 2]]), same([['matrix-rule', 1]]), same([['matrix-rule', 1]]), same([]),
     ),
@@ -603,7 +607,7 @@ function dashboardMatrix(): Record<string, Matrix> {
 
   // A Directory finding is listed by its name and needs the Directory Scope.
   const topResources: Matrix = {
-    probe: async () => (await widget('top-resources') as { resourceName: string }[]).map(r => r.resourceName).sort(),
+    probe: async seed => (await widget('top-resources', seed) as { items: { resourceName: string }[] }).items.map(r => r.resourceName).sort(),
     expected: byPerson(
       same(SEEN.everything), same(SEEN.managementGroup), same(SEEN.subscription), same(SEEN.resourceGroup), same(['directory-app']), same([]),
     ),
@@ -611,7 +615,7 @@ function dashboardMatrix(): Record<string, Matrix> {
 
   const advisories: Matrix = {
     probe: async seed => {
-      const body = await widget('advisories') as { items: { fingerprint: string }[]; total: number };
+      const body = await widget('advisories', seed) as { items: { fingerprint: string }[]; total: number };
       return { names: nameOf(body.items, seed), total: body.total };
     },
     expected: byPerson(
@@ -1425,15 +1429,15 @@ describe('the findings routes show each person only what their Scopes cover', ()
     };
     for (const person of ['Viewer on one subscription', 'Viewer on one resource group']) {
       mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
-      const outside = `subscriptions=${SUB_TWO}`;
+      const outside = `dashboard=${seed.dashboardId}&widget=matrix-plain&subscription=${SUB_TWO}`;
       const summary = await ask('widgets/summary', outside) as { current: { activeFindings: number }; perSubscription: unknown[] };
       expect(summary.current.activeFindings, person).toBe(0);
       expect(summary.perSubscription, person).toEqual([]);
-      expect(await ask('widgets/findings', outside), person).toEqual([]);
-      expect(await ask('widgets/top-rules', outside), person).toEqual([]);
-      expect(await ask('widgets/top-resources', outside), person).toEqual([]);
+      expect((await ask('widgets/findings', outside) as { items: unknown[] }).items, person).toEqual([]);
+      expect((await ask('widgets/top-rules', outside) as { items: unknown[] }).items, person).toEqual([]);
+      expect((await ask('widgets/top-resources', outside) as { items: unknown[] }).items, person).toEqual([]);
       expect((await ask('widgets/advisories', outside) as { total: number }).total, person).toBe(0);
-      await ask('widgets/filter-options', outside);
+      await ask('widgets/filter-options', '');
       const view = await ask('findings/view', `subscription=${SUB_TWO}`) as { total: number; items: unknown[] };
       expect(view.total, person).toBe(0);
       expect(view.items, person).toEqual([]);

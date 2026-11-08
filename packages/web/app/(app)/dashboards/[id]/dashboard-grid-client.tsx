@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
   Pencil, Plus, RefreshCw, Clock, Trash2, Copy,
   ChevronDown, Save, MoreHorizontal, Star, Lock,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { WidgetWrapper } from '@/components/dashboard/widget-wrapper';
+import { WidgetRequestProvider } from '@/components/dashboard/widget-request';
 import { WidgetConfigPanel } from '@/components/dashboard/widget-config-panel';
 import { AddWidgetPanel } from '@/components/dashboard/add-widget-panel';
 import { StatCardWidget } from '@/components/dashboard/widgets/stat-card-widget';
@@ -32,7 +33,10 @@ import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widg
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
-import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
+import {
+  widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, dashboardFiltersOf, differencesFromSaved, type WidgetFilters,
+} from '@/lib/dashboard-filters';
+import { dashboardAddress } from '@/lib/finding-view';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
@@ -43,6 +47,8 @@ interface Props {
   dashboard: Dashboard;
   /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** Whether the person may edit the dashboard, and why not. Edit mode previews widget drafts, which the server refuses without the right. */
+  edit: { allowed: boolean; reason?: string };
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -61,12 +67,19 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, canPreview, outsideAccess, onRemove, onConfigure }: {
   widget: WidgetDef;
+  /** The widget as saved on the dashboard, or undefined for one added in this edit. */
+  stored: WidgetDef | undefined;
+  dashboardId: string;
+  /** The filter changes in force, as query params. */
+  changes: string;
   filters: WidgetFilters;
   filtered: boolean;
   refreshKey: number;
   editMode: boolean;
+  /** The person has the edit right, so a draft widget may be counted by the server. */
+  canPreview: boolean;
   outsideAccess: OutsideAccess;
   onRemove: () => void;
   onConfigure: () => void;
@@ -103,9 +116,9 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
       case 'coverage-freshness':
         return <CoverageFreshnessWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
       case 'new-vs-fixed':
-        return <NewVsFixedWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <NewVsFixedWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'activity-occurrences':
-        return <ActivityOccurrencesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
+        return <ActivityOccurrencesWidget config={widget.config as never} refreshKey={refreshKey} />;
       case 'advisories':
         return <AdvisoriesWidget config={widget.config as never} filters={filters} refreshKey={refreshKey} />;
       default:
@@ -113,14 +126,20 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
     }
   })();
 
+  // A widget edited in this session has a config the server has not saved, so the server counts the draft.
+  // Only someone with the edit right can have one (Edit is off for the rest), and the server refuses the preview otherwise.
+  const draft = canPreview && (!stored || JSON.stringify(stored.config) !== JSON.stringify(widget.config));
+
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      {inner}
+      <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
+        {inner}
+      </WidgetRequestProvider>
     </WidgetWrapper>
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -132,6 +151,15 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
     initial.config.dateWindow ?? { mode: 'relative', days: initial.config.windowDays ?? 7 },
   );
   const filters: WidgetFilters = { ...dashFilters, dateWindow };
+  // What the widgets ask the server for: the changes in the address, with any bar change not saved yet
+  // laid over them. The server holds the saved filters, so only differences from them travel.
+  const searchParams = useSearchParams();
+  const changes = useMemo(() => {
+    const saved = savedFiltersOf(dashboard.config);
+    const address = dashboardAddress(saved);
+    const live = differencesFromSaved(saved, dashboardFiltersOf(dashFilters, dateWindow));
+    return address.write({ ...address.read(searchParams), ...live }).toString();
+  }, [dashboard.config, searchParams, dashFilters, dateWindow]);
   const hasActiveFilters = dashFilters.categories.length > 0 || dashFilters.subscriptions.length > 0
     || dashFilters.resourceGroups.length > 0 || dashFilters.tags.length > 0
     || dashFilters.severities.length > 0 || dashFilters.ruleIds.length > 0;
@@ -513,7 +541,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
                 {saving ? 'Saving…' : 'Save changes'}
               </Button>
             )}
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditMode(true)}>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditMode(true)} disabled={!edit.allowed} title={edit.allowed ? undefined : edit.reason}>
               <Pencil className="size-3.5" />Edit
             </Button>
           </>
@@ -571,7 +599,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         {widgets.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-4 border border-dashed border-rule-strong">
             <p className="text-sm text-ink-muted">No widgets yet</p>
-            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
+            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }} disabled={!edit.allowed} title={edit.allowed ? undefined : edit.reason}>
               <Plus className="size-3.5" />Add your first widget
             </Button>
           </div>
@@ -590,10 +618,14 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
               <div key={w.id} data-grid-item={w.id}>
                 <WidgetRenderer
                   widget={w}
+                  stored={dashboard.config.widgets.find(saved => saved.id === w.id)}
+                  dashboardId={dashboard.id}
+                  changes={changes}
                   filters={filters}
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
                   refreshKey={refreshKey}
                   editMode={editMode}
+                  canPreview={edit.allowed}
                   outsideAccess={outsideAccess}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}

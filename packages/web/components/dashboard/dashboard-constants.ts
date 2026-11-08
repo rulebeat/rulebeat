@@ -97,15 +97,6 @@ export function postureColor(pct: number | null): string {
   return 'var(--color-sev-critical)';
 }
 
-/** Widget "period" config values → day counts. `allDays` lets each caller pick what 'all' means
- *  for its own data source's retention window (e.g. posture_snapshots vs. finding_events). */
-export function periodToDays(period: string, allDays: number): number {
-  if (period === '7d') return 7;
-  if (period === '90d') return 90;
-  if (period === 'all') return allDays;
-  return 30;
-}
-
 /** Trend chart tooltip label (spec 033): "passing/total" reads a posture trend correctly.
  *  A bare percentage doesn't say whether it moved because rules changed or resources did. Falls
  *  back to the bare percentage when a data point carries no passing/total (older snapshot rows,

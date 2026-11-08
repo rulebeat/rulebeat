@@ -7,6 +7,7 @@ import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
 import { markDashboardConfig } from '@/lib/outside-access';
+import { dashboardEditControlFor } from '@/lib/write-controls';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props { params: Promise<{ id: string }> }
@@ -31,7 +32,7 @@ export default async function DashboardPage({ params }: Props) {
         <div className="flex-1 min-h-0">
           {holdsNoScope(access)
             ? <NoAccessState />
-            : <DashboardGridClient dashboard={dashboard} outsideAccess={markDashboardConfig(access, dashboard.config)} />}
+            : <DashboardGridClient dashboard={dashboard} outsideAccess={markDashboardConfig(access, dashboard.config)} edit={dashboardEditControlFor(access)} />}
         </div>
       </div>
     </>
