@@ -2,8 +2,9 @@ import type { HeldBackSavedView, SavedViewFields } from '@/lib/saved-view-query'
 
 export type SavedViewChange =
   | { kind: 'create'; fields: SavedViewFields }
-  /** `revision` is the one of the copy the person was sent: the server refuses the save when the view has moved on. */
-  | { kind: 'update'; id: string; fields: Partial<SavedViewFields>; revision?: number }
+  /** `revision` and `opened` are the version and the query of the copy the person was sent: the server refuses the save
+   *  when the view has moved on, and puts back the stored values that copy left out. */
+  | { kind: 'update'; id: string; fields: Partial<SavedViewFields>; revision?: number; opened?: string }
   | { kind: 'delete'; id: string };
 
 /** `view` is the stored view after a create or update, and null after a delete. */
@@ -27,7 +28,7 @@ export async function requestSavedViewChange(
       method: change.kind === 'create' ? 'POST' : change.kind === 'update' ? 'PATCH' : 'DELETE',
       ...(change.kind !== 'delete' && {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(change.kind === 'update' && change.revision !== undefined ? { ...change.fields, revision: change.revision } : change.fields),
+        body: JSON.stringify(change.kind === 'update' ? { ...change.fields, revision: change.revision, opened: change.opened } : change.fields),
       }),
     });
     if (res.redirected) return { ok: false, error: FALLBACK };

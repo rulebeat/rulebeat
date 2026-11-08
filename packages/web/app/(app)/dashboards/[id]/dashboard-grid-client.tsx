@@ -175,7 +175,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined }, revision: dashboard.revision }),
+        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined }, revision: dashboard.revision, opened: dashboard.config }),
       })
         .then(async res => {
           if (res.ok) { setError(null); return await res.json() as HeldBackDashboard; }
@@ -353,6 +353,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
           // That persistence is independent (see the debounced effect above).
           config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
           revision: dashboard.revision,
+          opened: dashboard.config,
         }),
       });
       if (res.ok) {

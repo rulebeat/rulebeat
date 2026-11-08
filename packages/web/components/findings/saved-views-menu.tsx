@@ -73,8 +73,8 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, openId, onOpen
     let change: SavedViewChange;
     if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
     else if (!open || !canChangeOpen) return null;
-    else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: open.revision };
-    else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: open.revision };
+    else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: open.revision, opened: open.query };
+    else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: open.revision, opened: open.query };
     else change = { kind: 'delete', id: open.id };
 
     const outcome = await requestSavedViewChange(change);

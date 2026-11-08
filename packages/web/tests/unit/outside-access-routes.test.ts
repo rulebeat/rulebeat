@@ -4,7 +4,7 @@
  * and no response body of any route holds a stored held-back value. The Scans page's own address filters keep
  * their marking (#274): a `subscription` the person holds no Scope in answers 200 with nothing and a mark.
  */
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createPeople, MATRIX_OWNER, MATRIX_TENANT, SCOPE_SUBSCRIPTION, seedMatrix, share, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
 import { createSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
@@ -269,14 +269,15 @@ describe('saving an item back from the trimmed copy', () => {
     SAVE_DASHBOARD(new Request('http://localhost/api/dashboards/x', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) }), ctx(id));
   async function saveView(received: OpenedView, query = received.query) {
     asEditor();
-    const res = await patchView(viewId, { query, revision: received.revision });
+    const res = await patchView(viewId, { query, revision: received.revision, opened: received.query });
     expect(res.status).toBe(200);
     return res.json() as Promise<OpenedView>;
   }
   interface OpenedDashboard { config: typeof CONFIG; revision: number; heldBack: HeldBack[] }
-  async function saveDashboard(config: unknown, revision?: number) {
+  async function saveDashboard(config: unknown, from?: OpenedDashboard) {
     asEditor();
-    const res = await putDashboard(dashboardId, { config, revision: revision ?? (await openDashboard()).revision });
+    const received = from ?? await openDashboard();
+    const res = await putDashboard(dashboardId, { config, revision: received.revision, opened: received.config });
     expect(res.status).toBe(200);
     return res.json() as Promise<OpenedDashboard>;
   }
@@ -323,7 +324,7 @@ describe('saving an item back from the trimmed copy', () => {
   it('keeps every held-back value of a dashboard when the received config is saved back', async () => {
     const received = await openDashboard();
     expect(received.config.filters.subscriptions).toEqual([SUB_ONE]);
-    await saveDashboard(received.config, received.revision);
+    await saveDashboard(received.config, received);
     const stored = (await getDashboard(dashboardId))!.config;
     expect(stored.filters?.subscriptions).toEqual(expect.arrayContaining([SUB_ONE, SUB_TWO]));
     expect(stored.filters?.subscriptions).toHaveLength(2);
@@ -358,7 +359,7 @@ describe('saving an item back from the trimmed copy', () => {
       expect(changed.status).toBe(200);
 
       asEditor();
-      const stale = await patchView(viewId, { query: received.query, revision: received.revision });
+      const stale = await patchView(viewId, { query: received.query, revision: received.revision, opened: received.query });
       expect(stale.status).toBe(409);
       expect(await stale.json()).toEqual({ error: expect.stringContaining('changed while you were editing') });
       expect((await getSavedView(viewId))!.query).toBe('severity=high');
@@ -371,7 +372,7 @@ describe('saving an item back from the trimmed copy', () => {
       expect(cleared.status).toBe(200);
 
       asEditor();
-      const stale = await putDashboard(dashboardId, { config: received.config, revision: received.revision });
+      const stale = await putDashboard(dashboardId, { config: received.config, revision: received.revision, opened: received.config });
       expect(stale.status).toBe(409);
       expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([]);
     });
@@ -393,14 +394,102 @@ describe('saving an item back from the trimmed copy', () => {
       expect((await getSavedView(viewId))!.query).toBe(`subscription=${SUB_TWO}`);
     });
 
-    it('refuses a view query carrying the placeholder when it names no revision, even when nothing is held back now', async () => {
+    it('strips the placeholder from a view query even when it names no revision and nothing is held back now', async () => {
       const current = (await getSavedView(viewId))!;
       asAdmin();
       await patchView(viewId, { query: 'severity=high', revision: current.revision });
       asEditor();
-      const res = await patchView(viewId, { query: `subscription=${OUTSIDE_ACCESS_LABEL.replaceAll(' ', '+')}` });
-      expect(res.status).toBe(409);
-      expect((await getSavedView(viewId))!.query).toBe('severity=high');
+      const res = await patchView(viewId, { query: `severity=low&subscription=${OUTSIDE_ACCESS_LABEL.replaceAll(' ', '+')}` });
+      expect(res.status).toBe(200);
+      expect((await getSavedView(viewId))!.query).toBe('severity=low');
+    });
+  });
+
+  describe('access that changes between opening an item and saving it', () => {
+    const PLACEHOLDER = OUTSIDE_ACCESS_LABEL.replaceAll(' ', '+');
+    const grantSubscriptionTwo = () => inTransaction(async tx => {
+      await grantAssignmentOn(tx, editor, MATRIX_TENANT, `/subscriptions/${SUB_TWO}`, 'editor');
+    });
+    const restoreAccess = () => inTransaction(async tx => {
+      await deleteAssignmentsOn(tx, editor);
+      await grantAssignmentOn(tx, editor, MATRIX_TENANT, SCOPE_SUBSCRIPTION, 'editor');
+    });
+    afterEach(restoreAccess);
+
+    it('keeps a subscription for everyone when it was granted to the person after they opened the dashboard', async () => {
+      const created = await createDashboard({
+        name: 'Granted meanwhile',
+        config: { filters: { subscriptions: [SUB_ONE, SUB_TWO], resourceGroups: [] }, widgets: [] },
+      }, editor);
+      if (!created.ok) throw new Error(created.reason);
+      await share('dashboards', created.dashboard.id);
+      const id = created.dashboard.id;
+
+      asEditor();
+      const received = await (await READ_DASHBOARD(new Request('http://localhost/api/dashboards/x'), ctx(id))).json() as OpenedDashboard;
+      expect(received.config.filters.subscriptions).toEqual([SUB_ONE]);
+      expect(received.heldBack).toEqual([{ place: 'dashboard', id, dimension: 'subscription', count: 1 }]);
+
+      await grantSubscriptionTwo();
+      const res = await putDashboard(id, { config: received.config, revision: received.revision, opened: received.config });
+      expect(res.status).toBe(200);
+      expect((await getDashboard(id))!.config.filters?.subscriptions).toEqual(expect.arrayContaining([SUB_ONE, SUB_TWO]));
+      expect((await getDashboard(id))!.config.filters?.subscriptions).toHaveLength(2);
+    });
+
+    it('still removes a subscription the person could see and took out', async () => {
+      const created = await createDashboard({
+        name: 'Removed by the person',
+        config: { filters: { subscriptions: [SUB_ONE, SUB_TWO], resourceGroups: [] }, widgets: [] },
+      }, editor);
+      if (!created.ok) throw new Error(created.reason);
+      await share('dashboards', created.dashboard.id);
+      const id = created.dashboard.id;
+
+      asEditor();
+      const received = await (await READ_DASHBOARD(new Request('http://localhost/api/dashboards/x'), ctx(id))).json() as OpenedDashboard;
+      const res = await putDashboard(id, {
+        config: { ...received.config, filters: { subscriptions: [], resourceGroups: [] } }, revision: received.revision, opened: received.config,
+      });
+      expect(res.status).toBe(200);
+      expect((await getDashboard(id))!.config.filters?.subscriptions).toEqual([SUB_TWO]);
+    });
+
+    it('keeps the real value of a view, never the placeholder, when the value was granted after the person opened it', async () => {
+      const created = await createSavedView({ name: 'Granted view', tab: 'results', query: `subscription=${SUB_TWO}` }, editor);
+      if (!created.ok) throw new Error(created.reason);
+      await share('saved_views', created.view.id);
+      const id = created.view.id;
+
+      asEditor();
+      const received = await (await READ(new Request('http://localhost/api/views/x'), ctx(id))).json() as OpenedView;
+      expect(received.query).toBe(`subscription=${PLACEHOLDER}`);
+
+      await grantSubscriptionTwo();
+      const res = await patchView(id, { query: `severity=high&subscription=${PLACEHOLDER}`, revision: received.revision, opened: received.query });
+      expect(res.status).toBe(200);
+      const stored = (await getSavedView(id))!.query;
+      expect(stored).not.toContain(PLACEHOLDER);
+      expect(viewFromSearchParams(new URLSearchParams(stored)).filters).toEqual(
+        expect.arrayContaining([{ field: 'subscription', values: [SUB_TWO] }, { field: 'severity', values: ['high'] }]),
+      );
+    });
+
+    it('refuses a view saved on a revision that has moved on, and stores nothing', async () => {
+      const created = await createSavedView({ name: 'Moved on view', tab: 'results', query: `subscription=${SUB_TWO}` }, editor);
+      if (!created.ok) throw new Error(created.reason);
+      await share('saved_views', created.view.id);
+      const id = created.view.id;
+
+      asEditor();
+      const received = await (await READ(new Request('http://localhost/api/views/x'), ctx(id))).json() as OpenedView;
+      expect((await patchView(id, { name: 'Renamed meanwhile', revision: received.revision })).status).toBe(200);
+      const before = (await getSavedView(id))!;
+
+      await grantSubscriptionTwo();
+      const stale = await patchView(id, { query: 'severity=high', revision: received.revision, opened: received.query });
+      expect(stale.status).toBe(409);
+      expect(await getSavedView(id)).toEqual(before);
     });
   });
 });

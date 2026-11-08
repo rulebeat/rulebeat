@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackSavedViews } from '@/lib/db/held-back';
+import { withoutPlaceholder } from '@/lib/held-back';
 import { openableItems } from '@/lib/item-access';
 import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await createSavedView(fields.value, actor.id);
+    const result = await createSavedView({ ...fields.value, query: withoutPlaceholder(fields.value.query) }, actor.id);
     if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
 
     await writeAudit({

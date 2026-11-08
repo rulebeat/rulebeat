@@ -173,10 +173,14 @@ Opening a saved view whose filter has every value held back lists nothing for th
 stays on the Scans page as an "Outside your access" chip in place of the values, so the list is empty
 and does not widen to the viewer's whole Access. The chip has no remove control.
 
-Saving never loses a held-back value. A person who saves a Personal item, or a Shared item they may
-change, from the copy they were sent has the values outside their Access put back first, so everyone
-else the item is shared with still gets them. What they changed among the values they can see is kept.
-Each save names the version of the copy it was made from. If the item changed after the person opened it, the save is refused and they reload it, so a value that someone else removed or a stale placeholder is never written back.
+Saving does not lose a held-back value the person was not sent. Each save carries the copy the person
+was sent and the version it was made from. Whatever that copy left out is put back from the stored item
+before it is written, so everyone else the item is shared with still gets it, even if the person has been
+granted that value since they opened the item. What they changed among the values they were sent is
+kept, so a value they could see and removed stays removed. A value outside their Access at the moment
+they save is also put back. If the item changed after the person opened it, the save is refused and they
+reload it. The words "Outside your access" stand in for values the person was not sent and are never
+stored: a save that carries them has them removed.
 
 The address of the Scans page is different. A subscription or resource group typed into the address
 bar is the viewer's own input, so it reads "Outside your access" on its chip and leaves the list empty.

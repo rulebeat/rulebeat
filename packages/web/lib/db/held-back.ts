@@ -16,7 +16,7 @@
  * `restoreHeldBackDashboard`), so a save made from a trimmed copy cannot lose them for everyone else.
  */
 import type { Access } from '../access-model';
-import { OUTSIDE_ACCESS_LABEL, type HeldBack, type HeldBackPlace } from '../held-back';
+import { OUTSIDE_ACCESS_LABEL, withoutPlaceholder, type HeldBack, type HeldBackPlace } from '../held-back';
 import { markOutsideAccess } from '../outside-access';
 import {
   findingSubject, isRowField, readPath, rowPath, valueText, viewFromSearchParams, viewToSearchParams,
@@ -235,29 +235,44 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
 // ---- Saving back ----
 
 const withHeld = (visible: readonly string[], held: readonly string[]) => [...new Set([...visible, ...held])];
-const heldOf = (held: HeldValues, dimension: string, values: unknown) =>
-  (stringsOf(values) ?? []).filter(value => isHeld(held, dimension, value));
 
 /**
- * The query a person saves back, with the stored values their Access does not reach put back. What they were sent
- * never held those values, and the placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in
- * full is not a value: it is dropped. What they changed among the values they could see is kept. `restored` says
- * whether the stored query held anything back from them, which is when the write needs the revision the copy was read at.
+ * The stored values of one dimension that go back into a save: those the copy the person was sent left out
+ * (`opened`, which holds the values it was sent), and those outside their Access now, which they cannot have
+ * chosen to remove. What the copy held and the person took out is not here, so it stays removed. Without a
+ * copy to measure against, only the values outside their Access now go back.
+ */
+function leftOut(held: HeldValues, dimension: string, stored: unknown, opened: readonly string[] | undefined): string[] {
+  const sent = opened && new Set(opened);
+  return (stringsOf(stored) ?? []).filter(value => isHeld(held, dimension, value) || (sent !== undefined && !sent.has(value)));
+}
+
+/**
+ * The query a person saves back, with the stored values their copy left out put back. `opened` is the query they were
+ * sent: what it did not hold is restored from the stored row, whatever their Access is now. What they changed among
+ * the values it held is kept. The placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in full
+ * is not a value and is never stored. `restored` says whether anything was put back, which is when the write needs
+ * the revision the copy was read at.
  */
 export async function restoreHeldBackView(
-  access: Access, stored: { id: string; query: string }, incoming: string,
+  access: Access, stored: { id: string; query: string }, incoming: string, opened?: string,
 ): Promise<{ query: string; restored: boolean }> {
   const before = viewFromSearchParams(new URLSearchParams(stored.query));
+  const sent = opened === undefined ? undefined : viewFromSearchParams(new URLSearchParams(opened));
   const held = await heldBackValues(access, viewValues(stored.id, before));
-  const heldFilters = before.filters.map(f => ({ field: f.field, values: heldOf(held, f.field, f.values) })).filter(f => f.values.length > 0);
-  if (heldFilters.length === 0) return { query: incoming, restored: false };
+  const back = before.filters.filter(f => isHeldDimension(f.field)).map(f => ({
+    field: f.field,
+    values: leftOut(held, f.field, f.values, sent && sent.filters.filter(o => o.field === f.field).flatMap(o => o.values)),
+  })).filter(f => f.values.length > 0);
 
-  const after = viewFromSearchParams(new URLSearchParams(incoming));
+  const query = withoutPlaceholder(incoming);
+  if (back.length === 0) return { query, restored: false };
+
+  const after = viewFromSearchParams(new URLSearchParams(query));
   const filters = [...after.filters];
-  for (const { field, values } of heldFilters) {
+  for (const { field, values } of back) {
     const index = filters.findIndex(f => f.field === field);
-    const kept = index < 0 ? [] : filters[index]!.values.filter(value => value !== OUTSIDE_ACCESS_LABEL);
-    const merged = { field, values: withHeld(kept, values) } as ViewFilter;
+    const merged = { field, values: withHeld(index < 0 ? [] : filters[index]!.values, values) } as ViewFilter;
     if (index < 0) filters.push(merged);
     else filters[index] = merged;
   }
@@ -265,32 +280,38 @@ export async function restoreHeldBackView(
 }
 
 /**
- * The config a person saves back, with the stored subscriptions and resource groups their Access does not reach put
- * back into the filter bar and into each widget's override that is still there. A widget they removed takes its held-back
- * values with it. `restored` is as for `restoreHeldBackView`.
+ * The config a person saves back, with the stored subscriptions and resource groups their copy left out put back
+ * into the filter bar and into each widget's override that is still there. `opened` is the config they were sent.
+ * A widget they removed takes its held-back values with it. `restored` is as for `restoreHeldBackView`.
  */
 export async function restoreHeldBackDashboard(
-  access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig,
+  access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig, opened?: DashboardConfig,
 ): Promise<{ config: DashboardConfig; restored: boolean }> {
   const held = await heldBackValues(access, dashboardValues(stored.id, stored.config));
-  if (held.size === 0) return { config: incoming, restored: false };
+  let restored = false;
 
-  const restoreInto = (own: Record<string, unknown> | undefined, before: Record<string, unknown> | undefined) => {
+  const restoreInto = (
+    own: Record<string, unknown> | undefined, before: Record<string, unknown> | undefined, sent: Record<string, unknown> | undefined,
+  ) => {
     const out = { ...own };
     for (const [key, dimension] of DASHBOARD_KEYS) {
-      const back = heldOf(held, dimension, before?.[key]);
-      if (back.length > 0) out[key] = withHeld(stringsOf(own?.[key]) ?? [], back);
+      const back = leftOut(held, dimension, before?.[key], opened && (stringsOf(sent?.[key]) ?? []));
+      if (back.length === 0) continue;
+      out[key] = withHeld(stringsOf(own?.[key]) ?? [], back);
+      restored = true;
     }
     return out;
   };
 
   const config: DashboardConfig = { ...incoming };
-  if (stored.config.filters && DASHBOARD_KEYS.some(([key, dimension]) => heldOf(held, dimension, stored.config.filters?.[key]).length > 0)) {
-    config.filters = restoreInto(incoming.filters, stored.config.filters) as DashboardConfig['filters'];
+  if (stored.config.filters) {
+    const filters = restoreInto(incoming.filters, stored.config.filters, opened?.filters);
+    if (restored) config.filters = filters as DashboardConfig['filters'];
   }
   config.widgets = (incoming.widgets ?? []).map(widget => {
     const before = stored.config.widgets?.find(w => w.id === widget.id);
-    return before ? { ...widget, config: restoreInto(widget.config, before.config) } : widget;
+    if (!before) return widget;
+    return { ...widget, config: restoreInto(widget.config, before.config, opened?.widgets?.find(w => w.id === widget.id)?.config) };
   });
-  return { config, restored: true };
+  return { config, restored };
 }

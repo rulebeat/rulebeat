@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
-import { claimedRevision } from '@/lib/held-back';
+import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import type { DashboardConfig } from '@/lib/types';
@@ -48,11 +48,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json(updated && (await holdBackDashboards(actor.access, [updated]))[0]);
   }
 
-  // What the person was sent never held the stored values outside their Access, so they go back in before the
-  // save. The write is made on the revision of the copy they were sent, not the one read just now: a copy the
-  // dashboard has moved on from is refused, since it would put back values that are no longer there.
+  // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+  // The write is made on the revision of that copy, not the one read just now: a copy the dashboard has moved
+  // on from is refused, since it would put back values that are no longer there.
   const revision = claimedRevision(body);
-  const restored = body.config === undefined ? null : await restoreHeldBackDashboard(actor.access, before, body.config);
+  if (revision !== undefined && revision !== before.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+  const opened = openedCopy(body);
+  const restored = body.config === undefined ? null : await restoreHeldBackDashboard(
+    actor.access, before, body.config, opened && typeof opened === 'object' ? opened as DashboardConfig : undefined,
+  );
   if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
   const result = await updateDashboard(
     id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },

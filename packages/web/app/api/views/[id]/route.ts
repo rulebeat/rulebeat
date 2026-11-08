@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
-import { carriesPlaceholder, claimedRevision } from '@/lib/held-back';
+import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -44,16 +44,16 @@ export async function PATCH(req: Request, { params }: Params) {
     const current = await getSavedView(id);
     const refused = guardItem(actor, 'view', current, 'change');
     if (refused || !current) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-    // What the person was sent never held the stored values outside their Access, so they go back in before the
-    // save. The write is made on the revision of the copy they were sent, not the one read just now: a copy the
-    // item has moved on from is refused, since it would put values (or a placeholder) back that are no longer there.
+    // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+    // The write is made on the revision of that copy, not the one read just now: a copy the item has moved on
+    // from is refused, since it would put values back that are no longer there.
     const revision = claimedRevision(body);
+    if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+    const opened = openedCopy(body);
     const restored = fields.value.query === undefined
       ? { query: undefined, restored: false }
-      : await restoreHeldBackView(actor.access, current, fields.value.query);
-    if (revision === undefined && (restored.restored || (fields.value.query !== undefined && carriesPlaceholder(fields.value.query)))) {
-      return Response.json({ error: STALE_COPY }, { status: 409 });
-    }
+      : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined);
+    if (revision === undefined && restored.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
     const result = await updateSavedView(
       id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
       revision === undefined ? {} : { ifRevision: revision },
