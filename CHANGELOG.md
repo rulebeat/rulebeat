@@ -12,6 +12,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Changed
 
+- Dashboard posture now counts only the rules that can look at something you hold. Someone without the Directory no longer has Microsoft Graph rules in their number.
+- Top violating rules shows each rule's highest open severity.
 - Scans can filter, group and show findings by where they are placed ("Placed at").
 
 ## [0.13.1] - 2026-10-16

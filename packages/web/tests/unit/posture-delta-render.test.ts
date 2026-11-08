@@ -25,7 +25,7 @@ const summaryWith = (over: Partial<WidgetSummary>): WidgetSummary => ({
     pct: 99, passingRules: 239, totalRules: 240, unknownRules: 1, activityRuleCount: 0,
     activeFindings: 0, severityCounts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, newInWindow: 0, fixedInWindow: 0,
   },
-  suppressedIncluded: false, deltaFindings: 0, perCategory: [], perSubscription: [], newVsFixedTrend: [], activityTrend: [],
+  deltaFindings: 0, perCategory: [], perSubscription: [], newVsFixedTrend: [], activityTrend: [],
   lastScanAt: null, baseline: null, deltaPct: null, baselineGap: null, trend: [], trendIsCategoryScopedOnly: false, trendUnavailable: null,
   ...over,
 } as WidgetSummary);
