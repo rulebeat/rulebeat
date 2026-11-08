@@ -12,14 +12,14 @@ import { accessAllowing, type Action } from './rbac';
  * finding that sits inside a Scope they hold (#275). A suppression whose finding is gone is seen by
  * Everything only, since there is no placement to put inside a Scope.
  */
-export async function loadSuppressions(access: Access): Promise<Suppression[]> {
+export async function loadSuppressions(access: Access, handle: DbHandle = db): Promise<Suppression[]> {
   const inside = accessFilterSql(access);
   const query = inside
-    ? db.select().from(suppressionsTable).where(inArray(
+    ? handle.select().from(suppressionsTable).where(inArray(
         suppressionsTable.fingerprint,
-        db.select({ fingerprint: findingsTable.fingerprint }).from(findingsTable).where(inside),
+        handle.select({ fingerprint: findingsTable.fingerprint }).from(findingsTable).where(inside),
       ))
-    : db.select().from(suppressionsTable);
+    : handle.select().from(suppressionsTable);
   return (await many(query)).map(rowToSuppression);
 }
 

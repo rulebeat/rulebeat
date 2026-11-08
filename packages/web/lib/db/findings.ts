@@ -1,6 +1,6 @@
 import { eq, and, asc, gte, inArray, lt, sql, getTableColumns } from 'drizzle-orm';
-import { db } from './client';
-import { findings as findingsTable, findingEvents as findingEventsTable, findingRows as findingRowsTable, meta as metaTable } from './tables';
+import { db, dbReady, takeCategoriesMovedBySeeding } from './client';
+import { findings as findingsTable, findingEvents as findingEventsTable, findingRows as findingRowsTable, meta as metaTable, rules as rulesTable } from './tables';
 import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
 import { rebuildColumnCatalogue, removeColumnCatalogueForRule, type WrittenFinding } from './column-catalogue';
 import { many, one, run, inTransaction, type DbHandle } from './exec';
@@ -14,7 +14,7 @@ import { upsertDailySnapshot } from './snapshots';
 import { derivePlacement } from './finding-placement';
 import type { Access } from '../access-model';
 import { SYSTEM_ACCESS } from '../system-access';
-import { subscriptionFilterSql } from './subscription-filter';
+import { resourceGroupFilterSql, subscriptionFilterSql } from './subscription-filter';
 import { accessFilterSql } from './access-filter';
 import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
@@ -47,8 +47,9 @@ export interface DetailedSyncResult extends SyncResult {
    *  rows or whose rule did not succeed. */
   changed: ChangedFinding[];
   /** Every category that had a finding row written, resolved or moved in this sync, including the
-   *  scanned one. A rule moved to another category leaves rows recorded under its old category,
-   *  so the caller must refresh each of these categories' snapshot, not only the scanned one. */
+   *  scanned one. A finding recorded under another category (before moves rewrote a moved rule's
+   *  findings) leaves that category's counts, so the caller must refresh each of these categories'
+   *  snapshot, not only the scanned one. */
   affectedCategories: string[];
 }
 
@@ -414,9 +415,10 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
 
     // 3. Resolve: findings that were active for a rule this scan actually ran, but didn't
     // reappear. Scoping to ranRuleIds means disabled rules and tag/rule-scoped schedules never
-    // falsely resolve findings outside what they checked. Deliberately not scoped to the finding's
-    // stored category: a rule moved to another category keeps its old findings under the old one,
-    // and neither category's scan would ever resolve them otherwise. kind:'state' excludes
+    // falsely resolve findings outside what they checked. Deliberately scoped by rule and not by the
+    // finding's stored category: a moved rule takes its findings with it (moveFindingsToCategory), but
+    // a finding recorded before moves rewrote them can still sit under the rule's old category, and
+    // neither category's scan would resolve it otherwise. kind:'state' excludes
     // 'activity' findings: those never resolve, they age out of a read-time window instead
     // (spec 034): a rule not re-reporting an occurrence this scan says nothing about whether it's
     // still relevant, unlike a resource genuinely no longer matching a state rule's query.
@@ -521,6 +523,11 @@ export async function syncScanFindingsDetailed(opts: SyncScanFindingsOptions): P
   return { created, reactivated, resolved, changed, affectedCategories: [...affectedCategories] };
 }
 
+/** The category an event counts under: its rule's category now, so a rule moved to another category
+ *  takes the history of its findings with it, else the category stored on the event when the rule row
+ *  is gone. Needs the query to left join `rules` on the event's rule id. */
+const eventCategorySql = sql`coalesce(${rulesTable.category}, ${findingEventsTable.category})`;
+
 export interface FindingEventCount { date: string; created: number; resolved: number; }
 
 /** Daily created(+reactivated)-vs-resolved counts from finding_events, for the "New vs Fixed"
@@ -531,7 +538,9 @@ export interface FindingEventCount { date: string; created: number; resolved: nu
  *  together with its findings row (deleteFindingsForRule, lib/db/fingerprint-rekey.ts).
  *  Caveat: the join reads the finding's *current* subscription/RG/severity/kind, not event-time
  *  values, same convention as every live findings-sourced number. Days with no events are
- *  zero-filled between the first event and today so bar spacing stays honest. */
+ *  zero-filled between the first event and today so bar spacing stays honest. A category filter
+ *  matches the event's rule's current category, falling back to the category stored on the event
+ *  when the rule row is gone. */
 export async function getFindingEventCounts(opts: {
   categories?: string[];
   ruleIds?: string[];
@@ -547,10 +556,10 @@ export async function getFindingEventCounts(opts: {
     inArray(findingEventsTable.type, ['created', 'reactivated', 'resolved']),
     countsInFindingTotalsSql,
   ];
-  if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
+  if (opts.categories?.length) conditions.push(inArray(eventCategorySql, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
   if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
-  if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
+  if (opts.resourceGroups?.length) conditions.push(resourceGroupFilterSql(opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
   const accessCondition = accessFilterSql(access);
   if (accessCondition) conditions.push(accessCondition);
@@ -558,6 +567,7 @@ export async function getFindingEventCounts(opts: {
   const selection =  { type: findingEventsTable.type, occurredAt: findingEventsTable.occurredAt };
   const rows = await many(db.select(selection).from(findingEventsTable)
     .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
+    .leftJoin(rulesTable, eq(findingEventsTable.ruleId, rulesTable.id))
     .where(and(...conditions)));
 
   const byDate = new Map<string, { created: number; resolved: number }>();
@@ -604,10 +614,10 @@ export async function getActivityOccurrenceCounts(opts: {
     inArray(findingEventsTable.type, ['created', 'occurred']),
     eq(findingsTable.kind, 'activity'),
   ];
-  if (opts.categories?.length) conditions.push(inArray(findingEventsTable.category, opts.categories));
+  if (opts.categories?.length) conditions.push(inArray(eventCategorySql, opts.categories));
   if (opts.ruleIds?.length) conditions.push(inArray(findingEventsTable.ruleId, opts.ruleIds));
   if (opts.subscriptions?.length) conditions.push(subscriptionFilterSql(opts.subscriptions));
-  if (opts.resourceGroups?.length) conditions.push(inArray(findingsTable.resourceGroup, opts.resourceGroups));
+  if (opts.resourceGroups?.length) conditions.push(resourceGroupFilterSql(opts.resourceGroups));
   if (opts.severities?.length) conditions.push(inArray(findingsTable.severity, opts.severities));
   const accessCondition = accessFilterSql(access);
   if (accessCondition) conditions.push(accessCondition);
@@ -616,6 +626,7 @@ export async function getActivityOccurrenceCounts(opts: {
     db.select({ occurredAt: findingEventsTable.occurredAt })
       .from(findingEventsTable)
       .innerJoin(findingsTable, eq(findingEventsTable.fingerprint, findingsTable.fingerprint))
+      .leftJoin(rulesTable, eq(findingEventsTable.ruleId, rulesTable.id))
       .where(and(...conditions)),
   );
 
@@ -678,11 +689,34 @@ export async function removeFindingRowsForRule(
   return { deleted: rows.length, categories: [...new Set(rows.map(r => r.category))] };
 }
 
-/** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
- *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
- *  transaction has not yet committed. */
-export async function refreshSnapshotsFor(categories: string[], now?: Date): Promise<void> {
-  for (const category of categories) await upsertDailySnapshot(category, now);
+/** Records every finding of a rule, open and fixed, under `category`: the write a rule's move to
+ *  another category makes, in the transaction that changes the rule, so the live numbers follow the
+ *  rule at once instead of at its next scan. Touches `findings` only: `scan_findings`, the stored scan
+ *  blobs and `finding_events` keep the category each scan saw. Returns the categories whose counts
+ *  changed (the ones the findings left, and `category`), empty when none moved; the caller passes
+ *  them to refreshSnapshotsFor() on the same `tx`. */
+export async function moveFindingsToCategory(tx: DbHandle, ruleId: string, category: string): Promise<string[]> {
+  const left = await many(
+    tx.selectDistinct({ category: findingsTable.category }).from(findingsTable)
+      .where(and(eq(findingsTable.ruleId, ruleId), sql`${findingsTable.category} <> ${category}`)),
+  );
+  if (left.length === 0) return [];
+  await run(tx.update(findingsTable).set({ category }).where(eq(findingsTable.ruleId, ruleId)));
+  return [...left.map(r => r.category), category];
+}
+
+/** Recomputes today's snapshot for each category. Pass the transaction `handle` that wrote the rows
+ *  when the refresh must commit with them: on Postgres a recompute on the default handle uses its own
+ *  connection and would not see rows that transaction has not yet committed. */
+export async function refreshSnapshotsFor(categories: string[], now?: Date, handle?: DbHandle): Promise<void> {
+  for (const category of categories) await upsertDailySnapshot(category, now, handle);
+}
+
+/** Refreshes today's snapshot of each category startup seeding moved findings between, which it could
+ *  not do itself (the seeders run before the async database is usable). Called once at startup. */
+export async function refreshSnapshotsForSeededMoves(): Promise<void> {
+  await dbReady;
+  await refreshSnapshotsFor(takeCategoriesMovedBySeeding());
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---

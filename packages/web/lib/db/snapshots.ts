@@ -1,7 +1,7 @@
 import { eq, and, inArray, gte, lte, lt, desc, sql, type SQL } from 'drizzle-orm';
 import { db } from './client';
 import { postureSnapshots as snapshotsTable, findings as findingsTable } from './tables';
-import { many, run } from './exec';
+import { many, run, type DbHandle } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
@@ -72,11 +72,11 @@ function toDateKey(d: Date): string {
  *  finding in this category (same "only knowable via live findings" limitation as
  *  dashboard-data.ts's `perSubscription`: a subscription that reaches zero findings simply stops
  *  getting a fresh row rather than writing an explicit 100%/0-findings row). */
-export async function upsertDailySnapshot(categoryId: string, now: Date = new Date()): Promise<void> {
-  const category = await getCategory(categoryId);
+export async function upsertDailySnapshot(categoryId: string, now: Date = new Date(), handle: DbHandle = db): Promise<void> {
+  const category = await getCategory(categoryId, handle);
   if (!category) return;
 
-  const enabledRules = (await loadRules()).filter(r => r.enabled && r.category === categoryId);
+  const enabledRules = (await loadRules(handle)).filter(r => r.enabled && r.category === categoryId);
   const stateRules = enabledRules.filter(countsTowardPosture);
   const stateRuleIds = new Set(stateRules.map(r => r.id));
   const ruleById = new Map(enabledRules.map(r => [r.id, r]));
@@ -85,13 +85,13 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
 
   // An activity finding's ruleId never matches stateRuleIds below, so including it here doesn't
   // affect failingRuleIds.
-  const activeRows = await many(db.select().from(findingsTable)
+  const activeRows = await many(handle.select().from(findingsTable)
     .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'), countsInFindingTotalsSql)));
 
   // A stored snapshot is an install-wide value, so it is computed under SYSTEM_ACCESS, never under
   // whoever triggered the scan or backfill.
   const suppressedFingerprints = new Set(
-    (await loadSuppressions(SYSTEM_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint),
+    (await loadSuppressions(SYSTEM_ACCESS, handle)).filter(isActiveSuppression).map(s => s.fingerprint),
   );
   const visible = activeRows.filter(f => !suppressedFingerprints.has(f.fingerprint));
 
@@ -118,7 +118,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
     }
     const posturePct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
 
-    await run(db.insert(snapshotsTable).values({
+    await run(handle.insert(snapshotsTable).values({
       category: categoryId,
       subscriptionId,
       date,
@@ -145,7 +145,7 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
   }
 
   const cutoff = toDateKey(new Date(now.getTime() - RETENTION_DAYS * 86_400_000));
-  await run(db.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)));
+  await run(handle.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)));
 }
 
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only

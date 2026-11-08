@@ -1,5 +1,6 @@
 import type { Severity } from './types';
 import type { DateWindow } from './date-window';
+import { DIRECTORY_SUBSCRIPTION, type FindingPlacement } from './placement';
 
 /** Client-safe filter shape shared by every dashboard widget's data request. Dashboard-level
  *  filters (set by a future Phase 4 filter bar) flow down as a prop; each widget merges in its
@@ -14,6 +15,40 @@ export interface WidgetFilters {
   ruleIds?: string[];
   dateWindow: DateWindow;
   includeSuppressed?: boolean;
+}
+
+/** The form a subscription or resource group name is compared in. Azure treats both as case-insensitive
+ *  but ARM returns them in whatever case a resource was created with, so one group can be stored as
+ *  both 'rg-a' and 'RG-A'. SQL compares `lower(column)` against these (lib/db/subscription-filter.ts),
+ *  so the lists and the database agree on what one name is. */
+export function foldFilterValue(value: string): string {
+  return value.toLowerCase();
+}
+
+/** Whether `value` is one of a filter's `values`, ignoring case. */
+export function filterValuesInclude(values: Iterable<string>, value: string): boolean {
+  const folded = foldFilterValue(value);
+  for (const v of values) if (foldFilterValue(v) === folded) return true;
+  return false;
+}
+
+/** Whether a finding's resource group passes a resource group filter. A finding with none passes
+ *  only a filter that names the empty value. */
+export function resourceGroupFilterMatches(values: Iterable<string>, resourceGroup: string | undefined): boolean {
+  return filterValuesInclude(values, resourceGroup ?? '');
+}
+
+/** Whether a finding passes a subscription filter. A value is a subscription id, compared ignoring
+ *  case, or the reserved Directory value, which matches a finding placed in the directory and nothing
+ *  else: a Directory finding is stored with an empty subscription and no id can match it. */
+export function subscriptionFilterMatches(
+  values: Iterable<string>,
+  finding: { placement?: FindingPlacement | string; subscriptionId: string },
+): boolean {
+  // The reserved value is matched exactly, as the SQL does (lib/db/subscription-filter.ts).
+  const list = [...values];
+  if (finding.placement === 'directory') return list.includes(DIRECTORY_SUBSCRIPTION);
+  return filterValuesInclude(list.filter(v => v !== DIRECTORY_SUBSCRIPTION), finding.subscriptionId);
 }
 
 /** Per-widget config values, when present, REPLACE the matching dashboard-level dimension

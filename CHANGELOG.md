@@ -12,6 +12,14 @@ All notable changes to RuleBeat are documented here. Format follows
 - Every scan now writes to trend history in the same transaction that saves its findings, dated at the scan's finish: the cells of every rule it ran, those rules' settings and last-run status, and which scopes and rules it covered, partial scans included. If the history cannot be written, the scan and its findings are not saved and Run History says "Trend history could not be recorded, so this scan's results were not saved." The one-time rebuild of finding history from old scans records only the state it ends with, dated when it ran.
 - Rule changes now write trend history in the same transaction as the change: creating, editing, duplicating, deleting, enabling or disabling a rule (singly or in bulk), switching a built-in rule's version, approving a Library request, clearing a rule's findings, and the rule changes an upgrade makes at start (if the history cannot be written there, the start logs a warning and corrects it on the next start). A rule switched from Problem to Advisory, deleted, or cleared takes its counts to 0 from that moment, and a deleted rule keeps its last name, category, tags and source so its earlier days still read. Anywhere else, if the history cannot be written, the change is not saved and the request fails with a server error.
 
+### Changed
+
+- Moving a rule to another category now moves its findings with it at once, instead of at its next scan. This holds for a custom rule edit, a version switch, a disabled rule that moves to a new version at startup, and a Library request approval. The ring, the Scans count and New vs Fixed count the rule's open and fixed findings under the new category straight away, and both categories' snapshots are refreshed. Run History and Compare keep showing the category each scan saw.
+
+### Fixed
+
+- Subscription and resource group filters now ignore case, so a count can go up where it used to miss findings. A filter on `RG-A` now counts findings placed in `rg-a` as well, in the posture ring, New vs Fixed, Activity occurrences and the Scans views.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

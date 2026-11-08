@@ -58,7 +58,7 @@ Switching a shipped [Rule version](rule-versions.md) can also move the number af
 even when your estate has not changed. The selected definition may return different resources or
 use a different severity or category. Matched findings keep their age, history and suppressions;
 dropped matches become fixed and new matches open. Switching itself starts no scan and does not
-reset findings. Upgrading does not change the version an enabled shipped rule runs, so taking a
+reset findings; a version in another category moves the rule's findings to it straight away. Upgrading does not change the version an enabled shipped rule runs, so taking a
 new definition is an admin's choice, not a silent consequence of restarting. The one exception is a
 rule an earlier release left on a stored definition that differed from the shipped one: it now runs
 the shipped version, and the next scan may flag different resources.

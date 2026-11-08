@@ -72,7 +72,7 @@ rule's rows in the trend tables with the same pass that rewrites its findings, a
 the record is ever edited.
 
 **Moving a rule to another category now moves its findings at once.** The findings keep their age and
-suppressions and appear under the new category on the next read, not on the rule's next scan. Past trend points regroup under today's category, because the
+suppressions and appear under the new category on the next read, not on the rule's next scan. The rewrite and the refresh of both categories' snapshots share the rule write's transaction, bar startup seeding, which refreshes the snapshots right after it commits. Past trend points regroup under today's category, because the
 category is a label read today. The recorded coverage of earlier scans keeps the categories as they
 were scanned, so a moved rule's earlier scans do not mark its new category as covered.
 

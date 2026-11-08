@@ -246,7 +246,8 @@ function changesFrom(definition: PersonalRuleDefinition, enabled: boolean | unde
  *
  * A new-rule request inserts the library rule with a new id and the request's id. An update request (#283)
  * re-reads its target under the locks and writes the reviewed definition onto the same id, so the rule's
- * findings, suppressions and ages stay as they are. It is refused when the target is gone, is not `custom`
+ * findings, suppressions and ages stay as they are (its findings follow it, in this transaction, when the
+ * reviewed definition changes its category, with both categories' snapshots refreshed in it). It is refused when the target is gone, is not `custom`
  * (a built-in changes only by version) or runs on another backend. The target keeps its enabled state
  * unless the reviewer sets one.
  */

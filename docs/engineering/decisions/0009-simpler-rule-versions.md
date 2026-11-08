@@ -20,8 +20,9 @@ and a Running or New tag. There is no dropdown and no collapsible history. Selec
 than the running one opens the existing before/after review. An admin can switch to any recorded
 version, older or newer. A viewer or editor sees the list and the review, and a line saying only an
 admin can switch. The card says that a disabled rule moves to the newest version when RuleBeat is
-upgraded. A switch starts no scan, is audited as `rule.version` with field names only, and leaves
-findings alone until the next scan.
+upgraded. A switch starts no scan and is audited as `rule.version` with field names only. It leaves
+which findings are open to the next scan, but a version in another category moves the rule's
+findings to that category at once (#379).
 
 **"Before versioning" is removed.** ADR 0004's first-upgrade step recorded a stored definition that
 differed from what ships under a pseudo-version of that name and kept an enabled rule running it.
@@ -52,7 +53,8 @@ exception that comes with this change (the APRL query correction from issue #221
 0004 and stands on its own): an enabled built-in that was on `before-versioning`, or stored with a
 definition that differs from what ships and no version, now runs its pack's shipped definition. The
 next scan can flag different resources for those rules, and findings the old definition produced and
-the new one does not are fixed by the usual rule-edit behaviour. The rule above stands for every
+the new one does not are fixed by the usual rule-edit behaviour. When the shipped definition has
+another category, the rule's findings are recorded under it at once, not at the next scan (#379). The rule above stands for every
 other case, including every enabled rule on a real version.
 
 ## Why
