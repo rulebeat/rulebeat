@@ -35,12 +35,13 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
-import { createDashboard } from '@/lib/db/dashboards';
+import { createDashboard, deleteDashboard } from '@/lib/db/dashboards';
+import { buildWidgetReadParams } from '@/lib/dashboard-filters';
 import { createSavedView } from '@/lib/db/saved-views';
 import { execRaw } from '../helpers/db';
 import { createLibraryRequest } from '@/lib/db/library-requests';
 import {
-  createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
+  createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_OWNER, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
   SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
 import type { OwnAccess } from '@/lib/access';
@@ -518,6 +519,7 @@ function dashboardMatrix(): Record<string, Matrix> {
     'top-resources': () => import('@/app/api/widgets/top-resources/route'),
     'advisories': () => import('@/app/api/widgets/advisories/route'),
     'filter-options': () => import('@/app/api/widgets/filter-options/route'),
+    'rules': () => import('@/app/api/widgets/rules/route'),
   };
   const widget = async (route: string, query = '') =>
     BODY(await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}${query}`)));
@@ -620,6 +622,12 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
+  // The rule list is every rule, for everyone: the picker names rules, not findings.
+  const rulesList: Matrix = {
+    probe: async () => ({ listsRules: ((await widget('rules')) as { id: string }[]).length > 0 }),
+    expected: byPerson(...Array.from({ length: 6 }, () => same({ listsRules: true })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  };
+
   const ALL_RULES = ['matrix-advisory-rule', 'matrix-rule'];
   const options = (subscriptions: string[], resourceGroups: string[], rules: string[]) => same({
     categories: ['compliance', 'cost', 'security', 'identity', 'reliability'], hasTags: false, subscriptions, resourceGroups, rules,
@@ -643,6 +651,51 @@ function dashboardMatrix(): Record<string, Matrix> {
       options([], [], []),
     ),
   };
+
+  // #375: a widget read names the dashboard (and widget) it is for. The reads below are made the way the page makes
+  // them: the dashboard's filter bar as this person was sent it, no widget named. Subscription two is the seeded
+  // dashboard's filter, so the people who hold it read its findings and everyone else, who is held it back from, reads
+  // nothing and never their own Access. An id that is unknown, and someone else's Personal dashboard, are 404 for all.
+  const readOnDashboard = async (route: string, seed: MatrixSeed): Promise<Response> => {
+    const sent = await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as {
+      config: { filters?: { subscriptions?: string[] } };
+    };
+    const params = buildWidgetReadParams({ dashboardId: seed.dashboardId }, { dateWindow: { mode: 'relative', days: 7 }, subscriptions: sent.config.filters?.subscriptions }, {});
+    return (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}?${params}`));
+  };
+  const statusOnDashboard = async (route: string, id: string): Promise<number> =>
+    (await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}?${buildWidgetReadParams({ dashboardId: id }, { dateWindow: { mode: 'relative', days: 7 } }, {})}`))).status;
+  const refusals = async (route: string): Promise<{ unknownId: number; othersPersonal: number }> => {
+    const made = await createDashboard({ name: `matrix personal ${Math.random().toString(36).slice(2)}`, config: { widgets: [] } }, MATRIX_OWNER);
+    if (!made.ok) throw new Error(made.reason);
+    try {
+      return { unknownId: await statusOnDashboard(route, 'no-such-dashboard'), othersPersonal: await statusOnDashboard(route, made.dashboard.id) };
+    } finally {
+      await deleteDashboard(made.dashboard.id);
+    }
+  };
+  const REFUSED = { unknownId: 404, othersPersonal: 404 };
+  /** The entry as it was, plus the dashboard read and the two refusals. `onDashboard` is each person's expectation, by hand. */
+  const onDashboardToo = (
+    route: string, base: Matrix, digest: (body: unknown, seed: MatrixSeed) => unknown,
+    onDashboard: [unknown, unknown, unknown, unknown, unknown, unknown],
+  ): Matrix => {
+    const people = PEOPLE.map(p => p.name);
+    // The Admin and the Editor on Everything hold the same, so they share the first expectation.
+    const slot = [0, 0, 1, 2, 3, 4, 5];
+    return {
+      probe: async (seed, tab) => ({
+        plain: await base.probe(seed, tab),
+        onDashboard: digest(await BODY(await readOnDashboard(route, seed)), seed),
+        ...(await refusals(route)),
+      }),
+      expected: Object.fromEntries(people.map((person, i) => [person, Object.fromEntries(VIEW_TABS.map(tab => [tab, {
+        plain: base.expected[person]![tab], onDashboard: onDashboard[slot[i]!], ...REFUSED,
+      }]))])) as Matrix['expected'],
+    };
+  };
+  const count = (n: number) => ({ activeFindings: n });
+  const OTHER_SUB = ['vm-other-sub'];
 
   // #363: a stored filter value outside the person's Access is left out of what comes back and counted beside it.
   // Each expectation is the item as stored with only the held-back values removed, and the counts, by hand.
@@ -791,8 +844,17 @@ function dashboardMatrix(): Record<string, Matrix> {
     'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
     'dashboards/[id]/hand-over': transferMatrix('dashboard', 'hand-over'), 'dashboards/[id]/take-over': transferMatrix('dashboard', 'take-over'),
     'views/[id]/hand-over': transferMatrix('view', 'hand-over'), 'views/[id]/take-over': transferMatrix('view', 'take-over'),
-    'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
-    'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
+    'widgets/summary': onDashboardToo('summary', summary, body => count((body as { current: { activeFindings: number } }).current.activeFindings), [count(1), count(1), count(0), count(0), count(0), count(0)]),
+    'widgets/findings': onDashboardToo('findings', findings, (body, seed) => nameOf(body as { fingerprint: string }[], seed), [OTHER_SUB, OTHER_SUB, [], [], [], []]),
+    'widgets/top-rules': onDashboardToo('top-rules', topRules, body => (body as { ruleId: string; count: number }[]).map(r => [r.ruleId, r.count]), [[['matrix-rule', 1]], [['matrix-rule', 1]], [], [], [], []]),
+    'widgets/top-resources': onDashboardToo('top-resources', topResources, body => (body as { resourceName: string }[]).map(r => r.resourceName).sort(), [OTHER_SUB, OTHER_SUB, [], [], [], []]),
+    'widgets/advisories': onDashboardToo('advisories', advisories, (body, seed) => {
+      const b = body as { items: { fingerprint: string }[]; total: number };
+      return { names: nameOf(b.items, seed), total: b.total };
+    }, [{ names: ['advisory-other-sub'], total: 1 }, { names: ['advisory-other-sub'], total: 1 }, { names: [], total: 0 }, { names: [], total: 0 }, { names: [], total: 0 }, { names: [], total: 0 }]),
+    // These two apply no filter: a dashboard the person may open is read, any other id is refused.
+    'widgets/filter-options': onDashboardToo('filter-options', filterOptions, () => 'opens', ['opens', 'opens', 'opens', 'opens', 'opens', 'opens']),
+    'widgets/rules': onDashboardToo('rules', rulesList, () => 'opens', ['opens', 'opens', 'opens', 'opens', 'opens', 'opens']),
     'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
   };
 }

@@ -4,11 +4,12 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { limit?: number; category?: string; policyIds?: string[] }
@@ -17,8 +18,9 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 export function SubscriptionScorecardWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+  const target = useWidgetReadTarget();
   const subNames = useSubscriptionNames();
-  const params = buildSummaryParams(merged).toString();
+  const params = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>).toString();
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]
