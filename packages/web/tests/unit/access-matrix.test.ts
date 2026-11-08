@@ -35,7 +35,8 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
-import { createDashboard } from '@/lib/db/dashboards';
+import { chooseInstallDefault, createDashboard } from '@/lib/db/dashboards';
+import { getMyDefault } from '@/lib/db/default-dashboard';
 import { createSavedView } from '@/lib/db/saved-views';
 import { execRaw } from '../helpers/db';
 import { createLibraryRequest } from '@/lib/db/library-requests';
@@ -768,7 +769,43 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: sharingExpected('dashboard'),
   };
 
+  // My default needs only `dashboards:personal`, which every Role holds, so every person gets the same answers: their own
+  // Personal dashboard and any Shared one are accepted, someone else's Personal one answers like an unknown id, and a
+  // refused choice leaves the earlier one in place. Choosing also clears the "no longer available" notice. The person
+  // with no Scope is still allowed in: My default never reads their Access.
+  const myDefault: Matrix = {
+    probe: async () => {
+      const uid = ((await mockAuth()) as { user: { uid: string } }).user.uid;
+      const put = async (id: string) => (await (await import('@/app/api/account/default-dashboard/route')).PUT(new Request('http://localhost/api/account/default-dashboard', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+      }))).status;
+      const ownerless = async (visibility: 'personal' | 'shared') => {
+        const made = await createDashboard({ name: `my default probe ${Math.random().toString(36).slice(2)}`, config: { autoRefresh: 0, widgets: [] } }, uid);
+        if (!made.ok) throw new Error(made.reason);
+        await execRaw(`UPDATE dashboards SET owner_id = NULL, visibility = '${visibility}' WHERE id = '${made.dashboard.id}'`);
+        return made.dashboard.id;
+      };
+      await execRaw(`UPDATE users SET default_dashboard_unavailable = 1 WHERE id = '${uid}'`);
+      const ownPersonal = await put(await ownItem('dashboard', 'personal'));
+      const ownShared = await put(await ownItem('dashboard', 'shared'));
+      const sharedId = await ownerless('shared');
+      const otherShared = await put(sharedId);
+      const afterChoosing = await getMyDefault(uid);
+      const otherPersonal = await put(await ownerless('personal'));
+      const unknown = await put('00000000-0000-0000-0000-00000000dead');
+      const afterRefusals = await getMyDefault(uid);
+      return {
+        ownPersonal, ownShared, otherShared, otherPersonal, unknown,
+        choiceKept: afterRefusals.dashboardId === sharedId, noticeCleared: !afterChoosing.unavailable,
+      };
+    },
+    expected: byPerson(...Array(6).fill(same({
+      ownPersonal: 200, ownShared: 200, otherShared: 200, otherPersonal: 404, unknown: 404, choiceKept: true, noticeCleared: true,
+    })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  };
+
   return {
+    'account/default-dashboard': myDefault,
     'dashboards/install-default': installDefault,
     'dashboards/[id]/share': shareMatrix('dashboard', 'share'), 'dashboards/[id]/unshare': shareMatrix('dashboard', 'unshare'),
     'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
@@ -2267,42 +2304,49 @@ describe('suppressing needs a Role that allows it at a Scope containing the find
  */
 const ITEM_PEOPLE = ['Viewer on one subscription', 'Editor on one subscription', 'Editor on Everything', 'Admin', 'No Scope'] as const;
 type ItemPerson = typeof ITEM_PEOPLE[number];
-const ITEM_KINDS = ['own Personal', 'other Personal', 'own Shared', 'other Shared', 'ownerless Shared'] as const;
+const ITEM_KINDS = ['own Personal', 'other Personal', 'own Shared', 'other Shared', 'ownerless Shared', 'own Install default'] as const;
 type ItemKindName = typeof ITEM_KINDS[number];
 
 type PerKind<T> = Record<ItemKindName, T>;
-const perKind = (ownPersonal: number, otherPersonal: number, ownShared: number, otherShared: number, ownerless: number): PerKind<number> =>
-  ({ 'own Personal': ownPersonal, 'other Personal': otherPersonal, 'own Shared': ownShared, 'other Shared': otherShared, 'ownerless Shared': ownerless });
+const perKind = (ownPersonal: number, otherPersonal: number, ownShared: number, otherShared: number, ownerless: number, installDefault: number): PerKind<number> =>
+  ({ 'own Personal': ownPersonal, 'other Personal': otherPersonal, 'own Shared': ownShared, 'other Shared': otherShared, 'ownerless Shared': ownerless, 'own Install default': installDefault });
+/** The Install default is a dashboard idea, so a saved view is never seeded or checked as one. */
+const kindsFor = (kind: 'dashboard' | 'view'): ItemKindName[] => ITEM_KINDS.filter(k => kind === 'dashboard' || k !== 'own Install default');
 
 /** What each person gets for opening an item, and for Duplicate: all but someone else's Personal item. */
-const OPENS = perKind(200, 404, 200, 200, 200);
-const DUPLICATES = perKind(201, 404, 201, 201, 201);
-/** What each person gets for changing an item, by what they hold. A change that works answers `ok`. */
-const changing = (ok: number): Record<ItemPerson, PerKind<number>> => ({
-  'Viewer on one subscription': perKind(ok, 404, 403, 403, 403),
-  'Editor on one subscription': perKind(ok, 404, ok, 403, 403),
-  'Editor on Everything': perKind(ok, 404, ok, ok, ok),
-  'Admin': perKind(ok, 404, ok, ok, ok),
-  'No Scope': perKind(ok, 404, 403, 403, 403),
-});
+const OPENS = perKind(200, 404, 200, 200, 200, 200);
+const DUPLICATES = perKind(201, 404, 201, 201, 201, 201);
+/** What each person gets for changing an item, by what they hold. A change that works answers `ok`. The Install default is
+ *  the one own Shared item a person who holds only `*:write` cannot remove: `removal` makes it need `*:manage`. */
+const changing = (ok: number, removal = false): Record<ItemPerson, PerKind<number>> => {
+  const scopedOwner = removal ? 403 : ok;
+  return {
+    'Viewer on one subscription': perKind(ok, 404, 403, 403, 403, 403),
+    'Editor on one subscription': perKind(ok, 404, ok, 403, 403, scopedOwner),
+    'Editor on Everything': perKind(ok, 404, ok, ok, ok, ok),
+    'Admin': perKind(ok, 404, ok, ok, ok, ok),
+    'No Scope': perKind(ok, 404, 403, 403, 403, 403),
+  };
+};
 /** Sharing and unsharing, by what each person holds: `*:write` on their own item, `*:manage` on any Shared one. A call
- *  the item's state no longer allows answers 409, and an unshare of an item with no owner does too. */
+ *  the item's state no longer allows answers 409, and an unshare of an item with no owner does too. The Install default
+ *  is Shared already, so sharing it answers 409, and only `*:manage` may unshare it. */
 const sharing: Record<ItemPerson, PerKind<number>> = {
-  'Viewer on one subscription': perKind(403, 404, 403, 403, 403),
-  'Editor on one subscription': perKind(200, 404, 409, 403, 403),
-  'Editor on Everything': perKind(200, 404, 409, 403, 403),
-  'Admin': perKind(200, 404, 409, 403, 403),
-  'No Scope': perKind(403, 404, 403, 403, 403),
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(200, 404, 409, 403, 403, 409),
+  'Editor on Everything': perKind(200, 404, 409, 403, 403, 409),
+  'Admin': perKind(200, 404, 409, 403, 403, 409),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
 };
 const unsharing: Record<ItemPerson, PerKind<number>> = {
-  'Viewer on one subscription': perKind(403, 404, 403, 403, 403),
-  'Editor on one subscription': perKind(409, 404, 200, 403, 403),
-  'Editor on Everything': perKind(409, 404, 200, 200, 409),
-  'Admin': perKind(409, 404, 200, 200, 409),
-  'No Scope': perKind(403, 404, 403, 403, 403),
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(409, 404, 200, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 409, 200),
+  'Admin': perKind(409, 404, 200, 200, 409, 200),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
 };
 /** Whether an item shows in the list, and in the owner's own "Yours" section: shared ones and one's own Personal. */
-const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true };
+const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true, 'own Install default': true };
 
 type OwnedKind = 'dashboard' | 'view';
 interface OwnedRoute {
@@ -2321,11 +2365,11 @@ const sameForAll = (by: PerKind<number>): Record<ItemPerson, PerKind<number>> =>
 
 /** Choosing the Install default: `dashboards:manage` to get in, then a Shared dashboard the person may open. */
 const choosingInstallDefault: Record<ItemPerson, PerKind<number>> = {
-  'Viewer on one subscription': perKind(403, 403, 403, 403, 403),
-  'Editor on one subscription': perKind(403, 403, 403, 403, 403),
-  'Editor on Everything': perKind(409, 404, 200, 200, 200),
-  'Admin': perKind(409, 404, 200, 200, 200),
-  'No Scope': perKind(403, 403, 403, 403, 403),
+  'Viewer on one subscription': perKind(403, 403, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(403, 403, 403, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 200, 200),
+  'Admin': perKind(409, 404, 200, 200, 200, 200),
+  'No Scope': perKind(403, 403, 403, 403, 403, 403),
 };
 
 /** One entry for each route file under `app/api/dashboards` and `app/api/views`, written by hand. */
@@ -2335,7 +2379,7 @@ const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
       call: async id => (await (await import('@/app/api/dashboards/[id]/route')).GET(new Request('http://localhost/api/dashboards/x'), ctxFor({ id }))).status },
     { kind: 'dashboard', expected: changing(200),
       call: async id => (await (await import('@/app/api/dashboards/[id]/route')).PUT(putRequest(`/api/dashboards/${id}`, 'PUT', { name: `renamed dashboard ${++ownedCounter}` }), ctxFor({ id }))).status },
-    { kind: 'dashboard', expected: changing(204),
+    { kind: 'dashboard', expected: changing(204, true),
       call: async id => (await (await import('@/app/api/dashboards/[id]/route')).DELETE(new Request(`http://localhost/api/dashboards/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
   ],
   'dashboards/install-default': [
@@ -2393,8 +2437,12 @@ describe('the dashboard and saved view routes answer each person by who owns the
       id = made.view.id;
     }
     const table = kind === 'dashboard' ? 'dashboards' : 'saved_views';
-    if (which.endsWith('Shared')) await execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
+    if (which.endsWith('Shared') || which === 'own Install default') await execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
     if (which === 'ownerless Shared') await execRaw(`UPDATE ${table} SET owner_id = NULL WHERE id = '${id}'`);
+    if (which === 'own Install default') {
+      const chosen = await chooseInstallDefault(id);
+      if (!chosen.ok) throw new Error(chosen.reason);
+    }
     return id;
   }
 
@@ -2418,7 +2466,7 @@ describe('the dashboard and saved view routes answer each person by who owns the
   for (const [route, calls] of Object.entries(OWNED_ITEM_MATRIX)) {
     for (const [index, entry] of calls.entries()) {
       for (const person of ITEM_PEOPLE) {
-        for (const which of ITEM_KINDS) {
+        for (const which of kindsFor(entry.kind)) {
           it(`${route} #${index + 1}: ${person}, ${which}`, async () => {
             const id = await seedItem(entry.kind, which, person);
             mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
@@ -2432,13 +2480,14 @@ describe('the dashboard and saved view routes answer each person by who owns the
   for (const route of OWNED_COLLECTION_ROUTES) {
     for (const person of ITEM_PEOPLE) {
       it(`${route}: ${person} creates a Personal item and lists exactly what they may open`, async () => {
-        const ids = Object.fromEntries(await Promise.all(ITEM_KINDS.map(async which => [which, await seedItem(route === 'dashboards' ? 'dashboard' : 'view', which, person)])));
+        const kind = route === 'dashboards' ? 'dashboard' : 'view';
+        const ids = Object.fromEntries(await Promise.all(kindsFor(kind).map(async which => [which, await seedItem(kind, which, person)])));
         mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
-        const module = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
-        const listed = (await (await module.GET()).json() as { id: string }[]).map(i => i.id);
-        for (const which of ITEM_KINDS) expect(listed.includes(ids[which]!), which).toBe(LISTED[which]);
+        const routeModule = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
+        const listed = (await (await routeModule.GET()).json() as { id: string }[]).map(i => i.id);
+        for (const which of kindsFor(kind)) expect(listed.includes(ids[which]!), which).toBe(LISTED[which]);
 
-        const res = await module.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
+        const res = await routeModule.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
           ? { name: `created ${++ownedCounter}` } : { name: `created ${++ownedCounter}`, tab: 'results', query: '' }));
         expect(res.status).toBe(201);
         expect(await res.json()).toMatchObject({ visibility: 'personal', owner: { id: userIds[person] } });
