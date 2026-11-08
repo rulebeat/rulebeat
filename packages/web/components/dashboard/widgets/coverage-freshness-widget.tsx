@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2, AlertTriangle, Clock, HelpCircle } from 'lucide-
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
+import { incompleteRulesHref } from '@/lib/rules-tab-query';
 import { timeAgo } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -32,6 +33,10 @@ const BADGE: Record<Freshness, { label: string; className: string; icon: typeof 
   stale:  { label: 'Stale',         className: 'border-sev-critical/40 text-sev-critical',  icon: AlertTriangle },
   never:  { label: 'Never scanned', className: 'border-border text-ink-faint',              icon: HelpCircle },
 };
+
+const FRESHNESS_DEFINITION_EVERYTHING = 'Last scanned is the newest scan of this category, whatever it covered.';
+const FRESHNESS_DEFINITION_SCOPED = 'Last scanned is the newest scan that covered part of what you hold.';
+const INCOMPLETE_DEFINITION = 'Incomplete rules are enabled rules whose last run failed, was capped or was invalid. They look at what you hold and ignore the Scope, tag, rule and severity filters.';
 
 /** A high posture % means nothing if the underlying scan is weeks old. This widget surfaces
  *  per-category scan recency so that trust signal is visible next to the score, not implied. */
@@ -62,34 +67,46 @@ export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) 
           const badge = BADGE[freshness];
           const Icon = badge.icon;
           return (
-            <Link
-              key={cat.category}
-              href={buildScansHref(merged, { category: cat.category })}
-              className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="size-2 shrink-0" style={{ backgroundColor: cat.color ?? 'var(--color-ink-faint)' }} />
-                <span className="truncate text-sm font-medium text-ink">{cat.label}</span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-xs text-ink-muted">
-                  {cat.lastScanAt ? timeAgo(cat.lastScanAt) : '-'}
-                </span>
-                {cat.lastScanCoverage === 'partial' && (
-                  <span
-                    className="inline-flex items-center gap-1 border border-status-warn/40 px-1.5 py-0.5 text-xs font-medium text-status-warn"
-                    title={`Not fully scanned: ${cat.lastScanIncompleteRules.map(r => r.ruleName).join(', ')}`}
-                  >
-                    <AlertTriangle className="size-3" />Partial
+            <div key={cat.category} className="flex items-center gap-3 pr-4 transition-colors hover:bg-surface-hover">
+              <Link
+                href={buildScansHref(merged, { category: cat.category })}
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2.5 pl-4"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="size-2 shrink-0" style={{ backgroundColor: cat.color ?? 'var(--color-ink-faint)' }} />
+                  <span className="truncate text-sm font-medium text-ink">{cat.label}</span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-ink-muted">
+                    {cat.lastScanAt ? timeAgo(cat.lastScanAt) : '-'}
                   </span>
-                )}
-                <span className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-xs font-medium ${badge.className}`}>
-                  <Icon className="size-3" />{badge.label}
-                </span>
-              </div>
-            </Link>
+                  {cat.lastScanCoverage === 'partial' && (
+                    <span
+                      className="inline-flex items-center gap-1 border border-status-warn/40 px-1.5 py-0.5 text-xs font-medium text-status-warn"
+                      title={`Not fully scanned: ${cat.lastScanIncompleteRules.map(r => r.ruleName).join(', ')}`}
+                    >
+                      <AlertTriangle className="size-3" />Partial
+                    </span>
+                  )}
+                  <span className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-xs font-medium ${badge.className}`}>
+                    <Icon className="size-3" />{badge.label}
+                  </span>
+                </div>
+              </Link>
+              {cat.incompleteRuleCount > 0 && (
+                <Link
+                  href={incompleteRulesHref(cat.category, summary.holdsEverything)}
+                  className="shrink-0 bg-status-warn-soft px-1.5 py-0.5 text-xs font-medium text-status-warn"
+                >
+                  {cat.incompleteRuleCount === 1 ? '1 rule incomplete' : `${cat.incompleteRuleCount} rules incomplete`}
+                </Link>
+              )}
+            </div>
           );
         })}
+        <p className="px-4 py-2.5 text-xs text-ink-muted">
+          {summary.holdsEverything ? FRESHNESS_DEFINITION_EVERYTHING : FRESHNESS_DEFINITION_SCOPED} {INCOMPLETE_DEFINITION}
+        </p>
       </div>
     </div>
   );

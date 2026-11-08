@@ -56,3 +56,24 @@ export function ruleOverlapsScopes(
   if (rule.queryBackend === 'microsoft-graph') return coversDirectory(scopes);
   return scopeForRule(rule.scope, scopes, hierarchy) !== null;
 }
+
+/** The ids of the rules that look at what `access` holds: the Rules tab's "Rules that look at what you hold". */
+export function ruleIdsInReach(
+  rules: readonly Pick<Rule, 'id' | 'queryBackend' | 'scope'>[], access: Access, hierarchy: readonly HierarchyNode[],
+): Set<string> {
+  return new Set(rules.filter(r => ruleOverlapsScopes(r, access, hierarchy)).map(r => r.id));
+}
+
+/**
+ * The enabled rules of a category, of any kind, whose last run did not finish (failed, capped or invalid)
+ * and that look at what `access` holds. A rule that has never run is not one. Scan Coverage's count, and
+ * so the length of the Rules list the count opens. It reads no Scope, tag, rule or severity filter.
+ */
+export function incompleteRulesOf(
+  category: string, rules: readonly Rule[], access: Access, hierarchy: readonly HierarchyNode[],
+): Rule[] {
+  return rules.filter(r =>
+    r.enabled && r.category === category
+    && (r.lastRunStatus === 'failed' || r.lastRunStatus === 'capped' || r.lastRunStatus === 'invalid')
+    && ruleOverlapsScopes(r, access, hierarchy));
+}

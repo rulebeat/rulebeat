@@ -2,13 +2,13 @@ import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityO
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, getLastSnapshotTimes, type DailySnapshot } from './db/snapshots';
+import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, type DailySnapshot } from './db/snapshots';
 import { posturePct, postureDelta } from './posture-math';
 import { equalFormulaVersions } from './trend-version-equality';
 import type { BaselineGap } from './posture-baseline';
 import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
-import { listScanMetas } from './scan-history';
+import { listLastScanTimes, listScanMetas } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, IncompleteRule, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
@@ -17,7 +17,7 @@ import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './fi
 import { accessReach, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
-import { narrowScopes, ruleOverlapsScopes } from './rule-overlap';
+import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -25,10 +25,6 @@ function isWithinRange(iso: string | undefined, from: string, to: string): boole
   if (!iso) return false;
   const day = iso.slice(0, 10);
   return day >= from && day <= to;
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function dayBefore(dateKey: string): string {
@@ -202,7 +198,13 @@ export interface WidgetSummary {
     /** Same passing/total the pct is rounded from. The honest headline (spec 033), with pct as
      *  the secondary, rounded figure. */
     passing: number; total: number;
+    /** The newest finished scan of the category that covered part of what the viewer holds (anything,
+     *  for Everything). Read from scans, never from a trend point's time. */
     lastScanAt: string | null;
+    /** Enabled rules of any kind whose last run failed, was capped or was invalid, among those that look at
+     *  what the viewer holds. Ignores the Scope, tag, rule and severity filters, and is not the ring's
+     *  unknown count (a rule that never ran is unknown there and not counted here). */
+    incompleteRuleCount: number;
     /** From the category's most recent scan row: null when it has never been scanned. A category
      *  can be 'fresh' by timestamp and still 'partial': the scan ran recently but a rule failed or
      *  was capped, so its posture % may not reflect reality (spec 004). */
@@ -225,6 +227,8 @@ export interface WidgetSummary {
    *  The widget renders its own empty state for that, it isn't an error. */
   activityTrend: Array<{ date: string; count: number }>;
   lastScanAt: string | null;
+  /** Whether the viewer holds Everything, so the incomplete-rule link asks for reach only of those who do not. */
+  holdsEverything: boolean;
 
   // --- historical, snapshot-sourced: computed from `posture_snapshots`, needed because a past
   //     percentage requires the past denominator (rules enabled / resources in scope at that
@@ -307,11 +311,9 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // Scans page and works under every filter (unlike deltaPct/baseline, which need a snapshot).
   const deltaFindings = newInWindow - fixedInWindow;
 
-  // Latest install-wide snapshot time per target category, for per-category lastScanAt and the
-  // overall lastScanAt below. A category with no snapshot row yet has never been scanned. Only the
-  // time is read, so a person on less than Everything is not handed an aggregate count (#274).
-  const categoryIds = targetCategories.map(c => c.id);
-  const lastSnapshotAt = await getLastSnapshotTimes(categoryIds, today());
+  // When each target category was last scanned, for the per-category lastScanAt and the overall one
+  // below: the newest scan that covered part of what the viewer holds, read from the scans themselves.
+  const lastScanTimes = await listLastScanTimes(targetCategories.map(c => c.id), access);
 
   const perCategory = await Promise.all(targetCategories.map(async cat => {
     const { stateRuleIds } = countedByCategory.get(cat.id)!;
@@ -330,7 +332,8 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       activeFindings: catFindings.length,
       passing: catPassing,
       total: catTotal,
-      lastScanAt: lastSnapshotAt.get(cat.id) ?? null,
+      lastScanAt: lastScanTimes.get(cat.id) ?? null,
+      incompleteRuleCount: incompleteRulesOf(cat.id, allRules, access, hierarchy).length,
       lastScanCoverage: lastScan?.coverage ?? null,
       lastScanIncompleteRules: lastScan?.incompleteRules ?? [],
     };
@@ -410,7 +413,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (hasUnsupportedTrendFilter) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: true,
+      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
   }
@@ -420,7 +423,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (!trendScope.available) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, trendIsCategoryScopedOnly: false,
+      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
   }
@@ -458,7 +461,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   return {
     current, baseline, deltaPct, baselineGap, deltaFindings,
-    perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt,
+    perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

@@ -15,6 +15,9 @@ import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
 import { getPageAccess } from '@/lib/page-access';
 import { holdsNoScope } from '@/lib/access-model';
+import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
+import { ruleIdsInReach } from '@/lib/rule-overlap';
+import { readRulesTabFilter } from '@/lib/rules-tab-query';
 import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
 import type { Rule, Suppression } from '@/lib/types';
@@ -86,7 +89,12 @@ export default async function ScansPage({
 
   // The Results, Advisories and Activity tabs send no findings: the explorer reads them from the
   // server view as the view changes, starting from `initialView`.
-  const policies = narrowRulesScope(await loadRules(), access) as unknown as Rule[];
+  const allRules = await loadRules();
+  const policies = narrowRulesScope(allRules, access) as unknown as Rule[];
+  // The Rules tab's "Rules that look at what you hold" filter. Everything has no such set, so reach=yours is ignored for it.
+  const reachRuleIds = activeTab === 'rules' && !access.everything
+    ? [...ruleIdsInReach(allRules, access, await listHierarchyNodes())]
+    : undefined;
   const tabEmpty = activeTab === 'advisories' ? advisoriesEmptyState(policies)
     : activeTab === 'activity' ? activityEmptyState(policies)
     : undefined;
@@ -101,6 +109,8 @@ export default async function ScansPage({
         activeTab={activeTab}
         initialSuppressions={initialSuppressions}
         initialCategoryFilter={initialCategoryFilter}
+        initialRulesFilter={readRulesTabFilter(params)}
+        reachRuleIds={reachRuleIds}
         initialView={initialView}
         initialSavedViewId={initialSavedViewId}
         runs={activeTab === 'history' ? await listAllRuns(access, 50) : undefined}

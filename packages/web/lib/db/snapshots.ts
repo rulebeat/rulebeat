@@ -222,24 +222,6 @@ export async function getFirstSnapshotDates(categories: string[], access: Access
   return first;
 }
 
-/** When each category's install-wide snapshot was last written, on or before `onOrBefore`. Only the
- *  time: a time is the same for everyone and carries no count, so a person on less than Everything
- *  can be told when a category was last scanned without being handed an aggregate number. */
-export async function getLastSnapshotTimes(categories: string[], onOrBefore: string): Promise<Map<string, string>> {
-  const times = new Map<string, string>();
-  if (categories.length === 0) return times;
-  const rows = await many(db.select({ category: snapshotsTable.category, updatedAt: snapshotsTable.updatedAt })
-    .from(snapshotsTable)
-    .where(and(
-      inArray(snapshotsTable.category, categories),
-      eq(snapshotsTable.subscriptionId, ''),
-      lte(snapshotsTable.date, onOrBefore),
-    ))
-    .orderBy(desc(snapshotsTable.date)));
-  for (const row of rows) if (!times.has(row.category)) times.set(row.category, row.updatedAt);
-  return times;
-}
-
 // --- one-time backfill from existing scan-blob history ---
 
 /** Approximates historical daily snapshots from the scan-blob history (last scan of each day
