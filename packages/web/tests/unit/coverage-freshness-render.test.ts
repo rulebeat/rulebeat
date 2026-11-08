@@ -18,7 +18,7 @@ vi.mock('@/lib/hooks/use-widget-fetch', () => ({
 
 const category = (incompleteRuleCount: number) => ({
   category: 'security', label: 'Security', pct: 90, activeFindings: 0, passing: 9, total: 10, lastScanAt: null,
-  incompleteRuleCount, lastScanCoverage: null, lastScanIncompleteRules: [],
+  incompleteRuleCount,
 });
 
 const render = (incompleteRuleCount: number, holdsEverything: boolean) => {
@@ -63,6 +63,19 @@ describe('the incomplete-rule badge', () => {
     expect(everything.searchParams.get('reach')).toBeNull();
     const scoped = new URL(/href="([^"]+)"/.exec(anchorWith(render(2, false), '2 rules')!.tag)![1]!.replaceAll('&amp;', '&'), 'http://localhost');
     expect(scoped.searchParams.get('reach')).toBe('yours');
+  });
+});
+
+describe('the row layout', () => {
+  /** Everything between the Results link's closing tag and the row's end, up to the next row. */
+  const slotAfterResults = (html: string) => /<\/a>(<div class="[^"]*")/.exec(html)?.[1];
+
+  it('reserves the same fixed-width slot for the badge on rows with and without one', () => {
+    const withBadge = slotAfterResults(render(2, true));
+    const without = slotAfterResults(render(0, true));
+    expect(withBadge).toMatch(/\bw-\d+/);
+    expect(without).toBe(withBadge);
+    expect(render(0, true)).not.toContain('incomplete<');
   });
 });
 

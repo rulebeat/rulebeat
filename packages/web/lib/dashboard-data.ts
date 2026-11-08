@@ -8,9 +8,9 @@ import { equalFormulaVersions } from './trend-version-equality';
 import type { BaselineGap } from './posture-baseline';
 import { trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
-import { listLastScanTimes, listScanMetas } from './scan-history';
+import { listLastScanTimes } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
-import type { Category, IncompleteRule, Rule, Severity } from './types';
+import type { Category, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
 import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
@@ -205,11 +205,6 @@ export interface WidgetSummary {
      *  what the viewer holds. Ignores the Scope, tag, rule and severity filters, and is not the ring's
      *  unknown count (a rule that never ran is unknown there and not counted here). */
     incompleteRuleCount: number;
-    /** From the category's most recent scan row: null when it has never been scanned. A category
-     *  can be 'fresh' by timestamp and still 'partial': the scan ran recently but a rule failed or
-     *  was capped, so its posture % may not reflect reality (spec 004). */
-    lastScanCoverage: 'complete' | 'partial' | null;
-    lastScanIncompleteRules: IncompleteRule[];
   }>;
   /** Per-subscription posture, derived live from findings (no schema change): only subscriptions
    *  with at least one active finding appear (there's no tenant-wide subscription list without a
@@ -315,15 +310,12 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   // below: the newest scan that covered part of what the viewer holds, read from the scans themselves.
   const lastScanTimes = await listLastScanTimes(targetCategories.map(c => c.id), access);
 
-  const perCategory = await Promise.all(targetCategories.map(async cat => {
+  const perCategory = targetCategories.map(cat => {
     const { stateRuleIds } = countedByCategory.get(cat.id)!;
     const catTotal = stateRuleIds.size;
     const catFindings = activeFindings.filter(f => f.category === cat.id);
     const { passing: catPassing } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
     const catPct = posturePct(catPassing, catTotal);
-    // A high posture % is misleading if the scan behind it didn't finish. The coverage-freshness
-    // widget must show that alongside recency, not just "how long ago" (spec 004).
-    const [lastScan] = await listScanMetas(cat.id, access, 1);
     return {
       category: cat.id,
       label: cat.label,
@@ -334,10 +326,8 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
       total: catTotal,
       lastScanAt: lastScanTimes.get(cat.id) ?? null,
       incompleteRuleCount: incompleteRulesOf(cat.id, allRules, access, hierarchy).length,
-      lastScanCoverage: lastScan?.coverage ?? null,
-      lastScanIncompleteRules: lastScan?.incompleteRules ?? [],
     };
-  }));
+  });
 
   const lastScanAt = perCategory.reduce<string | null>((max, m) => {
     if (!m.lastScanAt) return max;

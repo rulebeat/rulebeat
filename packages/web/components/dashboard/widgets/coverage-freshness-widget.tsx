@@ -80,27 +80,22 @@ export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) 
                   <span className="text-xs text-ink-muted">
                     {cat.lastScanAt ? timeAgo(cat.lastScanAt) : '-'}
                   </span>
-                  {cat.lastScanCoverage === 'partial' && (
-                    <span
-                      className="inline-flex items-center gap-1 border border-status-warn/40 px-1.5 py-0.5 text-xs font-medium text-status-warn"
-                      title={`Not fully scanned: ${cat.lastScanIncompleteRules.map(r => r.ruleName).join(', ')}`}
-                    >
-                      <AlertTriangle className="size-3" />Partial
-                    </span>
-                  )}
                   <span className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-xs font-medium ${badge.className}`}>
                     <Icon className="size-3" />{badge.label}
                   </span>
                 </div>
               </Link>
-              {cat.incompleteRuleCount > 0 && (
-                <Link
-                  href={incompleteRulesHref(cat.category, summary.holdsEverything)}
-                  className="shrink-0 bg-status-warn-soft px-1.5 py-0.5 text-xs font-medium text-status-warn"
-                >
-                  {cat.incompleteRuleCount === 1 ? '1 rule incomplete' : `${cat.incompleteRuleCount} rules incomplete`}
-                </Link>
-              )}
+              {/* A fixed-width slot, filled or not, so the time and freshness badge line up row to row. */}
+              <div className="flex w-36 shrink-0 justify-end">
+                {cat.incompleteRuleCount > 0 && (
+                  <Link
+                    href={incompleteRulesHref(cat.category, summary.holdsEverything)}
+                    className="bg-status-warn-soft px-1.5 py-0.5 text-xs font-medium text-status-warn"
+                  >
+                    {cat.incompleteRuleCount === 1 ? '1 rule incomplete' : `${cat.incompleteRuleCount} rules incomplete`}
+                  </Link>
+                )}
+              </div>
             </div>
           );
         })}

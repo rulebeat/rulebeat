@@ -3,14 +3,17 @@
  * the length of the Rules list its link opens, for Everything and for someone who holds one subscription;
  * a rule that never ran is not incomplete; and Last scanned is read from scans, not from trend points.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/client';
 import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { loadRules } from '@/lib/rules';
 import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
 import { upsertDailySnapshot } from '@/lib/db/snapshots';
-import { computeWidgetSummary } from '@/lib/dashboard-data';
+import { computeWidgetSummary, type WidgetSummary } from '@/lib/dashboard-data';
+import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage-freshness-widget';
 import { saveScanResult } from '@/lib/scan-history';
 import { buildAccess, parseScope, type Access } from '@/lib/access-model';
 import { ruleIdsInReach } from '@/lib/rule-overlap';
@@ -20,6 +23,22 @@ import { emptySeverityCounts } from '@/lib/severity';
 import type { QueryBackend, RuleExecutionStatus } from '@rulebeat/core';
 import { resetDb, clearRules } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+
+let widgetSummary: WidgetSummary | null = null;
+
+vi.mock('@/lib/hooks/use-widget-fetch', () => ({
+  useWidgetFetch: () => ({ data: widgetSummary, loading: false, failed: false, retry: () => undefined }),
+}));
+
+/** The freshness badge the widget renders for the security row, from the summary the viewer is served. */
+async function freshnessShownTo(access: Access): Promise<string> {
+  widgetSummary = await computeWidgetSummary(FILTERS, 30, access);
+  const html = renderToStaticMarkup(createElement(CoverageFreshnessWidget, { config: {}, filters: FILTERS, refreshKey: 0 }));
+  return /(Fresh|Recent|Stale|Never scanned)<\/span>/.exec(html)![1]!;
+}
+
+const DAY_MS = 86_400_000;
+const ago = (days: number) => new Date(Date.now() - days * DAY_MS).toISOString();
 
 const SUB_A = '00000000-0000-0000-0000-00000000000a';
 const SUB_B = '00000000-0000-0000-0000-00000000000b';
@@ -43,11 +62,11 @@ async function insertRule(seed: RuleSeed): Promise<void> {
   }));
 }
 
-async function saveScan(id: string, finishedAt: string, covered: CoveredEntry[]): Promise<void> {
+async function saveScan(id: string, finishedAt: string, covered: CoveredEntry[] | null): Promise<void> {
   await saveScanResult('security', {
     id, module: 'security', startedAt: finishedAt, finishedAt, durationMs: 1, subscriptionsScanned: [], findings: [],
     counts: emptySeverityCounts(), totalRules: 1, coverage: 'complete', incompleteRules: [],
-  }, { id, coveredScope: covered });
+  }, { id, ...(covered ? { coveredScope: covered } : {}) });
 }
 
 describe('Scan Coverage counts the rules whose last run did not finish', () => {
@@ -112,22 +131,35 @@ describe('Scan Coverage counts the rules whose last run did not finish', () => {
 });
 
 describe('Last scanned follows what the viewer holds', () => {
-  const TEN_DAYS_AGO = '2026-10-29T08:00:00.000Z';
-  const YESTERDAY = '2026-11-07T08:00:00.000Z';
+  let tenDaysAgo: string;
+  let yesterday: string;
 
   beforeEach(async () => {
     await resetDb();
-    await saveScan('old-a', TEN_DAYS_AGO, [{ tenantId: 't', path: `/subscriptions/${SUB_A}` }]);
-    await saveScan('new-b', YESTERDAY, [{ tenantId: 't', path: `/subscriptions/${SUB_B}` }]);
+    tenDaysAgo = ago(10);
+    yesterday = ago(0.5);
+    await saveScan('old-a', tenDaysAgo, [{ tenantId: 't', path: `/subscriptions/${SUB_A}` }]);
+    await saveScan('new-b', yesterday, [{ tenantId: 't', path: `/subscriptions/${SUB_B}` }]);
   });
 
   it('reads the older scan of the subscription they hold, while Everything reads the newer scan', async () => {
     const scoped = await computeWidgetSummary(FILTERS, 30, holder);
-    expect(scoped.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(TEN_DAYS_AGO);
-    expect(scoped.lastScanAt).toBe(TEN_DAYS_AGO);
+    expect(scoped.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(tenDaysAgo);
+    expect(scoped.lastScanAt).toBe(tenDaysAgo);
     const everything = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
-    expect(everything.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(YESTERDAY);
-    expect(everything.lastScanAt).toBe(YESTERDAY);
+    expect(everything.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(yesterday);
+    expect(everything.lastScanAt).toBe(yesterday);
+  });
+
+  it('reads Stale for the scoped person and Fresh for Everything, as the widget renders them', async () => {
+    expect(await freshnessShownTo(holder)).toBe('Stale');
+    expect(await freshnessShownTo(EVERYTHING_ACCESS)).toBe('Fresh');
+  });
+
+  it('counts a scan from before covered scopes were recorded (null) for the scoped person', async () => {
+    await resetDb();
+    await saveScan('pre-276', ago(0.25), null);
+    expect(await freshnessShownTo(holder)).toBe('Fresh');
   });
 
   it('is never read from a trend point\'s time', async () => {
@@ -136,5 +168,6 @@ describe('Last scanned follows what the viewer holds', () => {
     const summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
     expect(summary.perCategory.find(c => c.category === 'security')!.lastScanAt).toBeNull();
     expect(summary.lastScanAt).toBeNull();
+    expect(await freshnessShownTo(EVERYTHING_ACCESS)).toBe('Never scanned');
   });
 });

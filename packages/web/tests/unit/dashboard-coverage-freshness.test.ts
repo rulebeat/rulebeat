@@ -1,10 +1,12 @@
 /**
- * Spec 004: the posture-freshness dashboard widget must surface a category's most recent
- * scan coverage, not just how long ago it ran. A category can be freshly scanned and still have a
- * rule that failed or was capped. The widget's data source (computeWidgetSummary) needs to expose
- * that alongside lastScanAt, or the widget has nothing to render it from.
+ * The Scan Coverage widget says a category is incomplete from the rules whose last run did not finish,
+ * not from the single newest scan. A category scanned a moment ago can still have a rule that failed, and
+ * the row says so with one signal: the count link. The summary is read through computeWidgetSummary and
+ * the row is rendered from it.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TokenCredential } from '@azure/identity';
 import type { TenantContext } from '@rulebeat/core';
 import { db } from '@/lib/db/client';
@@ -12,10 +14,24 @@ import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { getCategory } from '@/lib/db/categories';
 import { runCategoryScan } from '@/lib/scan-runner';
-import { computeWidgetSummary } from '@/lib/dashboard-data';
+import { computeWidgetSummary, type WidgetSummary } from '@/lib/dashboard-data';
+import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage-freshness-widget';
 import { resetDb, clearRules } from '../helpers/db';
 import { argRow, TEST_SUB_A } from '../helpers/fake-azure';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+
+let summary: WidgetSummary | null = null;
+
+vi.mock('@/lib/hooks/use-widget-fetch', () => ({
+  useWidgetFetch: () => ({ data: summary, loading: false, failed: false, retry: () => undefined }),
+}));
+
+const FILTERS = { categories: ['security'], dateWindow: { mode: 'relative' as const, days: 7 } };
+
+async function renderRow(): Promise<string> {
+  summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+  return renderToStaticMarkup(createElement(CoverageFreshnessWidget, { config: {}, filters: FILTERS, refreshKey: 0 }));
+}
 
 const RULE_OK = 'test-rule-ok';
 const RULE_FAIL = 'test-rule-fail';
@@ -62,7 +78,7 @@ function makeCtx(behavior: QueryBehavior): TenantContext {
   };
 }
 
-describe('coverage-freshness widget data (spec 004)', () => {
+describe('coverage-freshness widget data', () => {
   beforeEach(async () => {
     await resetDb();
     await clearRules();
@@ -70,45 +86,44 @@ describe('coverage-freshness widget data (spec 004)', () => {
     await insertRule(RULE_FAIL, MARKER_FAIL);
   });
 
-  it('reports the security category as partial, with the failed rule named, after a mixed scan', async () => {
+  async function scan(behavior: QueryBehavior): Promise<void> {
     const category = (await getCategory('security'))!;
-    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
-      ctx: makeCtx({
-        [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
-        [MARKER_FAIL]: { failWith: new Error('429 Too Many Requests') },
-      }),
-      ruleIds: [RULE_OK, RULE_FAIL],
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: makeCtx(behavior), ruleIds: [RULE_OK, RULE_FAIL] });
+  }
+
+  it('counts the failed rule after a mixed scan, and the row says "1 rule incomplete" and no "Partial"', async () => {
+    await scan({
+      [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
+      [MARKER_FAIL]: { failWith: new Error('429 Too Many Requests') },
     });
-
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
-    const security = summary.perCategory.find(c => c.category === 'security');
-
-    expect(security?.lastScanCoverage).toBe('partial');
-    expect(security?.lastScanIncompleteRules).toEqual([{ ruleId: RULE_FAIL, ruleName: RULE_FAIL, status: 'failed' }]);
+    const html = await renderRow();
+    const security = summary!.perCategory.find(c => c.category === 'security')!;
+    expect(security.incompleteRuleCount).toBe(1);
+    expect(security).not.toHaveProperty('lastScanCoverage');
+    expect(html).toContain('>1 rule incomplete<');
+    expect(html).not.toContain('Partial');
+    expect(html).not.toContain('title=');
   });
 
-  it('reports complete coverage and no incomplete rules after a fully clean scan', async () => {
-    const category = (await getCategory('security'))!;
-    await runCategoryScan(category, { access: EVERYTHING_ACCESS,
-      ctx: makeCtx({
-        [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] },
-        [MARKER_FAIL]: { rows: [] },
-      }),
-      ruleIds: [RULE_OK, RULE_FAIL],
-    });
-
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
-    const security = summary.perCategory.find(c => c.category === 'security');
-
-    expect(security?.lastScanCoverage).toBe('complete');
-    expect(security?.lastScanIncompleteRules).toEqual([]);
+  it('counts nothing and shows no badge after a fully clean scan', async () => {
+    await scan({ [MARKER_OK]: { rows: [argRow({ name: 'vm-ok' })] }, [MARKER_FAIL]: { rows: [] } });
+    const html = await renderRow();
+    expect(summary!.perCategory.find(c => c.category === 'security')!.incompleteRuleCount).toBe(0);
+    expect(html).not.toContain('incomplete<');
+    expect(html).not.toContain('Partial');
   });
 
-  it('reports null coverage for a category that has never been scanned', async () => {
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
-    const security = summary.perCategory.find(c => c.category === 'security');
+  it('counts nothing for a category that has never been scanned', async () => {
+    const html = await renderRow();
+    expect(summary!.perCategory.find(c => c.category === 'security')!.incompleteRuleCount).toBe(0);
+    expect(html).not.toContain('Partial');
+  });
 
-    expect(security?.lastScanCoverage).toBeNull();
-    expect(security?.lastScanIncompleteRules).toEqual([]);
+  it('counts a rule that failed in an earlier scan even when the newest scan was complete for other rules', async () => {
+    await scan({ [MARKER_OK]: { rows: [] }, [MARKER_FAIL]: { failWith: new Error('boom') } });
+    const category = (await getCategory('security'))!;
+    await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx: makeCtx({ [MARKER_OK]: { rows: [] } }), ruleIds: [RULE_OK] });
+    await renderRow();
+    expect(summary!.perCategory.find(c => c.category === 'security')!.incompleteRuleCount).toBe(1);
   });
 });
