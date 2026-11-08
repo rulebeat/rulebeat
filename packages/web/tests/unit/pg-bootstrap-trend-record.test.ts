@@ -29,6 +29,8 @@ async function databaseWithOneRule(): Promise<void> {
   await dbReady;
   await resetDb();
   await bootstrapPg(pgDb!);
+  // resetDb() keeps the rules table, so a rule an earlier test inserted would still be there.
+  await raw(`DELETE FROM rules WHERE id = '${RULE}'`);
   await raw(`
     INSERT INTO rules (id, name, description, category, severity, enabled, scope, resource_types, conditions, raw_kql, query_backend, type)
     VALUES ('${RULE}', 'VMs without backup', 'test', 'security', 'high', true, '{"level":"subscription"}', '[]', '[]',
@@ -55,6 +57,7 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg records what its upgrade steps mov
   afterEach(async () => {
     await bootstrapPg(pgDb!);
     await resetDb();
+    await raw(`DELETE FROM rules WHERE id = '${RULE}'`);
   });
 
   describe('placement correction', () => {
