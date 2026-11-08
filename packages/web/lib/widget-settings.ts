@@ -36,3 +36,14 @@ export function storedLimit(config: Record<string, unknown>): number | undefined
   const limit = config['limit'];
   return typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : undefined;
 }
+
+/** The row count a widget type shows when its stored config sets no limit. It is the figure the
+ *  config panel offers, so a widget saved without one (an upgraded findings table) keeps showing it. */
+const DEFAULT_LIMITS: Record<string, number> = {
+  'recent-findings': 10,
+};
+
+/** The row limit a widget of `type` counts: its stored config's, else the type's default. */
+export function limitFor(type: string | undefined, config: Record<string, unknown>): number | undefined {
+  return storedLimit(config) ?? (type ? DEFAULT_LIMITS[type] : undefined);
+}

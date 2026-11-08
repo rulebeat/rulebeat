@@ -97,6 +97,7 @@ beforeEach(async () => {
         widget('rules', 'top-rules', { limit: 1 }),
         widget('resources', 'top-resources', { limit: 1 }),
         widget('recent', 'recent-findings', { limit: 2 }),
+        widget('recent-default', 'recent-findings'),
         widget('advisories', 'advisories', { limit: 1 }),
         widget('fixed', 'new-vs-fixed', { period: '7d' }),
         widget('scoped', 'top-rules', { subscriptions: [SUB_A] }),
@@ -280,5 +281,22 @@ describe('the trend cap of a widget that is not saved yet', () => {
     };
     expect(await read('new-vs-fixed')).toBe(180);
     expect(await read('trend')).toBe(365);
+  });
+});
+
+describe('a Recent Findings widget stored without a limit', () => {
+  const limitFor = async (query: string) => {
+    const out = await readWidgetRequest(
+      new Request(`http://localhost/api/widgets/findings?dashboard=${dashboardId}&${query}`),
+      everythingAccess('editor'),
+    );
+    if (out instanceof Response) throw new Error(`refused with ${out.status}`);
+    return out.limit;
+  };
+
+  it('shows 10 rows, as the config panel says and as the edit preview does', async () => {
+    expect(await limitFor('widget=recent-default')).toBe(10);
+    expect(await limitFor('widget=recent-default&preview=1&draft=%7B%7D')).toBe(10);
+    expect(await limitFor('widget=fresh&preview=1&draft=%7B%7D&type=recent-findings')).toBe(10);
   });
 });

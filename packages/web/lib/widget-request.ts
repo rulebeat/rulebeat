@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import type { Access } from '@/lib/access-model';
 import { effectiveFilters } from '@/lib/effective-filters';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
-import { DEFAULT_TREND_DAYS, MAX_TREND_DAYS, TREND_CAP_DAYS, storedLimit, storedTrendDays } from '@/lib/widget-settings';
+import { DEFAULT_TREND_DAYS, MAX_TREND_DAYS, TREND_CAP_DAYS, limitFor, storedTrendDays } from '@/lib/widget-settings';
 
 /** The params the routes used to take as an assembled filter. They are refused, not read. */
 const ASSEMBLED_FILTER_PARAMS = ['categories', 'subscriptions', 'resourceGroups', 'severities', 'ruleIds', 'policyIds', 'suppressed', 'includeSuppressed'];
@@ -85,7 +85,7 @@ export async function readWidgetRequest(req: Request, access: Access): Promise<W
   return {
     filters: result.filters,
     meta: { revision: result.revision, heldBack: result.heldBack },
-    limit: preview ? (requestedLimit ?? storedLimit(result.config)) : storedLimit(result.config),
+    limit: preview ? (requestedLimit ?? limitFor(type, result.config)) : limitFor(type, result.config),
     trendDays,
   };
 }
