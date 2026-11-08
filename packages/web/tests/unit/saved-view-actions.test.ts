@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
-import type { SavedView } from '@/lib/saved-view-query';
+import type { HeldBackSavedView } from '@/lib/saved-view-query';
 
-const view = (id: string, name: string): SavedView => ({
+const view = (id: string, name: string): HeldBackSavedView => ({
   id, name, tab: 'results', query: '', createdBy: null, createdAt: '2026-01-01T00:00:00.000Z', updatedBy: null, updatedAt: '2026-01-01T00:00:00.000Z',
-  owner: null, visibility: 'shared', revision: 1,
+  owner: null, visibility: 'shared', revision: 1, heldBack: [],
 });
 
 function fake(status: number, body?: unknown, opts: { redirected?: boolean } = {}) {
@@ -29,6 +29,18 @@ describe('requestSavedViewChange', () => {
     const fetchImpl = fake(200, view('v1', 'B'));
     await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { name: 'B' } }, fetchImpl);
     expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"name":"B"}' }));
+  });
+
+  it('names the revision of the copy it was sent, so the server can refuse a save made after the view changed', async () => {
+    const fetchImpl = fake(200, view('v1', 'B'));
+    await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { query: 'q=x' }, revision: 3 }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3}' }));
+  });
+
+  it('names the query of the copy it was sent, so the server can put back what that copy left out', async () => {
+    const fetchImpl = fake(200, view('v1', 'B'));
+    await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { query: 'q=x' }, revision: 3, opened: 'q=y' }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3,"opened":"q=y"}' }));
   });
 
   it('deletes with no body and returns no view', async () => {

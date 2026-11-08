@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
+import { holdBackSavedViews } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { getSavedView, unshareSavedView } from '@/lib/db/saved-views';
 import { savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -41,7 +41,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     if (result.view.owner?.id !== actor.id) {
       return Response.json({ id, visibility: result.view.visibility, revision: result.view.revision });
     }
-    return Response.json(markedSavedView(actor.access, result.view));
+    return Response.json((await holdBackSavedViews(actor.access, [result.view]))[0]);
   } catch (err) {
     return serverError('Could not unshare the saved view', err);
   }

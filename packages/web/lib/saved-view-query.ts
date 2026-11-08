@@ -9,6 +9,7 @@
  * knowing the View's shape.
  */
 import { viewFromSearchParams, viewToSearchParams } from './finding-view';
+import type { HeldBack } from './held-back';
 import type { ItemOwner, ItemVisibility } from './types';
 
 export const SAVED_VIEW_TABS = ['results', 'advisories', 'activity'] as const;
@@ -39,6 +40,12 @@ export interface SavedView extends SavedViewFields {
   visibility: ItemVisibility;
   /** Starts at 1 and goes up by one on every write. */
   revision: number;
+}
+
+/** A saved view as the routes return it: `query` leaves out the stored values outside the viewer's Access,
+ *  which `heldBack` counts (lib/held-back.ts). */
+export interface HeldBackSavedView extends SavedView {
+  heldBack: HeldBack[];
 }
 
 export function isSavedViewTab(value: unknown): value is SavedViewTab {

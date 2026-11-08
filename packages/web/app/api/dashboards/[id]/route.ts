@@ -3,11 +3,14 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
+
+const STALE_COPY = 'This dashboard changed while you were editing it. Reload it and try again.';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
@@ -16,7 +19,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const d = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', d, 'open');
   if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(markedDashboard(actor.access, d));
+  const [held] = await holdBackDashboards(actor.access, [d]);
+  return Response.json(held);
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,7 +32,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: boolean }>(req);
+  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: boolean; revision?: number }>(req);
   if (body instanceof NextResponse) return body;
 
   if (body.isDefault) {
@@ -42,12 +46,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
     // isDefault-only request: return the (now-updated) dashboard without touching other fields.
     const updated = await getDashboard(id);
-    return Response.json(updated && markedDashboard(actor.access, updated));
+    return Response.json(updated && (await holdBackDashboards(actor.access, [updated]))[0]);
   }
 
-  const result = await updateDashboard(id, body);
+  // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+  // The write is made on the revision of that copy, not the one read just now: a copy the dashboard has moved
+  // on from is refused, since it would put back values that are no longer there.
+  const revision = claimedRevision(body);
+  if (revision !== undefined && revision !== before.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+  const opened = openedCopy(body);
+  const restored = body.config === undefined ? null : await restoreHeldBackDashboard(
+    actor.access, before, body.config, opened && typeof opened === 'object' ? opened as DashboardConfig : undefined,
+  );
+  if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
+  const result = await updateDashboard(
+    id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },
+  );
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+    if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
     return Response.json({ error }, { status: 409 });
   }
@@ -87,7 +104,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  return Response.json(markedDashboard(actor.access, result.dashboard));
+  const [held] = await holdBackDashboards(actor.access, [result.dashboard]);
+  return Response.json(held);
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

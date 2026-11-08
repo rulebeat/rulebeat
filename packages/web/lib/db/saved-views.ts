@@ -103,7 +103,10 @@ export async function createSavedView(
 
 export type UpdateSavedViewResult =
   | { ok: true; view: SavedView; before: SavedView }
-  | { ok: false; reason: 'not-found' | 'name-taken' };
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'conflict' };
+
+/** `ifRevision` makes the write conditional: it is refused as a `conflict` when the row has moved to another revision. */
+export interface UpdateGuard { ifRevision?: number }
 
 // The name is only checked when it actually changes (compared the same way the check compares), so
 // an install holding a pre-existing clashing pair can still save either one without renaming it.
@@ -111,11 +114,13 @@ export async function updateSavedView(
   id: string,
   data: Partial<SavedViewFields>,
   actorId: string | null,
+  guard: UpdateGuard = {},
 ): Promise<UpdateSavedViewResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' } as const;
+    if (guard.ifRevision !== undefined && existing.revision !== guard.ifRevision) return { ok: false, reason: 'conflict' } as const;
     const name = data.name?.trim();
     if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, spaceOf(existing), id)) {
       return { ok: false, reason: 'name-taken' } as const;

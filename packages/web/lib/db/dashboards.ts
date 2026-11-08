@@ -113,16 +113,21 @@ export type UpdateDashboardResult =
   | { ok: true; dashboard: Dashboard }
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'empty-name' }
-  | { ok: false; reason: 'name-taken' };
+  | { ok: false; reason: 'name-taken' }
+  | { ok: false; reason: 'conflict' };
 
 // The name is only checked when it actually changes (compared case-insensitively, after trimming,
 // against the stored one): an install can already hold a pre-existing duplicate pair, and saving
 // one of them without renaming it must keep working.
-export async function updateDashboard(id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>): Promise<UpdateDashboardResult> {
+// `ifRevision` makes the write conditional: it is refused as a `conflict` when the row has moved to another revision.
+export async function updateDashboard(
+  id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>, guard: { ifRevision?: number } = {},
+): Promise<UpdateDashboardResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
+    if (guard.ifRevision !== undefined && existing.revision !== guard.ifRevision) return { ok: false, reason: 'conflict' };
     if (data.name !== undefined) {
       const trimmed = data.name.trim();
       if (!trimmed) return { ok: false, reason: 'empty-name' };

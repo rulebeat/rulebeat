@@ -504,9 +504,6 @@ const suppressionRemoval: Matrix = {
   expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
 
-const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
-const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
-const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
 
 /**
  * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
@@ -647,26 +644,31 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
-  // A stored filter reads back exactly as stored, with the marks beside it. The marks are what differs.
-  const marked = (marks: { subscriptions: string[]; resourceGroups: string[] }) => ({ marks });
-  const marksByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
+  // #363: a stored filter value outside the person's Access is left out of what comes back and counted beside it.
+  // Each expectation is the item as stored with only the held-back values removed, and the counts, by hand.
+  const heldByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
     byPerson(same(everything), same(managementGroup), same(subscription), same(resourceGroup), same(directory), same(nothing));
 
-  const dashboardOf = (body: { config: { filters?: unknown; widgets: { config: unknown }[] }; outsideAccess: unknown }) =>
-    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, marks: body.outsideAccess });
-  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] } };
-  const dashboardExpected = marksByPerson(
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(SUB_TWO_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+  const SELF = 'self';
+  const dashboardOf = (body: { id: string; config: { filters?: unknown; widgets: { config: unknown }[] }; heldBack: { id: string }[] }) =>
+    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [] };
+  const DASHBOARD_SUBSCRIPTION = { place: 'dashboard', id: SELF, dimension: 'subscription', count: 1 };
+  const WIDGET_GROUP = { place: 'widget', id: 'matrix-widget', dimension: 'resourceGroup', count: 1 };
+  // Subscription one holds every resource group name, since a name is not tied to a subscription. A person who
+  // holds one resource group, the Directory or nothing holds neither subscription two nor `rg-two`.
+  const dashboardExpected = heldByPerson(
+    STORED_DASHBOARD,
+    STORED_DASHBOARD,
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [DASHBOARD_SUBSCRIPTION] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
   );
   const dashboards: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; outsideAccess: unknown }[];
-      return dashboardOf(list.find(d => d.id === seed.dashboardId)!);
+      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; heldBack: never }[];
+      return dashboardOf(list.find(d => d.id === seed.dashboardId)! as never);
     },
     expected: dashboardExpected,
   };
@@ -676,18 +678,22 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
-  const viewOf = (body: { query: string; tab: string; outsideAccess: unknown }) => ({ tab: body.tab, query: body.query, marks: body.outsideAccess });
-  const viewExpected = marksByPerson(
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+  const viewOf = (body: { id: string; query: string; tab: string; heldBack: { id: string }[] }) =>
+    ({ tab: body.tab, query: body.query, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  // The held subscription leaves as a placeholder no finding carries, so the view lists nothing for them.
+  const VIEW_MATCHES_NOTHING = `subscription=${encodeURIComponent('Outside your access').replace(/%20/g, '+')}`;
+  const VIEW_HELD = [{ place: 'savedView', id: SELF, dimension: 'subscription', count: 1 }];
+  const viewExpected = heldByPerson(
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
   );
   const views: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; heldBack: { id: string }[] }[];
       return viewOf(list.find(v => v.id === seed.savedViewId)!);
     },
     expected: viewExpected,
@@ -697,34 +703,41 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: viewExpected,
   };
 
-  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It carries the
-  // stored filters as they are, so each person is shown the same marks they are on the dashboard itself.
-  const duplicated = (marks: { subscriptions: string[]; resourceGroups: string[] }) =>
-    same({ status: 201, filters: { subscriptions: [SUB_TWO] }, marks });
+  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It stores the
+  // filters as they are and answers with what the person's Access reaches, so each person is held back the same
+  // values as on the dashboard itself. The copy's own id is new, so the counts are compared without it.
+  const COPY_HELD_SUBSCRIPTION = { place: 'dashboard', dimension: 'subscription', count: 1 };
+  const COPY_HELD_GROUP = { place: 'widget', dimension: 'resourceGroup', count: 1 };
+  const duplicated = (subscriptions: string[], heldBack: object[]) => same({ status: 201, filters: { subscriptions }, heldBack });
   const duplicate: Matrix = {
     probe: async seed => {
       const route = await import('@/app/api/dashboards/[id]/duplicate/route');
       const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
-      const body = await res.json() as { outsideAccess?: unknown; config?: { filters?: unknown } };
-      return { status: res.status, filters: body.config?.filters, marks: body.outsideAccess };
+      const body = await res.json() as { heldBack?: { place: string; dimension: string; count: number }[]; config?: { filters?: unknown } };
+      return {
+        status: res.status, filters: body.config?.filters,
+        heldBack: body.heldBack?.map(({ place, dimension, count }) => ({ place, dimension, count })),
+      };
     },
     expected: byPerson(
-      duplicated(NOTHING_MARKED), duplicated(NOTHING_MARKED), duplicated(SUB_TWO_MARKED), duplicated(BOTH_MARKED), duplicated(BOTH_MARKED), duplicated(BOTH_MARKED),
+      duplicated([SUB_TWO], []), duplicated([SUB_TWO], []),
+      duplicated([], [COPY_HELD_SUBSCRIPTION]),
+      duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]), duplicated([], [COPY_HELD_SUBSCRIPTION, COPY_HELD_GROUP]),
     ),
   };
 
-  // Sharing and unsharing answer with the item, so each person is shown the same marks they are on the item itself.
+  // Sharing and unsharing answer with the item, so each person is held back the same values they are on the item itself.
   // Only an Admin or an Editor on Everything holds the write action in this matrix (the other people are Viewers),
   // so a probe is a fresh item of the asking person's own: a Personal one to share, a Shared one to unshare.
   const ROUTES = {
     dashboard: { share: () => import('@/app/api/dashboards/[id]/share/route'), unshare: () => import('@/app/api/dashboards/[id]/unshare/route'), 'hand-over': () => import('@/app/api/dashboards/[id]/hand-over/route'), 'take-over': () => import('@/app/api/dashboards/[id]/take-over/route') },
     view: { share: () => import('@/app/api/views/[id]/share/route'), unshare: () => import('@/app/api/views/[id]/unshare/route'), 'hand-over': () => import('@/app/api/views/[id]/hand-over/route'), 'take-over': () => import('@/app/api/views/[id]/take-over/route') },
   };
-  /** What a reply holds that depends on the person: the stored filters (a dashboard) or query (a view), and the marks. */
+  /** What a reply holds that depends on the person: the stored filters (a dashboard) or query (a view), and the counts held back. */
   const stored = (kind: 'dashboard' | 'view') => (kind === 'dashboard' ? { filters: { subscriptions: [SUB_TWO] } } : { query: VIEW_QUERY });
   const refusedShare = { status: 403 };
   const sharingExpected = (kind: 'dashboard' | 'view') => {
-    const shared = same({ status: 200, ...stored(kind), marks: NOTHING_MARKED });
+    const shared = same({ status: 200, ...stored(kind), heldBack: [] });
     return byPerson(shared, same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare));
   };
   const ownItem = async (kind: 'dashboard' | 'view', visibility: 'personal' | 'shared', ownerId?: string) => {
@@ -757,8 +770,8 @@ function dashboardMatrix(): Record<string, Matrix> {
         { params: Promise.resolve({ id }) },
       );
       if (res.status !== 200) return { status: res.status };
-      const reply = await res.json() as { outsideAccess: unknown; config: { filters: unknown }; query: string };
-      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), marks: reply.outsideAccess };
+      const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
     },
     expected: sharingExpected(kind),
   });
@@ -767,8 +780,8 @@ function dashboardMatrix(): Record<string, Matrix> {
       const id = await ownItem(kind, action === 'share' ? 'personal' : 'shared');
       const res = await (await ROUTES[kind][action]()).POST(new Request(`http://localhost/api/${kind}s/x/${action}`, { method: 'POST' }), { params: Promise.resolve({ id }) });
       if (res.status !== 200) return { status: res.status };
-      const reply = await res.json() as { outsideAccess: unknown; config: { filters: unknown }; query: string };
-      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), marks: reply.outsideAccess };
+      const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
     },
     expected: sharingExpected(kind),
   });

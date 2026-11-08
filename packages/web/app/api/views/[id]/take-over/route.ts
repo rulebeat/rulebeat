@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getSavedView, transferSavedView } from '@/lib/db/saved-views';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
+import { holdBackSavedViews } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { staleStateMessage } from '@/lib/item-sharing';
 import { savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -35,7 +35,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       entityId: id,
       summary: `Took over saved view "${before.name}"`,
     });
-    return Response.json(markedSavedView(actor.access, result.view));
+    return Response.json((await holdBackSavedViews(actor.access, [result.view]))[0]);
   } catch (err) {
     return serverError('Could not take over the saved view', err);
   }

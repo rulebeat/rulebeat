@@ -31,9 +31,9 @@ import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activi
 import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
 import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
-import type { Dashboard, WidgetDef } from '@/lib/types';
-import { widgetHasScopeOverrides, mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
+import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
+import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
+import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
@@ -46,9 +46,8 @@ import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 type RGLLayout = LayoutItem;
 
 interface Props {
-  dashboard: Dashboard;
-  /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
-  outsideAccess: OutsideAccess;
+  /** The dashboard without the stored values the person's Access does not reach, which `heldBack` counts. */
+  dashboard: HeldBackDashboard;
   /** Whether the person may change this dashboard (rename, edit, delete). Anyone who can open it may Duplicate it. */
   canChange: boolean;
   /** Whether the person may choose the Install default, which is a Shared dashboard. */
@@ -65,7 +64,7 @@ interface Props {
 const ROW_HEIGHT = 80;
 const ROW_MARGIN = 8;
 
-function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
+function filtersFromConfig(config: HeldBackDashboard['config']): DashboardFilters {
   return {
     categories: config.filters?.categories ?? [],
     subscriptions: config.filters?.subscriptions ?? [],
@@ -76,19 +75,22 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, onRemove, onConfigure }: {
   widget: WidgetDef;
   filters: WidgetFilters;
   filtered: boolean;
   refreshKey: number;
   editMode: boolean;
-  outsideAccess: OutsideAccess;
+  dashboardId: string;
+  heldBack: HeldBack[];
   onRemove: () => void;
   onConfigure: () => void;
 }) {
   // A widget filtered only to what the person cannot see says so, instead of drawing the zero its
   // empty read would turn into a 100% posture or "No violations found".
-  const accessReason = widgetAccessReason(mergeWidgetFilters(filters, widget.config), outsideAccess);
+  const accessReason = widgetHeldBackReason(heldBack, dashboardId, widget, {
+    subscriptions: filters.subscriptions ?? [], resourceGroups: filters.resourceGroups ?? [],
+  });
   const inner = accessReason ? (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
       <Lock className="size-5 text-ink-2" aria-hidden="true" />
@@ -135,9 +137,9 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, outsi
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
+export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
   const router = useRouter();
-  const [dashboard, setDashboard] = useState<Dashboard>(initial);
+  const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
@@ -185,10 +187,17 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       fetch(`/api/dashboards/${dashboard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
+        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined }, revision: dashboard.revision, opened: dashboard.config }),
       })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
+        .then(async res => {
+          if (res.ok) { setError(null); return await res.json() as HeldBackDashboard; }
+          // A 409 means the dashboard changed after this copy was read: say so rather than dropping the filter silently.
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          setError(body.error ?? 'Failed to save the filters.');
+          return null;
+        })
+        .then(d => { if (d) setDashboard(d); })
+        .catch(() => setError('Failed to save the filters.'));
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,7 +339,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       body: JSON.stringify({ name: trimmed }),
     });
     if (res.ok) {
-      const d = await res.json() as Dashboard;
+      const d = await res.json() as HeldBackDashboard;
       setDashboard(d);
       setTitleValue(d.name);
       setTitleError('');
@@ -355,12 +364,18 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
           // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
           // That persistence is independent (see the debounced effect above).
           config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+          revision: dashboard.revision,
+          opened: dashboard.config,
         }),
       });
       if (res.ok) {
-        const d = await res.json() as Dashboard;
+        const d = await res.json() as HeldBackDashboard;
         setDashboard(d);
         setDirty(false);
+        setError(null);
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to save the dashboard.');
       }
     } finally { setSaving(false); }
   }
@@ -389,7 +404,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
   async function handleDuplicate() {
     const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
     if (res.ok) {
-      const copy = await res.json() as Dashboard;
+      const copy = await res.json() as HeldBackDashboard;
       router.push(`/dashboards/${copy.id}`);
       router.refresh();
     }
@@ -402,7 +417,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       body: JSON.stringify({ isDefault: true }),
     });
     if (res.ok) {
-      const d = await res.json() as Dashboard;
+      const d = await res.json() as HeldBackDashboard;
       setDashboard(d);
       router.refresh(); // invalidate cached server data so sidebar / gallery update
     }
@@ -423,7 +438,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       return;
     }
     // The answer is the dashboard, or only its id, visibility and revision after someone else's unshare.
-    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<Dashboard>), ...(action === 'unshare' && { isDefault: false }) }));
+    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) }));
     router.refresh(); // the Header and the sidebar list are read on the server
   }
 
@@ -622,7 +637,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
         dateWindow={dateWindow}
         onFiltersChange={setDashFilters}
         onDateWindowChange={setDateWindow}
-        outsideAccess={outsideAccess}
+        dashboardId={dashboard.id}
+        heldBack={dashboard.heldBack}
       />
 
       {/* Edit mode banner */}
@@ -668,7 +684,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
                   refreshKey={refreshKey}
                   editMode={editMode}
-                  outsideAccess={outsideAccess}
+                  dashboardId={dashboard.id}
+                  heldBack={dashboard.heldBack}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />
@@ -682,7 +699,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
       {configuringWidget && (
         <WidgetConfigPanel
           widget={configuringWidget}
-          outsideAccess={outsideAccess}
+          heldBack={dashboard.heldBack}
           onClose={() => setConfiguringWidget(null)}
           onSave={updated => { updateWidget(updated); setConfiguringWidget(null); }}
         />
@@ -698,7 +715,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, canChan
           name={dashboard.name}
           onClose={() => setTransfer(null)}
           onDone={item => {
-            const { owner, revision } = item as Pick<Dashboard, 'owner' | 'revision'>;
+            const { owner, revision } = item as Pick<HeldBackDashboard, 'owner' | 'revision'>;
             setDashboard(prev => ({ ...prev, owner, revision }));
             router.refresh(); // what this person may now do with it is read on the server
           }}

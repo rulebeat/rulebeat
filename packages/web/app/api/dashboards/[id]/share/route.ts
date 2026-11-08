@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getDashboard, shareDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { staleStateMessage } from '@/lib/item-sharing';
 
@@ -33,7 +33,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       entityId: id,
       summary: `Shared dashboard "${result.dashboard.name}" with everyone on this install`,
     });
-    return Response.json(markedDashboard(actor.access, result.dashboard));
+    return Response.json((await holdBackDashboards(actor.access, [result.dashboard]))[0]);
   } catch (err) {
     return serverError('Could not share the dashboard', err);
   }

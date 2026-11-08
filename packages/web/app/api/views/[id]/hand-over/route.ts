@@ -4,7 +4,7 @@ import { serverError } from '@/lib/api-error';
 import { parseJsonBody } from '@/lib/api-body';
 import { getSavedView, transferSavedView } from '@/lib/db/saved-views';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
+import { holdBackSavedViews } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { ownerLabel } from '@/lib/item-access-model';
 import { handOverCandidates } from '@/lib/hand-over-candidates';
@@ -46,7 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       entityId: id,
       summary: `Handed over saved view "${before.name}" from ${before.owner ? ownerLabel(before.owner) : 'no owner'} to ${chosen.displayName}`,
     });
-    return Response.json(markedSavedView(actor.access, result.view));
+    return Response.json((await holdBackSavedViews(actor.access, [result.view]))[0]);
   } catch (err) {
     return serverError('Could not hand over the saved view', err);
   }
