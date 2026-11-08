@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as pgSchema from '../schema.pg';
 import {
@@ -37,8 +37,8 @@ export async function seedPg(
   db: PgDb,
   dataDir: string,
   opts: SeedOptions = {},
-): Promise<void> {
-  await seedRules(db, dataDir, opts.catalogue, opts.now);
+): Promise<string[]> {
+  const categoriesMoved = await seedRules(db, dataDir, opts.catalogue, opts.now);
   await seedCategories(db);
   await seedDefaultDashboard(db);
   // Onboarding must be decided BEFORE the owner account exists (see runSeeds in migrate.ts).
@@ -48,6 +48,7 @@ export async function seedPg(
   // Last, once the rules are in: the first start records the state of the moment, every later one recounts it
   // (lib/db/trend-record.ts, ADR 0012). The twin of the call at the end of runSeeds().
   await startTrendRecordingPg(db, opts.now);
+  return categoriesMoved;
 }
 
 /**
@@ -56,10 +57,11 @@ export async function seedPg(
  * enabled rule runs (ADR 0004), bar the one-time move off the removed "Before versioning"
  * pseudo-version (ADR 0009).
  */
-async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined, clock: Date | undefined): Promise<void> {
+async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue | undefined, clock: Date | undefined): Promise<string[]> {
   const { rules, ruleVersions, findings, findingRows, findingEvents, columnCatalogue } = pgSchema;
   const shipped = catalogue ?? loadShippedCatalogue(dataDir);
   const now = new Date().toISOString();
+  const categoriesMoved = new Set<string>();
 
   await db.transaction(async (tx) => {
     const rows: StoredRuleRow[] = (await tx.select({
@@ -118,10 +120,21 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
         case 'delete-recorded':
           await t.delete(ruleVersions).where(and(eq(ruleVersions.ruleId, a.ruleId), eq(ruleVersions.version, a.version)));
           break;
-        case 'apply':
+        case 'apply': {
           await t.update(rules).set({ ...definitionToColumns(a.rule.definition), version: a.rule.version })
             .where(eq(rules.id, a.rule.id));
+          // A rule's findings follow its category (moveFindingsToCategory, db/findings.ts): a version that
+          // moves the rule moves its findings in the same transaction.
+          const category = a.rule.definition.category;
+          const left = await t.selectDistinct({ category: findings.category }).from(findings)
+            .where(and(eq(findings.ruleId, a.rule.id), ne(findings.category, category)));
+          if (left.length > 0) {
+            await t.update(findings).set({ category }).where(eq(findings.ruleId, a.rule.id));
+            for (const l of left) categoriesMoved.add(l.category);
+            categoriesMoved.add(category);
+          }
           break;
+        }
         case 'correct':
           // The #221 correction (APRL_QUERY_CORRECTION). `version` is written back unchanged. The findings
           // go from the same tables as removeFindingRowsForRule() (db/findings.ts), suppressions left alone.
@@ -169,6 +182,7 @@ async function seedRules(db: PgDb, dataDir: string, catalogue: ShippedCatalogue 
       }
     }
   });
+  return [...categoriesMoved];
 }
 async function seedCategories(db: PgDb): Promise<void> {
   const { categories } = pgSchema;

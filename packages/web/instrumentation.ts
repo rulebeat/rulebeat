@@ -83,6 +83,15 @@ export async function register() {
     console.error('[startup] finding-history backfill failed:', err);
   }
 
+  // A rule that moved to a new version at startup took its findings to the new category; the seeders
+  // could not recompute the two categories' snapshots, so it is done here.
+  try {
+    const { refreshSnapshotsForSeededMoves } = await import('./lib/db/findings');
+    await refreshSnapshotsForSeededMoves();
+  } catch (err) {
+    console.error('[startup] snapshot refresh after a rule moved category failed:', err);
+  }
+
   // Gives a stored Logs finding the subscription of its workspace. Needs Azure, which the upgrade
   // cannot call, so it runs here, and only when a Logs finding is waiting for it. Not awaited, like
   // the schema warm-up: a slow Azure call must not hold the app back from serving. It never throws.

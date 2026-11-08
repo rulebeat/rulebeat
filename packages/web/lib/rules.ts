@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { rules as rulesTable, ruleVersions, personalRules, categories } from './db/tables';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
-import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
+import { moveFindingsToCategory, removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
 import { recountTrend, type DeletedRuleLabels } from './db/trend-record';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 import { buildRuleQuery } from '@rulebeat/core/kql';
@@ -11,8 +11,8 @@ import { isCommitDateVersion } from './rule-version-markers';
 import type { RuleDefinition } from './shipped-catalogue';
 import type { RuleVersionHistory } from './types';
 
-export async function loadRules(): Promise<Rule[]> {
-  return (await many(db.select().from(rulesTable))).map(rowToRule);
+export async function loadRules(handle: DbHandle = db): Promise<Rule[]> {
+  return (await many(handle.select().from(rulesTable))).map(rowToRule);
 }
 
 function definitionQuery(definition: RuleDefinition): string {
@@ -261,8 +261,10 @@ export async function updateRule(id: string, changes: RuleChanges, opts: WriteOp
 /**
  * The read, name check and write of `updateRule()`, on a transaction the caller already holds, for a
  * write that must commit together with another (a Library update request's approval, #283). The caller
- * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. A change to a posture input (enabled, kind, severity,
- * scope) writes the trend record in the same transaction, after that lock (ADR 0012), unless `opts.recount` is false.
+ * has taken `pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY)` first. A change of category moves the rule's
+ * findings with it in the same transaction, and both categories' daily snapshots are refreshed in it too.
+ * A change to a posture input (enabled, kind, severity, scope) writes the trend record in the same
+ * transaction, after that lock (ADR 0012), unless `opts.recount` is false.
  */
 export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChanges, opts: RuleWriteOnOptions = {}): Promise<UpdateRuleResult> {
   const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
@@ -290,6 +292,9 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
     await run(tx.update(rulesTable).set(set).where(eq(rulesTable.id, id)));
     if (opts.recount !== false && POSTURE_COLUMNS.some(column => column in set)) await recountTrend(tx, { ruleIds: [id], now: opts.now });
   }
+  if (typeof set.category === 'string') {
+    await refreshSnapshotsFor(await moveFindingsToCategory(tx, id, set.category), undefined, tx);
+  }
 
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
   // Always present: this same transaction just confirmed the row exists and only this process
@@ -304,7 +309,7 @@ export type SwitchRuleVersionResult =
   | { ok: false; reason: 'name-taken'; conflictingName: string };
 
 export async function switchRuleVersion(id: string, version: string, opts: WriteOptions = {}): Promise<SwitchRuleVersionResult> {
-  return inTransaction(async (tx) => {
+  return inTransaction(async (tx): Promise<SwitchRuleVersionResult> => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     if (!current) return { ok: false, reason: 'not-found' };
@@ -322,6 +327,8 @@ export async function switchRuleVersion(id: string, version: string, opts: Write
     await run(tx.update(rulesTable).set({
       ...definitionToColumns(definition), version, filter: null,
     }).where(eq(rulesTable.id, id)));
+    // The rule's findings follow its category, so the live numbers change with the switch.
+    await refreshSnapshotsFor(await moveFindingsToCategory(tx, id, definition.category), undefined, tx);
     await recountTrend(tx, { ruleIds: [id], now: opts.now });
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     return {

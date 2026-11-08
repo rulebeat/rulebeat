@@ -1,7 +1,7 @@
 import { db } from './client';
 import { categories } from './tables';
 import { eq, asc } from 'drizzle-orm';
-import { many, one, run } from './exec';
+import { many, one, run, type DbHandle } from './exec';
 import type { Category } from '@/lib/types';
 
 function rowToCategory(row: typeof categories.$inferSelect): Category {
@@ -21,8 +21,8 @@ export async function listCategories(): Promise<Category[]> {
   return rows.map(rowToCategory);
 }
 
-export async function getCategory(id: string): Promise<Category | null> {
-  const row = await one(db.select().from(categories).where(eq(categories.id, id)));
+export async function getCategory(id: string, handle: DbHandle = db): Promise<Category | null> {
+  const row = await one(handle.select().from(categories).where(eq(categories.id, id)));
   return row ? rowToCategory(row) : null;
 }
 

@@ -171,7 +171,8 @@ An admin can switch one shipped rule forward or back to any recorded version, ch
 rule's list of versions, after reviewing its changes. The definition and version are saved together with the case-insensitive name check.
 The switch is audited and starts no scan. The next scan uses the selected definition and the
 same rule id, preserving matched findings, their ages and suppressions through the normal sync
-path. See [Rule versions](rule-versions.md).
+path. If the version has another category, the rule's findings move to it in the same
+transaction as the switch. See [Rule versions](rule-versions.md).
 
 ## Where data lives
 

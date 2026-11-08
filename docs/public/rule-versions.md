@@ -36,14 +36,15 @@ spaces.
 
 ## What happens to findings
 
-Nothing happens to findings until the next scan. A successful scan keeps matched findings with
-their first-seen date, history and suppressions. Findings the rule no longer returns become
-fixed; new matches become new findings. A previously fixed match that returns is reactivated
-with its original age. A failed or incomplete scan does not resolve prior findings.
+A switch changes which findings are open only on the next scan. A successful scan keeps matched
+findings with their first-seen date, history and suppressions. Findings the rule no longer returns
+become fixed; new matches become new findings. A previously fixed match that returns is
+reactivated with its original age. A failed or incomplete scan does not resolve prior findings.
 
-If the version moves the rule to another category, matched findings move on that scan. Dropped
-findings resolve under the category they were found in. Historical scans keep what they recorded.
-There is no separate finding label for a version switch. See [Posture](posture.md) for why this
+If the version moves the rule to another category, all of the rule's findings, open and fixed,
+move with it when you switch, without waiting for a scan, and both categories' numbers change at
+once. The same holds when startup moves a disabled rule to a newer version. Historical scans keep
+the category they recorded. There is no separate finding label for a version switch. See [Posture](posture.md) for why this
 can change the passing count.
 
 Each switch writes `rule.version` in the audit log. Its summary names the old and new versions;
