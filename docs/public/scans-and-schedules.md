@@ -204,6 +204,32 @@ successful rule may mark its old findings fixed, and a run with any non-success 
 [`how-it-works.md`](how-it-works.md#one-outcome-per-rule), and what "X of Y passing" counts is in
 [`posture.md`](posture.md).
 
+### Filter Run History by category
+
+The **Category** menu on the Run History list picks one or more categories and lists only the runs that
+attempted at least one of them, by the categories the run itself recorded, so a run in which that
+category failed is still listed. The choice is written to the address as
+`?tab=history&category=security,cost`, so a filtered list can be bookmarked, shared or linked to, and opening such an address shows the same list
+with the menu already set. Clearing the menu removes the parameter. The filter is applied before the list
+is cut to the 50 most recent runs, so a rarely scanned category still shows its runs. When no run scanned
+the category, the list says so and offers to clear the filter.
+
+Each run lists the categories it attempted, each marked **Complete** or **Partial**. A category is Partial
+when one or more of its rules did not end in success (the query failed, or its result was capped or
+had rows with no resource id) or when the run recorded that the category scan failed, and Complete when every rule did.
+The run's own record wins: a category the run names as failed is Partial even if a scan of it was saved before
+the failure. A run still in progress marks only the categories it has scanned so far. Scans are kept for the 90 most recent
+runs of each category, so on an older run the mark is read from the run itself: a category of a successful run is
+Complete, a category the run recorded as failed is Partial, and any other category has no mark, because nothing
+that is kept says how it ended (the scan that listed its rules is gone, or the run was cut short, for example by a restart, without
+naming the category). One run can show both: a run that
+attempted Security and Cost can be Complete for Security and Partial for Cost. Hover a Partial mark for how
+many rules did not complete, or open the run to see which. The list always shows every category the run
+attempted, not only the ones the filter asked for.
+
+A reader whose access is smaller than Everything sees the same runs, with the counts of the findings
+inside their Scopes, as described below.
+
 ### What a run covered
 
 Every run records the Scope it covered. An Admin's run, a scheduled run and every run from before this

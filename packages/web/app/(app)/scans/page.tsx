@@ -3,12 +3,12 @@ import { loadRules } from '@/lib/rules';
 import { getScansForRun, listScanMetas } from '@/lib/scan-history';
 import { loadSuppressions } from '@/lib/suppressions';
 import { activityEmptyState, advisoriesEmptyState } from '@/lib/tab-empty-state';
-import { listAllRuns, getRun, getLatestRun } from '@/lib/schedule-runs';
+import { listRunHistory, getRun, getLatestRun } from '@/lib/schedule-runs';
 import { listSchedules } from '@/lib/db/schedules';
 import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
-import { viewFromSearchParams } from '@/lib/finding-view';
+import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
@@ -44,6 +44,7 @@ export default async function ScansPage({
 
   const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions(access) as Suppression[];
+  const initialCategoryFilter = filterValues(initialView.filters, 'category');
   // The Rules tab's own filters, read by the reader the controls write with.
   const rulesQuery = rulesQueryFromSearchParams(params);
 
@@ -105,7 +106,8 @@ export default async function ScansPage({
         initialSuppressions={initialSuppressions}
         initialView={initialView}
         initialSavedViewId={initialSavedViewId}
-        runs={activeTab === 'history' ? await listAllRuns(access, 50) : undefined}
+        runs={activeTab === 'history' ? await listRunHistory(access, { categories: initialCategoryFilter, limit: 50 }) : undefined}
+        historyCategories={initialCategoryFilter}
         runDetail={runDetail}
         snapshotScanId={snapshotScanId}
         snapshotQuery={snapshotScanId ? snapshotQueryFromParams(params) : undefined}
