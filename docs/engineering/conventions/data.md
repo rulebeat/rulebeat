@@ -129,6 +129,8 @@ Read [ADR 0012](../decisions/0012-trend-history-records-the-inputs-to-posture.md
 
 **The record lock is taken last, after any name lock, and is held only for reads, record inserts and `trend_state` updates.** On Postgres it is one advisory lock for the touched keys. Taking it first, or holding it across a query to Azure or a recount of findings, turns every concurrent writer into a queue and can deadlock against the rule name lock.
 
+**A suppression expiry is swept, not scheduled.** Nothing writes when a suppression's `expires_at` passes, so `trend_state.swept_through` marks how far the record has counted them. The sweep recounts the rules whose suppressions expired since it and then advances it, on every scheduler tick and first thing in every record write, so an install with no scheduler (the Demo) records an expiry at its next action. A new record writer goes through `recountTrend()` or `recordRecordedDay()` and gets the sweep for free.
+
 **A write is never dated before its key's newest row; `seq` breaks ties.** A key's rows read in the order they were written even when the clock steps back or two writes land on one day. A write that would be dated earlier takes the newest row's date.
 
 **A deletion writes the rule's cells to 0.** Removing a rule's rows from the record would erase its findings from past days that were counted with them.

@@ -33,7 +33,7 @@ import {
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from './scan-findings-copy';
-import { recountTrendSqlite, startTrendRecording } from './trend-record';
+import { COUNTED_FINDING_RULES_READ, recountTrendSqlite, startTrendRecording } from './trend-record';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -1447,6 +1447,13 @@ function upgradeAccess(sqlite: Database.Database): void {
   }
 }
 
+/** Recounts, inside the transaction of an upgrade step that changed findings, the rules those findings belong to
+ *  (ADR 0012). The record lock is taken last, after the step's own writes. */
+function recordFindingChanges(sqlite: Database.Database): void {
+  const ruleIds = (sqlite.prepare(COUNTED_FINDING_RULES_READ).all() as { rule_id: string }[]).map(r => r.rule_id);
+  if (ruleIds.length > 0) recountTrendSqlite(sqlite, { ruleIds });
+}
+
 /**
  * Runs lib/db/finding-placement.ts's plan (#271) on `findings` and on `scan_findings`, one
  * transaction each. It has no marker: the plan only changes a row that does not already have the
@@ -1459,7 +1466,10 @@ function placeFindings(sqlite: Database.Database): void {
     try {
       sqlite.transaction(() => {
         const statements = planFindingPlacement(table, sqlite.prepare(placementRead(table)).all() as PlacementRow[]);
-        for (const s of statements) sqlite.prepare(s.sql).run(...s.params);
+        let moved = 0;
+        for (const s of statements) moved += sqlite.prepare(s.sql).run(...s.params).changes;
+        // A finding that moved changes which cell it counts in, so the record follows in this transaction.
+        if (table === 'findings' && moved > 0) recordFindingChanges(sqlite);
       })();
     } catch (err) {
       console.error(`[migrate] could not place the findings in ${table}:`, err);
@@ -1625,6 +1635,8 @@ function rekeyFingerprintCase(sqlite: Database.Database): void {
       for (const s of statements) sqlite.prepare(s.sql).run(...s.params);
       sqlite.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)`)
         .run(FINGERPRINT_CASE_MARKER, new Date().toISOString());
+      // Merged findings and suppressions that follow their finding change what the cells count.
+      if (statements.length > 0) recordFindingChanges(sqlite);
     })();
   } catch (err) {
     console.error('[migrate] could not move finding fingerprints onto the case-insensitive formula:', err);

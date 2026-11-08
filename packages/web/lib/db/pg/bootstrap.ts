@@ -5,6 +5,7 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from '../fingerprint-rekey';
+import { COUNTED_FINDING_RULES_READ, recountTrendPg } from '../trend-record';
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from '../finding-placement';
 import { planAccessUpgrade } from '../access-upgrade';
 import {
@@ -708,11 +709,21 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
 /** The Postgres half of migrate.ts's placeFindings(): the same plan, run on every boot. */
 async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number]): Promise<void> {
   const rows = (await tx.execute(sql.raw(placementRead(table)))).rows as unknown as PlacementRow[];
+  let moved = 0;
   for (const s of planFindingPlacement(table, rows)) {
     const parts = s.sql.split('?');
     const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
-    await tx.execute(sql.join(chunks, sql.raw('')));
+    moved += (await tx.execute(sql.join(chunks, sql.raw('')))).rowCount ?? 0;
   }
+  // A finding that moved changes which cell it counts in, so the record follows in this savepoint.
+  if (table === 'findings' && moved > 0) await recordFindingChanges(tx);
+}
+
+/** Recounts, inside the savepoint of an upgrade step that changed findings, the rules those findings belong to
+ *  (ADR 0012). The record lock is taken last, after the step's own writes. */
+async function recordFindingChanges(tx: PgTx): Promise<void> {
+  const ruleIds = ((await tx.execute(sql.raw(COUNTED_FINDING_RULES_READ))).rows as { rule_id: string }[]).map(r => r.rule_id);
+  if (ruleIds.length > 0) await recountTrendPg(tx, { ruleIds });
 }
 
 type PgTx = Parameters<Parameters<NodePgDatabase<typeof pgSchema>['transaction']>[0]>[0];
@@ -738,6 +749,8 @@ async function rekeyFingerprintCase(tx: PgTx): Promise<void> {
     await tx.execute(sql.join(chunks, sql.raw('')));
   }
   await tx.execute(sql`INSERT INTO meta (key, value) VALUES (${FINGERPRINT_CASE_MARKER}, ${new Date().toISOString()}) ON CONFLICT (key) DO NOTHING`);
+  // Last, since it takes the record lock: merged findings and suppressions that follow their finding change what the cells count.
+  if (statements.length > 0) await recordFindingChanges(tx);
 }
 
 /** 1000 a statement keeps each well under Postgres's 65535 bind parameters. */

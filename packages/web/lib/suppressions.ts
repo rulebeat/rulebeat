@@ -1,6 +1,8 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { accessFilterSql } from './db/access-filter';
+import { chunk } from './db/chunk';
+import { recountTrend } from './db/trend-record';
 import { findings as findingsTable, suppressions as suppressionsTable } from './db/tables';
 import { many, one, run, inTransaction, type DbHandle } from './db/exec';
 import type { Suppression } from './types';
@@ -41,9 +43,32 @@ async function findingIsInside(handle: DbHandle, allowed: Access, fingerprint: s
   return row !== undefined;
 }
 
-/** Inserts one suppression without touching the others, so two people suppressing at once both land. */
-export async function addSuppression(s: Suppression): Promise<void> {
-  await run(db.insert(suppressionsTable).values(suppressionToRow(s)));
+/** `now` is the clock the trend record is dated by; a test injects it. */
+export interface SuppressionWriteOptions { now?: Date }
+
+/**
+ * Moves the counts of the rules whose findings carry these fingerprints between open and suppressed in the trend
+ * record (ADR 0012). Called last in the transaction of the change it records, since it takes the record lock. A
+ * fingerprint no finding holds counts nothing, so it writes nothing.
+ */
+async function recordSuppressionChange(tx: DbHandle, fingerprints: readonly string[], opts: SuppressionWriteOptions): Promise<void> {
+  const ruleIds = new Set<string>();
+  for (const part of chunk([...new Set(fingerprints)])) {
+    const rows = await many(tx.selectDistinct({ ruleId: findingsTable.ruleId }).from(findingsTable).where(inArray(findingsTable.fingerprint, part)));
+    for (const row of rows) ruleIds.add(row.ruleId);
+  }
+  if (ruleIds.size > 0) await recountTrend(tx, { ruleIds: [...ruleIds], now: opts.now });
+}
+
+/**
+ * Inserts one suppression without touching the others, so two people suppressing at once both land. The cells it
+ * moves are recorded in the same transaction, and a record write that fails leaves it unsaved.
+ */
+export async function addSuppression(s: Suppression, opts: SuppressionWriteOptions = {}): Promise<void> {
+  await inTransaction(async (tx) => {
+    await run(tx.insert(suppressionsTable).values(suppressionToRow(s)));
+    await recordSuppressionChange(tx, [s.fingerprint], opts);
+  });
 }
 
 /**
@@ -51,23 +76,27 @@ export async function addSuppression(s: Suppression): Promise<void> {
  * `allowedBy`, a suppression whose finding sits outside what that access holds a Role for is left alone
  * and reads as there being none: pass `accessAllowing(actor.access, 'suppressions:write')`.
  */
-export async function removeSuppression(id: string, allowedBy?: Access): Promise<Suppression | null> {
+export async function removeSuppression(id: string, allowedBy?: Access, opts: SuppressionWriteOptions = {}): Promise<Suppression | null> {
   return inTransaction(async (tx) => {
     const row = await one(tx.select().from(suppressionsTable).where(eq(suppressionsTable.id, id)));
     if (!row) return null;
     if (allowedBy && !allowedBy.everything && !(await findingIsInside(tx, allowedBy, row.fingerprint))) return null;
     await run(tx.delete(suppressionsTable).where(eq(suppressionsTable.id, id)));
+    await recordSuppressionChange(tx, [row.fingerprint], opts);
     return rowToSuppression(row);
   });
 }
 
-/** Replaces the whole set. No route uses it; it remains for test fixtures that need an exact set. */
-export async function saveSuppressions(sups: Suppression[]): Promise<void> {
+/** Replaces the whole set. No route uses it; it remains for test fixtures that need an exact set. The record is
+ *  corrected for the old set and the new one in the same transaction. */
+export async function saveSuppressions(sups: Suppression[], opts: SuppressionWriteOptions = {}): Promise<void> {
   await inTransaction(async (tx) => {
+    const replaced = await many(tx.select({ fingerprint: suppressionsTable.fingerprint }).from(suppressionsTable));
     await run(tx.delete(suppressionsTable));
     for (const s of sups) {
       await run(tx.insert(suppressionsTable).values(suppressionToRow(s)));
     }
+    await recordSuppressionChange(tx, [...replaced.map(r => r.fingerprint), ...sups.map(s => s.fingerprint)], opts);
   });
 }
 

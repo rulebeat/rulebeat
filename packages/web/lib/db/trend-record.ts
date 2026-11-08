@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { dbKind } from './backend';
@@ -34,6 +34,10 @@ export const TREND_RECORD_VERSION = 1;
 
 /** How far back an install's finding events are kept before the upgrade, in days (ADR 0012). */
 const EVENT_RETENTION_BEFORE_UPGRADE_DAYS = 180;
+
+/** The rules whose findings a cell counts, for an upgrade step that changes findings with raw SQL and then recounts
+ *  them (placement correction, fingerprint rekey). Plain SQL valid on both backends. */
+export const COUNTED_FINDING_RULES_READ = `SELECT DISTINCT rule_id FROM findings WHERE status = 'active' AND kind = 'state'`;
 
 export interface CoveredEntry {
   category: string;
@@ -349,6 +353,32 @@ function* markerScript({ tx, t }: Ctx, now: Date, covered: readonly CoveredEntry
   if (merged !== existing.covered) yield* run(tx.update(trendRecordedDays).set({ covered: merged }).where(eq(trendRecordedDays.day, day)));
 }
 
+// ---- Suppression expiry ----
+
+/**
+ * Recounts the rules whose suppressions expired since `trend_state.swept_through`, then advances it to `now`. A
+ * suppression stops hiding its finding the moment its expiry passes, and nothing writes at that moment, so this is
+ * what records it: on every scheduler tick, and first in every record write, so an install with no scheduler (the
+ * Demo) records an expiry at its next action. A recount that already counted the expiry makes this write nothing.
+ * It does nothing before the record has started (no `trend_state` row), and never moves `swept_through` back.
+ */
+function* sweepScript(c: Ctx, now: Date): Script<void> {
+  const { tx, t } = c;
+  const { trendState, suppressions, findings } = t;
+  const nowIso = now.toISOString();
+  const [state] = yield* all(tx.select({ sweptThrough: trendState.sweptThrough }).from(trendState).where(eq(trendState.id, 1)).limit(1));
+  if (!state) return;
+  const since = state.sweptThrough;
+  if (since !== null && nowIso <= since) return;
+  if (since !== null) {
+    const expired = tx.select({ fingerprint: suppressions.fingerprint }).from(suppressions)
+      .where(and(gt(suppressions.expiresAt, since), lte(suppressions.expiresAt, nowIso)));
+    const ruleIds = (yield* all(tx.selectDistinct({ ruleId: findings.ruleId }).from(findings).where(inArray(findings.fingerprint, expired)))).map(r => r.ruleId);
+    if (ruleIds.length > 0) yield* recountScript(c, nowIso, ruleIds);
+  }
+  yield* run(tx.update(trendState).set({ sweptThrough: nowIso }).where(eq(trendState.id, 1)));
+}
+
 // ---- Start ----
 
 /**
@@ -362,15 +392,20 @@ function* startScript(c: Ctx, now: Date): Script<TrendStartResult> {
   const { trendState, findingEvents } = t;
   const nowIso = now.toISOString();
   yield* takeRecordLock(c);
-  const first = (yield* all(tx.select({ id: trendState.id }).from(trendState).where(eq(trendState.id, 1)).limit(1))).length === 0;
+  const [state] = yield* all(tx.select({ sweptThrough: trendState.sweptThrough }).from(trendState).where(eq(trendState.id, 1)).limit(1));
+  const first = state === undefined;
   const result = yield* recountScript(c, nowIso, undefined);
   yield* markerScript(c, now, []);
+  // The full recount above counted every suppression expiry up to now, so the sweep resumes from here.
+  if (!first && (state.sweptThrough === null || state.sweptThrough < nowIso)) {
+    yield* run(tx.update(trendState).set({ sweptThrough: nowIso }).where(eq(trendState.id, 1)));
+  }
   if (first) {
     // Events are kept for the 180 days before the upgrade when there are any, so a window never claims days the
     // events cannot show; with none, the record and the events begin together.
     const hasEvents = (yield* all(tx.select({ id: findingEvents.id }).from(findingEvents).limit(1))).length > 0;
     const keptSince = hasEvents ? dayOf(new Date(now.getTime() - EVENT_RETENTION_BEFORE_UPGRADE_DAYS * 86_400_000)) : dayOf(now);
-    yield* run(tx.insert(trendState).values({ id: 1, eventsKeptSince: keptSince }));
+    yield* run(tx.insert(trendState).values({ id: 1, sweptThrough: nowIso, eventsKeptSince: keptSince }));
   }
   return { first, ...result };
 }
@@ -427,7 +462,9 @@ export interface RecountOptions {
 
 const recountOf = (c: Ctx, opts: RecountOptions): Script<RecountResult> => (function* (): Script<RecountResult> {
   yield* takeRecordLock(c);
-  return yield* recountScript(c, (opts.now ?? new Date()).toISOString(), opts.ruleIds, new Map(Object.entries(opts.deleted ?? {})));
+  const now = opts.now ?? new Date();
+  yield* sweepScript(c, now);
+  return yield* recountScript(c, now.toISOString(), opts.ruleIds, new Map(Object.entries(opts.deleted ?? {})));
 })();
 
 /**
@@ -455,6 +492,18 @@ export async function recordRecordedDay(tx: DbHandle, opts: { now?: Date; covere
   const c = processCtx(tx);
   return driveAsync((function* (): Script<void> {
     yield* takeRecordLock(c);
-    yield* markerScript(c, opts.now ?? new Date(), opts.covered ?? []);
+    const now = opts.now ?? new Date();
+    yield* sweepScript(c, now);
+    yield* markerScript(c, now, opts.covered ?? []);
+  })(), dbKind === 'pg');
+}
+
+/** Records the suppression expiries since the last sweep and advances `swept_through` to `now`. The scheduler calls it
+ *  on every tick, inside a transaction of its own. */
+export async function sweepSuppressionExpiry(tx: DbHandle, opts: { now?: Date } = {}): Promise<void> {
+  const c = processCtx(tx);
+  return driveAsync((function* (): Script<void> {
+    yield* takeRecordLock(c);
+    yield* sweepScript(c, opts.now ?? new Date());
   })(), dbKind === 'pg');
 }
