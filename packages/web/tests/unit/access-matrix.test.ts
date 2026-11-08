@@ -940,6 +940,135 @@ function runHistoryMatrix(): Record<string, Matrix> {
   };
 }
 
+// #373: the same five routes with the seeded saved view open. It is filtered to subscription two, so a person
+// who holds subscription two gets their findings there and a person who does not gets nothing, never their own
+// findings: the view's value is held back from them and every read adds it back. Each person's address is the
+// query the view opens with for them, which is all of the view they were ever sent.
+
+/** The address a person opens the seeded view with: its id, then the query the server sent them. */
+async function openViewAddress(seed: MatrixSeed, tab: ViewTab, extra = ''): Promise<string> {
+  const opened = await BODY(await getWith('/api/views/x', await import('@/app/api/views/[id]/route'), seed.savedViewId)) as { query: string };
+  return `${tabParams(tab)}&view=${seed.savedViewId}&${opened.query}${extra}`;
+}
+
+const NO_NAMES = { names: [], total: 0 };
+
+const openView: Matrix = {
+  probe: async (seed, tab) => {
+    const body = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${await openViewAddress(seed, tab)}`))) as {
+      items: { finding: { fingerprint: string } }[]; total: number; viewMissing?: boolean;
+    };
+    expect(body.viewMissing).toBeUndefined();
+    return { names: namesOf(seed, body.items.map(i => i.finding)), total: body.total };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { names: ['vm-other-sub'], total: 1 }, advisories: { names: ['advisory-other-sub'], total: 1 }, activity: NO_NAMES,
+      };
+      const held = same(NO_NAMES);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openGroup: Matrix = {
+  probe: async (seed, tab) => {
+    const address = `${await openViewAddress(seed, tab)}&group=category`;
+    const headers = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${address}`))) as {
+      grouped: { groups: { value: string; findingCount: number }[] };
+    };
+    const inside = await BODY(await (await import('@/app/api/findings/group/route')).GET(
+      new Request(`http://localhost/api/findings/group?${address}&groupPath=%5B%22security%22%5D`),
+    )) as { items: { finding: { fingerprint: string } }[]; total: number; group?: { findingCount: number } | null };
+    return {
+      headers: headers.grouped.groups.map(g => [g.value, g.findingCount]),
+      names: namesOf(seed, inside.items.map(i => i.finding)),
+      total: inside.total,
+      groupCount: inside.group?.findingCount ?? null,
+    };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { headers: [['security', 1]], names: ['vm-other-sub'], total: 1, groupCount: 1 },
+        advisories: { headers: [['security', 1]], names: ['advisory-other-sub'], total: 1, groupCount: 1 },
+        activity: NOTHING_GROUP,
+      };
+      const held = same(NOTHING_GROUP);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openColumnValues: Matrix = {
+  probe: async (seed, tab) => {
+    const route = await import('@/app/api/findings/column-values/route');
+    const read = async (column: string) => {
+      const body = await BODY(await route.GET(new Request(`http://localhost/api/findings/column-values?${await openViewAddress(seed, tab)}&column=row.${column}`))) as {
+        values: { value: string; count: number }[];
+      };
+      return body.values.map(v => [v.value, v.count]);
+    };
+    return { zone: await read('zone'), otherSubColumn: await read('otherSubColumn') };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { zone: [['a', 1]], otherSubColumn: [['x', 1]] },
+        advisories: { zone: [['a', 1]], otherSubColumn: [] },
+        activity: NOTHING_COLUMN,
+      };
+      const held = same(NOTHING_COLUMN);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openExport: Matrix = {
+  probe: async (seed, tab) => {
+    const res = await (await import('@/app/api/findings/export/route')).GET(
+      new Request(`http://localhost/api/findings/export?${await openViewAddress(seed, tab)}&format=json`),
+    );
+    expect(res.headers.get('X-View-Missing')).toBeNull();
+    const list = await BODY(res) as { fingerprint: string; rows: Record<string, unknown>[] }[];
+    return {
+      names: namesOf(seed, list),
+      rowKeys: [...new Set(list.flatMap(f => f.rows.flatMap(r => Object.keys(r))))].sort(),
+    };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { names: ['vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
+        advisories: { names: ['advisory-other-sub'], rowKeys: ['zone'] },
+        activity: NOTHING_EXPORT,
+      };
+      const held = same(NOTHING_EXPORT);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+// The rows route is narrowed by row filters only, so a view filtered to a subscription changes which finding
+// opens for nobody: each person opens what their Scopes cover and nothing more.
+const openRows: Matrix = {
+  probe: async (seed, tab) => {
+    const route = await import('@/app/api/findings/rows/route');
+    const out: Record<string, number> = {};
+    for (const name of STORED_BY_TAB[tab]) {
+      const res = await route.GET(new Request(`http://localhost/api/findings/rows?${await openViewAddress(seed, tab)}&fingerprint=${seed.fingerprints[name]}`));
+      out[name] = res.status;
+    }
+    return out;
+  },
+  expected: rows.expected,
+};
+
+const OPEN_VIEW_MATRIX: Record<string, Matrix> = {
+  'findings/view': openView, 'findings/group': openGroup, 'findings/column-values': openColumnValues, 'findings/export': openExport, 'findings/rows': openRows,
+};
+
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
   'suppressions': suppressionsList,
@@ -1463,6 +1592,24 @@ describe('the findings routes show each person only what their Scopes cover', ()
       }
     }
   }
+
+  for (const [route, entry] of Object.entries(OPEN_VIEW_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      for (const tab of VIEW_TABS) {
+        it(`${route} with the saved view open: ${person}, ${tab} tab`, async () => {
+          mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+          expect(await entry.probe(seed, tab)).toEqual(entry.expected[person]![tab]);
+        });
+      }
+    }
+  }
+
+  it('holds an expectation for every person and tab of each read with the saved view open', () => {
+    for (const entry of Object.values(OPEN_VIEW_MATRIX)) {
+      expect(Object.keys(entry.expected).sort()).toEqual(PEOPLE.map(p => p.name).sort());
+      for (const byTab of Object.values(entry.expected)) expect(Object.keys(byTab).sort()).toEqual([...VIEW_TABS].sort());
+    }
+  });
 
   /** A new Viewer holding exactly these Scopes, signed in, and what the Results and Advisories tabs list for them. */
   async function listedFor(...scopes: string[]): Promise<{ results: string[]; advisories: string[] }> {

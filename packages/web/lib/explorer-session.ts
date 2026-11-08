@@ -26,16 +26,24 @@ export type FetchFn = (url: string, init?: { signal?: AbortSignal }) => Promise<
 
 /** The view on screen with the two things a View does not hold: which tab, and whether suppressed
  *  findings are listed. */
-export interface ViewRequest { view: View; tab: ViewTab; showSuppressed: boolean }
+export interface ViewRequest {
+  view: View;
+  tab: ViewTab;
+  showSuppressed: boolean;
+  /** The saved view the address says is open. Every read and the export carry it, so the server adds the open
+   *  view's values held back from the reader to what the address holds (lib/open-saved-view.ts). */
+  savedViewId?: string | null;
+}
 
 // ---- The requests ----
 
 const ROUTE = '/api/findings';
 
-/** The query of a view read: the tab and the suppressed flag, then exactly what the address carries. */
+/** The query of a view read: the tab, the suppressed flag and the open saved view, then exactly what the address carries. */
 export function viewQuery(request: ViewRequest): string {
   const base: Record<string, string> = { tab: request.tab };
   if (request.showSuppressed) base.suppressed = '1';
+  if (request.savedViewId) base[OPEN_VIEW_PARAM] = request.savedViewId;
   return viewToSearchParams(request.view, base).toString();
 }
 

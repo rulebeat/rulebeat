@@ -173,6 +173,13 @@ Opening a saved view whose filter has every value held back lists nothing for th
 stays on the Scans page as an "Outside your access" chip in place of the values, so the list is empty
 and does not widen to the viewer's whole Access. The chip has no remove control.
 
+A saved view that is open on Scans keeps applying its held-back values in every read and in the export,
+on the Results, Advisories and Activity tabs. The address carries only the values the person can see next to
+`view=<id>`, and the server adds the rest back before it matches, so the open view means what it means for
+everyone else. Closing the view is the only way to widen it on Scans. A view that was deleted, or is now
+someone else's Personal view, is announced with "This saved view no longer exists." and dropped from the
+address.
+
 Saving does not lose a held-back value the person was not sent. Each save carries the copy the person
 was sent and the version it was made from. Whatever that copy left out is put back from the stored item
 before it is written, so everyone else the item is shared with still gets it, even if the person has been
