@@ -177,7 +177,7 @@ describe('the protected Install default', () => {
     const owner = await signInAs('editor', { onOneSubscription: true });
     const made = await created('Owned default');
     await share(made.id);
-    await execRaw(`UPDATE dashboards SET is_default = 1 WHERE id = '${made.id}'`);
+    await execRaw(`UPDATE dashboards SET is_default = TRUE WHERE id = '${made.id}'`);
     return { owner, id: made.id };
   }
 
@@ -217,7 +217,7 @@ describe('the protected Install default', () => {
 });
 
 describe('an Install default chosen between a route\'s read and its change', () => {
-  const makeDefault = (id: string) => async () => { await execRaw(`UPDATE dashboards SET is_default = 1 WHERE id = '${id}'`); };
+  const makeDefault = (id: string) => async () => { await execRaw(`UPDATE dashboards SET is_default = TRUE WHERE id = '${id}'`); };
 
   it('still cannot be deleted or unshared by its owner who holds only part of the install', async () => {
     const owner = await signInAs('editor', { onOneSubscription: true });

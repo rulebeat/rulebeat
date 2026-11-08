@@ -806,7 +806,7 @@ function dashboardMatrix(): Record<string, Matrix> {
         await execRaw(`UPDATE dashboards SET owner_id = NULL, visibility = '${visibility}' WHERE id = '${made.dashboard.id}'`);
         return made.dashboard.id;
       };
-      await execRaw(`UPDATE users SET default_dashboard_unavailable = 1 WHERE id = '${uid}'`);
+      await execRaw(`UPDATE users SET default_dashboard_unavailable = TRUE WHERE id = '${uid}'`);
       const ownPersonal = await put(await ownItem('dashboard', 'personal'));
       const ownShared = await put(await ownItem('dashboard', 'shared'));
       const sharedId = await ownerless('shared');
