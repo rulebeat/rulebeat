@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, parseScope, type Access, type ManagementGroupExpansion } from '@/lib/access-model';
 import {
-  coveredAccess, coveredScopeKey, coveredScopeOf, coversDirectory, coversWorkspace, EVERYTHING_COVERED, insideCovered, labelCoveredScope,
+  coveredAccess, coveredScopeKey, coveredScopeOf, coveredScopeOverlaps, coversDirectory, coversWorkspace, EVERYTHING_COVERED, insideCovered, labelCoveredScope,
   sameCoveredScope, scopeForRule, subscriptionsAskedFor, type RequestScope,
 } from '@/lib/run-scope';
 import { parseCoveredScope, serializeCoveredScope } from '@/lib/covered-scope-view';
@@ -279,5 +279,65 @@ describe('the in-memory test agrees with accessFilterSql for every placement', (
     expect(reached('a management group with a group beneath it')).toBe(10);
     expect(reached('nothing')).toBe(0);
     expect(reached('a Viewer\'s Scopes only')).toBe(0);
+  });
+});
+
+describe('whether a covered Scope overlaps what a person holds', () => {
+  const sub = (id: string) => ({ tenantId: T, path: `/subscriptions/${id}` });
+  const group = (name: string) => ({ tenantId: T, path: mgPath(name) });
+  const overlaps = (covered: readonly { tenantId: string; path: string }[], access: Access) => coveredScopeOverlaps(covered, access, NODES);
+
+  it('is true for Everything whatever was covered, and for a run that covered Everything whatever is held', () => {
+    expect(overlaps([sub(SUB_TWO)], everythingAccess('admin'))).toBe(true);
+    expect(overlaps([], everythingAccess('admin'))).toBe(true);
+    expect(overlaps(EVERYTHING_COVERED, holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(true);
+  });
+
+  it('is false for a person who holds nothing, even when a run covered Everything', () => {
+    expect(overlaps(EVERYTHING_COVERED, holding('viewer'))).toBe(false);
+  });
+
+  it('is true when the run covered a subscription the person holds, and false for another one', () => {
+    const one = holding('viewer', `/subscriptions/${SUB_ONE}`);
+    expect(overlaps([sub(SUB_ONE)], one)).toBe(true);
+    expect(overlaps([sub(SUB_TWO)], one)).toBe(false);
+    expect(overlaps([sub(SUB_TWO), sub(SUB_ONE)], one)).toBe(true);
+  });
+
+  it('reads a subscription id in any casing', () => {
+    expect(overlaps([sub(SUB_ONE.toUpperCase())], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(true);
+  });
+
+  it('is true for a subscription under a management group the person holds, and for a resource group inside a held subscription', () => {
+    expect(overlaps([sub(SUB_TWO)], holding('viewer', mgPath('mg-top')))).toBe(true);
+    expect(overlaps([sub(SUB_THREE)], holding('viewer', mgPath('mg-top')))).toBe(false);
+    expect(overlaps([{ tenantId: T, path: rgPath(SUB_ONE, 'rg-a') }], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(true);
+  });
+
+  it('is true for a subscription when the person holds one of its resource groups, but only that group for a resource group', () => {
+    const inGroup = holding('viewer', rgPath(SUB_ONE, 'rg-a'));
+    expect(overlaps([sub(SUB_ONE)], inGroup)).toBe(true);
+    expect(overlaps([{ tenantId: T, path: rgPath(SUB_ONE, 'RG-A') }], inGroup)).toBe(true);
+    expect(overlaps([{ tenantId: T, path: rgPath(SUB_ONE, 'rg-b') }], inGroup)).toBe(false);
+  });
+
+  it('is true for a management group above, at or below what the person holds, read over the stored tree', () => {
+    expect(overlaps([group('mg-top')], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(true);
+    expect(overlaps([group('mg-other')], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(false);
+    expect(overlaps([group('mg-top')], holding('viewer', mgPath('mg-leaf')))).toBe(true);
+    expect(overlaps([group('mg-leaf')], holding('viewer', mgPath('mg-top')))).toBe(true);
+    expect(overlaps([group('mg-other')], holding('viewer', mgPath('mg-top')))).toBe(false);
+  });
+
+  it('is true for the Directory only when the person holds it', () => {
+    const directory = { tenantId: '', path: '@directory' };
+    const held = buildAccess([{ tenantId: T, scope: parseScope('@directory')!, role: 'viewer' }], 'manual');
+    expect(overlaps([directory], held)).toBe(true);
+    expect(overlaps([directory], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(false);
+  });
+
+  it('is false for a covered Scope that is empty or cannot be read', () => {
+    expect(overlaps([], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(false);
+    expect(overlaps([{ tenantId: T, path: 'not a scope' }], holding('viewer', `/subscriptions/${SUB_ONE}`))).toBe(false);
   });
 });
