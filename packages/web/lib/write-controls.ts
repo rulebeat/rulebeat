@@ -57,3 +57,19 @@ export function writeControlsFor(access: Access): WriteControls {
     ...(heldButScoped ? { reason: SCOPED_WRITE_REASON } : {}),
   };
 }
+
+export const VIEWER_DASHBOARD_REASON = 'Changing a dashboard needs the Editor Role. You are a Viewer, so you can look at dashboards and change the filters on your own page.';
+
+export const SCOPED_DASHBOARD_REASON =
+  'Changing a dashboard affects the whole install. It needs an Admin, or an Editor on Everything. Your Editor access covers only part of it.';
+
+/**
+ * Whether the person may edit a dashboard (change its layout and widgets, and preview a widget draft), and
+ * why not. Edit mode is the only place a draft widget is counted, and the server refuses that preview
+ * without `dashboards:write`, so the client offers Edit only when `allowed`.
+ */
+export function dashboardEditControlFor(access: Access): { allowed: boolean; reason?: string } {
+  if (mayAct(access, 'dashboards:write')) return { allowed: true };
+  const heldButScoped = access.grants.some(g => can(g.role, 'dashboards:write'));
+  return { allowed: false, reason: heldButScoped ? SCOPED_DASHBOARD_REASON : VIEWER_DASHBOARD_REASON };
+}

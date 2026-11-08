@@ -47,6 +47,8 @@ interface Props {
   dashboard: Dashboard;
   /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** Whether the person may edit the dashboard, and why not. Edit mode previews widget drafts, which the server refuses without the right. */
+  edit: { allowed: boolean; reason?: string };
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -65,7 +67,7 @@ function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
   };
 }
 
-function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, outsideAccess, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, refreshKey, editMode, canPreview, outsideAccess, onRemove, onConfigure }: {
   widget: WidgetDef;
   /** The widget as saved on the dashboard, or undefined for one added in this edit. */
   stored: WidgetDef | undefined;
@@ -76,6 +78,8 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   filtered: boolean;
   refreshKey: number;
   editMode: boolean;
+  /** The person has the edit right, so a draft widget may be counted by the server. */
+  canPreview: boolean;
   outsideAccess: OutsideAccess;
   onRemove: () => void;
   onConfigure: () => void;
@@ -123,7 +127,8 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   })();
 
   // A widget edited in this session has a config the server has not saved, so the server counts the draft.
-  const draft = !stored || JSON.stringify(stored.config) !== JSON.stringify(widget.config);
+  // Only someone with the edit right can have one (Edit is off for the rest), and the server refuses the preview otherwise.
+  const draft = canPreview && (!stored || JSON.stringify(stored.config) !== JSON.stringify(widget.config));
 
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
@@ -134,7 +139,7 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -536,7 +541,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
                 {saving ? 'Saving…' : 'Save changes'}
               </Button>
             )}
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditMode(true)}>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditMode(true)} disabled={!edit.allowed} title={edit.allowed ? undefined : edit.reason}>
               <Pencil className="size-3.5" />Edit
             </Button>
           </>
@@ -594,7 +599,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
         {widgets.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-4 border border-dashed border-rule-strong">
             <p className="text-sm text-ink-muted">No widgets yet</p>
-            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }}>
+            <Button size="sm" className="gap-1.5" onClick={() => { setEditMode(true); setAddingWidget(true); }} disabled={!edit.allowed} title={edit.allowed ? undefined : edit.reason}>
               <Plus className="size-3.5" />Add your first widget
             </Button>
           </div>
@@ -620,6 +625,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess }: Props
                   filtered={hasActiveFilters || widgetHasScopeOverrides(w.config)}
                   refreshKey={refreshKey}
                   editMode={editMode}
+                  canPreview={edit.allowed}
                   outsideAccess={outsideAccess}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}

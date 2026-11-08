@@ -5,7 +5,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import { accessAllowing, type Role } from '@/lib/rbac';
-import { categoryControlFor, SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, writeControlsFor } from '@/lib/write-controls';
+import {
+  categoryControlFor, dashboardEditControlFor, SCOPED_CATEGORY_REASON, SCOPED_DASHBOARD_REASON, SCOPED_WRITE_REASON,
+  VIEWER_DASHBOARD_REASON, writeControlsFor,
+} from '@/lib/write-controls';
 
 const grants = (...held: [path: string, role: Role][]): Access =>
   buildAccess(held.map(([path, role]) => ({ tenantId: 't', scope: parseScope(path)!, role })), 'manual');
@@ -109,5 +112,20 @@ describe('accessAllowing', () => {
     const none = accessAllowing(grants([SUB, 'viewer']), 'suppressions:write');
     expect(none.grants).toEqual([]);
     expect(none.everything).toBe(false);
+  });
+});
+
+describe('dashboardEditControlFor', () => {
+  it('allows an Admin and an Editor on Everything', () => {
+    expect(dashboardEditControlFor(everythingAccess('admin'))).toEqual({ allowed: true });
+    expect(dashboardEditControlFor(everythingAccess('editor', 'manual'))).toEqual({ allowed: true });
+  });
+
+  it('refuses a Viewer with the Viewer reason', () => {
+    expect(dashboardEditControlFor(everythingAccess('viewer', 'manual'))).toEqual({ allowed: false, reason: VIEWER_DASHBOARD_REASON });
+  });
+
+  it('refuses an Editor on one subscription with the scoped reason', () => {
+    expect(dashboardEditControlFor(grants([SUB, 'editor']))).toEqual({ allowed: false, reason: SCOPED_DASHBOARD_REASON });
   });
 });
