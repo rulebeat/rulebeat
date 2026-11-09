@@ -73,3 +73,8 @@ export function dashboardEditControlFor(access: Access): { allowed: boolean; rea
   const heldButScoped = access.grants.some(g => can(g.role, 'dashboards:write'));
   return { allowed: false, reason: heldButScoped ? SCOPED_DASHBOARD_REASON : VIEWER_DASHBOARD_REASON };
 }
+
+/** Whether the duplicate route (`dashboards:write`) will take this person's request, so Duplicate is offered only to them. */
+export function dashboardDuplicateAllowedFor(access: Access): boolean {
+  return mayAct(access, 'dashboards:write');
+}

@@ -205,3 +205,21 @@ export function backToSaved(changes: DashboardFilterChanges, dim: BarDimension):
   const { [dim]: _dropped, ...rest } = changes;
   return rest;
 }
+
+/**
+ * The changes with every value outside the viewer's Access taken out: the answer to a save that was
+ * refused for carrying them. A dimension that held only such values goes back to what is saved, never to
+ * "any", so removing them cannot widen anything.
+ */
+export function removeOutsideValues(changes: DashboardFilterChanges, marks: OutsideAccess): DashboardFilterChanges {
+  const next: DashboardFilterChanges = { ...changes };
+  for (const dim of ['subscription', 'resourceGroup'] as const) {
+    const values = changes[dim];
+    if (!values || values.length === 0) continue;
+    const kept = values.filter(v => !isOutsideAccess(marks, dim, v));
+    if (kept.length === values.length) continue;
+    if (kept.length === 0) delete next[dim];
+    else next[dim] = kept;
+  }
+  return next;
+}

@@ -10,7 +10,7 @@ import { buildBarState } from '@/lib/dashboard-bar';
 import { savedFiltersOf } from '@/lib/dashboard-filters';
 import { loadKnownValues } from '@/lib/dashboard-known-values';
 import { dashboardAddress } from '@/lib/finding-view';
-import { dashboardEditControlFor } from '@/lib/write-controls';
+import { dashboardDuplicateAllowedFor, dashboardEditControlFor } from '@/lib/write-controls';
 import { DashboardGridClient } from './dashboard-grid-client';
 
 interface Props {
@@ -48,7 +48,7 @@ export default async function DashboardPage({ params, searchParams }: Props) {
         <div className="flex-1 min-h-0">
           {holdsNoScope(access)
             ? <NoAccessState />
-            : <DashboardGridClient dashboard={dashboard} outsideAccess={marks} bar={state} edit={dashboardEditControlFor(access)} />}
+            : <DashboardGridClient dashboard={dashboard} outsideAccess={marks} bar={state} edit={dashboardEditControlFor(access)} canDuplicate={dashboardDuplicateAllowedFor(access)} />}
         </div>
       </div>
     </>

@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  ANY_WIDENS_REASON, UNTICK_LAST_REASON, backToSaved, buildBarState, pickAny, toggleValue, withWidgetOverrides, type BarLayers,
+  ANY_WIDENS_REASON, UNTICK_LAST_REASON, backToSaved, buildBarState, pickAny, removeOutsideValues, toggleValue, withWidgetOverrides, type BarLayers,
 } from '@/lib/dashboard-bar';
 import { dashboardAddress } from '@/lib/finding-view';
 import { markOutsideAccess } from '@/lib/outside-access';
@@ -240,5 +240,33 @@ describe('a saved value that no longer exists', () => {
     });
     expect(bar.dimensions.rule.savedVanished).toEqual([{ value: 'rule-9', label: 'A rule that no longer exists', note: 'A rule that no longer exists' }]);
     expect(bar.dimensions.category.savedVanished).toEqual([{ value: 'security', label: 'security', note: 'No longer exists' }]);
+  });
+});
+
+describe('removing the values outside L\'s access from the address', () => {
+  const changesOf = (address: string) => dashboardAddress(SAVED).read(new URLSearchParams(address));
+  const marksOf = (access: Access, address: string) => state(access, address).marks;
+
+  it('takes A out of an address that names A and B, and leaves the rest as written', () => {
+    const address = `subscription=${SUB_A}%2C${SUB_B}&severity=high`;
+    const next = removeOutsideValues(changesOf(address), marksOf(L, address));
+    expect(dashboardAddress(SAVED).write(next).toString()).toBe(`subscription=${SUB_B}&severity=high`);
+  });
+
+  it('puts a dimension that held only values L cannot see back to saved, never to any', () => {
+    const address = `subscription=${SUB_A}&severity=high`;
+    const next = removeOutsideValues(changesOf(address), marksOf(L, address));
+    expect(next.subscription).toBeUndefined();
+    expect(dashboardAddress(SAVED).write(next).toString()).toBe('severity=high');
+  });
+
+  it('leaves an explicit any alone', () => {
+    const next = removeOutsideValues(changesOf('subscription='), marksOf(L, 'subscription='));
+    expect(next.subscription).toEqual([]);
+  });
+
+  it('changes nothing for M, who holds both', () => {
+    const address = `subscription=${SUB_A}`;
+    expect(removeOutsideValues(changesOf(address), marksOf(M, address))).toEqual(changesOf(address));
   });
 });
