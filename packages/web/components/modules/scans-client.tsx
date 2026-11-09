@@ -189,8 +189,6 @@ export function ScansClient({
       router.push(savedViewHref(saved));
     },
     onUrlWrite: (query: string) => ownWrites.record(query),
-    // The saved view changed under this page: read the address again against the new one.
-    onReload: () => window.location.reload(),
   });
   const [policies, setPolicies] = useState(initialPolicies);
   const [clearingId, setClearingId] = useState<string | null>(null);

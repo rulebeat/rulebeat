@@ -10,6 +10,7 @@ import {
   ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, exportUrl, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
   viewQuery, viewUrl, type FetchFn, type ViewRequest,
 } from '@/lib/explorer-session';
+import { SAVED_VIEW_UNAVAILABLE, addressWithoutView } from '@/lib/saved-view-query';
 import type { ViewResponse } from '@/lib/view-response';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -634,5 +635,35 @@ describe('the requests with a saved view open', () => {
     const view: View = { ...savedView, columns: ['zone'] };
     const address = explorerAddress(view, { extraParams: { tab: 'results' }, viewId: 'v1', saved: savedView });
     expect(address).toBe('tab=results&view=v1&cols=zone');
+  });
+
+  it('says the open saved view is gone when a read of it is answered 404, and is a plain failure otherwise', async () => {
+    const gone = answeringFetch(() => json({ error: SAVED_VIEW_UNAVAILABLE }, 404));
+    const session = new ExplorerSession(gone.fetchFn);
+    session.view.request(request(savedView, { saved }));
+    await settle();
+    expect(session.view.getSnapshot()).toMatchObject({ status: 'failed', savedViewGone: true });
+
+    const other = new ExplorerSession(answeringFetch(() => json({ error: SAVED_VIEW_UNAVAILABLE }, 404)).fetchFn);
+    other.view.request(request(savedView));
+    await settle();
+    expect(other.view.getSnapshot()).not.toHaveProperty('savedViewGone');
+
+    const broken = new ExplorerSession(answeringFetch(() => json({ error: 'Could not load the findings' }, 500)).fetchFn);
+    broken.view.request(request(savedView, { saved }));
+    await settle();
+    expect(broken.view.getSnapshot()).toMatchObject({ status: 'failed' });
+    expect(broken.view.getSnapshot()).not.toHaveProperty('savedViewGone');
+  });
+});
+
+describe('the address without the open saved view', () => {
+  it('drops view and rev and keeps every other param, a repeated one repeated', () => {
+    expect(addressWithoutView(new URLSearchParams('tab=advisories&view=v1&rev=4&f=a%3D1&f=b%3D2&severity=low')))
+      .toBe('/scans?tab=advisories&f=a%3D1&f=b%3D2&severity=low');
+  });
+
+  it('is plain /scans when nothing else is left', () => {
+    expect(addressWithoutView(new URLSearchParams('view=v1'))).toBe('/scans');
   });
 });

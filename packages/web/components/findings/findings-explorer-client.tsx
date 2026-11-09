@@ -57,7 +57,8 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
-import type { OpenSavedView, SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import { addressWithoutView, type OpenSavedView, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
+import { SavedViewUnavailable } from '@/components/findings/saved-view-unavailable';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -109,8 +110,6 @@ interface FindingsExplorerClientProps {
     open: OpenSavedView | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
     onOpen: (view: SavedView) => void;
-    /** Starts again from the address, for when the open saved view was changed by someone else. */
-    onReload: () => void;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -806,9 +805,9 @@ export function FindingsExplorerClient({
   }, [saved]);
   const filtersRecovery = filtersRecoveryOf({ savedViewOpen: !!saved, hasActiveFilter, differsFromSaved });
   const recoverFilters = saved ? backToSaved : clearFilters;
-  // Someone updated the open view after this page read it: the server read the new one, so the numbers
-  // are its, while the controls still show the version this page was opened on.
-  const savedChanged = !!openSaved && !!data?.savedView && data.savedView.id === openSaved.id && data.savedView.revision !== openSaved.revision;
+  // The open view was deleted, or stopped being the person's, while the page was open: every read of it
+  // answers 404, so the page says what a link to such a view says rather than offer a retry that cannot work.
+  const savedViewGone = feed.status === 'failed' && !!feed.savedViewGone;
 
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
@@ -853,6 +852,10 @@ export function FindingsExplorerClient({
   if (screen === 'no-access') return <NoAccessState />;
   if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
+  }
+
+  if (savedViewGone) {
+    return <SavedViewUnavailable keepHref={addressWithoutView(new URLSearchParams(urlQuery), basePath)} />;
   }
 
   if (screen === 'unavailable' && failure) {
@@ -1355,13 +1358,6 @@ export function FindingsExplorerClient({
 
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
-
-      {savedChanged && (
-        <Callout tone="warn" role="status">
-          <span>Someone updated this saved view after you opened it. The list below uses the new version.</span>
-          <Button variant="outline" size="xs" className="ml-3" onClick={savedViews?.onReload}>Reload saved view</Button>
-        </Callout>
-      )}
 
       <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 

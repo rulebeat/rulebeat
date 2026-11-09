@@ -11,7 +11,7 @@ import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
 import { effectiveView } from '@/lib/effective-filters';
-import { OPEN_VIEW_PARAM, type OpenSavedView } from '@/lib/saved-view-query';
+import { OPEN_VIEW_PARAM, addressWithoutView, type OpenSavedView } from '@/lib/saved-view-query';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
@@ -21,15 +21,13 @@ import { narrowRulesScope } from '@/lib/rule-scope-access';
 import { writeControlsFor } from '@/lib/write-controls';
 import type { Rule, Suppression } from '@/lib/types';
 
-/** `/scans` with the link's params but `name`, a repeated param kept repeated. */
-function hrefWithout(params: Record<string, string | string[] | undefined>, name: string): string {
-  const kept = new URLSearchParams();
+/** The link's params as a query, a repeated param kept repeated. */
+function queryOf(params: Record<string, string | string[] | undefined>): URLSearchParams {
+  const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === name) continue;
-    for (const one of Array.isArray(value) ? value : value === undefined ? [] : [value]) kept.append(key, one);
+    for (const one of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, one);
   }
-  const query = kept.toString();
-  return query ? `/scans?${query}` : '/scans';
+  return query;
 }
 
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
@@ -67,7 +65,7 @@ export default async function ScansPage({
       initialView = effective.view;
       openSavedView = effective.saved;
     } else {
-      savedViewUnavailable = { keepHref: hrefWithout(params, OPEN_VIEW_PARAM) };
+      savedViewUnavailable = { keepHref: addressWithoutView(queryOf(params)) };
     }
   }
   const initialSuppressions = await loadSuppressions(access) as Suppression[];

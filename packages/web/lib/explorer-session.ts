@@ -17,7 +17,7 @@ import type { ExportFormat } from './findings-export';
 import {
   type ColumnValuesResponse, type FindingRowsResponse, type GroupResponse, type ViewResponse, type ViewTab,
 } from './view-response';
-import { OPEN_VIEW_PARAM, OPEN_VIEW_REVISION_PARAM, type OpenSavedView } from './saved-view-query';
+import { OPEN_VIEW_PARAM, OPEN_VIEW_REVISION_PARAM, SAVED_VIEW_UNAVAILABLE, type OpenSavedView } from './saved-view-query';
 
 /** How long typing in the search box waits before the view is read again. Every other change reads at once. */
 export const SEARCH_DEBOUNCE_MS = 250;
@@ -205,8 +205,10 @@ export class Store<S> {
 export type ViewState =
   | { status: 'loading'; stale?: ViewResponse; query: string | null }
   | { status: 'ready'; data: ViewResponse; query: string | null }
-  /** A failed read keeps the last answer, so the controls stay on screen to change the view. */
-  | { status: 'failed'; message: string; stale?: ViewResponse; query: string | null };
+  /** A failed read keeps the last answer, so the controls stay on screen to change the view.
+   *  `savedViewGone` is a read of an open saved view the server no longer has for this person (deleted,
+   *  or no longer theirs), which no retry can change. */
+  | { status: 'failed'; message: string; savedViewGone?: true; stale?: ViewResponse; query: string | null };
 
 /** Only the search text and the page: what changes while someone types. */
 function withoutSearch(request: ViewRequest): string {
@@ -278,7 +280,12 @@ export class ViewFeed extends Store<ViewState> {
     this.publish({ status: 'loading', stale, query });
     void readJson<ViewResponse>(this.fetchFn, viewUrl(request), 'the findings', controller.signal).then(result => {
       if (id !== this.latest) return;
-      this.publish(result.ok ? { status: 'ready', data: result.data, query } : { status: 'failed', message: result.message, stale, query });
+      this.publish(result.ok
+        ? { status: 'ready', data: result.data, query }
+        : {
+          status: 'failed', message: result.message, stale, query,
+          ...(request.saved && result.message.includes(SAVED_VIEW_UNAVAILABLE) && { savedViewGone: true as const }),
+        });
     });
   }
 }

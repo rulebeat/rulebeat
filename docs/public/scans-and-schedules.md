@@ -129,8 +129,8 @@ place of Clear filters, since clearing would widen the view past what it saved. 
 view that was deleted or does not exist, the tab shows no findings and one
 notice, "This saved view is not available to you", whichever of the two it is. The action Open
 Scans with only this link's filters opens the same link without the view and keeps its other
-filters. If someone updates the view while you have it open, a notice above the list says so and
-offers to reload it; the list below the notice already uses the new version.
+filters. If the open view is deleted while you have the page open, the next read shows the same
+notice and action in place of the list.
 
 Viewers can open saved views. Editors and admins can also save the current view, replace an open
 view's filters with the current ones (Update with current view), rename it and delete it. A name

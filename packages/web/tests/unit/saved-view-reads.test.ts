@@ -96,7 +96,6 @@ describe('reading a request', () => {
   it('is the plain View when no view is open', async () => {
     const request = await readViewRequest(new URLSearchParams('severity=low'));
     expect(request.ok && filterValues(request.value.view.filters, 'severity')).toEqual(['low']);
-    expect(request.ok && request.saved).toBeUndefined();
   });
 
   it('reads the tab and the suppressed flag as before, with the effective View in place of the query\'s own', async () => {
@@ -105,7 +104,6 @@ describe('reading a request', () => {
     expect(request.value).toMatchObject({ tab: 'advisories', showSuppressed: true });
     expect(filterValues(request.value.view.filters, 'severity')).toEqual(['low']);
     expect(filterValues(request.value.view.filters, 'subscription')).toEqual(['sub-a']);
-    expect(request.saved).toEqual({ id: viewId, revision });
   });
 
   it('answers a bad tab with a 400 and an unavailable view with a 404', async () => {
@@ -135,10 +133,10 @@ describe.each(Object.entries(routes))('GET /api/findings/%s with a view open', (
 });
 
 describe('GET /api/findings/view', () => {
-  it('says which revision of the saved view it read', async () => {
+  it('answers with the list alone, whether or not a view is open', async () => {
     queries.queryView.mockResolvedValue({ total: 1 });
     const res = await routes.view(new Request(`http://localhost/api/findings/view?view=${viewId}&rev=${revision}`));
-    expect(await res.json()).toEqual({ total: 1, savedView: { id: viewId, revision } });
+    expect(await res.json()).toEqual({ total: 1 });
   });
 
   it('adds nothing when no view is open', async () => {

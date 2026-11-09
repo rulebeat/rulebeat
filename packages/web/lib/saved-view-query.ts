@@ -20,8 +20,7 @@ export const MAX_SAVED_VIEW_NAME_LENGTH = 100;
 /** The /scans param that records which saved view is open. `viewFromSearchParams` ignores it. */
 export const OPEN_VIEW_PARAM = 'view';
 
-/** The param that carries the revision of the open saved view on a read, so the server can tell the
- *  view the page was opened on from the one it holds now. */
+/** The param that carries the revision of the open saved view on a read, next to its id. */
 export const OPEN_VIEW_REVISION_PARAM = 'rev';
 
 /** The saved view an address has open: its id and revision, and the View it saved. The address
@@ -31,6 +30,17 @@ export interface OpenSavedView { id: string; revision: number; view: View }
 /** What a link to a saved view that is unknown, deleted or not the person's to open says. One message
  *  for all three, so none can be told from another. */
 export const SAVED_VIEW_UNAVAILABLE = 'This saved view is not available to you';
+
+/** `/scans` with the address's params but the open saved view (`view`, and the `rev` that goes with it),
+ *  a repeated param kept repeated: what is left of a link once the view is not there to read. */
+export function addressWithoutView(params: URLSearchParams, basePath = '/scans'): string {
+  const kept = new URLSearchParams();
+  for (const [key, value] of params) {
+    if (key !== OPEN_VIEW_PARAM && key !== OPEN_VIEW_REVISION_PARAM) kept.append(key, value);
+  }
+  const query = kept.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
 
 /** What a person chooses when saving a view; the rest of a SavedView is bookkeeping. */
 export interface SavedViewFields {

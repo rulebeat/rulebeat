@@ -24,15 +24,14 @@ export function parseViewRequest(params: URLSearchParams): Parsed<ViewRequest> {
 }
 
 export type ReadViewRequest =
-  | { ok: true; value: ViewRequest; saved?: { id: string; revision: number } }
+  | { ok: true; value: ViewRequest }
   | { ok: false; error: string; status: 400 | 404 };
 
 /**
  * `parseViewRequest` for a route that may be asked for a saved view (`view=<id>&rev=<n>`). With a view
  * open, the View is the saved view with the query's changes on top (`effectiveView`), assembled here
  * and never from a copy the browser built; an unknown, deleted or unopenable view is a 404 with one
- * message. `rev` is the revision the page opened the view at: the read always uses the view as it is
- * now, and `saved.revision` says which that is.
+ * message. The read always uses the view as it is now; `rev` is ignored.
  */
 export async function readViewRequest(params: URLSearchParams): Promise<ReadViewRequest> {
   const parsed = parseViewRequest(params);
@@ -41,7 +40,7 @@ export async function readViewRequest(params: URLSearchParams): Promise<ReadView
   if (!viewId) return parsed;
   const effective = await effectiveView({ viewId, changes: params });
   if (!effective.ok) return { ok: false, error: SAVED_VIEW_UNAVAILABLE, status: 404 };
-  return { ok: true, value: { ...parsed.value, view: effective.view }, saved: { id: effective.saved.id, revision: effective.saved.revision } };
+  return { ok: true, value: { ...parsed.value, view: effective.view } };
 }
 
 /** `format=csv|json`: which file the export route writes. There is no default, so a link that forgot

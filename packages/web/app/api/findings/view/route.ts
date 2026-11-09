@@ -15,8 +15,7 @@ export async function GET(req: Request) {
   try {
     const { view, tab, showSuppressed } = request.value;
     const answer = await queryView(view, { tab, showSuppressed }, actor.access);
-    // With a saved view open the answer says which revision of it was read, so a page opened on an older one can tell.
-    return Response.json(request.saved ? { ...answer, savedView: request.saved } : answer);
+    return Response.json(answer);
   } catch (err) {
     return serverError('Could not load the findings', err);
   }
