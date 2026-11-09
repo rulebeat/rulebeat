@@ -5,6 +5,7 @@
 import type { DashboardBarState } from './dashboard-bar';
 import type { DashboardFilterChanges } from './finding-view';
 import type { Dashboard } from './types';
+import { UNAVAILABLE_NOTICE } from './dashboard-conflict';
 
 export type SaveOutcome =
   /** Written. The page adopts the new revision, the bar and the dashboard as the server returned them. */
@@ -12,7 +13,11 @@ export type SaveOutcome =
   /** Not written, and nothing changed. `outside` is how many values outside the person's Access to remove, when that is the reason. */
   | { kind: 'refused'; message: string; outside?: number }
   /** Someone saved first. Nothing was written, and the changes stay in the address. */
-  | { kind: 'conflict'; revision: number; message: string }
+  | { kind: 'conflict'; revision: number; message: string; bar?: DashboardBarState; changedBy?: string; changedAt?: string }
+  /** The dashboard was deleted, unshared or handed over: it answers like one that never existed. */
+  | { kind: 'gone'; message: string }
+  /** The person no longer holds the right to edit. `message` is the reason the save is off. */
+  | { kind: 'forbidden'; message: string }
   | { kind: 'failed'; message: string };
 
 const UNSAVED = 'The filters could not be saved. Your changes are still in the address.';
@@ -34,7 +39,16 @@ export async function sendFiltersSave(
     if (res.ok) {
       return { kind: 'saved', revision: body['revision'] as number, bar: body['bar'] as DashboardBarState, dashboard: body['dashboard'] as Dashboard };
     }
-    if (res.status === 409) return { kind: 'conflict', revision: body['revision'] as number, message };
+    if (res.status === 409) {
+      return {
+        kind: 'conflict', revision: body['revision'] as number, message,
+        ...(typeof body['bar'] === 'object' && body['bar'] !== null && { bar: body['bar'] as DashboardBarState }),
+        ...(typeof body['changedBy'] === 'string' && { changedBy: body['changedBy'] }),
+        ...(typeof body['changedAt'] === 'string' && { changedAt: body['changedAt'] }),
+      };
+    }
+    if (res.status === 404) return { kind: 'gone', message: UNAVAILABLE_NOTICE };
+    if (res.status === 403 && typeof body['reason'] === 'string') return { kind: 'forbidden', message: body['reason'] };
     if (res.status === 422) {
       return body['code'] === 'outside-access' && typeof body['count'] === 'number'
         ? { kind: 'refused', message, outside: body['count'] }

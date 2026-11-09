@@ -4,13 +4,28 @@
  * Access, and writes nothing else. Fixture: the dashboard saves Subscription {A, B} and Severity
  * critical; L holds B only; M holds A and B.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createDashboard, getDashboard, updateDashboard } from '@/lib/db/dashboards';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDashboard, deleteDashboard, getDashboard, updateDashboard, updateDashboardFilters } from '@/lib/db/dashboards';
 import { saveDashboardFilters } from '@/lib/dashboard-filter-save';
 import { buildAccess, type Access } from '@/lib/access-model';
 import type { WidgetDef } from '@/lib/types';
 import { resetDb } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+
+// Another save can land between the revision check and the write. `beforeWrite` runs at that moment.
+let beforeWrite: (() => Promise<void>) | null = null;
+vi.mock('@/lib/db/dashboards', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/db/dashboards')>('@/lib/db/dashboards');
+  return {
+    ...actual,
+    updateDashboardFilters: async (...args: Parameters<typeof actual.updateDashboardFilters>) => {
+      const hook = beforeWrite;
+      beforeWrite = null;
+      if (hook) await hook();
+      return actual.updateDashboardFilters(...args);
+    },
+  };
+});
 
 const SUB_A = '00000000-0000-0000-0000-00000000000a';
 const SUB_B = '00000000-0000-0000-0000-00000000000b';
@@ -26,6 +41,7 @@ const widget = (id: string, config: Record<string, unknown> = {}): WidgetDef => 
 let id: string;
 beforeEach(async () => {
   await resetDb();
+  beforeWrite = null;
   const created = await createDashboard({
     name: `filters ${crypto.randomUUID()}`,
     config: {
@@ -127,9 +143,32 @@ describe('a save that is refused', () => {
     await updateDashboard(id, { name: `renamed ${crypto.randomUUID()}` });
     const current = await revision();
     const result = await saveDashboardFilters({ dashboardId: id, revision: stale, changes: { severity: ['high'] }, access: EVERYTHING_ACCESS });
-    expect(result).toEqual({ ok: false, reason: 'stale', revision: current });
+    expect(result).toMatchObject({ ok: false, reason: 'stale', revision: current });
+    // The bar of the newer revision, with the person's changes still on it.
+    expect(result.ok === false && result.reason === 'stale' && result.bar).toMatchObject({
+      revision: current, dimensions: { severity: { effective: ['high'], saved: ['critical'], inUrl: true } },
+    });
     expect((await stored()).filters?.severities).toEqual(['critical']);
     expect(await revision()).toBe(current);
+  });
+
+  it('answers a save that loses the race to the write as stale, with the bar of the revision that won', async () => {
+    const opened = await revision();
+    beforeWrite = async () => { await updateDashboardFilters(id, opened, { lists: { tags: ['prod'], severities: ['low'] } }); };
+    const result = await saveDashboardFilters({ dashboardId: id, revision: opened, changes: { severity: ['high'] }, access: EVERYTHING_ACCESS });
+    expect(result).toMatchObject({ ok: false, reason: 'stale', revision: opened + 1 });
+    expect(result.ok === false && result.reason === 'stale' && result.bar).toMatchObject({
+      revision: opened + 1,
+      dimensions: { tags: { effective: ['prod'] }, severity: { effective: ['high'], saved: ['low'], inUrl: true } },
+    });
+    expect((await stored()).filters?.severities).toEqual(['low']);
+  });
+
+  it('answers a save whose dashboard was deleted before the write as not found', async () => {
+    const opened = await revision();
+    beforeWrite = async () => { await deleteDashboard(id); };
+    expect(await saveDashboardFilters({ dashboardId: id, revision: opened, changes: { severity: ['high'] }, access: EVERYTHING_ACCESS }))
+      .toEqual({ ok: false, reason: 'not-found' });
   });
 
   it('answers an unknown dashboard as not found', async () => {
