@@ -128,8 +128,8 @@ type SavedFilterKey = keyof NonNullable<DashboardConfig['filters']>;
 /**
  * Writes the saved filters of a dashboard when its revision is still `expectedRevision`, and nothing
  * else of it: `lists` replaces the named filter keys, `window` the date window, and the layout, widget
- * overrides and every other key stay as stored. The check and the write share one transaction, so two
- * saves from the same revision cannot both land.
+ * overrides and every other key stay as stored. The check and the write share one locked transaction, so
+ * two saves from the same revision cannot both land.
  */
 export async function updateDashboardFilters(
   id: string,
@@ -137,6 +137,10 @@ export async function updateDashboardFilters(
   change: { lists: Partial<Record<SavedFilterKey, string[]>>; window?: DateWindow },
 ): Promise<UpdateDashboardFiltersResult> {
   return inTransaction(async (tx) => {
+    // The same lock every other write here takes: on Postgres the revision is read only after any
+    // save ahead of this one has committed, so two saves from one revision cannot both pass the check,
+    // and a layout save cannot land between the config read and the config write.
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
     if (existing.revision !== expectedRevision) return { ok: false, reason: 'stale', revision: existing.revision };

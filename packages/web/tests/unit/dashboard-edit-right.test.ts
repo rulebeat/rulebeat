@@ -31,8 +31,8 @@ const barFor = (address: string) => buildBarState({
   revision: 1, saved: SAVED, changes: dashboardAddress(SAVED).read(new URLSearchParams(address)), access: EVERYTHING_ACCESS, widgets: [],
 });
 
-const render = (edit: { allowed: boolean; reason?: string }, address = '') => (query = address, renderToStaticMarkup(createElement(DashboardGridClient, {
-  dashboard: DASHBOARD, outsideAccess: barFor(address).marks, bar: barFor(address).state, edit,
+const render = (edit: { allowed: boolean; reason?: string }, address = '', canDuplicate = edit.allowed) => (query = address, renderToStaticMarkup(createElement(DashboardGridClient, {
+  dashboard: DASHBOARD, outsideAccess: barFor(address).marks, bar: barFor(address).state, edit, canDuplicate,
 })));
 
 /** The `disabled` attribute, not the `disabled:` utility classes every button carries. */
@@ -69,8 +69,8 @@ describe('Save as this dashboard\'s filters', () => {
     expect(isDisabled(save)).toBe(false);
   });
 
-  it('is off with the server\'s reason for someone who may not, and Duplicate is offered beside it', () => {
-    const markup = render({ allowed: false, reason: SCOPED_DASHBOARD_REASON }, 'severity=high');
+  it('is off with the server\'s reason for someone who may not, and Duplicate is offered beside it when the server allows it', () => {
+    const markup = render({ allowed: false, reason: SCOPED_DASHBOARD_REASON }, 'severity=high', true);
     expect(isDisabled(buttonWith(markup, SAVE))).toBe(true);
     expect(markup).toContain(SCOPED_DASHBOARD_REASON.replace(/'/g, '&#x27;'));
     expect(buttonWith(markup, 'Duplicate')).not.toBe('');

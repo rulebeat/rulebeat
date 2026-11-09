@@ -53,6 +53,8 @@ interface Props {
   bar: DashboardBarState;
   /** Whether the person may edit the dashboard, and why not. Edit mode previews widget drafts, which the server refuses without the right. */
   edit: { allowed: boolean; reason?: string };
+  /** Whether the duplicate route will take this person's request. Computed on the server from the same action the route checks. */
+  canDuplicate: boolean;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -139,7 +141,7 @@ export function layoutConfig(config: Dashboard['config'], autoRefresh: number, w
   return { ...rest, autoRefresh, widgets };
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit, canDuplicate }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -442,11 +444,18 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   }
 
   async function handleDuplicate() {
-    const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        setError(res.status === 403 ? 'Duplicating a dashboard needs the Editor Role on the whole install.' : 'Failed to duplicate dashboard.');
+        return;
+      }
       const copy = await res.json() as Dashboard;
       router.push(`/dashboards/${copy.id}`);
       router.refresh();
+    } catch {
+      setError('Failed to duplicate dashboard.');
     }
   }
 
@@ -621,7 +630,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       </div>
 
       {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
-      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} save={{ allowed: edit.allowed, reason: edit.reason, run: saveFilters, duplicate: handleDuplicate }} />
+      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} save={{ allowed: edit.allowed, reason: edit.reason, canDuplicate, run: saveFilters, duplicate: handleDuplicate }} />
 
       {/* Edit mode banner */}
       {editMode && (

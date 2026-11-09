@@ -162,7 +162,8 @@ export function SaveRegion({ changed, allowed, reason, saving, refusal, onSave, 
   refusal: SaveRefusal | null;
   onSave: () => void;
   onRemoveOutside: () => void;
-  onDuplicate: () => void;
+  /** Absent when the server would refuse a duplicate for this person, so no button is offered that cannot work. */
+  onDuplicate?: () => void;
 }) {
   if (!changed) return null;
   return (
@@ -173,7 +174,7 @@ export function SaveRegion({ changed, allowed, reason, saving, refusal, onSave, 
       {!allowed && (
         <>
           {reason && <span>{reason}</span>}
-          <Button size="sm" variant="outline" onClick={onDuplicate}>Duplicate</Button>
+          {onDuplicate && <Button size="sm" variant="outline" onClick={onDuplicate}>Duplicate</Button>}
         </>
       )}
       {refusal && (
@@ -201,6 +202,8 @@ interface Props {
   save: {
     allowed: boolean;
     reason?: string;
+    /** Whether the duplicate route will take this person's request, as the server computed it. */
+    canDuplicate: boolean;
     /** Sends the changes in the address. The page owns the revision and what a conflict does. */
     run: (changes: DashboardFilterChanges) => Promise<SaveOutcome>;
     duplicate: () => void;
@@ -353,7 +356,7 @@ export function DashboardFilterBar({ state, saved, marks, save }: Props) {
           refusal={refusal}
           onSave={saveChanges}
           onRemoveOutside={() => { setRefusal(null); replace(removeOutsideValues(changes, marks)); }}
-          onDuplicate={save.duplicate}
+          onDuplicate={save.canDuplicate ? save.duplicate : undefined}
         />
         <button type="button" onClick={copyLink} className="flex items-center gap-1 font-medium text-ink underline underline-offset-2">
           <Link2 className="size-3.5" aria-hidden="true" />Copy link

@@ -61,8 +61,8 @@ dashboard's saved filters. Each person who opens it sees what their own Access a
 filters**. It is the only way the saved filters change: it writes your changes (each changed dimension and the
 date window) as what everyone starts from next, then clears the changes from your address. It leaves the
 layout and every widget's own Scope alone, and it never runs when you save the layout in edit mode. Someone
-who may not edit the dashboard sees it off, with the reason, and **Duplicate** beside it to keep their own
-version. The save is checked against the revision you opened: if someone saved or edited first, nothing is
+who may not edit the dashboard sees it off, with the reason. **Duplicate** sits beside it only for someone
+who is allowed to duplicate a dashboard, since the duplicate is refused for everyone else. The save is checked against the revision you opened: if someone saved or edited first, nothing is
 overwritten, the bar reloads, your changes stay in the address, and a notice asks you to check them and save
 again. A save is refused when your changes name values outside your Access (the bar then offers **Remove N
 values outside your access**, which takes them out of the address) and when it picks any for a dimension whose

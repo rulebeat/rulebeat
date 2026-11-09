@@ -42,7 +42,7 @@ function barFor(access: Access, address: string, widgets: { config: Record<strin
   return { ...built, changes };
 }
 
-const SAVE_ALLOWED = { allowed: true, run: vi.fn(), duplicate: vi.fn() };
+const SAVE_ALLOWED = { allowed: true, canDuplicate: true, run: vi.fn(), duplicate: vi.fn() };
 
 const html = (access: Access, address: string, widgets: { config: Record<string, unknown> }[] = []) => {
   const { state, marks } = barFor(access, address, widgets);
@@ -208,7 +208,7 @@ describe('Save as this dashboard\'s filters in the bar', () => {
   const buttonWith = (markup: string, label: string): string =>
     markup.match(new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`, 's'))?.[0] ?? '';
   const isDisabled = (button: string): boolean => /\sdisabled(=|\s|>)/.test(button);
-  const render = (address: string, save: { allowed: boolean; reason?: string }) => {
+  const render = (address: string, save: { allowed: boolean; canDuplicate?: boolean; reason?: string }) => {
     const { state, marks } = barFor(EVERYTHING_ACCESS, address);
     return renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved: SAVED, marks, save: { ...SAVE_ALLOWED, ...save } }));
   };
@@ -224,10 +224,16 @@ describe('Save as this dashboard\'s filters in the bar', () => {
   });
 
   it('is off with the reason in view, and Duplicate offered, for someone who may not edit', () => {
-    const markup = render('severity=high', { allowed: false, reason: 'Changing a dashboard needs the Editor Role.' });
+    const markup = render('severity=high', { allowed: false, canDuplicate: true, reason: 'Changing a dashboard needs the Editor Role.' });
     expect(isDisabled(buttonWith(markup, SAVE.replace("'", '&#x27;')))).toBe(true);
     expect(markup).toContain('Changing a dashboard needs the Editor Role.');
     expect(buttonWith(markup, 'Duplicate')).not.toBe('');
+  });
+
+  it('offers no Duplicate that the server would refuse, and still says why the save is off', () => {
+    const markup = render('severity=high', { allowed: false, canDuplicate: false, reason: 'Changing a dashboard needs the Editor Role.' });
+    expect(buttonWith(markup, 'Duplicate')).toBe('');
+    expect(markup).toContain('Changing a dashboard needs the Editor Role.');
   });
 
   it('does not offer Duplicate beside a save that is on', () => {

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import { accessAllowing, type Role } from '@/lib/rbac';
 import {
-  categoryControlFor, dashboardEditControlFor, SCOPED_CATEGORY_REASON, SCOPED_DASHBOARD_REASON, SCOPED_WRITE_REASON,
+  categoryControlFor, dashboardDuplicateAllowedFor, dashboardEditControlFor, SCOPED_CATEGORY_REASON, SCOPED_DASHBOARD_REASON, SCOPED_WRITE_REASON,
   VIEWER_DASHBOARD_REASON, writeControlsFor,
 } from '@/lib/write-controls';
 
@@ -127,5 +127,14 @@ describe('dashboardEditControlFor', () => {
 
   it('refuses an Editor on one subscription with the scoped reason', () => {
     expect(dashboardEditControlFor(grants([SUB, 'editor']))).toEqual({ allowed: false, reason: SCOPED_DASHBOARD_REASON });
+  });
+});
+
+describe('dashboardDuplicateAllowedFor', () => {
+  it('is what the duplicate route allows: an Admin and an Editor on Everything, not a Viewer or a scoped Editor', () => {
+    expect(dashboardDuplicateAllowedFor(everythingAccess('admin'))).toBe(true);
+    expect(dashboardDuplicateAllowedFor(everythingAccess('editor', 'manual'))).toBe(true);
+    expect(dashboardDuplicateAllowedFor(everythingAccess('viewer', 'manual'))).toBe(false);
+    expect(dashboardDuplicateAllowedFor(grants([SUB, 'editor']))).toBe(false);
   });
 });
