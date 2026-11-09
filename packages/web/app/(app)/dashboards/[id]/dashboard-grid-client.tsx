@@ -57,7 +57,6 @@ interface Props {
   permissions: ItemPermissions;
   /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
   shareControl: { allowed: boolean; reason?: string };
-  /** How many widgets of a Duplicate show more than the original, read from the address when the copy opens. */
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
