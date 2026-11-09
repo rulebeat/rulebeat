@@ -173,6 +173,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
     const address = dashboardAddress(saved);
     return address.write(address.read(searchParams)).toString();
   }, [saved, searchParams]);
+  // Back at the saved filters there is nothing left to check, so a later pick starts without the old notice.
+  useEffect(() => { if (changes === '') setConflict(null); }, [changes]);
   const filters: WidgetFilters = useMemo(
     () => widgetFiltersOf(applyChanges(saved, dashboardAddress(saved).read(searchParams))),
     [saved, searchParams],

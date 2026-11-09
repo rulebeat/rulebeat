@@ -75,7 +75,8 @@ address. One notice reads "<name or email> changed this dashboard's saved filter
 still in the address. Check them, then save again." When a dimension you did not touch now counts something
 else because of that save, the notice adds "This also changed Severity for you." and names it. Saving
 again, once you have checked, is a deliberate save over the new revision, also while a layout edit is open
-(the notice then adds that the edit is still open). A time from an earlier day shows its date. If the dashboard was deleted,
+(the notice then adds that the edit is still open). A time from an earlier day shows its date. When the dashboard moved by a rename or a layout save and not by a
+filters save, no one is named and the notice reads "This dashboard changed since you opened it." If the dashboard was deleted,
 unshared or handed over while you had it open, the page says "This dashboard is no longer available to
 you". If you lost the right to edit it, Save is off with the reason and Duplicate is offered if you may
 duplicate.

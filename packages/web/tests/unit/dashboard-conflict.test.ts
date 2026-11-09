@@ -43,7 +43,7 @@ describe('the conflict notice', () => {
 
   it('does not claim a name or time it was not given', () => {
     expect(conflictNotice({ moved: [], formatTime: time })).toBe(
-      "This dashboard's saved filters changed since you opened it. Your changes are still in the address. Check them, then save again.",
+      "This dashboard changed since you opened it. Your changes are still in the address. Check them, then save again.",
     );
   });
 });

@@ -132,6 +132,22 @@ describe('a save by someone with the edit right', () => {
     expect(body['bar']).toBeDefined();
   });
 
+  it('names nobody when the filters were saved before the page was opened and only a rename came after', async () => {
+    const sam = await createUser({ email: 'sam@example.com', name: 'Sam Rivera', role: 'admin' });
+    if ('error' in sam) throw new Error(sam.error);
+    mockAuth.mockResolvedValue({ user: { uid: sam.user.id } });
+    expect((await put({ revision: await revision(), changes: { severity: ['low'] } })).status).toBe(200);
+    mockAuth.mockResolvedValue({ user: { uid: admin } });
+
+    const opened = await revision();
+    await updateDashboard(id, { name: `renamed ${crypto.randomUUID()}` });
+    const res = await put({ revision: opened, changes: { severity: ['high'] } });
+    expect(res.status).toBe(409);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body['changedBy']).toBeUndefined();
+    expect(body['changedAt']).toBeUndefined();
+  });
+
   it('answers an unknown dashboard with 404', async () => {
     expect((await put({ revision: 1, changes: {} }, 'nope')).status).toBe(404);
   });

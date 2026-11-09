@@ -47,7 +47,7 @@ export function conflictNotice(input: { by?: string; at?: string; moved: string[
   const { by, at, moved, formatTime = defaultTime, layoutEditOpen } = input;
   const head = by && at
     ? `${by} changed this dashboard's saved filters at ${formatTime(at)}.`
-    : "This dashboard's saved filters changed since you opened it.";
+    : 'This dashboard changed since you opened it.';
   const also = moved.length > 0 ? ` This also changed ${joined(moved)} for you.` : '';
   const layout = layoutEditOpen ? ' Your layout edit is still open: save or cancel it to load the new layout.' : '';
   return `${head}${also} Your changes are still in the address. Check them, then save again.${layout}`;
