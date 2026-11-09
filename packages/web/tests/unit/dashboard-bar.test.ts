@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ANY_WIDENS_REASON, UNTICK_LAST_REASON, backToSaved, buildBarState, pickAny, toggleValue, type BarLayers,
+  ANY_WIDENS_REASON, UNTICK_LAST_REASON, backToSaved, buildBarState, pickAny, toggleValue, withWidgetOverrides, type BarLayers,
 } from '@/lib/dashboard-bar';
 import { dashboardAddress } from '@/lib/finding-view';
 import { markOutsideAccess } from '@/lib/outside-access';
@@ -109,6 +109,27 @@ describe('a value that no longer exists', () => {
   });
 });
 
+describe('a person who holds the Directory and subscription A', () => {
+  const holder = buildAccess([
+    { tenantId: 't', scope: { kind: 'directory' as const, path: '@directory' }, role: 'viewer' as const },
+    { tenantId: 't', scope: { kind: 'subscription' as const, path: `/subscriptions/${SUB_A}` }, role: 'viewer' as const },
+  ], 'manual');
+  const saved: DashboardFilters = { ...SAVED, subscription: ['directory', SUB_A] };
+  const input = { revision: 1, saved, access: holder, widgets: [], known: { subscription: new Set([SUB_A, 'directory']) } };
+
+  it('sees both, with nothing counted outside and nothing called gone', () => {
+    const { state: bar } = buildBarState({ ...input, changes: {} });
+    expect(bar.dimensions.subscription.effective).toEqual(['directory', SUB_A]);
+    expect(bar.dimensions.subscription.outside).toEqual({ saved: 0, url: 0 });
+    expect(bar.dimensions.subscription.vanished).toEqual([]);
+  });
+
+  it('can untick A and keep the Directory', () => {
+    const { marks } = buildBarState({ ...input, changes: {} });
+    expect(toggleValue({ saved, changes: {}, marks }, 'subscription', SUB_A)).toEqual({ changes: { subscription: ['directory'] } });
+  });
+});
+
 describe('widgets that set their own value', () => {
   it('counts them per dimension', () => {
     const widgets = [
@@ -117,6 +138,16 @@ describe('widgets that set their own value', () => {
     ];
     const { overriddenBy } = state(M, '', { widgets }).state;
     expect(overriddenBy).toEqual({ category: 1, subscription: 0, resourceGroup: 0, tags: 0, rule: 0, severity: 2, window: 1 });
+  });
+});
+
+describe('the bar after a layout save changes a widget override', () => {
+  it('counts the overrides of the dashboard as it now stands, and changes nothing else', () => {
+    const { state: before } = state(M, '', { widgets: [{ config: { severities: ['low'] } }] });
+    expect(before.overriddenBy.severity).toBe(1);
+    const after = withWidgetOverrides(before, [{ config: { severities: ['low'] } }, { config: { severities: ['high'], category: 'cost' } }]);
+    expect(after.overriddenBy).toEqual({ category: 1, subscription: 0, resourceGroup: 0, tags: 0, rule: 0, severity: 2, window: 0 });
+    expect({ ...after, overriddenBy: before.overriddenBy }).toEqual(before);
   });
 });
 

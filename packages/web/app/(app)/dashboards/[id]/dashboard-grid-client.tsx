@@ -37,7 +37,7 @@ import {
   widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, applyChanges, widgetFiltersOf, type WidgetFilters,
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
-import type { DashboardBarState } from '@/lib/dashboard-bar';
+import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
 import { incomingDashboard, noticeFor, seeRevision } from '@/lib/dashboard-revision';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
@@ -214,6 +214,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // showing the bar of the revision held, so the bar never describes different filters from the numbers.
   const [shownBar, setShownBar] = useState(bar);
   if (bar !== shownBar && bar.revision === dashboard.revision) setShownBar(bar);
+  // A layout save adds or changes a widget override without reloading the page, so the line that says
+  // which dimensions widgets override is counted from the dashboard as held.
+  const barShown = useMemo(() => withWidgetOverrides(shownBar, dashboard.config.widgets), [shownBar, dashboard.config.widgets]);
 
   // Every widget below self-fetches from /api/widgets/summary (or its own route) keyed off
   // `refreshKey`: bumping it is the shared "refetch everything" signal for manual refresh and
@@ -587,7 +590,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       </div>
 
       {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
-      <DashboardFilterBar state={shownBar} saved={saved} marks={outsideAccess} />
+      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} />
 
       {/* Edit mode banner */}
       {editMode && (

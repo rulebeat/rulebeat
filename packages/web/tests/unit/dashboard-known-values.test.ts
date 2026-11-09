@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { loadKnownValues } from '@/lib/dashboard-known-values';
 import { buildBarState } from '@/lib/dashboard-bar';
+import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
 import { dashboardAddress, type DashboardFilters } from '@/lib/finding-view';
 import { fakeHierarchy, group, refreshFrom, subscription, HIERARCHY_TENANT as TENANT } from '../helpers/fake-hierarchy';
 import { EVERYTHING_ACCESS } from '../helpers/access';
@@ -28,7 +29,17 @@ describe('the subscriptions the bar knows', () => {
 
   it('are the subscriptions in the stored tree', async () => {
     await refreshFrom(fakeHierarchy([group(TENANT, 'Root', null), subscription(SUB_A, 'A', TENANT)]));
-    expect([...(await loadKnownValues()).subscription!]).toEqual([SUB_A]);
+    expect([...(await loadKnownValues()).subscription!]).toEqual([SUB_A, DIRECTORY_SUBSCRIPTION]);
+  });
+
+  it('never call the Directory gone, though it is not in the tree', async () => {
+    await refreshFrom(fakeHierarchy([group(TENANT, 'Root', null), subscription(SUB_A, 'A', TENANT)]));
+    const saved = { ...SAVED, subscription: [DIRECTORY_SUBSCRIPTION, SUB_A] };
+    const { state } = buildBarState({
+      revision: 1, saved, changes: {}, access: EVERYTHING_ACCESS, widgets: [], known: await loadKnownValues(),
+    });
+    expect(state.dimensions.subscription.vanished).toEqual([]);
+    expect(state.dimensions.subscription.effective).toEqual([DIRECTORY_SUBSCRIPTION, SUB_A]);
   });
 
   it('let the bar name a subscription that left the tree, for Everything only', async () => {

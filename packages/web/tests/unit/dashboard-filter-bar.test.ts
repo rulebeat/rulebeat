@@ -181,3 +181,21 @@ describe('the Saved line for a rule that was deleted', () => {
     expect(bar).not.toContain('rule-9');
   });
 });
+
+describe('an effective value the option list does not offer', () => {
+  it('stays shown, ticked and untickable, named from the rule list', () => {
+    const saved: DashboardFilters = { ...SAVED, rule: ['rule-1'] };
+    const changes = dashboardAddress(saved).read(new URLSearchParams(''));
+    const { state, marks } = buildBarState({ revision: 1, saved, changes, access: EVERYTHING_ACCESS, widgets: [], known: { rule: new Set(['rule-1', 'rule-2']) } });
+    const replace = vi.fn();
+    const control = dimensionControl({
+      dimension: 'rule', state, layers: { saved, changes, marks }, options: [{ value: 'rule-2', label: 'Rule two' }], replace,
+      nameOf: id => ({ 'rule-1': 'Rule one' })[id] ?? id,
+    });
+    expect(control.options.map(o => [o.value, o.label])).toEqual([['rule-2', 'Rule two'], ['rule-1', 'Rule one']]);
+    expect([...control.selected]).toEqual(['rule-1']);
+    expect(control.count).toBe(1);
+    control.onToggle('rule-1');
+    expect(replace).toHaveBeenCalledWith({ rule: [] });
+  });
+});

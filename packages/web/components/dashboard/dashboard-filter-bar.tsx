@@ -70,10 +70,16 @@ export function dimensionControl(input: {
   const outside = dim.inUrl ? dim.outside.url : dim.outside.saved;
 
   const listed = new Set(input.options.map(o => o.value));
+  const goneValues = new Set(dim.vanished.map(v => v.value));
   const gone = dim.vanished
     .filter(v => !listed.has(v.value))
     .map(v => ({ value: v.value, label: vanishedText(v, nameOf) }));
-  const known = [...input.options, ...gone].map(option => {
+  // The option list holds what has findings. An effective value that exists but is not in it (a rule
+  // with no findings yet) is still in force, so it stays on the list, named and untickable.
+  const unlisted = dim.effective
+    .filter(v => !listed.has(v) && !goneValues.has(v))
+    .map(v => ({ value: v, label: nameOf(v) }));
+  const known = [...input.options, ...unlisted, ...gone].map(option => {
     if (!dim.effective.includes(option.value)) return option;
     const picked = toggleValue(layers, dimension, option.value);
     return 'refused' in picked ? { ...option, disabledReason: picked.refused } : option;
@@ -132,12 +138,18 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
   const searchParams = useSearchParams();
   const subNames = useSubscriptionNames();
   const [options, setOptions] = useState<FilterOptionsResponse | null>(null);
+  const [ruleList, setRuleList] = useState<{ id: string; name: string }[]>([]);
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
 
   useEffect(() => {
     fetch('/api/widgets/filter-options')
       .then(r => r.ok ? r.json() : null)
       .then((d: FilterOptionsResponse | null) => { if (d) setOptions(d); })
+      .catch(() => {});
+    // Every rule, not only those with findings, so a saved rule that has none yet still reads by name.
+    fetch('/api/widgets/rules')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { id: string; name: string }[] | null) => { if (d) setRuleList(d); })
       .catch(() => {});
   }, []);
 
@@ -148,7 +160,7 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
   const replace = (next: DashboardFilterChanges) => replaceChanges(router, pathname, searchParams, saved, next);
 
   const categoryLabels = new Map((options?.categories ?? []).map(c => [c.id, c.label]));
-  const ruleNames = new Map((options?.rules ?? []).map(r => [r.id, r.name]));
+  const ruleNames = new Map([...(options?.rules ?? []), ...ruleList].map(r => [r.id, r.name]));
   const nameOfSubscription = (id: string) => subNames[id] ?? id;
   const lists: Record<BarListDimension, ChecklistOption[]> = {
     category: (options?.categories ?? []).map(c => ({ value: c.id, label: c.label })),

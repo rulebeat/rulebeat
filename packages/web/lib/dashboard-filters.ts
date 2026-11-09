@@ -113,30 +113,10 @@ export function widgetFiltersOf(filters: DashboardFilters): WidgetFilters {
   };
 }
 
-/** The filter bar's state as a dashboard's dimensions. */
-export function dashboardFiltersOf(bar: {
-  categories: string[]; subscriptions: string[]; resourceGroups: string[]; tags: string[]; severities: string[]; ruleIds: string[];
-}, window: DateWindow): DashboardFilters {
-  return {
-    category: bar.categories, subscription: bar.subscriptions, resourceGroup: bar.resourceGroups,
-    tags: bar.tags, rule: bar.ruleIds, severity: bar.severities, window,
-  };
-}
-
 export function sameValues(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a);
   const right = new Set(b);
   return left.size === right.size && [...left].every(v => right.has(v));
-}
-
-/** Only the dimensions of `current` that are not what `saved` holds, as filter changes. */
-export function differencesFromSaved(saved: DashboardFilters, current: DashboardFilters): DashboardFilterChanges {
-  const changes: DashboardFilterChanges = {};
-  for (const dim of ['category', 'subscription', 'resourceGroup', 'tags', 'rule', 'severity'] as const) {
-    if (!sameValues(current[dim], saved[dim])) changes[dim] = current[dim];
-  }
-  if (JSON.stringify(current.window) !== JSON.stringify(saved.window)) changes.window = current.window;
-  return changes;
 }
 
 /** How many of `configs` (widget configs) set their own value for each dimension, by the same rule

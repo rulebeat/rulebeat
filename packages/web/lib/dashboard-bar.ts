@@ -156,6 +156,15 @@ export function buildBarState(input: BuildBarStateInput): { state: DashboardBarS
   };
 }
 
+/**
+ * The bar with the widget overrides of the dashboard as it stands now. A layout save adds or changes a
+ * widget's own value without reloading the page, and the overrides are the one part of the bar that
+ * follows the widgets, so the line "N widgets use their own severity" is counted again from them.
+ */
+export function withWidgetOverrides(state: DashboardBarState, widgets: readonly { config?: Record<string, unknown> }[]): DashboardBarState {
+  return { ...state, overriddenBy: overriddenDimensions(widgets.map(w => w.config ?? {})) };
+}
+
 // ---- Picks ----
 
 /** What a pick works on: the filters saved on the dashboard, the changes in the address as written, and the marks. */

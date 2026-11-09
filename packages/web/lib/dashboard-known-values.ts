@@ -6,6 +6,7 @@
  */
 import { listCategories } from '@/lib/db/categories';
 import { getHierarchyStatus, listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
+import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
 import { loadRules } from '@/lib/rules';
 import type { KnownValues } from '@/lib/dashboard-bar';
 
@@ -13,7 +14,8 @@ async function knownSubscriptions(): Promise<ReadonlySet<string> | undefined> {
   const status = await getHierarchyStatus();
   if (!status.lastSuccessAt) return undefined;
   const nodes = await listHierarchyNodes();
-  return new Set(nodes.filter(n => n.kind === 'subscription').map(n => n.id));
+  // The Directory is a Scope value of its own, offered beside the subscriptions and never in the tree.
+  return new Set([...nodes.filter(n => n.kind === 'subscription').map(n => n.id), DIRECTORY_SUBSCRIPTION]);
 }
 
 export async function loadKnownValues(): Promise<KnownValues> {
