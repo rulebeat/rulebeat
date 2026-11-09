@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
-import { listDashboards } from '@/lib/db/dashboards';
+import { getDashboard, listDashboards } from '@/lib/db/dashboards';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import type { Dashboard } from '@/lib/types';
 
@@ -36,8 +36,10 @@ function post(payload: unknown): Promise<Response> {
   return POST(json('POST', payload));
 }
 
-function put(id: string, payload: unknown): Promise<Response> {
-  return PUT(json('PUT', payload), { params: Promise.resolve({ id }) });
+/** A write carries the revision of the dashboard it read, as the page does. */
+async function put(id: string, payload: object): Promise<Response> {
+  const revision = (await getDashboard(id))?.revision ?? 1;
+  return PUT(json('PUT', { ...payload, revision }), { params: Promise.resolve({ id }) });
 }
 
 function duplicate(id: string): Promise<Response> {

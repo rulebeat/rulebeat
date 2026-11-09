@@ -122,3 +122,13 @@ renaming and deleting is audited, and so is saving the dashboard's filters: one 
 save, naming the dimensions that changed and never their values. The changes in an address are never audited; dragging and resizing is not, since every drag would be an entry
 and would bury real changes. Viewers see every dashboard, editing needs the editor role
 ([`rbac.md`](rbac.md)).
+
+**Auto-refresh.** The refresh picker in the toolbar, outside edit mode, applies only to the page you
+have open. It is not saved and not in the address, so it never changes the dashboard for anyone else, and
+it goes back to the saved interval when you reload. The saved interval is set in edit mode and saved
+with the layout, like a widget move.
+
+**Old tabs.** Every save of a layout or a name carries the revision of the dashboard you opened, and
+the save returns the new one. A save that carries no revision, which is what a tab left open from before
+this rule sends, is refused with "This dashboard changed since you opened it. Reload to continue." and
+nothing is written. Setting the default needs no revision.
