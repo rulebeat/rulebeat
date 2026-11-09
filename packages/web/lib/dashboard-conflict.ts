@@ -10,7 +10,16 @@ const DIMENSION_NAME: Record<BarDimension, string> = {
   category: 'Category', rule: 'Rule', subscription: 'Subscription', resourceGroup: 'Resource group', tags: 'Tags', severity: 'Severity', window: 'Date window',
 };
 
-const defaultTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+/** The time of a save, with the date added when it was not today, so an earlier day never reads as a time alone. */
+export function timeLabel(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return when.toDateString() === now.toDateString()
+    ? time
+    : `${when.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+}
+
+const defaultTime = (iso: string) => timeLabel(iso);
 
 function joined(names: string[]): string {
   return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -34,13 +43,14 @@ export function movedDimensions(before: DashboardBarState, after: DashboardBarSt
 }
 
 /** The one notice for a save that met a newer revision. A second Save is the person's deliberate choice. */
-export function conflictNotice(input: { by?: string; at?: string; moved: string[]; formatTime?: (iso: string) => string }): string {
-  const { by, at, moved, formatTime = defaultTime } = input;
+export function conflictNotice(input: { by?: string; at?: string; moved: string[]; formatTime?: (iso: string) => string; layoutEditOpen?: boolean }): string {
+  const { by, at, moved, formatTime = defaultTime, layoutEditOpen } = input;
   const head = by && at
     ? `${by} changed this dashboard's saved filters at ${formatTime(at)}.`
     : "This dashboard's saved filters changed since you opened it.";
   const also = moved.length > 0 ? ` This also changed ${joined(moved)} for you.` : '';
-  return `${head}${also} Your changes are still in the address. Check them, then save again.`;
+  const layout = layoutEditOpen ? ' Your layout edit is still open: save or cancel it to load the new layout.' : '';
+  return `${head}${also} Your changes are still in the address. Check them, then save again.${layout}`;
 }
 
 export const UNAVAILABLE_NOTICE = 'This dashboard is no longer available to you';

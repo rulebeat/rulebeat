@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  CHANGED_NOTICE_DEFERRED, CHANGED_NOTICE_RELOADED, incomingDashboard, latestOf, noticeFor, reportedRevision, seeRevision,
+  CHANGED_NOTICE_DEFERRED, CHANGED_NOTICE_RELOADED, incomingDashboard, latestOf, noticeFor, reportedRevision, revisionToSave, seeRevision,
 } from '@/lib/dashboard-revision';
 import { WidgetRequestProvider, useRevisionReport } from '@/components/dashboard/widget-request';
 
@@ -101,5 +101,16 @@ describe('the notice for a response from a newer revision', () => {
   it('does not ask the person to save again, since they did not try to save', () => {
     expect(noticeFor('adopt')).not.toMatch(/save again/i);
     expect(noticeFor('defer')).not.toMatch(/save again/i);
+  });
+});
+
+describe('the revision a filters save sends', () => {
+  // While a layout edit is open the page keeps the dashboard it holds, so its revision goes stale. The
+  // filter bar does not wait for the layout, so a second Save must go over what the bar and the 409 said.
+  it('is the newest of the dashboard, the bar and the revision a conflict reported', () => {
+    expect(revisionToSave({ dashboard: 4, bar: 4 })).toBe(4);
+    expect(revisionToSave({ dashboard: 4, bar: 6 })).toBe(6);
+    expect(revisionToSave({ dashboard: 4, bar: 4, conflict: 7 })).toBe(7);
+    expect(revisionToSave({ dashboard: 8, bar: 6, conflict: 7 })).toBe(8);
   });
 });

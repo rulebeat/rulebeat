@@ -45,3 +45,13 @@ export function reportedRevision(body: unknown): number | undefined {
   const revision = (body as { revision?: unknown } | null)?.revision;
   return typeof revision === 'number' ? revision : undefined;
 }
+
+/**
+ * The revision a save of the saved filters goes over. A layout edit that is open keeps the dashboard the
+ * page holds, so its revision can be older than the filter bar's, which follows the newest. A save is
+ * checked against the newest one the page knows: the bar's, or the one a conflict reported. A second
+ * Save after a conflict is then a deliberate save over the new revision, not the same refusal again.
+ */
+export function revisionToSave(known: { dashboard: number; bar: number; conflict?: number }): number {
+  return Math.max(known.dashboard, known.bar, known.conflict ?? 0);
+}

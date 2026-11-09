@@ -39,7 +39,7 @@ import {
 import { dashboardAddress, type DashboardFilterChanges } from '@/lib/finding-view';
 import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
 import { NO_REFRESH_CHOICE, pageInterval, pickInterval, savedInterval, shownInterval, type RefreshChoice } from '@/lib/dashboard-refresh';
-import { incomingDashboard, latestOf, noticeFor, seeRevision } from '@/lib/dashboard-revision';
+import { incomingDashboard, latestOf, noticeFor, revisionToSave, seeRevision } from '@/lib/dashboard-revision';
 import { UNAVAILABLE_NOTICE, conflictNotice, movedDimensions } from '@/lib/dashboard-conflict';
 import { sendFiltersSave, type SaveOutcome } from '@/lib/dashboard-filter-save-client';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
@@ -154,6 +154,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // The notice a save that met a newer revision leaves. It outlasts the reload that follows, and it goes
   // when the address no longer holds changes to check.
   const [conflict, setConflict] = useState<string | null>(null);
+  // The revision a conflict reported. While a layout edit is open the page keeps the dashboard it holds,
+  // so a second Save goes over this one, not over the older revision of the layout.
+  const [conflictRevision, setConflictRevision] = useState<number | undefined>(undefined);
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
@@ -379,8 +382,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // layout edit that is open is untouched: it never carries filters, and the revision it holds moves with this.
   async function saveFilters(changes: DashboardFilterChanges): Promise<SaveOutcome> {
     const before = shownBar;
-    const outcome = await sendFiltersSave(dashboard.id, dashboard.revision, changes);
+    const outcome = await sendFiltersSave(
+      dashboard.id, revisionToSave({ dashboard: dashboard.revision, bar: shownBar.revision, conflict: conflictRevision }), changes,
+    );
     if (outcome.kind === 'saved') {
+      setConflictRevision(undefined);
       setDashboard(prev => latestOf(prev, outcome.dashboard));
       setShownBar(outcome.bar);
       setRefreshKey(k => k + 1);
@@ -393,8 +399,10 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       const after = outcome.bar;
       if (after) setShownBar(prev => latestOf(prev, after));
       onRevision(outcome.revision);
+      setConflictRevision(prev => Math.max(prev ?? 0, outcome.revision));
       setConflict(conflictNotice({
         by: outcome.changedBy, at: outcome.changedAt, moved: after ? movedDimensions(before, after, changes) : [],
+        layoutEditOpen,
       }));
     } else if (outcome.kind === 'gone') {
       setUnavailable(true);

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildBarState } from '@/lib/dashboard-bar';
-import { conflictNotice, movedDimensions } from '@/lib/dashboard-conflict';
+import { conflictNotice, movedDimensions, timeLabel } from '@/lib/dashboard-conflict';
 import type { DashboardFilters } from '@/lib/finding-view';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
@@ -27,6 +27,18 @@ describe('the conflict notice', () => {
     expect(conflictNotice({ by: 'sam@example.com', at, moved: ['Severity', 'Date window'], formatTime: time })).toBe(
       "sam@example.com changed this dashboard's saved filters at 10:30. This also changed Severity and Date window for you. Your changes are still in the address. Check them, then save again.",
     );
+  });
+
+  it('says the open layout edit is why the new layout is not shown, when one is open', () => {
+    expect(conflictNotice({ by: 'Sam Rivera', at, moved: [], formatTime: time, layoutEditOpen: true })).toBe(
+      "Sam Rivera changed this dashboard's saved filters at 10:30. Your changes are still in the address. Check them, then save again. Your layout edit is still open: save or cancel it to load the new layout.",
+    );
+  });
+
+  it('puts a date on a time that is not today', () => {
+    const now = new Date('2026-11-09T12:00:00.000Z');
+    expect(timeLabel('2026-11-09T10:30:00.000Z', now)).not.toMatch(/2026|Nov/);
+    expect(timeLabel('2026-11-07T10:30:00.000Z', now)).toMatch(/Nov/);
   });
 
   it('does not claim a name or time it was not given', () => {
