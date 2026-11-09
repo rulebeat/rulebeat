@@ -33,7 +33,7 @@ import {
   SCAN_COPY_DELETE_ORPHANS, SCAN_COPY_READ_PENDING, SCAN_FINDING_COLUMNS, SCAN_FINDING_SEVERITY_RANK,
   planScanBlob, recordValues,
 } from './scan-findings-copy';
-import { COUNTED_FINDING_RULES_READ, recountTrendSqlite, startTrendRecording } from './trend-record';
+import { CHANGED_FINDING_RULES_READ, recountTrendSqlite, startTrendRecording } from './trend-record';
 
 /**
  * Everything the app does to a database file on startup, in the order it does it.
@@ -1450,7 +1450,7 @@ function upgradeAccess(sqlite: Database.Database): void {
 /** Recounts, inside the transaction of an upgrade step that changed findings, the rules those findings belong to
  *  (ADR 0012). The record lock is taken last, after the step's own writes. */
 function recordFindingChanges(sqlite: Database.Database): void {
-  const ruleIds = (sqlite.prepare(COUNTED_FINDING_RULES_READ).all() as { rule_id: string }[]).map(r => r.rule_id);
+  const ruleIds = (sqlite.prepare(CHANGED_FINDING_RULES_READ).all() as { rule_id: string }[]).map(r => r.rule_id);
   if (ruleIds.length > 0) recountTrendSqlite(sqlite, { ruleIds });
 }
 

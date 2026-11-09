@@ -5,7 +5,7 @@ import {
   FINGERPRINT_CASE_MARKER, REKEY_READS, planFingerprintRekey,
   type RekeyFindingRow, type RekeyScheduleRunRow, type RekeySuppressionRow,
 } from '../fingerprint-rekey';
-import { COUNTED_FINDING_RULES_READ, recountTrendPg } from '../trend-record';
+import { CHANGED_FINDING_RULES_READ, recountTrendPg } from '../trend-record';
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from '../finding-placement';
 import { planAccessUpgrade } from '../access-upgrade';
 import {
@@ -734,7 +734,7 @@ async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number])
 /** Recounts the rules the findings belong to after the upgrade steps that moved them (ADR 0012). Takes the record
  *  lock, so bootstrapPg() calls it after its last write. */
 async function recordFindingChanges(tx: PgTx): Promise<void> {
-  const ruleIds = ((await tx.execute(sql.raw(COUNTED_FINDING_RULES_READ))).rows as { rule_id: string }[]).map(r => r.rule_id);
+  const ruleIds = ((await tx.execute(sql.raw(CHANGED_FINDING_RULES_READ))).rows as { rule_id: string }[]).map(r => r.rule_id);
   if (ruleIds.length > 0) await recountTrendPg(tx, { ruleIds });
 }
 

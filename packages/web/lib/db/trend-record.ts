@@ -35,9 +35,11 @@ export const TREND_RECORD_VERSION = 1;
 /** How far back an install's finding events are kept before the upgrade, in days (ADR 0012). */
 const EVENT_RETENTION_BEFORE_UPGRADE_DAYS = 180;
 
-/** The rules whose findings a cell counts, for an upgrade step that changes findings with raw SQL and then recounts
- *  them (placement correction, fingerprint rekey). Plain SQL valid on both backends. */
-export const COUNTED_FINDING_RULES_READ = `SELECT DISTINCT rule_id FROM findings WHERE status = 'active' AND kind = 'state'`;
+/** The rules to recount after an upgrade step that changes findings with raw SQL (placement correction, fingerprint
+ *  rekey): those with an active finding, and those the record holds a cell for, since a step that merges or moves
+ *  their last active finding away leaves a cell that must come down. Plain SQL valid on both backends. */
+export const CHANGED_FINDING_RULES_READ = `SELECT DISTINCT rule_id FROM findings WHERE status = 'active' AND kind = 'state'
+  UNION SELECT DISTINCT rule_id FROM trend_cells`;
 
 export interface CoveredEntry {
   category: string;

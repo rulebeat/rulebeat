@@ -31,13 +31,16 @@ beforeEach(() => {
 });
 afterEach(() => { sqlite.close(); vi.restoreAllMocks(); });
 
-function insertFinding(f: { fingerprint: string; resourceId: string; subscriptionId: string; resourceGroup: string | null; placement: string }): void {
+function insertFinding(f: {
+  fingerprint: string; resourceId: string; subscriptionId: string; resourceGroup: string | null; placement: string;
+  status?: 'active' | 'resolved'; lastSeenAt?: string;
+}): void {
   sqlite.prepare(`
     INSERT INTO findings (fingerprint, rule_id, category, severity, kind, resource_id, resource_type, resource_name, subscription_id, resource_group,
       placement, title, status, first_seen_at, last_seen_at)
-    VALUES (?, ?, 'security', 'high', 'state', ?, 'microsoft.compute/virtualmachines', 'vm-1', ?, ?, ?, 'VMs without backup', 'active',
-      '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')
-  `).run(f.fingerprint, RULE, f.resourceId, f.subscriptionId, f.resourceGroup, f.placement);
+    VALUES (?, ?, 'security', 'high', 'state', ?, 'microsoft.compute/virtualmachines', 'vm-1', ?, ?, ?, 'VMs without backup', ?,
+      '2026-03-01T00:00:00.000Z', ?)
+  `).run(f.fingerprint, RULE, f.resourceId, f.subscriptionId, f.resourceGroup, f.placement, f.status ?? 'active', f.lastSeenAt ?? '2026-03-01T00:00:00.000Z');
 }
 
 const recount = (at: Date) => sqlite.transaction(() => recountTrendSqlite(sqlite, { ruleIds: [RULE], now: at }))();
@@ -86,6 +89,24 @@ describe('fingerprint rekey', () => {
 
     expect(cells().map(c => c.open_count)).toEqual([2, 1]);
     expect(cells()[1]!.changed_at > T1.toISOString()).toBe(true);
+    expect(recount(new Date('2026-04-01T00:00:00.000Z'))).toEqual({ cells: 0, facts: 0 });
+  });
+
+  it('records an active finding merged into a resolved duplicate seen later, and a recount afterwards writes nothing', () => {
+    // The merge keeps the duplicate seen last, here the resolved one, so the rule has no active finding afterwards.
+    insertFinding({ fingerprint: computeLegacyFingerprint(RULE, vm('RG-APP')), resourceId: vm('RG-APP'), subscriptionId: SUB, resourceGroup: 'RG-APP', placement: 'resource' });
+    insertFinding({
+      fingerprint: computeLegacyFingerprint(RULE, vm('rg-app')), resourceId: vm('rg-app'), subscriptionId: SUB, resourceGroup: 'rg-app', placement: 'resource',
+      status: 'resolved', lastSeenAt: '2026-03-05T00:00:00.000Z',
+    });
+    sqlite.prepare(`DELETE FROM meta WHERE key = ?`).run(FINGERPRINT_CASE_MARKER);
+    recount(T1);
+    expect(cells()).toEqual([expect.objectContaining({ open_count: 1, changed_at: T1.toISOString() })]);
+
+    runMigrations(sqlite);
+
+    expect(sqlite.prepare(`SELECT status FROM findings`).all()).toEqual([{ status: 'resolved' }]);
+    expect(cells().map(c => c.open_count)).toEqual([1, 0]);
     expect(recount(new Date('2026-04-01T00:00:00.000Z'))).toEqual({ cells: 0, facts: 0 });
   });
 
