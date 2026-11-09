@@ -4,10 +4,11 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { Loader2, CheckCircle2, AlertTriangle, Clock, HelpCircle } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { timeAgo } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { staleAfterHours?: number; category?: string; policyIds?: string[] }
@@ -37,8 +38,9 @@ const BADGE: Record<Freshness, { label: string; className: string; icon: typeof 
  *  per-category scan recency so that trust signal is visible next to the score, not implied. */
 export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) {
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+  const target = useWidgetReadTarget();
   const staleAfterHours = config.staleAfterHours ?? 168; // 7 days
-  const params = buildSummaryParams(merged).toString();
+  const params = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>).toString();
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]

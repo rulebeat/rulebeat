@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { openExport } from '@/lib/db/finding-views';
+import { VIEW_MISSING_HEADER, readWithOpenView } from '@/lib/open-saved-view';
 import { streamExport } from '@/lib/export-stream';
 import { parseExportFormat, parseViewRequest } from '@/lib/view-request';
 
@@ -18,13 +19,15 @@ export async function GET(req: Request) {
   if (!format.ok) return Response.json({ error: format.error }, { status: 400 });
 
   try {
-    const { view, tab, showSuppressed } = request.value;
+    const { tab, showSuppressed } = request.value;
+    const { view, viewMissing } = await readWithOpenView(actor, params, request.value.view);
     const body = await streamExport(openExport(view, { tab, showSuppressed }, actor.access), format.value);
     return new Response(body, {
       headers: {
         'Content-Type': CONTENT_TYPES[format.value],
         'Content-Disposition': `attachment; filename="findings.${format.value}"`,
         'Cache-Control': 'no-store',
+        ...(viewMissing && { [VIEW_MISSING_HEADER]: '1' }),
       },
     });
   } catch (err) {

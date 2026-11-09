@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
@@ -34,6 +34,7 @@ import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
 import { copiedDashboardNotice, rememberCopiedDashboard, takeCopiedDashboard, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { WidgetReadContext } from '@/lib/hooks/use-widget-read';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
@@ -57,6 +58,8 @@ interface Props {
   permissions: ItemPermissions;
   /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
   shareControl: { allowed: boolean; reason?: string };
+  /** Whether Unshare and Delete are on for the Install default, and why not when they are off. Computed on the server from `mayAct`. */
+  installDefaultControl: { allowed: boolean; reason?: string };
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -75,7 +78,7 @@ function filtersFromConfig(config: HeldBackDashboard['config']): DashboardFilter
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, canEdit, onRemove, onConfigure }: {
   widget: WidgetDef;
   filters: WidgetFilters;
   filtered: boolean;
@@ -83,6 +86,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   editMode: boolean;
   dashboardId: string;
   heldBack: HeldBack[];
+  canEdit: boolean;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
@@ -90,7 +94,8 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   // empty read would turn into a 100% posture or "No violations found".
   const accessReason = widgetHeldBackReason(heldBack, dashboardId, widget, {
     subscriptions: filters.subscriptions ?? [], resourceGroups: filters.resourceGroups ?? [],
-  });
+  }, canEdit);
+  const readTarget = useMemo(() => ({ dashboardId, widgetId: widget.id }), [dashboardId, widget.id]);
   const inner = accessReason ? (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
       <Lock className="size-5 text-ink-2" aria-hidden="true" />
@@ -132,12 +137,12 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
 
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      {inner}
+      <WidgetReadContext.Provider value={readTarget}>{inner}</WidgetReadContext.Provider>
     </WidgetWrapper>
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
+export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl, installDefaultControl }: Props) {
   const router = useRouter();
   // A Duplicate leaves its count for this page in session storage, read once so a reload or a link has none.
   // A later run finds it gone, so it only ever sets the count, and the notice belongs to this dashboard's id.
@@ -422,15 +427,43 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   }
 
   async function handleSetDefault() {
-    const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isDefault: true }),
-    });
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboards/install-default', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboard.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to set the Install default.');
+        return;
+      }
       const d = await res.json() as HeldBackDashboard;
-      setDashboard(d);
+      setDashboard(prev => ({ ...prev, ...d, isMyDefault: prev.isMyDefault }));
       router.refresh(); // invalidate cached server data so sidebar / gallery update
+    } catch {
+      setError('Failed to set the Install default.');
+    }
+  }
+
+  async function handleSetMyDefault() {
+    setError(null);
+    try {
+      const res = await fetch('/api/account/default-dashboard', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboard.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to set your default dashboard.');
+        return;
+      }
+      setDashboard(prev => ({ ...prev, isMyDefault: true }));
+      router.refresh();
+    } catch {
+      setError('Failed to set your default dashboard.');
     }
   }
 
@@ -449,7 +482,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       return;
     }
     // The answer is the dashboard, or only its id, visibility and revision after someone else's unshare.
-    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) }));
+    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false, isInstallDefault: false }) }));
     router.refresh(); // the Header and the sidebar list are read on the server
   }
 
@@ -480,6 +513,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   const actor = { id: currentUserId };
   const canShare = dashboard.visibility === 'personal' && isOwnItem(actor, dashboard);
   const canUnshare = mayChangeVisibilityWith(actor, permissions, dashboard, 'unshare');
+  // The Install default is the install's: whoever may not manage it sees Unshare and Delete off, with the reason.
+  const protectedDefault = dashboard.isInstallDefault && !installDefaultControl.allowed;
   const { handOver: canHandOver, takeOver: canTakeOver } = transferControlsWith(actor, permissions, dashboard);
 
   const layout: RGLLayout[] = widgets.map(w => ({
@@ -602,9 +637,14 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
                 <Pencil />Rename
               </DropdownMenuItem>
             )}
-            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isDefault && (
+            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isInstallDefault && (
               <DropdownMenuItem onClick={handleSetDefault}>
-                <Star />Set as default
+                <Star />Set as Install default
+              </DropdownMenuItem>
+            )}
+            {!dashboard.isMyDefault && (
+              <DropdownMenuItem onClick={handleSetMyDefault}>
+                <Star />Make my default
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={handleDuplicate}>
@@ -619,7 +659,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
               <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
             )}
             {canUnshare && (
-              <DropdownMenuItem onClick={() => void handleVisibility('unshare')}>
+              <DropdownMenuItem disabled={protectedDefault} onClick={() => void handleVisibility('unshare')}>
                 <Undo2 />Unshare
               </DropdownMenuItem>
             )}
@@ -634,9 +674,12 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
               </DropdownMenuItem>
             )}
             {canChange && (
-              <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+              <DropdownMenuItem variant="destructive" disabled={protectedDefault} onClick={handleDelete}>
                 <Trash2 />Delete dashboard
               </DropdownMenuItem>
+            )}
+            {(canUnshare || canChange) && protectedDefault && installDefaultControl.reason && (
+              <p className="px-3 pb-1.5 text-xs text-ink-2">{installDefaultControl.reason}</p>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -698,6 +741,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
                   editMode={editMode}
                   dashboardId={dashboard.id}
                   heldBack={dashboard.heldBack}
+                  canEdit={canChange}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />
@@ -711,6 +755,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       {configuringWidget && (
         <WidgetConfigPanel
           widget={configuringWidget}
+          dashboardId={dashboard.id}
           heldBack={dashboard.heldBack}
           onClose={() => setConfiguringWidget(null)}
           onSave={updated => { updateWidget(updated); setConfiguringWidget(null); }}

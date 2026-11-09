@@ -59,7 +59,7 @@ rules in scope shows an empty posture rather than 0% or 100%.
 
 ## Managing dashboards
 
-Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
+Create a blank dashboard, duplicate one for a per-team variant, rename, delete, choose the defaults, or
 Restore starter to recreate the seeded Overview layout. Layouts save per dashboard. Creating,
 renaming and deleting is audited. Saving a Shared dashboard is audited too (see below), but dragging
 and resizing a Personal one is not, since every drag would be an entry and would bury real changes.
@@ -124,18 +124,70 @@ dashboard's current state no longer allows answers 409 and asks you to reload.
 If your access no longer lets you change a Shared dashboard you own, the page says "Your access no longer
 lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+A widget's config may name a saved view (`savedViewId`). A Shared dashboard can use only Shared saved views,
+because anyone who opens the dashboard has to be able to open the view. Every save of a Shared dashboard, and
+every share of a Personal one, checks this. If a widget uses a view that is Personal or deleted, the save or
+share is refused with 400: "N widgets use saved views that are no longer shared: <widget titles>. Change or
+remove them before saving." The message names the dashboard's own widgets and never a saved view, so it says
+nothing about views that belong to someone else. A Personal dashboard can use any saved view. Unsharing or
+deleting a saved view that Shared dashboards use is allowed, and its confirmation says how many Shared
+dashboards use it. Those dashboards then refuse their next save until the widgets change or the view is
+shared again. When a widget is read, the view it names is in one of three states: resolved (its stored values
+outside your access are counted in `heldBack` as place `savedView`, and match nothing for you), "This saved
+view is no longer shared with you" (it exists, but is now someone else's Personal view) or "This saved view
+no longer exists." (it was deleted). The widget routes report the state as `savedView` (an `X-Saved-View`
+header when the answer is a list).
+
+Each widget reads its numbers by the dashboard it is on and its own id. The request carries the page's
+filters and the widget's own overrides, only the values you can see, and the server adds back the
+values each of the two stores that your access does not reach before it merges them. A widget's own value
+for a dimension still replaces the page's. This covers the page's filters on a Shared dashboard, which
+change only your own page, and a widget while you edit it. A widget you have not saved yet holds nothing
+back. A dimension whose values are all held back counts nothing for you, never your whole access, and the
+widget says "Outside your access" with "This widget is filtered to places outside your Access, so it has
+nothing to count for you. Duplicate the dashboard to get a copy without them." If you may change the
+dashboard, it adds "Or remove those values in edit mode." The seven widget data routes (`/api/widgets/summary`,
+`findings`, `top-rules`, `top-resources`, `advisories`, `rules` and `filter-options`) answer a dashboard
+that does not exist, or is someone else's Personal one, with "not found".
+
 A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
 else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
 Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names
 that already clash from before keep working.
 
-The Install default is a Shared dashboard chosen by an Admin or an Editor on Everything. Nothing becomes
-the default by being first or by being the oldest left: deleting the default leaves the install without
-one until it is set again. A new dashboard is never the default.
+### The two defaults
+
+There are two defaults, and neither is picked for you.
+
+The **Install default** is one Shared dashboard chosen by an Admin or an Editor on Everything, from the
+Shared dashboards: "Set as Install default" in the card menu on the gallery or the More menu on the
+dashboard. A Personal dashboard cannot be it (the answer is 409: share it first). Only an Admin or an
+Editor on Everything can unshare or delete the Install default, and they choose it, so its owner, if
+they are an Editor on a smaller Scope, can still edit what is in it but sees Unshare and Delete switched
+off with the reason. Choosing a dashboard is not a save: a dashboard save that sends `isDefault` is
+refused with 400.
+
+**My default** is the dashboard you open first. Anyone signed in can pick one: their own Personal
+dashboard or any Shared one ("Make my default" in the same menus). It is yours alone, nobody else sees it
+and it is not audited.
+
+The Dashboards link (`/dashboard`) opens My default, then the Install default, then the gallery. Nothing
+becomes the default by being first or by being the oldest left, so deleting or unsharing the Install
+default leaves the install without one until an Admin or an Editor on Everything chooses another. There is
+no automatic promotion. With no Install default the gallery says so, and offers whoever may choose one a
+way to do it.
+
+If your My default stops being available to you (it was deleted, unshared by someone else, or is no
+longer one you can open), it is cleared and the next time you open the Dashboards link you land on the
+Install default or the gallery with one line saying so. You are told once. The redirect never saves a
+choice for you.
+
+The gallery and the tab strip mark the Install default and your My default.
 
 Creating, renaming and deleting a Personal dashboard is audited by its id and kind only, with no name.
 Sharing writes `dashboard.share` and unsharing `dashboard.unshare`, each naming the dashboard (an unshare
-with the name it had while Shared). Handing over writes `dashboard.hand_over`, naming the dashboard and both
+with the name it had while Shared). Choosing the Install default, and losing it by an unshare or a delete,
+write `dashboard.install_default`. Handing over writes `dashboard.hand_over`, naming the dashboard and both
 people by display name, else email, and taking over writes `dashboard.take_over`. Each save of a Shared dashboard writes one entry that names it and the
 fields that changed (name, description, filters, widgets, layout), never their values.
 Removing a person deletes their Personal dashboards and leaves their Shared ones Shared with no owner

@@ -3,6 +3,8 @@ import { savedViews } from '@/lib/db/tables';
 import { eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from '@/lib/db/exec';
 import { loadItemOwners, readVisibility } from '@/lib/db/item-owners';
+import { SAVED_VIEW_NAME_LOCK_KEY, lockDashboardsThenViews } from '@/lib/db/name-locks';
+import { sharedDashboardUseCounts } from '@/lib/db/dashboard-view-references';
 import type { ItemOwner } from '@/lib/types';
 import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 
@@ -19,11 +21,9 @@ import { isSavedViewTab, type SavedView, type SavedViewFields } from '@/lib/save
  * `inTransaction()` already serializes every writer; on Postgres every write takes
  * `pgAdvisoryXactLock()` first so two concurrent writers cannot both pass the check.
  */
-const SAVED_VIEW_NAME_LOCK_KEY = 7194826112;
-
 type Row = typeof savedViews.$inferSelect;
 
-function rowToView(row: Row, owners: Map<string, ItemOwner>): SavedView {
+function rowToView(row: Row, owners: Map<string, ItemOwner>, uses: Map<string, number>): SavedView {
   return {
     id: row.id,
     name: row.name,
@@ -37,12 +37,14 @@ function rowToView(row: Row, owners: Map<string, ItemOwner>): SavedView {
     owner: (row.ownerId && owners.get(row.ownerId)) || null,
     visibility: readVisibility(row.visibility),
     revision: row.revision,
+    sharedDashboardCount: uses.get(row.id) ?? 0,
   };
 }
 
 async function toViews(rows: Row[], handle: DbHandle = db): Promise<SavedView[]> {
   const owners = await loadItemOwners(rows.map(r => r.ownerId), handle);
-  return rows.map(row => rowToView(row, owners));
+  const uses = rows.length > 0 ? await sharedDashboardUseCounts(handle) : new Map<string, number>();
+  return rows.map(row => rowToView(row, owners, uses));
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -172,7 +174,7 @@ export type UnshareSavedViewResult =
  */
 export async function unshareSavedView(id: string, actorId: string): Promise<UnshareSavedViewResult> {
   return inTransaction(async (tx) => {
-    await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
+    await lockDashboardsThenViews(tx);
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' } as const;
     if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'wrong-state' } as const;
@@ -214,9 +216,14 @@ export async function transferSavedView(id: string, expectedOwnerId: string | nu
   });
 }
 
-/** Removes a saved view. Returns the view that was removed, or null when there was none. */
+/**
+ * Removes a saved view, which Shared dashboards may be using: their widgets then read it as no longer existing.
+ * Takes the dashboard name lock before the saved view one, as a dashboard save does. Returns the view that was
+ * removed, or null when there was none.
+ */
 export async function deleteSavedView(id: string): Promise<SavedView | null> {
   return inTransaction(async (tx) => {
+    await lockDashboardsThenViews(tx);
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return null;
     await run(tx.delete(savedViews).where(eq(savedViews.id, id)));

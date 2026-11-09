@@ -372,3 +372,38 @@ export async function restoreHeldBackDashboard(
   });
   return { config, restored };
 }
+
+// ---- Widget reads ----
+
+/** What a widget read adds back for the one dashboard it names. */
+export interface PlaceHeldBack {
+  /** The held-back values per dimension, each as stored, for the filter bar. */
+  dashboard: ReadonlyMap<string, readonly string[]>;
+  /** The same for the widget the read names, empty when the dashboard has no such widget (an unsaved one). */
+  widget: ReadonlyMap<string, readonly string[]>;
+  /** Every held-back value, whichever place stores it: what matches nothing for this person. */
+  held: HeldValues;
+  /** One count per place and dimension. */
+  counts: HeldBack[];
+}
+
+/**
+ * The stored held-back values of a dashboard's filter bar and of one of its widgets, for a widget read (#375). Both
+ * places are asked about in one findings query. A widget that is not in the stored dashboard has none.
+ */
+export async function heldBackForRead(
+  access: Access, dashboard: { id: string; config: DashboardConfig }, widgetId: string | null,
+): Promise<PlaceHeldBack> {
+  const stored = dashboardValues(dashboard.id, dashboard.config)
+    .filter(s => s.place === 'dashboard' || (s.place === 'widget' && s.id === widgetId));
+  const held = await heldBackValues(access, stored);
+  const of = (place: HeldBackPlace) => {
+    const out = new Map<string, string[]>();
+    for (const s of stored.filter(v => v.place === place)) {
+      const values = s.values.filter(value => isHeld(held, s.dimension, value));
+      if (values.length > 0) out.set(s.dimension, values);
+    }
+    return out;
+  };
+  return { dashboard: of('dashboard'), widget: of('widget'), held, counts: countsOf(stored, held) };
+}

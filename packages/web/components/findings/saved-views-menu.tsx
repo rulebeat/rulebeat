@@ -12,12 +12,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
-import { copiedViewNotice, copyNoticeWhileOpen, type CopyNotice, type HeldBack } from '@/lib/held-back';
+import { copiedViewNotice, copyNoticeWhileOpen, dimensionsHeldInFull, type CopyNotice, type HeldBack } from '@/lib/held-back';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
 import { shareConfirmation } from '@/lib/item-sharing';
+import { sharedDashboardUseNote } from '@/lib/saved-view-reference';
 import { SHARE_REASON } from '@/lib/write-controls';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -33,13 +34,16 @@ interface SavedViewsMenuProps {
   shareControl?: { allowed: boolean; reason?: string };
   /** The view the URL says is open, if any. */
   openId: string | null;
-  /** Asks for the URL's open view to change: set after a save, cleared after a delete or when the
-   *  open view is gone. */
+  /** Asks for the URL's open view to change: set after a save, cleared after a delete. */
   onOpenIdChange: (id: string | null) => void;
+  /** Closes the open view. Unlike a delete this lets go of the placeholder a held-back dimension stands for, so
+   *  it is the one way to see the findings the view's held-back values kept out. */
+  onClose?: () => void;
   /** Opens a saved view. */
   onOpen: (view: HeldBackSavedView) => void;
-  /** Told which of the open view's stored values are held back from this person, or none when no view is open. */
-  onHeldBackChange?: (heldBack: HeldBack[]) => void;
+  /** Told which of the open view's stored values are held back from this person, and which dimensions are held
+   *  back in full, or none when no view is open. */
+  onHeldBackChange?: (held: { heldBack: HeldBack[]; inFull: string[] }) => void;
   /** The explorer's current View as the query a saved view stores. */
   currentQuery: string;
 }
@@ -48,7 +52,7 @@ interface SavedViewsMenuProps {
 type ViewAction = 'save' | 'update' | 'rename' | 'delete' | 'share' | 'unshare';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: HeldBackSavedView[] }
 
-export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onClose, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
@@ -66,7 +70,9 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   }, [reloadKey]);
 
   const views = state.views.filter(v => v.tab === tab);
-  const open = views.find(v => v.id === openId) ?? null;
+  // The open view is found among all of them: the address names it whatever tab it was saved for, and the
+  // server applies it either way.
+  const open = state.views.find(v => v.id === openId) ?? null;
   const { yours, sharedByOthers } = sectionsOf({ id: currentUserId }, views);
   const shareControl = shareControlProp ?? (permissions.write ? { allowed: true } : { allowed: false, reason: SHARE_REASON });
   const actor = { id: currentUserId };
@@ -87,12 +93,10 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   }, [copyNotice, openId]);
 
   const openHeldBack = open?.heldBack;
-  useEffect(() => { onHeldBackChange?.(openHeldBack ?? []); }, [openHeldBack, onHeldBackChange]);
-
-  // A view someone else deleted, or a stale link, leaves nothing to update or rename.
+  const openQuery = open?.query;
   useEffect(() => {
-    if (state.status === 'ready' && openId && !open) onOpenIdChange(null);
-  }, [state.status, openId, open, onOpenIdChange]);
+    onHeldBackChange?.({ heldBack: openHeldBack ?? [], inFull: openQuery === undefined ? [] : dimensionsHeldInFull(openQuery, openHeldBack) });
+  }, [openHeldBack, openQuery, onHeldBackChange]);
 
   /** Makes the change, then mirrors it in the list and the URL. Returns the message to show, or
    *  null when it worked. */
@@ -184,6 +188,12 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
               </>
             )}
           </DropdownMenuGroup>
+          {open && onClose && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onClose}>Close view</DropdownMenuItem>
+            </>
+          )}
           {(permissions.personal || canChangeOpen || canShareOpen || canUnshareOpen || canHandOverOpen || canTakeOverOpen || demotedOpen) && (
             <>
               <DropdownMenuSeparator />
@@ -229,6 +239,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
           kind={action}
           viewName={open?.name ?? ''}
           shared={open?.visibility === 'shared'}
+          sharedDashboardCount={open?.sharedDashboardCount ?? 0}
           onClose={() => setAction(null)}
           onConfirm={name => applyAction(action, name)}
         />
@@ -259,11 +270,13 @@ function ViewItem({ view, openId, onOpen, tag }: { view: HeldBackSavedView; open
   );
 }
 
-function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
+function ViewDialog({ kind, viewName, shared, sharedDashboardCount, onClose, onConfirm }: {
   kind: ViewAction;
   viewName: string;
   /** Whether the open view is Shared: what the dialog says about who sees the change. */
   shared: boolean;
+  /** How many Shared dashboards have a widget on the open view: an unshare or a delete of it affects them. */
+  sharedDashboardCount: number;
   onClose: () => void;
   /** Returns the message to show, or null when it worked. */
   onConfirm: (name: string) => Promise<string | null>;
@@ -326,9 +339,9 @@ function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
                 {kind === 'save' && 'Only you can open this saved view. It keeps the filters, search, window, columns, sort and grouping you have now.'}
                 {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now.${shared ? ' Everyone who opens it will see the change.' : ''}`}
                 {kind === 'rename' && (shared ? 'Everyone who uses this install sees the new name.' : 'Only you see the new name.')}
-                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.`}
+                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.${sharedDashboardUseNote(sharedDashboardCount, 'deleted')}`}
                 {kind === 'share' && shareConfirmation('view', viewName)}
-                {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.`}
+                {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.${sharedDashboardUseNote(sharedDashboardCount, 'unshared')}`}
               </p>
 
               {error && <p className="text-xs font-medium text-sev-critical">{error}</p>}

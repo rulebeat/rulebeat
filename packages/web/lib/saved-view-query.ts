@@ -40,6 +40,8 @@ export interface SavedView extends SavedViewFields {
   visibility: ItemVisibility;
   /** Starts at 1 and goes up by one on every write. */
   revision: number;
+  /** How many Shared dashboards have a widget on this view: what an unshare or a delete of it affects. */
+  sharedDashboardCount: number;
 }
 
 /** A saved view as the routes return it: `query` leaves out the stored values outside the viewer's Access,

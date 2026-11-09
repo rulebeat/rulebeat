@@ -96,7 +96,7 @@ describe('the filter lists', () => {
     await scan();
     expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'a-two')?.status).toBe('fixed');
 
-    const res = await filterOptions.GET();
+    const res = await filterOptions.GET(new Request('http://localhost/api/widgets/filter-options'));
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(['categories', 'resourceGroups', 'rules', 'subscriptions', 'tags']);
