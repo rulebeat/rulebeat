@@ -128,7 +128,7 @@ export async function planViewFilters(
     const pickStates = scopePickStates(access, scope, nodes);
     if (expansion) {
       // A set is never sent to the browser whole: it names the picks the viewer holds and counts the rest.
-      states.scope = pickStates.filter(s => s.access === 'held' || s.access === 'narrowed');
+      states.scope = pickStates.filter(s => s.access === 'held' || s.access === 'narrowed' || s.access === 'unresolved');
       states.scopeHidden = {
         outside: pickStates.filter(s => s.access === 'outside').length,
         outsideNarrowed: pickStates.filter(s => s.access === 'outside-narrowed').length,

@@ -15,3 +15,11 @@ export function unresolvedPick(text: string): string {
 export function isUnresolvedPick(pick: string): boolean {
   return pick.startsWith(UNRESOLVED_PICK_PREFIX);
 }
+
+/** What an unresolved pick is called: the old filter's own words, without the prefix. */
+export function unresolvedLabel(pick: string): string {
+  const text = pick.slice(UNRESOLVED_PICK_PREFIX.length);
+  if (text.startsWith('resourceGroup/')) return `Resource group ${text.slice('resourceGroup/'.length)}`;
+  if (text.startsWith('@directory/')) return `Resource group ${text.slice('@directory/'.length)} in Directory`;
+  return text;
+}

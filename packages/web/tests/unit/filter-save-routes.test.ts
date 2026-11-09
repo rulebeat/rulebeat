@@ -443,3 +443,64 @@ async function seedPair(subscription: string, group: string): Promise<void> {
     INSERT INTO findings (fingerprint, rule_id, category, severity, subscription_id, resource_group, title, first_seen_at, last_seen_at)
     VALUES ('route-fp-${pairs++}', 'pair-rule', 'security', 'high', '${subscription}', '${group}', 'A finding', '2026-01-02T03:04:05.000Z', '2026-02-03T04:05:06.000Z')`);
 }
+
+describe('what a save adds is held to the shape and cap of a Scope set (ADR 0016)', () => {
+  const subs = (n: number) => Array.from({ length: n }, (_, i) => `30000000-0000-0000-0000-${String(i).padStart(12, '0')}`);
+  const subscriptionPaths = (n: number) => subs(n).map(s => `/subscriptions/${s}`);
+
+  it('refuses a dashboard Scope list over 2000 paths and text that is no Scope, and keeps an unresolved pick the row holds', async () => {
+    await signInAsEditor();
+    const id = await dashboardWith({});
+
+    const tooMany = await putDashboard(id, { config: { widgets: WIDGETS, dimensionFilters: { scope: subscriptionPaths(2501) } } });
+    const text = await putDashboard(id, { config: { widgets: WIDGETS, dimensionFilters: { scope: ['unresolved:anything at all'] } } });
+
+    expect(tooMany.status).toBe(400);
+    expect(text.status).toBe(400);
+    const stored: DashboardConfig = { widgets: WIDGETS, dimensionFilters: { scope: ['unresolved:resourceGroup/rg-gone'] } };
+    const kept = await prepareDashboardConfig(holding(SCOPE_SUBSCRIPTION), { widgets: WIDGETS, dimensionFilters: { scope: ['unresolved:resourceGroup/rg-gone'], tags: ['t'] } }, stored);
+    expect(kept.ok).toBe(true);
+  });
+
+  it('counts only the Scopes a dashboard save adds against the cap', async () => {
+    const stored: DashboardConfig = { widgets: WIDGETS, dimensionFilters: { scope: subscriptionPaths(2500) } };
+
+    const kept = await prepareDashboardConfig(EVERYTHING, { widgets: WIDGETS, dimensionFilters: { scope: subscriptionPaths(2500), tags: ['t'] } }, stored);
+
+    expect(kept.ok).toBe(true);
+  });
+
+  it('refuses a filter bar list whose cross product is over 2000 paths and creates no set for it', async () => {
+    const lists = { subscriptions: subs(30), resourceGroups: Array.from({ length: 100 }, (_, i) => `rg-${i}`) };
+
+    const refused = await prepareDashboardConfig(EVERYTHING, { widgets: WIDGETS, filters: lists }, null);
+
+    expect(refused.ok).toBe(false);
+    expect(await many(db.select().from(scopeSets))).toHaveLength(0);
+  });
+
+  it('refuses a saved view whose subscription and resource group params cross to over 2000 paths, with no set left behind', async () => {
+    await signInAsEditor();
+    const names = Array.from({ length: 100 }, (_, i) => `rg-${i}`);
+
+    const res = await postView({ name: 'Wide cross', tab: 'results', query: `subscription=${subs(30).join('%2C')}&rg=${names.join('%2C')}` });
+
+    expect(res.status).toBe(400);
+    expect(await many(db.select().from(scopeSets))).toHaveLength(0);
+  });
+
+  it('refuses a saved view Scope list over 2000 paths and text that is no Scope', async () => {
+    const wide = `scope=${encodeURIComponent(subscriptionPaths(2001).join(','))}`;
+
+    expect((await prepareSavedViewQuery(EVERYTHING, wide, null)).ok).toBe(false);
+    expect((await prepareSavedViewQuery(EVERYTHING, 'scope=unresolved%3Aanything', null)).ok).toBe(false);
+    expect((await prepareSavedViewQuery(EVERYTHING, 'scope=unresolved%3Aanything', 'scope=unresolved%3Aanything')).ok).toBe(true);
+  });
+
+  it('leaves no set behind when a saved view save is refused as not held', async () => {
+    const refused = await prepareSavedViewQuery(holding(SCOPE_SUBSCRIPTION), `subscription=${subs(40).join('%2C')}`, null);
+
+    expect(refused).toEqual({ ok: false, error: NOT_HELD });
+    expect(await many(db.select().from(scopeSets))).toHaveLength(0);
+  });
+});

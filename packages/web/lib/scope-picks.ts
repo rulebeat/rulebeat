@@ -13,6 +13,7 @@ import {
   type Access, type ManagementGroupExpansion, type Scope, type ScopeGrant,
 } from './access-model';
 import { expandManagementGroups, type HierarchyNode } from './management-group-tree';
+import { isUnresolvedPick, unresolvedLabel } from './unresolved-pick';
 import type { ScopePickAccess, ScopePickState } from './filter-states';
 
 /** The kinds a pick can be. Everything is the absence of a pick, never one. */
@@ -64,9 +65,10 @@ export function pickLabel(pick: string, nodes: readonly HierarchyNode[]): string
   }
 }
 
-/** How one pick sits against `access`: all of it held, a subscription held in part, a pick held in part whose
+/** How one pick sits against `access`: an unresolved one, all of it held, a subscription held in part, a pick held in part whose
  *  name the viewer may not read, or none of it. A path that is no Scope is held by nobody but Everything. */
 export function classifyPick(access: Access, pick: string, nodes: readonly HierarchyNode[]): ScopePickAccess {
+  if (isUnresolvedPick(pick)) return 'unresolved';
   if (access.everything) return 'held';
   const scope = pickableScope(pick);
   if (!scope) return 'outside';
@@ -102,6 +104,7 @@ export function classifyPick(access: Access, pick: string, nodes: readonly Hiera
 export function scopePickStates(access: Access, picks: readonly string[], nodes: readonly HierarchyNode[]): ScopePickState[] {
   return picks.map((value): ScopePickState => {
     const state = classifyPick(access, value, nodes);
+    if (state === 'unresolved') return { value, access: state, label: unresolvedLabel(value) };
     const named = state === 'held' || state === 'narrowed';
     return { value, access: state, label: named ? pickLabel(value, nodes) : null };
   });

@@ -4,10 +4,10 @@
  * saved is not asked for again, so an Editor who changes another field of a shared dashboard or saved view is
  * not refused for what its author held.
  */
-import { parseScope, type Access } from '@/lib/access-model';
+import type { Access } from '@/lib/access-model';
 import { viewFromSearchParams } from '@/lib/finding-view';
 import { isUnresolvedPick } from '@/lib/unresolved-pick';
-import { pathsOutsideAccess } from '@/lib/scope-sets';
+import { SCOPE_SET_MAX_PATHS, checkScopeSetShape, distinctPaths, pathsOutsideAccess } from '@/lib/scope-sets';
 import { MAX_SAVED_VIEW_QUERY_LENGTH, normalizeViewQuery } from '@/lib/saved-view-query';
 import { convertDashboardConfig, convertSavedViewQuery, legacyFiltersOf, sameLegacy } from '@/lib/db/filter-conversion';
 import { readRecordedPairs } from '@/lib/db/filter-pairs';
@@ -16,18 +16,19 @@ import type { DashboardConfig, DashboardDimensionFilters, LegacyDashboardFilters
 
 export const OUTSIDE_ACCESS_ERROR = 'A path in the list is outside the Scopes you hold.';
 const MALFORMED_SCOPE_ERROR = 'A Scope pick is a management group, subscription, resource group or Directory path.';
+const TOO_MANY_ERROR = `A Scope list holds at most ${SCOPE_SET_MAX_PATHS} paths.`;
 const UNKNOWN_SET_ERROR = 'The Scope list is not one this install made. Send its paths again.';
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const SHA256 = /^[0-9a-f]{64}$/i;
 
-/** The paths a stored or sent pick list and set stand for. `null` for a set this install cannot open. */
-async function pathsOf(scope: readonly string[] | undefined, scopeSet: string | undefined): Promise<string[] | null> {
-  const paths = (scope ?? []).filter(p => !isUnresolvedPick(p));
-  if (scopeSet === undefined) return paths;
+/** Every entry a stored or sent pick list and set stand for, unresolved picks too. `null` for a set this install cannot open. */
+async function entriesOf(scope: readonly string[] | undefined, scopeSet: string | undefined): Promise<string[] | null> {
+  const entries = [...(scope ?? [])];
+  if (scopeSet === undefined) return entries;
   const expansion = await expandScopeSet(scopeSet);
-  return expansion.status === 'resolved' ? [...paths, ...expansion.paths.filter(p => !isUnresolvedPick(p))] : null;
+  return expansion.status === 'resolved' ? [...entries, ...expansion.paths] : null;
 }
 
 /**
@@ -38,20 +39,32 @@ async function checkAdded(
   access: Access,
   sent: { scope?: readonly string[]; scopeSet?: string },
   stored: { scope?: readonly string[]; scopeSet?: string },
+  options: { serverBuilt?: boolean } = {},
 ): Promise<string | null> {
   const unchangedSet = sent.scopeSet !== undefined && sent.scopeSet.toLowerCase() === stored.scopeSet?.toLowerCase();
-  const sentPaths = await pathsOf(sent.scope, unchangedSet ? undefined : sent.scopeSet);
-  if (sentPaths === null) return UNKNOWN_SET_ERROR;
-  return checkAddedPaths(access, sentPaths, stored);
+  const entries = await entriesOf(sent.scope, unchangedSet ? undefined : sent.scopeSet);
+  if (entries === null) return UNKNOWN_SET_ERROR;
+  return checkAddedEntries(access, entries, stored, options);
 }
 
-/** Whether `access` may add `sentPaths`, leaving out those `stored` already held. */
-async function checkAddedPaths(
-  access: Access, sentPaths: readonly string[], stored: { scope?: readonly string[]; scopeSet?: string },
+/**
+ * Whether `access` may add `sent`, leaving out those `stored` already held. An added entry is held to the shape
+ * and cap of a Scope set, so a save cannot fill a row with text or an unbounded list, and to the Scopes the person
+ * holds. `serverBuilt` entries come from converting the old lists the server was sent: they may be unresolved
+ * picks, but their number is still the person's, so the cap applies.
+ */
+async function checkAddedEntries(
+  access: Access, sent: readonly string[], stored: { scope?: readonly string[]; scopeSet?: string },
+  options: { serverBuilt?: boolean } = {},
 ): Promise<string | null> {
-  if (sentPaths.length === 0) return null;
-  const storedPaths = await pathsOf(stored.scope, stored.scopeSet) ?? [];
-  return pathsOutsideAccess(access, sentPaths, storedPaths).length > 0 ? OUTSIDE_ACCESS_ERROR : null;
+  const storedEntries = await entriesOf(stored.scope, stored.scopeSet) ?? [];
+  const known = new Set(storedEntries.map(entry => entry.toLowerCase()));
+  const added = distinctPaths(sent).filter(entry => !known.has(entry.toLowerCase()));
+  if (added.length === 0) return null;
+  if (added.length > SCOPE_SET_MAX_PATHS) return TOO_MANY_ERROR;
+  const paths = options.serverBuilt ? added.filter(entry => !isUnresolvedPick(entry)) : added;
+  if (paths.length > 0 && !checkScopeSetShape(paths, { cap: false }).ok) return MALFORMED_SCOPE_ERROR;
+  return pathsOutsideAccess(access, paths).length > 0 ? OUTSIDE_ACCESS_ERROR : null;
 }
 
 const strings = (list: unknown): string[] | undefined =>
@@ -68,7 +81,6 @@ function readDimensions(input: unknown): Result<DashboardDimensionFilters> {
     if (!list) return { ok: false, error: `dimensionFilters.${key} must be a list of text.` };
     (out as Record<string, unknown>)[key] = list;
   }
-  if (out.scope?.some(p => !isUnresolvedPick(p) && (parseScope(p)?.kind ?? 'everything') === 'everything')) return { ok: false, error: MALFORMED_SCOPE_ERROR };
   if (raw.scopeSet !== undefined) {
     if (typeof raw.scopeSet !== 'string' || !SHA256.test(raw.scopeSet)) return { ok: false, error: 'dimensionFilters.scopeSet must be a sha256 hash.' };
     out.scopeSet = raw.scopeSet.toLowerCase();
@@ -125,8 +137,8 @@ async function convertBarLists(
   const dimensions = converted?.config.dimensionFilters ?? {};
   // The set is not stored yet, so the held check reads the paths the conversion made, not the hash. A refused
   // list leaves no row behind.
-  const added = [...(dimensions.scope ?? []), ...(converted?.set?.paths ?? [])].filter(p => !isUnresolvedPick(p));
-  const refused = await checkAddedPaths(access, added, stored?.dimensionFilters ?? {});
+  const added = [...(dimensions.scope ?? []), ...(converted?.set?.paths ?? [])];
+  const refused = await checkAddedEntries(access, added, stored?.dimensionFilters ?? {}, { serverBuilt: true });
   if (refused) return { ok: false, error: refused };
   if (converted?.set) await createScopeSet(converted.set.paths, { unresolved: true });
   config.dimensionFilters = dimensions;
@@ -154,19 +166,22 @@ function withoutLegacyScopeParams(query: string): string {
 export async function prepareSavedViewQuery(
   access: Access, query: string, storedQuery: string | null,
 ): Promise<Result<string>> {
-  let next = query;
+  const stored = storedQuery === null ? {} : viewFromSearchParams(new URLSearchParams(storedQuery));
   const converted = convertSavedViewQuery(query, await readRecordedPairs(access), false);
   if (converted === 'too-long') return { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` };
   if (converted) {
-    if (converted.set) await createScopeSet(converted.set.paths, { unresolved: true });
-    next = normalizeViewQuery(converted.query);
+    const next = normalizeViewQuery(converted.query);
     if (next.length > MAX_SAVED_VIEW_QUERY_LENGTH) return { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` };
-  } else {
-    next = withoutLegacyScopeParams(query);
+    // The set is not stored yet, so the checks read the paths the conversion made, not the hash. A refused
+    // query leaves no row behind.
+    const made = [...(viewFromSearchParams(new URLSearchParams(next)).scope ?? []), ...(converted.set?.paths ?? [])];
+    const refused = await checkAddedEntries(access, made, stored, { serverBuilt: true });
+    if (refused) return { ok: false, error: refused };
+    if (converted.set) await createScopeSet(converted.set.paths, { unresolved: true });
+    return { ok: true, value: next };
   }
-  const sent = viewFromSearchParams(new URLSearchParams(next));
-  const stored = storedQuery === null ? {} : viewFromSearchParams(new URLSearchParams(storedQuery));
-  const refused = await checkAdded(access, sent, stored);
+  const next = withoutLegacyScopeParams(query);
+  const refused = await checkAdded(access, viewFromSearchParams(new URLSearchParams(next)), stored);
   if (refused) return { ok: false, error: refused };
   return { ok: true, value: next };
 }
