@@ -96,3 +96,10 @@ describe('the revision a counting response reports', () => {
     expect(report).toBeUndefined();
   });
 });
+
+describe('the notice for a response from a newer revision', () => {
+  it('does not ask the person to save again, since they did not try to save', () => {
+    expect(noticeFor('adopt')).not.toMatch(/save again/i);
+    expect(noticeFor('defer')).not.toMatch(/save again/i);
+  });
+});

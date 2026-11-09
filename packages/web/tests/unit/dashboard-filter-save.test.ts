@@ -127,7 +127,11 @@ describe('a save that is refused', () => {
     await updateDashboard(id, { name: `renamed ${crypto.randomUUID()}` });
     const current = await revision();
     const result = await saveDashboardFilters({ dashboardId: id, revision: stale, changes: { severity: ['high'] }, access: EVERYTHING_ACCESS });
-    expect(result).toEqual({ ok: false, reason: 'stale', revision: current });
+    expect(result).toMatchObject({ ok: false, reason: 'stale', revision: current });
+    // The bar of the newer revision, with the person's changes still on it.
+    expect(result.ok === false && result.reason === 'stale' && result.bar).toMatchObject({
+      revision: current, dimensions: { severity: { effective: ['high'], saved: ['critical'], inUrl: true } },
+    });
     expect((await stored()).filters?.severities).toEqual(['critical']);
     expect(await revision()).toBe(current);
   });

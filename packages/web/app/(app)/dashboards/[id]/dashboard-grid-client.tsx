@@ -40,6 +40,7 @@ import { dashboardAddress, type DashboardFilterChanges } from '@/lib/finding-vie
 import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
 import { NO_REFRESH_CHOICE, pageInterval, pickInterval, savedInterval, shownInterval, type RefreshChoice } from '@/lib/dashboard-refresh';
 import { incomingDashboard, latestOf, noticeFor, seeRevision } from '@/lib/dashboard-revision';
+import { UNAVAILABLE_NOTICE, conflictNotice, movedDimensions } from '@/lib/dashboard-conflict';
 import { sendFiltersSave, type SaveOutcome } from '@/lib/dashboard-filter-save-client';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
@@ -142,8 +143,17 @@ export function layoutConfig(config: Dashboard['config'], autoRefresh: number, w
   return { ...rest, autoRefresh, widgets };
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit, canDuplicate }: Props) {
+export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit: editRight, canDuplicate }: Props) {
   const router = useRouter();
+  // A save can find the edit right gone (a Role change or a handover while the page was open). The page then
+  // shows the controls off with the reason the server gave, as it would for anyone who never had the right.
+  const [lostEditReason, setLostEditReason] = useState<string | null>(null);
+  const edit = lostEditReason ? { allowed: false, reason: lostEditReason } : editRight;
+  // The dashboard was deleted, unshared or handed over while the page was open.
+  const [unavailable, setUnavailable] = useState(false);
+  // The notice a save that met a newer revision leaves. It outlasts the reload that follows, and it goes
+  // when the address no longer holds changes to check.
+  const [conflict, setConflict] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
@@ -368,17 +378,28 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // adopts the one the server returns, so its own save is never mistaken for someone else's change. A
   // layout edit that is open is untouched: it never carries filters, and the revision it holds moves with this.
   async function saveFilters(changes: DashboardFilterChanges): Promise<SaveOutcome> {
+    const before = shownBar;
     const outcome = await sendFiltersSave(dashboard.id, dashboard.revision, changes);
     if (outcome.kind === 'saved') {
       setDashboard(prev => latestOf(prev, outcome.dashboard));
       setShownBar(outcome.bar);
       setRefreshKey(k => k + 1);
       setNotice(null);
+      setConflict(null);
     } else if (outcome.kind === 'conflict') {
       // Nothing was saved. The bar and every number reload from the newer revision, the address stays, and
-      // the notice says to check the changes before saving again.
+      // the notice says who changed the saved filters, which dimensions moved under the person, and to
+      // check the changes before saving again. A second Save is then a deliberate save over the new revision.
+      const after = outcome.bar;
+      if (after) setShownBar(prev => latestOf(prev, after));
       onRevision(outcome.revision);
-      setNotice(outcome.message);
+      setConflict(conflictNotice({
+        by: outcome.changedBy, at: outcome.changedAt, moved: after ? movedDimensions(before, after, changes) : [],
+      }));
+    } else if (outcome.kind === 'gone') {
+      setUnavailable(true);
+    } else if (outcome.kind === 'forbidden') {
+      setLostEditReason(outcome.message);
     }
     return outcome;
   }
@@ -511,6 +532,15 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   const layout: RGLLayout[] = widgets.map(w => ({
     i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2,
   }));
+
+  if (unavailable) {
+    return (
+      <div role="alert" className="flex h-64 flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-sm font-semibold text-ink">{UNAVAILABLE_NOTICE}</p>
+        <Button size="sm" variant="outline" onClick={() => router.replace('/dashboard')}>Open your dashboards</Button>
+      </div>
+    );
+  }
 
   return (
     /* No height cap and no scroll container of its own. The app has exactly one
@@ -653,7 +683,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
-      {notice && <Callout tone="warn" className="shrink-0 border-b border-rule-strong">{notice}</Callout>}
+      {(conflict && changes !== '' ? conflict : notice) && (
+        <Callout tone="warn" className="shrink-0 border-b border-rule-strong">{conflict && changes !== '' ? conflict : notice}</Callout>
+      )}
 
       {/* Grid */}
       <div className="px-4 py-4" ref={gridContainerRef as React.RefObject<HTMLDivElement>}>

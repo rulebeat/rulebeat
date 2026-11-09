@@ -64,10 +64,20 @@ layout and every widget's own Scope alone, and it never runs when you save the l
 who may not edit the dashboard sees it off, with the reason. **Duplicate** sits beside it only for someone
 who is allowed to duplicate a dashboard, since the duplicate is refused for everyone else. The save is checked against the revision you opened: if someone saved or edited first, nothing is
 overwritten, the bar reloads, your changes stay in the address, and a notice asks you to check them and save
-again. A save is refused when your changes name values outside your Access (the bar then offers **Remove N
+again (see **When someone saved first** below). A save is refused when your changes name values outside your Access (the bar then offers **Remove N
 values outside your access**, which takes them out of the address) and when it picks any for a dimension whose
 saved values include some you cannot see. Values you cannot see that the dashboard saved are kept when you save
 a narrower choice, so a colleague with more Access still gets them.
+
+**When someone saved first.** If the dashboard's saved filters changed after you opened it, **Save as this
+dashboard's filters** writes nothing, the bar reloads the new saved filters and your changes stay in the
+address. One notice reads "<name or email> changed this dashboard's saved filters at <time>. Your changes are
+still in the address. Check them, then save again." When a dimension you did not touch now counts something
+else because of that save, the notice adds "This also changed Severity for you." and names it. Saving
+again, once you have checked, is a deliberate save over the new revision. If the dashboard was deleted,
+unshared or handed over while you had it open, the page says "This dashboard is no longer available to
+you". If you lost the right to edit it, Save is off with the reason and Duplicate is offered if you may
+duplicate.
 
 **Counted values.** A value that your Access does not reach is never named to you. It shows as one row,
 "N outside your access", that you cannot tick. It stays in the filter, so your numbers remain the ones your
@@ -84,7 +94,8 @@ access". A value that no longer exists matches nothing and is never removed on i
 bar to change the address.
 
 **When the dashboard changes while you have it open.** A number that comes back computed from a newer
-revision reloads the filter bar and every widget together, and a notice says so. Your changes stay in the
+revision reloads the filter bar and every widget together, and a notice says so (without asking you to save
+again, since you did not try to save). Your changes stay in the
 address. If you have a layout edit open, it is not discarded: the notice says so, and the layout of the
 newer revision loads once you save or cancel the edit. The bar and the numbers do not wait, so the bar
 always describes the filters the numbers were counted with.

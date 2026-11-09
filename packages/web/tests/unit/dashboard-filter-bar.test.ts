@@ -265,6 +265,13 @@ describe('the answer to a save', () => {
     expect(afterSave({ kind: 'conflict', revision: 9, message: 'Changed.' }, replace)).toBeNull();
     expect(replace).not.toHaveBeenCalled();
   });
+
+  it('leaves a dashboard that is gone and a lost edit right to the page, and keeps the address', () => {
+    const replace = vi.fn();
+    expect(afterSave({ kind: 'gone', message: 'This dashboard is no longer available to you' }, replace)).toBeNull();
+    expect(afterSave({ kind: 'forbidden', message: 'You are a Viewer.' }, replace)).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+  });
 });
 
 describe('a refused save for L, whose address names A', () => {

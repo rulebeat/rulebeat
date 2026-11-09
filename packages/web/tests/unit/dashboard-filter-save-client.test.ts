@@ -37,8 +37,24 @@ describe('sending the save', () => {
     expect(outcome).toEqual({ kind: 'conflict', revision: 9, message: 'Changed.' });
   });
 
+  it('carries who changed the saved filters, when, and the bar the newer revision brought', async () => {
+    const bar = { revision: 9 };
+    const outcome = await sendFiltersSave('d1', 4, {}, reply(409, { error: 'Changed.', revision: 9, bar, changedBy: 'Sam', changedAt: '2026-11-09T10:30:00.000Z' }));
+    expect(outcome).toEqual({ kind: 'conflict', revision: 9, message: 'Changed.', bar, changedBy: 'Sam', changedAt: '2026-11-09T10:30:00.000Z' });
+  });
+
+  it('reads an unknown dashboard as no longer available to the person', async () => {
+    const outcome = await sendFiltersSave('d1', 4, {}, reply(404, { error: 'Not found' }));
+    expect(outcome).toEqual({ kind: 'gone', message: 'This dashboard is no longer available to you' });
+  });
+
+  it('reads a lost edit right as forbidden, with the reason the server gave', async () => {
+    const outcome = await sendFiltersSave('d1', 4, {}, reply(403, { error: 'You are a Viewer.', reason: 'You are a Viewer.' }));
+    expect(outcome).toEqual({ kind: 'forbidden', message: 'You are a Viewer.' });
+  });
+
   it('says it could not save for any other status, and when the request fails', async () => {
-    expect(await sendFiltersSave('d1', 4, {}, reply(403, { error: 'Forbidden' }))).toEqual({ kind: 'failed', message: 'Forbidden' });
+    expect(await sendFiltersSave('d1', 4, {}, reply(500, { error: 'Broke' }))).toEqual({ kind: 'failed', message: 'Broke' });
     expect(await sendFiltersSave('d1', 4, {}, vi.fn().mockRejectedValue(new Error('offline')))).toEqual({
       kind: 'failed', message: "The filters could not be saved. Your changes are still in the address.",
     });

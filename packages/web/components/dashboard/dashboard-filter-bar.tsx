@@ -132,8 +132,8 @@ export interface SaveRefusal {
 
 /**
  * What a save's answer does to the bar. A saved answer clears the changes from the address, since the
- * dashboard now holds them. A refusal or a failure keeps the address and says why. A conflict is the
- * page's to show: it reloads the bar and names the change, and the address stays as it is.
+ * dashboard now holds them. A refusal or a failure keeps the address and says why. A conflict, a dashboard
+ * that is gone and a lost edit right are the page's to show, and the address stays as it is.
  */
 export function afterSave(outcome: SaveOutcome, replace: (changes: DashboardFilterChanges) => void): SaveRefusal | null {
   switch (outcome.kind) {
@@ -145,6 +145,8 @@ export function afterSave(outcome: SaveOutcome, replace: (changes: DashboardFilt
     case 'failed':
       return { message: outcome.message };
     case 'conflict':
+    case 'gone':
+    case 'forbidden':
       return null;
   }
 }

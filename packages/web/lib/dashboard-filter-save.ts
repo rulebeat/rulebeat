@@ -69,7 +69,7 @@ export function planFiltersSave(saved: DashboardFilters, changes: DashboardFilte
 export type SaveFiltersResult =
   | { ok: true; dashboard: Dashboard; revision: number; bar: DashboardBarState; changed: SavedDimension[] }
   | { ok: false; reason: 'not-found' }
-  | { ok: false; reason: 'stale'; revision: number }
+  | { ok: false; reason: 'stale'; revision: number; bar: DashboardBarState }
   | Exclude<FiltersPlan, { ok: true }>;
 
 export async function saveDashboardFilters(input: {
@@ -81,11 +81,14 @@ export async function saveDashboardFilters(input: {
 }): Promise<SaveFiltersResult> {
   const dashboard = await getDashboard(input.dashboardId);
   if (!dashboard) return { ok: false, reason: 'not-found' };
-  if (dashboard.revision !== input.revision) return { ok: false, reason: 'stale', revision: dashboard.revision };
-
   const known = await loadKnownValues();
   const saved = savedFiltersOf(dashboard.config);
   const widgets = dashboard.config.widgets;
+  if (dashboard.revision !== input.revision) {
+    // The bar of the newer revision, with the person's changes still on it, so the page can reload it.
+    const { state } = buildBarState({ revision: dashboard.revision, saved, changes: input.changes, access: input.access, widgets, known });
+    return { ok: false, reason: 'stale', revision: dashboard.revision, bar: state };
+  }
   const { marks } = buildBarState({ revision: dashboard.revision, saved, changes: input.changes, access: input.access, widgets, known });
 
   const plan = planFiltersSave(saved, input.changes, marks);
@@ -101,7 +104,16 @@ export async function saveDashboardFilters(input: {
     lists,
     ...(plan.changed.includes('window') && { window: plan.next.window }),
   });
-  if (!written.ok) return written;
+  if (!written.ok) {
+    if (written.reason === 'not-found') return written;
+    // Another save landed between the check and the write: the same conflict, against the newer revision.
+    const newer = await getDashboard(input.dashboardId);
+    if (!newer) return { ok: false, reason: 'not-found' };
+    const { state } = buildBarState({
+      revision: newer.revision, saved: savedFiltersOf(newer.config), changes: input.changes, access: input.access, widgets: newer.config.widgets, known,
+    });
+    return { ok: false, reason: 'stale', revision: newer.revision, bar: state };
+  }
 
   const { state } = buildBarState({
     revision: written.dashboard.revision, saved: savedFiltersOf(written.dashboard.config), changes: {},

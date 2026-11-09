@@ -9,6 +9,7 @@ import { listAuditEntries } from '@/lib/db/audit';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import type { WidgetDef } from '@/lib/types';
+import { VIEWER_DASHBOARD_REASON } from '@/lib/write-controls';
 import { resetDb } from '../helpers/db';
 
 const mockAuth = vi.fn();
@@ -66,7 +67,7 @@ describe('a save by someone with the edit right', () => {
     const entries = await saveEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ summary: "Saved this dashboard's filters", entityType: 'dashboard', entityId: id, actorId: admin });
-    expect(entries[0]!.details).toEqual({ dimensions: ['severity', 'window'] });
+    expect(entries[0]!.details).toEqual({ dimensions: ['severity', 'window'], revision: before + 1 });
     expect(JSON.stringify(entries[0])).not.toContain('high');
   });
 
@@ -94,6 +95,43 @@ describe('a save by someone with the edit right', () => {
     expect(await saveEntries()).toHaveLength(0);
   });
 
+  it('names who saved the filters meanwhile and when, and returns the bar of the newer revision', async () => {
+    const stale = await revision();
+    const sam = await createUser({ email: 'sam@example.com', name: 'Sam Rivera', role: 'admin' });
+    if ('error' in sam) throw new Error(sam.error);
+    mockAuth.mockResolvedValue({ user: { uid: sam.user.id } });
+    expect((await put({ revision: stale, changes: { severity: ['low'], tags: ['prod'] } })).status).toBe(200);
+    mockAuth.mockResolvedValue({ user: { uid: admin } });
+
+    const res = await put({ revision: stale, changes: { severity: ['high'] } });
+    expect(res.status).toBe(409);
+    const body = await res.json() as { revision: number; changedBy: string; changedAt: string; bar: { revision: number; dimensions: Record<string, { effective: string[]; inUrl: boolean }> } };
+    expect(body.changedBy).toBe('Sam Rivera');
+    expect(Date.parse(body.changedAt)).not.toBeNaN();
+    expect(body.bar.revision).toBe(await revision());
+    expect(body.bar.dimensions['tags']!.effective).toEqual(['prod']);
+    expect(body.bar.dimensions['severity']).toMatchObject({ effective: ['high'], inUrl: true });
+    expect((await getDashboard(id))!.config.filters?.severities).toEqual(['low']);
+  });
+
+  it('names the person by email when they have no display name', async () => {
+    const stale = await revision();
+    expect((await put({ revision: stale, changes: { severity: ['low'] } })).status).toBe(200);
+    const res = await put({ revision: stale, changes: { severity: ['high'] } });
+    expect((await res.json() as { changedBy: string }).changedBy).toBe('admin@example.com');
+  });
+
+  it('names nobody when the revision moved by a rename and the saved filters did not', async () => {
+    const stale = await revision();
+    await updateDashboard(id, { name: `renamed ${crypto.randomUUID()}` });
+    const res = await put({ revision: stale, changes: { severity: ['high'] } });
+    expect(res.status).toBe(409);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body['changedBy']).toBeUndefined();
+    expect(body['changedAt']).toBeUndefined();
+    expect(body['bar']).toBeDefined();
+  });
+
   it('answers an unknown dashboard with 404', async () => {
     expect((await put({ revision: 1, changes: {} }, 'nope')).status).toBe(404);
   });
@@ -118,6 +156,7 @@ describe('a save by someone without the edit right', () => {
     mockAuth.mockResolvedValue({ user: { uid: viewer.user.id } });
     const res = await put({ revision: await revision(), changes: { severity: ['high'] } });
     expect(res.status).toBe(403);
+    expect((await res.json() as { reason: string }).reason).toBe(VIEWER_DASHBOARD_REASON);
     expect((await getDashboard(id))!.config.filters?.severities).toEqual(['critical']);
     expect(await saveEntries()).toHaveLength(0);
   });
