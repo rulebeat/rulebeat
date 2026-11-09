@@ -18,6 +18,7 @@ import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
 import { shareConfirmation } from '@/lib/item-sharing';
+import { sharedDashboardUseNote } from '@/lib/saved-view-reference';
 import { SHARE_REASON } from '@/lib/write-controls';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -219,6 +220,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
           kind={action}
           viewName={open?.name ?? ''}
           shared={open?.visibility === 'shared'}
+          sharedDashboardCount={open?.sharedDashboardCount ?? 0}
           onClose={() => setAction(null)}
           onConfirm={name => applyAction(action, name)}
         />
@@ -249,11 +251,13 @@ function ViewItem({ view, openId, onOpen, tag }: { view: HeldBackSavedView; open
   );
 }
 
-function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
+function ViewDialog({ kind, viewName, shared, sharedDashboardCount, onClose, onConfirm }: {
   kind: ViewAction;
   viewName: string;
   /** Whether the open view is Shared: what the dialog says about who sees the change. */
   shared: boolean;
+  /** How many Shared dashboards have a widget on the open view: an unshare or a delete of it affects them. */
+  sharedDashboardCount: number;
   onClose: () => void;
   /** Returns the message to show, or null when it worked. */
   onConfirm: (name: string) => Promise<string | null>;
@@ -316,9 +320,9 @@ function ViewDialog({ kind, viewName, shared, onClose, onConfirm }: {
                 {kind === 'save' && 'Only you can open this saved view. It keeps the filters, search, window, columns, sort and grouping you have now.'}
                 {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now.${shared ? ' Everyone who opens it will see the change.' : ''}`}
                 {kind === 'rename' && (shared ? 'Everyone who uses this install sees the new name.' : 'Only you see the new name.')}
-                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.`}
+                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.${sharedDashboardUseNote(sharedDashboardCount, 'deleted')}`}
                 {kind === 'share' && shareConfirmation('view', viewName)}
-                {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.`}
+                {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.${sharedDashboardUseNote(sharedDashboardCount, 'unshared')}`}
               </p>
 
               {error && <p className="text-xs font-medium text-sev-critical">{error}</p>}
