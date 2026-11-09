@@ -21,10 +21,11 @@ import { accessFilterSql } from './access-filter';
 import { expandScopeSetOn } from './scope-sets';
 import type { HierarchyNode } from '../management-group-tree';
 import { filterValues, type AgeRange, type View } from '../finding-view';
-import { COMMUNITY_SOURCE, CUSTOM_SOURCE, sourceLabel, type FilterStates, type SourceValueState } from '../filter-states';
+import { COMMUNITY_SOURCE, CUSTOM_SOURCE, NO_FILTER_STATES, sourceLabel, type FilterStates, type SourceValueState } from '../filter-states';
 import type { PackManifestLabels } from '../pack-labels';
 import packManifest from '@/data/packs/pack-manifest.json';
 import { picksAsAccess, readPicks, scopePickStates } from '../scope-picks';
+import type { LegacyResolution } from './legacy-scope-link';
 import { CORE_PACK } from '../shipped-catalogue';
 import type { ExplorerCategory, RuleDetails } from '../view-response';
 
@@ -107,11 +108,11 @@ function ageCondition(age: AgeRange, now: Date): SQL {
  */
 export async function planViewFilters(
   tx: DbHandle, view: View, access: Access,
-  context: { rules: ReadonlyMap<string, RuleDetails>; categories: readonly ExplorerCategory[] },
+  context: { rules: ReadonlyMap<string, RuleDetails>; categories: readonly ExplorerCategory[]; legacy?: Pick<LegacyResolution, 'paths' | 'gone'> },
   now: Date = new Date(),
 ): Promise<ViewFilterPlan> {
   const conditions: SQL[] = [];
-  const states: FilterStates = { scope: [], scopeHidden: { outside: 0, outsideNarrowed: 0 }, scopeUnresolved: false, source: [], missingTags: [], deletedCategories: [] };
+  const states: FilterStates = { scope: [], scopeHidden: { outside: 0, outsideNarrowed: 0 }, scopeUnresolved: false, source: [], missingTags: [], deletedCategories: [], legacyGone: context.legacy?.gone ?? NO_FILTER_STATES.legacyGone };
 
   // A long Scope list arrives as a hash and only the server opens it (ADR 0016). A hash no row holds is not the
   // same as no pick, which would show everything held: it matches nothing.
@@ -136,6 +137,13 @@ export async function planViewFilters(
     } else {
       states.scope = pickStates;
     }
+  }
+
+  // The held pairs an old link's subscription and resource group values translate to, matched like any other pick
+  // and ANDed with the rest. No pair is not the same as no filter: the old values were a filter, and match nothing.
+  if (context.legacy?.paths) {
+    const picks = readPicks(context.legacy.paths);
+    conditions.push((picks.length === 0 ? undefined : accessFilterSql(picksAsAccess(picks, await readHierarchy(tx)))) ?? NOTHING);
   }
 
   if (view.source && view.source.length > 0) {

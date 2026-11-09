@@ -9,7 +9,6 @@
  * dashboard page and the components share one definition.
  */
 import { DIRECTORY_SUBSCRIPTION } from './placement';
-import { filterValues, viewFromSearchParams } from './finding-view';
 import { wholeSubscriptionIds, type Access } from './access-model';
 import type { DashboardConfig } from './types';
 
@@ -131,23 +130,9 @@ export function widgetAccessReason(filter: AccessFilterValues, marks: OutsideAcc
   };
 }
 
-/** The marks for a saved view's stored query, read the way the explorer reads it. */
-export function markSavedViewQuery(access: Access, query: string): OutsideAccess {
-  const { filters } = viewFromSearchParams(new URLSearchParams(query));
-  return markOutsideAccess(access, {
-    subscriptions: filterValues(filters, 'subscription'),
-    resourceGroups: filterValues(filters, 'resourceGroup'),
-  });
-}
-
 /** A dashboard as the routes and the page return it: the stored dashboard unchanged, plus its marks. */
 export function markedDashboard<T extends { config: DashboardConfig }>(access: Access, dashboard: T): T & { outsideAccess: OutsideAccess } {
   return { ...dashboard, outsideAccess: markDashboardConfig(access, dashboard.config) };
-}
-
-/** A saved view as the routes return it: the stored view unchanged, plus its marks. */
-export function markedSavedView<T extends { query: string }>(access: Access, view: T): T & { outsideAccess: OutsideAccess } {
-  return { ...view, outsideAccess: markSavedViewQuery(access, view.query) };
 }
 
 /**

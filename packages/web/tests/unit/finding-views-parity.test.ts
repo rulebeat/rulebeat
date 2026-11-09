@@ -193,7 +193,12 @@ async function getView(view: View, tab: ViewTab, showSuppressed: boolean): Promi
 const make = (patch: Partial<View> & { filters?: ViewFilter[] }): View => ({ ...emptyView(), ...patch });
 const f = (field: ViewFilter['field'], ...values: string[]): ViewFilter => ({ field, values } as ViewFilter);
 
-interface Case { name: string; view: View; tab?: ViewTab }
+interface Case { name: string; view: View; tab?: ViewTab; ignore?: readonly string[] }
+
+/** An old link's subscription and resource group are read as the Scope picks they translate to (#392), which narrow
+ *  the whole answer the way a Scope filter does. The findings, counts and tiles are the reference's; the lists
+ *  beside them (dropdown facets, rule options, columns, the suppressed count) are those of the narrowed set. */
+const READ_AS_SCOPE = ['facets', 'policyOptions', 'columns', 'suppressedCount'] as const;
 
 const RESULTS_VIEWS: Case[] = [
   { name: 'the default view', view: make({}) },
@@ -203,8 +208,8 @@ const RESULTS_VIEWS: Case[] = [
   { name: 'status Fixed', view: make({ filters: [f('status', 'fixed')] }) },
   { name: 'status New', view: make({ filters: [f('status', 'new')] }) },
   { name: 'status All', view: make({ filters: [f('status', 'all')] }) },
-  { name: 'a subscription', view: make({ filters: [f('subscription', TEST_SUB_B)] }) },
-  { name: 'a resource group', view: make({ filters: [f('resourceGroup', 'rg-a')] }) },
+  { name: 'a subscription', view: make({ filters: [f('subscription', TEST_SUB_B)] }), ignore: READ_AS_SCOPE },
+  { name: 'a resource group', view: make({ filters: [f('resourceGroup', 'rg-a')] }), ignore: READ_AS_SCOPE },
   { name: 'a location', view: make({ filters: [f('location', 'northeurope')] }) },
   { name: 'a rule tag', view: make({ filters: [f('tags', 'finops')] }) },
   { name: 'the Activity kind', view: make({ filters: [f('kind', 'activity')] }) },
@@ -316,13 +321,14 @@ const ACTIVITY_VIEWS = [
   { name: 'grouped by rule', view: make({ groupBy: ['rule'] }) },
 ].map(c => ({ ...c, tab: 'activity' as const }));
 
-const VIEW_CASES = [...RESULTS_VIEWS.map(c => ({ ...c, tab: 'results' as const })), ...ADVISORY_VIEWS, ...ACTIVITY_VIEWS];
+const VIEW_CASES: (Case & { tab: ViewTab })[] = [...RESULTS_VIEWS.map(c => ({ ...c, tab: 'results' as const })), ...ADVISORY_VIEWS, ...ACTIVITY_VIEWS];
 
 describe('GET /api/findings/view answers what the explorer computes over every finding', () => {
-  it.each(VIEW_CASES)('$tab: $name', async ({ view, tab }) => {
+  it.each(VIEW_CASES)('$tab: $name', async ({ view, tab, ignore }) => {
     const res = await getView(view, tab, false);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(await referenceView(view, tab, false));
+    const without = (response: object) => Object.fromEntries(Object.entries(response).filter(([key]) => !ignore?.includes(key)));
+    expect(without(await res.json())).toEqual(without(await referenceView(view, tab, false)));
   });
 
   it.each([

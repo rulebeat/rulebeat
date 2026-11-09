@@ -1,6 +1,6 @@
 import { DIRECTORY_SCOPE_PATH, parseScope } from '../access-model';
 import { MAX_SAVED_VIEW_QUERY_LENGTH } from '../saved-view-query';
-import { SCOPE_INLINE_BUDGET, esc, filterValues, viewFromSearchParams } from '../finding-view';
+import { SCOPE_INLINE_BUDGET, esc, filterValues, viewFromSearchParams, withoutLegacyScope } from '../finding-view';
 import { DIRECTORY_SUBSCRIPTION } from '../placement';
 import { unresolvedPick } from '../unresolved-pick';
 import { distinctPaths, scopeSetHash } from '../scope-sets';
@@ -311,9 +311,7 @@ function withScope(
 ): { query: string; set?: { hash: string; paths: string[] } } | null {
   const preferred = scopeValue(resolved, true);
   const values = preferred.set ? [preferred] : [preferred, setOf([...resolved.paths, ...resolved.unresolved])];
-  const bare = new URLSearchParams(query);
-  bare.delete('subscription');
-  bare.delete('rg');
+  const bare = withoutLegacyScope(new URLSearchParams(query));
   const bases = keepLegacy ? [query, bare.toString()] : [bare.toString()];
   for (const base of bases) {
     for (const value of values) {

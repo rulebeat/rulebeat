@@ -52,6 +52,10 @@ export interface FilterStates {
   missingTags: string[];
   /** Categories in the filter that were deleted. They still match the findings recorded under them. */
   deletedCategories: string[];
+  /** The subscription and resource group values of an old link that Everything holds no pair of: a name no record
+   *  pairs with a subscription. They are named, marked as no longer existing, and match nothing. Anyone with less
+   *  than Everything has them counted as outside their access instead (`ViewResponse.outsideAccess`). */
+  legacyGone: { subscriptions: string[]; resourceGroups: string[] };
 }
 
 export const NO_FILTER_STATES: FilterStates = Object.freeze({
@@ -61,6 +65,7 @@ export const NO_FILTER_STATES: FilterStates = Object.freeze({
   source: Object.freeze([]) as unknown as SourceValueState[],
   missingTags: Object.freeze([]) as unknown as string[],
   deletedCategories: Object.freeze([]) as unknown as string[],
+  legacyGone: Object.freeze({ subscriptions: Object.freeze([]) as unknown as string[], resourceGroups: Object.freeze([]) as unknown as string[] }),
 });
 
 export const COMMUNITY_SOURCE = 'community';

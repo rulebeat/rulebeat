@@ -3,7 +3,7 @@
  * something outside the person's access.
  */
 import { describe, expect, it } from 'vitest';
-import { emptyListCopy, emptyReasonOf, filterChipLabel } from '@/lib/explorer-screen';
+import { emptyListCopy, emptyReasonOf, filterChipLabel, legacyOutsideChip } from '@/lib/explorer-screen';
 import type { ViewFilter } from '@/lib/finding-view';
 import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
 
@@ -51,5 +51,32 @@ describe('filterChipLabel', () => {
     expect(filterChipLabel('subscription', SUB_ONE, marks, named)).toBe(`named ${SUB_ONE}`);
     expect(filterChipLabel('severity', SUB_TWO, marks, named)).toBe(`named ${SUB_TWO}`);
     expect(filterChipLabel('subscription', SUB_TWO, undefined, named)).toBe(`named ${SUB_TWO}`);
+  });
+});
+
+describe('legacyOutsideChip (#392)', () => {
+  it('counts the marked subscription and resource group values in one chip, and names none of them', () => {
+    const chip = legacyOutsideChip([filter('subscription', SUB_TWO, SUB_ONE), filter('resourceGroup', 'rg-two')], marks);
+    expect(chip).toEqual({
+      label: '2 Scopes outside your access',
+      values: [{ field: 'subscription', value: SUB_TWO }, { field: 'resourceGroup', value: 'rg-two' }],
+    });
+    expect(chip!.label).not.toContain(SUB_TWO);
+    expect(chip!.label).not.toContain('rg-two');
+  });
+
+  it('reads the singular for one value', () => {
+    expect(legacyOutsideChip([filter('subscription', SUB_TWO)], marks)!.label).toBe('1 Scope outside your access');
+  });
+
+  it('is absent when no value is marked, and ignores a mark the filters do not hold', () => {
+    expect(legacyOutsideChip([filter('subscription', SUB_ONE)], marks)).toBeNull();
+    expect(legacyOutsideChip([filter('severity', 'high')], marks)).toBeNull();
+    expect(legacyOutsideChip([filter('subscription', SUB_TWO)], undefined)).toBeNull();
+  });
+
+  it('keeps the other values of the filters out of the chip', () => {
+    const chip = legacyOutsideChip([filter('subscription', SUB_ONE, SUB_TWO)], marks);
+    expect(chip!.values).toEqual([{ field: 'subscription', value: SUB_TWO }]);
   });
 });

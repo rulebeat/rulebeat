@@ -82,7 +82,12 @@ shows only the Scopes you hold and narrows the way Access does
 Pack, Community and Custom. An **age chip** such as "First seen 31 to 90 days ago" filters by how
 long ago a finding was first seen. It is rolling, so it moves with the date, and it is separate
 from the First seen funnel, which takes fixed dates. Old links with `subscription=` and `rg=` still
-open, as Scope picks.
+open, as Scope picks you hold: a resource group name on its own resolves only to the pairs you hold,
+and when every value does, the address is replaced with the new one. A value that reaches no pair
+you hold matches nothing and is counted as outside your access without being named, and the link
+keeps its `subscription=` and `rg=`; the other values in it still match the pairs you hold, whatever
+their case. For Everything, a resource group name that no record pairs with a subscription stays on
+the page marked "no longer exists", and an empty list says so.
 
 ### Group by
 

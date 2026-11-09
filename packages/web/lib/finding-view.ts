@@ -831,6 +831,8 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
     category: parseCategoryParam(readParam(source, 'category')),
     rule: splitList(readParam(source, 'ruleId')),
     severity: splitList(readParam(source, 'severity')).filter(s => (EXPLORER_SEVERITIES as string[]).includes(s)),
+    // An old link's values: kept as filters so the server can translate them (`lib/db/legacy-scope-link.ts`), which is
+    // the only place they are matched, as Scope picks and never by string.
     subscription: splitList(readParam(source, 'subscription')),
     resourceGroup: splitList(readParam(source, 'rg')),
     location: splitList(readParam(source, 'location')),
@@ -889,6 +891,49 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
   const page = Number(readParam(source, 'page'));
   if (Number.isInteger(page) && page > 1 && page <= MAX_URL_PAGE) view.page = page;
   return view;
+}
+
+// ---- Old links: `subscription=` and `rg=` ----
+
+/** The params an address written before the Scope filter used for it. They stay readable as filters so an old link
+ *  opens; the Scans page translates them to Scope picks on the server (`lib/db/legacy-scope-link.ts`) and nothing
+ *  else reads them, so this module is the only place that names them. */
+const LEGACY_SCOPE_PARAMS = ['subscription', 'rg'] as const;
+
+/** The subscription ids and resource group names an old address names, as written. */
+export function legacyScopeValues(source: ParamSource): { subscriptions: string[]; resourceGroups: string[] } {
+  return { subscriptions: splitList(readParam(source, 'subscription')), resourceGroups: splitList(readParam(source, 'rg')) };
+}
+
+/** Whether an address holds a Scope filter of the new kind, a list or a set. */
+export function hasScopeParam(source: ParamSource): boolean {
+  return readParam(source, 'scope') !== undefined || readParam(source, 'scopeset') !== undefined;
+}
+
+/** `source` as params, without the legacy ones. A saved view the upgrade converted keeps them beside its Scope for
+ *  a rollback, and a save writes only the new shape. */
+export function withoutLegacyScope(source: ParamSource): URLSearchParams {
+  const params = new URLSearchParams();
+  if (source instanceof URLSearchParams) source.forEach((v, k) => params.append(k, v));
+  else for (const [k, v] of Object.entries(source)) for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) params.append(k, one);
+  for (const name of LEGACY_SCOPE_PARAMS) params.delete(name);
+  return params;
+}
+
+/** Whether a Scope list is short enough to travel in the address. A longer one travels as a set. */
+export function scopeFitsInline(paths: readonly string[]): boolean {
+  return distinctIgnoringCase(paths).map(esc).join(',').length <= SCOPE_INLINE_BUDGET;
+}
+
+/** `source` with the legacy params replaced by the Scope picks they translate to: `scope=`, or `scopeset=` for the
+ *  hash of a set the caller stored. Every other param is kept as it was. */
+export function replaceLegacyScope(source: ParamSource, scope: { paths: readonly string[] } | { scopeSet: string }): URLSearchParams {
+  const params = withoutLegacyScope(source);
+  params.delete('scope');
+  params.delete('scopeset');
+  if ('scopeSet' in scope) params.set('scopeset', scope.scopeSet.toLowerCase());
+  else params.set('scope', distinctIgnoringCase(scope.paths).map(esc).join(','));
+  return params;
 }
 
 // ---- Links ----

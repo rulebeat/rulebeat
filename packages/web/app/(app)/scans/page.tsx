@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { loadRules } from '@/lib/rules';
 import { queryRuleFindingCounts } from '@/lib/db/finding-views';
@@ -10,6 +11,7 @@ import { listLinksForSchedule } from '@/lib/db/schedule-notification-channels';
 import { listChannels } from '@/lib/db/notification-channels';
 import { ScansClient } from '@/components/modules/scans-client';
 import { filterValues, viewFromSearchParams } from '@/lib/finding-view';
+import { legacyLinkRedirect } from '@/lib/db/legacy-scope-link';
 import { snapshotQueryFromParams } from '@/lib/snapshot-query';
 import { compareQueryFromParams, parseCompareIds } from '@/lib/compare-query';
 import { listCategories } from '@/lib/db/categories';
@@ -33,15 +35,21 @@ export default async function ScansPage({
   const runId = one(params.run);
   const compare = one(params.compare);
   const compareCategory = one(params.compareCategory);
+  const { user, access } = await getPageAccess();
+  const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
+  // An old link that carries `subscription=` and `rg=` opens as Scope picks the viewer holds, and the address is
+  // replaced with the new encoding. One with a value they hold no pair of keeps its address (see legacyLinkRedirect).
+  if (activeTab === 'results' || activeTab === 'advisories' || activeTab === 'activity') {
+    const moved = await legacyLinkRedirect(params, access);
+    if (moved) redirect(moved);
+  }
   // Every filter, column, sort and page param is read by the one reader the explorer writes with.
   const initialView = viewFromSearchParams(params);
   const initialSavedViewId = one(params.view);
   const categories = await listCategories();
-  const { user, access } = await getPageAccess();
   const role = user?.role ?? 'viewer';
   const controls = writeControlsFor(access);
 
-  const activeTab: TabKey = (tabParam === 'advisories' || tabParam === 'activity' || tabParam === 'history' || tabParam === 'rules' || tabParam === 'schedules') ? tabParam : 'results';
   const initialSuppressions = await loadSuppressions(access) as Suppression[];
   const initialCategoryFilter = filterValues(initialView.filters, 'category');
 

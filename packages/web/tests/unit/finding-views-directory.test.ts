@@ -81,7 +81,7 @@ describe('Directory is one choice in the subscription filter', () => {
   });
 
   it('is one option in the subscription facet, labelled Directory, with its own count', async () => {
-    const { facets } = await queryView(withSubscription(SUB_A), query('results'), EVERYTHING_ACCESS);
+    const { facets } = await queryView(emptyView(), query('results'), EVERYTHING_ACCESS);
     expect(facets.subscription).toEqual([
       { value: SUB_A, label: SUB_A, count: 1 },
       { value: SUB_B, label: SUB_B, count: 1 },

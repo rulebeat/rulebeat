@@ -5,7 +5,7 @@
  * not refused for what its author held.
  */
 import type { Access } from '@/lib/access-model';
-import { viewFromSearchParams } from '@/lib/finding-view';
+import { hasScopeParam, viewFromSearchParams, withoutLegacyScope } from '@/lib/finding-view';
 import { isUnresolvedPick } from '@/lib/unresolved-pick';
 import { SCOPE_SET_MAX_PATHS, checkScopeSetShape, distinctPaths, pathsOutsideAccess } from '@/lib/scope-sets';
 import { MAX_SAVED_VIEW_QUERY_LENGTH, normalizeViewQuery } from '@/lib/saved-view-query';
@@ -157,10 +157,9 @@ async function convertBarLists(
  */
 function withoutLegacyScopeParams(query: string): string {
   const params = new URLSearchParams(query);
-  if (!(params.has('scope') || params.has('scopeset')) || !(params.has('subscription') || params.has('rg'))) return query;
-  params.delete('subscription');
-  params.delete('rg');
-  return normalizeViewQuery(params.toString());
+  if (!hasScopeParam(params)) return query;
+  const bare = withoutLegacyScope(params);
+  return bare.toString() === params.toString() ? query : normalizeViewQuery(bare.toString());
 }
 
 /**

@@ -30,15 +30,16 @@
  * count, facet, column option and export. The narrowing is in the SQL that reads the tab's findings
  * (lib/db/access-filter.ts), so everything built over them is already in scope, `queryFilterOptions`
  * included: the dashboards' filter lists offer only values the person has a finding to see (#274).
- * `queryView` also marks the values of the view's own subscription and resource group filters that sit
- * outside the person's access (lib/outside-access.ts), so the explorer can say so without naming them.
+ * A view from an old link still holds subscription and resource group filters. They are read as the Scope picks
+ * they translate to, narrowed to the person's access (lib/db/legacy-scope-link.ts), and `queryView` marks the
+ * values that reach no pair the person holds, so the explorer can say so without naming them.
  *
  * Before the upgrade's copy into finding_rows has been proven, the old row columns are the truth (as
  * in listFindings()), so a view then reads every finding in full and the reference answers it.
  */
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Access } from '../access-model';
-import { markOutsideAccess } from '../outside-access';
+import { resolveLegacyFilters, type LegacyResolution } from './legacy-scope-link';
 import { accessFilterSql } from './access-filter';
 import { planViewFilters, type ViewFilterPlan } from './view-filters';
 import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
@@ -53,7 +54,7 @@ import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSum
 import { ruleTagsOf } from '../rules';
 import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
-import { activeRowFilters, applyView, filterValues, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
+import { activeRowFilters, applyView, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { isActiveSuppression } from '../suppressions';
@@ -162,6 +163,10 @@ async function streamRows(
 // ---- What a view reads ----
 
 interface Prepared {
+  /** The view asked for, with an old link's subscription and resource group filters taken out: `filters` stands for them. */
+  view: View;
+  /** What those old filters mean for the viewer. */
+  legacy: LegacyResolution;
   rules: Map<string, RuleDetails>;
   categories: ExplorerCategory[];
   ctx: ResolvedContext;
@@ -169,14 +174,16 @@ interface Prepared {
   filters: ViewFilterPlan;
 }
 
-async function prepare(tx: DbHandle, view: View, query: ViewQuery, access: Access): Promise<Prepared> {
+async function prepare(tx: DbHandle, asked: View, query: ViewQuery, access: Access): Promise<Prepared> {
+  const legacy = await resolveLegacyFilters(tx, asked, access);
+  const view = legacy.view;
   const ctx: ViewContext = {
     suppressedFingerprints: await readSuppressedFingerprints(tx),
     showSuppressed: query.showSuppressed,
   };
   const rules = await readRuleDetails(tx);
   const categories = await readCategories(tx);
-  return { rules, categories, ctx: resolveContext(view, ctx), filters: await planViewFilters(tx, view, access, { rules, categories }) };
+  return { view, legacy, rules, categories, ctx: resolveContext(view, ctx), filters: await planViewFilters(tx, view, access, { rules, categories, legacy }) };
 }
 
 /** The row index a view's answer is built over: nothing, a count per finding, or the streamed rows. */
@@ -286,13 +293,10 @@ export function queryRuleFindingCounts(access: Access): Promise<Record<string, n
 
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */
-export function queryView(view: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
-  const outsideAccess = markOutsideAccess(access, {
-    subscriptions: filterValues(view.filters, 'subscription'),
-    resourceGroups: filterValues(view.filters, 'resourceGroup'),
-  });
+export function queryView(asked: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
   return inReadTransaction(async (tx) => {
-    const { rules, categories, ctx, filters } = await prepare(tx, view, query, access);
+    const { view, legacy, rules, categories, ctx, filters } = await prepare(tx, asked, query, access);
+    const outsideAccess = legacy.outside;
     const filterStates = filters.states;
     if (!(await rowsTableReady(tx))) {
       const findings = await readWhole(tx, query.tab, rules, access, filters.condition);
@@ -348,9 +352,9 @@ async function withRows(tx: DbHandle, row: Parameters<typeof rowToSummary>[0]) {
 }
 
 /** One group's contents: the next level's groups, or the findings of the last level, a page of them. */
-export function queryGroup(view: View, query: ViewQuery & { groupPath: readonly (string | null)[]; groupPage: number }, access: Access): Promise<GroupResponse> {
+export function queryGroup(asked: View, query: ViewQuery & { groupPath: readonly (string | null)[]; groupPage: number }, access: Access): Promise<GroupResponse> {
   return inReadTransaction(async (tx) => {
-    const { rules, categories, ctx, filters } = await prepare(tx, view, query, access);
+    const { view, rules, categories, ctx, filters } = await prepare(tx, asked, query, access);
     const options = { tab: query.tab, catalogueColumns: [], categories, groupPath: query.groupPath, groupPage: query.groupPage };
     if (!(await rowsTableReady(tx))) return buildGroupResponse(await readWhole(tx, query.tab, rules, access, filters.condition), view, ctx, options);
 
@@ -388,9 +392,9 @@ export function queryFilterOptions(access: Access): Promise<FilterOptions> {
 }
 
 /** The values one returned column holds, for its filter's option list. */
-export function queryColumnValues(view: View, query: ViewQuery & { column: RowField; q?: string }, access: Access): Promise<ColumnValuesResponse> {
+export function queryColumnValues(asked: View, query: ViewQuery & { column: RowField; q?: string }, access: Access): Promise<ColumnValuesResponse> {
   return inReadTransaction(async (tx) => {
-    const { rules, ctx, filters } = await prepare(tx, view, query, access);
+    const { view, rules, ctx, filters } = await prepare(tx, asked, query, access);
     if (!(await rowsTableReady(tx))) {
       return buildColumnValuesResponse(await readWhole(tx, query.tab, rules, access, filters.condition), view, ctx, { tab: query.tab, column: query.column, q: query.q });
     }
@@ -479,8 +483,7 @@ async function* exportPieces(
 /** What an export of the view reads: the findings the view lists in its order, ungrouped, with every
  *  row that passes its row filters. */
 async function exportSource(tx: DbHandle, view: View, query: ViewQuery, access: Access): Promise<ExportSource> {
-  const flat: View = { ...view, groupBy: [] };
-  const { rules, ctx, filters } = await prepare(tx, flat, query, access);
+  const { view: flat, rules, ctx, filters } = await prepare(tx, { ...view, groupBy: [] }, query, access);
   const rowFilters = activeRowFilters(flat.filters);
 
   if (!(await rowsTableReady(tx))) {
