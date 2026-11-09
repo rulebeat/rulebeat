@@ -141,7 +141,7 @@ describe('the count a Duplicate hands to the copy', () => {
     expect(takeCopiedDashboard(store, 'copy-1')).toBe(0);
   });
 
-  it('is not kept when nothing widened, and nothing in an address can make one', () => {
+  it('keeps nothing for a count of 0, an unknown count or no storage', () => {
     const store = memoryStore();
     rememberCopiedDashboard(store, 'copy-1', 0);
     rememberCopiedDashboard(store, 'copy-2', undefined);
@@ -210,7 +210,7 @@ describe('Save a new view from an open saved view', () => {
     expect(viewFromSearchParams(new URLSearchParams(stored.query)).filters).toEqual([{ field: 'subscription', values: [SUB_ONE] }]);
   });
 
-  it('counts a dimension that is still filtered after the copier adds a value of their own', async () => {
+  it('counts nothing for a dimension that is still filtered after the copier adds a value of their own', async () => {
     const id = await sharedView([{ field: 'subscription', values: [SUB_TWO] }]);
     signIn(SCOPED);
     const res = await CREATE_VIEW(new Request('http://localhost/api/views', {

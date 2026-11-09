@@ -144,6 +144,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   const [copied, setCopied] = useState<{ id: string; widened: number } | null>(null);
   useEffect(() => {
     const widened = takeCopiedDashboard(window.sessionStorage, initial.id);
+    // Reading session storage is an external system the server render cannot see: legitimate effect setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (widened > 0) setCopied({ id: initial.id, widened });
   }, [initial.id]);
   const copiedNotice = copied?.id === initial.id ? copiedDashboardNotice(copied.widened) : null;
