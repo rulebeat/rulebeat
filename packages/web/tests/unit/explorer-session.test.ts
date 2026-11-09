@@ -10,6 +10,7 @@ import {
   ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, exportUrl, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
   viewQuery, viewUrl, type FetchFn, type ViewRequest,
 } from '@/lib/explorer-session';
+import { SAVED_VIEW_UNAVAILABLE, addressWithoutView } from '@/lib/saved-view-query';
 import type { ViewResponse } from '@/lib/view-response';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -597,5 +598,72 @@ describe('the export request', () => {
       exportUrl(request(view), 'csv'),
     ]) expect(url).not.toContain('pageSize');
     expect(viewToSearchParams(view, { tab: 'results' }).toString()).not.toContain('pageSize');
+  });
+});
+
+describe('the requests with a saved view open', () => {
+  const savedView: View = { ...withFilter('severity', ['critical', 'high']), search: 'vm', filters: [{ field: 'category', values: ['security'] }, { field: 'severity', values: ['critical', 'high'] }] };
+  const saved = { id: 'v1', revision: 4, view: savedView };
+  const query = (path: string) => new URLSearchParams(path.split('?')[1]);
+
+  it('name the view and its revision and carry nothing of the saved query', () => {
+    expect(viewQuery(request(savedView, { saved }))).toBe('tab=results&view=v1&rev=4');
+  });
+
+  it('carry only what the viewer changed, Any included', () => {
+    const view: View = { ...savedView, search: '', filters: [{ field: 'category', values: ['security'] }, { field: 'severity', values: ['low'] }], page: 2 };
+    expect(viewQuery(request(view, { saved, showSuppressed: true }))).toBe('tab=results&suppressed=1&view=v1&rev=4&severity=low&q=&page=2');
+  });
+
+  it('are the same for every read, so the list, a group, its rows, a column and the file agree', () => {
+    const view: View = { ...savedView, search: 'storage' };
+    const req = request(view, { saved });
+    for (const url of [
+      viewUrl(req), rowsUrl(req, 'fp', 1), groupUrl(req, ['security'], 1), columnValuesUrl(req, rowField('zone'), ''), exportUrl(req, 'csv'),
+    ]) {
+      const params = query(url);
+      expect([params.get('view'), params.get('rev'), params.get('q'), params.get('severity'), params.get('category')]).toEqual(['v1', '4', 'storage', null, null]);
+    }
+  });
+
+  it('read one rule\'s findings as the view with that rule on top, ungrouped', () => {
+    const params = query(ruleFindingsUrl(request(savedView, { saved }), 'rule-1', 2));
+    expect([params.get('view'), params.get('ruleId'), params.get('group'), params.get('page')]).toEqual(['v1', 'rule-1', null, '2']);
+  });
+
+  it('write the address as differences from the saved view', () => {
+    const view: View = { ...savedView, columns: ['zone'] };
+    const address = explorerAddress(view, { extraParams: { tab: 'results' }, viewId: 'v1', saved: savedView });
+    expect(address).toBe('tab=results&view=v1&cols=zone');
+  });
+
+  it('says the open saved view is gone when a read of it is answered 404, and is a plain failure otherwise', async () => {
+    const gone = answeringFetch(() => json({ error: SAVED_VIEW_UNAVAILABLE }, 404));
+    const session = new ExplorerSession(gone.fetchFn);
+    session.view.request(request(savedView, { saved }));
+    await settle();
+    expect(session.view.getSnapshot()).toMatchObject({ status: 'failed', savedViewGone: true });
+
+    const other = new ExplorerSession(answeringFetch(() => json({ error: SAVED_VIEW_UNAVAILABLE }, 404)).fetchFn);
+    other.view.request(request(savedView));
+    await settle();
+    expect(other.view.getSnapshot()).not.toHaveProperty('savedViewGone');
+
+    const broken = new ExplorerSession(answeringFetch(() => json({ error: 'Could not load the findings' }, 500)).fetchFn);
+    broken.view.request(request(savedView, { saved }));
+    await settle();
+    expect(broken.view.getSnapshot()).toMatchObject({ status: 'failed' });
+    expect(broken.view.getSnapshot()).not.toHaveProperty('savedViewGone');
+  });
+});
+
+describe('the address without the open saved view', () => {
+  it('drops view and rev and keeps every other param, a repeated one repeated', () => {
+    expect(addressWithoutView(new URLSearchParams('tab=advisories&view=v1&rev=4&f=a%3D1&f=b%3D2&severity=low')))
+      .toBe('/scans?tab=advisories&f=a%3D1&f=b%3D2&severity=low');
+  });
+
+  it('is plain /scans when nothing else is left', () => {
+    expect(addressWithoutView(new URLSearchParams('view=v1'))).toBe('/scans');
   });
 });

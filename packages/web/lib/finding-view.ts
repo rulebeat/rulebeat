@@ -894,3 +894,157 @@ export function dashboardAddress(saved: DashboardFilters): {
     },
   };
 }
+
+// ---- A saved view's filter changes in the URL (ADR 0013) ----
+
+const STATUS_VALUES = ['open', 'new', 'fixed', 'all', 'active'];
+
+/** `undefined` inherits. The empty value is Any (`[]`). A param of only values `ok` refuses counts as
+ *  missing, never as Any. */
+function readLayerList(raw: string | undefined, ok: (value: string) => boolean = () => true): string[] | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === '') return [];
+  const values = [...new Set(listPieces(raw).filter(v => v !== '' && ok(v)))];
+  return values.length > 0 ? values : undefined;
+}
+
+function setFilter(filters: Map<ViewField, string[]>, field: ViewField, values: string[]): void {
+  if (values.length === 0) filters.delete(field);
+  else filters.set(field, values);
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+const effectiveSort = (sort: ViewSort | null): ViewSort => sort ?? DEFAULT_SORT;
+
+/**
+ * The reader and writer of the changes a /scans address holds on top of an open saved view. Every part
+ * a saved view keeps is a layer: each list param, each `f=<field>`, each `rf=<path>` keyed by path,
+ * `q`, `status`, the window, `cols`, `sort`, `group` and `gsort`. A part the address names replaces the
+ * saved one (never intersects), and one it does not name is inherited, so a link follows the view's
+ * later updates and a part that arrives malformed cannot widen it.
+ *
+ * Any is the empty value (`severity=`, `f=kind=`, `q=`, `cols=`, `group=`), and for a returned column
+ * `rf=<path>` with no `=` (`rf=<path>=` still means the rows where it is blank). `status`, `sort`,
+ * `gsort` and the window have no Any and are written in full when they differ. `page` is where the
+ * viewer is, not part of a view: it is read and written as navigation and never compared.
+ */
+export function savedViewAddress(saved: View): {
+  /** The saved view with the changes `source` holds applied: the effective View. */
+  read(source: ParamSource): View;
+  /** The changes `current` makes to the saved view as query params, with `base` (params the page owns,
+   *  such as `tab` and `view`) kept first. */
+  write(current: View, base?: ParamSource): URLSearchParams;
+} {
+  return {
+    read(source) {
+      const view = emptyView();
+      const filters = new Map<ViewField, string[]>(saved.filters.map(f => [f.field, [...f.values]]));
+
+      for (const field of BUILTIN_FIELDS) {
+        const name = LIST_PARAMS[field];
+        if (!name) continue;
+        const ok = field === 'category' ? (v: string) => v !== 'all'
+          : field === 'severity' ? (v: string) => (EXPLORER_SEVERITIES as string[]).includes(v)
+          : undefined;
+        const values = readLayerList(readParam(source, name), ok);
+        if (values) setFilter(filters, field, values);
+      }
+      const status = readParam(source, 'status');
+      if (status !== undefined && STATUS_VALUES.includes(status)) {
+        const parsed = parseExplorerStatus(status);
+        setFilter(filters, 'status', parsed === 'open' ? [] : [parsed]);
+      }
+      for (const raw of readParams(source, 'f')) {
+        const named = readNamedValues(raw);
+        if (!named || !(GENERIC_FIELDS as readonly string[]).includes(named.name)) continue;
+        const field = named.name as BuiltinField;
+        if (named.values.length === 1 && named.values[0] === '') { filters.delete(field); continue; }
+        const values = named.values.filter(v => v !== '');
+        if (values.length > 0) filters.set(field, values);
+      }
+      for (const raw of readParams(source, 'rf')) {
+        const [head, ...rest] = splitEscaped(raw, '=');
+        const path = unesc(head);
+        if (path === '') continue;
+        if (rest.length === 0) filters.delete(rowField(path));
+        else filters.set(rowField(path), readValues(rest.join('=')));
+      }
+      const builtin = BUILTIN_FIELDS.filter(f => filters.has(f)).map(field => ({ field, values: filters.get(field)! }) as ViewFilter);
+      const returned = [...filters].filter(([field]) => isRowField(field)).map(([field, values]) => ({ field, values }) as ViewFilter);
+      view.filters = [...builtin, ...returned];
+
+      view.window = readDashboardWindow(source) ?? saved.window;
+      view.search = readParam(source, 'q') ?? saved.search;
+      view.columns = readLayerList(readParam(source, 'cols')) ?? saved.columns;
+
+      const sort = readParam(source, 'sort');
+      const colon = sort ? sort.lastIndexOf(':') : -1;
+      let nextSort = saved.sort;
+      if (sort && colon > 0) {
+        const field = sort.slice(0, colon);
+        const dir = sort.slice(colon + 1);
+        if (isViewField(field) && (dir === 'asc' || dir === 'desc')) nextSort = { field, dir };
+      }
+      const sorted = effectiveSort(nextSort);
+      view.sort = sorted.field === DEFAULT_SORT.field && sorted.dir === DEFAULT_SORT.dir ? null : sorted;
+
+      view.groupBy = readLayerList(readParam(source, 'group'), isViewField) as ViewField[] | undefined ?? saved.groupBy;
+      const [by, dir] = (readParam(source, 'gsort') ?? '').split(':');
+      view.groupSort = (by === 'value' || by === 'count') && (dir === 'asc' || dir === 'desc') ? { by, dir } : saved.groupSort;
+
+      const page = Number(readParam(source, 'page'));
+      if (Number.isInteger(page) && page > 1 && page <= MAX_URL_PAGE) view.page = page;
+      return view;
+    },
+
+    write(current, base) {
+      const params = new URLSearchParams();
+      if (base instanceof URLSearchParams) base.forEach((v, k) => params.append(k, v));
+      else if (base) for (const [k, v] of Object.entries(base)) for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) params.append(k, one);
+
+      const savedValues = (field: ViewField) => filterValues(saved.filters, field);
+      const currentValues = (field: ViewField) => filterValues(current.filters, field);
+      const changed = (field: ViewField) => !sameSet(currentValues(field), savedValues(field));
+      const joined = (values: readonly string[]) => values.map(esc).join(',');
+
+      for (const field of BUILTIN_FIELDS) {
+        const name = LIST_PARAMS[field];
+        if (name && changed(field)) params.set(name, joined(currentValues(field)));
+      }
+      const status = parseExplorerStatus(currentValues('status')[0]);
+      if (status !== parseExplorerStatus(savedValues('status')[0])) params.set('status', status);
+      for (const field of GENERIC_FIELDS) {
+        if (changed(field)) params.append('f', `${field}=${currentValues(field).map(esc).join('|')}`);
+      }
+
+      if (!sameWindow(current.window, saved.window)) {
+        if (current.window.mode === 'custom') {
+          params.set('from', current.window.from);
+          params.set('to', current.window.to);
+        } else {
+          params.set('window', String(current.window.days));
+        }
+      }
+      if (current.search !== saved.search) params.set('q', current.search);
+      if (!sameList(current.columns, saved.columns)) params.set('cols', joined(current.columns));
+      const sort = effectiveSort(current.sort);
+      if (sort.field !== effectiveSort(saved.sort).field || sort.dir !== effectiveSort(saved.sort).dir) params.set('sort', `${sort.field}:${sort.dir}`);
+      if (!sameList(current.groupBy, saved.groupBy)) params.set('group', joined(current.groupBy));
+      if (current.groupSort.by !== saved.groupSort.by || current.groupSort.dir !== saved.groupSort.dir) {
+        params.set('gsort', `${current.groupSort.by}:${current.groupSort.dir}`);
+      }
+
+      const paths = new Set([...current.filters, ...saved.filters].filter(isRowFilter).filter(isActiveRowFilter).map(f => f.field));
+      for (const field of paths) {
+        if (!changed(field)) continue;
+        const values = currentValues(field);
+        params.append('rf', values.length > 0 ? `${esc(rowPath(field as RowField))}=${values.map(esc).join('|')}` : esc(rowPath(field as RowField)));
+      }
+      if (current.page > 1) params.set('page', String(current.page));
+      return params;
+    },
+  };
+}

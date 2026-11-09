@@ -6,13 +6,17 @@ import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/findi
 
 describe('normalizeViewQuery', () => {
   it('keeps a query the View writes unchanged', () => {
-    const view = { ...emptyView(), search: 'storage', columns: ['properties.sku'], page: 3 };
+    const view = { ...emptyView(), search: 'storage', columns: ['properties.sku'] };
     const query = viewToSearchParams(view).toString();
     expect(normalizeViewQuery(query)).toBe(query);
   });
 
   it('drops params the View does not know, including the page-owned ones', () => {
     expect(normalizeViewQuery('tab=results&view=abc&severity=critical&junk=1')).toBe('severity=critical');
+  });
+
+  it('drops the page, which is where the viewer is and never part of a saved view', () => {
+    expect(normalizeViewQuery('severity=critical&page=3')).toBe('severity=critical');
   });
 
   it('drops defaults, so a default View is an empty query', () => {
@@ -38,23 +42,16 @@ describe('saved view helpers', () => {
 describe('savedViewHref', () => {
   const view = { id: 'v1', tab: 'advisories' as const, query: 'severity=critical&q=a%26b' };
 
-  it('puts the tab and the view id first, then the saved query', () => {
-    expect(savedViewHref(view)).toBe('/scans?tab=advisories&view=v1&severity=critical&q=a%26b');
+  it('writes only the tab and the view id: the view\'s query is read from the view, not copied', () => {
+    expect(savedViewHref(view)).toBe('/scans?tab=advisories&view=v1');
   });
 
-  it('reads back as the saved View, ignoring the tab and view params', () => {
-    const href = savedViewHref(view);
-    const params = new URLSearchParams(href.split('?')[1]);
-    expect(params.get(OPEN_VIEW_PARAM)).toBe('v1');
-    expect(viewToSearchParams(viewFromSearchParams(params)).toString()).toBe(view.query);
+  it('opens the same address whatever the view holds', () => {
+    const emptied = { ...view, query: '' };
+    expect(savedViewHref(emptied)).toBe(savedViewHref(view));
   });
 
-  it('keeps a repeated param repeated', () => {
-    const href = savedViewHref({ ...view, query: 'x=1&x=2' });
-    expect(new URLSearchParams(href.split('?')[1]).getAll('x')).toEqual(['1', '2']);
-  });
-
-  it('is just the tab and id for an empty query', () => {
-    expect(savedViewHref({ ...view, query: '' })).toBe('/scans?tab=advisories&view=v1');
+  it('names the view in the param the explorer reads', () => {
+    expect(new URLSearchParams(savedViewHref(view).split('?')[1]).get(OPEN_VIEW_PARAM)).toBe('v1');
   });
 });
