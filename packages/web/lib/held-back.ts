@@ -84,37 +84,41 @@ export function valuesWithoutPlaceholder(
 }
 
 const SCOPE_DIMENSIONS = [
-  { key: 'subscriptions', dimension: 'subscription', noun: 'subscriptions' },
-  { key: 'resourceGroups', dimension: 'resourceGroup', noun: 'resource groups' },
+  { key: 'subscriptions', dimension: 'subscription' },
+  { key: 'resourceGroups', dimension: 'resourceGroup' },
 ] as const;
+
+/** What a fully held-back widget says, and what it adds for someone who may edit the dashboard. */
+export const WIDGET_HELD_BACK_DETAIL = 'This widget is filtered to places outside your Access, so it has nothing to count for you. Duplicate the dashboard to get a copy without them.';
+export const WIDGET_HELD_BACK_EDITOR_DETAIL = ' Or remove those values in edit mode.';
 
 /**
  * What a widget says in place of a number when every subscription (or every resource group) it is filtered
  * to is held back from the viewer. The held values are not in the config the browser has, so without this
  * the filter would read as empty and the widget would draw the viewer's whole Access: a posture of 100%,
  * "No violations found" or "All rules passing" would claim something was checked and found clean, when
- * nothing it was set up to show is theirs to see.
+ * nothing it was set up to show is theirs to see. The server matches nothing for such a read (#375); this
+ * says why.
  *
  * A widget's own list replaces the dashboard's for a dimension (mergeWidgetFilters), so the widget is
- * looked at first and the filter bar only when the widget names none.
+ * looked at first and the filter bar only when the widget names none. Someone who may edit the dashboard
+ * is also told they can remove the values.
  */
 export function widgetHeldBackReason(
   heldBack: readonly HeldBack[] | undefined,
   dashboardId: string,
   widget: { id: string; config: Record<string, unknown> },
   filterBar: { subscriptions: readonly string[]; resourceGroups: readonly string[] },
+  canEdit = false,
 ): { title: string; detail: string } | null {
   const lengthOf = (value: unknown) => (Array.isArray(value) ? value.length : 0);
-  for (const { key, dimension, noun } of SCOPE_DIMENSIONS) {
+  for (const { key, dimension } of SCOPE_DIMENSIONS) {
     const own = lengthOf(widget.config[key]);
     const heldOnly = own > 0 ? false
       : heldBackCount(heldBack, 'widget', widget.id, dimension) > 0
         || onlyHeldBack(heldBack, 'dashboard', dashboardId, dimension, filterBar[key].length);
     if (heldOnly) {
-      return {
-        title: OUTSIDE_ACCESS_LABEL,
-        detail: `This widget is filtered to ${noun} your Access does not include, so it has nothing to count for you. Add one of your ${noun} to its filter to count it.`,
-      };
+      return { title: OUTSIDE_ACCESS_LABEL, detail: canEdit ? WIDGET_HELD_BACK_DETAIL + WIDGET_HELD_BACK_EDITOR_DETAIL : WIDGET_HELD_BACK_DETAIL };
     }
   }
   return null;

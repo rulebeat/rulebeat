@@ -4,10 +4,13 @@ import { serverError } from '@/lib/api-error';
 import { listCategories } from '@/lib/db/categories';
 import { queryFilterOptions } from '@/lib/db/finding-views';
 import { loadRules } from '@/lib/rules';
+import { guardWidgetDashboard } from '@/lib/widget-reads';
 
-export async function GET() {
+export async function GET(req: Request) {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
+  const refused = await guardWidgetDashboard(actor, new URL(req.url).searchParams);
+  if (refused) return refused;
 
   try {
     const categories = await listCategories();

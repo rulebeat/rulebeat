@@ -286,14 +286,29 @@ describe('what the page says', () => {
     const bar = (subscriptions: string[] = [], resourceGroups: string[] = []) => ({ subscriptions, resourceGroups });
     const widget = (config: Record<string, unknown> = {}) => ({ id: 'w1', config });
 
-    it('names the subscriptions when the filter bar holds only held-back ones', () => {
-      const reason = widgetHeldBackReason(held, 'd1', widget(), bar());
-      expect(reason?.title).toBe(OUTSIDE_ACCESS_LABEL);
-      expect(reason?.detail).toContain('subscriptions');
+    it('says it is filtered to places outside the Access when the filter bar holds only held-back subscriptions', () => {
+      expect(widgetHeldBackReason(held, 'd1', widget(), bar())).toEqual({
+        title: 'Outside your access',
+        detail: 'This widget is filtered to places outside your Access, so it has nothing to count for you. Duplicate the dashboard to get a copy without them.',
+      });
     });
 
-    it('names the resource groups when the widget\'s own override holds only held-back ones', () => {
-      expect(widgetHeldBackReason(held, 'd1', widget(), bar([SUB_ONE]))?.detail).toContain('resource groups');
+    it('says the same when the widget\'s own override holds only held-back resource groups', () => {
+      expect(widgetHeldBackReason(held, 'd1', widget(), bar([SUB_ONE]))?.title).toBe('Outside your access');
+    });
+
+    it('tells someone who may edit the dashboard that they can remove those values', () => {
+      expect(widgetHeldBackReason(held, 'd1', widget(), bar(), true)?.detail).toBe(
+        'This widget is filtered to places outside your Access, so it has nothing to count for you. Duplicate the dashboard to get a copy without them. Or remove those values in edit mode.',
+      );
+    });
+
+    it('no longer advises clearing the filter or adding one of the person\'s own', () => {
+      for (const canEdit of [false, true]) {
+        const detail = widgetHeldBackReason(held, 'd1', widget(), bar(), canEdit)!.detail;
+        expect(detail).not.toContain('Clear the filter');
+        expect(detail).not.toContain('Add one of your');
+      }
     });
 
     it('gives no reason when a visible value is left, whether the widget\'s or the filter bar\'s', () => {
@@ -302,7 +317,7 @@ describe('what the page says', () => {
     });
 
     it('lets a widget\'s own held-back override win over a visible filter bar value', () => {
-      expect(widgetHeldBackReason(held, 'd1', widget(), bar([SUB_ONE], ['rg-one']))?.detail).toContain('resource groups');
+      expect(widgetHeldBackReason(held, 'd1', widget(), bar([SUB_ONE], ['rg-one']))?.title).toBe('Outside your access');
     });
 
     it('gives no reason when nothing is held back', () => {

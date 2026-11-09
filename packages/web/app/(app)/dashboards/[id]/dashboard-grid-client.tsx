@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem, Layout as RGLLayoutArray } from 'react-grid-layout';
 import {
@@ -34,6 +34,7 @@ import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
 import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { WidgetReadContext } from '@/lib/hooks/use-widget-read';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
@@ -75,7 +76,7 @@ function filtersFromConfig(config: HeldBackDashboard['config']): DashboardFilter
   };
 }
 
-function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashboardId, heldBack, canEdit, onRemove, onConfigure }: {
   widget: WidgetDef;
   filters: WidgetFilters;
   filtered: boolean;
@@ -83,6 +84,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   editMode: boolean;
   dashboardId: string;
   heldBack: HeldBack[];
+  canEdit: boolean;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
@@ -90,7 +92,8 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   // empty read would turn into a 100% posture or "No violations found".
   const accessReason = widgetHeldBackReason(heldBack, dashboardId, widget, {
     subscriptions: filters.subscriptions ?? [], resourceGroups: filters.resourceGroups ?? [],
-  });
+  }, canEdit);
+  const readTarget = useMemo(() => ({ dashboardId, widgetId: widget.id }), [dashboardId, widget.id]);
   const inner = accessReason ? (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 px-4 py-6 text-center">
       <Lock className="size-5 text-ink-2" aria-hidden="true" />
@@ -132,7 +135,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
 
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} onRemove={onRemove} onConfigure={onConfigure}>
-      {inner}
+      <WidgetReadContext.Provider value={readTarget}>{inner}</WidgetReadContext.Provider>
     </WidgetWrapper>
   );
 }
@@ -686,6 +689,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
                   editMode={editMode}
                   dashboardId={dashboard.id}
                   heldBack={dashboard.heldBack}
+                  canEdit={canChange}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />
@@ -699,6 +703,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       {configuringWidget && (
         <WidgetConfigPanel
           widget={configuringWidget}
+          dashboardId={dashboard.id}
           heldBack={dashboard.heldBack}
           onClose={() => setConfiguringWidget(null)}
           onSave={updated => { updateWidget(updated); setConfiguringWidget(null); }}
