@@ -12,6 +12,7 @@
  * Still deliberately at the repository layer: route handlers and the scan flow have their own
  * suites, which the Postgres CI job runs in full.
  */
+import { SYSTEM_ACCESS } from '@/lib/system-access';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import { getMeta, setMeta, deleteMeta } from '@/lib/db/meta';
@@ -235,7 +236,7 @@ describe('dashboards repository parity', () => {
     expect(await createDashboard({ name: 'parity a', config: { widgets: [] } }, 'parity-owner')).toEqual({ ok: false, reason: 'name-taken' });
     expect(await updateDashboard(b.dashboard.id, { name: 'PARITY A' })).toEqual({ ok: false, reason: 'name-taken' });
 
-    const dup = await duplicateDashboard(a.dashboard.id, 'parity-owner');
+    const dup = (await duplicateDashboard(a.dashboard.id, 'parity-owner', SYSTEM_ACCESS))?.dashboard;
     expect(dup).not.toBeNull();
     expect(dup!.id).not.toBe(a.dashboard.id);
     expect(dup!.name).toBe('Parity A (copy)');

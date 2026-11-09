@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
-import { dimensionsHeldInFull, type HeldBack } from '@/lib/held-back';
+import { copiedViewNotice, copyNoticeWhileOpen, dimensionsHeldInFull, type CopyNotice, type HeldBack } from '@/lib/held-back';
 import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
@@ -57,6 +57,8 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
+  // Said after a view is saved from an open one, for as long as that view stays open and unchanged.
+  const [copyNotice, setCopyNotice] = useState<CopyNotice | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -80,6 +82,16 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const demotedOpen = open !== null && isDemotedOwner(actor, permissions, open);
   const { handOver: canHandOverOpen, takeOver: canTakeOverOpen } = open ? transferControlsWith(actor, permissions, open) : { handOver: false, takeOver: false };
 
+  const shownCopyNotice = copyNoticeWhileOpen(copyNotice, openId);
+  // Once the view it describes is closed or another is opened, the notice is spent: opening that view again
+  // does not bring it back. The open id can lag a save by a render, so only a move away from it counts.
+  const previousOpenId = useRef<string | null>(openId);
+  useEffect(() => {
+    const was = previousOpenId.current;
+    previousOpenId.current = openId;
+    if (copyNotice && was === copyNotice.viewId && openId !== copyNotice.viewId) setCopyNotice(null);
+  }, [copyNotice, openId]);
+
   const openHeldBack = open?.heldBack;
   const openQuery = open?.query;
   useEffect(() => {
@@ -99,18 +111,23 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
       setState(prev => ({ status: prev.status, views: openableItems(actor, prev.views.map(v => (v.id === open.id ? { ...v, ...changed } : v))) }));
       return null;
     }
-    if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
+    if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery }, from: open?.id };
     else if (!open || !canChangeOpen) return null;
     else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: open.revision, opened: open.query };
     else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: open.revision, opened: open.query };
     else change = { kind: 'delete', id: open.id };
 
+    setCopyNotice(null);
     const outcome = await requestSavedViewChange(change);
     if (!outcome.ok) return outcome.error;
     if (outcome.view) {
       const stored = outcome.view;
       setState(prev => ({ status: prev.status, views: upsertSavedView(prev.views, stored) }));
-      if (kind === 'save') onOpenIdChange(stored.id);
+      if (kind === 'save') {
+        const text = copiedViewNotice(outcome.widened);
+        setCopyNotice(text ? { viewId: stored.id, text } : null);
+        onOpenIdChange(stored.id);
+      }
     } else {
       setState(prev => ({ status: prev.status, views: prev.views.filter(v => v.id !== open?.id) }));
       onOpenIdChange(null);
@@ -202,6 +219,8 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {shownCopyNotice && <p role="status" className="text-sm text-ink-2">{shownCopyNotice}</p>}
 
       {transfer && open && (
         <ItemTransferDialog

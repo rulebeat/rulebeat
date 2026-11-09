@@ -33,7 +33,7 @@ import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboar
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { copiedDashboardNotice, rememberCopiedDashboard, takeCopiedDashboard, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import { WidgetReadContext } from '@/lib/hooks/use-widget-read';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
@@ -144,6 +144,16 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
 
 export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl, installDefaultControl }: Props) {
   const router = useRouter();
+  // A Duplicate leaves its count for this page in session storage, read once so a reload or a link has none.
+  // A later run finds it gone, so it only ever sets the count, and the notice belongs to this dashboard's id.
+  const [copied, setCopied] = useState<{ id: string; widened: number } | null>(null);
+  useEffect(() => {
+    const widened = takeCopiedDashboard(window.sessionStorage, initial.id);
+    // Reading session storage is an external system the server render cannot see: legitimate effect setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (widened > 0) setCopied({ id: initial.id, widened });
+  }, [initial.id]);
+  const copiedNotice = copied?.id === initial.id ? copiedDashboardNotice(copied.widened) : null;
   const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
@@ -409,7 +419,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   async function handleDuplicate() {
     const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
     if (res.ok) {
-      const copy = await res.json() as HeldBackDashboard;
+      const copy = await res.json() as HeldBackDashboard & { widened?: number };
+      rememberCopiedDashboard(window.sessionStorage, copy.id, copy.widened);
       router.push(`/dashboards/${copy.id}`);
       router.refresh();
     }
@@ -693,6 +704,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
+      {copiedNotice && <Callout tone="info" className="shrink-0 border-b border-rule-strong">{copiedNotice}</Callout>}
       {isDemotedOwner(actor, permissions, dashboard) && (
         <Callout tone="info" className="shrink-0 border-b border-rule-strong">{DEMOTED_OWNER_NOTE}</Callout>
       )}

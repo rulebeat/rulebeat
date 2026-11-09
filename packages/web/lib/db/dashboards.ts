@@ -8,7 +8,12 @@ import { DASHBOARD_NAME_LOCK_KEY, lockDashboardsThenViews } from './name-locks';
 import { widgetsOnUnsharedViews } from './dashboard-view-references';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
+import type { Access } from '@/lib/access-model';
+import { copyDashboardConfig } from './held-back';
 import { clearUnreachableMyDefaultsOn } from './default-dashboard';
+
+/** A Duplicate: the Personal copy, and how many of its widgets show more than the original did for the copier. */
+export interface DuplicatedDashboard { dashboard: Dashboard; widened: number }
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -333,21 +338,24 @@ async function nextFreeName(tx: DbHandle, ownerId: string, base: string, suffix:
 }
 
 // Copies a dashboard the person can open into a Personal one of their own: neither the Install default
-// flag nor the owner is carried over, and widget config (a `savedViewId` included) is copied as it is.
+// flag nor the owner is carried over, widget config (a `savedViewId` included) is copied as it is, and the
+// values held back from the copier are left out (`widened` counts the widgets that then show more).
 // Picks the copy's name and inserts it in one locked transaction, so concurrent duplicates of one
 // dashboard each land on a different name.
-export async function duplicateDashboard(id: string, ownerId: string): Promise<Dashboard | null> {
+export async function duplicateDashboard(id: string, ownerId: string, access: Access): Promise<DuplicatedDashboard | null> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!row) return null;
     const src = (await toDashboards([row], tx))[0];
     const name = await nextFreeName(tx, ownerId, `${src.name} (copy)`, n => `${src.name} (copy ${n})`);
-    return insertDashboard(tx, ownerId, {
+    const { config, widened } = await copyDashboardConfig(access, src);
+    const dashboard = await insertDashboard(tx, ownerId, {
       name,
       description: src.description,
-      config: JSON.parse(JSON.stringify(src.config)) as DashboardConfig,
+      config: JSON.parse(JSON.stringify(config)) as DashboardConfig,
     });
+    return { dashboard, widened };
   });
 }
 

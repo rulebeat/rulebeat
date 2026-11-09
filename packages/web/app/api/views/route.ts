@@ -3,10 +3,10 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackSavedViews } from '@/lib/db/held-back';
+import { copyViewQuery, holdBackSavedViews } from '@/lib/db/held-back';
 import { withoutPlaceholder } from '@/lib/held-back';
-import { openableItems } from '@/lib/item-access';
-import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
+import { canOpenItem, openableItems } from '@/lib/item-access';
+import { createSavedView, getSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
 export async function GET() {
@@ -19,6 +19,14 @@ export async function GET() {
   }
 }
 
+/** The saved view a new one is being saved from (`from` in the body), when it exists and the person may open it. */
+async function openedSource(actor: { id: string }, body: unknown) {
+  const from = (body as { from?: unknown } | null)?.from;
+  if (typeof from !== 'string') return null;
+  const source = await getSavedView(from);
+  return source && canOpenItem(actor, source) ? source : null;
+}
+
 export async function POST(req: Request) {
   const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
@@ -29,7 +37,13 @@ export async function POST(req: Request) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await createSavedView({ ...fields.value, query: withoutPlaceholder(fields.value.query) }, actor.id);
+    // A view saved from an open one is a Duplicate: it holds none of the values held back from the copier, whatever
+    // the request carries, and says how many filters now show more than the original did.
+    const source = await openedSource(actor, body);
+    const copy = source
+      ? await copyViewQuery(actor.access, source, fields.value.query)
+      : { query: withoutPlaceholder(fields.value.query), widened: 0 };
+    const result = await createSavedView({ ...fields.value, query: copy.query }, actor.id);
     if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
 
     await writeAudit({
@@ -42,7 +56,7 @@ export async function POST(req: Request) {
       details: { fields: SAVED_VIEW_FIELDS },
     });
     const [view] = await holdBackSavedViews(actor.access, [result.view]);
-    return Response.json(view, { status: 201 });
+    return Response.json({ ...view, widened: copy.widened }, { status: 201 });
   } catch (err) {
     return serverError('Could not save the view', err);
   }

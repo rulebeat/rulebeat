@@ -75,7 +75,19 @@ A Shared dashboard opens at `/dashboards/<id>` for anyone signed in, each person
 access allows. A person who holds no Scope sees a message that they have been given no access in place of the widgets, since every widget would read empty. Its owner can change it if they are an Editor. An Admin, or an Editor on Everything, can
 change any Shared dashboard, including one with no owner (every dashboard from before owners has none).
 Anyone who can open a dashboard can Duplicate it: the copy is a Personal dashboard of their own, it is
-never the default, and its widgets keep any saved view they point at.
+never the default, and its widgets keep any saved view they point at. The copy never follows the
+original, and it holds only the values you can see: a subscription or resource group in a filter that
+your access does not reach is left out, not copied. When that makes a widget show more than the original
+did for you, the copy says so once: "Copied as a Personal dashboard. N widgets show more than the
+original, because values outside your access were left out." A widget shows more when the filter it
+takes (its own, or the dashboard's) held values and every one of them was outside your access, so the
+original matched nothing for you. If it was the dashboard's filter, the copy has no filter on that
+dimension, and a dashboard filter that widens this way counts every widget that takes it. If it was only
+the widget's own list, the copy's widget no longer has one, so it takes the dashboard's filter on that
+dimension (or none, when the dashboard has none). A filter that still names a value you can see widens
+nothing, and the notice does not appear when N is 0. The notice shows once, on the copy you are sent to
+after Duplicate. It is not kept in the address, so reloading the copy or opening a link to it does not
+bring it back. Someone who holds Everything has nothing left out.
 
 The gallery has two sections. **Yours** lists everything you own, each tagged Personal or Shared.
 **Shared by others** lists the Shared dashboards you do not own, with the owner's name, or their email
