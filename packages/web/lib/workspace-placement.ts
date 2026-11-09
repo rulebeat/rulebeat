@@ -2,7 +2,8 @@ import { and, eq, ne } from 'drizzle-orm';
 import { resolveWorkspacePlacement, type TenantContext } from '@rulebeat/core';
 import { db } from './db/client';
 import { findings as findingsTable, scanFindings as scanFindingsTable } from './db/tables';
-import { inTransaction, one, run } from './db/exec';
+import { inTransaction, many, one, run } from './db/exec';
+import { recountTrend } from './db/trend-record';
 import { resolveLogAnalyticsWorkspaceId } from './log-analytics-workspace';
 import { createScanContext } from './scan-context';
 import { SYSTEM_ACCESS } from './system-access';
@@ -32,8 +33,11 @@ async function anyToPlace(): Promise<boolean> {
   return false;
 }
 
-/** `ctx` is for a caller that already holds one (a test); without it the step builds the scan context, and only when a workspace is configured. */
-export async function placeWorkspaceFindings(opts: { ctx?: TenantContext } = {}): Promise<WorkspacePlacementResult> {
+/**
+ * `ctx` is for a caller that already holds one (a test); without it the step builds the scan context, and only when a
+ * workspace is configured. `now` is the clock the trend record is dated by; a test injects it.
+ */
+export async function placeWorkspaceFindings(opts: { ctx?: TenantContext; now?: Date } = {}): Promise<WorkspacePlacementResult> {
   try {
     if (!(await anyToPlace())) return 'nothing-to-place';
 
@@ -47,6 +51,8 @@ export async function placeWorkspaceFindings(opts: { ctx?: TenantContext } = {})
     if (!workspace) return 'unresolved';
 
     await inTransaction(async (tx) => {
+      // The rules of the findings that move, for the trend record below (ADR 0012).
+      const moving = await many(tx.selectDistinct({ ruleId: findingsTable.ruleId }).from(findingsTable).where(needsPlacing(findingsTable)));
       for (const t of [findingsTable, scanFindingsTable]) {
         await run(tx.update(t).set({
           placement: 'workspace',
@@ -55,6 +61,8 @@ export async function placeWorkspaceFindings(opts: { ctx?: TenantContext } = {})
           managementGroupId: null,
         }).where(needsPlacing(t)));
       }
+      // Last, since it takes the record lock. A record write that fails leaves the findings unplaced for the next start.
+      if (moving.length > 0) await recountTrend(tx, { ruleIds: moving.map(r => r.ruleId), now: opts.now });
     });
     return 'placed';
   } catch (err) {

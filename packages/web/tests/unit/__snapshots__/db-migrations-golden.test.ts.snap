@@ -578,7 +578,7 @@ trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","la
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"low"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
-trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":"<TS>"}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -1142,7 +1142,7 @@ trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","la
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":9,"severity":"high"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
-trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":"<TS>"}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -1719,7 +1719,7 @@ trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","la
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"low"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
-trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":"<TS>"}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -2300,7 +2300,7 @@ trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","la
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":23,"severity":"low"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
-trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":"<TS>"}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;
 
@@ -2875,6 +2875,6 @@ trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","la
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"<UUID>","running_version":null,"scope":"{\\"level\\":\\"resource\\"}","seq":19,"severity":"low"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-cert-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":15,"severity":"medium"}
 trend_rule_facts {"changed_at":"<TS>","deleted":0,"enabled":1,"kind":"state","last_category":null,"last_category_label":null,"last_name":null,"last_run_status":null,"last_source":null,"last_tags":null,"rule_id":"cred:app-secret-expiring","running_version":"1.0.0","scope":"{\\"level\\":\\"resource\\"}","seq":14,"severity":"medium"}
-trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":null}
+trend_state {"events_kept_since":"<DAY>","id":1,"recount_corrected":null,"recounted_at":null,"retained_through":null,"swept_through":"<TS>"}
 users {"access_source":null,"created_at":"<TS>","email":"admin@rulebeat.local","id":"<UUID>","last_seen_at":null,"linked_object_id":null,"linked_tenant_id":null,"mirror_error":null,"mirror_last_attempt_at":null,"mirror_last_success_at":null,"name":null,"oid":null,"role":"admin","scope":null,"session_epoch":0}"
 `;

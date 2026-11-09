@@ -93,6 +93,19 @@ describe('the first start', () => {
     expect(rows('trend_state')[0]).toMatchObject({ id: 1, events_kept_since: '2025-11-21' });
   });
 
+  it('starts the expiry sweep at the start, and each later start moves it on but never back', () => {
+    previousRelease();
+
+    start(T1);
+    expect(rows('trend_state')[0]).toMatchObject({ swept_through: T1.toISOString() });
+
+    start(T2);
+    expect(rows('trend_state')[0]).toMatchObject({ swept_through: T2.toISOString() });
+
+    start(T1);
+    expect(rows('trend_state')[0]).toMatchObject({ swept_through: T2.toISOString() });
+  });
+
   it('changes nothing a customer had: rules, findings, suppressions and events are as they were', () => {
     previousRelease();
     sqlite.prepare(`INSERT INTO finding_events (id, fingerprint, rule_id, category, scan_id, type, occurred_at) VALUES ('e1', 'fp-1', ?, 'security', 'scan-1', 'created', '2026-04-01T00:00:00.000Z')`).run(RULE_A);

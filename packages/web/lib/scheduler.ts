@@ -6,6 +6,8 @@ import { recoverInterruptedRuns, recoverPendingNotifications } from './startup-r
 import { isDemoMode } from './demo';
 import { SYSTEM_ACCESS } from './system-access';
 import type { Access } from './access-model';
+import { inTransaction } from './db/exec';
+import { sweepSuppressionExpiry } from './db/trend-record';
 import { getHierarchyStatus } from './db/management-group-hierarchy';
 import { refreshManagementGroupHierarchy, type HierarchyReader } from './management-group-hierarchy';
 import { refreshDue } from './management-group-tree';
@@ -72,6 +74,7 @@ export async function tickOnce(opts: {
   scanLock.busy = true;
   try {
     await sweepStaleWork();
+    await recordSuppressionExpiries(opts.now);
     await runDueSchedules(opts);
     await refreshHierarchyIfDue(opts);
     // After the tree, so a person's management group Scopes expand against the tree this tick refreshed.
@@ -94,6 +97,18 @@ async function sweepStaleWork(): Promise<void> {
     await recoverPendingNotifications();
   } catch (err) {
     console.error('[scheduler] stale-run sweep failed:', err);
+  }
+}
+
+/**
+ * Records the suppressions that expired since the last tick in the trend record (ADR 0012). A failed sweep is logged
+ * and retried by the next tick, which sweeps from the same point; it never stops the tick.
+ */
+async function recordSuppressionExpiries(now: Date = new Date()): Promise<void> {
+  try {
+    await inTransaction(tx => sweepSuppressionExpiry(tx, { now }));
+  } catch (err) {
+    console.error('[scheduler] suppression expiry sweep failed:', err);
   }
 }
 
