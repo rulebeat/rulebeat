@@ -112,6 +112,20 @@ dashboard's current state no longer allows answers 409 and asks you to reload.
 If your access no longer lets you change a Shared dashboard you own, the page says "Your access no longer
 lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+A widget's config may name a saved view (`savedViewId`). A Shared dashboard can use only Shared saved views,
+because anyone who opens the dashboard has to be able to open the view. Every save of a Shared dashboard, and
+every share of a Personal one, checks this. If a widget uses a view that is Personal or deleted, the save or
+share is refused with 400: "N widgets use saved views that are no longer shared: <widget titles>. Change or
+remove them before saving." The message names the dashboard's own widgets and never a saved view, so it says
+nothing about views that belong to someone else. A Personal dashboard can use any saved view. Unsharing or
+deleting a saved view that Shared dashboards use is allowed, and its confirmation says how many Shared
+dashboards use it. Those dashboards then refuse their next save until the widgets change or the view is
+shared again. When a widget is read, the view it names is in one of three states: resolved (its stored values
+outside your access are counted in `heldBack` as place `savedView`, and match nothing for you), "This saved
+view is no longer shared with you" (it exists, but is now someone else's Personal view) or "This saved view
+no longer exists." (it was deleted). The widget routes report the state as `savedView` (an `X-Saved-View`
+header when the answer is a list).
+
 Each widget reads its numbers by the dashboard it is on and its own id. The request carries the page's
 filters and the widget's own overrides, only the values you can see, and the server adds back the
 values each of the two stores that your access does not reach before it merges them. A widget's own value

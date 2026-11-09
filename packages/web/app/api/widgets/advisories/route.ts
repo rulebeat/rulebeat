@@ -16,5 +16,5 @@ export async function GET(req: Request) {
   const read = await resolveWidgetRead(actor, searchParams);
   if (read instanceof NextResponse) return read;
 
-  return respondWithHeldBack(await queryAdvisoriesWidget(read.filters, { limit }, actor.access), read.heldBack);
+  return respondWithHeldBack(await queryAdvisoriesWidget(read.filters, { limit }, actor.access), read.heldBack, read.savedView);
 }

@@ -7,6 +7,7 @@ import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back
 import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
+import { sharedDashboardViewsRefusal } from '@/lib/saved-view-reference';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -65,6 +66,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
     if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
+    if (result.reason === 'views-not-shared') return Response.json({ error: sharedDashboardViewsRefusal(result.widgetTitles) }, { status: 400 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
     return Response.json({ error }, { status: 409 });
   }

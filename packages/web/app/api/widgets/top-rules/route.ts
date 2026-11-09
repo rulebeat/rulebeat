@@ -41,5 +41,5 @@ export async function GET(req: Request) {
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 
-  return respondWithHeldBack(sorted, read.heldBack);
+  return respondWithHeldBack(sorted, read.heldBack, read.savedView);
 }

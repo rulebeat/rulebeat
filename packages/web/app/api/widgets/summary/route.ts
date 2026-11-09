@@ -17,5 +17,5 @@ export async function GET(req: Request) {
   const trendDays = trendDaysParam ? (parseInt(trendDaysParam, 10) || 30) : 30;
 
   const summary = await computeWidgetSummary(read.filters, trendDays, actor.access);
-  return respondWithHeldBack(summary, read.heldBack);
+  return respondWithHeldBack(summary, read.heldBack, read.savedView);
 }
