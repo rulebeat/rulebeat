@@ -7,7 +7,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computeFingerprint } from '@rulebeat/core';
 import type { Rule } from '@rulebeat/core';
 import { createUser } from '@/lib/db/users';
-import { createDashboard } from '@/lib/db/dashboards';
+import { createCategory, deleteCategory } from '@/lib/db/categories';
+import { createDashboard, getDashboard, updateDashboard } from '@/lib/db/dashboards';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { syncScanFindings } from '@/lib/db/findings';
@@ -228,6 +229,26 @@ describe('a widget whose values for a dimension are all gone', () => {
     const body = await ask('summary', 'half-gone');
     expect(body.noCount).toBeUndefined();
     expect(body.current.activeFindings).toBe(0);
+  });
+
+  it('still counts a deleted category that rules and open findings keep, and the Scans link holds the same count', async () => {
+    const made = await createCategory({ label: 'qa custom' });
+    if (!('category' in made)) throw new Error(made.error);
+    await saveRules([...RULES.map(rule), { ...rule('sl-rule-4'), category: made.category.id }]);
+    await syncScanFindings({
+      scanId: 'sl-2', category: made.category.id, ranRuleIds: ['sl-rule-4'], finishedAt: new Date().toISOString(),
+      findings: [{ ...finding('sl-rule-4', 'vm-b3', SUB_B), module: made.category.id as never, category: made.category.id as never }],
+    });
+    expect(await deleteCategory(made.category.id)).toBe(true);
+
+    const saved = await getDashboard(dashboardId);
+    const config = saved!.config;
+    await updateDashboard(dashboardId, { config: { ...config, widgets: [...config.widgets, widget('deleted-category', 'stat-card', { metric: 'total-findings', category: made.category.id })] } });
+
+    const body = await ask('summary', 'deleted-category');
+    expect(body.noCount).toBeUndefined();
+    expect(body.current.activeFindings).toBe(1);
+    expect((await opened(body.scansHref)).total).toBe(1);
   });
 
   it('answers every counting route the same way', async () => {

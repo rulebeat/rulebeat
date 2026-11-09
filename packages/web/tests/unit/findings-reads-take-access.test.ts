@@ -52,6 +52,7 @@ const EXEMPT: Record<string, Record<string, string>> = {
     removeFindingRowsForRule: 'write: removes a rule\'s finding rows',
     refreshSnapshotsFor: 'write: recomputes the stored snapshots, under the system access',
     backfillFindings: 'write: startup backfill, under the system access',
+    categoriesCarriedByFindings: 'returns only which category ids exist on a stored finding, the same for everyone and holding no count',
   },
   'lib/db/finding-views.ts': {
     planExportReads: 'pure planner over a count already read',
