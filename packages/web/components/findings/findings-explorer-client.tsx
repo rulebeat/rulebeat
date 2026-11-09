@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Callout } from '@/components/ui/callout';
+import { SavedViewGoneNotice } from '@/components/findings/saved-view-gone-notice';
+import { OPEN_VIEW_INITIAL, afterClose, afterDismiss, afterRead, openViewIdOf } from '@/lib/open-view-state';
 import { ChecklistDropdown, ColumnFilterIcon, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import { ReadStatus } from '@/components/ui/read-status';
 import { CodeBlock } from '@/components/ui/code-block';
@@ -59,7 +61,7 @@ import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
-import { OPEN_VIEW_OUTSIDE_COPY, SAVED_VIEW_GONE_COPY, valuesWithoutPlaceholder, withoutHeldPlaceholders, type HeldBack } from '@/lib/held-back';
+import { OPEN_VIEW_OUTSIDE_COPY, valuesWithoutPlaceholder, withoutHeldPlaceholders, type HeldBack } from '@/lib/held-back';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -468,8 +470,8 @@ export function FindingsExplorerClient({
   const [initial] = useState<View>(() => initialView ?? emptyView());
   // The view the address names stays open until the viewer closes it or the server says it no longer opens.
   // Either drops it here at once, since the address only follows once the page has read it again.
-  const [droppedViewId, setDroppedViewId] = useState<string | null>(null);
-  const openViewId = savedViews && savedViews.openId !== droppedViewId ? savedViews.openId : null;
+  const [openView, setOpenView] = useState(OPEN_VIEW_INITIAL);
+  const openViewId = openViewIdOf(savedViews?.openId, openView);
 
   // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
   // the category tabs and the Add filter control all read and write it, and it is the View's own
@@ -612,20 +614,17 @@ export function FindingsExplorerClient({
   const closeOpenView = useCallback(() => {
     setFilters(prev => withoutHeldPlaceholders(prev));
     setPage(0);
-    setDroppedViewId(openViewId);
+    setOpenView(prev => afterClose(prev, openViewId));
   }, [openViewId]);
 
   // A view that was deleted, or is now someone else's Personal view, is announced once and dropped from the address.
-  // The page then follows the address filters alone.
-  const [viewGone, setViewGone] = useState(false);
-  const readViewMissing = answered && data?.viewMissing === true;
-  useEffect(() => {
-    if (!readViewMissing || !openViewId) return;
-    // Reacting to what the server answered, not deriving state from props.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setViewGone(true);
-    setDroppedViewId(openViewId);
-  }, [readViewMissing, openViewId]);
+  // The page then follows the address filters alone. Adjusted while rendering, so the notice is part of whichever
+  // screen the page draws and no screen can leave it out.
+  const nextOpenView = afterRead(openView, openViewId, answered && data?.viewMissing === true);
+  if (nextOpenView !== openView) setOpenView(nextOpenView);
+  const viewGone = (
+    <SavedViewGoneNotice gone={nextOpenView.gone} onDismiss={() => setOpenView(prev => afterDismiss(prev))} />
+  );
 
   // What a filter value is called on screen: a rule by name, a category by label, a subscription by
   // its display name, a day as a date. The value itself, which the URL carries, stays the id.
@@ -879,6 +878,7 @@ export function FindingsExplorerClient({
             />
           </div>
         )}
+        {viewGone}
         <NoAccessState />
       </>
     );
@@ -888,20 +888,33 @@ export function FindingsExplorerClient({
   }
 
   if (screen === 'unavailable' && failure) {
-    return <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />;
+    return (
+      <>
+        {viewGone}
+        <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+      </>
+    );
   }
 
   if (screen === 'loading' || !data) {
-    return <p role="status" className="bg-surface py-16 text-center text-sm text-ink-2">Loading findings</p>;
+    return (
+      <>
+        {viewGone}
+        <p role="status" className="bg-surface py-16 text-center text-sm text-ink-2">Loading findings</p>
+      </>
+    );
   }
 
   if (screen === 'empty') {
     return (
-      <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
-        <Search className="mb-4 size-7 text-ink-faint" />
-        <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
-        <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
-      </div>
+      <>
+        {viewGone}
+        <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
+          <Search className="mb-4 size-7 text-ink-faint" />
+          <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
+          <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
+        </div>
+      </>
     );
   }
 
@@ -1392,14 +1405,7 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
-      {viewGone && (
-        <Callout tone="warn">
-          <div className="flex items-center justify-between gap-3">
-            <span>{SAVED_VIEW_GONE_COPY}</span>
-            <Button variant="outline" size="xs" onClick={() => setViewGone(false)}>Dismiss</Button>
-          </div>
-        </Callout>
-      )}
+      {viewGone}
 
       <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
