@@ -8,7 +8,7 @@
 import { groupUrl, type Loaded, type ViewRequest } from './explorer-session';
 import { NO_VALUE_LABEL, type ColumnValuesResponse, type ViewResponse } from './view-response';
 import { filterValues, type ViewField, type ViewFilter } from './finding-view';
-import { filterOutsideDimension, outsideAwareLabel, type OutsideAccess } from './outside-access';
+import { filterOutsideDimension, isOutsideAccess, outsideAwareLabel, type OutsideAccess } from './outside-access';
 import {
   DELETED_NOTE, NO_LONGER_EXISTS, dimensionMatchingNothing, markedLabel, type FilterStates, type MatchesNothing,
 } from './filter-states';
@@ -89,6 +89,18 @@ export function filterChipLabel(
   if (field === 'subscription') return outsideAwareLabel(outsideAccess, 'subscription', value, named);
   if (field === 'resourceGroup') return outsideAwareLabel(outsideAccess, 'resourceGroup', value, named);
   return named(value);
+}
+
+/** The one chip that counts the values of an old link's subscription and resource group filters that reach no pair
+ *  the viewer holds (#392): "2 Scopes outside your access", with neither an id nor a name. `values` are the filter
+ *  values removing the chip drops. Null when none is marked. */
+export function legacyOutsideChip(
+  filters: readonly ViewFilter[], outsideAccess: OutsideAccess | undefined,
+): { label: string; values: { field: 'subscription' | 'resourceGroup'; value: string }[] } | null {
+  const values = (['subscription', 'resourceGroup'] as const).flatMap(field =>
+    filterValues(filters, field).filter(value => isOutsideAccess(outsideAccess, field, value)).map(value => ({ field, value })));
+  if (values.length === 0) return null;
+  return { label: `${values.length} ${values.length === 1 ? 'Scope' : 'Scopes'} outside your access`, values };
 }
 
 /** `filterChipLabel`, and a tag no rule carries or a deleted category marked as such. The mark follows the

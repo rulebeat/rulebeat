@@ -1,6 +1,6 @@
 import { and, isNotNull, ne } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
-import { many } from '@/lib/db/exec';
+import { many, type DbHandle } from '@/lib/db/exec';
 import { findings, scanFindings } from '@/lib/db/tables';
 import { accessFilterSql } from '@/lib/db/access-filter';
 import type { Access } from '@/lib/access-model';
@@ -12,10 +12,15 @@ import { indexPairs, type PairRow } from '@/lib/db/filter-conversion';
  * name-only resource group into Scope picks reads it, so a save and the upgrade give one answer, except
  * that a save sees only the pairs of the findings `access` can see; the upgrade runs install-wide.
  */
-export async function readRecordedPairs(access: Access): Promise<ReturnType<typeof indexPairs>> {
+export function readRecordedPairs(access: Access): Promise<ReturnType<typeof indexPairs>> {
+  return readRecordedPairsOn(db, access);
+}
+
+/** `readRecordedPairs` on a handle: a view read asks inside its own transaction. */
+export async function readRecordedPairsOn(handle: DbHandle, access: Access): Promise<ReturnType<typeof indexPairs>> {
   const rows: PairRow[] = [];
   for (const table of [findings, scanFindings]) {
-    const found = await many(db.selectDistinct({ subscription_id: table.subscriptionId, resource_group: table.resourceGroup })
+    const found = await many(handle.selectDistinct({ subscription_id: table.subscriptionId, resource_group: table.resourceGroup })
       .from(table)
       .where(and(ne(table.subscriptionId, ''), isNotNull(table.resourceGroup), ne(table.resourceGroup, ''), accessFilterSql(access, table))));
     for (const r of found) rows.push({ subscription_id: r.subscription_id, resource_group: r.resource_group! });

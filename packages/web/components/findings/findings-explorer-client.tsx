@@ -45,7 +45,7 @@ import {
   explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
-import { emptyListCopy, emptyReasonOf, filterValueLabel, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
+import { emptyListCopy, emptyReasonOf, filterValueLabel, legacyOutsideChip, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
 import { NO_LONGER_EXISTS, ageChipLabel, dropValues, markedLabel, scopeChips, type ScopeListing } from '@/lib/filter-states';
 import { RuleSourceFilter, ScopeFilter, ScopeFunnel } from '@/components/filters/shared-filters';
 import { useFilterOptions } from '@/lib/hooks/use-filter-options';
@@ -714,12 +714,24 @@ export function FindingsExplorerClient({
   // Subscription names for the funnels: the stored tree's, else the live list's.
   const funnelNames = useMemo(() => ({ ...subNames, ...(optionsReady ? subscriptionNames(optionsReady.scopes.tree) : {}) }), [subNames, optionsReady]);
   const chips = useMemo<FilterChip[]>(() => {
+    // The values of an old link that reach no pair the viewer holds are counted in one chip, never named.
+    const legacyOutside = legacyOutsideChip(filters, data?.outsideAccess);
+    const counted = (field: ViewField, value: string) => legacyOutside?.values.some(v => v.field === field && v.value === value) ?? false;
     const own = filters
       .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
-      .flatMap(f => f.values.map(value => ({
+      .flatMap(f => f.values.filter(value => !counted(f.field, value)).map(value => ({
         field: f.field, value, fieldLabel: fieldLabel(f.field),
         valueLabel: isRowField(f.field) ? value : filterValueLabel(f.field, value, data?.outsideAccess, filterStates, v => valueLabel(f.field, v)),
       })));
+    const legacyChipList: FilterChip[] = legacyOutside
+      ? [{
+        field: 'legacy-outside', value: 'outside', fieldLabel: '', valueLabel: legacyOutside.label,
+        remove: () => {
+          setFilters(prev => legacyOutside.values.reduce((next, v) => toggleFilterValue(next, v.field, v.value), prev));
+          setPage(0);
+        },
+      }]
+      : [];
     // A set the server cannot open is one chip that says so, and a set it opened is chips of its picks.
     const scopeChipList: FilterChip[] = filterStates?.scopeUnresolved
       ? [{ field: 'scope', value: scopeSet ?? '', fieldLabel: 'Scope', valueLabel: UNRESOLVED_SCOPE_LABEL, remove: () => { void changeScope([]); } }]
@@ -735,7 +747,7 @@ export function FindingsExplorerClient({
     const ageChipList: FilterChip[] = age
       ? [{ field: 'age', value: `${age.min}-${age.max ?? ''}`, fieldLabel: '', valueLabel: ageChipLabel(age), remove: () => { setAge(undefined); setPage(0); } }]
       : [];
-    return [...own, ...scopeChipList, ...sourceChipList, ...ageChipList];
+    return [...own, ...legacyChipList, ...scopeChipList, ...sourceChipList, ...ageChipList];
   }, [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess, filterStates, scopeSet, scopePicks, scopeListing, changeScope, age]);
 
   const stats = data?.tiles ?? NO_TILES;

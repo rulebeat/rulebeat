@@ -38,7 +38,7 @@
  */
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Access } from '../access-model';
-import { markOutsideAccess } from '../outside-access';
+import { legacyOutsideAccess } from './legacy-scope-link';
 import { accessFilterSql } from './access-filter';
 import { planViewFilters, type ViewFilterPlan } from './view-filters';
 import { many, inReadTransaction, inSnapshotRead, type DbHandle } from './exec';
@@ -53,7 +53,7 @@ import { loadFindingRows, loadFindingRowsRange, rowToRecordFromColumns, rowToSum
 import { ruleTagsOf } from '../rules';
 import type { ExportSource, OpenExport } from '../export-stream';
 import { pageBounds, type FindingRow } from '../finding-rows';
-import { activeRowFilters, applyView, filterValues, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
+import { activeRowFilters, applyView, readPath, rowLeafPaths, rowMatches, rowPath, valueText, type RowField, type RowFilter, type View, type ViewContext } from '../finding-view';
 import { addEvidenceKeys, sortedKeys, type ExportPiece } from '../findings-export';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { isActiveSuppression } from '../suppressions';
@@ -287,11 +287,8 @@ export function queryRuleFindingCounts(access: Access): Promise<Record<string, n
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */
 export function queryView(view: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
-  const outsideAccess = markOutsideAccess(access, {
-    subscriptions: filterValues(view.filters, 'subscription'),
-    resourceGroups: filterValues(view.filters, 'resourceGroup'),
-  });
   return inReadTransaction(async (tx) => {
+    const outsideAccess = await legacyOutsideAccess(tx, view, access);
     const { rules, categories, ctx, filters } = await prepare(tx, view, query, access);
     const filterStates = filters.states;
     if (!(await rowsTableReady(tx))) {
