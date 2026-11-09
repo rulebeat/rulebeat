@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
+import { baseCopyAfterVisibilityChange, requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
+import { STALE_VIEW_MESSAGE } from '@/lib/held-back';
 import type { HeldBackSavedView } from '@/lib/saved-view-query';
 
 const view = (id: string, name: string): HeldBackSavedView => ({
@@ -43,6 +44,14 @@ describe('requestSavedViewChange', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3,"opened":"q=y"}' }));
   });
 
+  it('marks a refusal for a changed view as stale, so the page can offer a reload, and not a name clash', async () => {
+    const change = { kind: 'update' as const, id: 'v1', fields: { query: 'q=x' }, revision: 3 };
+    expect(await requestSavedViewChange(change, fake(409, { error: STALE_VIEW_MESSAGE })))
+      .toEqual({ ok: false, error: STALE_VIEW_MESSAGE, stale: true });
+    const clash = await requestSavedViewChange(change, fake(409, { error: 'A saved view named "A" already exists.' }));
+    expect(clash).not.toHaveProperty('stale');
+  });
+
   it('deletes with no body and returns no view', async () => {
     const fetchImpl = fake(204);
     const outcome = await requestSavedViewChange({ kind: 'delete', id: 'v1' }, fetchImpl);
@@ -83,5 +92,17 @@ describe('upsertSavedView', () => {
 
   it('adds a view it has not seen', () => {
     expect(upsertSavedView([view('a', 'A')], view('b', 'B')).map(v => v.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('baseCopyAfterVisibilityChange', () => {
+  const base = { ...view('a', 'A'), revision: 4, query: 'q=x' };
+
+  it('moves the base to the revision our own share or unshare made', () => {
+    expect(baseCopyAfterVisibilityChange(base, { visibility: 'personal', revision: 5 })).toMatchObject({ visibility: 'personal', revision: 5, query: 'q=x' });
+  });
+
+  it('keeps the old base when someone else changed the view too, so the next save is refused as stale', () => {
+    expect(baseCopyAfterVisibilityChange(base, { visibility: 'personal', revision: 6 })).toBe(base);
   });
 });

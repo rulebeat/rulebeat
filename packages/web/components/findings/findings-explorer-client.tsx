@@ -115,6 +115,9 @@ interface FindingsExplorerClientProps {
     openId: string | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
     onOpen: (view: HeldBackSavedView) => void;
+    /** The copy of the saved view the page was last opened from the menu with, so a save is based on what the
+     *  page shows. Null when the page was opened from a link. */
+    appliedView?: HeldBackSavedView | null;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -662,6 +665,8 @@ export function FindingsExplorerClient({
   // The open saved view's stored values this person's Access does not reach, counted beside the filters
   // they sit with. The values themselves never arrive.
   const [openHeldBack, setOpenHeldBack] = useState<HeldBack[]>([]);
+  // Set when a save of the open view was refused because the view changed since this page showed it.
+  const [viewStale, setViewStale] = useState<string | null>(null);
   const chips = useMemo<FilterChip[]>(() => filters
     .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
     .flatMap(f => valuesWithoutPlaceholder(openHeldBack, f.field, f.values).map(value => ({
@@ -852,6 +857,7 @@ export function FindingsExplorerClient({
               onOpenIdChange={setOpenViewId}
               onOpen={savedViews.onOpen}
               currentQuery={savedViewQuery}
+              appliedView={savedViews.appliedView}
             />
           </div>
         )}
@@ -1326,6 +1332,8 @@ export function FindingsExplorerClient({
             onOpen={savedViews.onOpen}
             onHeldBackChange={setOpenHeldBack}
             currentQuery={savedViewQuery}
+            appliedView={savedViews.appliedView}
+            onStale={setViewStale}
           />
         )}
 
@@ -1367,6 +1375,12 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
+      {viewStale && (
+        <Callout tone="warn" className="mt-2.5">
+          <span>{viewStale}</span>{' '}
+          <button type="button" className="font-medium underline" onClick={() => window.location.reload()}>Reload</button>
+        </Callout>
+      )}
       <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (

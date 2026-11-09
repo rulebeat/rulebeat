@@ -21,6 +21,9 @@ export const UNSEEN_VALUE_MESSAGE = "No finding you can see has this value, so i
 /** What a save from a copy of a dashboard that has since changed is answered with (409). */
 export const STALE_DASHBOARD_MESSAGE = 'This dashboard changed while you were editing it. Reload it and try again.';
 
+/** What a save from a copy of a saved view that has since changed is answered with (409). */
+export const STALE_VIEW_MESSAGE = 'This saved view changed while you were editing it. Reload it and try again.';
+
 export type HeldBackPlace = 'dashboard' | 'widget' | 'savedView';
 
 /**

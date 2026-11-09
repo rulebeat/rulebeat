@@ -13,7 +13,7 @@ import {
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
 import type { HeldBack } from '@/lib/held-back';
-import { requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
+import { baseCopyAfterVisibilityChange, requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
@@ -42,17 +42,25 @@ interface SavedViewsMenuProps {
   onHeldBackChange?: (heldBack: HeldBack[]) => void;
   /** The explorer's current View as the query a saved view stores. */
   currentQuery: string;
+  /** The copy of the view the page was opened from, when the person opened it from this menu. A save is based
+   *  on that copy, not on the list the menu re-reads, so someone else's later change is refused as stale. */
+  appliedView?: HeldBackSavedView | null;
+  /** Told the view changed since the copy the page was opened from, or null once that is cleared. */
+  onStale?: (message: string | null) => void;
 }
 
 /** What the dialog is for. */
 type ViewAction = 'save' | 'update' | 'rename' | 'delete' | 'share' | 'unshare';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: HeldBackSavedView[] }
 
-export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onOpen, onHeldBackChange, currentQuery, appliedView, onStale }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
+  // The copy of the open view this page shows. Opening the menu re-reads the list, and that list may hold
+  // someone else's newer change, so saves are based on this copy and never on the list.
+  const [base, setBase] = useState<HeldBackSavedView | null>(appliedView?.id === openId ? appliedView ?? null : null);
 
   useEffect(() => {
     let live = true;
@@ -74,6 +82,15 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const demotedOpen = open !== null && isDemotedOwner(actor, permissions, open);
   const { handOver: canHandOverOpen, takeOver: canTakeOverOpen } = open ? transferControlsWith(actor, permissions, open) : { handOver: false, takeOver: false };
 
+  // A view opened from a link has no applied copy: the first copy the list holds for it is the closest there is.
+  // Syncing a stored copy to the URL's open view, not state derived from props.
+  useEffect(() => {
+    if (!open || base?.id === open.id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBase(open);
+  }, [open, base]);
+  const baseCopy = base !== null && base.id === openId ? base : null;
+
   const openHeldBack = open?.heldBack;
   useEffect(() => { onHeldBackChange?.(openHeldBack ?? []); }, [openHeldBack, onHeldBackChange]);
 
@@ -93,18 +110,25 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
       // The answer is the view, or only its id, visibility and revision after someone else's unshare.
       const changed = outcome.item as Partial<HeldBackSavedView>;
       setState(prev => ({ status: prev.status, views: openableItems(actor, prev.views.map(v => (v.id === open.id ? { ...v, ...changed } : v))) }));
+      setBase(prev => (prev && prev.id === open.id && changed.revision !== undefined && changed.visibility !== undefined
+        ? baseCopyAfterVisibilityChange(prev, { visibility: changed.visibility, revision: changed.revision })
+        : prev));
       return null;
     }
     if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery } };
-    else if (!open || !canChangeOpen) return null;
-    else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: open.revision, opened: open.query };
-    else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: open.revision, opened: open.query };
+    else if (!open || !baseCopy || !canChangeOpen) return null;
+    else if (kind === 'rename') change = { kind: 'update', id: open.id, fields: { name }, revision: baseCopy.revision, opened: baseCopy.query };
+    else if (kind === 'update') change = { kind: 'update', id: open.id, fields: { query: currentQuery }, revision: baseCopy.revision, opened: baseCopy.query };
     else change = { kind: 'delete', id: open.id };
 
     const outcome = await requestSavedViewChange(change);
-    if (!outcome.ok) return outcome.error;
+    if (!outcome.ok) {
+      if (outcome.stale) onStale?.(outcome.error);
+      return outcome.error;
+    }
     if (outcome.view) {
       const stored = outcome.view;
+      setBase(stored);
       setState(prev => ({ status: prev.status, views: upsertSavedView(prev.views, stored) }));
       if (kind === 'save') onOpenIdChange(stored.id);
     } else {

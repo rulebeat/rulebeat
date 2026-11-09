@@ -55,7 +55,9 @@ your page. Changing auto-refresh, or renaming the dashboard, never stores the fi
 
 Every save of a dashboard, and of a saved view, carries the revision of the copy you opened. If someone
 else changed the item since, the save is refused with "changed while you were editing it. Reload it and try
-again." and the page shows a reload notice; nothing of theirs is overwritten. Values stored on the item that
+again." and the page shows a reload notice; nothing of theirs is overwritten. For a saved view on Scans the
+copy you opened is the one the page shows: opening the Views menu, which reads the list again, does not move it
+forward, so a change someone made after you opened the view is still refused and the page offers a reload. Values stored on the item that
 are outside your Access are put back from the current item on every save, so saving never drops them, and a
 widget keeps them when its type or fields change.
 
