@@ -19,14 +19,23 @@ import { sharedDashboardUseNote } from '@/lib/saved-view-reference';
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
+const SAVED_VIEW_LOCK_KEY = 7194826112;
 const lockKeys: number[] = [];
+// Runs once, inside the open transaction, right after the saved view name lock is taken: the point at which a
+// concurrent writer's commit would land between a save's locks and its read of the views.
+let afterViewLock: (() => Promise<void>) | null = null;
 vi.mock('@/lib/db/exec', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/db/exec')>();
   return {
     ...original,
-    pgAdvisoryXactLock: (tx: Parameters<typeof original.pgAdvisoryXactLock>[0], key: number) => {
+    pgAdvisoryXactLock: async (tx: Parameters<typeof original.pgAdvisoryXactLock>[0], key: number) => {
       lockKeys.push(key);
-      return original.pgAdvisoryXactLock(tx, key);
+      await original.pgAdvisoryXactLock(tx, key);
+      const hook = key === SAVED_VIEW_LOCK_KEY ? afterViewLock : null;
+      if (hook) {
+        afterViewLock = null;
+        await hook();
+      }
     },
   };
 });
@@ -54,6 +63,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   lockKeys.length = 0;
+  afterViewLock = null;
   signIn(EDITOR);
 });
 
@@ -274,24 +284,44 @@ describe('a widget read that names a widget with a savedViewId', () => {
 });
 
 describe('a dashboard save and a view unshare at the same moment', () => {
-  it('ends the way one of the two orders would: the save is refused, or it lands and the unshare follows', async () => {
+  it('refuses a save whose view is unshared after the save took its locks, and writes nothing', async () => {
     const view = await makeView(people[EDITOR]!, { shared: true });
     const dashboard = await makeDashboard(people[EDITOR]!, configOf(widget('Plain')), true);
-    const incoming = configOf(widget('On the view', view.id));
+    const before = (await getDashboard(dashboard.id))!;
+    let unshareStatus = 0;
+    afterViewLock = async () => { unshareStatus = (await post(viewUnshare, view.id)).status; };
 
-    const [saved, unshared] = await Promise.all([
-      put(dashboard.id, { config: incoming }),
-      post(viewUnshare, view.id),
-    ]);
+    const saved = await put(dashboard.id, { config: configOf(widget('On the view', view.id)) });
 
-    expect(unshared.status).toBe(200);
+    expect(unshareStatus).toBe(200);
+    expect(saved.status).toBe(400);
     const stored = (await getDashboard(dashboard.id))!;
-    const uses = stored.config.widgets.some(w => w.config['savedViewId'] === view.id);
-    if (saved.status === 200) expect(uses).toBe(true);
-    else {
-      expect(saved.status).toBe(400);
-      expect(uses).toBe(false);
-    }
+    expect(stored.config).toEqual(before.config);
+    expect(stored.revision).toBe(before.revision);
+  });
+
+  it('refuses a share whose view is unshared after the share took its locks', async () => {
+    const view = await makeView(people[EDITOR]!, { shared: true });
+    const dashboard = await makeDashboard(people[EDITOR]!, configOf(widget('On the view', view.id)), false);
+    let unshareStatus = 0;
+    afterViewLock = async () => { unshareStatus = (await post(viewUnshare, view.id)).status; };
+
+    const shared = await post(dashboardShare, dashboard.id);
+
+    expect(unshareStatus).toBe(200);
+    expect(shared.status).toBe(400);
+    expect((await getDashboard(dashboard.id))!.visibility).toBe('personal');
+  });
+
+  it('lets a save win when the unshare only starts after it has committed, and the unshare then follows', async () => {
+    const view = await makeView(people[EDITOR]!, { shared: true });
+    const dashboard = await makeDashboard(people[EDITOR]!, configOf(widget('Plain')), true);
+
+    const saved = await put(dashboard.id, { config: configOf(widget('On the view', view.id)) });
+    const unshared = await post(viewUnshare, view.id);
+
+    expect(saved.status).toBe(200);
+    expect(unshared.status).toBe(200);
   });
 
   it('refuses a save that comes after the unshare', async () => {
