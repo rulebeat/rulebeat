@@ -4,9 +4,10 @@ import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { CHART_LEGEND_STYLE, CHART_TICK, periodToDays } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; period?: string; policyIds?: string[] }
@@ -16,13 +17,13 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
  *  finding_events: a platform team closing more than it opens is the story this chart tells.
  *  Works under every filter dimension (see getFindingEventCounts). */
 export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+  const target = useWidgetReadTarget();
   const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days. Anything longer is empty air
   const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
+    const p = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>);
     p.set('trendDays', String(trendDays));
     return p.toString();
-  }, [merged, trendDays]);
+  }, [target, filters, config, trendDays]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]

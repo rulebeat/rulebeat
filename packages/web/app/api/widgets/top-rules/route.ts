@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { loadRules } from '@/lib/rules';
 import { listCategories } from '@/lib/db/categories';
-import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
+import { resolveWidgetRead, respondWithHeldBack } from '@/lib/widget-reads';
 import { countsInFindingTotals } from '@/lib/finding-kinds';
 import type { Severity } from '@/lib/types';
 
@@ -13,9 +13,10 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
-  const filters = parseWidgetFiltersFromSearchParams(searchParams);
+  const read = await resolveWidgetRead(actor, searchParams);
+  if (read instanceof NextResponse) return read;
 
-  const findings = (await queryActiveFindings(filters, actor.access)).filter(countsInFindingTotals);
+  const findings = (await queryActiveFindings(read.filters, actor.access)).filter(countsInFindingTotals);
   const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
@@ -40,5 +41,5 @@ export async function GET(req: Request) {
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 
-  return Response.json(sorted);
+  return respondWithHeldBack(sorted, read.heldBack);
 }

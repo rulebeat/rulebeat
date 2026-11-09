@@ -112,6 +112,18 @@ dashboard's current state no longer allows answers 409 and asks you to reload.
 If your access no longer lets you change a Shared dashboard you own, the page says "Your access no longer
 lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+Each widget reads its numbers by the dashboard it is on and its own id. The request carries the page's
+filters and the widget's own overrides, only the values you can see, and the server adds back the
+values each of the two stores that your access does not reach before it merges them. A widget's own value
+for a dimension still replaces the page's. This covers the page's filters on a Shared dashboard, which
+change only your own page, and a widget while you edit it. A widget you have not saved yet holds nothing
+back. A dimension whose values are all held back counts nothing for you, never your whole access, and the
+widget says "Outside your access" with "This widget is filtered to places outside your Access, so it has
+nothing to count for you. Duplicate the dashboard to get a copy without them." If you may change the
+dashboard, it adds "Or remove those values in edit mode." The seven widget data routes (`/api/widgets/summary`,
+`findings`, `top-rules`, `top-resources`, `advisories`, `rules` and `filter-options`) answer a dashboard
+that does not exist, or is someone else's Personal one, with "not found".
+
 A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
 else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
 Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names
