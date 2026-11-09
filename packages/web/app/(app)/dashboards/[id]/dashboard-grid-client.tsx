@@ -38,6 +38,7 @@ import {
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
 import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
+import { NO_REFRESH_CHOICE, pageInterval, pickInterval, savedInterval, shownInterval, type RefreshChoice } from '@/lib/dashboard-refresh';
 import { incomingDashboard, latestOf, noticeFor, seeRevision } from '@/lib/dashboard-revision';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
@@ -164,7 +165,12 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
     filters.categories || filters.subscriptions || filters.resourceGroups || filters.tags || filters.severities || filters.ruleIds,
   );
   const [refreshKey, setRefreshKey] = useState(0);
-  const [autoRefresh, setAutoRefresh] = useState(dashboard.config.autoRefresh ?? 0);
+  // Outside edit mode a pick applies only to this open page. The saved interval is set in edit mode and
+  // saved with the layout, so nothing a person picks while looking changes the dashboard for everyone.
+  const [refreshChoice, setRefreshChoice] = useState<RefreshChoice>(NO_REFRESH_CHOICE);
+  const savedRefresh = dashboard.config.autoRefresh ?? 0;
+  const autoRefresh = pageInterval(savedRefresh, refreshChoice);
+  const shownRefresh = shownInterval(editMode, savedRefresh, refreshChoice);
   const [countdown, setCountdown] = useState(0);
   const [configuringWidget, setConfiguringWidget] = useState<WidgetDef | null>(null);
   const [addingWidget, setAddingWidget] = useState(false);
@@ -379,7 +385,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   }
 
   // Save layout + config to API
-  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue) {
+  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = savedInterval(savedRefresh, refreshChoice), updatedName = titleValue) {
     setSaving(true);
     try {
       const res = await fetch(`/api/dashboards/${dashboard.id}`, {
@@ -396,6 +402,10 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
         const d = await res.json() as Dashboard;
         setDashboard(d);
         setDirty(false);
+        setRefreshChoice(choice => ({ ...choice, draft: null }));
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to save the dashboard.');
       }
     } finally { setSaving(false); }
   }
@@ -462,9 +472,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
     }
   }
 
+  // Sends no request: in edit mode the pick waits for Save, outside it applies to this page only.
   function handleRefreshChange(val: number) {
-    setAutoRefresh(val);
-    save(widgets, val, titleValue);
+    const picked = pickInterval(editMode, refreshChoice, val);
+    setRefreshChoice(picked.choice);
+    if (picked.layoutChanged) setDirty(true);
   }
 
   const layout: RGLLayout[] = widgets.map(w => ({
@@ -521,7 +533,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
             render={
               <Button variant="outline" size="sm" className="gap-1.5">
                 <RefreshCw className="size-3.5" />
-                {autoRefresh === 0 ? 'Off' : REFRESH_OPTIONS.find(o => o.value === autoRefresh)?.label ?? `${autoRefresh}s`}
+                {shownRefresh === 0 ? 'Off' : REFRESH_OPTIONS.find(o => o.value === shownRefresh)?.label ?? `${shownRefresh}s`}
                 <ChevronDown className="size-3" />
               </Button>
             }
@@ -531,7 +543,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
               <DropdownMenuItem
                 key={o.value}
                 onClick={() => handleRefreshChange(o.value)}
-                className={cn(autoRefresh === o.value && 'font-semibold')}
+                className={cn(shownRefresh === o.value && 'font-semibold')}
               >
                 {o.label}
               </DropdownMenuItem>
@@ -547,7 +559,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
         {/* Edit mode toggle */}
         {editMode ? (
           <>
-            <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); setRefreshChoice(choice => ({ ...choice, draft: null })); }}>
               Cancel
             </Button>
             <Button size="sm" className="gap-1.5" onClick={() => { save(); setEditMode(false); }} disabled={saving}>
