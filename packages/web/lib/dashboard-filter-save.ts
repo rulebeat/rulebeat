@@ -28,6 +28,17 @@ export function configForSave(
     : config;
 }
 
+/**
+ * The filter bar a save carries: the page's filters when the save is the Save of edit mode, and nothing for any other
+ * save ("Save changes" after a widget Configure, or after an edit-mode Save that failed). What a person explored on
+ * their own page is then not stored for everyone.
+ */
+export function filterBarForSave(
+  inEditMode: boolean, filters: NonNullable<DashboardConfig['filters']>, dateWindow: DateWindow,
+): { filters?: NonNullable<DashboardConfig['filters']>; dateWindow?: DateWindow } {
+  return inEditMode ? { filters, dateWindow } : {};
+}
+
 /** A rename names the revision of the copy the page holds, so a rename from a copy that has moved on is refused. */
 export function renameBody(dashboard: Pick<HeldBackDashboard, 'revision'>, name: string): { name: string; revision: number } {
   return { name, revision: dashboard.revision };

@@ -4,7 +4,7 @@
  * sends nothing, for its owner too: stored filters change only through Save in edit mode.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, renameBody } from '@/lib/dashboard-filter-save';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody } from '@/lib/dashboard-filter-save';
 import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import type { HeldBackDashboard } from '@/lib/types';
 
@@ -96,6 +96,20 @@ describe('the config a save in edit mode sends', () => {
     expect(config.filters).toEqual({ subscriptions: ['stored-sub'] });
     expect(config.dateWindow).toEqual(WINDOW);
     expect(config.autoRefresh).toBe(60);
+  });
+
+  it('keeps the stored filter bar of a Shared dashboard when "Save changes" is pressed outside edit mode, such as after a widget Configure', () => {
+    const stored = dashboard({ visibility: 'shared', config: { widgets: [], filters: { subscriptions: ['stored-sub'] }, dateWindow: WINDOW } });
+    const config = configForSave(stored, { widgets: [], autoRefresh: 0, ...filterBarForSave(false, FILTERS, { mode: 'relative', days: 1 }) });
+    expect(config.filters).toEqual({ subscriptions: ['stored-sub'] });
+    expect(config.dateWindow).toEqual(WINDOW);
+  });
+
+  it('stores the filter bar of a Shared dashboard when the save is made in edit mode', () => {
+    const stored = dashboard({ visibility: 'shared', config: { widgets: [], filters: { subscriptions: ['stored-sub'] }, dateWindow: WINDOW } });
+    const config = configForSave(stored, { widgets: [], autoRefresh: 0, ...filterBarForSave(true, FILTERS, { mode: 'relative', days: 1 }) });
+    expect(config.filters).toEqual(FILTERS);
+    expect(config.dateWindow).toEqual({ mode: 'relative', days: 1 });
   });
 
   it('leaves the stored filter bar of a Personal dashboard to its own auto-save', () => {

@@ -57,6 +57,7 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import { fetchCurrentSavedView } from '@/lib/saved-view-actions';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { valuesWithoutPlaceholder, type HeldBack } from '@/lib/held-back';
@@ -801,6 +802,30 @@ export function FindingsExplorerClient({
   // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
   const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
 
+  // The reload notice opens the view as the server holds it now. Reloading the address would bring back the query of
+  // the copy this page was opened from, and the next Update would be based on the newest revision with the old filters.
+  const reloadStaleView = useCallback(async () => {
+    if (!openViewId) return;
+    const current = await fetchCurrentSavedView(openViewId);
+    if (current.ok) {
+      setViewStale(null);
+      savedViews?.onOpen(current.view);
+    } else if (current.gone) {
+      setViewStale('This saved view no longer exists.');
+      setOpenViewId(null);
+    } else {
+      setViewStale('The saved view could not be reloaded. Try again.');
+    }
+  }, [openViewId, savedViews, setOpenViewId]);
+  const staleNotice = viewStale && (
+    <Callout tone="warn" className="mt-2.5">
+      <span>{viewStale}</span>
+      {openViewId && (
+        <>{' '}<button type="button" className="font-medium underline" onClick={() => void reloadStaleView()}>Reload</button></>
+      )}
+    </Callout>
+  );
+
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
   const savedViewQuery = useMemo(
@@ -858,9 +883,11 @@ export function FindingsExplorerClient({
               onOpen={savedViews.onOpen}
               currentQuery={savedViewQuery}
               appliedView={savedViews.appliedView}
+              onStale={setViewStale}
             />
           </div>
         )}
+        {mode === 'page' && savedViews && staleNotice}
         <NoAccessState />
       </>
     );
@@ -1375,12 +1402,7 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
-      {viewStale && (
-        <Callout tone="warn" className="mt-2.5">
-          <span>{viewStale}</span>{' '}
-          <button type="button" className="font-medium underline" onClick={() => window.location.reload()}>Reload</button>
-        </Callout>
-      )}
+      {staleNotice}
       <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (

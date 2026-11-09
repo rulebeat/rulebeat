@@ -89,6 +89,11 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setBase(open);
   }, [open, base]);
+  // Opening a copy from outside the menu (the reload notice) moves the base to it, even when the view is the same one.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (appliedView && appliedView.id === openId) setBase(appliedView);
+  }, [appliedView, openId]);
   const baseCopy = base !== null && base.id === openId ? base : null;
 
   const openHeldBack = open?.heldBack;

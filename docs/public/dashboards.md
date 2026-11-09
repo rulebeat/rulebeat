@@ -51,13 +51,13 @@ On your own **Personal** dashboard, a filter change is saved as you make it (aft
 dashboard stays as you left it. On a **Shared** dashboard a filter change applies to your page only, for
 everyone including the owner, and a line on the page says filter changes are not saved. The stored filters
 of a Shared dashboard change only through **Save** in edit mode, which stores the filter bar as it is on
-your page. Changing auto-refresh, or renaming the dashboard, never stores the filters on your page. Filters typed into the address on Scans and not saved behave as before.
+your page. Changing auto-refresh, renaming the dashboard, or **Save changes** after configuring a widget outside edit mode, never stores the filters on your page. Filters typed into the address on Scans and not saved behave as before.
 
 Every save of a dashboard, and of a saved view, carries the revision of the copy you opened. If someone
 else changed the item since, the save is refused with "changed while you were editing it. Reload it and try
 again." and the page shows a reload notice; nothing of theirs is overwritten. For a saved view on Scans the
 copy you opened is the one the page shows: opening the Views menu, which reads the list again, does not move it
-forward, so a change someone made after you opened the view is still refused and the page offers a reload. Values stored on the item that
+forward, so a change someone made after you opened the view is still refused and the page offers a reload. Reload opens the view as it is now, with its current filters, rather than refreshing the address you opened it from. Values stored on the item that
 are outside your Access are put back from the current item on every save, so saving never drops them, and a
 widget keeps them when its type or fields change.
 

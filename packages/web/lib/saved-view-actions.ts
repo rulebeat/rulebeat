@@ -49,6 +49,24 @@ export async function requestSavedViewChange(
   }
 }
 
+/**
+ * Reads one view as the server holds it now. The reload notice after a stale save opens this copy: reloading the
+ * address would bring back the query of the old copy, with the newest revision to save it over.
+ */
+export async function fetchCurrentSavedView(
+  id: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; view: HeldBackSavedView } | { ok: false; gone: boolean }> {
+  try {
+    const res = await fetchImpl(`/api/views/${encodeURIComponent(id)}`);
+    if (res.redirected) return { ok: false, gone: false };
+    if (res.ok) return { ok: true, view: await res.json() as HeldBackSavedView };
+    return { ok: false, gone: res.status === 404 };
+  } catch {
+    return { ok: false, gone: false };
+  }
+}
+
 /** A view stored in the list: replaces the one with its id, or is added when there is none. */
 export function upsertSavedView(views: HeldBackSavedView[], view: HeldBackSavedView): HeldBackSavedView[] {
   return views.some(v => v.id === view.id) ? views.map(v => (v.id === view.id ? view : v)) : [...views, view];

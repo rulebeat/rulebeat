@@ -364,6 +364,24 @@ describe('saving an item back from the trimmed copy', () => {
     expect(stored.widgets[0]!.config.subscriptions).toEqual([SUB_TWO]);
   });
 
+  it('keeps a widget\'s held-back values when the person changes its type and another field of its config', async () => {
+    const own = await createDashboard({ name: 'Type change dashboard', config: CONFIG }, editor);
+    if (!own.ok) throw new Error(own.reason);
+    await share('dashboards', own.dashboard.id);
+    asEditor();
+    const received = await (await READ_DASHBOARD(new Request('http://localhost/api/dashboards/x'), ctx(own.dashboard.id))).json() as { config: typeof CONFIG; revision: number };
+    expect(received.config.widgets[0]!.config.subscriptions).toEqual([]);
+    const changed = {
+      ...received.config,
+      widgets: received.config.widgets.map(w => ({ ...w, type: 'top-rules' as const, title: 'Renamed', config: { ...w.config, limit: 5 } })),
+    };
+    const res = await putDashboard(own.dashboard.id, { config: changed, revision: received.revision, opened: received.config });
+    expect(res.status).toBe(200);
+    const [widget] = (await getDashboard(own.dashboard.id))!.config.widgets;
+    expect(widget).toMatchObject({ id: 'own-widget', type: 'top-rules', title: 'Renamed' });
+    expect(widget!.config).toEqual({ subscriptions: [SUB_TWO], limit: 5 });
+  });
+
   it('keeps held-back dashboard values when the person clears what they can see', async () => {
     const saved = await saveDashboard({ ...CONFIG, filters: { subscriptions: [], resourceGroups: [] }, widgets: [] });
     expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([SUB_TWO]);

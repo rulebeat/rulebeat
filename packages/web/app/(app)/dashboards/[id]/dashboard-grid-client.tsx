@@ -39,7 +39,7 @@ import { cn } from '@/lib/utils';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, renameBody } from '@/lib/dashboard-filter-save';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody } from '@/lib/dashboard-filter-save';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -366,7 +366,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   }
 
   // Save layout + config to API
-  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, withFilters = true) {
+  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, inEditMode = false) {
     setSaving(true);
     try {
       const res = await fetch(`/api/dashboards/${dashboard.id}`, {
@@ -377,7 +377,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
           // A Personal dashboard's filter bar saves on its own (see the debounced effect above), so this save
           // must not clobber it. A Shared dashboard stores its filter bar only here.
           config: configForSave(dashboard, {
-            widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...(withFilters && { filters: dashFilters, dateWindow }),
+            widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...filterBarForSave(inEditMode, dashFilters, dateWindow),
           }),
           revision: dashboard.revision,
           opened: dashboard.config,
@@ -481,7 +481,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   function handleRefreshChange(val: number) {
     setAutoRefresh(val);
     // Not a Save in edit mode: the filters explored on this page are not stored.
-    save(widgets, val, titleValue, false);
+    save(widgets, val, titleValue);
   }
 
   const actor = { id: currentUserId };
@@ -572,7 +572,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
             <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); }}>
               Cancel
             </Button>
-            <Button size="sm" className="gap-1.5" onClick={() => { save(); setEditMode(false); }} disabled={saving}>
+            <Button size="sm" className="gap-1.5" onClick={() => { save(widgets, autoRefresh, titleValue, true); setEditMode(false); }} disabled={saving}>
               <Save className="size-3.5" />
               {saving ? 'Saving…' : 'Save'}
             </Button>

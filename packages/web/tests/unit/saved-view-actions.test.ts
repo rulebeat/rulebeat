@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { baseCopyAfterVisibilityChange, requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
+import { baseCopyAfterVisibilityChange, fetchCurrentSavedView, requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
 import { STALE_VIEW_MESSAGE } from '@/lib/held-back';
 import type { HeldBackSavedView } from '@/lib/saved-view-query';
 
@@ -104,5 +104,24 @@ describe('baseCopyAfterVisibilityChange', () => {
 
   it('keeps the old base when someone else changed the view too, so the next save is refused as stale', () => {
     expect(baseCopyAfterVisibilityChange(base, { visibility: 'personal', revision: 6 })).toBe(base);
+  });
+});
+
+describe('fetchCurrentSavedView', () => {
+  it('reads the view as the server holds it now, so a reload can open that copy and not the one the address names', async () => {
+    const fetchImpl = fake(200, { ...view('v1', 'A'), revision: 9, query: 'q=newest' });
+    const outcome = await fetchCurrentSavedView('v 1', fetchImpl);
+    expect(outcome).toEqual({ ok: true, view: expect.objectContaining({ revision: 9, query: 'q=newest' }) });
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v%201');
+  });
+
+  it('says the view is gone when the server does not open it', async () => {
+    expect(await fetchCurrentSavedView('v1', fake(404, { error: 'Not found' }))).toEqual({ ok: false, gone: true });
+  });
+
+  it('says it could not be read, and not that it is gone, on any other failure', async () => {
+    expect(await fetchCurrentSavedView('v1', fake(500, { error: 'boom' }))).toEqual({ ok: false, gone: false });
+    expect(await fetchCurrentSavedView('v1', vi.fn(async () => { throw new Error('offline'); }))).toEqual({ ok: false, gone: false });
+    expect(await fetchCurrentSavedView('v1', fake(200, view('v1', 'A'), { redirected: true }))).toEqual({ ok: false, gone: false });
   });
 });
