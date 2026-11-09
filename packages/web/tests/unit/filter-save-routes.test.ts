@@ -12,6 +12,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { execRaw, resetDb } from '../helpers/db';
 import { SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SUB_ONE, SUB_TWO } from '../helpers/access-matrix';
+import { db } from '@/lib/db/client';
+import { many } from '@/lib/db/exec';
+import { scopeSets } from '@/lib/db/tables';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { createDashboard, getDashboard } from '@/lib/db/dashboards';
@@ -121,6 +124,37 @@ describe('saving a dashboard', () => {
     expect(stored.dateWindow).toEqual({ mode: 'relative', days: 30 });
     expect(stored.windowDays).toBeUndefined();
     expect(stored.convertedFrom).toEqual({ filters: stored.filters, dateWindow: stored.dateWindow });
+  });
+
+  it('stores a filter bar list over the inline budget as a Scope set, never a refusal', async () => {
+    await signInAsEditor();
+    const subs = Array.from({ length: 40 }, (_, n) => `30000000-0000-0000-0000-${String(n).padStart(12, '0')}`);
+    const wide = await dashboardWith({});
+    const paired = await dashboardWith({});
+
+    const bySubscription = await putDashboard(wide, { config: { widgets: WIDGETS, filters: { subscriptions: subs } } });
+    const byGroup = await putDashboard(paired, { config: { widgets: WIDGETS, filters: { subscriptions: subs, resourceGroups: ['rg-wide'] } } });
+
+    expect(bySubscription.status).toBe(200);
+    expect(byGroup.status).toBe(200);
+    const widePicks = (await getDashboard(wide))!.config.dimensionFilters!;
+    expect(widePicks.scope).toBeUndefined();
+    const expandedWide = await expandScopeSet(widePicks.scopeSet!);
+    expect(expandedWide).toEqual({ status: 'resolved', paths: subs.map(s => `/subscriptions/${s}`) });
+    const expandedPaired = await expandScopeSet((await getDashboard(paired))!.config.dimensionFilters!.scopeSet!);
+    expect(expandedPaired).toEqual({ status: 'resolved', paths: subs.map(s => `/subscriptions/${s}/resourceGroups/rg-wide`) });
+  });
+
+  it('holds a long filter bar list to the Scopes the person holds, and creates no set for a refused list', async () => {
+    const subs = Array.from({ length: 40 }, (_, n) => `30000000-0000-0000-0000-${String(n).padStart(12, '0')}`);
+    const sent: DashboardConfig = { widgets: WIDGETS, filters: { subscriptions: subs } };
+
+    const refused = await prepareDashboardConfig(holding(SCOPE_SUBSCRIPTION), sent, null);
+    const allowed = await prepareDashboardConfig(EVERYTHING, sent, null);
+
+    expect(refused).toEqual({ ok: false, error: NOT_HELD });
+    expect(allowed.ok).toBe(true);
+    expect(await many(db.select().from(scopeSets))).toHaveLength(1);
   });
 
   it('stores a cleared filter bar as no filters', async () => {
@@ -250,6 +284,21 @@ describe('saving a view', () => {
     expect(res.status).toBe(201);
     expect(stored.has('scope')).toBe(false);
     expect(stored.get('scopeset')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('stores a query near the limit with a short Scope list as a Scope set instead of refusing it', async () => {
+    await signInAsEditor();
+    for (let n = 0; n < 15; n++) await seedPair(`30000000-0000-0000-0000-${String(n).padStart(12, '0')}`, 'a');
+    const query = `q=${'x'.repeat(2900)}&rg=a`;
+
+    const res = await postView({ name: 'Near the limit', tab: 'results', query });
+
+    expect(res.status).toBe(201);
+    const stored = new URLSearchParams((await res.json()).query);
+    expect(stored.get('q')).toBe('x'.repeat(2900));
+    expect(stored.has('scope')).toBe(false);
+    const expanded = await expandScopeSet(stored.get('scopeset')!);
+    expect(expanded.status === 'resolved' && expanded.paths).toHaveLength(15);
   });
 
   it('refuses a Scope it adds that the person does not hold', async () => {

@@ -42,6 +42,13 @@ async function checkAdded(
   const unchangedSet = sent.scopeSet !== undefined && sent.scopeSet.toLowerCase() === stored.scopeSet?.toLowerCase();
   const sentPaths = await pathsOf(sent.scope, unchangedSet ? undefined : sent.scopeSet);
   if (sentPaths === null) return UNKNOWN_SET_ERROR;
+  return checkAddedPaths(access, sentPaths, stored);
+}
+
+/** Whether `access` may add `sentPaths`, leaving out those `stored` already held. */
+async function checkAddedPaths(
+  access: Access, sentPaths: readonly string[], stored: { scope?: readonly string[]; scopeSet?: string },
+): Promise<string | null> {
   if (sentPaths.length === 0) return null;
   const storedPaths = await pathsOf(stored.scope, stored.scopeSet) ?? [];
   return pathsOutsideAccess(access, sentPaths, storedPaths).length > 0 ? OUTSIDE_ACCESS_ERROR : null;
@@ -116,7 +123,10 @@ async function convertBarLists(
   Object.assign(config, lists, { convertedFrom: lists });
   const converted = convertDashboardConfig({ widgets: [], ...lists }, await readRecordedPairs(access));
   const dimensions = converted?.config.dimensionFilters ?? {};
-  const refused = await checkAdded(access, dimensions, stored?.dimensionFilters ?? {});
+  // The set is not stored yet, so the held check reads the paths the conversion made, not the hash. A refused
+  // list leaves no row behind.
+  const added = [...(dimensions.scope ?? []), ...(converted?.set?.paths ?? [])].filter(p => !isUnresolvedPick(p));
+  const refused = await checkAddedPaths(access, added, stored?.dimensionFilters ?? {});
   if (refused) return { ok: false, error: refused };
   if (converted?.set) await createScopeSet(converted.set.paths, { unresolved: true });
   config.dimensionFilters = dimensions;

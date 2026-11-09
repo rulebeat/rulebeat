@@ -42,6 +42,37 @@ describe('convertSavedViewQuery near the length limit', () => {
     expect(params.has('scopeset')).toBe(true);
   });
 
+  it('writes a short Scope list as a Scope set when the inline list would pass the limit', () => {
+    const pairs = indexPairs(Array.from({ length: 15 }, (_, n) => ({ subscription_id: sub(n), resource_group: 'a' })));
+    const query = `q=${'x'.repeat(2900)}&rg=a`;
+    expect(query.length).toBe(2907);
+
+    const converted = convertSavedViewQuery(query, pairs);
+    const saved = convertSavedViewQuery(query, pairs, false);
+
+    for (const result of [converted, saved]) {
+      if (result === null || result === 'too-long') throw new Error('expected a conversion');
+      expect(result.query.length).toBeLessThanOrEqual(MAX_SAVED_VIEW_QUERY_LENGTH);
+      const params = new URLSearchParams(result.query);
+      expect(params.has('scope')).toBe(false);
+      expect(params.get('scopeset')).toBe(result.set!.hash);
+      expect(result.set!.paths).toHaveLength(15);
+    }
+    const plan = planFilterConversion({ dashboards: [], savedViews: [{ id: 'v', query }], pairs: Array.from({ length: 15 }, (_, n) => ({ subscription_id: sub(n), resource_group: 'a' })), now: NOW });
+    expect(plan.skipped).toEqual([]);
+    expect(plan.statements).toHaveLength(2);
+  });
+
+  it('keeps a short Scope list inline when the query fits with it', () => {
+    const pairs = indexPairs(Array.from({ length: 3 }, (_, n) => ({ subscription_id: sub(n), resource_group: 'a' })));
+
+    const converted = convertSavedViewQuery('severity=high&rg=a', pairs);
+
+    if (converted === null || converted === 'too-long') throw new Error('expected a conversion');
+    expect(converted.set).toBeUndefined();
+    expect(new URLSearchParams(converted.query).get('scope')).toHaveLength(3 * 68 + 2);
+  });
+
   it('leaves a query alone, and says so, when no form of it fits', () => {
     const query = `q=${'x'.repeat(3990)}&subscription=${sub(1)}`;
 

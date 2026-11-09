@@ -126,10 +126,7 @@ function scopeValue(resolved: { paths: string[]; unresolved: string[] }, unresol
   const all = [...resolved.paths, ...resolved.unresolved];
   if (all.length === 0) return {};
   if (all.join(',').length <= SCOPE_INLINE_BUDGET) return { scope: all };
-  if (unresolvedInSet) {
-    const hash = scopeSetHash(all);
-    return { scopeSet: hash, set: { hash, paths: all } };
-  }
+  if (unresolvedInSet) return setOf(all);
   if (resolved.paths.length === 0) return { scope: all };
   const hash = scopeSetHash(resolved.paths);
   return {
@@ -137,6 +134,12 @@ function scopeValue(resolved: { paths: string[]; unresolved: string[] }, unresol
     scopeSet: hash,
     set: { hash, paths: resolved.paths },
   };
+}
+
+/** The picks stored as a set, the form a saved view falls back to when the inline list would not fit its limit. */
+function setOf(paths: string[]): ScopeValue {
+  const hash = scopeSetHash(paths);
+  return { scopeSet: hash, set: { hash, paths } };
 }
 
 function setStatement(set: { hash: string; paths: string[] }, now: string): ConversionStatement {
@@ -201,18 +204,28 @@ export function convertDashboardConfig(
 // ---- Saved views ----
 
 /** `query` with the picks added as `scope=` or `scopeset=`, or null when no form of it fits the limit. The legacy
- *  `subscription=` and `rg=` stay in the first form, for a rollback; only a query that cannot fit with them loses them.
- *  A saved view holds a set or an inline list, not both, so a set holds the unresolved picks too (`scopeValue`). */
-function withScope(query: string, value: ScopeValue, keepLegacy: boolean): { query: string; set?: { hash: string; paths: string[] } } | null {
-  const added = value.set
-    ? new URLSearchParams({ scopeset: value.set.hash })
-    : new URLSearchParams({ scope: (value.scope ?? []).map(esc).join(',') });
+ *  `subscription=` and `rg=` stay in the first forms, for a rollback; only a query that cannot fit with them loses them.
+ *  A list that fits `SCOPE_INLINE_BUDGET` is written inline, but as a set when the whole query would pass the limit with
+ *  it. A saved view holds a set or an inline list, not both, so a set holds the unresolved picks too (`scopeValue`). */
+function withScope(
+  query: string, resolved: { paths: string[]; unresolved: string[] }, keepLegacy: boolean,
+): { query: string; set?: { hash: string; paths: string[] } } | null {
+  const preferred = scopeValue(resolved, true);
+  const values = preferred.set ? [preferred] : [preferred, setOf([...resolved.paths, ...resolved.unresolved])];
   const bare = new URLSearchParams(query);
   bare.delete('subscription');
   bare.delete('rg');
-  const join = (base: string) => (base === '' ? added.toString() : `${base}&${added}`);
-  const fitting = (keepLegacy ? [join(query), join(bare.toString())] : [join(bare.toString())]).find(q => q.length <= MAX_SAVED_VIEW_QUERY_LENGTH);
-  return fitting === undefined ? null : { query: fitting, set: value.set };
+  const bases = keepLegacy ? [query, bare.toString()] : [bare.toString()];
+  for (const base of bases) {
+    for (const value of values) {
+      const added = value.set
+        ? new URLSearchParams({ scopeset: value.set.hash })
+        : new URLSearchParams({ scope: (value.scope ?? []).map(esc).join(',') });
+      const joined = base === '' ? added.toString() : `${base}&${added}`;
+      if (joined.length <= MAX_SAVED_VIEW_QUERY_LENGTH) return { query: joined, set: value.set };
+    }
+  }
+  return null;
 }
 
 /**
@@ -229,8 +242,7 @@ export function convertSavedViewQuery(
   const subscriptions = filterValues(view.filters, 'subscription');
   const resourceGroups = filterValues(view.filters, 'resourceGroup');
   if (subscriptions.length === 0 && resourceGroups.length === 0) return null;
-  const value = scopeValue(resolveLegacyScope(subscriptions, resourceGroups, pairs), true);
-  return withScope(query, value, keepLegacy) ?? 'too-long';
+  return withScope(query, resolveLegacyScope(subscriptions, resourceGroups, pairs), keepLegacy) ?? 'too-long';
 }
 
 // ---- The plan ----
