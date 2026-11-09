@@ -6,7 +6,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DashboardFilterBar, OUTSIDE_ROW, dimensionControl, overrideNote, replaceChanges } from '@/components/dashboard/dashboard-filter-bar';
+import { DashboardFilterBar, OUTSIDE_ROW, SaveRegion, afterSave, dimensionControl, overrideNote, replaceChanges } from '@/components/dashboard/dashboard-filter-bar';
 import { ChecklistPanel } from '@/components/ui/checklist-dropdown';
 import { buildBarState, UNTICK_LAST_REASON } from '@/lib/dashboard-bar';
 import { dashboardAddress } from '@/lib/finding-view';
@@ -42,9 +42,11 @@ function barFor(access: Access, address: string, widgets: { config: Record<strin
   return { ...built, changes };
 }
 
+const SAVE_ALLOWED = { allowed: true, run: vi.fn(), duplicate: vi.fn() };
+
 const html = (access: Access, address: string, widgets: { config: Record<string, unknown> }[] = []) => {
   const { state, marks } = barFor(access, address, widgets);
-  return renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved: SAVED, marks }));
+  return renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved: SAVED, marks, save: SAVE_ALLOWED }));
 };
 
 describe('the Subscription checklist for L', () => {
@@ -176,7 +178,7 @@ describe('the Saved line for a rule that was deleted', () => {
       revision: 1, saved, changes, access: EVERYTHING_ACCESS, widgets: [],
       known: { rule: new Set(['rule-1']) },
     });
-    const bar = renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved, marks }));
+    const bar = renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved, marks, save: SAVE_ALLOWED }));
     expect(bar).toContain('Saved: A rule that no longer exists');
     expect(bar).not.toContain('rule-9');
   });
@@ -197,5 +199,86 @@ describe('an effective value the option list does not offer', () => {
     expect(control.count).toBe(1);
     control.onToggle('rule-1');
     expect(replace).toHaveBeenCalledWith({ rule: [] });
+  });
+});
+
+const SAVE = "Save as this dashboard's filters";
+
+describe('Save as this dashboard\'s filters in the bar', () => {
+  const buttonWith = (markup: string, label: string): string =>
+    markup.match(new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`, 's'))?.[0] ?? '';
+  const isDisabled = (button: string): boolean => /\sdisabled(=|\s|>)/.test(button);
+  const render = (address: string, save: { allowed: boolean; reason?: string }) => {
+    const { state, marks } = barFor(EVERYTHING_ACCESS, address);
+    return renderToStaticMarkup(createElement(DashboardFilterBar, { state, saved: SAVED, marks, save: { ...SAVE_ALLOWED, ...save } }));
+  };
+
+  it('is not shown while the address holds no changes', () => {
+    expect(render('', { allowed: true })).not.toContain(SAVE);
+  });
+
+  it('is shown and on while changes exist and the person may edit', () => {
+    const button = buttonWith(render('severity=high', { allowed: true }), SAVE.replace("'", '&#x27;'));
+    expect(button).not.toBe('');
+    expect(isDisabled(button)).toBe(false);
+  });
+
+  it('is off with the reason in view, and Duplicate offered, for someone who may not edit', () => {
+    const markup = render('severity=high', { allowed: false, reason: 'Changing a dashboard needs the Editor Role.' });
+    expect(isDisabled(buttonWith(markup, SAVE.replace("'", '&#x27;')))).toBe(true);
+    expect(markup).toContain('Changing a dashboard needs the Editor Role.');
+    expect(buttonWith(markup, 'Duplicate')).not.toBe('');
+  });
+
+  it('does not offer Duplicate beside a save that is on', () => {
+    expect(buttonWith(render('severity=high', { allowed: true }), 'Duplicate')).toBe('');
+  });
+});
+
+describe('the answer to a save', () => {
+  it('clears the changes from the address when it was saved', () => {
+    const replace = vi.fn();
+    expect(afterSave({ kind: 'saved', revision: 5, bar: {} as never, dashboard: {} as never }, replace)).toBeNull();
+    expect(replace).toHaveBeenCalledWith({});
+  });
+
+  it('keeps the address and shows a refusal with how many values to remove', () => {
+    const replace = vi.fn();
+    expect(afterSave({ kind: 'refused', message: 'Remove them.', outside: 1 }, replace)).toEqual({ message: 'Remove them.', outside: 1 });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('keeps the address and shows why a save failed', () => {
+    const replace = vi.fn();
+    expect(afterSave({ kind: 'failed', message: 'Nope.' }, replace)).toEqual({ message: 'Nope.' });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('leaves a conflict to the page, which reloads the bar and says who changed it', () => {
+    const replace = vi.fn();
+    expect(afterSave({ kind: 'conflict', revision: 9, message: 'Changed.' }, replace)).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('a refused save for L, whose address names A', () => {
+  const region = (outside: number | undefined) => renderToStaticMarkup(createElement(SaveRegion, {
+    changed: true, allowed: true, saving: false, refusal: { message: 'Your changes include values outside your access.', outside },
+    onSave: () => undefined, onRemoveOutside: () => undefined, onDuplicate: () => undefined,
+  }));
+
+  it('offers to remove the values outside L\'s access, counted and never named', () => {
+    const markup = region(1);
+    expect(markup).toContain('Remove 1 value outside your access');
+    expect(markup).toContain('Your changes include values outside your access.');
+    expect(markup).not.toContain(SUB_A);
+  });
+
+  it('counts more than one', () => {
+    expect(region(2)).toContain('Remove 2 values outside your access');
+  });
+
+  it('offers nothing to remove when the refusal is not about access', () => {
+    expect(region(undefined)).not.toContain('Remove');
   });
 });

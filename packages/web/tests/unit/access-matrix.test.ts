@@ -721,10 +721,30 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
+  // Saving the dashboard's filters is install-wide like the rest of the dashboard writes: the Admin and the
+  // Editor on Everything save, and everyone who holds less is refused the same way, with the reason.
+  const saveFilters: Matrix = {
+    probe: async seed => {
+      const { getDashboard } = await import('@/lib/db/dashboards');
+      const route = await import('@/app/api/dashboards/[id]/filters/route');
+      const body = JSON.stringify({ revision: (await getDashboard(seed.dashboardId))!.revision, changes: { severity: ['low'] } });
+      const res = await route.PUT(
+        new Request('http://localhost/api/dashboards/x/filters', { method: 'PUT', body, headers: { 'Content-Type': 'application/json' } }),
+        { params: Promise.resolve({ id: seed.dashboardId }) },
+      );
+      return { status: res.status, saved: res.status === 200 };
+    },
+    expected: byPerson(
+      same({ status: 200, saved: true }),
+      same({ status: 403, saved: false }), same({ status: 403, saved: false }), same({ status: 403, saved: false }),
+      same({ status: 403, saved: false }), same({ status: 403, saved: false }),
+    ),
+  };
+
   return {
     'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
     'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
-    'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
+    'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'dashboards/[id]/filters': saveFilters, 'views': views, 'views/[id]': viewById,
   };
 }
 

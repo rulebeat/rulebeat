@@ -3,15 +3,17 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Link2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ChecklistDropdown, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { SEVERITY_LABEL } from '@/components/dashboard/dashboard-constants';
 import {
-  ANY_WIDENS_REASON, BAR_LIST_DIMENSIONS, backToSaved, pickAny, toggleValue, vanishedText,
+  ANY_WIDENS_REASON, BAR_LIST_DIMENSIONS, backToSaved, pickAny, removeOutsideValues, toggleValue, vanishedText,
   type BarDimension, type BarLayers, type BarListDimension, type DashboardBarState,
 } from '@/lib/dashboard-bar';
 import { dashboardAddress, type DashboardFilterChanges, type DashboardFilters } from '@/lib/finding-view';
 import { dateWindowLabel } from '@/lib/date-window';
+import type { SaveOutcome } from '@/lib/dashboard-filter-save-client';
 import { useSubscriptionNames } from '@/lib/hooks/use-subscription-names';
 import type { OutsideAccess } from '@/lib/outside-access';
 import type { FilterOptionsResponse } from '@/lib/types';
@@ -120,6 +122,74 @@ export function replaceChanges(
   router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
 }
 
+const SAVE_LABEL = "Save as this dashboard's filters";
+
+/** Why a save did not go through, as the bar shows it. `outside` is how many values outside the person's Access to remove. */
+export interface SaveRefusal {
+  message: string;
+  outside?: number;
+}
+
+/**
+ * What a save's answer does to the bar. A saved answer clears the changes from the address, since the
+ * dashboard now holds them. A refusal or a failure keeps the address and says why. A conflict is the
+ * page's to show: it reloads the bar and names the change, and the address stays as it is.
+ */
+export function afterSave(outcome: SaveOutcome, replace: (changes: DashboardFilterChanges) => void): SaveRefusal | null {
+  switch (outcome.kind) {
+    case 'saved':
+      replace({});
+      return null;
+    case 'refused':
+      return { message: outcome.message, ...(outcome.outside !== undefined && { outside: outcome.outside }) };
+    case 'failed':
+      return { message: outcome.message };
+    case 'conflict':
+      return null;
+  }
+}
+
+export function removeOutsideLabel(count: number): string {
+  return `Remove ${count} ${count === 1 ? 'value' : 'values'} outside your access`;
+}
+
+/** The save action, off with its reason and Duplicate beside it for someone who may not edit, and the refusal when one came back. */
+export function SaveRegion({ changed, allowed, reason, saving, refusal, onSave, onRemoveOutside, onDuplicate }: {
+  changed: boolean;
+  allowed: boolean;
+  reason?: string;
+  saving: boolean;
+  refusal: SaveRefusal | null;
+  onSave: () => void;
+  onRemoveOutside: () => void;
+  onDuplicate: () => void;
+}) {
+  if (!changed) return null;
+  return (
+    <>
+      <Button size="sm" onClick={onSave} disabled={!allowed || saving} title={allowed ? undefined : reason}>
+        {saving ? 'Saving…' : SAVE_LABEL}
+      </Button>
+      {!allowed && (
+        <>
+          {reason && <span>{reason}</span>}
+          <Button size="sm" variant="outline" onClick={onDuplicate}>Duplicate</Button>
+        </>
+      )}
+      {refusal && (
+        <span role="alert" className="flex flex-wrap items-center gap-2 font-medium text-ink">
+          {refusal.message}
+          {refusal.outside !== undefined && refusal.outside > 0 && (
+            <button type="button" onClick={onRemoveOutside} className="underline underline-offset-2">
+              {removeOutsideLabel(refusal.outside)}
+            </button>
+          )}
+        </span>
+      )}
+    </>
+  );
+}
+
 interface Props {
   /** The bar for this viewer, computed on the server from the address in the request. */
   state: DashboardBarState;
@@ -127,12 +197,20 @@ interface Props {
   saved: DashboardFilters;
   /** The saved, address and widget values the viewer's Access does not reach. */
   marks: OutsideAccess;
+  /** Saving the changes as the dashboard's filters. `allowed` and `reason` are the server's account of the edit right. */
+  save: {
+    allowed: boolean;
+    reason?: string;
+    /** Sends the changes in the address. The page owns the revision and what a conflict does. */
+    run: (changes: DashboardFilterChanges) => Promise<SaveOutcome>;
+    duplicate: () => void;
+  };
 }
 
 /** The dashboard's filter bar. A pick is written to the address with `router.replace`: nothing is saved
  *  to the dashboard, no history entry is added and leaving the page asks nothing. The page and the
  *  widgets read the same address, so the numbers and the bar change together. */
-export function DashboardFilterBar({ state, saved, marks }: Props) {
+export function DashboardFilterBar({ state, saved, marks, save }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -140,6 +218,8 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
   const [options, setOptions] = useState<FilterOptionsResponse | null>(null);
   const [ruleList, setRuleList] = useState<{ id: string; name: string }[]>([]);
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [refusal, setRefusal] = useState<SaveRefusal | null>(null);
 
   useEffect(() => {
     fetch('/api/widgets/filter-options')
@@ -189,6 +269,16 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
   };
 
   const anyChanged = BAR_LIST_DIMENSIONS.some(d => state.dimensions[d].changed) || state.window.changed;
+
+  async function saveChanges() {
+    setSaving(true);
+    setRefusal(null);
+    try {
+      setRefusal(afterSave(await save.run(changes), replace));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function copyLink() {
     const query = address.write(changes).toString();
@@ -255,6 +345,16 @@ export function DashboardFilterBar({ state, saved, marks }: Props) {
             Reset to saved filters
           </button>
         )}
+        <SaveRegion
+          changed={anyChanged}
+          allowed={save.allowed}
+          reason={save.reason}
+          saving={saving}
+          refusal={refusal}
+          onSave={saveChanges}
+          onRemoveOutside={() => { setRefusal(null); replace(removeOutsideValues(changes, marks)); }}
+          onDuplicate={save.duplicate}
+        />
         <button type="button" onClick={copyLink} className="flex items-center gap-1 font-medium text-ink underline underline-offset-2">
           <Link2 className="size-3.5" aria-hidden="true" />Copy link
         </button>

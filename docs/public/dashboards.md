@@ -57,6 +57,18 @@ dimension is an explicit pick of any value for that dimension; there is no Clear
 **Copy link** copies an address that carries only your changes, so the link keeps following the
 dashboard's saved filters. Each person who opens it sees what their own Access allows ([`access.md`](access.md)).
 
+**Save as this dashboard's filters.** While changes exist, the bar offers **Save as this dashboard's
+filters**. It is the only way the saved filters change: it writes your changes (each changed dimension and the
+date window) as what everyone starts from next, then clears the changes from your address. It leaves the
+layout and every widget's own Scope alone, and it never runs when you save the layout in edit mode. Someone
+who may not edit the dashboard sees it off, with the reason, and **Duplicate** beside it to keep their own
+version. The save is checked against the revision you opened: if someone saved or edited first, nothing is
+overwritten, the bar reloads, your changes stay in the address, and a notice asks you to check them and save
+again. A save is refused when your changes name values outside your Access (the bar then offers **Remove N
+values outside your access**, which takes them out of the address) and when it picks any for a dimension whose
+saved values include some you cannot see. Values you cannot see that the dashboard saved are kept when you save
+a narrower choice, so a colleague with more Access still gets them.
+
 **Counted values.** A value that your Access does not reach is never named to you. It shows as one row,
 "N outside your access", that you cannot tick. It stays in the filter, so your numbers remain the ones your
 Access allows. If a dashboard saved a filter to values you hold only part of, unticking your last visible
@@ -106,6 +118,7 @@ Create a blank dashboard, duplicate one for a per-team variant, rename, delete, 
 Restore starter to recreate the seeded Overview layout. Every dashboard is deletable including the
 default; deleting it promotes the oldest remaining one. Layouts save per dashboard, and a layout save
 never changes the saved filters or the date window. Creating,
-renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
+renaming and deleting is audited, and so is saving the dashboard's filters: one "Saved this dashboard's filters" entry per
+save, naming the dimensions that changed and never their values. The changes in an address are never audited; dragging and resizing is not, since every drag would be an entry
 and would bury real changes. Viewers see every dashboard, editing needs the editor role
 ([`rbac.md`](rbac.md)).

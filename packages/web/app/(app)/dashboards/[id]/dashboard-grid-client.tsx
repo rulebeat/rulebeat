@@ -36,9 +36,10 @@ import type { Dashboard, WidgetDef } from '@/lib/types';
 import {
   widgetHasScopeOverrides, mergeWidgetFilters, savedFiltersOf, applyChanges, widgetFiltersOf, type WidgetFilters,
 } from '@/lib/dashboard-filters';
-import { dashboardAddress } from '@/lib/finding-view';
+import { dashboardAddress, type DashboardFilterChanges } from '@/lib/finding-view';
 import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
 import { incomingDashboard, latestOf, noticeFor, seeRevision } from '@/lib/dashboard-revision';
+import { sendFiltersSave, type SaveOutcome } from '@/lib/dashboard-filter-save-client';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
@@ -355,6 +356,25 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
     setDirty(true);
   }
 
+  // Save the changes in the address as the dashboard's filters. The page sends the revision it holds and
+  // adopts the one the server returns, so its own save is never mistaken for someone else's change. A
+  // layout edit that is open is untouched: it never carries filters, and the revision it holds moves with this.
+  async function saveFilters(changes: DashboardFilterChanges): Promise<SaveOutcome> {
+    const outcome = await sendFiltersSave(dashboard.id, dashboard.revision, changes);
+    if (outcome.kind === 'saved') {
+      setDashboard(prev => latestOf(prev, outcome.dashboard));
+      setShownBar(outcome.bar);
+      setRefreshKey(k => k + 1);
+      setNotice(null);
+    } else if (outcome.kind === 'conflict') {
+      // Nothing was saved. The bar and every number reload from the newer revision, the address stays, and
+      // the notice says to check the changes before saving again.
+      onRevision(outcome.revision);
+      setNotice(outcome.message);
+    }
+    return outcome;
+  }
+
   // Save title rename only
   async function saveTitle(newName: string) {
     const trimmed = newName.trim();
@@ -601,7 +621,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
       </div>
 
       {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
-      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} />
+      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} save={{ allowed: edit.allowed, reason: edit.reason, run: saveFilters, duplicate: handleDuplicate }} />
 
       {/* Edit mode banner */}
       {editMode && (

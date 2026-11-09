@@ -5,6 +5,7 @@ import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from
 import type { Dashboard, DashboardConfig } from '@/lib/types';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
+import type { DateWindow } from '@/lib/date-window';
 
 function rowToDashboard(row: typeof dashboards.$inferSelect): Dashboard {
   return {
@@ -109,6 +110,41 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
       ...(data.name !== undefined && { name: data.name }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.config !== undefined && { config: JSON.stringify(data.config) }),
+      revision: sql`${dashboards.revision} + 1`,
+    }).where(eq(dashboards.id, id)));
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: rowToDashboard(stored!) };
+  });
+}
+
+export type UpdateDashboardFiltersResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'stale'; revision: number };
+
+/** The saved-filter keys of `DashboardConfig.filters` a save can set, by the dimension it names. */
+type SavedFilterKey = keyof NonNullable<DashboardConfig['filters']>;
+
+/**
+ * Writes the saved filters of a dashboard when its revision is still `expectedRevision`, and nothing
+ * else of it: `lists` replaces the named filter keys, `window` the date window, and the layout, widget
+ * overrides and every other key stay as stored. The check and the write share one transaction, so two
+ * saves from the same revision cannot both land.
+ */
+export async function updateDashboardFilters(
+  id: string,
+  expectedRevision: number,
+  change: { lists: Partial<Record<SavedFilterKey, string[]>>; window?: DateWindow },
+): Promise<UpdateDashboardFiltersResult> {
+  return inTransaction(async (tx) => {
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (existing.revision !== expectedRevision) return { ok: false, reason: 'stale', revision: existing.revision };
+    const config = JSON.parse(existing.config) as DashboardConfig;
+    config.filters = { ...config.filters, ...change.lists } as DashboardConfig['filters'];
+    if (change.window) config.dateWindow = change.window;
+    await run(tx.update(dashboards).set({
+      config: JSON.stringify(config),
       revision: sql`${dashboards.revision} + 1`,
     }).where(eq(dashboards.id, id)));
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));

@@ -10,7 +10,7 @@ export type AuditAction =
   | 'suppression.create' | 'suppression.delete'
   | 'schedule.create' | 'schedule.update' | 'schedule.delete' | 'schedule.run'
   | 'category.create' | 'category.update' | 'category.delete'
-  | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate'
+  | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate' | 'dashboard.filters_save'
   | 'view.create' | 'view.rename' | 'view.update' | 'view.delete'
   | 'scan.run'
   | 'user.invite' | 'user.invite_claimed' | 'user.role_change' | 'user.access_change' | 'user.mirror_set' | 'user.mirror_refresh' | 'user.remove' | 'user.default_role_change'
