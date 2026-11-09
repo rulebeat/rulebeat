@@ -12,6 +12,12 @@ import { isRowField, viewFromSearchParams, viewToSearchParams } from './finding-
 /** What a chip, a select or an empty widget reads in place of a value outside the person's Access. */
 export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
 
+/** What Scans says while an open saved view has a dimension whose stored values are all held back. */
+export const OPEN_VIEW_OUTSIDE_COPY = 'This saved view is filtered to places outside your Access. Close the view to see your own findings.';
+
+/** What Scans says, once, when `view=<id>` no longer opens (deleted, or someone else's Personal view). */
+export const SAVED_VIEW_GONE_COPY = 'This saved view no longer exists.';
+
 export type HeldBackPlace = 'dashboard' | 'widget' | 'savedView';
 
 /**
@@ -133,4 +139,25 @@ export function withoutPlaceholder(query: string): string {
     .map(f => (carries(f) ? { ...f, values: f.values.filter(value => value !== OUTSIDE_ACCESS_LABEL) } : f))
     .filter(f => f.values.length > 0);
   return viewToSearchParams({ ...view, filters } as typeof view).toString();
+}
+
+/**
+ * The dimensions of an open saved view whose stored values are all held back from the viewer: those its query opened
+ * holding only the placeholder. Such a dimension matches nothing and cannot be removed, and the page says so.
+ */
+export function dimensionsHeldInFull(query: string, heldBack: readonly HeldBack[] | undefined): string[] {
+  return viewFromSearchParams(new URLSearchParams(query)).filters
+    .filter(f => isHeldField(f.field) && f.values.includes(OUTSIDE_ACCESS_LABEL) && (heldBack?.some(h => h.dimension === f.field) ?? false))
+    .map(f => f.field);
+}
+
+/**
+ * The filters without the placeholder `OUTSIDE_ACCESS_LABEL` of a held-back Scope, resource name or returned column.
+ * Closing the open saved view is what lets go of it: the filter that stood for the view's values goes, and the
+ * dimension no longer narrows. Nothing else drops it.
+ */
+export function withoutHeldPlaceholders<F extends { field: string; values: readonly string[] }>(filters: readonly F[]): F[] {
+  return filters
+    .map(f => (isHeldField(f.field) && f.values.includes(OUTSIDE_ACCESS_LABEL) ? { ...f, values: f.values.filter(value => value !== OUTSIDE_ACCESS_LABEL) } : f))
+    .filter(f => f.values.length > 0);
 }
