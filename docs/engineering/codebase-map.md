@@ -189,7 +189,11 @@
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
 | `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
-| `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → the Install default (a Shared dashboard) if there is one, else the first dashboard the person can open, or the `/dashboards` gallery if none |
+| `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → the person's My default, then the Install default, then the `/dashboards` gallery (never the first dashboard they can open). Clears the "default no longer available" flag as it redirects with the notice, and never writes a choice |
+| `packages/web/lib/db/default-dashboard.ts` | My default (`users.default_dashboard_id` and its unavailable flag): `setMyDefault`, `getMyDefault`, `takeUnavailableNotice`, and `clearUnreachableMyDefaultsOn(tx)`, which the dashboard delete, the unshare and the user removal run in their own transaction |
+| `packages/web/lib/default-dashboards.ts` | Pure: the "your default is no longer available" notice (query value and message) and `withMyDefault()` |
+| `packages/web/app/api/dashboards/install-default/route.ts` | `PUT`: choose the Install default (`dashboards:manage`), a Shared dashboard only (409 for a Personal one), audited as `dashboard.install_default` |
+| `packages/web/app/api/account/default-dashboard/route.ts` | `PUT`: set My default (`dashboards:personal`) to an own Personal or any Shared dashboard; not audited |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Create, Duplicate and starter restore always make a Personal dashboard owned by the person; nothing is made the default by being first, and deleting the default promotes nothing (ADR 0012). Create, rename, duplicate and starter restore check the name inside the same transaction as the write, taking a Postgres advisory lock first, among the owner's Personal names or among Shared names only, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
 | `packages/web/app/(app)/dashboards/dashboards-gallery.tsx` | Manage-all-dashboards page: "Yours" (each item tagged Personal or Shared) and "Shared by others" (with the owner) |
 | `packages/web/lib/db/saved-views.ts` | Saved views repository: list, get, create (always Personal, owned by the actor), update, delete. A Personal name is unique among its owner's Personal views and a Shared name among Shared views, case-insensitively, checked in the write's transaction after a Postgres advisory lock, and a clash comes back as `name-taken` (409) |
@@ -204,7 +208,7 @@
 | `packages/web/lib/own-url-writes.ts` | Tells the explorer's own `router.replace` writes from an outside navigation, so opening a saved view restarts the explorer and a filter edit does not |
 | `packages/web/app/api/views/` | Saved view routes. Reads need `read`, writes need `views:write`; each write audits field names only |
 | `packages/web/components/findings/saved-views-menu.tsx` | The Views button on the Results and Advisories toolbar: the "Yours" and "Shared by others" lists, open, and save, update, rename and delete wherever the person may change the item |
-| `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
+| `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: My default first, then the Install default, `+` to create, "Manage" opens the gallery |
 | `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |
 | `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode, merges filters into every widget fetch |

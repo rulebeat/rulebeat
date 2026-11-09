@@ -610,7 +610,7 @@ describe('every route that returns a dashboard or a saved view, for a person wit
       counted(body);
     });
 
-    it('PUT /api/dashboards/[id] answers the dashboard without them, for a rename, for a config save and for isDefault alone', async () => {
+    it('PUT /api/dashboards/[id] answers the dashboard without them, for a rename, for a config save and for a refused isDefault', async () => {
       const dashboard = await ownDashboard(person);
       as(person);
       const renamed = await clean(await SAVE_DASHBOARD(req('PUT', { name: name('Renamed dashboard') }), ctx(dashboard.id)), 200);
@@ -618,8 +618,8 @@ describe('every route that returns a dashboard or a saved view, for a person wit
       const current = (await getDashboard(dashboard.id))!;
       const saved = await clean(await SAVE_DASHBOARD(req('PUT', { config: heldConfig(), revision: current.revision }), ctx(dashboard.id)), 200);
       counted(saved.body);
-      // Choosing the Install default is the Manage action: a person who holds only part of the install is refused.
-      await clean(await SAVE_DASHBOARD(req('PUT', { isDefault: true }), ctx(dashboard.id)), 403);
+      // The Install default is chosen at its own route, so a save that sends isDefault is refused whoever sends it.
+      await clean(await SAVE_DASHBOARD(req('PUT', { isDefault: true }), ctx(dashboard.id)), 400);
     });
 
     it('POST /api/dashboards/[id]/duplicate answers the copy without them', async () => {

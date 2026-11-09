@@ -58,6 +58,8 @@ interface Props {
   permissions: ItemPermissions;
   /** Whether Share is on, and why not when it is off. Computed on the server from `mayAct`. */
   shareControl: { allowed: boolean; reason?: string };
+  /** Whether Unshare and Delete are on for the Install default, and why not when they are off. Computed on the server from `mayAct`. */
+  installDefaultControl: { allowed: boolean; reason?: string };
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -140,7 +142,7 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
+export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl, installDefaultControl }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
@@ -414,15 +416,43 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   }
 
   async function handleSetDefault() {
-    const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isDefault: true }),
-    });
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboards/install-default', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboard.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to set the Install default.');
+        return;
+      }
       const d = await res.json() as HeldBackDashboard;
-      setDashboard(d);
+      setDashboard(prev => ({ ...prev, ...d, isMyDefault: prev.isMyDefault }));
       router.refresh(); // invalidate cached server data so sidebar / gallery update
+    } catch {
+      setError('Failed to set the Install default.');
+    }
+  }
+
+  async function handleSetMyDefault() {
+    setError(null);
+    try {
+      const res = await fetch('/api/account/default-dashboard', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboard.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to set your default dashboard.');
+        return;
+      }
+      setDashboard(prev => ({ ...prev, isMyDefault: true }));
+      router.refresh();
+    } catch {
+      setError('Failed to set your default dashboard.');
     }
   }
 
@@ -441,7 +471,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       return;
     }
     // The answer is the dashboard, or only its id, visibility and revision after someone else's unshare.
-    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) }));
+    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false, isInstallDefault: false }) }));
     router.refresh(); // the Header and the sidebar list are read on the server
   }
 
@@ -472,6 +502,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   const actor = { id: currentUserId };
   const canShare = dashboard.visibility === 'personal' && isOwnItem(actor, dashboard);
   const canUnshare = mayChangeVisibilityWith(actor, permissions, dashboard, 'unshare');
+  // The Install default is the install's: whoever may not manage it sees Unshare and Delete off, with the reason.
+  const protectedDefault = dashboard.isInstallDefault && !installDefaultControl.allowed;
   const { handOver: canHandOver, takeOver: canTakeOver } = transferControlsWith(actor, permissions, dashboard);
 
   const layout: RGLLayout[] = widgets.map(w => ({
@@ -594,9 +626,14 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
                 <Pencil />Rename
               </DropdownMenuItem>
             )}
-            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isDefault && (
+            {canSetDefault && dashboard.visibility === 'shared' && !dashboard.isInstallDefault && (
               <DropdownMenuItem onClick={handleSetDefault}>
-                <Star />Set as default
+                <Star />Set as Install default
+              </DropdownMenuItem>
+            )}
+            {!dashboard.isMyDefault && (
+              <DropdownMenuItem onClick={handleSetMyDefault}>
+                <Star />Make my default
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={handleDuplicate}>
@@ -611,7 +648,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
               <p className="px-3 pb-1.5 text-xs text-ink-2">{shareControl.reason}</p>
             )}
             {canUnshare && (
-              <DropdownMenuItem onClick={() => void handleVisibility('unshare')}>
+              <DropdownMenuItem disabled={protectedDefault} onClick={() => void handleVisibility('unshare')}>
                 <Undo2 />Unshare
               </DropdownMenuItem>
             )}
@@ -626,9 +663,12 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
               </DropdownMenuItem>
             )}
             {canChange && (
-              <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+              <DropdownMenuItem variant="destructive" disabled={protectedDefault} onClick={handleDelete}>
                 <Trash2 />Delete dashboard
               </DropdownMenuItem>
+            )}
+            {(canUnshare || canChange) && protectedDefault && installDefaultControl.reason && (
+              <p className="px-3 pb-1.5 text-xs text-ink-2">{installDefaultControl.reason}</p>
             )}
           </DropdownMenuContent>
         </DropdownMenu>

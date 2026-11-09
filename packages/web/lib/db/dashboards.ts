@@ -8,6 +8,7 @@ import { DASHBOARD_NAME_LOCK_KEY, lockDashboardsThenViews } from './name-locks';
 import { widgetsOnUnsharedViews } from './dashboard-view-references';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
+import { clearUnreachableMyDefaultsOn } from './default-dashboard';
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -18,6 +19,7 @@ function rowToDashboard(row: Row, owners: Map<string, ItemOwner>): Dashboard {
     description: row.description ?? undefined,
     config: migrateDashboardConfig(JSON.parse(row.config) as DashboardConfig),
     isDefault: row.isDefault ?? false,
+    isInstallDefault: (row.isDefault ?? false) && readVisibility(row.visibility) === 'shared',
     createdAt: row.createdAt,
     owner: (row.ownerId && owners.get(row.ownerId)) || null,
     visibility: readVisibility(row.visibility),
@@ -50,6 +52,7 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
  * Postgres (READ COMMITTED) two open transactions cannot see each other's uncommitted row, so every
  * write here takes `pgAdvisoryXactLock()` first, which is a no-op on SQLite.
  */
+// The key lives in name-locks.ts; default-dashboard.ts takes it too (My default is written under it).
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
@@ -183,21 +186,27 @@ export async function shareDashboard(id: string): Promise<ShareDashboardResult> 
 }
 
 export type UnshareDashboardResult =
-  | { ok: true; dashboard: Dashboard; sharedName: string }
-  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' };
+  | { ok: true; dashboard: Dashboard; sharedName: string; wasInstallDefault: boolean }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' | 'no-owner' | 'install-default' };
 
 /**
  * Makes a Shared dashboard Personal again, to its owner. The owner's own unshare is refused when the name
  * clashes with one of their Personal names; anyone else's unshare gives it the next free name instead, so it
- * never fails on a clash. It stops being the Install default, which has to be Shared. `dashboard` holds
+ * never fails on a clash. It stops being the Install default, which has to be Shared, and a My default
+ * that pointed at it for anyone but the owner is cleared. `dashboard` holds
  * the new name, so the caller returns it only to the owner; `sharedName` is the name it had while Shared.
+ * Whether it is the Install default is read on the transaction, not before it: someone who may not remove the
+ * Install default (`mayRemoveInstallDefault` false) gets `install-default`, and `wasInstallDefault` is what the
+ * caller audits.
  */
-export async function unshareDashboard(id: string, actorId: string): Promise<UnshareDashboardResult> {
+export async function unshareDashboard(id: string, actorId: string, mayRemoveInstallDefault: boolean): Promise<UnshareDashboardResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
     if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'wrong-state' };
+    const wasInstallDefault = existing.isDefault ?? false;
+    if (wasInstallDefault && !mayRemoveInstallDefault) return { ok: false, reason: 'install-default' };
     if (!existing.ownerId) return { ok: false, reason: 'no-owner' };
     const space: NameSpace = { visibility: 'personal', ownerId: existing.ownerId };
     let name = existing.name;
@@ -206,8 +215,9 @@ export async function unshareDashboard(id: string, actorId: string): Promise<Uns
       name = await nextFreeName(tx, existing.ownerId, existing.name, n => `${existing.name} (${n})`);
     }
     await run(tx.update(dashboards).set({ name, visibility: 'personal', isDefault: false, revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
+    await clearUnreachableMyDefaultsOn(tx);
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
-    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0], sharedName: existing.name };
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0], sharedName: existing.name, wasInstallDefault };
   });
 }
 
@@ -237,27 +247,79 @@ export async function transferDashboard(id: string, expectedOwnerId: string | nu
 }
 
 // Every dashboard is deletable, including the default. Deleting the default leaves the install with
-// none: no other dashboard is promoted for being the oldest (ADR 0012).
+// none: no other dashboard is promoted for being the oldest (ADR 0012). A My default that pointed at
+// it is cleared in the same transaction.
 export async function deleteDashboard(id: string): Promise<boolean> {
-  const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
-  if (!row) return false;
-  await run(db.delete(dashboards).where(eq(dashboards.id, id)));
-  return true;
+  return (await deleteDashboardAs(id, true)).ok;
+}
+
+export type DeleteDashboardResult =
+  | { ok: true; wasInstallDefault: boolean }
+  | { ok: false; reason: 'not-found' | 'install-default' };
+
+/**
+ * Deletes a dashboard, reading whether it is the Install default on the transaction that deletes it: someone
+ * who may not remove the Install default (`mayRemoveInstallDefault` false) gets `install-default`, and
+ * `wasInstallDefault` is what the caller audits.
+ */
+export async function deleteDashboardAs(id: string, mayRemoveInstallDefault: boolean): Promise<DeleteDashboardResult> {
+  return inTransaction(async (tx) => {
+    // The same lock `chooseInstallDefault()` takes: without it, on Postgres, a delete could read the
+    // flag as unset while a choice commits, and then remove the new Install default unchecked.
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const row = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!row) return { ok: false, reason: 'not-found' };
+    const wasInstallDefault = (row.isDefault ?? false) && readVisibility(row.visibility) === 'shared';
+    if (wasInstallDefault && !mayRemoveInstallDefault) return { ok: false, reason: 'install-default' };
+    await run(tx.delete(dashboards).where(eq(dashboards.id, id)));
+    await clearUnreachableMyDefaultsOn(tx);
+    return { ok: true, wasInstallDefault };
+  });
+}
+
+// Moves the default flag to `id` on `tx`, clearing it on every other row.
+async function moveDefaultFlagOn(tx: DbHandle, id: string): Promise<void> {
+  // Only the rows whose flag actually changes are written, so only they move to a new revision.
+  await run(tx.update(dashboards).set({ isDefault: false, revision: sql`${dashboards.revision} + 1` })
+    .where(and(eq(dashboards.isDefault, true), ne(dashboards.id, id))));
+  await run(tx.update(dashboards).set({ isDefault: true, revision: sql`${dashboards.revision} + 1` })
+    .where(and(eq(dashboards.id, id), eq(dashboards.isDefault, false))));
 }
 
 // Makes `id` the default dashboard, clearing the flag on every other row. Returns false if `id`
-// doesn't exist.
+// doesn't exist. It checks nothing else: `chooseInstallDefault()` is what a person's choice goes through.
 export async function setDefaultDashboard(id: string): Promise<boolean> {
   const row = await one(db.select().from(dashboards).where(eq(dashboards.id, id)));
   if (!row) return false;
-  await inTransaction(async (tx) => {
-    // Only the rows whose flag actually changes are written, so only they move to a new revision.
-    await run(tx.update(dashboards).set({ isDefault: false, revision: sql`${dashboards.revision} + 1` })
-      .where(and(eq(dashboards.isDefault, true), ne(dashboards.id, id))));
-    await run(tx.update(dashboards).set({ isDefault: true, revision: sql`${dashboards.revision} + 1` })
-      .where(and(eq(dashboards.id, id), eq(dashboards.isDefault, false))));
-  });
+  await inTransaction(tx => moveDefaultFlagOn(tx, id));
   return true;
+}
+
+export type ChooseInstallDefaultResult =
+  | { ok: true; dashboard: Dashboard }
+  | { ok: false; reason: 'not-found' | 'personal' };
+
+/**
+ * Makes a Shared dashboard the Install default (ADR 0012). The state check and the write are one transaction
+ * under the name lock, so a dashboard unshared at the same moment cannot end up the default while Personal.
+ */
+export async function chooseInstallDefault(id: string): Promise<ChooseInstallDefaultResult> {
+  return inTransaction(async (tx) => {
+    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    if (!existing) return { ok: false, reason: 'not-found' };
+    if (readVisibility(existing.visibility) !== 'shared') return { ok: false, reason: 'personal' };
+    await moveDefaultFlagOn(tx, id);
+    const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
+    return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };
+  });
+}
+
+/** The id of the Install default, if the install has one: the default flag on a Shared dashboard. */
+export async function getInstallDefaultId(): Promise<string | null> {
+  const row = await one(db.select({ id: dashboards.id }).from(dashboards)
+    .where(and(eq(dashboards.isDefault, true), eq(dashboards.visibility, 'shared'))));
+  return row?.id ?? null;
 }
 
 // Picks the first name free among `ownerId`'s Personal names out of `base`, then `suffix(2)`,
