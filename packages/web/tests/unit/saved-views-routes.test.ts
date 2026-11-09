@@ -340,6 +340,15 @@ describe('saved views routes', () => {
       expect(updates[0]!.details).toEqual({ fields: ['query'] });
       expect(JSON.stringify(updates[0]!.details)).not.toContain('correct-horse');
     });
+
+    it('refuses changes that make the stored query longer than a saved view may be, and writes nothing', async () => {
+      const view = await created('Long update');
+      const res = await patch(view.id, { changes: `q=${'a'.repeat(6000)}` });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Query must be 4000 characters or fewer.');
+      expect(await getSavedView(view.id)).toMatchObject({ query: 'severity=critical', revision: view.revision });
+      expect((await viewAudit()).filter(e => e.action === 'view.update')).toHaveLength(0);
+    });
   });
 
   describe('save current view with one open', () => {
@@ -360,6 +369,14 @@ describe('saved views routes', () => {
       expect(stale.status).toBe(409);
       expect((await stale.json() as { view: SavedView }).view.revision).toBe(open.revision + 1);
       expect((await listSavedViews()).map(v => v.name)).toEqual(['Open two']);
+    });
+
+    it('refuses an effective View longer than a saved view may be, and creates nothing', async () => {
+      const open = await created('Open long');
+      const res = await post({ name: 'Too long', tab: 'results', fromView: open.id, revision: open.revision, changes: `q=${'a'.repeat(7000)}` });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Query must be 4000 characters or fewer.');
+      expect((await listSavedViews()).map(v => v.name)).toEqual(['Open long']);
     });
 
     it('answers 404 for a view that does not exist', async () => {

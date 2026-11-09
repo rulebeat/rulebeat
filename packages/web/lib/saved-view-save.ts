@@ -18,7 +18,7 @@ import { filterValues, savedViewAddress, viewFromSearchParams, viewToSearchParam
 import { sameValues } from '@/lib/dashboard-filters';
 import { isOutsideAccess, markedSavedView, markOutsideAccess } from '@/lib/outside-access';
 import { SAVED_VIEW_CHANGED_MESSAGE } from '@/lib/saved-views';
-import { normalizeViewQuery, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
+import { MAX_SAVED_VIEW_QUERY_LENGTH, normalizeViewQuery, type SavedView, type SavedViewFields } from '@/lib/saved-view-query';
 import type { Access } from '@/lib/access-model';
 
 const SCOPE_DIMENSIONS = ['subscription', 'resourceGroup'] as const;
@@ -75,7 +75,7 @@ export function planViewUpdate(saved: View, effective: View, access: Access): { 
 
 export type SaveViewResult =
   | { ok: true; view: SavedView; before: SavedView; changed: (keyof SavedViewFields)[] }
-  | { ok: false; reason: 'not-found' | 'name-taken' }
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'too-long' }
   | { ok: false; reason: 'stale'; view: SavedView }
   | ViewRefusal;
 
@@ -99,6 +99,8 @@ export async function saveViewChanges(input: {
     const saved = openedView(stored);
     const plan = planViewUpdate(saved, savedViewAddress(saved).read(input.changes), input.access);
     if (!plan.ok) return plan;
+    // The limit holds for what is stored, not only for what the client sent.
+    if (plan.query.length > MAX_SAVED_VIEW_QUERY_LENGTH) return { ok: false, reason: 'too-long' };
     if (plan.query !== normalizeViewQuery(stored.query)) fields.query = plan.query;
   }
   if (Object.keys(fields).length === 0) return { ok: true, view: stored, before: stored, changed: [] };
@@ -117,7 +119,7 @@ export async function saveViewChanges(input: {
 
 export type BuiltViewResult =
   | { ok: true; query: string; dropped: number }
-  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'not-found' | 'too-long' }
   | { ok: false; reason: 'stale'; view: SavedView };
 
 /** The query of a new view made from the open one: the effective View with what the saver cannot see dropped and counted. */
@@ -137,7 +139,9 @@ export async function buildViewFromOpen(input: { viewId: string; revision: numbe
     for (const v of values) if (!kept.includes(v)) dropped.add(`${dim}:${v.toLowerCase()}`);
     if (kept.length !== values.length) filters = withValues(filters, dim, kept);
   }
-  return { ok: true, query: queryOf({ ...effective, filters }), dropped: dropped.size };
+  const query = queryOf({ ...effective, filters });
+  if (query.length > MAX_SAVED_VIEW_QUERY_LENGTH) return { ok: false, reason: 'too-long' };
+  return { ok: true, query, dropped: dropped.size };
 }
 
 /** What the bar says when an update is refused. */

@@ -8,7 +8,7 @@ import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { buildViewFromOpen, staleAnswer } from '@/lib/saved-view-save';
 import { SAVED_VIEW_UNAVAILABLE, type SavedViewFields } from '@/lib/saved-view-query';
 import {
-  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, parseSavedViewFields, parseSavedViewFromOpen, readRevision, savedViewNameTakenMessage,
+  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, SAVED_VIEW_QUERY_TOO_LONG_MESSAGE, parseSavedViewFields, parseSavedViewFromOpen, readRevision, savedViewNameTakenMessage,
 } from '@/lib/saved-views';
 
 export async function GET() {
@@ -41,9 +41,9 @@ export async function POST(req: Request) {
     try {
       const built = await buildViewFromOpen({ viewId: parsed.value.fromView, revision, changes: parsed.value.changes, access: actor.access });
       if (!built.ok) {
-        return built.reason === 'stale'
-          ? await staleAnswer(built.view, actor.access)
-          : Response.json({ error: SAVED_VIEW_UNAVAILABLE }, { status: 404 });
+        if (built.reason === 'stale') return await staleAnswer(built.view, actor.access);
+        if (built.reason === 'too-long') return Response.json({ error: SAVED_VIEW_QUERY_TOO_LONG_MESSAGE }, { status: 400 });
+        return Response.json({ error: SAVED_VIEW_UNAVAILABLE }, { status: 404 });
       }
       dropped = built.dropped;
       fields = { name: parsed.value.name, tab: parsed.value.tab, query: built.query };

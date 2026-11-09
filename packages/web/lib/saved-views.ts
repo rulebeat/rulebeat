@@ -21,6 +21,9 @@ type FieldsResult<T> = { ok: true; value: T } | { ok: false; error: string };
 /** What the update and save-from-open routes answer 409 with when the page holds no revision, or an older one. */
 export const SAVED_VIEW_CHANGED_MESSAGE = 'This saved view changed since you opened it. Reload to continue.';
 
+/** What a create or update answers 400 with when the query to be stored is longer than a saved view may hold. */
+export const SAVED_VIEW_QUERY_TOO_LONG_MESSAGE = `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.`;
+
 /** The most a request's `changes` may be: the address's differences, which are at most a View's query. */
 const MAX_CHANGES_LENGTH = 2 * MAX_SAVED_VIEW_QUERY_LENGTH;
 
@@ -64,7 +67,7 @@ export function parseSavedViewFields(body: unknown): FieldsResult<SavedViewField
   if (!isSavedViewTab(input.tab)) return { ok: false, error: 'Tab must be "results", "advisories" or "activity".' };
   if (input.query === undefined) return { ok: false, error: 'Query is required.' };
   if (typeof input.query !== 'string') return { ok: false, error: 'Query must be a string.' };
-  const tooLong = { ok: false, error: `Query must be ${MAX_SAVED_VIEW_QUERY_LENGTH} characters or fewer.` } as const;
+  const tooLong = { ok: false, error: SAVED_VIEW_QUERY_TOO_LONG_MESSAGE } as const;
   if (input.query.length > MAX_SAVED_VIEW_QUERY_LENGTH) return tooLong;
   const query = normalizeViewQuery(input.query);
   if (query.length > MAX_SAVED_VIEW_QUERY_LENGTH) return tooLong;

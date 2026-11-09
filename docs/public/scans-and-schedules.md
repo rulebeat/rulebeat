@@ -145,7 +145,8 @@ address, never a copy of the view. The server puts the view as saved and your ch
 every part you did not change stays as saved. A Changed mark beside the button lists the parts you
 changed, such as "Changed: Severity, Search". An update is refused when your changes name a
 subscription or resource group outside your access, and when it would pick any over saved values you
-cannot see; values you cannot see that the view saved are kept when you change that filter. One audit
+cannot see, or when the view with your changes would be longer than a saved view may be (4000
+characters); values you cannot see that the view saved are kept when you change that filter. One audit
 entry is written per update. If someone saved the view first, nothing is saved: the page takes the
 newer view and keeps your changes in the address, and a notice says who changed the view and when, and
 names any part you did not touch that moved because of it. This page has no refresh timer, so a change
@@ -157,7 +158,8 @@ opened it. Reload to continue." and changes nothing.
 **Save current view** with a view open builds the new view the same way, from the open view and your
 changes, and leaves out any subscription or resource group value outside your access. The dialog then
 says how many were left out, for example "2 values outside your access were not saved." With no view
-open, saving works as before and keeps the whole view in the address.
+open, saving works as before and keeps the whole view in the address. The same 4000 character limit
+applies to a new view built from an open one.
 
 ## Disable, clear findings, or suppress
 

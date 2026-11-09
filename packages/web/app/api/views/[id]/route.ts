@@ -7,7 +7,7 @@ import { markedSavedView } from '@/lib/outside-access';
 import { deleteSavedView, getSavedView } from '@/lib/db/saved-views';
 import { saveViewChanges, staleAnswer, viewRefusalMessage } from '@/lib/saved-view-save';
 import {
-  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, parseSavedViewUpdate, readRevision, savedViewNameTakenMessage,
+  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, SAVED_VIEW_QUERY_TOO_LONG_MESSAGE, parseSavedViewUpdate, readRevision, savedViewNameTakenMessage,
 } from '@/lib/saved-views';
 
 type Params = { params: Promise<{ id: string }> };
@@ -48,6 +48,8 @@ export async function PATCH(req: Request, { params }: Params) {
           return Response.json({ error: 'Not found' }, { status: 404 });
         case 'name-taken':
           return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
+        case 'too-long':
+          return Response.json({ error: SAVED_VIEW_QUERY_TOO_LONG_MESSAGE }, { status: 400 });
         case 'stale':
           return await staleAnswer(result.view, actor.access);
         case 'outside-access':

@@ -120,6 +120,13 @@ describe('updating a saved view with the current view', () => {
     expect(await stored()).toEqual(before);
   });
 
+  it('refuses changes that make the stored query longer than a saved view may be', async () => {
+    const before = await stored();
+    const result = await saveViewChanges({ viewId: id, revision: before.revision, changes: params(`q=${'a'.repeat(6000)}`), access: EVERYTHING_ACCESS });
+    expect(result).toEqual({ ok: false, reason: 'too-long' });
+    expect(await stored()).toEqual(before);
+  });
+
   it('merges back the saved values the saver cannot see when they change that dimension', async () => {
     const other = await createSavedView({ name: `second ${crypto.randomUUID()}`, tab: 'results', query: `subscription=${SUB_A}%2C${SUB_B}` }, null);
     if (!other.ok) throw new Error('create failed');
@@ -155,6 +162,11 @@ describe('saving a new view with one open', () => {
   it('drops the values outside the saver\'s Access and counts them', async () => {
     const result = await buildViewFromOpen({ viewId: id, revision: (await stored()).revision, changes: params('severity=high'), access: L });
     expect(result).toEqual({ ok: true, query: `severity=high&subscription=${SUB_B}`, dropped: 1 });
+  });
+
+  it('refuses an effective View longer than a saved view may be', async () => {
+    const result = await buildViewFromOpen({ viewId: id, revision: (await stored()).revision, changes: params(`q=${'a'.repeat(7000)}`), access: EVERYTHING_ACCESS });
+    expect(result).toEqual({ ok: false, reason: 'too-long' });
   });
 
   it('says stale over an older revision', async () => {
