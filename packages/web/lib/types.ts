@@ -218,6 +218,10 @@ export interface WidgetDef {
   w: number;
   h: number;
   config: Record<string, unknown>;
+  /** The widget's overrides in the one filter model (ADR 0015), the same dimensions as the dashboard's. Written by
+   *  the upgrade beside the legacy `config` keys, which it leaves as they were so 0.13 still reads them after a
+   *  rollback. A dimension that is absent is Inherit, and an empty list is Any. */
+  dimensionFilters?: DashboardDimensionFilters;
 }
 
 export interface DashboardConfig {
@@ -249,6 +253,16 @@ export interface DashboardConfig {
 export interface LegacyDashboardFilters {
   filters?: DashboardConfig['filters'];
   dateWindow?: DateWindow;
+  windowDays?: 1 | 7 | 30;
+  /** By widget id, the legacy values of the widgets that hold any. */
+  widgets?: Record<string, LegacyWidgetValues>;
+}
+
+/** The legacy override values a widget's config held, as 0.13 read them. */
+export interface LegacyWidgetValues {
+  category?: string;
+  policyIds?: string[];
+  period?: string;
   windowDays?: 1 | 7 | 30;
 }
 

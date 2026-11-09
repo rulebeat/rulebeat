@@ -4,7 +4,8 @@ import { SCOPE_INLINE_BUDGET, esc, filterValues, viewFromSearchParams, withoutLe
 import { DIRECTORY_SUBSCRIPTION } from '../placement';
 import { unresolvedPick } from '../unresolved-pick';
 import { distinctPaths, scopeSetHash } from '../scope-sets';
-import type { DashboardConfig, DashboardDimensionFilters, LegacyDashboardFilters } from '../types';
+import { migrateDashboardConfig } from '../dashboard-migrations';
+import type { DashboardConfig, DashboardDimensionFilters, LegacyDashboardFilters, LegacyWidgetValues, WidgetDef } from '../types';
 
 /**
  * Converts the filters that dashboards and saved views stored as two lists, subscriptions and resource group
@@ -22,6 +23,12 @@ import type { DashboardConfig, DashboardDimensionFilters, LegacyDashboardFilters
  *   written empty, which would read as no filter.
  * - A list over `SCOPE_INLINE_BUDGET` characters is stored as a Scope set (ADR 0016), uncapped, since the
  *   server wrote it.
+ *
+ * A dashboard's widgets are converted with it: category becomes a one-value pick, `policyIds` a Rule override, and
+ * a chart's period (or a widget's `windowDays`) a window override. A dashboard config is read through
+ * `migrateDashboardConfig` first, so a `findings-table` widget is read as `recent-findings` (only its limit, category
+ * and policyIds are read, as 0.13 applied), and a widget stored with no config is read with `{}`. The renames
+ * are never written back.
  *
  * Idempotent: a dashboard is converted again only when its legacy values are not the ones it was converted
  * from, a saved view only while its query has no Scope. Pure: rows in, SQL statements out, so SQLite
@@ -155,7 +162,7 @@ const nonEmpty = <T>(list: T[] | undefined): T[] | undefined => (Array.isArray(l
 const strings = (list: unknown): string[] => (Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string' && v !== '') : []);
 
 /** The legacy filter values a config holds, empty lists left out and keys in a fixed order, so two configs
- *  with the same values compare as the same JSON. */
+ *  with the same values compare as the same JSON. The widgets' values are `legacyWidgetsOf`. */
 export function legacyFiltersOf(config: DashboardConfig): LegacyDashboardFilters {
   const out: LegacyDashboardFilters = {};
   const f = config.filters;
@@ -174,31 +181,123 @@ export function legacyFiltersOf(config: DashboardConfig): LegacyDashboardFilters
 
 export const sameLegacy = (a: LegacyDashboardFilters, b: LegacyDashboardFilters) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The chart types that carry a period of their own, and the days 'all' meant on each (0.13's `periodToDays`). */
+const PERIOD_ALL_DAYS: Readonly<Record<string, number>> = { trend: 365, 'new-vs-fixed': 180, 'activity-occurrences': 180 };
+const PERIOD_DAYS: Readonly<Record<string, number>> = { '7d': 7, '30d': 30, '90d': 90 };
+const DEFAULT_PERIOD_DAYS = 30;
+
+/** A config as the planner reads it: a widget stored with no config reads as `{}`, then the read-time renames. */
+function readConfig(config: DashboardConfig): DashboardConfig {
+  const widgets = Array.isArray(config.widgets) ? config.widgets : [];
+  return migrateDashboardConfig({
+    ...config,
+    widgets: widgets.map((w): WidgetDef => ({ ...w, config: w.config !== null && typeof w.config === 'object' ? w.config : {} })),
+  });
+}
+
+/** The override values 0.13 read from a widget's config: category, policyIds, period and windowDays (1, 7 or 30). */
+function widgetValuesOf(cfg: Record<string, unknown>): LegacyWidgetValues {
+  const out: LegacyWidgetValues = {};
+  if (typeof cfg.category === 'string' && cfg.category !== '') out.category = cfg.category;
+  const policyIds = nonEmpty(strings(cfg.policyIds));
+  if (policyIds) out.policyIds = policyIds;
+  if (typeof cfg.period === 'string' && cfg.period !== '') out.period = cfg.period;
+  if (cfg.windowDays === 1 || cfg.windowDays === 7 || cfg.windowDays === 30) out.windowDays = cfg.windowDays;
+  return out;
+}
+
+/** The legacy values of the widgets that hold any, by widget id, of a config already read through `readConfig`. */
+function legacyWidgetsOf(config: DashboardConfig): Record<string, LegacyWidgetValues> {
+  const out: Record<string, LegacyWidgetValues> = {};
+  for (const w of config.widgets) {
+    const values = widgetValuesOf(w.config);
+    if (typeof w.id === 'string' && Object.keys(values).length > 0) out[w.id] = values;
+  }
+  return out;
+}
+
 /**
- * The dashboard with its filters converted, or null when it needs nothing: no legacy values and never
- * converted, or already converted from the legacy values it holds now. A legacy value changed since (a save
- * under 0.13) converts again over the old conversion, and one cleared since converts to no filters.
+ * What a widget's legacy values mean as overrides. Category 'all' and empty lists are Inherit. Only the three
+ * chart types read a period: it wins over `windowDays`, and none is 30 days, which is what 0.13 drew. Elsewhere a
+ * `windowDays` of 1, 7 or 30 is the window.
+ */
+function widgetDimensions(type: string, values: LegacyWidgetValues): DashboardDimensionFilters {
+  const out: DashboardDimensionFilters = {};
+  if (values.category && values.category !== 'all') out.category = [values.category];
+  if (values.policyIds) out.rule = values.policyIds;
+  const allDays = PERIOD_ALL_DAYS[type];
+  const days = allDays !== undefined
+    ? (values.period === 'all' ? allDays : PERIOD_DAYS[values.period ?? ''] ?? DEFAULT_PERIOD_DAYS)
+    : values.windowDays;
+  if (days !== undefined) out.window = { mode: 'relative', days };
+  return out;
+}
+
+const hasKeys = (value: object) => Object.keys(value).length > 0;
+const sameValues = (a: object | undefined, b: object | undefined) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+
+/** The widgets of the config with the record's values in place of their config, read the way the config is. */
+function recordedWidgets(config: DashboardConfig, record: LegacyDashboardFilters): Record<string, LegacyWidgetValues> {
+  const widgets = Array.isArray(config.widgets) ? config.widgets : [];
+  return legacyWidgetsOf(readConfig({ ...config, widgets: widgets.map(w => ({ ...w, config: { ...record.widgets?.[w.id] } })) }));
+}
+
+/**
+ * The dashboard with its filters and widget overrides converted, or null when it needs nothing. The dashboard's
+ * own filters need it when they are not the ones it was converted from (none, if it never was), and a widget
+ * when its legacy values are not the ones recorded for its id. With no record yet, a widget that holds legacy
+ * values needs it, and so does a chart with no overrides of its own, which 0.13 drew over 30 days. A legacy value
+ * changed since (a save under 0.13) converts again over the old conversion, and one cleared since converts to
+ * no filters. What is not due is left as it is, so overrides set since stay.
  */
 export function convertDashboardConfig(
   config: DashboardConfig, pairs: Pairs,
 ): { config: DashboardConfig; set?: { hash: string; paths: string[] } } | null {
-  const legacy = legacyFiltersOf(config);
-  if (config.convertedFrom ? sameLegacy(legacyFiltersOf({ widgets: [], ...config.convertedFrom }), legacy) : Object.keys(legacy).length === 0) return null;
+  const view = readConfig(config);
+  const legacy = legacyFiltersOf(view);
+  const legacyWidgets = legacyWidgetsOf(view);
+  const record = config.convertedFrom;
+  const recordedLegacy = record ? legacyFiltersOf({ widgets: [], filters: record.filters, dateWindow: record.dateWindow, windowDays: record.windowDays }) : undefined;
+  const recordedValues = record ? recordedWidgets(config, record) : undefined;
 
-  const dimensions: DashboardDimensionFilters = {};
-  const f = legacy.filters;
-  if (f?.categories) dimensions.category = f.categories;
-  const scope = scopeValue(resolveLegacyScope(f?.subscriptions ?? [], f?.resourceGroups ?? [], pairs));
-  if (scope.scope) dimensions.scope = scope.scope;
-  if (scope.scopeSet) dimensions.scopeSet = scope.scopeSet;
-  if (f?.tags) dimensions.tags = f.tags;
-  if (f?.severities) dimensions.severity = f.severities;
-  if (f?.ruleIds) dimensions.rule = f.ruleIds;
-  // The window the dashboard read: `dateWindow`, else the `windowDays` that came before it.
-  const window = legacy.dateWindow ?? (legacy.windowDays !== undefined ? { mode: 'relative' as const, days: legacy.windowDays } : undefined);
-  if (window) dimensions.window = window;
+  const dashboardDue = recordedLegacy ? !sameLegacy(recordedLegacy, legacy) : hasKeys(legacy);
+  const rawWidgets = Array.isArray(config.widgets) ? config.widgets : [];
+  const widgetDue = view.widgets.map((w, i) => {
+    const values = legacyWidgets[w.id] ?? {};
+    if (recordedValues) return !sameValues(recordedValues[w.id], values);
+    const raw = rawWidgets[i];
+    return hasKeys(values) || (PERIOD_ALL_DAYS[w.type] !== undefined && !raw?.dimensionFilters);
+  });
+  if (!dashboardDue && !widgetDue.includes(true)) return null;
 
-  return { config: { ...config, dimensionFilters: dimensions, convertedFrom: legacy }, set: scope.set };
+  const next: DashboardConfig = { ...config };
+  let set: { hash: string; paths: string[] } | undefined;
+  if (dashboardDue) {
+    const dimensions: DashboardDimensionFilters = {};
+    const f = legacy.filters;
+    if (f?.categories) dimensions.category = f.categories;
+    const scope = scopeValue(resolveLegacyScope(f?.subscriptions ?? [], f?.resourceGroups ?? [], pairs));
+    if (scope.scope) dimensions.scope = scope.scope;
+    if (scope.scopeSet) dimensions.scopeSet = scope.scopeSet;
+    if (f?.tags) dimensions.tags = f.tags;
+    if (f?.severities) dimensions.severity = f.severities;
+    if (f?.ruleIds) dimensions.rule = f.ruleIds;
+    // The window the dashboard read: `dateWindow`, else the `windowDays` that came before it.
+    const window = legacy.dateWindow ?? (legacy.windowDays !== undefined ? { mode: 'relative' as const, days: legacy.windowDays } : undefined);
+    if (window) dimensions.window = window;
+    next.dimensionFilters = dimensions;
+    set = scope.set;
+  }
+  if (widgetDue.includes(true)) {
+    next.widgets = rawWidgets.map((raw, i) => {
+      if (!widgetDue[i]) return raw;
+      const { dimensionFilters: _previous, ...rest } = raw;
+      const dimensions = widgetDimensions(view.widgets[i]!.type, legacyWidgets[view.widgets[i]!.id] ?? {});
+      return hasKeys(dimensions) ? { ...rest, dimensionFilters: dimensions } : rest;
+    });
+  }
+  next.convertedFrom = hasKeys(legacyWidgets) ? { ...legacy, widgets: legacyWidgets } : legacy;
+  return { config: next, set };
 }
 
 // ---- Saved views ----
@@ -261,7 +360,13 @@ export function planFilterConversion(input: {
       plan.skipped.push({ kind: 'dashboard', id: row.id, reason: 'its config cannot be read' });
       continue;
     }
-    const converted = convertDashboardConfig(config, pairs);
+    let converted: ReturnType<typeof convertDashboardConfig>;
+    try {
+      converted = convertDashboardConfig(config, pairs);
+    } catch {
+      plan.skipped.push({ kind: 'dashboard', id: row.id, reason: 'its widgets cannot be read' });
+      continue;
+    }
     if (!converted) continue;
     if (converted.set) plan.statements.push(setStatement(converted.set, input.now));
     plan.statements.push({ sql: `UPDATE dashboards SET config = ? WHERE id = ?`, params: [JSON.stringify(converted.config), row.id] });
