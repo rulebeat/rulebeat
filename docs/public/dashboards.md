@@ -73,8 +73,9 @@ bar to change the address.
 
 **When the dashboard changes while you have it open.** A number that comes back computed from a newer
 revision reloads the filter bar and every widget together, and a notice says so. Your changes stay in the
-address. If you have a layout edit open, it is not discarded: the notice says so, and the reload happens
-once you save or cancel the edit.
+address. If you have a layout edit open, it is not discarded: the notice says so, and the layout of the
+newer revision loads once you save or cancel the edit. The bar and the numbers do not wait, so the bar
+always describes the filters the numbers were counted with.
 
 A widget that sets its own value for a dimension is not moved by your change. The bar says so under the
 dimension, for example "2 widgets use their own severity".

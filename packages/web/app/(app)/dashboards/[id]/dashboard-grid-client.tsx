@@ -38,7 +38,7 @@ import {
 } from '@/lib/dashboard-filters';
 import { dashboardAddress } from '@/lib/finding-view';
 import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
-import { incomingDashboard, noticeFor, seeRevision } from '@/lib/dashboard-revision';
+import { incomingDashboard, latestOf, noticeFor, seeRevision } from '@/lib/dashboard-revision';
 import { widgetAccessReason, type OutsideAccess } from '@/lib/outside-access';
 import { cn } from '@/lib/utils';
 
@@ -148,7 +148,10 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // What the widgets ask the server for is the address: the changes on top of the saved filters. The
   // filter bar writes them there and nowhere else, so nothing a person picks is saved to the dashboard.
   const searchParams = useSearchParams();
-  const saved = useMemo(() => savedFiltersOf(dashboard.config), [dashboard.config]);
+  // The saved filters are the newest the server has sent, not the dashboard held for a layout edit: the
+  // server counts with them, so the address is read against them too.
+  const savedSource = latestOf(dashboard, initial);
+  const saved = useMemo(() => savedFiltersOf(savedSource.config), [savedSource.config]);
   const changes = useMemo(() => {
     const address = dashboardAddress(saved);
     return address.write(address.read(searchParams)).toString();
@@ -183,8 +186,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   // The dashboard has one revision on this page. A counting response computed from a newer one means
   // the dashboard changed underneath it (the saved filters among other things): reload the bar and
   // every number together, and say so. Nothing is saved, and the address stays as it is. A layout edit
-  // that is open is not discarded: the page keeps showing the revision it holds, bar included, and
-  // takes the newer one when the edit ends.
+  // that is open is not discarded: the page keeps the layout it holds and takes the newer one when the
+  // edit ends. The filters are not part of that layout, so the bar and the numbers still reload.
   const layoutEditOpen = editMode || dirty;
   const layoutEditOpenRef = useRef(layoutEditOpen);
   useEffect(() => { layoutEditOpenRef.current = layoutEditOpen; }, [layoutEditOpen]);
@@ -200,7 +203,14 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
   }, [router]);
 
   useEffect(() => {
-    if (incomingDashboard({ held: dashboard.revision, incoming: initial.revision, layoutEditOpen }) !== 'adopt') return;
+    const action = incomingDashboard({ held: dashboard.revision, incoming: initial.revision, layoutEditOpen });
+    if (action === 'defer') {
+      // The layout waits, the numbers do not: they are counted from the newest saved filters.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRefreshKey(k => k + 1);
+      return;
+    }
+    if (action !== 'adopt') return;
     // Adopting the reloaded dashboard from props after router.refresh(): an external sync, not derived state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDashboard(initial);
@@ -210,10 +220,11 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, ed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.revision, layoutEditOpen]);
 
-  // The bar is the server's account of one revision. While a newer one waits behind a layout edit, keep
-  // showing the bar of the revision held, so the bar never describes different filters from the numbers.
+  // The bar is the server's account of the filters, from the same request that counts the numbers, so it
+  // follows the newest revision even while a layout edit holds an older layout. Only a bar older than the
+  // one shown (the page rendered before this tab saved) is ignored.
   const [shownBar, setShownBar] = useState(bar);
-  if (bar !== shownBar && bar.revision === dashboard.revision) setShownBar(bar);
+  if (bar !== shownBar && latestOf(shownBar, bar) === bar) setShownBar(bar);
   // A layout save adds or changes a widget override without reloading the page, so the line that says
   // which dimensions widgets override is counted from the dashboard as held.
   const barShown = useMemo(() => withWidgetOverrides(shownBar, dashboard.config.widgets), [shownBar, dashboard.config.widgets]);

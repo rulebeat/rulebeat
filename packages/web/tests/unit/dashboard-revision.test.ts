@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  CHANGED_NOTICE_DEFERRED, CHANGED_NOTICE_RELOADED, incomingDashboard, noticeFor, reportedRevision, seeRevision,
+  CHANGED_NOTICE_DEFERRED, CHANGED_NOTICE_RELOADED, incomingDashboard, latestOf, noticeFor, reportedRevision, seeRevision,
 } from '@/lib/dashboard-revision';
 import { WidgetRequestProvider, useRevisionReport } from '@/components/dashboard/widget-request';
 
@@ -42,13 +42,31 @@ describe('the dashboard a reload brings', () => {
   });
 });
 
+describe('the filters the page shows while a layout edit holds an older dashboard', () => {
+  // The server counts every number with the saved filters of the newest revision, whatever layout the
+  // page holds. The bar and the saved filters the address is read against must be that same revision.
+  const held = { revision: 4, label: 'held' };
+
+  it('are the newer revision, so the bar describes the numbers it sits above', () => {
+    expect(latestOf(held, { revision: 5, label: 'incoming' }).label).toBe('incoming');
+  });
+
+  it('take a bar re-sent at the same revision, which is what a pick in the address produces', () => {
+    expect(latestOf(held, { revision: 4, label: 'after a pick' }).label).toBe('after a pick');
+  });
+
+  it('never go back to an older one, such as the page the server rendered before this tab saved', () => {
+    expect(latestOf(held, { revision: 3, label: 'older' }).label).toBe('held');
+  });
+});
+
 describe('the conflict notice', () => {
-  it('says the bar and every number were reloaded only when they were', () => {
+  it('says the bar and every number were reloaded in both cases, and that a layout edit was kept', () => {
     expect(noticeFor('adopt')).toBe(CHANGED_NOTICE_RELOADED);
     expect(CHANGED_NOTICE_RELOADED).toMatch(/filter bar and every number were reloaded/);
     expect(noticeFor('defer')).toBe(CHANGED_NOTICE_DEFERRED);
-    expect(CHANGED_NOTICE_DEFERRED).not.toMatch(/were reloaded/);
-    expect(CHANGED_NOTICE_DEFERRED).toMatch(/layout/);
+    expect(CHANGED_NOTICE_DEFERRED).toMatch(/filter bar and every number were reloaded/);
+    expect(CHANGED_NOTICE_DEFERRED).toMatch(/layout edit is still open/);
   });
 });
 

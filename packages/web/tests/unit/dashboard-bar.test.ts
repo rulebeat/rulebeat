@@ -5,7 +5,7 @@
  *
  * Fixture: the dashboard saves Subscription {A, B}. L holds B only. M holds A and B.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ANY_WIDENS_REASON, UNTICK_LAST_REASON, backToSaved, buildBarState, pickAny, toggleValue, withWidgetOverrides, type BarLayers,
 } from '@/lib/dashboard-bar';
@@ -14,6 +14,9 @@ import { markOutsideAccess } from '@/lib/outside-access';
 import { buildAccess, type Access } from '@/lib/access-model';
 import type { DashboardFilters } from '@/lib/finding-view';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+import { resetDb } from '../helpers/db';
+import { fakeHierarchy, group, refreshFrom, subscription, HIERARCHY_TENANT } from '../helpers/fake-hierarchy';
+import { loadKnownValues } from '@/lib/dashboard-known-values';
 
 const SUB_A = '00000000-0000-0000-0000-00000000000a';
 const SUB_B = '00000000-0000-0000-0000-00000000000b';
@@ -115,17 +118,23 @@ describe('a person who holds the Directory and subscription A', () => {
     { tenantId: 't', scope: { kind: 'subscription' as const, path: `/subscriptions/${SUB_A}` }, role: 'viewer' as const },
   ], 'manual');
   const saved: DashboardFilters = { ...SAVED, subscription: ['directory', SUB_A] };
-  const input = { revision: 1, saved, access: holder, widgets: [], known: { subscription: new Set([SUB_A, 'directory']) } };
+  // The list the page checks against is the one the server loads from the stored tree, where the
+  // Directory is never a node, so these tests read it the way the page does.
+  beforeEach(async () => {
+    await resetDb();
+    await refreshFrom(fakeHierarchy([group(HIERARCHY_TENANT, 'Root', null), subscription(SUB_A, 'A', HIERARCHY_TENANT)]));
+  });
+  const inputOf = async () => ({ revision: 1, saved, access: holder, widgets: [], known: await loadKnownValues() });
 
-  it('sees both, with nothing counted outside and nothing called gone', () => {
-    const { state: bar } = buildBarState({ ...input, changes: {} });
+  it('sees both, with nothing counted outside and nothing called gone', async () => {
+    const { state: bar } = buildBarState({ ...(await inputOf()), changes: {} });
     expect(bar.dimensions.subscription.effective).toEqual(['directory', SUB_A]);
     expect(bar.dimensions.subscription.outside).toEqual({ saved: 0, url: 0 });
     expect(bar.dimensions.subscription.vanished).toEqual([]);
   });
 
-  it('can untick A and keep the Directory', () => {
-    const { marks } = buildBarState({ ...input, changes: {} });
+  it('can untick A and keep the Directory', async () => {
+    const { marks } = buildBarState({ ...(await inputOf()), changes: {} });
     expect(toggleValue({ saved, changes: {}, marks }, 'subscription', SUB_A)).toEqual({ changes: { subscription: ['directory'] } });
   });
 });

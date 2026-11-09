@@ -1,14 +1,16 @@
 /**
  * The dashboard page holds one revision (ADR 0013). A counting response computed from a newer one says
  * the dashboard changed underneath the page, so the bar and every number reload together. A layout edit
- * that is open is not discarded by that reload: the page keeps showing the revision it holds, bar
- * included, and takes the newer one when the edit ends. Pure and client-safe.
+ * that is open is not discarded by that reload: the page keeps the layout it holds and takes the newer
+ * one when the edit ends. The filters are not part of that layout, and the server counts with the
+ * newest saved filters whatever the page holds, so the bar follows the newest revision at once. Pure
+ * and client-safe.
  */
 
 export const CHANGED_NOTICE_RELOADED =
   'This dashboard changed since you opened it. The filter bar and every number were reloaded. Your changes are still in the address.';
 export const CHANGED_NOTICE_DEFERRED =
-  'This dashboard changed since you opened it. Your layout edit is still open. Save or cancel it to reload the filter bar and every number. Your changes are still in the address.';
+  'This dashboard changed since you opened it. The filter bar and every number were reloaded. Your layout edit is still open: save or cancel it to load the new layout. Your changes are still in the address.';
 
 export interface RevisionView {
   /** The revision the page shows. */
@@ -27,6 +29,11 @@ export function seeRevision(view: RevisionView, seen: number): { view: RevisionV
 export function incomingDashboard(input: { held: number; incoming: number; layoutEditOpen: boolean }): 'adopt' | 'defer' | 'same' {
   if (input.incoming <= input.held) return 'same';
   return input.layoutEditOpen ? 'defer' : 'adopt';
+}
+
+/** Of two accounts of one dashboard, the newer revision; a tie goes to `incoming`, the one just received. */
+export function latestOf<T extends { revision: number }>(held: T, incoming: T): T {
+  return incoming.revision >= held.revision ? incoming : held;
 }
 
 export function noticeFor(action: 'adopt' | 'defer'): string {
