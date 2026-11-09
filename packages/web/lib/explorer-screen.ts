@@ -66,6 +66,18 @@ export function emptyListCopy(reason: EmptyReason, subject: 'findings' | 'rules'
     : `No ${subject} match your filters`;
 }
 
+/** The way back from a list that could not load or holds nothing, when the filters are the viewer's to
+ *  undo. Plain Scans clears them. With a saved view open, clearing would widen it past what it saved, so
+ *  the way back is to the view's own filters, and there is none when nothing differs from them. */
+export function filtersRecoveryOf(state: {
+  savedViewOpen: boolean;
+  hasActiveFilter: boolean;
+  differsFromSaved: boolean;
+}): 'Clear filters' | 'Back to saved filters' | null {
+  if (state.savedViewOpen) return state.differsFromSaved ? 'Back to saved filters' : null;
+  return state.hasActiveFilter ? 'Clear filters' : null;
+}
+
 /** What a filter chip reads: "Outside your access" for a marked subscription or resource group, with
  *  neither its id nor its name, otherwise `named(value)`. */
 export function filterChipLabel(

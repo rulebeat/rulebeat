@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyView, rowField } from '@/lib/finding-view';
 import { groupUrl, type Loaded, type ViewRequest } from '@/lib/explorer-session';
-import { listBodyOf, openGroupUrl, screenOf, valueOptionsOf, valuesPanelOf } from '@/lib/explorer-screen';
+import { filtersRecoveryOf, listBodyOf, openGroupUrl, screenOf, valueOptionsOf, valuesPanelOf } from '@/lib/explorer-screen';
 import type { ColumnValuesResponse } from '@/lib/view-response';
 
 const request: ViewRequest = { view: { ...emptyView(), groupBy: ['category', rowField('zone')] }, tab: 'results', showSuppressed: false };
@@ -145,5 +145,20 @@ describe('the values a dropdown lists', () => {
     expect(valuesPanelOf({ remote: true, read: ready(values([['a', 1], ['b', 1]], 2)), options: [], search: '' }).footer).toBeNull();
     expect(valuesPanelOf({ remote: true, read: { status: 'loading' }, options: [], search: '' }).footer).toBeNull();
     expect(valuesPanelOf({ remote: false, read: undefined, options: own, search: '' }).footer).toBeNull();
+  });
+});
+
+describe('the way back from a list that could not load or holds nothing', () => {
+  it('clears the filters on plain Scans, when there are any', () => {
+    expect(filtersRecoveryOf({ savedViewOpen: false, hasActiveFilter: true, differsFromSaved: false })).toBe('Clear filters');
+    expect(filtersRecoveryOf({ savedViewOpen: false, hasActiveFilter: false, differsFromSaved: false })).toBeNull();
+  });
+
+  it('goes back to the saved filters with a view open, which clearing would widen past', () => {
+    expect(filtersRecoveryOf({ savedViewOpen: true, hasActiveFilter: true, differsFromSaved: true })).toBe('Back to saved filters');
+  });
+
+  it('offers nothing with a view open when nothing differs from it, however many filters it saves', () => {
+    expect(filtersRecoveryOf({ savedViewOpen: true, hasActiveFilter: true, differsFromSaved: false })).toBeNull();
   });
 });

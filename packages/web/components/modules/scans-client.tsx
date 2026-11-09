@@ -32,8 +32,9 @@ import { can, type Role } from '@/lib/rbac';
 import type { WriteControls } from '@/lib/write-controls';
 import type { Category, Rule, Severity, Suppression } from '@/lib/types';
 import type { View } from '@/lib/finding-view';
-import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import type { OpenSavedView, SavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
+import { SavedViewUnavailable } from '@/components/findings/saved-view-unavailable';
 import { OwnUrlWrites } from '@/lib/own-url-writes';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
 import type { TabEmptyState } from '@/lib/tab-empty-state';
@@ -87,8 +88,12 @@ export interface ScansClientProps {
    *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
    *  FindingsExplorerClient's `initialView`. The page sends no findings: the explorer reads them. */
   initialView?: View;
-  /** Which saved view the URL says is open (`?view=`). Undefined when none is. */
-  initialSavedViewId?: string;
+  /** The saved view the URL says is open (`?view=`), with the View it saved. The URL then holds only the
+   *  differences from it, and `initialView` is the saved view with them on top. Undefined when none is. */
+  openSavedView?: OpenSavedView;
+  /** Set when the URL names a saved view that is unknown, deleted or not the person's to open: the
+   *  explorer tabs show one notice instead of findings, and `keepHref` is this link without the view. */
+  savedViewUnavailable?: { keepHref: string };
   runs?: ScanHistoryTabProps['runs'];
   runDetail?: ScanHistoryTabProps['runDetail'];
   /** The scan a `?scan=` link names, with what the address asks of it. The page sends no findings: the
@@ -126,7 +131,8 @@ export function ScansClient({
   initialSuppressions,
   initialCategoryFilter,
   initialView,
-  initialSavedViewId,
+  openSavedView,
+  savedViewUnavailable,
   runs,
   runDetail,
   snapshotScanId,
@@ -177,7 +183,7 @@ export function ScansClient({
   const savedViewsFor = (tab: SavedViewTab) => ({
     tab,
     canWrite: canWriteViews,
-    openId: initialSavedViewId ?? null,
+    open: openSavedView ?? null,
     onOpen: (saved: SavedView) => {
       ownWrites.forget();
       router.push(savedViewHref(saved));
@@ -331,7 +337,9 @@ export function ScansClient({
         <TabLink href="/scans?tab=schedules" active={activeTab === 'schedules'}>Schedules</TabLink>
       </div>
 
-      {explorerTab && (
+      {explorerTab && savedViewUnavailable && <SavedViewUnavailable keepHref={savedViewUnavailable.keepHref} />}
+
+      {explorerTab && !savedViewUnavailable && (
         <FindingsExplorerClient
           key={`${explorerTab}-${explorerKey}`}
           tab={explorerTab}

@@ -19,11 +19,11 @@ interface SavedViewsMenuProps {
   tab: SavedViewTab;
   /** Whether the viewer may save, update, rename and delete. Everyone can open a view. */
   canWrite: boolean;
-  /** The view the URL says is open, if any. */
+  /** The view the address says is open, if any. */
   openId: string | null;
-  /** Asks for the URL's open view to change: set after a save, cleared after a delete or when the
-   *  open view is gone. */
-  onOpenIdChange: (id: string | null) => void;
+  /** The open view changed: it is the stored view after a save, an update or a rename (so the address
+   *  is written against it, at its new revision), and null after a delete. */
+  onOpenChange: (view: SavedView | null) => void;
   /** Opens a saved view. */
   onOpen: (view: SavedView) => void;
   /** The explorer's current View as the query a saved view stores. */
@@ -34,7 +34,7 @@ interface SavedViewsMenuProps {
 type ViewAction = 'save' | 'update' | 'rename' | 'delete';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: SavedView[] }
 
-export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, currentQuery }: SavedViewsMenuProps) {
+export function SavedViewsMenu({ tab, canWrite, openId, onOpenChange, onOpen, currentQuery }: SavedViewsMenuProps) {
   const [state, setState] = useState<SavedViewsState>({ status: 'loading', views: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [action, setAction] = useState<ViewAction | null>(null);
@@ -51,11 +51,6 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
   const views = state.views.filter(v => v.tab === tab);
   const open = views.find(v => v.id === openId) ?? null;
 
-  // A view someone else deleted, or a stale link, leaves nothing to update or rename.
-  useEffect(() => {
-    if (state.status === 'ready' && openId && !open) onOpenIdChange(null);
-  }, [state.status, openId, open, onOpenIdChange]);
-
   /** Makes the change, then mirrors it in the list and the URL. Returns the message to show, or
    *  null when it worked. */
   async function applyAction(kind: ViewAction, name: string): Promise<string | null> {
@@ -71,10 +66,10 @@ export function SavedViewsMenu({ tab, canWrite, openId, onOpenIdChange, onOpen, 
     if (outcome.view) {
       const stored = outcome.view;
       setState(prev => ({ status: prev.status, views: upsertSavedView(prev.views, stored) }));
-      if (kind === 'save') onOpenIdChange(stored.id);
+      onOpenChange(stored);
     } else {
       setState(prev => ({ status: prev.status, views: prev.views.filter(v => v.id !== open?.id) }));
-      onOpenIdChange(null);
+      onOpenChange(null);
     }
     return null;
   }

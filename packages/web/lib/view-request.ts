@@ -7,6 +7,8 @@
 import { EXPORT_FORMATS, type ExportFormat } from './findings-export';
 import { isRowField, viewFromSearchParams, type RowField, type View } from './finding-view';
 import { parseViewTab, type ViewTab } from './view-response';
+import { effectiveView } from './effective-filters';
+import { OPEN_VIEW_PARAM, SAVED_VIEW_UNAVAILABLE } from './saved-view-query';
 
 export interface ViewRequest { view: View; tab: ViewTab; showSuppressed: boolean }
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -19,6 +21,26 @@ export function parseViewRequest(params: URLSearchParams): Parsed<ViewRequest> {
   const tab = rawTab === null ? 'results' : parseViewTab(rawTab);
   if (!tab) return fail('The tab must be results or advisories.');
   return { ok: true, value: { view: viewFromSearchParams(params), tab, showSuppressed: params.get('suppressed') === '1' } };
+}
+
+export type ReadViewRequest =
+  | { ok: true; value: ViewRequest }
+  | { ok: false; error: string; status: 400 | 404 };
+
+/**
+ * `parseViewRequest` for a route that may be asked for a saved view (`view=<id>&rev=<n>`). With a view
+ * open, the View is the saved view with the query's changes on top (`effectiveView`), assembled here
+ * and never from a copy the browser built; an unknown, deleted or unopenable view is a 404 with one
+ * message. The read always uses the view as it is now; `rev` is ignored.
+ */
+export async function readViewRequest(params: URLSearchParams): Promise<ReadViewRequest> {
+  const parsed = parseViewRequest(params);
+  if (!parsed.ok) return { ok: false, error: parsed.error, status: 400 };
+  const viewId = params.get(OPEN_VIEW_PARAM);
+  if (!viewId) return parsed;
+  const effective = await effectiveView({ viewId, changes: params });
+  if (!effective.ok) return { ok: false, error: SAVED_VIEW_UNAVAILABLE, status: 404 };
+  return { ok: true, value: { ...parsed.value, view: effective.view } };
 }
 
 /** `format=csv|json`: which file the export route writes. There is no default, so a link that forgot

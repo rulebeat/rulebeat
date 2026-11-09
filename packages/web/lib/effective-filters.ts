@@ -2,14 +2,17 @@
  * The effective filters of one dashboard widget (ADR 0013), assembled on the server so the layers
  * cannot drift between the bar and the widgets: the filters saved on the dashboard, then the filter
  * changes from the address, then the widget's own override. Each layer replaces the one before for a
- * dimension it sets and never intersects with it.
+ * dimension it sets and never intersects with it. `effectiveView` does the same for a saved view open
+ * on /scans, which has the first two layers.
  *
  * A value the viewer's access does not reach stays in the filter, so it keeps restricting and the
  * numbers stay the ones the access allows (the reads narrow by access in SQL). It is reported as a
  * count and never named.
  */
 import { getDashboard } from '@/lib/db/dashboards';
-import { dashboardAddress } from '@/lib/finding-view';
+import { getSavedView } from '@/lib/db/saved-views';
+import { dashboardAddress, savedViewAddress, viewFromSearchParams, type View } from '@/lib/finding-view';
+import type { OpenSavedView } from '@/lib/saved-view-query';
 import {
   applyChanges, mergeWidgetFilters, savedFiltersOf, widgetFiltersOf, type WidgetFilters,
 } from '@/lib/dashboard-filters';
@@ -82,5 +85,35 @@ export async function effectiveFilters(input: EffectiveFiltersInput): Promise<Ef
     heldBack: held.subscriptions.length + held.resourceGroups.length,
     widgetType: stored?.type,
     config,
+  };
+}
+
+export type EffectiveView =
+  | {
+    ok: true;
+    /** The saved view with the address's changes on top: what the person is looking at. */
+    view: View;
+    /** The saved view the address has open, as it is now. */
+    saved: OpenSavedView;
+  }
+  | { ok: false; reason: 'unavailable' };
+
+/**
+ * The effective View of an address that has a saved view open (ADR 0013): the view's saved query, then
+ * the changes the address holds, each replacing the saved part it names (`savedViewAddress`). The
+ * client sends the view's id and the changes, never a copy of the query, so a link follows the view's
+ * later updates. A view that is unknown, deleted, or not the person's to open is one answer,
+ * `unavailable`, so the three cannot be told apart. The viewer's access narrows what the View reads in
+ * SQL, as it does for any View, so a saved value outside it keeps restricting and is never named.
+ */
+export async function effectiveView(input: { viewId: string; changes: URLSearchParams | Record<string, string | string[] | undefined> }): Promise<EffectiveView> {
+  const stored = await getSavedView(input.viewId);
+  if (!stored) return { ok: false, reason: 'unavailable' };
+  // The page is where a viewer happens to be, so a saved query written before it was dropped does not carry one.
+  const view = { ...viewFromSearchParams(new URLSearchParams(stored.query)), page: 1 };
+  return {
+    ok: true,
+    view: savedViewAddress(view).read(input.changes),
+    saved: { id: stored.id, revision: stored.revision, view },
   };
 }
