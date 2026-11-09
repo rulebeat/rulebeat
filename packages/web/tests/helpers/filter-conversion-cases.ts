@@ -388,4 +388,212 @@ export function defineFilterConversionCases(harness: () => ConversionHarness): v
       expect(await query('conv-view-empty')).toBe('');
     });
   });
+  describe('widget overrides and periods', () => {
+    const widget = (id: string, type: string, cfg: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+      ({ id, type, title: id, x: 0, y: 0, w: 4, h: 3, config: cfg, ...extra });
+    type StoredWidget = { id: string; type: string; config?: Record<string, unknown>; dimensionFilters?: Record<string, unknown> };
+    const widgetsOf = async (id: string) => (await config(id)).widgets as StoredWidget[];
+    const dims = async (id: string) => Object.fromEntries((await widgetsOf(id)).map(w => [w.id, w.dimensionFilters]));
+    const days = (n: number) => ({ window: { mode: 'relative', days: n } });
+
+    it('converts each period of a trend: All time is 365 days, no period is 30, and the rest keep their length', async () => {
+      await everything();
+      await dashboard('conv-w-trend', { widgets: [
+        widget('a', 'trend', { period: '7d' }), widget('b', 'trend', { period: '30d' }), widget('c', 'trend', { period: '90d' }),
+        widget('d', 'trend', { period: 'all' }), widget('e', 'trend', {}), widget('f', 'trend', { period: 'fortnight' }),
+      ] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-trend')).toEqual({ a: days(7), b: days(30), c: days(90), d: days(365), e: days(30), f: days(30) });
+    });
+
+    it('converts All history on New vs Fixed and Activity occurrences to 180 days, and no period to 30', async () => {
+      await everything();
+      await dashboard('conv-w-events', { widgets: [
+        widget('a', 'new-vs-fixed', { period: 'all' }), widget('b', 'new-vs-fixed', {}), widget('c', 'new-vs-fixed', { period: '90d' }),
+        widget('d', 'activity-occurrences', { period: 'all' }), widget('e', 'activity-occurrences', {}), widget('f', 'activity-occurrences', { period: '7d' }),
+      ] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-events')).toEqual({ a: days(180), b: days(30), c: days(90), d: days(180), e: days(30), f: days(7) });
+    });
+
+    it('converts a widget windowDays of 1, 7 or 30 and ignores any other, and gives no period to a widget that does not read one', async () => {
+      await everything();
+      await dashboard('conv-w-days', { widgets: [
+        widget('a', 'stat-card', { metric: 'new-findings', windowDays: 1 }), widget('b', 'stat-card', { metric: 'new-findings', windowDays: 7 }),
+        widget('c', 'top-rules', { windowDays: 30 }), widget('d', 'top-rules', { windowDays: 90 }),
+        widget('e', 'severity-breakdown', { period: '7d' }), widget('f', 'severity-breakdown', {}),
+      ] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-days')).toEqual({ a: days(1), b: days(7), c: days(30), d: undefined, e: undefined, f: undefined });
+    });
+
+    it('lets the period win over windowDays on the three chart types, and keeps windowDays when there is no period', async () => {
+      await everything();
+      await dashboard('conv-w-wins', { widgets: [
+        widget('a', 'trend', { period: '90d', windowDays: 7 }), widget('b', 'new-vs-fixed', { windowDays: 1 }),
+        widget('c', 'activity-occurrences', { period: 'all', windowDays: 30 }),
+      ] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-wins')).toEqual({ a: days(90), b: days(30), c: days(180) });
+    });
+
+    it('turns a widget category into a one-value pick, and category all and empty lists into Inherit', async () => {
+      await everything();
+      await dashboard('conv-w-category', { widgets: [
+        widget('a', 'severity-breakdown', { category: 'cost' }), widget('b', 'severity-breakdown', { category: 'all' }),
+        widget('c', 'top-rules', { category: 'all', policyIds: [], subscriptions: [], tags: [] }),
+        widget('d', 'posture-ring', { category: 'security', policyIds: ['r1', 'r2'] }),
+      ] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-category')).toEqual({ a: { category: ['cost'] }, b: undefined, c: undefined, d: { category: ['security'], rule: ['r1', 'r2'] } });
+    });
+
+    it('converts only limit, category and policyIds of a findings-table widget, and writes no rename back', async () => {
+      await everything();
+      const legacy = widget('a', 'findings-table', {
+        limit: 5, category: 'cost', policyIds: ['r1'], subscriptions: [SUB_A], period: '7d', windowDays: 1, tags: ['t'],
+      });
+      const explorer = widget('b', 'findings-explorer', { limit: 9, category: 'all', policyIds: ['r2'], windowDays: 30 });
+      await dashboard('conv-w-table', { widgets: [legacy, explorer] });
+
+      await h().startUp();
+
+      const stored = await config('conv-w-table');
+      expect(await dims('conv-w-table')).toEqual({ a: { category: ['cost'], rule: ['r1'] }, b: { rule: ['r2'] } });
+      expect((stored.widgets as StoredWidget[]).map(w => [w.type, w.config])).toEqual([[legacy.type, legacy.config], [explorer.type, explorer.config]]);
+      expect(stored.convertedFrom).toEqual({ widgets: { a: { category: 'cost', policyIds: ['r1'] }, b: { category: 'all', policyIds: ['r2'] } } });
+    });
+
+    it('converts an old top-policies widget as top-rules and leaves its type as stored', async () => {
+      await everything();
+      await dashboard('conv-w-policies', { widgets: [widget('a', 'top-policies', { limit: 8, category: 'cost', policyIds: ['r9'] }), widget('b', 'top-policies', { limit: 8 })] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-policies')).toEqual({ a: { category: ['cost'], rule: ['r9'] }, b: undefined });
+      expect((await widgetsOf('conv-w-policies')).map(w => w.type)).toEqual(['top-policies', 'top-policies']);
+    });
+
+    it('does not convert a widget-level filters or layout, which 0.13 never read', async () => {
+      await everything();
+      await dashboard('conv-w-unread', { widgets: [widget('a', 'top-rules', { limit: 3 }, { filters: { categories: ['cost'] }, layout: { x: 1, y: 2, w: 3, h: 4 } })] });
+      const before = (await h().all(`SELECT config FROM dashboards WHERE id = 'conv-w-unread'`))[0]!.config;
+
+      await h().startUp();
+
+      expect((await h().all(`SELECT config FROM dashboards WHERE id = 'conv-w-unread'`))[0]!.config).toBe(before);
+    });
+
+    it('records the legacy values per widget id, never its type or metric, and writes them beside the untouched legacy keys', async () => {
+      await everything();
+      const trend = widget('t1', 'trend', { category: 'cost', period: 'all', windowDays: 7, chartType: 'area', policyIds: ['r1'] });
+      const card = widget('c1', 'stat-card', { metric: 'new-findings', windowDays: 7 });
+      await dashboard('conv-w-record', { widgets: [trend, card, widget('plain', 'stat-card', { metric: 'total-findings' })], filters: { tags: ['t'] } });
+
+      await h().startUp();
+
+      const stored = await config('conv-w-record');
+      expect(stored.convertedFrom).toEqual({
+        filters: { tags: ['t'] },
+        widgets: { t1: { category: 'cost', policyIds: ['r1'], period: 'all', windowDays: 7 }, c1: { windowDays: 7 } },
+      });
+      expect((stored.widgets as StoredWidget[]).map(w => w.config)).toEqual([trend.config, card.config, { metric: 'total-findings' }]);
+    });
+
+    it('leaves a dashboard shaped like the 25-06 fixture row exactly as it was: widgets with a layout and no config', async () => {
+      await everything();
+      const fixture = {
+        widgets: [
+          { id: 'w1', type: 'stat-card', layout: { x: 0, y: 0, w: 3, h: 2 } },
+          { id: 'w2', type: 'top-policies', layout: { x: 3, y: 0, w: 6, h: 4 } },
+        ],
+        filters: { category: 'cost', dateWindow: { mode: 'relative', days: 7 } },
+      };
+      await dashboard('conv-w-2506', fixture as unknown as DashboardConfigJson);
+      const before = (await h().all(`SELECT config FROM dashboards WHERE id = 'conv-w-2506'`))[0]!.config;
+
+      await h().startUp();
+
+      expect((await h().all(`SELECT config FROM dashboards WHERE id = 'conv-w-2506'`))[0]!.config).toBe(before);
+    });
+
+    it('still converts the widgets that have a config on a dashboard that also holds one with none', async () => {
+      await everything();
+      await dashboard('conv-w-mixed', { widgets: [{ id: 'a', type: 'stat-card' }, widget('b', 'trend', { period: '90d' })] });
+
+      await h().startUp();
+
+      expect(await dims('conv-w-mixed')).toEqual({ a: undefined, b: days(90) });
+      expect((await widgetsOf('conv-w-mixed'))[0]).toEqual({ id: 'a', type: 'stat-card' });
+    });
+
+    it('converts a widget again when 0.13 edited its legacy values, and leaves the widgets it did not edit as they are', async () => {
+      await everything();
+      await dashboard('conv-w-rollback', { widgets: [widget('a', 'severity-breakdown', { category: 'cost' }), widget('b', 'trend', { period: '7d' })] });
+      await h().startUp();
+      const converted = await config('conv-w-rollback');
+      const [a, b] = converted.widgets as StoredWidget[];
+      // The person tunes widget b in the new shape, then goes back to 0.13 and edits widget a, whose save keeps the keys it does not know.
+      const tuned = { ...converted, widgets: [{ ...a, config: { category: 'security', policyIds: ['r1'] } }, { ...b, dimensionFilters: days(90) }] };
+      await h().run(`UPDATE dashboards SET config = ${lit(JSON.stringify(tuned))} WHERE id = 'conv-w-rollback'`);
+
+      await h().startUp();
+
+      const again = await config('conv-w-rollback');
+      expect(await dims('conv-w-rollback')).toEqual({ a: { category: ['security'], rule: ['r1'] }, b: days(90) });
+      expect(again.convertedFrom).toEqual({ widgets: { a: { category: 'security', policyIds: ['r1'] }, b: { period: '7d' } } });
+    });
+
+    it('clears a widget override when 0.13 cleared the legacy value it came from', async () => {
+      await everything();
+      await dashboard('conv-w-cleared', { widgets: [widget('a', 'severity-breakdown', { category: 'cost' })] });
+      await h().startUp();
+      const converted = await config('conv-w-cleared');
+      const [a] = converted.widgets as StoredWidget[];
+      await h().run(`UPDATE dashboards SET config = ${lit(JSON.stringify({ ...converted, widgets: [{ ...a, config: { category: 'all' } }] }))} WHERE id = 'conv-w-cleared'`);
+
+      await h().startUp();
+
+      expect(await dims('conv-w-cleared')).toEqual({ a: undefined });
+    });
+
+    it('converts a widget added under 0.13 and ignores the record of one that was deleted', async () => {
+      await everything();
+      await dashboard('conv-w-added', { widgets: [widget('a', 'severity-breakdown', { category: 'cost' }), widget('gone', 'top-rules', { category: 'cost' })] });
+      await h().startUp();
+      const converted = await config('conv-w-added');
+      const [a] = converted.widgets as StoredWidget[];
+      await h().run(`UPDATE dashboards SET config = ${lit(JSON.stringify({ ...converted, widgets: [a, widget('new', 'new-vs-fixed', { period: 'all' })] }))} WHERE id = 'conv-w-added'`);
+
+      await h().startUp();
+
+      expect(await dims('conv-w-added')).toEqual({ a: { category: ['cost'] }, new: days(180) });
+    });
+
+    it('changes nothing on a second start', async () => {
+      await everything();
+      await dashboard('conv-w-idem', { widgets: [
+        widget('a', 'trend', {}), widget('b', 'findings-table', { policyIds: ['r1'], category: 'cost' }), widget('c', 'stat-card', { metric: 'new-findings', windowDays: 7 }),
+        widget('d', 'new-vs-fixed', { period: 'all' }), { id: 'e', type: 'stat-card' },
+      ], filters: { subscriptions: [SUB_A] } });
+      await dashboard('conv-w-idem-bare', { widgets: [widget('a', 'trend', {})] });
+      await h().startUp();
+      const read = async () => h().all(`SELECT id, config FROM dashboards WHERE id LIKE 'conv-w-idem%' ORDER BY id`);
+      const first = await read();
+
+      await h().startUp();
+
+      expect(await read()).toEqual(first);
+    });
+  });
 }
