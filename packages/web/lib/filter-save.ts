@@ -124,7 +124,9 @@ export async function prepareDashboardConfig(
   return { ok: true, value: config };
 }
 
-/** `config` with the filter bar's old lists stored as dimensions, legacy values and record (see `prepareDashboardConfig`). */
+/** `config` with the filter bar's old lists stored as dimensions, legacy values and record (see `prepareDashboardConfig`).
+ *  A new dashboard has no 0.13 to go back to, so it stores the dimensions alone. The record keeps the widgets' values
+ *  the row held, which the bar knows nothing of. */
 async function convertBarLists(
   access: Access, config: DashboardConfig, lists: LegacyDashboardFilters, stored: DashboardConfig | null,
 ): Promise<Result<DashboardConfig>> {
@@ -132,8 +134,11 @@ async function convertBarLists(
   delete config.dateWindow;
   delete config.windowDays;
   delete config.convertedFrom;
-  Object.assign(config, lists, { convertedFrom: lists });
-  const converted = convertDashboardConfig({ widgets: [], ...lists }, await readRecordedPairs(access));
+  if (stored) {
+    const widgets = stored.convertedFrom?.widgets;
+    Object.assign(config, lists, { convertedFrom: widgets ? { ...lists, widgets } : lists });
+  }
+  const converted = convertDashboardConfig({ widgets: [], filters: lists.filters, dateWindow: lists.dateWindow, windowDays: lists.windowDays }, await readRecordedPairs(access));
   const dimensions = converted?.config.dimensionFilters ?? {};
   // The set is not stored yet, so the held check reads the paths the conversion made, not the hash. A refused
   // list leaves no row behind.
