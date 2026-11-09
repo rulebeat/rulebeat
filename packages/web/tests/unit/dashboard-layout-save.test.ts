@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUser } from '@/lib/db/users';
-import { createDashboard, getDashboard } from '@/lib/db/dashboards';
+import { createDashboard, getDashboard, listDashboards } from '@/lib/db/dashboards';
 import type { WidgetDef } from '@/lib/types';
 import { resetDb } from '../helpers/db';
 
@@ -36,9 +36,12 @@ const put = (body: unknown) => PUT(
   { params: Promise.resolve({ id }) },
 );
 
+const CHANGED = 'This dashboard changed since you opened it. Reload to continue.';
+const revisionNow = async () => (await getDashboard(id))!.revision;
+
 describe('a layout save', () => {
   it('moves the widgets and leaves the saved filters and window as stored', async () => {
-    const res = await put({ config: { widgets: [widget('a', 4)], autoRefresh: 60 } });
+    const res = await put({ revision: await revisionNow(), config: { widgets: [widget('a', 4)], autoRefresh: 60 } });
     expect(res.status).toBe(200);
     const stored = (await getDashboard(id))!.config;
     expect(stored.widgets[0]!.x).toBe(4);
@@ -48,10 +51,59 @@ describe('a layout save', () => {
   });
 
   it('ignores filters and a window in the body', async () => {
-    await put({ config: { widgets: [widget('a')], filters: { categories: ['cost'] }, dateWindow: { mode: 'relative', days: 1 }, windowDays: 7 } });
+    await put({ revision: await revisionNow(), config: { widgets: [widget('a')], filters: { categories: ['cost'] }, dateWindow: { mode: 'relative', days: 1 }, windowDays: 7 } });
     const stored = (await getDashboard(id))!.config;
     expect(stored.filters).toEqual(STORED_FILTERS);
     expect(stored.dateWindow).toEqual({ mode: 'relative', days: 30 });
     expect(stored.windowDays).toBeUndefined();
+  });
+});
+
+describe('a write that carries no revision', () => {
+  it('answers 409 with the stated copy and writes nothing when it carries a config', async () => {
+    const before = (await getDashboard(id))!;
+    const res = await put({ config: { widgets: [widget('a', 8)], autoRefresh: 30 } });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: CHANGED });
+    expect((await getDashboard(id))).toEqual(before);
+  });
+
+  it('answers 409 and writes nothing when it carries a name or description', async () => {
+    const before = (await getDashboard(id))!;
+    for (const body of [{ name: 'Renamed' }, { description: 'New words' }]) {
+      const res = await put(body);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: CHANGED });
+    }
+    expect((await getDashboard(id))).toEqual(before);
+  });
+
+  it('does not make a dashboard the default when the same request also needs a revision', async () => {
+    const other = await createDashboard({ name: `other ${crypto.randomUUID()}`, config: { widgets: [] } });
+    if (!other.ok) throw new Error(other.reason);
+    const defaultBefore = (await listDashboards()).find(d => d.isDefault)!.id;
+    const res = await put({ isDefault: true, name: 'Renamed' });
+    expect(res.status).toBe(409);
+    expect((await listDashboards()).find(d => d.isDefault)!.id).toBe(defaultBefore);
+  });
+
+  it('still accepts a request that sends only isDefault', async () => {
+    const other = await createDashboard({ name: `other ${crypto.randomUUID()}`, config: { widgets: [] } });
+    if (!other.ok) throw new Error(other.reason);
+    const res = await put({ isDefault: true });
+    expect(res.status).toBe(200);
+    expect((await getDashboard(id))!.isDefault).toBe(true);
+  });
+});
+
+describe('a write that carries the revision', () => {
+  it('renames, answers the new revision and keeps the saved filters', async () => {
+    const before = await revisionNow();
+    const res = await put({ name: 'Renamed', revision: before });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { name: string; revision: number };
+    expect(body.name).toBe('Renamed');
+    expect(body.revision).toBe(before + 1);
+    expect((await getDashboard(id))!.config.filters).toEqual(STORED_FILTERS);
   });
 });

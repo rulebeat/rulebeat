@@ -679,9 +679,36 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: dashboardExpected,
   };
+  // PUT /api/dashboards/[id] is a layout write: only an Editor on Everything or an Admin may make one, it needs
+  // the revision the person read, and it never changes the saved filters, whatever the body carries.
+  const putLayout = async (seed: MatrixSeed, body: object) => {
+    const route = await import('@/app/api/dashboards/[id]/route');
+    const res = await route.PUT(
+      new Request('http://localhost/api/dashboards/x', { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+      { params: Promise.resolve({ id: seed.dashboardId }) },
+    );
+    const answered = res.status === 200 ? await res.json() as { config: { filters?: unknown } } : undefined;
+    return { status: res.status, filters: answered?.config.filters };
+  };
   const dashboardById: Matrix = {
-    probe: async seed => dashboardOf(await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as never),
-    expected: dashboardExpected,
+    probe: async seed => {
+      const route = await import('@/app/api/dashboards/[id]/route');
+      const read = await BODY(await getWith('/api/dashboards/x', route, seed.dashboardId)) as { revision: number; config: { widgets: unknown[] } };
+      const layout = { widgets: read.config.widgets };
+      return {
+        ...dashboardOf(read as never),
+        withRevision: await putLayout(seed, { revision: read.revision, config: { ...layout, filters: { severities: ['high'] } } }),
+        withoutRevision: await putLayout(seed, { config: layout }),
+      };
+    },
+    expected: Object.fromEntries(Object.entries(dashboardExpected).map(([person, byTab]) => {
+      const mayWrite = person === 'Admin' || person === 'Editor on Everything';
+      const writes = {
+        withRevision: mayWrite ? { status: 200, filters: STORED_DASHBOARD.filters } : { status: 403, filters: undefined },
+        withoutRevision: { status: mayWrite ? 409 : 403, filters: undefined },
+      };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
