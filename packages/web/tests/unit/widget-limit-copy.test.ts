@@ -74,7 +74,8 @@ describe('widget source files', () => {
   const held: unknown[] = [...Object.values(limits), ...Object.values(WIDGET_LIMITS)];
   const sentences = held.filter(v => typeof v === 'string' && v.length > 30) as string[];
 
-  it('holds the module wording to check', () => {
+  it('finds the widget files and the module wording to check', () => {
+    expect(files.length).toBeGreaterThan(10);
     expect(sentences.length).toBeGreaterThan(5);
   });
 

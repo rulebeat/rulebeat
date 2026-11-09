@@ -203,15 +203,16 @@ describe('the Category scorecard tiles', () => {
     const html = scorecard(summaryWith({
       perCategory: [
         category({ category: 'empty', label: 'Aaa empty', emptyLabel: 'No enabled rules' }),
-        // 99.6% and 99.4% both round to 99% and 100%, so only the unrounded ratio orders them.
-        category({ category: 'near', label: 'Near', passing: 249, total: 250, pct: 100 }),
-        category({ category: 'nearer', label: 'Nearer', passing: 248, total: 250, pct: 99 }),
+        // 248/250 (99.2%) and 247/250 (98.8%) both round to 99, and Alpha sorts before Omega by name,
+        // so only the unrounded ratio puts Omega first.
+        category({ category: 'near', label: 'Alpha near', passing: 248, total: 250, pct: 99 }),
+        category({ category: 'nearer', label: 'Omega nearer', passing: 247, total: 250, pct: 99 }),
         category({ category: 'tie-few', label: 'Tie few', passing: 1, total: 2, activeFindings: 1, pct: 50 }),
         category({ category: 'tie-many', label: 'Zed tie many', passing: 1, total: 2, activeFindings: 4, pct: 50 }),
         category({ category: 'tie-name-b', label: 'Bravo', passing: 1, total: 2, activeFindings: 1, pct: 50 }),
       ],
     }));
-    const order = ['Zed tie many', 'Bravo', 'Tie few', 'Nearer', 'Near', 'Aaa empty'].map(l => html.indexOf(`>${l}<`));
+    const order = ['Zed tie many', 'Bravo', 'Tie few', 'Omega nearer', 'Alpha near', 'Aaa empty'].map(l => html.indexOf(`>${l}<`));
     expect(order.every(i => i > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
