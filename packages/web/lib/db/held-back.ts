@@ -258,18 +258,26 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
 }
 
 /**
- * How many filter dimensions a view saved from `source` shows more on than the original did for `access`. The
- * copy is the query the person was sent, which holds no value outside their Access, so a dimension widens when
- * every value the source stored for it is held back and the copy holds none of its own. Values left beside
+ * The query a view saved from `source` holds, and how many filter dimensions it shows more on than the original
+ * did for `access`. The query is the one sent with the placeholder and every value of the source that is held back
+ * from the copier taken out, so a tab opened before their Access narrowed cannot carry them in. A dimension widens
+ * when every value the source stored for it is held back and the copy holds none of its own. Values left beside
  * others they can see never matched, so they widen nothing.
  */
-export async function viewCopyWidened(access: Access, source: { id: string; query: string }, copyQuery: string): Promise<number> {
+export async function copyViewQuery(
+  access: Access, source: { id: string; query: string }, incoming: string,
+): Promise<{ query: string; widened: number }> {
+  const query = withoutPlaceholder(incoming);
   const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
   const held = await heldBackValues(access, stored);
-  if (held.size === 0) return 0;
-  const kept = new Set(viewFromSearchParams(new URLSearchParams(withoutPlaceholder(copyQuery))).filters.filter(f => f.values.length > 0).map(f => f.field as string));
+  if (held.size === 0) return { query, widened: 0 };
+  const sent = viewFromSearchParams(new URLSearchParams(query));
+  const filters = sent.filters.map((f): ViewFilter => (
+    isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f
+  )).filter(f => f.values.length > 0);
+  const kept = new Set(filters.map(f => f.field as string));
   const dimensions = new Set(stored.filter(s => s.values.length > 0 && s.values.every(v => isHeld(held, s.dimension, v))).map(s => s.dimension));
-  return [...dimensions].filter(dimension => !kept.has(dimension)).length;
+  return { query: viewToSearchParams({ ...sent, filters }).toString(), widened: [...dimensions].filter(dimension => !kept.has(dimension)).length };
 }
 
 // ---- Saving back ----

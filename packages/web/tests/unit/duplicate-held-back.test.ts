@@ -234,10 +234,46 @@ describe('Save a new view from an open saved view', () => {
     expect(viewFromSearchParams(new URLSearchParams(stored.query)).filters).toEqual([{ field: 'subscription', values: [SUB_TWO] }]);
   });
 
-  it('counts nothing without an open view, and for one the person cannot open', async () => {
+  it('drops the held-back values the request still carries, from a tab opened before the Access narrowed', async () => {
+    const id = await sharedView([{ field: 'subscription', values: [SUB_TWO, SUB_ONE] }, { field: 'resourceName', values: ['vm-other-sub'] }]);
+    signIn(SCOPED);
+    const res = await CREATE_VIEW(new Request('http://localhost/api/views', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: `Stale ${++serial}`, tab: 'results', query: queryOf([{ field: 'subscription', values: [SUB_TWO, SUB_ONE] }, { field: 'resourceName', values: ['vm-other-sub'] }]), from: id }),
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { id: string; widened: number };
+    const stored = (await getSavedView(body.id))!;
+    expect(body.widened).toBe(1);
+    expect(stored.query).not.toContain(SUB_TWO);
+    expect(stored.query).not.toContain('vm-other-sub');
+    expect(viewFromSearchParams(new URLSearchParams(stored.query)).filters).toEqual([{ field: 'subscription', values: [SUB_ONE] }]);
+  });
+
+  it('keeps what the request carries for an Everything copier, held back or not', async () => {
+    const id = await sharedView([{ field: 'subscription', values: [SUB_TWO] }]);
+    const { stored } = await saveFromOpen(ADMIN, id, { query: queryOf([{ field: 'subscription', values: [SUB_TWO] }]) });
+    expect(viewFromSearchParams(new URLSearchParams(stored.query)).filters).toEqual([{ field: 'subscription', values: [SUB_TWO] }]);
+  });
+
+  it('counts nothing without an open view, and for one that does not exist', async () => {
     const id = await sharedView([{ field: 'subscription', values: [SUB_TWO] }]);
     expect((await saveFromOpen(SCOPED, id, { from: undefined })).body.widened).toBe(0);
     expect((await saveFromOpen(SCOPED, id, { from: 'no-such-view' })).body.widened).toBe(0);
+  });
+
+  it("answers like an unknown id for someone else's Personal view: nothing is counted or revealed", async () => {
+    const made = await createSavedView({ name: `Private ${++serial}`, tab: 'results', query: queryOf([{ field: 'subscription', values: [SUB_TWO] }]) }, MATRIX_OWNER);
+    if (!made.ok) throw new Error(made.reason);
+    for (const person of [SCOPED, ADMIN]) {
+      signIn(person);
+      const res = await CREATE_VIEW(new Request('http://localhost/api/views', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: `Peek ${++serial}`, tab: 'results', query: queryOf([]), from: made.view.id }),
+      }));
+      expect(res.status).toBe(201);
+      expect((await res.json() as { widened: number }).widened).toBe(0);
+    }
   });
 
   it('says how many filters show more, and nothing for 0', () => {
