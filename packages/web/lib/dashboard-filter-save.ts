@@ -13,15 +13,24 @@ export function autoSavesFilters(actor: { id: string }, dashboard: Pick<HeldBack
   return dashboard.visibility === 'personal' && isOwnItem(actor, dashboard);
 }
 
-/** The config a save in edit mode sends. A Shared dashboard stores its filter bar only here, so it goes along. */
+/**
+ * The config a save sends. A Shared dashboard stores its filter bar only through Save in edit mode, which passes
+ * `filters` and `dateWindow`. Any other save (the auto-refresh selector) leaves them out, so the stored filter bar
+ * goes back as it is and whatever the person explored on their page is not stored for everyone.
+ */
 export function configForSave(
   dashboard: Pick<HeldBackDashboard, 'config' | 'visibility'>,
-  changes: { widgets: DashboardConfig['widgets']; autoRefresh: number; filters: DashboardConfig['filters']; dateWindow: DateWindow },
+  changes: { widgets: DashboardConfig['widgets']; autoRefresh: number; filters?: DashboardConfig['filters']; dateWindow?: DateWindow },
 ): DashboardConfig {
   const config = { ...dashboard.config, autoRefresh: changes.autoRefresh, widgets: changes.widgets };
-  return dashboard.visibility === 'shared'
+  return dashboard.visibility === 'shared' && changes.filters !== undefined && changes.dateWindow !== undefined
     ? { ...config, filters: changes.filters, dateWindow: changes.dateWindow, windowDays: undefined }
     : config;
+}
+
+/** A rename names the revision of the copy the page holds, so a rename from a copy that has moved on is refused. */
+export function renameBody(dashboard: Pick<HeldBackDashboard, 'revision'>, name: string): { name: string; revision: number } {
+  return { name, revision: dashboard.revision };
 }
 
 export type FilterAutoSaveOutcome =

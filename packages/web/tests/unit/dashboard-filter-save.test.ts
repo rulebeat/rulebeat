@@ -4,7 +4,7 @@
  * sends nothing, for its owner too: stored filters change only through Save in edit mode.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave } from '@/lib/dashboard-filter-save';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, renameBody } from '@/lib/dashboard-filter-save';
 import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import type { HeldBackDashboard } from '@/lib/types';
 
@@ -90,6 +90,14 @@ describe('the config a save in edit mode sends', () => {
     expect(config.autoRefresh).toBe(60);
   });
 
+  it('keeps the stored filter bar of a Shared dashboard when the save is not a Save in edit mode, such as an auto-refresh change', () => {
+    const stored = dashboard({ visibility: 'shared', config: { widgets: [], filters: { subscriptions: ['stored-sub'] }, dateWindow: WINDOW } });
+    const config = configForSave(stored, { widgets: [], autoRefresh: 60, filters: undefined, dateWindow: undefined });
+    expect(config.filters).toEqual({ subscriptions: ['stored-sub'] });
+    expect(config.dateWindow).toEqual(WINDOW);
+    expect(config.autoRefresh).toBe(60);
+  });
+
   it('leaves the stored filter bar of a Personal dashboard to its own auto-save', () => {
     const config = configForSave(dashboard(), changes);
     expect(config.filters).toEqual({ subscriptions: [] });
@@ -100,5 +108,11 @@ describe('the config a save in edit mode sends', () => {
 describe('the line on a Shared dashboard', () => {
   it('says filter changes are not saved', () => {
     expect(SHARED_FILTERS_NOTE).toMatch(/not saved/);
+  });
+});
+
+describe('the body of a rename', () => {
+  it('carries the revision of the copy the page holds, so a rename from a stale copy is refused', () => {
+    expect(renameBody(dashboard({ revision: 7 }), 'New name')).toEqual({ name: 'New name', revision: 7 });
   });
 });

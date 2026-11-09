@@ -33,13 +33,13 @@ import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboar
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
-import { widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import { STALE_DASHBOARD_MESSAGE, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave } from '@/lib/dashboard-filter-save';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, renameBody } from '@/lib/dashboard-filter-save';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -342,7 +342,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
     const res = await fetch(`/api/dashboards/${dashboard.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed }),
+      body: JSON.stringify(renameBody(dashboard, trimmed)),
     });
     if (res.ok) {
       const d = await res.json() as HeldBackDashboard;
@@ -353,13 +353,20 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       router.refresh(); // update server-rendered Header
     } else {
       const body = await res.json().catch(() => ({})) as { error?: string };
+      if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) {
+        // The dashboard changed since this copy was read: the reload notice, not a name error.
+        setStaleMessage(STALE_DASHBOARD_MESSAGE);
+        setEditingTitle(false);
+        setTitleValue(dashboard.name);
+        return;
+      }
       setTitleError(body.error ?? 'Failed to rename.');
       titleInputRef.current?.focus();
     }
   }
 
   // Save layout + config to API
-  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue) {
+  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, withFilters = true) {
     setSaving(true);
     try {
       const res = await fetch(`/api/dashboards/${dashboard.id}`, {
@@ -369,7 +376,9 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
           name: updatedName,
           // A Personal dashboard's filter bar saves on its own (see the debounced effect above), so this save
           // must not clobber it. A Shared dashboard stores its filter bar only here.
-          config: configForSave(dashboard, { widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, filters: dashFilters, dateWindow }),
+          config: configForSave(dashboard, {
+            widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...(withFilters && { filters: dashFilters, dateWindow }),
+          }),
           revision: dashboard.revision,
           opened: dashboard.config,
         }),
@@ -382,7 +391,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
         setStaleMessage(null);
       } else {
         const body = await res.json().catch(() => ({})) as { error?: string };
-        if (res.status === 409) setStaleMessage(body.error ?? 'This dashboard changed while you were editing it. Reload it and try again.');
+        if (res.status === 409) setStaleMessage(body.error ?? STALE_DASHBOARD_MESSAGE);
         else setError(body.error ?? 'Failed to save the dashboard.');
       }
     } finally { setSaving(false); }
@@ -471,7 +480,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
 
   function handleRefreshChange(val: number) {
     setAutoRefresh(val);
-    save(widgets, val, titleValue);
+    // Not a Save in edit mode: the filters explored on this page are not stored.
+    save(widgets, val, titleValue, false);
   }
 
   const actor = { id: currentUserId };

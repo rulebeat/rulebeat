@@ -18,6 +18,9 @@ export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
  */
 export const UNSEEN_VALUE_MESSAGE = "No finding you can see has this value, so it can't be saved.";
 
+/** What a save from a copy of a dashboard that has since changed is answered with (409). */
+export const STALE_DASHBOARD_MESSAGE = 'This dashboard changed while you were editing it. Reload it and try again.';
+
 export type HeldBackPlace = 'dashboard' | 'widget' | 'savedView';
 
 /**

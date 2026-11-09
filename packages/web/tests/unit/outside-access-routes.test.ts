@@ -7,8 +7,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createPeople, MATRIX_OWNER, MATRIX_TENANT, SCOPE_SUBSCRIPTION, seedMatrix, share, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
-import { createSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
-import { createDashboard, getDashboard, updateDashboard } from '@/lib/db/dashboards';
+import { createSavedView, getSavedView, listSavedViews, updateSavedView } from '@/lib/db/saved-views';
+import { createDashboard, getDashboard, listDashboards, updateDashboard } from '@/lib/db/dashboards';
 import { createUser } from '@/lib/db/users';
 import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
@@ -410,6 +410,21 @@ describe('saving an item back from the trimmed copy', () => {
       expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([]);
     });
 
+    it('refuses a rename made from a copy the Admin has changed since, and keeps the Admin\'s change', async () => {
+      const received = await openDashboard();
+      asAdmin();
+      const renamedByAdmin = await putDashboard(dashboardId, { name: 'Editor dashboard (admin)', revision: received.revision });
+      expect(renamedByAdmin.status).toBe(200);
+
+      asEditor();
+      const stale = await putDashboard(dashboardId, { name: 'Editor dashboard (stale)', revision: received.revision });
+      expect(stale.status).toBe(409);
+      expect((await getDashboard(dashboardId))!.name).toBe('Editor dashboard (admin)');
+
+      const current = await openDashboard();
+      expect((await putDashboard(dashboardId, { name: 'Editor dashboard', revision: current.revision })).status).toBe(200);
+    });
+
     it('refuses a save that names no revision while the stored item holds values back from the person', async () => {
       // Only someone who holds the subscription can put it in: the Editor's own save of it would be refused.
       asAdmin();
@@ -504,6 +519,55 @@ describe('saving an item back from the trimmed copy', () => {
       expect(await attemptDashboard([SUB_ONE, UNKNOWN_SUBSCRIPTION])).toEqual(refusal);
       expect(await attemptDashboard([SUB_ONE], [SUB_TWO])).toEqual(refusal);
       expect((await getDashboard(ownDashboardId))!.config.filters?.subscriptions).toEqual([SUB_ONE]);
+    });
+
+    const postJson = (route: (req: Request) => Promise<Response>, body: unknown) =>
+      route(new Request('http://localhost/api/x', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }));
+    const createView = async (name: string, query: string) => {
+      const res = await postJson(CREATE_VIEW, { name, tab: 'results', query });
+      return { status: res.status, body: await res.json() as unknown };
+    };
+    const createDashboardWith = async (name: string, subscriptions: string[], widgetSubscriptions: string[] = []) => {
+      const res = await postJson(CREATE_DASHBOARD, {
+        name,
+        config: {
+          filters: { subscriptions, resourceGroups: [] },
+          widgets: [{ id: `w-${name}`, type: 'stat-card', title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: widgetSubscriptions } }],
+        },
+      });
+      return { status: res.status, body: await res.json() as unknown };
+    };
+
+    it('refuses a new saved view naming a value outside their Access, in the same words with and without a finding that carries it', async () => {
+      asEditor();
+      expect(await createView('Create carried', named('vm-other-sub'))).toEqual(refusal);
+      expect(await createView('Create nobody', named('vm-nobody-has'))).toEqual(refusal);
+      expect(await createView('Create other sub', `severity=high&subscription=${SUB_TWO}`)).toEqual(refusal);
+      expect(await createView('Create unknown sub', `severity=high&subscription=${UNKNOWN_SUBSCRIPTION}`)).toEqual(refusal);
+      expect((await listSavedViews()).some(v => v.name.startsWith('Create '))).toBe(false);
+    });
+
+    it('refuses a new dashboard naming a subscription outside their Access in its filter bar or a widget, whether it exists or not', async () => {
+      asEditor();
+      expect(await createDashboardWith('Create dash other', [SUB_TWO])).toEqual(refusal);
+      expect(await createDashboardWith('Create dash unknown', [UNKNOWN_SUBSCRIPTION])).toEqual(refusal);
+      expect(await createDashboardWith('Create dash widget', [SUB_ONE], [SUB_TWO])).toEqual(refusal);
+      expect((await listDashboards()).some(d => d.name.startsWith('Create dash'))).toBe(false);
+    });
+
+    it('creates a view and a dashboard naming only what they can see', async () => {
+      asEditor();
+      expect((await createView('Create visible', named('vm-one'))).status).toBe(201);
+      expect((await createDashboardWith('Create dash visible', [SUB_ONE], [SUB_ONE])).status).toBe(201);
+    });
+
+    it('never refuses a create by a person who holds Everything', async () => {
+      for (const person of ['Admin', 'Editor on Everything']) {
+        mockAuth.mockResolvedValue({ user: { uid: people[person] } });
+        expect((await createView(`Create all ${person}`, named('vm-nobody-has', UNKNOWN_SUBSCRIPTION))).status).toBe(201);
+        expect((await createDashboardWith(`Create dash all ${person}`, [UNKNOWN_SUBSCRIPTION])).status).toBe(201);
+      }
+      asAdmin();
     });
 
     it('saves a resource a finding inside their Access carries, and a subscription they hold', async () => {
@@ -677,10 +741,10 @@ describe('every route that returns a dashboard or a saved view, for a person wit
   const counted = (body: Record<string, unknown>) => expect((body.heldBack as HeldBack[]).length).toBeGreaterThan(0);
 
   describe.each(['scoped', 'No Scope'])('%s: Personal items', person => {
-    it('POST /api/views answers the saved view without them', async () => {
+    it('POST /api/views refuses a new view naming them, and the refusal holds none of them', async () => {
       as(person);
-      const { body } = await clean(await CREATE_VIEW(req('POST', { name: name('Created view'), tab: 'results', query: HELD_QUERY })), 201);
-      counted(body);
+      const { body } = await clean(await CREATE_VIEW(req('POST', { name: name('Created view'), tab: 'results', query: HELD_QUERY })), 400);
+      expect(body).toEqual({ error: UNSEEN_VALUE_MESSAGE });
     });
 
     it('PATCH /api/views/[id] answers the saved view without them, for a rename and for a save of the received query', async () => {
@@ -693,10 +757,10 @@ describe('every route that returns a dashboard or a saved view, for a person wit
       counted(saved.body);
     });
 
-    it('POST /api/dashboards answers the dashboard without them', async () => {
+    it('POST /api/dashboards refuses a new dashboard naming them, and the refusal holds none of them', async () => {
       as(person);
-      const { body } = await clean(await CREATE_DASHBOARD(req('POST', { name: name('Created dashboard'), config: heldConfig() })), 201);
-      counted(body);
+      const { body } = await clean(await CREATE_DASHBOARD(req('POST', { name: name('Created dashboard'), config: heldConfig() })), 400);
+      expect(body).toEqual({ error: UNSEEN_VALUE_MESSAGE });
     });
 
     it('PUT /api/dashboards/[id] answers the dashboard without them, for a rename, for a config save and for isDefault alone', async () => {

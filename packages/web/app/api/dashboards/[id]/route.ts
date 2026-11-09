@@ -4,13 +4,13 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
-import { UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
+import { STALE_DASHBOARD_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
 
-const STALE_COPY = 'This dashboard changed while you were editing it. Reload it and try again.';
+const STALE_COPY = STALE_DASHBOARD_MESSAGE;
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
