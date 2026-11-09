@@ -842,7 +842,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return left.size === right.size && [...left].every(v => right.has(v));
 }
 
-function sameWindow(a: DateWindow, b: DateWindow): boolean {
+export function sameWindow(a: DateWindow, b: DateWindow): boolean {
   return a.mode === 'custom' ? b.mode === 'custom' && a.from === b.from && a.to === b.to : b.mode === 'relative' && a.days === b.days;
 }
 

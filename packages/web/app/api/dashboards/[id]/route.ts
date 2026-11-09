@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
+import { keepSavedFilters } from '@/lib/dashboard-filters';
 import { markedDashboard } from '@/lib/outside-access';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -34,7 +35,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const before = await getDashboard(id);
-  const result = await updateDashboard(id, body);
+  // The saved filters change only by an explicit save, never through a layout write.
+  const config = body.config && before ? keepSavedFilters(before.config, body.config) : body.config;
+  const result = await updateDashboard(id, { ...body, config });
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());

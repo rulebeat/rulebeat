@@ -36,9 +36,52 @@ the list you land on is the list the number counted.
 ## Filters and scope
 
 A dashboard has one filter bar applied to every widget: categories, subscriptions, resource groups,
-tags, severities, rules, and a date window. A funnel indicator appears on the bar and on each widget
-title while a filter is active, so a scoped number never looks global. Tags here are **rule** tags
-(labels like `framework:iso27001`), not Azure resource tags.
+tags, severities, rules, and a date window. A funnel indicator appears on each widget title while a
+filter is active, so a scoped number never looks global. Tags here are **rule** tags (labels like
+`framework:iso27001`), not Azure resource tags.
+
+### Saved filters and changes in the address
+
+A dashboard's filters live in two layers. The **saved filters** are stored on the dashboard, and
+everyone who opens it starts from them. Your **changes** live only in the address of the page. Picking
+a value in the bar changes that dimension in the address, and nothing else: it saves nothing, adds no
+history entry and asks nothing when you leave. Nobody else sees your changes unless you send them the
+link, and nothing is kept per person.
+
+Each dimension shows the values in force. A dimension you changed is marked **Changed**, shows a
+`Saved: ...` line with what the dashboard saved, and offers **Back to saved**. A changed date window is
+marked the same way. **Reset to saved filters** appears while any change exists and puts the whole
+bar back in one step. A dimension you set back to its saved value is no longer a change. Clear on one
+dimension is an explicit pick of any value for that dimension; there is no Clear for the whole bar.
+
+**Copy link** copies an address that carries only your changes, so the link keeps following the
+dashboard's saved filters. Each person who opens it sees what their own Access allows ([`access.md`](access.md)).
+
+**Counted values.** A value that your Access does not reach is never named to you. It shows as one row,
+"N outside your access", that you cannot tick. It stays in the filter, so your numbers remain the ones your
+Access allows. If a dashboard saved a filter to values you hold only part of, unticking your last visible
+value is off with the reason "Removing it leaves only values outside your access", because it would widen
+the filter for everyone else. It is allowed once the address itself carries the held-back value. Any, on
+such a dimension, says that it widens the link for others.
+
+**Values that no longer exist.** A category, tag or rule that was deleted stays in the filter, named, and is
+marked "No longer exists" (a deleted rule reads "A rule that no longer exists"). The "Saved: ..." line marks
+them the same way. A subscription is called gone only when it has left the management group tree RuleBeat
+keeps, and only for someone with access to Everything; anyone else has it counted under "outside your
+access". A value that no longer exists matches nothing and is never removed on its own: remove it from the
+bar to change the address.
+
+**When the dashboard changes while you have it open.** A number that comes back computed from a newer
+revision reloads the filter bar and every widget together, and a notice says so. Your changes stay in the
+address. If you have a layout edit open, it is not discarded: the notice says so, and the layout of the
+newer revision loads once you save or cancel the edit. The bar and the numbers do not wait, so the bar
+always describes the filters the numbers were counted with.
+
+A widget that sets its own value for a dimension is not moved by your change. The bar says so under the
+dimension, for example "2 widgets use their own severity".
+
+The dashboard tabs, the sidebar and Duplicate open a dashboard with no changes. Renaming a dashboard keeps
+the address, and `/dashboard` passes its query on to the default dashboard.
 
 Each widget also has a **Scope** panel with the same dimensions. A value set there **replaces** the
 dashboard's value for that dimension on that widget; anything left on inherit takes the dashboard's.
@@ -61,7 +104,8 @@ rules in scope shows an empty posture rather than 0% or 100%.
 
 Create a blank dashboard, duplicate one for a per-team variant, rename, delete, set the default, or
 Restore starter to recreate the seeded Overview layout. Every dashboard is deletable including the
-default; deleting it promotes the oldest remaining one. Layouts save per dashboard. Creating,
+default; deleting it promotes the oldest remaining one. Layouts save per dashboard, and a layout save
+never changes the saved filters or the date window. Creating,
 renaming and deleting is audited; dragging and resizing is not, since every drag would be an entry
 and would bury real changes. Viewers see every dashboard, editing needs the editor role
 ([`rbac.md`](rbac.md)).

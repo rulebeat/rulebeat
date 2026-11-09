@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchJson } from '@/lib/fetch-json';
+import { useRevisionReport } from '@/components/dashboard/widget-request';
+import { reportedRevision } from '@/lib/dashboard-revision';
 
 // Mirrors AZURE_CALL_TIMEOUT_MS (packages/core/src/net/fetch-retry.ts): reimplemented locally
 // since that module carries Node-only deps not meant for a client bundle.
@@ -30,6 +32,9 @@ export function useWidgetFetch<T>(url: string, deps: unknown[] = []): UseWidgetF
   const [failed, setFailed] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const requestId = useRef(0);
+  const reportRevision = useRevisionReport();
+  const report = useRef(reportRevision);
+  useEffect(() => { report.current = reportRevision; });
 
   useEffect(() => {
     const id = ++requestId.current;
@@ -42,6 +47,8 @@ export function useWidgetFetch<T>(url: string, deps: unknown[] = []): UseWidgetF
       if (id !== requestId.current) return; // superseded by a newer request: ignore
       setLoading(false);
       if (result.ok) {
+        const revision = reportedRevision(result.data);
+        if (revision !== undefined) report.current?.(revision);
         setData(result.data);
       } else {
         setFailed(true);
