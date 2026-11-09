@@ -80,11 +80,12 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
   if (noCount) return <WidgetNothingToCount reason={noCount} />;
 
+  const scansHref = summary?.scansHref;
   if (!result) {
     return (
       <button
         type="button"
-        onClick={() => router.push(summary!.scansHref)}
+        onClick={() => scansHref && router.push(scansHref)}
         className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 transition-colors hover:bg-surface-hover"
       >
         <Ring pct={0} label="0/0" />
@@ -96,7 +97,7 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
   return (
     <button
       type="button"
-      onClick={() => router.push(summary!.scansHref)}
+      onClick={() => scansHref && router.push(scansHref)}
       title="View in Scans"
       className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover"
     >

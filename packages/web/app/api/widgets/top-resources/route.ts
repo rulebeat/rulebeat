@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const findings = (await queryActiveFindings(widget.filters, actor.access)).filter(countsInFindingTotals);
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
-  const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();
+  const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; href: string; count: number; maxSeverity: Severity }>();
   for (const f of findings) {
     // 'activity' findings (spec 034) have no resource. This widget is resource-scoped by
     // definition, so they're counted by the dedicated activity-occurrences widget instead.
@@ -36,6 +36,7 @@ export async function GET(req: Request) {
         resourceType: f.resourceType ?? '',
         category: f.category,
         color: categoryColorById.get(f.category),
+        href: widget.resourceHref(f),
         count: 1,
         maxSeverity: f.severity,
       });
@@ -44,8 +45,7 @@ export async function GET(req: Request) {
 
   const sorted = Array.from(resourceMap.values())
     .sort((a, b) => b.count - a.count)
-    .slice(0, limit)
-    .map(resource => ({ ...resource, href: widget.href({ search: resource.resourceName }) }));
+    .slice(0, limit);
 
   return Response.json({ items: sorted, ...widget.meta });
 }

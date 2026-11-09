@@ -165,7 +165,7 @@ describe('the Advisories widget', () => {
         fingerprint: expect.any(String), ruleId: ADV_LOW, ruleName: `Rule ${ADV_LOW}`,
         resourceId: expect.stringContaining('/virtualMachines/low-1'), resourceName: 'low-1',
         category: 'security', severity: 'low', lastSeenAt: NOW.toISOString(),
-        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&window=7&q=low-1`,
+        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&subscription=${TEST_SUB_A}&window=7&rg=rg-low&f=resourceName%3Dlow-1&f=resourceType%3Dmicrosoft.compute%2Fvirtualmachines`,
       }],
       total: 1,
       hasAdvisoryRules: true,
@@ -175,6 +175,14 @@ describe('the Advisories widget', () => {
     expect(Object.keys(data.items[0]).sort()).toEqual([
       'category', 'fingerprint', 'href', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
     ]);
+  });
+
+  it('links each row to the one Advisory it lists', async () => {
+    const data = await widget('');
+    expect(data.items.length).toBeGreaterThan(1);
+    for (const { href } of data.items as unknown as { href: string }[]) {
+      expect((await view(href.slice('/scans?'.length))).total, href).toBe(1);
+    }
   });
 
   it('lists the same open Advisories, and counts the same total, as the view route for the same filters', async () => {

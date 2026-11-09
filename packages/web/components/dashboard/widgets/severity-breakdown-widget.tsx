@@ -52,7 +52,8 @@ export function SeverityBreakdownWidget({ refreshKey }: Props) {
             cursor="pointer"
             onClick={(entry) => {
               const severity = (entry as unknown as { severity?: string }).severity;
-              if (severity && summary) router.push(summary.severityHrefs[severity as Severity]);
+              const href = severity && summary ? summary.severityHrefs[severity as Severity] : null;
+              if (href) router.push(href);
             }}
           >
             {data.map((d) => <Cell key={d.severity} fill={d.color} fillOpacity={0.9} />)}

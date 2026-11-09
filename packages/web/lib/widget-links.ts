@@ -6,6 +6,8 @@
 import type { Access } from './access-model';
 import type { WidgetFilters } from './dashboard-filters';
 import type { WidgetSummary } from './dashboard-data';
+import { findingSubject, genericFilterParam } from './finding-view';
+import { subscriptionValue, type FindingPlacement } from './placement';
 import { markOutsideAccess, widgetAccessReason } from './outside-access';
 import { buildScansHref, type ScansLinkOverrides } from './scans-link';
 import type { Severity, StatMetric } from './types';
@@ -39,20 +41,57 @@ export function outsideAccessReason(filters: WidgetFilters, access: Access): Wid
   return reason ? { kind: 'outside-access', ...reason } : null;
 }
 
+/** The resource a list row stands for. Its link names the resource exactly, not by a search that would also
+ *  match a resource whose name merely contains it. */
+export interface LinkedResource {
+  resourceId?: string;
+  resourceName?: string;
+  resourceType?: string;
+  dimensionKey?: string;
+  subscriptionId: string;
+  resourceGroup?: string;
+  placement?: FindingPlacement | string;
+}
+
 /** The Scans link for `filters` as `access` sees them: a subscription or resource group the viewer's access
  *  does not reach is left out, so the page counts what the viewer's own numbers counted and names nothing
- *  outside their access. */
-export function viewerScansHref(filters: WidgetFilters, access: Access, overrides: ScansLinkOverrides = {}): string {
+ *  outside their access.
+ *
+ *  Use `numberScansHref` for a number a severity override can leave empty. */
+export function viewerScansHref(
+  filters: WidgetFilters,
+  access: Access,
+  overrides: ScansLinkOverrides = {},
+  resource?: LinkedResource,
+): string {
   const held = markOutsideAccess(access, filters);
   const without = (values: string[] | undefined, drop: string[]) => {
     const dropped = new Set(drop.map(v => v.toLowerCase()));
     return values?.filter(v => !dropped.has(v.toLowerCase()));
   };
-  return buildScansHref({
+  const href = buildScansHref({
     ...filters,
     subscriptions: without(filters.subscriptions, held.subscriptions),
     resourceGroups: without(filters.resourceGroups, held.resourceGroups),
-  }, overrides);
+  }, resource ? { ...overrides, subscription: subscriptionValue(resource) || overrides.subscription } : overrides);
+  return resource ? withExactResource(href, resource) : href;
+}
+
+/** The link behind one number. A severity override narrows the widget's own severities, as the number does, so
+ *  the link is null when the widget leaves that severity out: the number is zero, and replacing the widget's
+ *  severities would open findings the number did not count. */
+export function numberScansHref(filters: WidgetFilters, access: Access, overrides: ScansLinkOverrides = {}): string | null {
+  const severity = overrides.severity as Severity | undefined;
+  if (severity && filters.severities?.length && !filters.severities.includes(severity)) return null;
+  return viewerScansHref(filters, access, overrides);
+}
+
+function withExactResource(href: string, resource: LinkedResource): string {
+  const url = new URL(href, 'http://localhost');
+  if (resource.resourceGroup) url.searchParams.set('rg', resource.resourceGroup);
+  url.searchParams.append('f', genericFilterParam('resourceName', [findingSubject(resource)]));
+  if (resource.resourceType) url.searchParams.append('f', genericFilterParam('resourceType', [resource.resourceType]));
+  return `${url.pathname}${url.search}`;
 }
 
 /** What a stat card's number opens on Scans. Metrics with no equivalent filter (posture %, categories
@@ -70,9 +109,10 @@ export function metricScansOverrides(metric: unknown): ScansLinkOverrides {
 
 /** The summary route's answer: the numbers, and the Scans link behind each. */
 export type WidgetSummaryResponse = Omit<WidgetSummary, 'perCategory' | 'perSubscription'> & {
-  /** The link behind the widget's one number (a stat card's metric, the posture ring). */
-  scansHref: string;
-  severityHrefs: Record<Severity, string>;
+  /** The link behind the widget's one number (a stat card's metric, the posture ring), null as for `severityHrefs`. */
+  scansHref: string | null;
+  /** Null for a severity the widget's own severities leave out: its number is zero and there is nothing to open. */
+  severityHrefs: Record<Severity, string | null>;
   perCategory: Array<WidgetSummary['perCategory'][number] & { href: string }>;
   perSubscription: Array<WidgetSummary['perSubscription'][number] & { href: string }>;
 };

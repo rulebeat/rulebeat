@@ -2,8 +2,12 @@ import { loadRules } from './rules';
 import { queryView } from './db/finding-views';
 import { emptyView, type BuiltinField, type View } from './finding-view';
 import type { WidgetFilters } from './dashboard-filters';
-import type { AdvisoriesWidgetData } from './advisories-widget';
+import type { AdvisoriesWidgetData, AdvisoryWidgetItem } from './advisories-widget';
+import type { LinkedResource } from './widget-links';
 import type { Access } from './access-model';
+
+/** An Advisory with where its resource sits, which the server needs to link to that resource and does not return. */
+export type AdvisoryWidgetRow = AdvisoryWidgetItem & LinkedResource;
 
 /** The widget's filter dimensions as the view filters the Advisories tab reads them. */
 function filtersOf(filters: WidgetFilters): View['filters'] {
@@ -30,7 +34,7 @@ export async function queryAdvisoriesWidget(
   filters: WidgetFilters,
   opts: { limit: number },
   access: Access,
-): Promise<AdvisoriesWidgetData> {
+): Promise<Omit<AdvisoriesWidgetData, 'items'> & { items: AdvisoryWidgetRow[] }> {
   const view: View = {
     ...emptyView(),
     filters: filtersOf(filters),
@@ -48,6 +52,10 @@ export async function queryAdvisoriesWidget(
     ruleName: f.policyName ?? f.title,
     resourceId: f.resourceId,
     resourceName: f.resourceName ?? '',
+    resourceType: f.resourceType,
+    subscriptionId: f.subscriptionId,
+    resourceGroup: f.resourceGroup,
+    placement: f.placement,
     category: f.category,
     severity: f.severity,
     lastSeenAt: f.lastSeenAt,

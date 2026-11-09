@@ -136,17 +136,28 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
   if (noCount) return <WidgetNothingToCount reason={noCount} />;
 
-  return (
-    <button
-      type="button"
-      onClick={() => summary && router.push(summary.scansHref)}
-      className="flex h-full w-full cursor-pointer flex-col items-start justify-center gap-1 px-5 py-4 text-left transition-colors hover:bg-surface-hover"
-      title="View in Scans"
-    >
+  const body = (
+    <>
       <span className="numeral-grid text-4xl font-bold leading-none" style={{ color }}>{value}</span>
       <span className="mt-1 text-sm font-medium text-ink-2">{label}</span>
       {delta !== null && <Delta value={delta} suffix={deltaSuffix} title={deltaTitle} neutralLabel="flat" />}
       <span className="mt-0.5 text-xs text-ink-muted">{subtext}</span>
+    </>
+  );
+  const layout = 'flex h-full w-full flex-col items-start justify-center gap-1 px-5 py-4 text-left';
+
+  // No link when the widget's own severity leaves this number nothing to open on Scans.
+  const href = summary?.scansHref;
+  if (!href) return <div className={layout}>{body}</div>;
+
+  return (
+    <button
+      type="button"
+      onClick={() => router.push(href)}
+      className={`${layout} cursor-pointer transition-colors hover:bg-surface-hover`}
+      title="View in Scans"
+    >
+      {body}
     </button>
   );
 }

@@ -17,8 +17,8 @@ export async function GET(req: Request) {
   const summary = await computeWidgetSummary(widget.filters, widget.trendDays, actor.access);
   const body: WidgetSummaryResponse = {
     ...summary,
-    scansHref: widget.href(metricScansOverrides(widget.config['metric'])),
-    severityHrefs: Object.fromEntries(SEVERITY_ORDER.map(severity => [severity, widget.href({ severity })])) as WidgetSummaryResponse['severityHrefs'],
+    scansHref: widget.numberHref(metricScansOverrides(widget.config['metric'])),
+    severityHrefs: Object.fromEntries(SEVERITY_ORDER.map(severity => [severity, widget.numberHref({ severity })])) as WidgetSummaryResponse['severityHrefs'],
     perCategory: summary.perCategory.map(c => ({ ...c, href: widget.href({ category: c.category }) })),
     perSubscription: summary.perSubscription.map(s => ({ ...s, href: widget.href({ subscription: s.subscriptionId }) })),
   };

@@ -792,9 +792,10 @@ export async function backfillFindings(): Promise<void> {
   if (tryAgain === 0) await setMeta(FINDINGS_BACKFILL_MARKER, '1');
 }
 
-/** Which of these category ids some stored finding still carries. A deleted category keeps its findings. */
-export async function categoriesCarriedByFindings(ids: readonly string[]): Promise<Set<string>> {
+/** Which of these category ids some stored finding inside `access` still carries. A deleted category keeps its findings. */
+export async function categoriesCarriedByFindings(ids: readonly string[], access: Access): Promise<Set<string>> {
   if (!ids.length) return new Set();
-  const rows = await many(db.selectDistinct({ category: findingsTable.category }).from(findingsTable).where(inArray(findingsTable.category, [...ids])));
+  const rows = await many(db.selectDistinct({ category: findingsTable.category }).from(findingsTable)
+    .where(and(inArray(findingsTable.category, [...ids]), accessFilterSql(access))));
   return new Set(rows.map(row => row.category));
 }

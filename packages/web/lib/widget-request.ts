@@ -13,7 +13,7 @@ import type { Access } from '@/lib/access-model';
 import { effectiveFilters } from '@/lib/effective-filters';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { goneNoCount } from '@/lib/widget-gone';
-import { outsideAccessReason, viewerScansHref } from '@/lib/widget-links';
+import { numberScansHref, outsideAccessReason, viewerScansHref, type LinkedResource } from '@/lib/widget-links';
 import type { ScansLinkOverrides } from '@/lib/scans-link';
 import { DEFAULT_TREND_DAYS, MAX_TREND_DAYS, TREND_CAP_DAYS, limitFor, storedTrendDays } from '@/lib/widget-settings';
 
@@ -39,6 +39,10 @@ export interface WidgetRequest {
   config: Record<string, unknown>;
   /** The Scans link for this widget's filters as the viewer holds them, with `overrides` for one number. */
   href(overrides?: ScansLinkOverrides): string;
+  /** `href`, or null when the widget's own severities leave the overriding severity out (its number is zero). */
+  numberHref(overrides?: ScansLinkOverrides): string | null;
+  /** The Scans link for one resource of a list row, which holds that resource's findings and no other's. */
+  resourceHref(resource: LinkedResource, overrides?: ScansLinkOverrides): string;
 }
 
 function positiveInt(value: string | null): number | undefined {
@@ -84,7 +88,7 @@ export async function readWidgetRequest(req: Request, access: Access): Promise<W
       : NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const noCount = outsideAccessReason(result.filters, access) ?? await goneNoCount(result.filters);
+  const noCount = outsideAccessReason(result.filters, access) ?? await goneNoCount(result.filters, access);
   if (noCount) return NextResponse.json({ noCount, revision: result.revision, heldBack: result.heldBack });
 
   const requestedLimit = positiveInt(searchParams.get('limit'));
@@ -103,5 +107,7 @@ export async function readWidgetRequest(req: Request, access: Access): Promise<W
     trendDays,
     config: result.config,
     href: overrides => viewerScansHref(result.filters, access, overrides),
+    numberHref: overrides => numberScansHref(result.filters, access, overrides),
+    resourceHref: (resource, overrides) => viewerScansHref(result.filters, access, overrides, resource),
   };
 }

@@ -81,6 +81,9 @@ beforeEach(async () => {
       widgets: [
         widget('open', 'stat-card', { metric: 'total-findings' }),
         widget('critical', 'stat-card', { metric: 'critical-findings' }),
+        widget('critical-of-high', 'stat-card', { metric: 'critical-findings', severities: ['high'] }),
+        widget('high-of-high', 'stat-card', { metric: 'high-findings', severities: ['high'] }),
+        widget('breakdown-of-high', 'severity-breakdown', { severities: ['high'] }),
         widget('ring', 'posture-ring'),
         widget('rules', 'top-rules'),
         widget('resources', 'top-resources'),
@@ -90,6 +93,7 @@ beforeEach(async () => {
         widget('gone-category', 'stat-card', { metric: 'total-findings', category: 'removed-category' }),
         widget('gone-rule', 'stat-card', { metric: 'total-findings', policyIds: ['removed-rule'] }),
         widget('gone-tag', 'stat-card', { metric: 'total-findings', tags: ['removed-tag'] }),
+        widget('gone-elsewhere', 'stat-card', { metric: 'total-findings', category: 'only-in-a' }),
         widget('half-gone', 'stat-card', { metric: 'total-findings', policyIds: ['removed-rule', 'sl-rule-1'] }),
       ],
     },
@@ -112,7 +116,7 @@ beforeEach(async () => {
 /** The parts of a counting response these tests read. */
 interface Row { href: string; count: number; name: string; ruleId: string }
 interface WidgetAnswer {
-  scansHref: string;
+  scansHref: string | null;
   revision?: number;
   heldBack?: unknown;
   noCount?: { kind: string; title: string };
@@ -120,7 +124,7 @@ interface WidgetAnswer {
   items: Row[];
   perCategory: { category: string; href: string; activeFindings: number }[];
   perSubscription: { subscriptionId: string; href: string; activeFindings: number }[];
-  severityHrefs: Record<string, string>;
+  severityHrefs: Record<string, string | null>;
 }
 
 async function ask(route: string, widgetId: string, extra = ''): Promise<WidgetAnswer> {
@@ -130,7 +134,8 @@ async function ask(route: string, widgetId: string, extra = ''): Promise<WidgetA
 }
 
 /** What opening `href` on Scans shows the viewer: the Scans read for the link's own params. */
-async function opened(href: string): Promise<ViewResponse> {
+async function opened(href: string | null): Promise<ViewResponse> {
+  if (href === null) throw new Error('expected a link');
   expect(href.startsWith('/scans?')).toBe(true);
   const res = await viewRoute.GET(new Request(`http://localhost/api/findings/view?${href.slice('/scans?'.length)}`));
   expect(res.status).toBe(200);
@@ -157,7 +162,7 @@ describe('the Scans link of a number', () => {
 
   it('carries the metric of a stat card', async () => {
     const summary = await ask('summary', 'critical');
-    const href = new URL(summary.scansHref, 'http://localhost');
+    const href = new URL(summary.scansHref!, 'http://localhost');
     expect(href.searchParams.get('severity')).toBe('critical');
   });
 
@@ -256,5 +261,88 @@ describe('a widget whose values for a dimension are all gone', () => {
       const body = await ask(route, 'gone-category');
       expect(body.noCount?.kind, route).toBe('gone');
     }
+  });
+});
+
+describe('a number the widget\'s own severity leaves nothing to open', () => {
+  it('holds the same count as the number on the Scans page, or has no link when the number is zero', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: everyoneId } });
+    const critical = await ask('summary', 'critical-of-high');
+    expect(critical.current.severityCounts.critical).toBe(0);
+    expect(critical.scansHref).toBeNull();
+
+    const high = await ask('summary', 'high-of-high');
+    expect(high.current.severityCounts.high).toBe(2);
+    expect((await opened(high.scansHref)).total).toBe(2);
+  });
+
+  it('is decided per severity of the breakdown, so a severity the widget leaves out opens nothing', async () => {
+    mockAuth.mockResolvedValue({ user: { uid: everyoneId } });
+    const breakdown = await ask('summary', 'breakdown-of-high');
+    for (const [severity, href] of Object.entries(breakdown.severityHrefs)) {
+      const count = breakdown.current.severityCounts[severity]!;
+      if (href === null) expect(count, severity).toBe(0);
+      else expect((await opened(href)).total, severity).toBe(count);
+    }
+    expect(breakdown.severityHrefs['critical']).toBeNull();
+    expect(breakdown.severityHrefs['high']).not.toBeNull();
+  });
+});
+
+describe('the link of a row that names a resource', () => {
+  beforeEach(async () => {
+    // vm-b10 shares vm-b1's name as a prefix, and carries the same rule.
+    await syncScanFindings({
+      scanId: 'sl-3', category: 'security', ranRuleIds: RULES, finishedAt: new Date().toISOString(),
+      findings: [
+        finding('sl-rule-1', 'vm-a1', SUB_A, 'critical'),
+        finding('sl-rule-3', 'vm-b1', SUB_B, 'high'),
+        finding('sl-rule-3', 'vm-b10', SUB_B, 'low'),
+      ],
+    });
+  });
+
+  it('holds the count of a top-resources row, not every resource whose name contains it', async () => {
+    const resources = await ask('top-resources', 'resources');
+    expect(resources.items.length).toBe(2);
+    for (const item of resources.items) {
+      expect((await opened(item.href)).total, item.href).toBe(item.count);
+    }
+  });
+
+  it('holds one finding for a recent-findings row', async () => {
+    const recent = await ask('findings', 'recent');
+    expect(recent.items.length).toBe(2);
+    for (const item of recent.items) expect((await opened(item.href)).total, item.href).toBe(1);
+  });
+});
+
+describe('a widget on a category that was deleted', () => {
+  async function widgetOnDeletedCategory(): Promise<string> {
+    const made = await createCategory({ label: 'only in a' });
+    if (!('category' in made)) throw new Error(made.error);
+    await syncScanFindings({
+      scanId: 'sl-4', category: made.category.id, ranRuleIds: [], finishedAt: new Date().toISOString(),
+      findings: [{ ...finding('sl-rule-9', 'vm-a9', SUB_A), module: made.category.id as never, category: made.category.id as never }],
+    });
+    expect(await deleteCategory(made.category.id)).toBe(true);
+    const config = (await getDashboard(dashboardId))!.config;
+    await updateDashboard(dashboardId, { config: { ...config, widgets: [...config.widgets, widget('deleted-in-a', 'stat-card', { metric: 'total-findings', category: made.category.id })] } });
+    return 'deleted-in-a';
+  }
+
+  it('says it counts nothing to someone who holds none of the findings that still carry the category', async () => {
+    const id = await widgetOnDeletedCategory();
+    const body = await ask('summary', id);
+    expect(body.noCount?.kind).toBe('gone');
+    expect(body.current).toBeUndefined();
+  });
+
+  it('counts what carries the category for someone who holds it', async () => {
+    const id = await widgetOnDeletedCategory();
+    mockAuth.mockResolvedValue({ user: { uid: everyoneId } });
+    const body = await ask('summary', id);
+    expect(body.noCount).toBeUndefined();
+    expect(body.current.activeFindings).toBe(1);
   });
 });
