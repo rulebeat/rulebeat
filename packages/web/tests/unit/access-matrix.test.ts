@@ -17,7 +17,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, getUser } from '@/lib/db/users';
 import { createRule, loadRule, loadRules, saveRules } from '@/lib/rules';
@@ -25,6 +25,8 @@ import { createCategory, listCategories } from '@/lib/db/categories';
 import { createSchedule, listSchedules } from '@/lib/db/schedules';
 import { countAuditEntries, listAuditEntries } from '@/lib/db/audit';
 import { listFindingSummaries } from '@/lib/db/findings';
+import { createSavedView } from '@/lib/db/saved-views';
+import { SAVED_VIEW_UNAVAILABLE } from '@/lib/saved-view-query';
 import { queryRuleFindingCounts } from '@/lib/db/finding-views';
 import { addSuppression, loadSuppressions, removeSuppression, saveSuppressions } from '@/lib/suppressions';
 import { everythingAccess } from '@/lib/access-model';
@@ -155,7 +157,13 @@ const BODY = async (res: Response): Promise<unknown> => {
   return res.json();
 };
 
-const tabParams = (tab: ViewTab, extra: Partial<View> = {}) => viewToSearchParams({ ...emptyView(), ...extra }, { tab }).toString();
+/** The saved view open on the next reads, if any: its id and revision go on the query, as the explorer sends them. */
+let openedView: { id: string; revision: number } | null = null;
+
+const tabParams = (tab: ViewTab, extra: Partial<View> = {}) => viewToSearchParams(
+  { ...emptyView(), ...extra },
+  { tab, ...(openedView && { view: openedView.id, rev: String(openedView.revision) }) },
+).toString();
 
 /** The seeded finding names a response lists, from the fingerprints it holds, sorted. */
 const namesOf = (seed: MatrixSeed, items: { fingerprint: string }[]): string[] => {
@@ -1386,6 +1394,39 @@ describe('the findings routes show each person only what their Scopes cover', ()
       }
     }
   }
+
+  // A saved view is the same for everyone, and the server puts it together with the changes in the address. The
+  // five reads that take it must still show each person only what their Scopes cover. Every seeded finding is in
+  // the saved view's category, so each person's answer is the one the plain reads above give.
+  describe('with a saved view open', () => {
+    beforeAll(async () => {
+      const created = await createSavedView({ name: 'matrix view', tab: 'results', query: 'category=security' }, null);
+      if (!created.ok) throw new Error(created.reason);
+      openedView = { id: created.view.id, revision: created.view.revision };
+    });
+    afterAll(() => { openedView = null; });
+
+    for (const route of ['findings/view', 'findings/group', 'findings/column-values', 'findings/export', 'findings/rows']) {
+      const entry = FINDINGS_MATRIX[route]!;
+      for (const person of PEOPLE.map(p => p.name)) {
+        for (const tab of VIEW_TABS) {
+          it(`${route}: ${person}, ${tab} tab`, async () => {
+            mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+            expect(await entry.probe(seed, tab)).toEqual(entry.expected[person]![tab]);
+          });
+        }
+      }
+    }
+
+    it('answers a view that is not there with the same 404 for everyone, and reads nothing', async () => {
+      const route = await import('@/app/api/findings/view/route');
+      for (const person of PEOPLE.map(p => p.name)) {
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        const res = await route.GET(new Request('http://localhost/api/findings/view?tab=results&view=no-such-view'));
+        expect([person, res.status, await res.json()]).toEqual([person, 404, { error: SAVED_VIEW_UNAVAILABLE }]);
+      }
+    });
+  });
 
   /** A new Viewer holding exactly these Scopes, signed in, and what the Results and Advisories tabs list for them. */
   async function listedFor(...scopes: string[]): Promise<{ results: string[]; advisories: string[] }> {
