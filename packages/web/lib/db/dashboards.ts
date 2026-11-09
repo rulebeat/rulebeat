@@ -4,9 +4,11 @@ import { eq, ne, and, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './exec';
 import type { Dashboard, DashboardConfig, ItemOwner } from '@/lib/types';
 import { loadItemOwners, readVisibility } from './item-owners';
+import { DASHBOARD_NAME_LOCK_KEY, lockDashboardsThenViews } from './name-locks';
+import { widgetsOnUnsharedViews } from './dashboard-view-references';
 import { STARTER_DASHBOARD } from '@/lib/dashboard-templates';
 import { migrateDashboardConfig } from '@/lib/dashboard-migrations';
-import { clearUnreachableMyDefaultsOn, DASHBOARD_NAME_LOCK_KEY } from './default-dashboard';
+import { clearUnreachableMyDefaultsOn } from './default-dashboard';
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -50,8 +52,7 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
  * Postgres (READ COMMITTED) two open transactions cannot see each other's uncommitted row, so every
  * write here takes `pgAdvisoryXactLock()` first, which is a no-op on SQLite.
  */
-// The key itself lives in default-dashboard.ts, which takes it too (My default is written under it).
-
+// The key lives in name-locks.ts; default-dashboard.ts takes it too (My default is written under it).
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
@@ -115,16 +116,24 @@ export type UpdateDashboardResult =
   | { ok: true; dashboard: Dashboard }
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'empty-name' }
-  | { ok: false; reason: 'name-taken' };
+  | { ok: false; reason: 'name-taken' }
+  | { ok: false; reason: 'conflict' }
+  | { ok: false; reason: 'views-not-shared'; widgetTitles: string[] };
 
 // The name is only checked when it actually changes (compared case-insensitively, after trimming,
 // against the stored one): an install can already hold a pre-existing duplicate pair, and saving
 // one of them without renaming it must keep working.
-export async function updateDashboard(id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>): Promise<UpdateDashboardResult> {
+// `ifRevision` makes the write conditional: it is refused as a `conflict` when the row has moved to another revision.
+// A Shared dashboard may use only Shared saved views (ADR 0012), checked on every save against the config it will
+// hold, under the dashboard name lock and then the saved view name lock.
+export async function updateDashboard(
+  id: string, data: Partial<{ name: string; description: string; config: DashboardConfig }>, guard: { ifRevision?: number } = {},
+): Promise<UpdateDashboardResult> {
   return inTransaction(async (tx) => {
-    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    await lockDashboardsThenViews(tx);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
+    if (guard.ifRevision !== undefined && existing.revision !== guard.ifRevision) return { ok: false, reason: 'conflict' };
     if (data.name !== undefined) {
       const trimmed = data.name.trim();
       if (!trimmed) return { ok: false, reason: 'empty-name' };
@@ -134,6 +143,11 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
         : { visibility: 'personal', ownerId: existing.ownerId };
       if (renamed && await isNameTaken(trimmed, space, id, tx)) return { ok: false, reason: 'name-taken' };
       data = { ...data, name: trimmed };
+    }
+    if (readVisibility(existing.visibility) === 'shared') {
+      const config = data.config ?? migrateDashboardConfig(JSON.parse(existing.config) as DashboardConfig);
+      const widgetTitles = await widgetsOnUnsharedViews(tx, config);
+      if (widgetTitles.length > 0) return { ok: false, reason: 'views-not-shared', widgetTitles };
     }
     await run(tx.update(dashboards).set({
       ...(data.name !== undefined && { name: data.name }),
@@ -148,20 +162,23 @@ export async function updateDashboard(id: string, data: Partial<{ name: string; 
 
 export type ShareDashboardResult =
   | { ok: true; dashboard: Dashboard }
-  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' };
+  | { ok: false; reason: 'not-found' | 'name-taken' | 'wrong-state' }
+  | { ok: false; reason: 'views-not-shared'; widgetTitles: string[] };
 
 /**
  * Makes a Personal dashboard Shared, if it still is Personal and its name is free among Shared names
- * install-wide. Both checks and the write are one locked transaction, so a second click or a concurrent
- * share finds the state already changed and gets `wrong-state`.
+ * install-wide, and every saved view its widgets use is Shared. The checks and the write are one locked
+ * transaction, so a second click or a concurrent share finds the state already changed and gets `wrong-state`.
  */
 export async function shareDashboard(id: string): Promise<ShareDashboardResult> {
   return inTransaction(async (tx) => {
-    await pgAdvisoryXactLock(tx, DASHBOARD_NAME_LOCK_KEY);
+    await lockDashboardsThenViews(tx);
     const existing = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' };
     if (readVisibility(existing.visibility) !== 'personal') return { ok: false, reason: 'wrong-state' };
     if (await isNameTaken(existing.name, { visibility: 'shared' }, id, tx)) return { ok: false, reason: 'name-taken' };
+    const widgetTitles = await widgetsOnUnsharedViews(tx, migrateDashboardConfig(JSON.parse(existing.config) as DashboardConfig));
+    if (widgetTitles.length > 0) return { ok: false, reason: 'views-not-shared', widgetTitles };
     await run(tx.update(dashboards).set({ visibility: 'shared', revision: sql`${dashboards.revision} + 1` }).where(eq(dashboards.id, id)));
     const stored = await one(tx.select().from(dashboards).where(eq(dashboards.id, id)));
     return { ok: true, dashboard: (await toDashboards([stored!], tx))[0] };

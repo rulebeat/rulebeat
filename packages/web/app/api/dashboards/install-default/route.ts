@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { chooseInstallDefault, getDashboard } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { heldBackDashboardFor } from '@/lib/db/default-dashboard';
 import { guardItem } from '@/lib/item-access';
 
 /**
@@ -38,7 +38,7 @@ export async function PUT(req: Request) {
       entityId: body.id,
       summary: `Set dashboard "${result.dashboard.name}" as the Install default`,
     });
-    return Response.json(markedDashboard(actor.access, result.dashboard));
+    return Response.json(await heldBackDashboardFor(actor, result.dashboard));
   } catch (err) {
     return serverError('Could not set the Install default', err);
   }

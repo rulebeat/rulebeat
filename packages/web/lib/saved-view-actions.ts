@@ -1,12 +1,14 @@
-import type { SavedView, SavedViewFields } from '@/lib/saved-view-query';
+import type { HeldBackSavedView, SavedViewFields } from '@/lib/saved-view-query';
 
 export type SavedViewChange =
   | { kind: 'create'; fields: SavedViewFields }
-  | { kind: 'update'; id: string; fields: Partial<SavedViewFields> }
+  /** `revision` and `opened` are the version and the query of the copy the person was sent: the server refuses the save
+   *  when the view has moved on, and puts back the stored values that copy left out. */
+  | { kind: 'update'; id: string; fields: Partial<SavedViewFields>; revision?: number; opened?: string }
   | { kind: 'delete'; id: string };
 
 /** `view` is the stored view after a create or update, and null after a delete. */
-export type SavedViewChangeOutcome = { ok: true; view: SavedView | null } | { ok: false; error: string };
+export type SavedViewChangeOutcome = { ok: true; view: HeldBackSavedView | null } | { ok: false; error: string };
 
 const FALLBACK = 'The change could not be saved. Try again.';
 
@@ -26,11 +28,11 @@ export async function requestSavedViewChange(
       method: change.kind === 'create' ? 'POST' : change.kind === 'update' ? 'PATCH' : 'DELETE',
       ...(change.kind !== 'delete' && {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(change.fields),
+        body: JSON.stringify(change.kind === 'update' ? { ...change.fields, revision: change.revision, opened: change.opened } : change.fields),
       }),
     });
     if (res.redirected) return { ok: false, error: FALLBACK };
-    if (res.ok) return { ok: true, view: change.kind === 'delete' ? null : await res.json() as SavedView };
+    if (res.ok) return { ok: true, view: change.kind === 'delete' ? null : await res.json() as HeldBackSavedView };
     // Only a refusal the person can act on (a name in use, a name too long) carries its own message.
     if (res.status === 400 || res.status === 409) {
       const body = await res.json().catch(() => null) as { error?: unknown } | null;
@@ -45,6 +47,6 @@ export async function requestSavedViewChange(
 }
 
 /** A view stored in the list: replaces the one with its id, or is added when there is none. */
-export function upsertSavedView(views: SavedView[], view: SavedView): SavedView[] {
+export function upsertSavedView(views: HeldBackSavedView[], view: HeldBackSavedView): HeldBackSavedView[] {
   return views.some(v => v.id === view.id) ? views.map(v => (v.id === view.id ? view : v)) : [...views, view];
 }

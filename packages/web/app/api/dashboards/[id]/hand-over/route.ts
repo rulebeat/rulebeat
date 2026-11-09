@@ -4,7 +4,7 @@ import { serverError } from '@/lib/api-error';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, transferDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { ownerLabel } from '@/lib/item-access-model';
 import { handOverCandidates } from '@/lib/hand-over-candidates';
@@ -45,7 +45,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       entityId: id,
       summary: `Handed over dashboard "${before.name}" from ${before.owner ? ownerLabel(before.owner) : 'no owner'} to ${chosen.displayName}`,
     });
-    return Response.json(markedDashboard(actor.access, result.dashboard));
+    return Response.json((await holdBackDashboards(actor.access, [result.dashboard]))[0]);
   } catch (err) {
     return serverError('Could not hand over the dashboard', err);
   }

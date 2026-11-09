@@ -4,11 +4,12 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { CATEGORY_LABELS, postureColor } from '@/components/dashboard/dashboard-constants';
 import { Delta } from '@/components/dashboard/widgets/delta';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; showDelta?: boolean; showPolicyCounts?: boolean; policyIds?: string[] }
@@ -41,7 +42,8 @@ function Ring({ pct, label, size = 120 }: { pct: number; label: string; size?: n
 export function PostureRingWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = buildSummaryParams(merged).toString();
+  const target = useWidgetReadTarget();
+  const params = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>).toString();
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]

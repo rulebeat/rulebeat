@@ -3,10 +3,13 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
+import { heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
+
+const STALE_COPY = 'This saved view changed while you were editing it. Reload it and try again.';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +21,8 @@ export async function GET(_: Request, { params }: Params) {
     const view = await getSavedView(id);
     const refused = guardItem(actor, 'view', view, 'open');
     if (refused || !view) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-    return Response.json(markedSavedView(actor.access, view));
+    const [held] = await holdBackSavedViews(actor.access, [view]);
+    return Response.json(held);
   } catch (err) {
     return serverError('Could not load the saved view', err);
   }
@@ -37,11 +41,30 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const refused = guardItem(actor, 'view', await getSavedView(id), 'change');
-    if (refused) return refused;
-    const result = await updateSavedView(id, fields.value, actor.id);
+    const current = await getSavedView(id);
+    const refused = guardItem(actor, 'view', current, 'change');
+    if (refused || !current) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+    // The write is made on the revision of that copy, not the one read just now: a copy the item has moved on
+    // from is refused, since it would put values back that are no longer there.
+    const revision = claimedRevision(body);
+    if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+    const opened = openedCopy(body);
+    // One findings query serves the restore and the answer: the answer's values are the stored ones and the incoming ones.
+    const held = fields.value.query === undefined
+      ? undefined
+      : await heldBackOfQueries(actor.access, [current, { id, query: fields.value.query }]);
+    const restored = fields.value.query === undefined
+      ? { query: undefined, restored: false }
+      : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined, held);
+    if (revision === undefined && restored.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
+    const result = await updateSavedView(
+      id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
+      revision === undefined ? {} : { ifRevision: revision },
+    );
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+      if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
       return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
     }
 
@@ -66,7 +89,8 @@ export async function PATCH(req: Request, { params }: Params) {
         details: { fields: changed },
       });
     }
-    return Response.json(markedSavedView(actor.access, view));
+    const [answer] = await holdBackSavedViews(actor.access, [view], held);
+    return Response.json(answer);
   } catch (err) {
     return serverError('Could not update the saved view', err);
   }

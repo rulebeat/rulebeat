@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { serverError } from '@/lib/api-error';
 import { getDashboard, unshareDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
@@ -53,7 +53,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     if (result.dashboard.owner?.id !== actor.id) {
       return Response.json({ id, visibility: result.dashboard.visibility, revision: result.dashboard.revision });
     }
-    return Response.json(markedDashboard(actor.access, result.dashboard));
+    return Response.json((await holdBackDashboards(actor.access, [result.dashboard]))[0]);
   } catch (err) {
     return serverError('Could not unshare the dashboard', err);
   }

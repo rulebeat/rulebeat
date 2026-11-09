@@ -5,9 +5,12 @@ import { inTransaction, many, one, pgAdvisoryXactLock, run, type DbHandle } from
 import { chunk } from './chunk';
 import { canOpenItem } from '@/lib/item-access-model';
 import { readVisibility } from './item-owners';
+import { DASHBOARD_NAME_LOCK_KEY } from './name-locks';
+import { holdBackDashboards } from './held-back';
+import { withMyDefault } from '@/lib/default-dashboards';
+import type { Access } from '@/lib/access-model';
+import type { Dashboard } from '@/lib/types';
 
-/** The one advisory lock every write to a dashboard, the Install default or a My default takes first. */
-export const DASHBOARD_NAME_LOCK_KEY = 7194826034;
 
 /**
  * My default (ADR 0012): the dashboard a person opens first. It lives on the person's own `users` row
@@ -23,6 +26,15 @@ export async function getMyDefault(userId: string): Promise<MyDefault> {
   const row = await one(db.select({ id: users.defaultDashboardId, unavailable: users.defaultDashboardUnavailable })
     .from(users).where(eq(users.id, userId)));
   return { dashboardId: row?.id ?? null, unavailable: row?.unavailable ?? false };
+}
+
+/**
+ * A dashboard as a route answers it: marked with whether it is `actor`'s My default (the screens replace their
+ * copy with every answer) and without the stored values `actor.access` does not reach.
+ */
+export async function heldBackDashboardFor(actor: { id: string; access: Access }, dashboard: Dashboard) {
+  const mine = (await getMyDefault(actor.id)).dashboardId;
+  return (await holdBackDashboards(actor.access, withMyDefault([dashboard], mine)))[0]!;
 }
 
 export type SetMyDefaultResult = { ok: true } | { ok: false; reason: 'not-found' };

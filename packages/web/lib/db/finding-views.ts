@@ -74,6 +74,12 @@ export interface ViewQuery {
   showSuppressed: boolean;
 }
 
+/** What `queryView` marks outside the caller's access, read from `address` (the View the reader sent) rather
+ *  than the View it matches: an open saved view adds values the reader must not be told of. */
+export interface ViewReadQuery extends ViewQuery {
+  address?: View;
+}
+
 // ---- Reads, on the transaction's handle ----
 
 async function readRuleDetails(tx: DbHandle): Promise<Map<string, RuleDetails>> {
@@ -277,10 +283,11 @@ export function queryRuleFindingCounts(access: Access): Promise<Record<string, n
 
 /** The first response for a view: the page of findings or groups, tiles, facets, by-rule rows and
  *  the column list, all from one read. */
-export function queryView(view: View, query: ViewQuery, access: Access): Promise<ViewResponse> {
+export function queryView(view: View, query: ViewReadQuery, access: Access): Promise<ViewResponse> {
+  const marked = query.address ?? view;
   const outsideAccess = markOutsideAccess(access, {
-    subscriptions: filterValues(view.filters, 'subscription'),
-    resourceGroups: filterValues(view.filters, 'resourceGroup'),
+    subscriptions: filterValues(marked.filters, 'subscription'),
+    resourceGroups: filterValues(marked.filters, 'resourceGroup'),
   });
   return inReadTransaction(async (tx) => {
     const { rules, categories, ctx } = await prepare(tx, view, query);

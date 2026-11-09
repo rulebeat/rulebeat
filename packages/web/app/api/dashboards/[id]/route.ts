@@ -3,13 +3,17 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboardAs, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
-import { getMyDefault } from '@/lib/db/default-dashboard';
+import { heldBackDashboardFor } from '@/lib/db/default-dashboard';
+import { sharedDashboardViewsRefusal } from '@/lib/saved-view-reference';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
+
+const STALE_COPY = 'This dashboard changed while you were editing it. Reload it and try again.';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
@@ -18,12 +22,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const d = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', d, 'open');
   if (refused || !d) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, d)));
-}
-
-// The screens replace their copy of the dashboard with every answer, so each one says whether it is the person's My default.
-async function withMyDefault<T extends { id: string }>(userId: string, d: T): Promise<T & { isMyDefault: boolean }> {
-  return { ...d, isMyDefault: (await getMyDefault(userId)).dashboardId === d.id };
+  return Response.json(await heldBackDashboardFor(actor, d));
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,7 +34,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
-  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: unknown }>(req);
+  const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; isDefault?: unknown; revision?: number }>(req);
   if (body instanceof NextResponse) return body;
 
   // The Install default is chosen through its own route (PUT /api/dashboards/install-default), never by a save.
@@ -44,12 +43,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (body.name === undefined && body.description === undefined && body.config === undefined) {
-    return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, before)));
+    return Response.json(await heldBackDashboardFor(actor, before));
   }
 
-  const result = await updateDashboard(id, body);
+  // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+  // The write is made on the revision of that copy, not the one read just now: a copy the dashboard has moved
+  // on from is refused, since it would put back values that are no longer there.
+  const revision = claimedRevision(body);
+  if (revision !== undefined && revision !== before.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+  const opened = openedCopy(body);
+  const restored = body.config === undefined ? null : await restoreHeldBackDashboard(
+    actor.access, before, body.config, opened && typeof opened === 'object' ? opened as DashboardConfig : undefined,
+  );
+  if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
+  const result = await updateDashboard(
+    id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },
+  );
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+    if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
+    if (result.reason === 'views-not-shared') return Response.json({ error: sharedDashboardViewsRefusal(result.widgetTitles) }, { status: 400 });
     const error = result.reason === 'empty-name' ? 'Name cannot be empty.' : dashboardNameTakenMessage((body.name ?? '').trim());
     return Response.json({ error }, { status: 409 });
   }
@@ -89,7 +102,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  return Response.json(markedDashboard(actor.access, await withMyDefault(actor.id, result.dashboard)));
+  return Response.json(await heldBackDashboardFor(actor, result.dashboard));
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

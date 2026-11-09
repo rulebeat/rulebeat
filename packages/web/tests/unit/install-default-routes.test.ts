@@ -97,6 +97,14 @@ describe('PUT /api/dashboards/install-default', () => {
     expect((await listDashboards()).filter(d => d.isInstallDefault)).toHaveLength(1);
   });
 
+  it('answers in the held-back shape: counts, the asker\'s My default, and no marks on stored values', async () => {
+    await signInAs('admin');
+    const made = await created('Shape', true);
+    const body = await (await choose(made.id)).json() as Record<string, unknown>;
+    expect(body).toMatchObject({ id: made.id, isInstallDefault: true, isMyDefault: false, heldBack: [] });
+    expect(body).not.toHaveProperty('outsideAccess');
+  });
+
   it('works for an Editor on Everything', async () => {
     await signInAs('editor');
     const shared = await created('Team', true);

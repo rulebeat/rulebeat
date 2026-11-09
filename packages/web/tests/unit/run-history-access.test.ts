@@ -20,7 +20,7 @@ import { queryCompare } from '@/lib/db/scan-compare';
 import { emptySnapshotQuery } from '@/lib/snapshot-query';
 import { emptyCompareQuery } from '@/lib/compare-query';
 import { emptySeverityCounts } from '@/lib/severity';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/held-back';
 import type { Finding, Severity } from '@/lib/types';
 import { resetDb } from '../helpers/db';
 import { syntheticFinding } from '../helpers/synthetic-findings';

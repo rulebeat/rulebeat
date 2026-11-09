@@ -1,8 +1,9 @@
 import { Header } from '@/components/layout/header';
 import { listDashboards } from '@/lib/db/dashboards';
 import { getCurrentUser } from '@/lib/api-auth';
-import { redirect } from 'next/navigation';
 import { resolveAccess } from '@/lib/access';
+import { holdBackDashboards } from '@/lib/db/held-back';
+import { redirect } from 'next/navigation';
 import { itemPermissionsFor, openableItems } from '@/lib/item-access-model';
 import { installDefaultControlFor, shareControlFor } from '@/lib/write-controls';
 import { getMyDefault } from '@/lib/db/default-dashboard';
@@ -16,8 +17,8 @@ export default async function DashboardsPage({ searchParams }: { searchParams?: 
   if (!user) redirect('/signin');
 
   const myDefaultId = (await getMyDefault(user.id)).dashboardId;
-  const dashboards = withMyDefault(openableItems(user, await listDashboards()), myDefaultId);
   const access = await resolveAccess(user);
+  const dashboards = await holdBackDashboards(access, withMyDefault(openableItems(user, await listDashboards()), myDefaultId));
   const permissions = itemPermissionsFor(access, 'dashboard');
   const notice = noticeFor((await searchParams)?.notice);
 

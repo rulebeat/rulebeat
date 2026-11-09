@@ -153,6 +153,9 @@ export interface ViewResponse {
   /** The view's own subscription and resource group filter values outside the caller's access (#274).
    *  The filter itself is unchanged. Empty from the pure builders, set by the read that knows the caller. */
   outsideAccess: OutsideAccess;
+  /** Set when the request named a saved view (`view=<id>`) that no longer opens for the caller, deleted or
+   *  someone else's Personal view alike. The read then follows the address filters alone. */
+  viewMissing?: boolean;
 }
 
 export interface FindingRowsResponse {

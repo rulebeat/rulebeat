@@ -33,7 +33,7 @@ import { fakeHierarchy, group, refreshFrom, subscription, type FakeHierarchy } f
 export const MATRIX_OWNER = 'matrix-seed-owner';
 
 /** Makes a seeded item Shared. Sharing is a later change; the seed writes the row the way it would be stored. */
-const share = (table: 'dashboards' | 'saved_views', id: string) => execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
+export const share = (table: 'dashboards' | 'saved_views', id: string) => execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
 
 export const MATRIX_TENANT = '00000000-0000-0000-0000-0000000000f0';
 export const SUB_ONE = '00000000-0000-0000-0000-00000000000a';

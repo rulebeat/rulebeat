@@ -6,7 +6,7 @@ import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
-import { markDashboardConfig } from '@/lib/outside-access';
+import { holdBackDashboards } from '@/lib/db/held-back';
 import { itemPermissionsFor, mayChangeItemWith, openableItems, canOpenItem, isOwnItem } from '@/lib/item-access-model';
 import { installDefaultControlFor, shareControlFor } from '@/lib/write-controls';
 import { getMyDefault } from '@/lib/db/default-dashboard';
@@ -28,8 +28,12 @@ export default async function DashboardPage({ params, searchParams }: Props) {
   // Someone else's Personal dashboard is a 404 like an unknown id, an Admin included.
   if (!dashboard || !canOpenItem({ id: user?.id ?? '' }, dashboard)) notFound();
   const myDefaultId = user ? (await getMyDefault(user.id)).dashboardId : null;
-  const dashboards = withMyDefault(openableItems({ id: user?.id ?? '' }, await listDashboards()), myDefaultId);
   const access = user ? await resolveAccess(user) : NO_ACCESS;
+  // The page reaches the browser, so what it holds is trimmed the way the API's answer is.
+  const dashboards = await holdBackDashboards(access, withMyDefault(openableItems({ id: user?.id ?? '' }, await listDashboards()), myDefaultId));
+  // The stored config never goes to the browser, so a dashboard the list no longer holds is gone, not shown untrimmed.
+  const held = dashboards.find(d => d.id === dashboard.id);
+  if (!held) notFound();
   const permissions = itemPermissionsFor(access, 'dashboard');
   const ownsPersonal = dashboard.visibility === 'personal' && isOwnItem({ id: user?.id ?? '' }, dashboard);
 
@@ -45,8 +49,7 @@ export default async function DashboardPage({ params, searchParams }: Props) {
           {holdsNoScope(access) && !ownsPersonal
             ? <NoAccessState />
             : <DashboardGridClient
-                dashboard={{ ...dashboard, isMyDefault: dashboard.id === myDefaultId }}
-                outsideAccess={markDashboardConfig(access, dashboard.config)}
+                dashboard={held}
                 canChange={mayChangeItemWith({ id: user?.id ?? '' }, permissions, dashboard)}
                 canSetDefault={permissions.manage}
                 currentUserId={user?.id ?? ''}
