@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
-import { createSavedView, deleteSavedView } from '@/lib/db/saved-views';
+import { createSavedView, deleteSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { effectiveView } from '@/lib/effective-filters';
 import { readViewRequest } from '@/lib/view-request';
 import { filterValues, viewToSearchParams } from '@/lib/finding-view';
@@ -133,10 +133,11 @@ describe.each(Object.entries(routes))('GET /api/findings/%s with a view open', (
 });
 
 describe('GET /api/findings/view', () => {
-  it('answers with the list alone, whether or not a view is open', async () => {
+  it('says which revision of the open view it read, so a page holding an older one picks the change up', async () => {
     queries.queryView.mockResolvedValue({ total: 1 });
+    await updateSavedView(viewId, { name: 'Renamed by someone else' }, null);
     const res = await routes.view(new Request(`http://localhost/api/findings/view?view=${viewId}&rev=${revision}`));
-    expect(await res.json()).toEqual({ total: 1 });
+    expect(await res.json()).toEqual({ total: 1, savedRevision: revision + 1 });
   });
 
   it('adds nothing when no view is open', async () => {

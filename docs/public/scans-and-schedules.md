@@ -132,13 +132,32 @@ Scans with only this link's filters opens the same link without the view and kee
 filters. If the open view is deleted while you have the page open, the next read shows the same
 notice and action in place of the list.
 
-Viewers can open saved views. Editors and admins can also save the current view, replace an open
-view's filters with the current ones (Update with current view), rename it and delete it. A name
+Viewers can open saved views. Editors and admins can also save the current view, update an open view
+with the changes you made on top of it (Update with current view), rename it and delete it. A name
 is unique whatever its case, and saving a name already in use says so. A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
 names of the fields that changed, never their values.
+
+**Update with current view** sends the revision of the view you opened and the changes in your
+address, never a copy of the view. The server puts the view as saved and your changes together, so
+every part you did not change stays as saved. A Changed mark beside the button lists the parts you
+changed, such as "Changed: Severity, Search". An update is refused when your changes name a
+subscription or resource group outside your access, and when it would pick any over saved values you
+cannot see; values you cannot see that the view saved are kept when you change that filter. One audit
+entry is written per update. If someone saved the view first, nothing is saved: the page takes the
+newer view and keeps your changes in the address, and a notice says who changed the view and when, and
+names any part you did not touch that moved because of it. This page has no refresh timer, so a change
+someone else made is picked up on the next read of the findings or the next save; a read that finds it
+reloads the filters and every number and says so. Renaming a view also needs the revision you opened,
+and a rename without one, or over an older one, is refused with "This saved view changed since you
+opened it. Reload to continue." and changes nothing.
+
+**Save current view** with a view open builds the new view the same way, from the open view and your
+changes, and leaves out any subscription or resource group value outside your access. The dialog then
+says how many were left out, for example "2 values outside your access were not saved." With no view
+open, saving works as before and keeps the whole view in the address.
 
 ## Disable, clear findings, or suppress
 

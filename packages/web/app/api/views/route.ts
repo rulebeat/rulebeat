@@ -5,7 +5,11 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
 import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
-import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
+import { buildViewFromOpen, staleAnswer } from '@/lib/saved-view-save';
+import { SAVED_VIEW_UNAVAILABLE, type SavedViewFields } from '@/lib/saved-view-query';
+import {
+  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, parseSavedViewFields, parseSavedViewFromOpen, readRevision, savedViewNameTakenMessage,
+} from '@/lib/saved-views';
 
 export async function GET() {
   const actor = await requireRole('read');
@@ -23,12 +27,38 @@ export async function POST(req: Request) {
 
   const body = await parseJsonBody<unknown>(req);
   if (body instanceof NextResponse) return body;
-  const fields = parseSavedViewFields(body, 'create');
-  if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
+
+  // With a view open the server builds the new one from it, so a value the saver cannot see is dropped
+  // and counted here rather than lost or widened in a copy the browser built (ADR 0013).
+  const fromView = typeof body === 'object' && body !== null && 'fromView' in body;
+  let dropped: number | undefined;
+  let fields: { name: string; tab: SavedViewFields['tab']; query: string };
+  if (fromView) {
+    const revision = readRevision(body);
+    if (revision === null) return Response.json({ error: SAVED_VIEW_CHANGED_MESSAGE }, { status: 409 });
+    const parsed = parseSavedViewFromOpen(body);
+    if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    try {
+      const built = await buildViewFromOpen({ viewId: parsed.value.fromView, revision, changes: parsed.value.changes, access: actor.access });
+      if (!built.ok) {
+        return built.reason === 'stale'
+          ? await staleAnswer(built.view, actor.access)
+          : Response.json({ error: SAVED_VIEW_UNAVAILABLE }, { status: 404 });
+      }
+      dropped = built.dropped;
+      fields = { name: parsed.value.name, tab: parsed.value.tab, query: built.query };
+    } catch (err) {
+      return serverError('Could not save the view', err);
+    }
+  } else {
+    const parsed = parseSavedViewFields(body);
+    if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    fields = parsed.value;
+  }
 
   try {
-    const result = await createSavedView(fields.value, actor.id);
-    if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
+    const result = await createSavedView(fields, actor.id);
+    if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.name) }, { status: 409 });
 
     await writeAudit({
       actor,
@@ -38,7 +68,7 @@ export async function POST(req: Request) {
       summary: `Saved view "${result.view.name}"`,
       details: { fields: SAVED_VIEW_FIELDS },
     });
-    return Response.json(markedSavedView(actor.access, result.view), { status: 201 });
+    return Response.json({ ...markedSavedView(actor.access, result.view), ...(dropped !== undefined && { dropped }) }, { status: 201 });
   } catch (err) {
     return serverError('Could not save the view', err);
   }

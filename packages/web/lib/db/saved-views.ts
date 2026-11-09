@@ -79,19 +79,26 @@ export async function createSavedView(
 
 export type UpdateSavedViewResult =
   | { ok: true; view: SavedView; before: SavedView }
-  | { ok: false; reason: 'not-found' | 'name-taken' };
+  | { ok: false; reason: 'not-found' | 'name-taken' }
+  | { ok: false; reason: 'stale'; revision: number };
 
-// The name is only checked when it actually changes (compared the same way the check compares), so
-// an install holding a pre-existing clashing pair can still save either one without renaming it.
+// With `expectedRevision` the write happens only over that revision, checked inside the write's
+// transaction so two saves over the same revision cannot both land. The name is only checked when it
+// actually changes (compared the same way the check compares), so an install holding a pre-existing
+// clashing pair can still save either one without renaming it.
 export async function updateSavedView(
   id: string,
   data: Partial<SavedViewFields>,
   actorId: string | null,
+  expectedRevision?: number,
 ): Promise<UpdateSavedViewResult> {
   return inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, SAVED_VIEW_NAME_LOCK_KEY);
     const existing = await one(tx.select().from(savedViews).where(eq(savedViews.id, id)));
     if (!existing) return { ok: false, reason: 'not-found' } as const;
+    if (expectedRevision !== undefined && existing.revision !== expectedRevision) {
+      return { ok: false, reason: 'stale', revision: existing.revision } as const;
+    }
     const name = data.name?.trim();
     if (name !== undefined && !sameName(name, existing.name) && await isNameTaken(tx, name, id)) {
       return { ok: false, reason: 'name-taken' } as const;

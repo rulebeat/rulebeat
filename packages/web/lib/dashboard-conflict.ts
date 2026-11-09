@@ -1,6 +1,7 @@
 /**
- * The notice a person reads when their save of the dashboard's filters met a newer revision (ADR 0013):
- * who changed the saved filters, when, and which dimensions moved under them. Pure and client-safe.
+ * The notice a person reads when their save of the dashboard's filters (or of a saved view) met a newer
+ * revision (ADR 0013): who changed the saved filters, when, and which dimensions moved under them. Pure and
+ * client-safe.
  */
 import { sameValues } from './dashboard-filters';
 import { sameWindow, type DashboardFilterChanges } from './finding-view';
@@ -43,11 +44,15 @@ export function movedDimensions(before: DashboardBarState, after: DashboardBarSt
 }
 
 /** The one notice for a save that met a newer revision. A second Save is the person's deliberate choice. */
-export function conflictNotice(input: { by?: string; at?: string; moved: string[]; formatTime?: (iso: string) => string; layoutEditOpen?: boolean }): string {
-  const { by, at, moved, formatTime = defaultTime, layoutEditOpen } = input;
+export function conflictNotice(input: {
+  by?: string; at?: string; moved: string[]; formatTime?: (iso: string) => string; layoutEditOpen?: boolean;
+  /** What was saved over: a dashboard (the default) or a saved view on Scans, which has no layout. */
+  subject?: 'dashboard' | 'saved view';
+}): string {
+  const { by, at, moved, formatTime = defaultTime, layoutEditOpen, subject = 'dashboard' } = input;
   const head = by && at
-    ? `${by} changed this dashboard's saved filters at ${formatTime(at)}.`
-    : 'This dashboard changed since you opened it.';
+    ? `${by} changed this ${subject === 'dashboard' ? "dashboard's saved filters" : subject} at ${formatTime(at)}.`
+    : `This ${subject} changed since you opened it.`;
   const also = moved.length > 0 ? ` This also changed ${joined(moved)} for you.` : '';
   const layout = layoutEditOpen ? ' Your layout edit is still open: save or cancel it to load the new layout.' : '';
   return `${head}${also} Your changes are still in the address. Check them, then save again.${layout}`;

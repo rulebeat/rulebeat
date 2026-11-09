@@ -4,8 +4,11 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
-import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
-import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
+import { deleteSavedView, getSavedView } from '@/lib/db/saved-views';
+import { saveViewChanges, staleAnswer, viewRefusalMessage } from '@/lib/saved-view-save';
+import {
+  SAVED_VIEW_CHANGED_MESSAGE, SAVED_VIEW_FIELDS, parseSavedViewUpdate, readRevision, savedViewNameTakenMessage,
+} from '@/lib/saved-views';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -29,21 +32,35 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const body = await parseJsonBody<unknown>(req);
   if (body instanceof NextResponse) return body;
-  const fields = parseSavedViewFields(body, 'update');
+  // A write over no revision is a write over one the page may not hold: nothing is saved (ADR 0013).
+  const revision = readRevision(body);
+  if (revision === null) return Response.json({ error: SAVED_VIEW_CHANGED_MESSAGE }, { status: 409 });
+  const fields = parseSavedViewUpdate(body);
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await updateSavedView(id, fields.value, actor.id);
+    const result = await saveViewChanges({
+      viewId: id, revision, name: fields.value.name, changes: fields.value.changes, access: actor.access, actorId: actor.id,
+    });
     if (!result.ok) {
-      if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
-      return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
+      switch (result.reason) {
+        case 'not-found':
+          return Response.json({ error: 'Not found' }, { status: 404 });
+        case 'name-taken':
+          return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
+        case 'stale':
+          return await staleAnswer(result.view, actor.access);
+        case 'outside-access':
+          return Response.json({ error: viewRefusalMessage(result), code: result.reason, count: result.count }, { status: 422 });
+        case 'any-over-held-back':
+          return Response.json({ error: viewRefusalMessage(result), code: result.reason, dimensions: result.dimensions }, { status: 422 });
+      }
     }
 
     // The summary names the view, as the dashboard routes' summaries do, so the log reads without
     // a lookup. `details` holds field names only, never their values: a query is whatever the
-    // person filtered on.
-    const { before, view } = result;
-    const changed = SAVED_VIEW_FIELDS.filter(f => f in fields.value && view[f] !== before[f]);
+    // person filtered on. A save that changed nothing is not an event.
+    const { before, view, changed } = result;
     if (changed.length > 0) {
       const renamedOnly = changed.length === 1 && changed[0] === 'name';
       await writeAudit({

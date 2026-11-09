@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyView, filterValues, rowField, viewFromSearchParams, viewToSearchParams, type View } from '@/lib/finding-view';
 import {
-  ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, exportUrl, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
+  ExplorerSession, READ_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, columnValuesUrl, explorerAddress, explorerChanges, exportUrl, filtersWithoutLockedCategory, groupUrl, readJson, remoteValuesFor, rowsUrl, ruleFindingsUrl,
   viewQuery, viewUrl, type FetchFn, type ViewRequest,
 } from '@/lib/explorer-session';
 import { SAVED_VIEW_UNAVAILABLE, addressWithoutView } from '@/lib/saved-view-query';
@@ -635,6 +635,18 @@ describe('the requests with a saved view open', () => {
     const view: View = { ...savedView, columns: ['zone'] };
     const address = explorerAddress(view, { extraParams: { tab: 'results' }, viewId: 'v1', saved: savedView });
     expect(address).toBe('tab=results&view=v1&cols=zone');
+  });
+
+  it('write the differences alone, with no param the page owns and no page, for a save to send', () => {
+    const view: View = { ...savedView, columns: ['zone'], page: 3 };
+    expect(explorerChanges(view, savedView)).toBe('cols=zone');
+    expect(explorerChanges(savedView, savedView)).toBe('');
+  });
+
+  it('leave a locked category out of the differences, since it is the page\'s and not a change', () => {
+    const saved = { ...savedView, filters: [{ field: 'category' as const, values: ['security'] }] };
+    const current: View = { ...saved, filters: [{ field: 'category', values: ['cost'] }, { field: 'severity', values: ['low'] }] };
+    expect(explorerChanges(current, saved, 'cost')).toBe('severity=low');
   });
 
   it('says the open saved view is gone when a read of it is answered 404, and is a plain failure otherwise', async () => {

@@ -13,9 +13,9 @@ export async function GET(req: Request) {
   if (!request.ok) return Response.json({ error: request.error }, { status: request.status });
 
   try {
-    const { view, tab, showSuppressed } = request.value;
+    const { view, tab, showSuppressed, savedRevision } = request.value;
     const answer = await queryView(view, { tab, showSuppressed }, actor.access);
-    return Response.json(answer);
+    return Response.json(savedRevision === undefined ? answer : { ...answer, savedRevision });
   } catch (err) {
     return serverError('Could not load the findings', err);
   }

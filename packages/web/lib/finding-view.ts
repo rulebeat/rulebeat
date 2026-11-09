@@ -96,6 +96,13 @@ export interface ViewPage<T> {
   matched: ViewItem<T>[];
 }
 
+/** How a built-in field is named in the Add filter list and on a filter chip. */
+export const FIELD_LABEL: Record<BuiltinField, string> = {
+  rule: 'Rule', kind: 'Kind', category: 'Category', severity: 'Severity', status: 'Status',
+  subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
+  resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
+};
+
 export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_WINDOW_DAYS = 7;
 export const DEFAULT_SORT: ViewSort = { field: 'severity', dir: 'asc' };
