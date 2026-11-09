@@ -721,16 +721,48 @@ function dashboardMatrix(): Record<string, Matrix> {
     { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
     { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
   );
+  // Writing a saved view is install-wide like the rest of the library writes: the Admin and the Editor on
+  // Everything may, and everyone who holds less is refused. A write needs the revision the person read.
+  const mayWriteViews = (person: string) => person === 'Admin' || person === 'Editor on Everything';
+  const jsonRequest = (url: string, method: string, body: object) =>
+    new Request(`http://localhost${url}`, { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
   const views: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
-      return viewOf(list.find(v => v.id === seed.savedViewId)!);
+      const route = await import('@/app/api/views/route');
+      const list = await BODY(await route.GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      const read = list.find(v => v.id === seed.savedViewId)!;
+      // Saving from the open view builds the new one on the server from its id, revision and the changes.
+      const { getSavedView } = await import('@/lib/db/saved-views');
+      const revision = (await getSavedView(seed.savedViewId))!.revision;
+      const name = `Matrix copy ${crypto.randomUUID()}`;
+      const created = await route.POST(jsonRequest('/api/views', 'POST', { name, tab: 'results', fromView: seed.savedViewId, revision, changes: '' }));
+      const body = created.status === 201 ? await created.json() as { query: string; dropped: number } : undefined;
+      const withoutRevision = await route.POST(jsonRequest('/api/views', 'POST', { name: `${name} again`, tab: 'results', fromView: seed.savedViewId, changes: '' }));
+      return { ...viewOf(read), fromOpen: { status: created.status, query: body?.query, dropped: body?.dropped }, withoutRevision: withoutRevision.status };
     },
-    expected: viewExpected,
+    expected: Object.fromEntries(Object.entries(viewExpected).map(([person, byTab]) => {
+      const writes = mayWriteViews(person)
+        ? { fromOpen: { status: 201, query: VIEW_QUERY, dropped: 0 }, withoutRevision: 409 }
+        : { fromOpen: { status: 403, query: undefined, dropped: undefined }, withoutRevision: 403 };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
   const viewById: Matrix = {
-    probe: async seed => viewOf(await BODY(await getWith('/api/views/x', await import('@/app/api/views/[id]/route'), seed.savedViewId)) as never),
-    expected: viewExpected,
+    probe: async seed => {
+      const route = await import('@/app/api/views/[id]/route');
+      const read = await BODY(await getWith('/api/views/x', route, seed.savedViewId)) as { revision: number; query: string; tab: string; outsideAccess: unknown };
+      const patch = async (body: object) => (await route.PATCH(jsonRequest('/api/views/x', 'PATCH', body), { params: Promise.resolve({ id: seed.savedViewId }) })).status;
+      return {
+        ...viewOf(read),
+        // The changes name the saved subscription, so a write that is allowed leaves the view as it was.
+        withRevision: await patch({ revision: read.revision, changes: VIEW_QUERY }),
+        renameWithoutRevision: await patch({ name: 'Renamed' }),
+      };
+    },
+    expected: Object.fromEntries(Object.entries(viewExpected).map(([person, byTab]) => {
+      const writes = mayWriteViews(person) ? { withRevision: 200, renameWithoutRevision: 409 } : { withRevision: 403, renameWithoutRevision: 403 };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
 
   // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
