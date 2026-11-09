@@ -725,7 +725,7 @@ export function FindingsExplorerClient({
       })));
     const legacyChipList: FilterChip[] = legacyOutside
       ? [{
-        field: 'legacy-outside', value: 'outside', fieldLabel: '', valueLabel: legacyOutside.label,
+        field: 'scope', value: 'legacy-outside', fieldLabel: '', valueLabel: legacyOutside.label,
         remove: () => {
           setFilters(prev => legacyOutside.values.reduce((next, v) => toggleFilterValue(next, v.field, v.value), prev));
           setPage(0);

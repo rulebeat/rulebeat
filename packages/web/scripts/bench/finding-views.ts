@@ -390,6 +390,8 @@ export async function buildMeasurements(): Promise<Measurement[]> {
   const kindsOf = { results: RESULTS_KINDS, advisories: ['advisory'] as const };
   const rowFilterView = { ...emptyView(), filters: [{ field: rowField(BENCH_ROW_PATH), values: ['S1'] }] };
   const defaultView = emptyView();
+  // An old link that names a resource group on its own: the server reads the pairs on record to translate it.
+  const oldLinkView = { ...emptyView(), filters: [{ field: 'resourceGroup' as const, values: ['rg-1-0'] }] };
   const sizeOf = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
   return [
@@ -402,6 +404,7 @@ export async function buildMeasurements(): Promise<Measurement[]> {
     // New: the server computes the view and sends the page.
     { name: 'new: default view', run: async () => sizeOf(await queryView(defaultView, { tab: 'results', showSuppressed: false }, BENCH_ACCESS)) },
     { name: 'new: row-filtered view', run: async () => sizeOf(await queryView(rowFilterView, { tab: 'results', showSuppressed: false }, BENCH_ACCESS)) },
+    { name: 'new: old-link view, resource group name', run: async () => sizeOf(await queryView(oldLinkView, { tab: 'results', showSuppressed: false }, BENCH_ACCESS)) },
     { name: 'new: default view, Advisories tab', run: async () => sizeOf(await queryView(defaultView, { tab: 'advisories', showSuppressed: false }, BENCH_ACCESS)) },
     { name: 'new: column dropdown', run: async () => sizeOf(await queryColumnValues(defaultView, { tab: 'results', showSuppressed: false, column: rowField(BENCH_ROW_PATH) }, BENCH_ACCESS)) },
     // A past run's snapshot (ADR 0008): the page of 50, the total and the facets, from the scan's records.

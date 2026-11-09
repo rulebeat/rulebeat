@@ -18,13 +18,14 @@ const PAIRS = indexPairs([
 
 const holding = (...paths: string[]): Access => buildAccess(paths.map(path => ({ tenantId: 't', scope: parseScope(path)!, role: 'viewer' as const })), 'manual');
 const EVERYTHING = everythingAccess('admin');
+const NONE = { subscriptions: [], resourceGroups: [] };
 const sub = (id: string) => `/subscriptions/${id}`;
 const group = (id: string, name: string) => `/subscriptions/${id}/resourceGroups/${name}`;
 
 describe('a legacy link whose every value reaches a pair the viewer holds', () => {
   it('turns subscriptions into Scope picks', () => {
     const t = translateLegacyScope(holding(sub(SUB_A), sub(SUB_B)), { subscriptions: [SUB_A, SUB_B], resourceGroups: [] }, PAIRS);
-    expect(t).toEqual({ paths: [sub(SUB_A), sub(SUB_B)], outside: { subscriptions: [], resourceGroups: [] }, complete: true });
+    expect(t).toEqual({ paths: [sub(SUB_A), sub(SUB_B)], outside: NONE, gone: NONE, complete: true });
   });
 
   it('turns subscriptions with resource group names into their pairs', () => {
@@ -68,7 +69,7 @@ describe('a resource group name with no subscription', () => {
 describe('a legacy value that reaches no pair the viewer holds', () => {
   it('is outside the viewer\'s access, never turned into a pick, and the link is not complete', () => {
     const t = translateLegacyScope(holding(sub(SUB_A)), { subscriptions: [SUB_B], resourceGroups: [] }, PAIRS);
-    expect(t).toEqual({ paths: [], outside: { subscriptions: [SUB_B], resourceGroups: [] }, complete: false });
+    expect(t).toEqual({ paths: [], outside: { subscriptions: [SUB_B], resourceGroups: [] }, gone: NONE, complete: false });
   });
 
   it('keeps the held values and counts the rest, for a partly held link', () => {
@@ -103,5 +104,18 @@ describe('a legacy value that reaches no pair the viewer holds', () => {
     const t = translateLegacyScope(holding(group(SUB_A, 'rg-app')), { subscriptions: [SUB_A], resourceGroups: ['rg-app', 'rg-data'] }, PAIRS);
     expect(t.paths).toEqual([group(SUB_A, 'rg-app')]);
     expect(t.outside).toEqual({ subscriptions: [], resourceGroups: ['rg-data'] });
+  });
+});
+
+describe('a legacy value that no record pairs, for Everything', () => {
+  it('is named and gone, not outside anyone\'s access, and the link is not complete', () => {
+    const t = translateLegacyScope(EVERYTHING, { subscriptions: [], resourceGroups: ['rg-ghost'] }, PAIRS);
+    expect(t).toEqual({ paths: [], outside: NONE, gone: { subscriptions: [], resourceGroups: ['rg-ghost'] }, complete: false });
+  });
+
+  it('keeps the pairs a partly matching link reaches, whatever the case of the name', () => {
+    const t = translateLegacyScope(EVERYTHING, { subscriptions: [], resourceGroups: ['RG-DATA', 'rg-ghost'] }, PAIRS);
+    expect(t.paths).toEqual([group(SUB_A, 'rg-data')]);
+    expect(t.gone.resourceGroups).toEqual(['rg-ghost']);
   });
 });

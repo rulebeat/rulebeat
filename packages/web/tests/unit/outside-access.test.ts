@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import {
-  filterOutsideDimension, isOutsideAccess, markDashboardConfig, markedDashboard, markedSavedView, markOutsideAccess,
-  markSavedViewQuery, outsideAwareLabel, OUTSIDE_ACCESS_LABEL, widgetAccessReason, withOutsideOptions,
+  filterOutsideDimension, isOutsideAccess, markDashboardConfig, markedDashboard, markOutsideAccess,
+  outsideAwareLabel, OUTSIDE_ACCESS_LABEL, widgetAccessReason, withOutsideOptions,
 } from '@/lib/outside-access';
 import type { DashboardConfig } from '@/lib/types';
 
@@ -89,22 +89,8 @@ describe('markOutsideAccess', () => {
   });
 });
 
-describe('marking what a saved view and a dashboard store', () => {
+describe('marking what a dashboard stores', () => {
   const oneSub = holding([`/subscriptions/${SUB_ONE}`]);
-
-  it('marks a saved view\'s subscription filter and returns the stored query unchanged', () => {
-    const view = { id: 'v', query: `subscription=${SUB_TWO}&severity=high` };
-    expect(markedSavedView(oneSub, view)).toEqual({ ...view, outsideAccess: { subscriptions: [SUB_TWO], resourceGroups: [] } });
-  });
-
-  it('never marks a category, tag, severity or rule filter', () => {
-    const query = 'category=security&tag=x&severity=high&rule=matrix-rule';
-    expect(markSavedViewQuery(NO_ACCESS, query)).toEqual(NOTHING);
-  });
-
-  it('marks a saved view\'s resource group filter', () => {
-    expect(markSavedViewQuery(NO_ACCESS, 'rg=rg-two').resourceGroups).toEqual(['rg-two']);
-  });
 
   const config: DashboardConfig = {
     filters: { subscriptions: [SUB_TWO] },

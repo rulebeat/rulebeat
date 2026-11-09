@@ -115,7 +115,7 @@ describe('a run over a tiny database', () => {
     expect(names).toEqual([
       'scan save: first scan', 'scan save: second scan',
       'today: payload, Results tab', 'today: payload, Advisories tab', 'today: default view', 'today: row-filtered view', 'today: column dropdown',
-      'new: default view', 'new: row-filtered view', 'new: default view, Advisories tab', 'new: column dropdown',
+      'new: default view', 'new: row-filtered view', 'new: old-link view, resource group name', 'new: default view, Advisories tab', 'new: column dropdown',
       'snapshot: first page', 'snapshot: later page', 'snapshot: page filtered with search',
       'compare: added page', 'compare: fixed page', 'compare: persisted page', 'compare: later page of the biggest side',
     ]);

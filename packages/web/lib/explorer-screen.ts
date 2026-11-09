@@ -49,7 +49,7 @@ export type ListBody = 'unavailable' | 'empty' | 'rows';
  *  outside the Access or one that could not be opened, a Rule source or tags that no rule has any more),
  *  and `filters` for every other empty list. No Scope at all is the no-access screen, decided before the
  *  list. A scoped person whose own estate is clean gets `filters`. */
-export type EmptyReason = 'access' | 'filters' | MatchesNothing;
+export type EmptyReason = 'access' | 'filters' | 'legacy-gone' | MatchesNothing;
 
 export function emptyReasonOf(state: {
   noAccess?: boolean;
@@ -63,14 +63,27 @@ export function emptyReasonOf(state: {
     resourceGroups: filterValues(state.filters, 'resourceGroup'),
   }, state.outsideAccess);
   if (dimension) return 'access';
+  if (legacyGoneDimension(state.filters, state.filterStates)) return 'legacy-gone';
   const nothing = state.filterStates ? dimensionMatchingNothing(state.filterStates, filterValues(state.filters, 'tags').length) : null;
   return nothing ?? 'filters';
+}
+
+const isLegacyGone = (states: FilterStates | undefined, field: 'subscription' | 'resourceGroup', value: string) =>
+  (field === 'subscription' ? states?.legacyGone.subscriptions : states?.legacyGone.resourceGroups)?.some(v => v.toLowerCase() === value.toLowerCase()) ?? false;
+
+/** Whether an old link's subscription filter, or its resource group filter, holds only values that no longer exist. */
+function legacyGoneDimension(filters: readonly ViewFilter[], states: FilterStates | undefined): boolean {
+  return (['subscription', 'resourceGroup'] as const).some(field => {
+    const values = filterValues(filters, field);
+    return values.length > 0 && values.every(value => isLegacyGone(states, field, value));
+  });
 }
 
 /** The words an empty list shows for its reason. */
 export function emptyListCopy(reason: EmptyReason, subject: 'findings' | 'rules'): string {
   switch (reason) {
     case 'access': return `These filters name a subscription or resource group outside your Access, so no ${subject} can be listed`;
+    case 'legacy-gone': return `The subscription or resource group filter names only values that no longer exist, so no ${subject} can be listed`;
     case 'scope-outside': return `The Scope filter names only Scopes outside your Access, so no ${subject} can be listed`;
     case 'scope-gone': return `The Scope filter names only Scopes that no longer exist, so no ${subject} can be listed`;
     case 'scope-gone-or-outside': return `The Scope filter names only Scopes that no longer exist or are outside your Access, so no ${subject} can be listed`;
@@ -110,6 +123,7 @@ export function filterValueLabel(
   named: (value: string) => string,
 ): string {
   const label = filterChipLabel(field, value, outsideAccess, named);
+  if ((field === 'subscription' || field === 'resourceGroup') && isLegacyGone(states, field, value)) return markedLabel(label, NO_LONGER_EXISTS);
   if (field === 'tags' && states?.missingTags.includes(value)) return markedLabel(label, NO_LONGER_EXISTS);
   if (field === 'category' && states?.deletedCategories.includes(value)) return markedLabel(label, DELETED_NOTE);
   return label;

@@ -831,6 +831,8 @@ export function viewFromSearchParams(source: ParamSource, options: ReadOptions =
     category: parseCategoryParam(readParam(source, 'category')),
     rule: splitList(readParam(source, 'ruleId')),
     severity: splitList(readParam(source, 'severity')).filter(s => (EXPLORER_SEVERITIES as string[]).includes(s)),
+    // An old link's values: kept as filters so the server can translate them (`lib/db/legacy-scope-link.ts`), which is
+    // the only place they are matched, as Scope picks and never by string.
     subscription: splitList(readParam(source, 'subscription')),
     resourceGroup: splitList(readParam(source, 'rg')),
     location: splitList(readParam(source, 'location')),
