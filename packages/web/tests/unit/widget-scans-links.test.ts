@@ -114,7 +114,7 @@ beforeEach(async () => {
 });
 
 /** The parts of a counting response these tests read. */
-interface Row { href: string; count: number; name: string; ruleId: string }
+interface Row { href: string; count: number; name: string; ruleId: string; resourceName?: string }
 interface WidgetAnswer {
   scansHref: string | null;
   revision?: number;
@@ -314,6 +314,37 @@ describe('the link of a row that names a resource', () => {
     const recent = await ask('findings', 'recent');
     expect(recent.items.length).toBe(2);
     for (const item of recent.items) expect((await opened(item.href)).total, item.href).toBe(1);
+  });
+});
+
+describe('the link of a row for a child resource that shares its name with another', () => {
+  const database = (ruleId: string, server: string): Finding => {
+    const resourceId = `/subscriptions/${SUB_B}/resourceGroups/rg-1/providers/Microsoft.Sql/servers/${server}/databases/master`;
+    return {
+      ...finding(ruleId, 'master', SUB_B), resourceId, resourceType: 'microsoft.sql/servers/databases',
+      fingerprint: computeFingerprint(ruleId, resourceId),
+    };
+  };
+
+  beforeEach(async () => {
+    await syncScanFindings({
+      scanId: 'sl-5', category: 'security', ranRuleIds: RULES, finishedAt: new Date().toISOString(),
+      findings: [database('sl-rule-1', 'srv1'), database('sl-rule-2', 'srv1'), database('sl-rule-3', 'srv2')],
+    });
+  });
+
+  it('opens only that resource from top-resources', async () => {
+    const resources = await ask('top-resources', 'resources');
+    const databases = resources.items.filter(item => item.resourceName === 'master');
+    expect(databases.map(item => item.count).sort()).toEqual([1, 2]);
+    for (const item of databases) expect((await opened(item.href)).total, item.href).toBe(item.count);
+  });
+
+  it('opens only that resource from recent findings', async () => {
+    const recent = await ask('findings', 'recent');
+    const databases = recent.items.filter(item => item.resourceName === 'master');
+    expect(databases.length).toBe(3);
+    for (const item of databases) expect((await opened(item.href)).total, item.href).toBe(item.count ?? 1);
   });
 });
 

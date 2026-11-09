@@ -16,9 +16,8 @@ interface Config { category?: string; limit?: number; policyIds?: string[] }
 interface Props { config: Config; refreshKey: number; }
 
 /** "These N resources carry the most findings". The resource-side counterpart to the top-
- *  violating-rules widget. Click → /scans filtered by the resource's name (Scans has no
- *  resource-id-scoped filter, so name search is the closest equivalent, same as the old
- *  findings-table row click used). */
+ *  violating-rules widget. Click → the row's own `href`, built on the server: it opens /scans on exactly
+ *  that resource (name, type and id), under the filters the viewer holds. */
 export function TopResourcesWidget({ config, refreshKey }: Props) {
   const router = useRouter();
   const url = useWidgetUrl('top-resources', { limit: config.limit ?? 10 });

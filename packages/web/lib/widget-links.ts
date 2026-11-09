@@ -91,6 +91,10 @@ function withExactResource(href: string, resource: LinkedResource): string {
   if (resource.resourceGroup) url.searchParams.set('rg', resource.resourceGroup);
   url.searchParams.append('f', genericFilterParam('resourceName', [findingSubject(resource)]));
   if (resource.resourceType) url.searchParams.append('f', genericFilterParam('resourceType', [resource.resourceType]));
+  // A child resource's name is not unique inside a resource group (two SQL databases called `master` on
+  // different servers), so the full id narrows it to the one resource. The search matches an id as text,
+  // and a longer id of the same type under the same group cannot contain this one.
+  if (resource.resourceId) url.searchParams.set('q', resource.resourceId);
   return `${url.pathname}${url.search}`;
 }
 

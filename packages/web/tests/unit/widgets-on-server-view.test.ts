@@ -165,7 +165,7 @@ describe('the Advisories widget', () => {
         fingerprint: expect.any(String), ruleId: ADV_LOW, ruleName: `Rule ${ADV_LOW}`,
         resourceId: expect.stringContaining('/virtualMachines/low-1'), resourceName: 'low-1',
         category: 'security', severity: 'low', lastSeenAt: NOW.toISOString(),
-        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&subscription=${TEST_SUB_A}&window=7&rg=rg-low&f=resourceName%3Dlow-1&f=resourceType%3Dmicrosoft.compute%2Fvirtualmachines`,
+        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&subscription=${TEST_SUB_A}&window=7&rg=rg-low&f=resourceName%3Dlow-1&f=resourceType%3Dmicrosoft.compute%2Fvirtualmachines&q=${encodeURIComponent(`/subscriptions/${TEST_SUB_A}/resourceGroups/rg-low/providers/Microsoft.Compute/virtualMachines/low-1`)}`,
       }],
       total: 1,
       hasAdvisoryRules: true,
