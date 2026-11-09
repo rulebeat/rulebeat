@@ -33,18 +33,44 @@ export function copiedDashboardNotice(widgets: number | undefined): string | nul
   return `Copied as a Personal dashboard. ${shows} more than the original, because values outside your access were left out.`;
 }
 
-/** The address param that carries a Duplicate's count to the copy's page, which says it once. */
-export const COPIED_PARAM = 'copied';
-
-/** Where a Duplicate lands: the copy, with how many widgets show more than the original when any do. */
-export function copiedDashboardHref(id: string, widened: number | undefined): string {
-  return widened && widened > 0 ? `/dashboards/${id}?${COPIED_PARAM}=${widened}` : `/dashboards/${id}`;
+/** The slice of `sessionStorage` the hand-off needs, so it can be tried without a browser. */
+export interface NoticeStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
-/** The count in the address, or 0 when it is missing or not a whole number above 0. */
-export function widenedFromParam(value: string | string[] | undefined): number {
-  const n = typeof value === 'string' && /^\d{1,6}$/.test(value) ? Number(value) : 0;
-  return n > 0 ? n : 0;
+const copiedKey = (id: string) => `rulebeat:copied-dashboard:${id}`;
+
+/**
+ * Hands a Duplicate's count to the copy's page. It travels in this tab's session storage, keyed by the copy's
+ * id, not in the address: an address is bookmarked, shared and typed by hand, and the notice is for the one
+ * page load that follows the Duplicate.
+ */
+export function rememberCopiedDashboard(store: NoticeStore | undefined, id: string, widened: number | undefined): void {
+  if (!store || !widened || widened < 1) return;
+  try { store.setItem(copiedKey(id), String(widened)); } catch { /* storage refused: the copy just opens without the notice */ }
+}
+
+/** The count left for this copy, read once and removed; 0 when none was left or it is not a whole number above 0. */
+export function takeCopiedDashboard(store: NoticeStore | undefined, id: string): number {
+  if (!store) return 0;
+  try {
+    const raw = store.getItem(copiedKey(id));
+    store.removeItem(copiedKey(id));
+    const n = raw !== null && /^\d{1,6}$/.test(raw) ? Number(raw) : 0;
+    return n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** A saved view's notice, kept with the view it describes. */
+export interface CopyNotice { viewId: string; text: string }
+
+/** The notice while its view is the open one, and nothing once another view is open or none is. */
+export function copyNoticeWhileOpen(notice: CopyNotice | null, openId: string | null): string | null {
+  return notice && notice.viewId === openId ? notice.text : null;
 }
 
 /** The same for a saved view saved from an open one, counted in filter dimensions. */

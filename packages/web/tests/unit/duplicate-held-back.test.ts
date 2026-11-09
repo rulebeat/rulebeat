@@ -9,7 +9,7 @@ import { createPeople, MATRIX_OWNER, seedMatrix, share, SUB_ONE, SUB_TWO } from 
 import { createDashboard, getDashboard } from '@/lib/db/dashboards';
 import { createSavedView, getSavedView } from '@/lib/db/saved-views';
 import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
-import { OUTSIDE_ACCESS_LABEL, copiedDashboardHref, copiedDashboardNotice, copiedViewNotice, widenedFromParam } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL, copiedDashboardNotice, copiedViewNotice, copyNoticeWhileOpen, rememberCopiedDashboard, takeCopiedDashboard, type NoticeStore } from '@/lib/held-back';
 import type { Dashboard, DashboardConfig, HeldBackDashboard } from '@/lib/types';
 
 const mockAuth = vi.fn();
@@ -127,12 +127,45 @@ describe('the notice on a copied dashboard', () => {
   });
 });
 
-describe('the address a Duplicate lands on', () => {
-  it('carries the count only when widgets widened, and reads back only a whole number above 0', () => {
-    expect(copiedDashboardHref('d1', 3)).toBe('/dashboards/d1?copied=3');
-    expect(copiedDashboardHref('d1', 0)).toBe('/dashboards/d1');
-    expect(widenedFromParam('3')).toBe(3);
-    for (const bad of [undefined, '', '0', '-2', '2.5', 'x', ['2', '3']]) expect(widenedFromParam(bad)).toBe(0);
+describe('the count a Duplicate hands to the copy', () => {
+  const memoryStore = (): NoticeStore => {
+    const items = new Map<string, string>();
+    return { getItem: k => items.get(k) ?? null, setItem: (k, v) => void items.set(k, v), removeItem: k => void items.delete(k) };
+  };
+
+  it('is read once, by the copy it was made for', () => {
+    const store = memoryStore();
+    rememberCopiedDashboard(store, 'copy-1', 3);
+    expect(takeCopiedDashboard(store, 'other')).toBe(0);
+    expect(takeCopiedDashboard(store, 'copy-1')).toBe(3);
+    expect(takeCopiedDashboard(store, 'copy-1')).toBe(0);
+  });
+
+  it('is not kept when nothing widened, and nothing in an address can make one', () => {
+    const store = memoryStore();
+    rememberCopiedDashboard(store, 'copy-1', 0);
+    rememberCopiedDashboard(store, 'copy-2', undefined);
+    expect(takeCopiedDashboard(store, 'copy-1')).toBe(0);
+    expect(takeCopiedDashboard(store, 'copy-2')).toBe(0);
+    expect(takeCopiedDashboard(undefined, 'copy-1')).toBe(0);
+  });
+
+  it('ignores a stored value that is not a whole number above 0', () => {
+    const store = memoryStore();
+    for (const bad of ['', '0', '-2', '2.5', 'x']) {
+      store.setItem('rulebeat:copied-dashboard:copy-1', bad);
+      expect(takeCopiedDashboard(store, 'copy-1')).toBe(0);
+    }
+  });
+});
+
+describe('the notice on a view saved from an open one', () => {
+  it('shows only while the view it describes is the open one', () => {
+    const notice = { viewId: 'v2', text: 'Saved as a Personal view. 2 filters show more than the original, because values outside your access were left out.' };
+    expect(copyNoticeWhileOpen(notice, 'v2')).toBe(notice.text);
+    expect(copyNoticeWhileOpen(notice, 'v3')).toBeNull();
+    expect(copyNoticeWhileOpen(notice, null)).toBeNull();
+    expect(copyNoticeWhileOpen(null, 'v2')).toBeNull();
   });
 });
 

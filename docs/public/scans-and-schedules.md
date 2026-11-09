@@ -137,9 +137,10 @@ longer lets you change Shared items. Duplicate it, or ask an Admin to take it ov
 Saving a new view while a saved view is open counts as a Duplicate: the new view is Personal and holds
 only the values you can see, so a Scope, resource name or returned-column value that your access does not
 reach is not copied. When that leaves a filter that was held back in full with nothing in its place, the
-new view shows more than the original did for you, and the Views menu says so once: "Saved as a Personal
+new view shows more than the original did for you, and the Views menu says so while that new view is the open one: "Saved as a Personal
 view. N filters show more than the original, because values outside your access were left out." N counts
-filters (a Scope, resource name or returned column each counts once). Nothing is shown when N is 0, and
+filters (a Scope, resource name or returned column each counts once). Opening another view, or closing the view, removes the
+notice for good. Nothing is shown when N is 0, and
 someone who holds Everything has nothing left out.
 
 Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
