@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/client';
 import { scopeSets } from '@/lib/db/tables';
 import { one, run, type DbHandle } from '@/lib/db/exec';
+import { isUnresolvedPick } from '@/lib/unresolved-pick';
 import { checkScopeSetShape, distinctPaths, scopeSetHash } from '@/lib/scope-sets';
 
 /**
@@ -22,13 +23,16 @@ export interface ScopeSetRef {
  * building and old-link translation take, so it neither checks what the caller holds nor caps the list;
  * `POST /api/scope-sets` does both before it calls this. A path that is not a managementGroup,
  * subscription, resourceGroup or directory Scope throws: it is a bug in the caller, not a request.
+ * `unresolved: true` lets the list also hold unresolved picks (lib/unresolved-pick.ts), which only the
+ * conversion of an old filter writes: they match nothing and keep the old filter's own words visible.
  */
-export async function createScopeSet(paths: readonly string[]): Promise<ScopeSetRef> {
-  const shape = checkScopeSetShape(paths, { cap: false });
-  if (!shape.ok) throw new Error('A scope set holds one or more management group, subscription, resource group or Directory paths.');
-  const hash = scopeSetHash(shape.paths);
+export async function createScopeSet(paths: readonly string[], options: { unresolved?: boolean } = {}): Promise<ScopeSetRef> {
+  const real = options.unresolved ? paths.filter(p => !isUnresolvedPick(p)) : paths;
+  const fits = options.unresolved && real.length === 0 ? paths.length > 0 : checkScopeSetShape(real, { cap: false }).ok;
+  if (!fits) throw new Error('A scope set holds one or more management group, subscription, resource group or Directory paths.');
+  const hash = scopeSetHash(paths);
   await run(db.insert(scopeSets)
-    .values({ hash, paths: JSON.stringify(distinctPaths(shape.paths)), createdAt: new Date().toISOString() })
+    .values({ hash, paths: JSON.stringify(distinctPaths(paths)), createdAt: new Date().toISOString() })
     .onConflictDoNothing({ target: scopeSets.hash }));
   const stored = await expandScopeSet(hash);
   if (stored.status !== 'resolved') throw new Error('A scope set was written and cannot be read back.');

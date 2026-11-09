@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
+import { prepareDashboardConfig } from '@/lib/filter-save';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
@@ -34,11 +35,9 @@ export async function POST(req: Request) {
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
 
   const name = body.name.trim();
-  const result = await createDashboard({
-    name,
-    description: body.description,
-    config: body.config ?? { autoRefresh: 0, widgets: [] },
-  });
+  const config = await prepareDashboardConfig(actor.access, body.config ?? { autoRefresh: 0, widgets: [] }, null);
+  if (!config.ok) return Response.json({ error: config.error }, { status: 400 });
+  const result = await createDashboard({ name, description: body.description, config: config.value });
 
   if (!result.ok) {
     const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);

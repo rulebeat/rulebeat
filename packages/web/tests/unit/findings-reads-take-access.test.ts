@@ -29,6 +29,7 @@ const FAMILY = [
   'lib/db/snapshots.ts',
   'lib/db/scan-blob-history.ts',
   'lib/db/column-catalogue.ts',
+  'lib/db/filter-pairs.ts',
   'lib/scan-history.ts',
   'lib/schedule-runs.ts',
   'lib/db/run-recount.ts',

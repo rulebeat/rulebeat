@@ -5,6 +5,7 @@ import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { markedSavedView } from '@/lib/outside-access';
 import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
+import { prepareSavedViewQuery } from '@/lib/filter-save';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
 export async function GET() {
@@ -27,7 +28,9 @@ export async function POST(req: Request) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await createSavedView(fields.value, actor.id);
+    const query = await prepareSavedViewQuery(actor.access, fields.value.query, null);
+    if (!query.ok) return Response.json({ error: query.error }, { status: 400 });
+    const result = await createSavedView({ ...fields.value, query: query.value }, actor.id);
     if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
 
     await writeAudit({

@@ -72,6 +72,8 @@ export function emptyListCopy(reason: EmptyReason, subject: 'findings' | 'rules'
   switch (reason) {
     case 'access': return `These filters name a subscription or resource group outside your Access, so no ${subject} can be listed`;
     case 'scope-outside': return `The Scope filter names only Scopes outside your Access, so no ${subject} can be listed`;
+    case 'scope-gone': return `The Scope filter names only Scopes that no longer exist, so no ${subject} can be listed`;
+    case 'scope-gone-or-outside': return `The Scope filter names only Scopes that no longer exist or are outside your Access, so no ${subject} can be listed`;
     case 'scope-unresolved': return `The Scope filter refers to a list of Scopes this install cannot open, so no ${subject} can be listed`;
     case 'source': return `The Rule source filter names only packs that no longer exist, so no ${subject} can be listed`;
     case 'tags': return `The tags filter names only tags that no longer exist, so no ${subject} can be listed`;

@@ -13,8 +13,10 @@ import { packSourceLabel, type PackManifestLabels } from './pack-labels';
  *  - `held`: the viewer holds all of it, so it is named;
  *  - `narrowed`: a subscription they hold only in part, still named;
  *  - `outside-narrowed`: a pick they hold only in part and cannot read the name of (a management group);
- *  - `outside`: none of it is theirs, so it is counted and never named, and matches nothing. */
-export type ScopePickAccess = 'held' | 'narrowed' | 'outside-narrowed' | 'outside';
+ *  - `outside`: none of it is theirs, so it is counted and never named, and matches nothing;
+ *  - `unresolved`: the upgrade could not turn an old value into a Scope. It names no Scope, so there is nothing
+ *    to hide: it is named by the old filter's own words, marked as no longer existing, and matches nothing. */
+export type ScopePickAccess = 'held' | 'narrowed' | 'outside-narrowed' | 'outside' | 'unresolved';
 
 export interface ScopePickState {
   /** The pick as the address holds it. */
@@ -137,6 +139,7 @@ export function scopeChips(
   for (const pick of picks) {
     if (pick.access === 'held') chips.push({ key: pick.value, label: listedLabel(pick, listing), values: [pick.value] });
     else if (pick.access === 'narrowed') chips.push({ key: pick.value, label: markedLabel(listedLabel(pick, listing), NARROWED_NOTE), values: [pick.value] });
+    else if (pick.access === 'unresolved') chips.push({ key: pick.value, label: markedLabel(pick.label ?? pick.value, NO_LONGER_EXISTS), values: [pick.value] });
   }
   const outside = picks.filter(p => p.access === 'outside');
   const outsideCount = outside.length + hidden.outside;
@@ -170,12 +173,17 @@ export function markedLabel(name: string, note: string): string {
 
 /** The dimension, if any, whose every value matches nothing, which an empty list says rather than the
  *  words for a list that is genuinely empty. A Scope filter is checked first. */
-export type MatchesNothing = 'scope-outside' | 'scope-unresolved' | 'source' | 'tags';
+export type MatchesNothing = 'scope-outside' | 'scope-gone' | 'scope-gone-or-outside' | 'scope-unresolved' | 'source' | 'tags';
 
 export function dimensionMatchingNothing(states: FilterStates, tagCount: number): MatchesNothing | null {
   if (states.scopeUnresolved) return 'scope-unresolved';
   const picked = states.scope.length + states.scopeHidden.outside + states.scopeHidden.outsideNarrowed;
-  if (picked > 0 && states.scopeHidden.outsideNarrowed === 0 && states.scope.every(p => p.access === 'outside')) return 'scope-outside';
+  const matchNothing = (p: ScopePickState) => p.access === 'outside' || p.access === 'unresolved';
+  if (picked > 0 && states.scopeHidden.outsideNarrowed === 0 && states.scope.every(matchNothing)) {
+    const gone = states.scope.some(p => p.access === 'unresolved');
+    const outside = states.scopeHidden.outside > 0 || states.scope.some(p => p.access === 'outside');
+    return gone ? (outside ? 'scope-gone-or-outside' : 'scope-gone') : 'scope-outside';
+  }
   if (states.source.length > 0 && states.source.every(s => !s.exists)) return 'source';
   if (tagCount > 0 && states.missingTags.length >= tagCount) return 'tags';
   return null;

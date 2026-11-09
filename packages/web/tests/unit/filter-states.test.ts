@@ -8,9 +8,12 @@ import {
   NO_FILTER_STATES, ageChipLabel, dimensionMatchingNothing, dropValues, markedLabel, scopeChips, sourceLabel,
   type FilterStates, type ScopePickState,
 } from '@/lib/filter-states';
+import { buildAccess, everythingAccess, parseScope } from '@/lib/access-model';
+import { scopePickStates } from '@/lib/scope-picks';
 import { emptyListCopy, emptyReasonOf, filterValueLabel } from '@/lib/explorer-screen';
 import type { ViewFilter } from '@/lib/finding-view';
 
+const holding = (path: string) => buildAccess([{ tenantId: '00000000-0000-0000-0000-0000000000f0', scope: parseScope(path)!, role: 'viewer' as const }], 'manual');
 const pick = (value: string, access: ScopePickState['access'], label: string | null = null): ScopePickState => ({ value, access, label });
 const states = (extra: Partial<FilterStates>): FilterStates => ({ ...NO_FILTER_STATES, ...extra });
 
@@ -180,5 +183,33 @@ describe('sourceLabel with a manifest', () => {
     expect(sourceLabel('aprl-v2', { 'aprl-v2': { label: 'From the manifest' } })).toBe('From the manifest');
     expect(sourceLabel('zzz-pack', { 'aprl-v2': { label: 'x' } })).toBe('zzz-pack');
     expect(sourceLabel('community', { community: { label: 'ignored' } })).toBe('Community');
+  });
+});
+
+describe('unresolved Scope picks', () => {
+  const GONE = 'unresolved:resourceGroup/rg-gone';
+  const DIRECTORY = 'unresolved:@directory/rg-app';
+  const subscriptionHeld = holding('/subscriptions/00000000-0000-0000-0000-00000000000a');
+
+  it('are named and marked no longer existing for Everything and for a viewer who holds one subscription', () => {
+    for (const access of [everythingAccess('admin'), subscriptionHeld]) {
+      const chips = scopeChips(scopePickStates(access, [GONE, DIRECTORY], []));
+      expect(chips.map(c => c.label)).toEqual(['Resource group rg-gone (no longer exists)', 'Resource group rg-app in Directory (no longer exists)']);
+      expect(chips.map(c => c.values)).toEqual([[GONE], [DIRECTORY]]);
+    }
+  });
+
+  it('are never counted as outside the viewer\'s access', () => {
+    const chips = scopeChips(scopePickStates(subscriptionHeld, [GONE], []));
+
+    expect(chips.some(c => c.label.includes('outside your access'))).toBe(false);
+  });
+
+  it('say why an empty list is empty: they match nothing, whether alone or beside Scopes outside the Access', () => {
+    expect(dimensionMatchingNothing(states({ scope: [pick(GONE, 'unresolved', 'rg-gone')] }), 0)).toBe('scope-gone');
+    expect(dimensionMatchingNothing(states({ scope: [pick(GONE, 'unresolved', 'rg-gone'), pick('/a', 'outside')] }), 0)).toBe('scope-gone-or-outside');
+    expect(dimensionMatchingNothing(states({ scope: [pick(GONE, 'unresolved', 'rg-gone'), pick('/b', 'held', 'B')] }), 0)).toBeNull();
+    expect(emptyListCopy('scope-gone', 'findings')).toBe('The Scope filter names only Scopes that no longer exist, so no findings can be listed');
+    expect(emptyListCopy('scope-gone-or-outside', 'rules')).toContain('no longer exist or are outside your Access');
   });
 });

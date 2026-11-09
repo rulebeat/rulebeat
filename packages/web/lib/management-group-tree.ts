@@ -5,8 +5,8 @@
  * A node is a management group or a subscription, with the group it sits under. The tree is replaced as
  * a whole by a refresh and read as a list: expanding a grant and ordering the page both start from it.
  */
-import type { ManagementGroupExpansion, ScopeGrant } from '@/lib/access-model';
-import { managementGroupIdOf } from '@/lib/access-model';
+import type { ManagementGroupExpansion, ScopeGrant } from './access-model';
+import { managementGroupIdOf } from './access-model';
 
 export type HierarchyKind = 'managementGroup' | 'subscription';
 

@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboard, setDefaultDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { markedDashboard } from '@/lib/outside-access';
+import { prepareDashboardConfig } from '@/lib/filter-save';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -34,6 +35,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const before = await getDashboard(id);
+  if (body.config !== undefined && before) {
+    const prepared = await prepareDashboardConfig(actor.access, body.config, before.config);
+    if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 });
+    body.config = prepared.value;
+  }
   const result = await updateDashboard(id, body);
   if (!result.ok) {
     if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });

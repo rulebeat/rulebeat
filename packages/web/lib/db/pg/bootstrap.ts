@@ -8,6 +8,10 @@ import {
 import { PLACEMENT_TABLES, placementRead, planFindingPlacement, type PlacementRow } from '../finding-placement';
 import { planAccessUpgrade } from '../access-upgrade';
 import {
+  DASHBOARDS_READ, PAIRS_READ, SAVED_VIEWS_READ, planFilterConversion,
+  type DashboardRow, type PairRow, type SavedViewRow,
+} from '../filter-conversion';
+import {
   FINDING_ROWS_COPY_MARKER, ROW_COPY_DELETE_ORPHANS, ROW_COPY_READ_ALL, ROW_COPY_READ_BACK, ROW_COPY_READ_STALE,
   planRowCopy, rowCopyMismatch,
   type RowCopySource, type RowRecord,
@@ -656,6 +660,12 @@ export async function bootstrapPg(db: NodePgDatabase<typeof pgSchema>): Promise<
     } catch (err) {
       console.error('[bootstrap] could not give existing people their access:', err);
     }
+    // After the findings steps, whose tables it reads, and in its own savepoint for the same reason.
+    try {
+      await tx.transaction(async (sp) => { await convertFilters(sp); });
+    } catch (err) {
+      console.error('[bootstrap] could not convert dashboard filters and saved views into Scope picks:', err);
+    }
   });
 }
 
@@ -667,6 +677,23 @@ async function placeFindings(tx: PgTx, table: (typeof PLACEMENT_TABLES)[number])
     const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
     await tx.execute(sql.join(chunks, sql.raw('')));
   }
+}
+
+/** The Postgres half of migrate.ts's convertFilters(): the same plan, run on every boot. */
+async function convertFilters(tx: PgTx): Promise<void> {
+  const read = async <T>(query: string) => (await tx.execute(sql.raw(query))).rows as unknown as T[];
+  const plan = planFilterConversion({
+    dashboards: await read<DashboardRow>(DASHBOARDS_READ),
+    savedViews: await read<SavedViewRow>(SAVED_VIEWS_READ),
+    pairs: await read<PairRow>(PAIRS_READ),
+    now: new Date().toISOString(),
+  });
+  for (const s of plan.statements) {
+    const parts = s.sql.split('?');
+    const chunks = parts.flatMap((part, i) => (i < s.params.length ? [sql.raw(part), sql`${s.params[i]}`] : [sql.raw(part)]));
+    await tx.execute(sql.join(chunks, sql.raw('')));
+  }
+  for (const s of plan.skipped) console.error(`[bootstrap] left the filters of ${s.kind} ${s.id} as they were, ${s.reason}; it will be tried again on the next boot`);
 }
 
 type PgTx = Parameters<Parameters<NodePgDatabase<typeof pgSchema>['transaction']>[0]>[0];
