@@ -108,13 +108,55 @@ export async function saveDashboardEdits(
   changes: { name: string; config: DashboardConfig },
   fetchImpl: typeof fetch = fetch,
 ): Promise<DashboardSaveOutcome> {
-  const res = await fetchImpl(`/api/dashboards/${encodeURIComponent(dashboard.id)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...changes, revision: dashboard.revision, opened: dashboard.config }),
-  });
-  if (res.ok) return { kind: 'saved', dashboard: await res.json() as HeldBackDashboard };
-  const body = await res.json().catch(() => ({})) as { error?: string };
-  if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) return { kind: 'stale', message: STALE_DASHBOARD_MESSAGE };
-  return { kind: 'failed', message: body.error ?? 'Failed to save the dashboard.' };
+  const FAILED_SAVE = 'Failed to save the dashboard.';
+  try {
+    const res = await fetchImpl(`/api/dashboards/${encodeURIComponent(dashboard.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...changes, revision: dashboard.revision, opened: dashboard.config }),
+    });
+    if (res.ok) return { kind: 'saved', dashboard: await res.json() as HeldBackDashboard };
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) return { kind: 'stale', message: STALE_DASHBOARD_MESSAGE };
+    return { kind: 'failed', message: body.error ?? FAILED_SAVE };
+  } catch {
+    return { kind: 'failed', message: FAILED_SAVE };
+  }
+}
+
+/**
+ * The writes one page makes to its own dashboard. Each write is built from the latest copy this page holds, not
+ * the copy that was current when the write was planned, and runs only after the writes before it have answered.
+ * Without that, a person's own earlier write moves the revision first and their next one is refused as stale:
+ * a filter change followed within the debounce by an auto-refresh change, or a second filter change while the
+ * first save is still in flight.
+ */
+export class DashboardWrites {
+  private latest: HeldBackDashboard;
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(initial: HeldBackDashboard) {
+    this.latest = initial;
+  }
+
+  /** The latest copy this page holds. */
+  get current(): HeldBackDashboard {
+    return this.latest;
+  }
+
+  /** Takes a copy the page learned about elsewhere (a share, a hand-over) as the base of the next write. */
+  adopt(dashboard: HeldBackDashboard): void {
+    this.latest = dashboard;
+  }
+
+  /** Runs `write` after every write queued before it, handing it the latest copy. A saved answer becomes the latest copy. */
+  run<T extends { kind: string }>(write: (latest: HeldBackDashboard) => Promise<T>): Promise<T> {
+    const result = this.tail.then(async () => {
+      const outcome = await write(this.latest);
+      if (outcome.kind === 'saved' && 'dashboard' in outcome) this.latest = outcome.dashboard as HeldBackDashboard;
+      return outcome;
+    });
+    this.tail = result.catch(() => undefined);
+    return result;
+  }
 }

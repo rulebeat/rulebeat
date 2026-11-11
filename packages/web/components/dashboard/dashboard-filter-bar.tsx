@@ -139,7 +139,7 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
         </button>
       )}
 
-      {error && <p role="alert" className="text-xs font-medium text-sev-critical">{error}</p>}
+      {error && <p role="alert" className="text-xs font-medium text-destructive">{error}</p>}
 
       <div className="ml-auto">
         <DateRangePicker value={dateWindow} onChange={onDateWindowChange} />

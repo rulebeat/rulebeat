@@ -4,7 +4,7 @@
  * sends nothing, for its owner too: stored filters change only through Save in edit mode.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits } from '@/lib/dashboard-filter-save';
+import { DashboardWrites, SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits } from '@/lib/dashboard-filter-save';
 import { STALE_DASHBOARD_MESSAGE, UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import type { HeldBackDashboard } from '@/lib/types';
 
@@ -160,4 +160,74 @@ describe('saveDashboardEdits', () => {
     expect(await saveDashboardEdits(dashboard(), body, answer(500, {})))
       .toEqual({ kind: 'failed', message: 'Failed to save the dashboard.' });
   });
+
+  it('shows a rejected fetch as an error instead of throwing', async () => {
+    const thrown = vi.fn(async () => { throw new Error('offline'); });
+    expect(await saveDashboardEdits(dashboard(), body, thrown as unknown as typeof fetch))
+      .toEqual({ kind: 'failed', message: 'Failed to save the dashboard.' });
+  });
 });
+
+describe('DashboardWrites: the writes one page makes to its own dashboard', () => {
+  /** A fake server: it holds the revision and answers 409 to a write based on any other one. */
+  function server(start: number) {
+    let revision = start;
+    const seen: number[] = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const sent = JSON.parse(init!.body as string) as { revision: number };
+      seen.push(sent.revision);
+      await new Promise(r => setTimeout(r, 5));
+      if (sent.revision !== revision) return new Response(JSON.stringify({ error: STALE_DASHBOARD_MESSAGE }), { status: 409 });
+      revision += 1;
+      return new Response(JSON.stringify(dashboard({ revision })), { status: 200 });
+    });
+    return { fetchImpl: fetchImpl as unknown as typeof fetch, seen };
+  }
+
+  it('sends the revision a write before it moved, not the one the page held when the write was planned', async () => {
+    const { fetchImpl, seen } = server(7);
+    const writes = new DashboardWrites(dashboard());
+    // The auto-refresh save and the filter auto-save are both planned against revision 7.
+    const refresh = writes.run(latest => saveDashboardEdits(latest, editBody(), fetchImpl));
+    const filters = writes.run(latest => autoSaveFilters(ME, latest, FILTERS, WINDOW, fetchImpl));
+    expect((await refresh).kind).toBe('saved');
+    expect((await filters).kind).toBe('saved');
+    expect(seen).toEqual([7, 8]);
+    expect(writes.current.revision).toBe(9);
+  });
+
+  it('does not send a second filter save while the first is in flight', async () => {
+    const { fetchImpl, seen } = server(7);
+    const writes = new DashboardWrites(dashboard());
+    const first = writes.run(latest => autoSaveFilters(ME, latest, FILTERS, WINDOW, fetchImpl));
+    const second = writes.run(latest => autoSaveFilters(ME, latest, { ...FILTERS, tags: ['t'] }, WINDOW, fetchImpl));
+    expect([(await first).kind, (await second).kind]).toEqual(['saved', 'saved']);
+    expect(seen).toEqual([7, 8]);
+  });
+
+  it('still reports a stale base when someone else moved the revision', async () => {
+    const { fetchImpl } = server(9);
+    const writes = new DashboardWrites(dashboard());
+    expect((await writes.run(latest => autoSaveFilters(ME, latest, FILTERS, WINDOW, fetchImpl))).kind).toBe('stale');
+    expect(writes.current.revision).toBe(7);
+  });
+
+  it('runs a write after one that failed', async () => {
+    const { fetchImpl } = server(7);
+    const writes = new DashboardWrites(dashboard());
+    const failed = writes.run(async () => { throw new Error('offline'); }).catch(() => 'threw');
+    const next = writes.run(latest => autoSaveFilters(ME, latest, FILTERS, WINDOW, fetchImpl));
+    expect(await failed).toBe('threw');
+    expect((await next).kind).toBe('saved');
+  });
+
+  it('takes a copy the page adopted from elsewhere, such as a hand-over, as the base of the next write', async () => {
+    const { fetchImpl, seen } = server(12);
+    const writes = new DashboardWrites(dashboard());
+    writes.adopt(dashboard({ revision: 12 }));
+    await writes.run(latest => autoSaveFilters(ME, latest, FILTERS, WINDOW, fetchImpl));
+    expect(seen).toEqual([12]);
+  });
+});
+
+function editBody() { return { name: 'D', config: { widgets: [] } }; }

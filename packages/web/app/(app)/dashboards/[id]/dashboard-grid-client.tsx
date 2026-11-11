@@ -39,7 +39,9 @@ import { cn } from '@/lib/utils';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits } from '@/lib/dashboard-filter-save';
+import {
+  DashboardWrites, SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits,
+} from '@/lib/dashboard-filter-save';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -141,6 +143,10 @@ function WidgetRenderer({ widget, filters, filtered, refreshKey, editMode, dashb
 export function DashboardGridClient({ dashboard: initial, canChange, canSetDefault, currentUserId, permissions, shareControl }: Props) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<HeldBackDashboard>(initial);
+  /* The latest copy this page holds, and the one line every write to it goes through, so a write is built from the
+     revision the writes before it left behind instead of the copy a timer or a handler closed over. */
+  const [writes] = useState(() => new DashboardWrites(initial));
+  const applyDashboard = (next: HeldBackDashboard) => { writes.adopt(next); setDashboard(next); };
   const [transfer, setTransfer] = useState<'hand-over' | 'take-over' | null>(null);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
@@ -177,25 +183,24 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   useEffect(() => { widgetsRef.current = widgets; }, [widgets]);
   const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 });
 
-  // Filter-bar persistence: only the owner's own Personal dashboard saves a filter change as it is made. It is
-  // deliberately independent of the widget-layout `dirty`/edit-mode Save flow below: changing a filter bumps
-  // refreshKey immediately (all widgets refetch) and persists to the server debounced, with no explicit "Save"
-  // required and regardless of `editMode`. Built from `dashboard.config` (last-synced state), never the
-  // possibly-dirty `widgets` local state, so a filter change can never silently persist an unsaved layout edit
-  // as a side effect. On a Shared dashboard a change applies to this page only, for the owner too: stored
-  // filters change through Save in edit mode.
+  // Filter-bar persistence: only the owner's own Personal dashboard saves a filter change as it is made. It does
+  // not go through the widget-layout `dirty`/edit-mode Save flow below: changing a filter bumps refreshKey
+  // immediately (all widgets refetch) and persists to the server debounced, with no explicit "Save" required and
+  // regardless of `editMode`. Built from the latest server copy (`dashboard.config`), never the possibly-dirty
+  // `widgets` local state, so a filter change can never silently persist an unsaved layout edit as a side effect.
+  // The write queues behind this page's other writes and takes the revision they left behind, so the owner's own
+  // earlier save never makes the next one stale. On a Shared dashboard a change applies to this page only, for
+  // the owner too: stored filters change through Save in edit mode, which sends the page's filter bar with it.
   const savesFilters = autoSavesFilters({ id: currentUserId }, dashboard);
-  // In edit mode of a Shared dashboard the filter bar is part of what Save stores, so a change counts as one to save.
-  const markFilterChange = () => { if (editMode && canChange && !savesFilters) setDirty(true); };
   const filtersFirstRender = useRef(true);
   useEffect(() => {
     if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
     setRefreshKey(k => k + 1);
     if (!savesFilters) return;
     const t = setTimeout(() => {
-      autoSaveFilters({ id: currentUserId }, dashboard, dashFilters, dateWindow).then(outcome => {
+      writes.run(latest => autoSaveFilters({ id: currentUserId }, latest, dashFilters, dateWindow)).then(outcome => {
         switch (outcome.kind) {
-          case 'saved': setDashboard(outcome.dashboard); setFilterError(null); setStaleMessage(null); break;
+          case 'saved': applyDashboard(outcome.dashboard); setFilterError(null); setStaleMessage(null); break;
           // The dashboard changed after this copy was read: say so rather than dropping the filter silently.
           case 'stale': setStaleMessage(outcome.message); break;
           // The filter still applies to this page, so the page and the bar disagree with the stored one only by this value.
@@ -339,54 +344,60 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   async function saveTitle(newName: string) {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === dashboard.name) { setEditingTitle(false); setTitleValue(dashboard.name); return; }
-    const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(renameBody(dashboard, trimmed)),
+    const outcome = await writes.run(async latest => {
+      try {
+        const res = await fetch(`/api/dashboards/${latest.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(renameBody(latest, trimmed)),
+        });
+        if (res.ok) return { kind: 'saved' as const, dashboard: await res.json() as HeldBackDashboard };
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) return { kind: 'stale' as const };
+        return { kind: 'failed' as const, message: body.error ?? 'Failed to rename.' };
+      } catch {
+        return { kind: 'failed' as const, message: 'Failed to rename.' };
+      }
     });
-    if (res.ok) {
-      const d = await res.json() as HeldBackDashboard;
-      setDashboard(d);
-      setTitleValue(d.name);
+    if (outcome.kind === 'saved') {
+      applyDashboard(outcome.dashboard);
+      setTitleValue(outcome.dashboard.name);
       setTitleError('');
       setEditingTitle(false);
       router.refresh(); // update server-rendered Header
+    } else if (outcome.kind === 'stale') {
+      // The dashboard changed since this copy was read: the reload notice, not a name error.
+      setStaleMessage(STALE_DASHBOARD_MESSAGE);
+      setEditingTitle(false);
+      setTitleValue(dashboard.name);
     } else {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) {
-        // The dashboard changed since this copy was read: the reload notice, not a name error.
-        setStaleMessage(STALE_DASHBOARD_MESSAGE);
-        setEditingTitle(false);
-        setTitleValue(dashboard.name);
-        return;
-      }
-      setTitleError(body.error ?? 'Failed to rename.');
+      setTitleError(outcome.message);
       titleInputRef.current?.focus();
     }
   }
 
-  // Save layout + config to API
-  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, inEditMode = false) {
+  // Save layout + config to API. Answers whether the dashboard was stored, so edit mode only closes on a save that took.
+  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, inEditMode = false): Promise<boolean> {
     setSaving(true);
     try {
-      const outcome = await saveDashboardEdits(dashboard, {
+      const outcome = await writes.run(latest => saveDashboardEdits(latest, {
         name: updatedName,
         // A Personal dashboard's filter bar saves on its own (see the debounced effect above), so this save
         // must not clobber it. A Shared dashboard stores its filter bar only here.
-        config: configForSave(dashboard, {
+        config: configForSave(latest, {
           widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...filterBarForSave(inEditMode, dashFilters, dateWindow),
         }),
-      });
+      }));
       if (outcome.kind === 'saved') {
-        setDashboard(outcome.dashboard);
+        applyDashboard(outcome.dashboard);
         setDirty(false);
         setError(null);
         setStaleMessage(null);
-      } else if (outcome.kind === 'stale') {
-        setStaleMessage(outcome.message);
-      } else {
-        setError(outcome.message);
+        return true;
       }
+      if (outcome.kind === 'stale') setStaleMessage(outcome.message);
+      else setError(outcome.message);
+      return false;
     } finally { setSaving(false); }
   }
 
@@ -428,7 +439,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
     });
     if (res.ok) {
       const d = await res.json() as HeldBackDashboard;
-      setDashboard(d);
+      applyDashboard(d);
       router.refresh(); // invalidate cached server data so sidebar / gallery update
     }
   }
@@ -448,7 +459,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       return;
     }
     // The answer is the dashboard, or only its id, visibility and revision after someone else's unshare.
-    setDashboard(prev => ({ ...prev, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) }));
+    applyDashboard({ ...writes.current, ...(outcome.item as Partial<HeldBackDashboard>), ...(action === 'unshare' && { isDefault: false }) });
     router.refresh(); // the Header and the sidebar list are read on the server
   }
 
@@ -565,7 +576,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
             <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); }}>
               Cancel
             </Button>
-            <Button size="sm" className="gap-1.5" onClick={() => { save(widgets, autoRefresh, titleValue, true); setEditMode(false); }} disabled={saving}>
+            <Button size="sm" className="gap-1.5" onClick={async () => { if (await save(widgets, autoRefresh, titleValue, true)) setEditMode(false); }} disabled={saving}>
               <Save className="size-3.5" />
               {saving ? 'Saving…' : 'Save'}
             </Button>
@@ -646,8 +657,8 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
       <DashboardFilterBar
         filters={dashFilters}
         dateWindow={dateWindow}
-        onFiltersChange={next => { setDashFilters(next); markFilterChange(); }}
-        onDateWindowChange={next => { setDateWindow(next); markFilterChange(); }}
+        onFiltersChange={setDashFilters}
+        onDateWindowChange={setDateWindow}
         dashboardId={dashboard.id}
         heldBack={dashboard.heldBack}
         error={filterError}
@@ -737,7 +748,7 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
           onClose={() => setTransfer(null)}
           onDone={item => {
             const { owner, revision } = item as Pick<HeldBackDashboard, 'owner' | 'revision'>;
-            setDashboard(prev => ({ ...prev, owner, revision }));
+            applyDashboard({ ...writes.current, owner, revision });
             router.refresh(); // what this person may now do with it is read on the server
           }}
         />
