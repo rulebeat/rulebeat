@@ -134,6 +134,15 @@ and Unshare are logged as `view.share` and `view.unshare`, the unshare with the 
 Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
 longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
 
+Saving a new view while a saved view is open counts as a Duplicate: the new view is Personal and holds
+only the values you can see, so a Scope, resource name or returned-column value that your access does not
+reach is not copied. When that leaves a filter that was held back in full with nothing in its place, the
+new view shows more than the original did for you, and the Views menu says so while that new view is the open one: "Saved as a Personal
+view. N filters show more than the original, because values outside your access were left out." N counts
+filters (a Scope, resource name or returned column each counts once). Opening another view, or closing the view, removes the
+notice for good. Nothing is shown when N is 0, and
+someone who holds Everything has nothing left out.
+
 Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
 to another person, chosen from a list of names and emails only. The list
 holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server
@@ -145,6 +154,23 @@ search text under the new owner, nobody is notified, and both check the names of
 install. A hand-over or take-over the view's current state no longer allows answers 409 and asks for a
 reload. They are logged as `view.hand_over`, naming both people by display name, else email, and
 `view.take_over`.
+
+An open saved view keeps meaning the same thing for you. The address holds `view=<id>` and only the filter
+values you can see. Every read of the findings and the export (the list, a finding's rows, a group, a
+column's values and the export file), on the Results, Advisories and Activity tabs, loads the stored
+view and adds the values held back from you before it matches. A value you cannot see matches nothing for
+you, so a filter whose values are all held back shows "Outside your access", lists nothing and never widens
+to your whole Access. You can add values next to it, but you cannot remove it. While such a filter is
+present the page says "This saved view is filtered to places outside your Access. Close the view to see your
+own findings." Closing the view (Close view in the Views menu or beside that message) is the only way to
+widen on Scans, and it drops the placeholder with the view. Held-back values are described on the
+[Access](access.md#held-back-values) page.
+
+When `view=<id>` names a view that was deleted, or is now someone else's Personal view, the read says so
+and the page shows "This saved view no longer exists." once. It drops `view=<id>` from the address and
+carries on with the filters the address holds. The two cases look the same, an Admin included. The export
+answers the same way, with an `X-View-Missing: 1` header on a file filtered by the address alone. The Views
+menu no longer closes a view without saying so.
 
 A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still

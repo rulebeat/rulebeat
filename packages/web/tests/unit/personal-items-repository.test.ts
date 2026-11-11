@@ -4,6 +4,7 @@
  * person's Personal items only; a Shared name among Shared items; no name check reads another person's
  * Personal names; and nothing becomes the Install default by being first or the oldest left.
  */
+import { SYSTEM_ACCESS } from '@/lib/system-access';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser, deleteUser } from '@/lib/db/users';
@@ -94,7 +95,7 @@ describe('dashboards', () => {
     await share('dashboards', source.dashboard.id);
     await setDefaultDashboard(source.dashboard.id);
 
-    const copy = await duplicateDashboard(source.dashboard.id, ben);
+    const copy = (await duplicateDashboard(source.dashboard.id, ben, SYSTEM_ACCESS))?.dashboard;
     expect(copy).toMatchObject({ name: 'Source (copy)', visibility: 'personal', owner: { id: ben }, isDefault: false });
     expect(copy?.config).toEqual(config);
     expect((await getDashboard(source.dashboard.id))?.isDefault).toBe(true);
@@ -106,8 +107,8 @@ describe('dashboards', () => {
     await dashboard('Source (copy)', ben);
     await dashboard('Source (copy 2)', ana);
 
-    expect((await duplicateDashboard(source.id, ana))?.name).toBe('Source (copy)');
-    expect((await duplicateDashboard(source.id, ben))?.name).toBe('Source (copy 2)');
+    expect((await duplicateDashboard(source.id, ana, SYSTEM_ACCESS))?.dashboard.name).toBe('Source (copy)');
+    expect((await duplicateDashboard(source.id, ben, SYSTEM_ACCESS))?.dashboard.name).toBe('Source (copy 2)');
   });
 
   it('restore the starter as a Personal item owned by the person, named against their Personal names', async () => {

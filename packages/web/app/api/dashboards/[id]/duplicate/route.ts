@@ -12,8 +12,10 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   // The copy is the person's own Personal dashboard, so they need only be able to open the source.
   const refused = guardItem(actor, 'dashboard', await getDashboard(id), 'open');
   if (refused) return refused;
-  const copy = await duplicateDashboard(id, actor.id);
-  if (!copy) return Response.json({ error: 'Not found' }, { status: 404 });
+  const duplicated = await duplicateDashboard(id, actor.id, actor.access);
+  if (!duplicated) return Response.json({ error: 'Not found' }, { status: 404 });
+
+  const { dashboard: copy, widened } = duplicated;
 
   await writeAudit({
     actor,
@@ -25,5 +27,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   });
 
   const [held] = await holdBackDashboards(actor.access, [copy]);
-  return Response.json(held, { status: 201 });
+  // `widened` is what the copy says about itself: how many widgets show more than the original did for this person.
+  return Response.json({ ...held, widened }, { status: 201 });
 }

@@ -48,7 +48,7 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
   const [rules, setRules] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
-    fetch('/api/widgets/filter-options')
+    fetch(`/api/widgets/filter-options?${new URLSearchParams({ dashboardId })}`)
       .then(r => r.ok ? r.json() : null)
       .then((d: FilterOptionsResponse | null) => {
         if (!d) return;
@@ -59,7 +59,7 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
         setRules(d.rules);
       })
       .catch(() => {});
-  }, []);
+  }, [dashboardId]);
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.label }));
   const subscriptionOptions = subscriptionIds.map(id => ({ value: id, label: subNames[id] ?? id }));

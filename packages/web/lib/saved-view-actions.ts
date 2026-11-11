@@ -2,14 +2,19 @@ import { STALE_VIEW_MESSAGE } from '@/lib/held-back';
 import type { HeldBackSavedView, SavedViewFields } from '@/lib/saved-view-query';
 
 export type SavedViewChange =
-  | { kind: 'create'; fields: SavedViewFields }
+  /** `from` is the saved view that is open, when the new one is saved from it: that is a Duplicate, and the answer says how
+   *  many filters now show more than the original. */
+  | { kind: 'create'; fields: SavedViewFields; from?: string }
   /** `revision` and `opened` are the version and the query of the copy the person was sent: the server refuses the save
    *  when the view has moved on, and puts back the stored values that copy left out. */
   | { kind: 'update'; id: string; fields: Partial<SavedViewFields>; revision?: number; opened?: string }
   | { kind: 'delete'; id: string };
 
 /** `view` is the stored view after a create or update, and null after a delete. */
-export type SavedViewChangeOutcome = { ok: true; view: HeldBackSavedView | null } | { ok: false; error: string; /** The view changed since the copy this save was made from: the page offers a reload. */ stale?: true };
+export type SavedViewChangeOutcome =
+  | { ok: true; view: HeldBackSavedView | null; widened?: number }
+  /** `stale`: the view changed since the copy this save was made from, so the page offers a reload. */
+  | { ok: false; error: string; stale?: true };
 
 const FALLBACK = 'The change could not be saved. Try again.';
 
@@ -29,11 +34,15 @@ export async function requestSavedViewChange(
       method: change.kind === 'create' ? 'POST' : change.kind === 'update' ? 'PATCH' : 'DELETE',
       ...(change.kind !== 'delete' && {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(change.kind === 'update' ? { ...change.fields, revision: change.revision, opened: change.opened } : change.fields),
+        body: JSON.stringify(change.kind === 'update' ? { ...change.fields, revision: change.revision, opened: change.opened } : { ...change.fields, from: change.from }),
       }),
     });
     if (res.redirected) return { ok: false, error: FALLBACK };
-    if (res.ok) return { ok: true, view: change.kind === 'delete' ? null : await res.json() as HeldBackSavedView };
+    if (res.ok) {
+      if (change.kind === 'delete') return { ok: true, view: null };
+      const { widened, ...view } = await res.json() as HeldBackSavedView & { widened?: number };
+      return { ok: true, view, widened };
+    }
     // Only a refusal the person can act on (a name in use, a name too long) carries its own message.
     if (res.status === 400 || res.status === 409) {
       const body = await res.json().catch(() => null) as { error?: unknown } | null;

@@ -5,7 +5,7 @@ import type { HeldBackSavedView } from '@/lib/saved-view-query';
 
 const view = (id: string, name: string): HeldBackSavedView => ({
   id, name, tab: 'results', query: '', createdBy: null, createdAt: '2026-01-01T00:00:00.000Z', updatedBy: null, updatedAt: '2026-01-01T00:00:00.000Z',
-  owner: null, visibility: 'shared', revision: 1, heldBack: [],
+  owner: null, visibility: 'shared', revision: 1, sharedDashboardCount: 0, heldBack: [],
 });
 
 function fake(status: number, body?: unknown, opts: { redirected?: boolean } = {}) {
@@ -24,6 +24,14 @@ describe('requestSavedViewChange', () => {
     const outcome = await requestSavedViewChange({ kind: 'create', fields }, fetchImpl);
     expect(outcome).toEqual({ ok: true, view: view('v1', 'A') });
     expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ method: 'POST', body: JSON.stringify(fields) }));
+  });
+
+  it('names the open view a new one is saved from, and hands back how many filters now show more', async () => {
+    const fetchImpl = fake(201, { ...view('v2', 'Copy'), widened: 2 });
+    const fields = { name: 'Copy', tab: 'results' as const, query: 'q=x' };
+    const outcome = await requestSavedViewChange({ kind: 'create', fields, from: 'v1' }, fetchImpl);
+    expect(outcome).toEqual({ ok: true, view: view('v2', 'Copy'), widened: 2 });
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ body: JSON.stringify({ ...fields, from: 'v1' }) }));
   });
 
   it('patches only the fields it is given', async () => {

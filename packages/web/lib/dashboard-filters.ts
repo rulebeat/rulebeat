@@ -132,3 +132,61 @@ export function buildSummaryParams(filters: WidgetFilters): URLSearchParams {
   }
   return params;
 }
+
+/** Which dashboard and widget a read is for. The server looks both up to add back what the place holds. */
+export interface WidgetReadTarget { dashboardId: string; widgetId?: string }
+
+const WIDGET_PREFIX = 'widget.';
+const WIDGET_LISTS = ['policyIds', 'subscriptions', 'resourceGroups', 'tags', 'severities'] as const;
+
+/**
+ * The query string of a widget read (#375). With a target it carries the dashboard id and widget id, the page's
+ * values as `buildSummaryParams` writes them, and the widget's own overrides under `widget.`, each of them only
+ * the values the person can see. The two places are not merged here: the server adds each place's stored
+ * held-back values first, then runs `mergeWidgetFilters`, so a held-back value can neither be dropped by a
+ * request nor widen what a widget counts. With no target (a widget drawn outside a dashboard) it is the merged
+ * filters, as before.
+ */
+export function buildWidgetReadParams(target: WidgetReadTarget | null, dashboard: WidgetFilters, widgetCfg: Record<string, unknown>): URLSearchParams {
+  if (!target) return buildSummaryParams(mergeWidgetFilters(dashboard, widgetCfg));
+  const params = buildSummaryParams(dashboard);
+  params.set('dashboardId', target.dashboardId);
+  if (target.widgetId) params.set('widgetId', target.widgetId);
+  const category = widgetCfg['category'];
+  if (typeof category === 'string' && category !== 'all') params.set(`${WIDGET_PREFIX}category`, category);
+  for (const key of WIDGET_LISTS) {
+    const values = widgetCfg[key];
+    if (Array.isArray(values) && values.length > 0) params.set(`${WIDGET_PREFIX}${key}`, values.join(','));
+  }
+  const windowDays = widgetCfg['windowDays'];
+  if (windowDays === 1 || windowDays === 7 || windowDays === 30) params.set(`${WIDGET_PREFIX}windowDays`, String(windowDays));
+  return params;
+}
+
+export interface WidgetReadRequest {
+  dashboardId: string | null;
+  widgetId: string | null;
+  /** The page's values, as sent. */
+  dashboard: WidgetFilters;
+  /** The widget's own overrides, as sent, in the shape `mergeWidgetFilters` takes. */
+  widget: Record<string, unknown>;
+}
+
+/** The server-side counterpart of `buildWidgetReadParams`. */
+export function parseWidgetReadFromSearchParams(searchParams: URLSearchParams): WidgetReadRequest {
+  const widget: Record<string, unknown> = {};
+  const category = searchParams.get(`${WIDGET_PREFIX}category`);
+  if (category) widget['category'] = category;
+  for (const key of WIDGET_LISTS) {
+    const values = (searchParams.get(`${WIDGET_PREFIX}${key}`) ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    if (values.length > 0) widget[key] = values;
+  }
+  const windowDays = parseInt(searchParams.get(`${WIDGET_PREFIX}windowDays`) ?? '', 10);
+  if (windowDays === 1 || windowDays === 7 || windowDays === 30) widget['windowDays'] = windowDays;
+  return {
+    dashboardId: searchParams.get('dashboardId') || null,
+    widgetId: searchParams.get('widgetId') || null,
+    dashboard: parseWidgetFiltersFromSearchParams(searchParams),
+    widget,
+  };
+}

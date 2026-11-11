@@ -9,10 +9,11 @@ import { CategoryBadge } from '@/components/findings/category-badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import type { Finding, FilterOptionsResponse } from '@/lib/types';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
@@ -24,11 +25,13 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+  const target = useWidgetReadTarget();
+  const dashboardId = target?.dashboardId;
   const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
+    const p = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>);
     p.set('limit', String(config.limit ?? 10));
     return p.toString();
-  }, [merged, config.limit]);
+  }, [target, filters, config]);
   const { data, loading, failed, retry } = useWidgetFetch<Finding[]>(
     `/api/widgets/findings?${params}`,
     [refreshKey]
@@ -39,11 +42,11 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
   useEffect(() => {
     // Same endpoint/pattern the dashboard filter bar and widget config panel use: categories
     // are DB-backed and user-extensible, so the raw id alone isn't a stable enough label.
-    fetch('/api/widgets/filter-options')
+    fetch(`/api/widgets/filter-options${dashboardId ? `?${new URLSearchParams({ dashboardId })}` : ''}`)
       .then(r => r.ok ? r.json() : null)
       .then((d: FilterOptionsResponse | null) => { if (d) setCategories(d.categories); })
       .catch(() => {});
-  }, []);
+  }, [dashboardId]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;

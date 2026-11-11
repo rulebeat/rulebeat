@@ -6,12 +6,15 @@ import { writeAudit } from '@/lib/db/audit';
 import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
 import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import { openableItems } from '@/lib/item-access';
+import { getMyDefault } from '@/lib/db/default-dashboard';
+import { withMyDefault } from '@/lib/default-dashboards';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json(await holdBackDashboards(actor.access, openableItems(actor, await listDashboards())));
+  const mine = (await getMyDefault(actor.id)).dashboardId;
+  return Response.json(await holdBackDashboards(actor.access, withMyDefault(openableItems(actor, await listDashboards()), mine)));
 }
 
 export async function POST(req: Request) {

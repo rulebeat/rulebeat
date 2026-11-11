@@ -114,6 +114,8 @@ const SEVERITY_LABELS: Array<{ value: string; label: string }> = [
 
 interface Props {
   widget: WidgetDef | null;
+  /** The dashboard the widget is on: the option lists are read for it (#375). */
+  dashboardId: string;
   onClose: () => void;
   onSave: (updated: WidgetDef) => void;
   /** The stored values of any place the person's Access does not reach, counted (#363). */
@@ -301,23 +303,24 @@ function ScopeSection({ cfg, setConfig, categories, subscriptions, resourceGroup
   );
 }
 
-export function WidgetConfigPanel({ widget, onClose, onSave, heldBack }: Props) {
+export function WidgetConfigPanel({ widget, dashboardId, onClose, onSave, heldBack }: Props) {
   const [local, setLocal] = useState<WidgetDef | null>(widget);
   const [policies, setPolicies] = useState<PolicyOption[]>([]);
   const [options, setOptions] = useState<FilterOptionsResponse>({ categories: [], tags: [], subscriptions: [], resourceGroups: [], rules: [] });
 
   useEffect(() => {
-    fetch('/api/widgets/rules')
+    const read = new URLSearchParams({ dashboardId });
+    fetch(`/api/widgets/rules?${read}`)
       .then(r => r.ok ? r.json() : [])
       .then(d => setPolicies(d as PolicyOption[]))
       .catch(() => {});
     // Categories/tags/subscriptions/resourceGroups fetched live (DB-backed, user-extensible),
     // same endpoint the dashboard filter bar uses.
-    fetch('/api/widgets/filter-options')
+    fetch(`/api/widgets/filter-options?${read}`)
       .then(r => r.ok ? r.json() : null)
       .then((d: FilterOptionsResponse | null) => { if (d) setOptions(d); })
       .catch(() => {});
-  }, []);
+  }, [dashboardId]);
 
   if (!local) return null;
 

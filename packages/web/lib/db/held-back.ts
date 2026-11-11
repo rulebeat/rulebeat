@@ -206,6 +206,26 @@ export async function holdBackDashboards<T extends { id: string; config: Dashboa
   });
 }
 
+/**
+ * The config a Duplicate gives `access`: the source's, without the values held back from the copier, and how
+ * many widgets then show more than the original did. A held-back value matches nothing for the copier, so a
+ * widget only shows more when the filter it was set up with (its own list, else the dashboard's, as
+ * `mergeWidgetFilters` picks it) held values and every one was held back: the copy then has no filter on that
+ * dimension. Everything holds nothing back, so its copy is the source and counts 0.
+ */
+export async function copyDashboardConfig(
+  access: Access, source: { id: string; config: DashboardConfig },
+): Promise<{ config: DashboardConfig; widened: number }> {
+  const held = await heldBackValues(access, dashboardValues(source.id, source.config));
+  if (held.size === 0) return { config: source.config, widened: 0 };
+  const allHeld = (values: string[] | undefined, dimension: string) => !!values?.length && values.every(v => isHeld(held, dimension, v));
+  const widened = (source.config.widgets ?? []).filter(widget => DASHBOARD_KEYS.some(([key, dimension]) => {
+    const own = stringsOf((widget.config ?? {})[key]);
+    return allHeld(own?.length ? own : stringsOf(source.config.filters?.[key]), dimension);
+  })).length;
+  return { config: trimConfig(source.config, held), widened };
+}
+
 // ---- Saved views ----
 
 /** The Scope, resource name and returned-column filters of a saved view, in the order the view lists them. */
@@ -235,6 +255,29 @@ export async function holdBackSavedViews<T extends { id: string; query: string }
     }).filter(f => f.values.length > 0);
     return { ...v, query: viewToSearchParams({ ...parsed[i]!, filters }).toString(), heldBack };
   });
+}
+
+/**
+ * The query a view saved from `source` holds, and how many filter dimensions it shows more on than the original
+ * did for `access`. The query is the one sent with the placeholder and every value of the source that is held back
+ * from the copier taken out, so a tab opened before their Access narrowed cannot carry them in. A dimension widens
+ * when every value the source stored for it is held back and the copy holds none of its own. Values left beside
+ * others they can see never matched, so they widen nothing.
+ */
+export async function copyViewQuery(
+  access: Access, source: { id: string; query: string }, incoming: string,
+): Promise<{ query: string; widened: number }> {
+  const query = withoutPlaceholder(incoming);
+  const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
+  const held = await heldBackValues(access, stored);
+  if (held.size === 0) return { query, widened: 0 };
+  const sent = viewFromSearchParams(new URLSearchParams(query));
+  const filters = sent.filters.map((f): ViewFilter => (
+    isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f
+  )).filter(f => f.values.length > 0);
+  const kept = new Set(filters.map(f => f.field as string));
+  const dimensions = new Set(stored.filter(s => s.values.length > 0 && s.values.every(v => isHeld(held, s.dimension, v))).map(s => s.dimension));
+  return { query: viewToSearchParams({ ...sent, filters }).toString(), widened: [...dimensions].filter(dimension => !kept.has(dimension)).length };
 }
 
 // ---- Saving back ----
@@ -350,4 +393,39 @@ export async function restoreHeldBackDashboard(
     return { ...widget, config: restoreInto(widget.config, before.config, opened?.widgets?.find(w => w.id === widget.id)?.config) };
   });
   return { config, restored, unseen };
+}
+
+// ---- Widget reads ----
+
+/** What a widget read adds back for the one dashboard it names. */
+export interface PlaceHeldBack {
+  /** The held-back values per dimension, each as stored, for the filter bar. */
+  dashboard: ReadonlyMap<string, readonly string[]>;
+  /** The same for the widget the read names, empty when the dashboard has no such widget (an unsaved one). */
+  widget: ReadonlyMap<string, readonly string[]>;
+  /** Every held-back value, whichever place stores it: what matches nothing for this person. */
+  held: HeldValues;
+  /** One count per place and dimension. */
+  counts: HeldBack[];
+}
+
+/**
+ * The stored held-back values of a dashboard's filter bar and of one of its widgets, for a widget read (#375). Both
+ * places are asked about in one findings query. A widget that is not in the stored dashboard has none.
+ */
+export async function heldBackForRead(
+  access: Access, dashboard: { id: string; config: DashboardConfig }, widgetId: string | null,
+): Promise<PlaceHeldBack> {
+  const stored = dashboardValues(dashboard.id, dashboard.config)
+    .filter(s => s.place === 'dashboard' || (s.place === 'widget' && s.id === widgetId));
+  const held = await heldBackValues(access, stored);
+  const of = (place: HeldBackPlace) => {
+    const out = new Map<string, string[]>();
+    for (const s of stored.filter(v => v.place === place)) {
+      const values = s.values.filter(value => isHeld(held, s.dimension, value));
+      if (values.length > 0) out.set(s.dimension, values);
+    }
+    return out;
+  };
+  return { dashboard: of('dashboard'), widget: of('widget'), held, counts: countsOf(stored, held) };
 }

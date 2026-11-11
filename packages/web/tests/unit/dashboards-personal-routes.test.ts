@@ -20,6 +20,7 @@ vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 const { GET: LIST, POST } = await import('@/app/api/dashboards/route');
 const { GET: READ, PUT, DELETE } = await import('@/app/api/dashboards/[id]/route');
 const { POST: DUPLICATE } = await import('@/app/api/dashboards/[id]/duplicate/route');
+const { PUT: CHOOSE } = await import('@/app/api/dashboards/install-default/route');
 
 async function signInAs(role: Role): Promise<string> {
   const result = await createUser({ email: `${role}-${Math.random().toString(36).slice(2)}@example.com`, role });
@@ -34,6 +35,7 @@ const json = (method: string, payload: unknown) =>
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const post = (payload: unknown) => POST(json('POST', payload));
 const put = (id: string, payload: unknown) => PUT(json('PUT', payload), ctx(id));
+const chooseDefault = (id: string) => CHOOSE(json('PUT', { id }));
 const read = (id: string) => READ(new Request('http://localhost/api/dashboards/x'), ctx(id));
 const remove = (id: string) => DELETE(new Request('http://localhost/api/dashboards/x', { method: 'DELETE' }), ctx(id));
 const duplicate = (id: string) => DUPLICATE(json('POST', {}), ctx(id));
@@ -81,7 +83,7 @@ describe('new dashboards are Personal', () => {
     const config = { autoRefresh: 0, widgets: [{ id: 'w', type: 'stat-card', title: 'T', x: 0, y: 0, w: 4, h: 2, config: { savedViewId: 'view-1' } }] };
     const source = await (await post({ name: 'Source', config })).json() as Dashboard;
     await share(source.id);
-    expect((await put(source.id, { isDefault: true })).status).toBe(200);
+    expect((await chooseDefault(source.id)).status).toBe(200);
 
     const copier = await signInAs('viewer');
     const res = await duplicate(source.id);
@@ -104,7 +106,7 @@ describe('someone else\'s Personal dashboard', () => {
     expect(stranger.map(r => r.status)).toEqual([404, 404, 404, 404]);
     expect(await Promise.all(stranger.map(r => r.json()))).toEqual(await Promise.all(unknown.map(r => r.json())));
     expect(await names()).toEqual([]);
-    expect((await put(theirs.id, { isDefault: true })).status).toBe(404);
+    expect((await chooseDefault(theirs.id)).status).toBe(404);
     expect((await getDashboard(theirs.id))?.name).toBe('Theirs');
   });
 });
@@ -150,13 +152,13 @@ describe('Shared dashboards', () => {
   it('are made the Install default only by someone who can manage Shared dashboards, and never a Personal one', async () => {
     await signInAs('editor');
     const personal = await created('Mine');
-    expect((await put(personal.id, { isDefault: true })).status).toBe(400);
+    expect((await chooseDefault(personal.id)).status).toBe(409);
     await share(personal.id);
-    expect((await put(personal.id, { isDefault: true })).status).toBe(200);
+    expect((await chooseDefault(personal.id)).status).toBe(200);
     expect((await getDashboard(personal.id))?.isDefault).toBe(true);
 
     await signInAs('viewer');
-    expect((await put(personal.id, { isDefault: true })).status).toBe(403);
+    expect((await chooseDefault(personal.id)).status).toBe(403);
   });
 });
 
