@@ -31,14 +31,31 @@ export const WIDGET_LIMITS = {
 } as const;
 
 /**
- * The caveat on the Subscription scorecard and a single-subscription trend while a subscription is graded
- * against its category's install-wide total. W2 replaces both once the per-subscription count changes.
+ * The caveat on a single-subscription trend while a subscription is graded against its category's
+ * install-wide total. W2 replaces it once the per-subscription count changes.
  */
 export const PER_CATEGORY_TOTAL_NOTE = 'Total is per category, not per subscription';
 
-/** The longer reading of PER_CATEGORY_TOTAL_NOTE, shown as the Subscription scorecard caption's tooltip. */
-export const PER_CATEGORY_TOTAL_DETAIL =
-  "Each subscription's total reflects every rule enabled for the category. It isn't narrowed to that subscription's own resources, so subscriptions with fewer applicable resource types will always show more headroom than they really have.";
+/** What the Subscription scorecard says when it has no row to list. */
+export const SUBSCRIPTIONS_EMPTY =
+  'No subscriptions known yet. RuleBeat lists them once it has read the management group tree or found a finding.';
+
+/** What a Subscription scorecard tile reads when no rule covers what it grades. */
+export const NO_RULES_SUBSCRIPTION = 'No rules cover this subscription';
+export const NO_RULES_DIRECTORY = 'No rules cover the Directory';
+
+/** The label on a subscription row counted over only the resource groups the viewer holds in it. */
+export const YOUR_GROUPS_ONLY = 'Your resource groups only';
+
+/** The Subscription scorecard footer: findings placed at a management group or nowhere, which no row counts. */
+export function outsideSubscriptionsNote(count: number): string {
+  return `${count} ${count === 1 ? 'finding sits' : 'findings sit'} outside any subscription or the Directory`;
+}
+
+/** What a scorecard says when its limit cuts the list. */
+export function showingLowestFirst(shown: number, total: number): string {
+  return `Showing ${shown} of ${total}, lowest first`;
+}
 
 /** The note a posture figure carries about what "passing" means for the viewer reading it. */
 export function postureLimitNote(holdsEverything: boolean): string {

@@ -144,10 +144,11 @@ describe('the dashboard does not count Directory findings under a subscription',
     expect((await queryActiveFindings({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, EVERYTHING_ACCESS)).map(f => f.resourceName).sort()).toEqual(['app-1', 'app-2', 'app-3']);
   });
 
-  it('lists no Directory entry in the subscription scorecard, though the tenant-wide count holds them', async () => {
+  it('gives the Directory a row of its own in the subscription scorecard, apart from the subscriptions', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
     const summary = await computeWidgetSummary({ dateWindow }, 30, EVERYTHING_ACCESS);
-    expect(summary.perSubscription.map(s => s.subscriptionId).sort()).toEqual([SUB_A, SUB_B]);
+    expect(summary.perSubscription.filter(s => !s.directory).map(s => s.subscriptionId).sort()).toEqual([SUB_A, SUB_B]);
+    expect(summary.perSubscription.filter(s => s.directory).map(s => [s.subscriptionId, s.activeFindings])).toEqual([[DIRECTORY_SUBSCRIPTION, 2]]);
     expect(summary.current.activeFindings).toBe(4);
 
     const narrowed = await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS);

@@ -18,6 +18,8 @@ All notable changes to RuleBeat are documented here. Format follows
 - Scans can filter, group and show findings by where they are placed ("Placed at").
 - The Rules tab filters by last run, and for someone without Everything, by rules that look at what they hold; its status, last run and category filters are kept in the link.
 - Scan Coverage counts the rules whose last run did not finish, of every kind, and the count opens that list on the Rules tab; for someone without Everything, last scanned is the newest scan that covered part of what they hold.
+- The Subscription scorecard lists every subscription, including ones with no findings or no rules, plus a Directory row. Each is graded against the rules whose scope includes it, and a footer counts findings placed elsewhere.
+- Scorecards say All passing only when every counted rule passes, show how many are not yet proven, and list the lowest first; posture tiles say why there is nothing to count.
 
 ## [0.13.1] - 2026-10-16
 

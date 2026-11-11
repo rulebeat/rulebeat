@@ -77,3 +77,15 @@ export function incompleteRulesOf(
     && (r.lastRunStatus === 'failed' || r.lastRunStatus === 'capped' || r.lastRunStatus === 'invalid')
     && ruleOverlapsScopes(r, access, hierarchy));
 }
+
+/**
+ * Whether an enabled rule is scoped to a management group the stored tree does not hold. Such a rule counts
+ * install-wide but for no subscription until RuleBeat has read the tree (W3), because a group the tree cannot
+ * expand has no subscriptions under it.
+ */
+export function namesUnexpandableGroup(
+  rules: readonly Pick<Rule, 'enabled' | 'scope'>[], hierarchy: readonly HierarchyNode[],
+): boolean {
+  const known = new Set(hierarchy.filter(n => n.kind === 'managementGroup').map(n => n.id.toLowerCase()));
+  return rules.some(r => r.enabled && (r.scope?.managementGroups ?? []).some(g => g.trim() !== '' && !known.has(g.toLowerCase())));
+}

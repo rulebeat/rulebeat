@@ -554,7 +554,7 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: byPerson(
       same({
-        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [[SNAPSHOT_DAYS[0], 5], [SNAPSHOT_DAYS[1], 6]],
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], trend: [[SNAPSHOT_DAYS[0], 5], [SNAPSHOT_DAYS[1], 6]],
         baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
       }),
       // Both subscriptions and no filter: two subscriptions' rows are never added into one trend.
@@ -572,7 +572,8 @@ function dashboardMatrix(): Record<string, Matrix> {
         trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
       }),
       same({
-        activeFindings: 1, high: 1, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
+        // The Directory has its own row, and a person who holds it is given it.
+        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: [], baselineDate: null, deltaPct: null,
         trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
       }),
       // Holds no Scope, so no scan covered part of what they hold: last scanned is not theirs to be told.

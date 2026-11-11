@@ -13,6 +13,13 @@ export const FINDING_PLACEMENTS = [
 ] as const;
 export type FindingPlacement = (typeof FINDING_PLACEMENTS)[number];
 
+/** The placements no subscription or Directory row holds: a finding at a management group, or one that could not be placed. */
+export const OUTSIDE_PLACEMENTS = ['management-group', 'unplaceable'] as const satisfies readonly FindingPlacement[];
+
+export function isOutsidePlacement(placement: string | undefined): boolean {
+  return (OUTSIDE_PLACEMENTS as readonly string[]).includes(placement ?? '');
+}
+
 /** What a Directory finding is called wherever a subscription would be named. */
 export const DIRECTORY_LABEL = 'Directory';
 
