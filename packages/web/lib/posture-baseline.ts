@@ -5,13 +5,15 @@
  * could use. Pure and client-safe.
  */
 
+import type { TrendLevel } from './trend-version-equality';
+
 /** Why no baseline was built: `needed` is the day before the window's first day, `earliest` the first
  *  date every category has a comparable point from (null when some category has none yet), and `level`
  *  where the points are kept. */
 export interface BaselineGap {
   needed: string;
   earliest: string | null;
-  level: 'install' | 'subscription';
+  level: TrendLevel;
 }
 
 export function baselineGapMessage(gap: BaselineGap): { title: string; detail: string } {
@@ -19,8 +21,8 @@ export function baselineGapMessage(gap: BaselineGap): { title: string; detail: s
   if (!gap.earliest) return { title, detail: 'Not every category has a count that can be compared yet.' };
   return {
     title,
-    detail: gap.level === 'subscription'
-      ? `Counts at this level start on ${gap.earliest}.`
-      : `The earliest date every category can be compared from is ${gap.earliest}.`,
+    detail: gap.level === 'install'
+      ? `The earliest date every category can be compared from is ${gap.earliest}.`
+      : `Counts at this level start on ${gap.earliest}.`,
   };
 }

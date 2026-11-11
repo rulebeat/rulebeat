@@ -154,9 +154,10 @@ describe('the dashboard does not count Directory findings under a subscription',
     expect(narrowed.current.activeFindings).toBe(1);
   });
 
-  it('offers no trend for Directory alone, which has no snapshot history, and still does for one subscription', async () => {
+  it('serves a trend for the Directory alone as it does for one subscription, with no line until a point is stored', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
-    expect((await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, 30, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(true);
+    const directory = await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, 30, EVERYTHING_ACCESS);
+    expect(directory).toMatchObject({ trendIsCategoryScopedOnly: false, trendLevel: 'directory', trend: [] });
     expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
   });
 
