@@ -15,12 +15,24 @@ export interface WidgetFilters {
   dateWindow: DateWindow;
 }
 
+/** A widget's saved `period` read as a number of days: 'Nd' is N days, and 'all' is `allDays`, which each
+ *  widget sets to what its data keeps. Null for anything else, which leaves the dashboard's window. */
+export function periodWindowDays(period: unknown, allDays: number): number | null {
+  if (period === 'all') return allDays;
+  if (typeof period !== 'string') return null;
+  const match = /^(\d+)d$/.exec(period);
+  const days = match ? parseInt(match[1]!, 10) : 0;
+  return days > 0 ? days : null;
+}
+
 /** Per-widget config values, when present, REPLACE the matching dashboard-level dimension
  *  entirely (never intersect/union): everything else is inherited unchanged from `dashboard`.
  *  A widget saved with `category: 'all'` (the existing default from widget-config-panel's
  *  Select) means "no override," not "replace with ['all']". An empty array for any list
  *  dimension (subscriptions/resourceGroups/tags/severities) means the same: no override. */
-export function mergeWidgetFilters(dashboard: WidgetFilters, widgetCfg: Record<string, unknown>): WidgetFilters {
+export function mergeWidgetFilters(
+  dashboard: WidgetFilters, widgetCfg: Record<string, unknown>, options: { periodAllDays?: number } = {},
+): WidgetFilters {
   const merged: WidgetFilters = { ...dashboard };
 
   const category = widgetCfg['category'];
@@ -53,8 +65,17 @@ export function mergeWidgetFilters(dashboard: WidgetFilters, widgetCfg: Record<s
     merged.severities = severities as Severity[];
   }
 
-  // Per-widget window override stays relative-only (24h/7d/30d/inherit). A secondary,
-  // rarely-used power override; full custom-range picking lives on the dashboard filter bar.
+  // A chart widget's saved period is that widget's own window, so a dashboard saved before the date
+  // window drove the charts draws the span it always did. Only a widget that passes `periodAllDays`
+  // reads one; an unreadable value leaves the dashboard's window.
+  if (options.periodAllDays !== undefined) {
+    const periodDays = periodWindowDays(widgetCfg['period'], options.periodAllDays);
+    if (periodDays !== null) merged.dateWindow = { mode: 'relative', days: periodDays };
+  }
+
+  // Per-widget window override stays relative-only (Today (UTC)/7d/30d/inherit). A secondary,
+  // rarely-used power override; full custom-range picking lives on the dashboard filter bar. An
+  // explicit override wins over a saved period.
   const windowDays = widgetCfg['windowDays'];
   if (windowDays === 1 || windowDays === 7 || windowDays === 30) {
     merged.dateWindow = { mode: 'relative', days: windowDays };
@@ -111,8 +132,7 @@ export function parseWidgetFiltersFromSearchParams(searchParams: URLSearchParams
 
 /** Builds the URLSearchParams for a /api/widgets/summary request from a merged WidgetFilters:
  *  shared by every widget that reads live posture/finding numbers, so a new filter dimension
- *  only needs to be wired in one place. Does not set `trendDays`: callers that need a trend
- *  chart period distinct from the delta window (e.g. TrendWidget) add that param themselves. */
+ *  only needs to be wired in one place. */
 export function buildSummaryParams(filters: WidgetFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.categories?.length) params.set('categories', filters.categories.join(','));

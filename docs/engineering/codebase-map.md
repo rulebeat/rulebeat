@@ -202,7 +202,7 @@
 | `packages/web/app/api/views/` | Saved view routes. Reads need `read`, writes need `views:write`; each write audits field names only |
 | `packages/web/components/findings/saved-views-menu.tsx` | The Views button on the Results and Advisories toolbar: list, open, and for editors save, update, rename, delete |
 | `packages/web/components/dashboard/dashboard-tabs.tsx` | Horizontal tab strip: default-first, `+` to create, "Manage" opens the gallery |
-| `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared 24h/7d/30d + custom-range popover |
+| `packages/web/components/ui/date-range-picker.tsx` | `DateRangePicker`: shared Today (UTC)/7d/30d + custom-range popover |
 | `packages/web/components/dashboard/dashboard-filter-bar.tsx` | Dashboard-level filter bar, debounced persist |
 | `packages/web/app/(app)/dashboards/[id]/dashboard-grid-client.tsx` | Multi-dashboard grid client: react-grid-layout, edit mode, merges filters into every widget fetch |
 | `packages/web/components/dashboard/widget-config-panel.tsx` | Shared `ScopeSection` config drawer rendered for every widget type |

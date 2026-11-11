@@ -146,18 +146,18 @@ describe('the dashboard does not count Directory findings under a subscription',
 
   it('lists no Directory entry in the subscription scorecard, though the tenant-wide count holds them', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
-    const summary = await computeWidgetSummary({ dateWindow }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ dateWindow }, EVERYTHING_ACCESS);
     expect(summary.perSubscription.map(s => s.subscriptionId).sort()).toEqual([SUB_A, SUB_B]);
     expect(summary.current.activeFindings).toBe(4);
 
-    const narrowed = await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS);
+    const narrowed = await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, EVERYTHING_ACCESS);
     expect(narrowed.current.activeFindings).toBe(1);
   });
 
   it('offers no trend for Directory alone, which has no snapshot history, and still does for one subscription', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
-    expect((await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, 30, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(true);
-    expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
+    expect((await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(true);
+    expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
   });
 
   it('writes no per-subscription snapshot for them, and counts them in the aggregate row', async () => {

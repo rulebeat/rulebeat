@@ -508,7 +508,8 @@ const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
 /**
  * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
  * is not per tab, so each expectation is `same(...)` across the three. The summary probe runs under a
- * fixed clock because `trendDays` and the delta window are rolling: the seed's days are in June 2026.
+ * fixed clock because the date window is rolling: the seed's days are in June 2026. The window is nine days, so it starts on
+ * the seed's second day and the first is the baseline.
  */
 function dashboardMatrix(): Record<string, Matrix> {
   const loaders: Record<string, () => Promise<{ GET(req: Request): Promise<Response> }>> = {
@@ -529,7 +530,7 @@ function dashboardMatrix(): Record<string, Matrix> {
       vi.setSystemTime(new Date(MATRIX_NOW));
       try {
         // One category: a delta is withheld unless every category in scope has a comparable point, and only security has any.
-        const body = await widget('summary', '?trendDays=30&categories=security') as {
+        const body = await widget('summary', '?window=9&categories=security') as {
           current: { activeFindings: number; severityCounts: { high: number } };
           perSubscription: { subscriptionId: string; activeFindings: number }[];
           trend: { date: string; findings: number }[];
@@ -554,8 +555,8 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: byPerson(
       same({
-        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [[SNAPSHOT_DAYS[0], 5], [SNAPSHOT_DAYS[1], 6]],
-        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [[SNAPSHOT_DAYS[1], 6]],
+        baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
       }),
       // Both subscriptions and no filter: two subscriptions' rows are never added into one trend.
       same({
@@ -564,8 +565,8 @@ function dashboardMatrix(): Record<string, Matrix> {
       }),
       // Everything the person holds lies in subscription one, so its rows serve the trend: its count, not the install's.
       same({
-        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: [[SNAPSHOT_DAYS[0], 3], [SNAPSHOT_DAYS[1], 2]],
-        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: [[SNAPSHOT_DAYS[1], 2]],
+        baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
       }),
       same({
         activeFindings: 1, high: 1, perSubscription: [[SUB_ONE, 1]], trend: [], baselineDate: null, deltaPct: null,

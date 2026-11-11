@@ -1,13 +1,14 @@
-import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityOccurrenceCounts, type FindingRecord, type FindingSummary } from './db/findings';
+import { listFindings, listFindingSummaries, getActivityOccurrenceCounts, type FindingRecord, type FindingSummary } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
 import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, type DailySnapshot } from './db/snapshots';
+import { getRecencyStatus, isFixedInWindow } from './explorer-filters';
 import { posturePct, postureDelta } from './posture-math';
 import { equalFormulaVersions } from './trend-version-equality';
 import type { BaselineGap } from './posture-baseline';
 import { trendScopeOf, type TrendReason } from './trend-scope';
-import { resolveDateWindow } from './date-window';
+import { resolveDateWindow, todayKey } from './date-window';
 import { listLastScanTimes } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, Rule, Severity } from './types';
@@ -18,22 +19,48 @@ import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
-import { categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure } from './widget-limits';
+import { activityRetentionNote, categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, trendRetentionNote } from './widget-limits';
 
-/** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
- *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
-function isWithinRange(iso: string | undefined, from: string, to: string): boolean {
-  if (!iso) return false;
-  const day = iso.slice(0, 10);
-  return day >= from && day <= to;
-}
+/** How many UTC days of trend points and of activity occurrences are kept (lib/db/snapshots.ts and
+ *  lib/db/findings.ts prune to these). A window that reaches further back draws from the first kept day. */
+const TREND_KEPT_DAYS = 365;
+const ACTIVITY_KEPT_DAYS = 180;
 
 function dayBefore(dateKey: string): string {
   return new Date(new Date(`${dateKey}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
 }
 
-function daysAgo(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+function addDays(dateKey: string, days: number): string {
+  return new Date(new Date(`${dateKey}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The first day a chart kept for `keptDays` days can draw: today and the days-1 before it. */
+function firstKeptDay(keptDays: number): string {
+  return addDays(todayKey(), -(keptDays - 1));
+}
+
+/** Every day key from `from` to `to`, inclusive. */
+function dayKeysBetween(from: string, to: string): string[] {
+  const keys: string[] = [];
+  for (let day = from; day <= to; day = addDays(day, 1)) keys.push(day);
+  return keys;
+}
+
+/** Per-UTC-day New and Fixed counts, zero-filled across the window, from the findings' own timestamps
+ *  and the Scans predicates (getRecencyStatus, isFixedInWindow) applied to that one day, so a bar equals
+ *  the one-day Scans list it opens. A finding opened and fixed inside the window is Fixed only, and a
+ *  reactivated finding keeps its first-seen date, so it is not New. */
+function newVsFixedByDay(from: string, to: string, open: readonly FindingSummary[], fixed: readonly FindingSummary[]): WidgetSummary['newVsFixedTrend'] {
+  const bars = new Map(dayKeysBetween(from, to).map(date => [date, { date, created: 0, resolved: 0 }]));
+  for (const f of open) {
+    const bar = f.firstSeenAt ? bars.get(f.firstSeenAt.slice(0, 10)) : undefined;
+    if (bar && getRecencyStatus(f, bar.date, bar.date) === 'new') bar.created++;
+  }
+  for (const f of fixed) {
+    const bar = f.resolvedAt ? bars.get(f.resolvedAt.slice(0, 10)) : undefined;
+    if (bar && isFixedInWindow(f, bar.date, bar.date)) bar.resolved++;
+  }
+  return [...bars.values()];
 }
 
 /** The Scopes the live posture is read over (formula v3): the viewer's Access intersected with the
@@ -244,15 +271,20 @@ export interface WidgetSummary {
    *  calc: rules with zero violations in that subscription / rules in scope for the active
    *  category+rule filters. */
   perSubscription: Array<{ subscriptionId: string; pct: number | null; activeFindings: number; totalRules: number; passingRules: number }>;
-  /** Daily created-vs-resolved counts for the New vs Fixed widget: available under every filter
-   *  combination (subscription/RG/severity via a fingerprint join to `findings`, tags resolved to
-   *  rule ids), unlike the snapshot-sourced `trend`. */
+  /** Per-UTC-day New and Fixed counts for the New vs Fixed widget, one bar for every day of the date
+   *  window, zero-filled. Counted from the live findings with the Scans predicates, Problem findings
+   *  only and never a suppressed one, so each bar equals the one-day Scans list it opens. Available
+   *  under every filter combination, unlike the snapshot-sourced `trend`. */
   newVsFixedTrend: Array<{ date: string; created: number; resolved: number }>;
   /** Daily occurrence counts for kind:'activity' findings. The Activity Occurrences widget's
    *  data source (spec 034). Same filter support as newVsFixedTrend (subscription/RG/severity via
    *  a fingerprint join, tags resolved to rule ids). Empty when nothing in scope is activity-kind.
    *  The widget renders its own empty state for that, it isn't an error. */
   activityTrend: Array<{ date: string; count: number }>;
+  /** The note a chart carries when the date window reaches past the 365 days of trend points, or the 180
+   *  days of activity occurrences, saying which day it starts on. Null while the window sits inside them. */
+  trendRetentionNote: string | null;
+  activityRetentionNote: string | null;
   lastScanAt: string | null;
   /** Whether the viewer holds Everything, so the incomplete-rule link asks for reach only of those who do not. */
   holdsEverything: boolean;
@@ -288,7 +320,7 @@ export interface WidgetSummary {
  *  single subscription: snapshots are recorded per category × subscription (Phase 5); any
  *  RG/tag/severity/rule filter, or more than one subscription at once, makes "trend over time"
  *  ill-defined at that granularity since it isn't recorded). */
-export async function computeWidgetSummary(filters: WidgetFilters, trendDays: number, access: Access): Promise<WidgetSummary> {
+export async function computeWidgetSummary(filters: WidgetFilters, access: Access): Promise<WidgetSummary> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   const allCategories = await listCategories();
   const allRules = await loadRules();
@@ -339,13 +371,16 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     emptyReason: totalRules > 0 ? null : emptyReasonFor(access, allCategories, allRules, hierarchy),
   };
 
-  const newInWindow = activeFindings.filter(f => isWithinRange(f.firstSeenAt, from, to)).length;
+  // New and Fixed are the counts of the Scans New and Fixed lists for the window, by the Scans
+  // predicates themselves: a reactivated finding keeps its old first-seen date, so it is not New, and a
+  // finding opened and fixed inside the window is Fixed only.
+  const newInWindow = activeFindings.filter(f => getRecencyStatus(f, from, to) === 'new').length;
   const fixedFindings = (await queryFixedFindings(filters, access)).filter(countsInFindingTotals);
-  const fixedInWindow = fixedFindings.filter(f => isWithinRange(f.resolvedAt, from, to)).length;
+  const fixedInWindow = fixedFindings.filter(f => isFixedInWindow(f, from, to)).length;
 
-  // Findings-sourced, not snapshot-sourced: net lifecycle change over the window, using the same
-  // firstSeenAt/resolvedAt predicate as Scans' getRecencyStatus, so this always agrees with the
-  // Scans page and works under every filter (unlike deltaPct/baseline, which need a snapshot).
+  // Findings-sourced, not snapshot-sourced: the net change in a count of findings over the window,
+  // so it agrees with the Scans page and works under every filter (unlike deltaPct/baseline, which
+  // need a snapshot).
   const deltaFindings = newInWindow - fixedInWindow;
 
   // When each target category was last scanned, for the per-category lastScanAt and the overall one
@@ -400,10 +435,13 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     };
   }).sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101) || b.activeFindings - a.activeFindings);
 
-  // New vs Fixed supports every filter dimension: subscription/RG/severity via a join to the
-  // findings row (see getFindingEventCounts), tags resolved here to rule ids (rules own tags,
-  // same predicate as matchesFilters). An empty tag∩rule intersection must yield zero events,
-  // not "no filter": hence the impossible-id sentinel.
+  // The bars come from the live findings read above, so they carry every filter dimension the Scans
+  // lists do and nothing the window's own range does not hold.
+  const newVsFixedTrend = newVsFixedByDay(from, to, activeFindings, fixedFindings);
+
+  // Activity occurrences still come from finding_events, which keeps 180 days. Tags are resolved here
+  // to rule ids (rules own tags, same predicate as matchesFilters). An empty tag∩rule intersection
+  // must yield zero events, not "no filter": hence the impossible-id sentinel.
   let eventRuleIds = filters.ruleIds;
   if (filters.tags?.length) {
     const tagRuleIds = allRules
@@ -413,22 +451,21 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     if (eventRuleIds.length === 0) eventRuleIds = ['__no-matching-rule__'];
   }
   const eventCategoryIds = filters.categories?.length ? filters.categories : allCategories.map(c => c.id);
-  const newVsFixedTrend = await getFindingEventCounts({
+  const activityStart = firstKeptDay(ACTIVITY_KEPT_DAYS);
+  const activityTrend = (await getActivityOccurrenceCounts({
     categories: eventCategoryIds,
     ruleIds: eventRuleIds,
     subscriptions: filters.subscriptions,
     resourceGroups: filters.resourceGroups,
     severities: filters.severities,
-    sinceDate: daysAgo(trendDays),
-  }, access);
-  const activityTrend = await getActivityOccurrenceCounts({
-    categories: eventCategoryIds,
-    ruleIds: eventRuleIds,
-    subscriptions: filters.subscriptions,
-    resourceGroups: filters.resourceGroups,
-    severities: filters.severities,
-    sinceDate: daysAgo(trendDays),
-  }, access);
+    sinceDate: from > activityStart ? from : activityStart,
+  }, access)).filter(d => d.date <= to);
+
+  // A window that reaches past the data kept is told so on the chart, with the day it starts.
+  const retentionNotes = {
+    trendRetentionNote: from < firstKeptDay(TREND_KEPT_DAYS) ? trendRetentionNote(firstKeptDay(TREND_KEPT_DAYS)) : null,
+    activityRetentionNote: from < activityStart ? activityRetentionNote(activityStart) : null,
+  };
 
   // Trend/baseline need a representation in posture_snapshots. Category is always supported
   // (snapshots are recorded per category). A *single* subscription is also supported: snapshots
@@ -446,7 +483,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   if (hasUnsupportedTrendFilter) {
     return {
-      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
+      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits, ...retentionNotes,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
@@ -456,13 +493,15 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   const trendScope = trendScopeOf(access, filters.subscriptions);
   if (!trendScope.available) {
     return {
-      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
+      current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits, ...retentionNotes,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
   }
   const trendSubscriptionId = trendScope.subscriptionId;
-  const snaps = await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: daysAgo(trendDays) });
+  const trendStart = firstKeptDay(TREND_KEPT_DAYS);
+  const snaps = (await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: from > trendStart ? from : trendStart }))
+    .filter(s => s.date <= to);
   const trend = aggregateSnapshotsByDate(snaps);
   const trendByCategory = groupSnapshotsByCategory(snaps);
 
@@ -494,7 +533,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   }
 
   return {
-    current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits,
+    current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits, ...retentionNotes,
     perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };

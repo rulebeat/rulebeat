@@ -5,24 +5,20 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
-import { CHART_LEGEND_STYLE, CHART_TICK, periodToDays } from '@/components/dashboard/dashboard-constants';
+import { CHART_LEGEND_STYLE, CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; period?: string; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
-/** Remediation velocity: findings created (incl. reactivated) vs. resolved per day, from
- *  finding_events: a platform team closing more than it opens is the story this chart tells.
- *  Works under every filter dimension (see getFindingEventCounts). */
+/** Remediation velocity: findings new vs. fixed per UTC day of the date window, counted from the live
+ *  findings with the Scans predicates (a reactivated finding is not new): a platform team closing more
+ *  than it opens is the story this chart tells. Works under every filter dimension. */
 export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days. Anything longer is empty air
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('trendDays', String(trendDays));
-    return p.toString();
-  }, [merged, trendDays]);
+  // The date window draws the chart. A saved period is this widget's own window; 'all' is the 180 days finding_events keeps.
+  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: 180 }), [filters, config]);
+  const params = useMemo(() => buildSummaryParams(merged).toString(), [merged]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]
@@ -33,7 +29,8 @@ export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
 
   const data = summary?.newVsFixedTrend ?? [];
-  if (!data.length) {
+  // The bars are zero-filled across the window, so a window with nothing in it is all zeros.
+  if (!data.some(d => d.created > 0 || d.resolved > 0)) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No remediation activity yet in this period.</div>;
   }
 

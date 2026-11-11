@@ -22,10 +22,11 @@ const underGroup: Access = buildAccess(
 );
 
 // Security is the one category with snapshots, and a delta is withheld unless every category in scope has a comparable point.
+// The window is the ten days from 2026-06-01, so the trend holds the two points of June and the baseline is the one before it.
 async function summary(access: Access, subscriptions?: string[]) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
-  const result = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 }, ...(subscriptions ? { subscriptions } : {}) }, 30, access);
+  const result = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 10 }, ...(subscriptions ? { subscriptions } : {}) }, access);
   return {
     live: result.current.activeFindings,
     trend: result.trend.map(p => [p.date, p.findings]),
@@ -42,6 +43,8 @@ beforeAll(async () => {
   await resetDb();
   const a = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_ONE, resourceGroup: 'rg-one' });
   const b = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_TWO, resourceGroup: 'rg-one' });
+  await storeScan([a('a1')], { scanId: '00000000-0000-0000-0000-0000000000e0', finishedAt: '2026-05-31T10:00:00.000Z' });
+  await upsertDailySnapshot('security', new Date('2026-05-31T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e1', finishedAt: '2026-06-01T10:00:00.000Z' });
   await upsertDailySnapshot('security', new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e2', finishedAt: '2026-06-02T10:00:00.000Z' });
@@ -52,13 +55,13 @@ beforeAll(async () => {
 describe('the summary trend for a person below Everything', () => {
   it('draws Everything\'s trend from the install-wide row', async () => {
     expect(await summary(everythingAccess('admin'))).toMatchObject({
-      live: 4, trend: [['2026-06-01', 3], ['2026-06-02', 4]], baseline: '2026-06-02', reason: null,
+      live: 4, trend: [['2026-06-01', 3], ['2026-06-02', 4]], baseline: '2026-05-31', reason: null,
     });
   });
 
   it('draws a subscription Viewer\'s trend from that subscription\'s rows, not the install\'s', async () => {
     const result = await summary(viewerAt(`/subscriptions/${SUB_ONE}`));
-    expect(result).toMatchObject({ live: 3, trend: [['2026-06-01', 2], ['2026-06-02', 3]], baseline: '2026-06-02', reason: null });
+    expect(result).toMatchObject({ live: 3, trend: [['2026-06-01', 2], ['2026-06-02', 3]], baseline: '2026-05-31', reason: null });
     expect(typeof result.deltaPct).toBe('number');
   });
 

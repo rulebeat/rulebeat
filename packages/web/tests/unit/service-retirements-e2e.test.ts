@@ -210,7 +210,7 @@ describe('scanning the shipped Service retirements rule', () => {
 
   it('never enters a posture or problem count', async () => {
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['reliability'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['reliability'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     expect(summary.current.activeFindings).toBe(0);
   });
 });
