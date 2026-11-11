@@ -2,17 +2,19 @@
 
 import { useMemo } from 'react';
 import {
-  AreaChart, Area, LineChart, Line, BarChart, Bar,
+  AreaChart, Area, LineChart, Line, BarChart, Bar, ReferenceLine,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
-import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chartSeriesColor, formatTrendTooltipLabel, periodToDays } from '@/components/dashboard/dashboard-constants';
+import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, TREND_MARKER_STROKE, chartSeriesColor, formatTrendTooltipLabel, periodToDays } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 import { trendUnavailableMessage } from '@/lib/trend-scope';
-import { PER_CATEGORY_TOTAL_NOTE, WIDGET_LIMITS } from '@/lib/widget-limits';
+import { TREND_EMPTY_STATE, TREND_FILTER_TITLE, WIDGET_LIMITS } from '@/lib/widget-limits';
+import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
+import { trendMarkerDates } from '@/lib/trend-points';
 
 interface Config { category?: string; period?: string; chartType?: string; showFindings?: boolean; policyIds?: string[] }
 interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
@@ -72,6 +74,8 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     [refreshKey]
   );
 
+  useReportWidgetNotes(!loading && !failed && summary ? (summary.trendNotes ?? []) : []);
+
   const { chartData, series } = useMemo(() => {
     if (!summary) return { chartData: [] as Array<Record<string, unknown>>, series: [] as Series[] };
     // RG/tag/severity/rule filters, or 2+ subscriptions, have no history in posture_snapshots
@@ -109,12 +113,12 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     const dateMap = new Map<string, Record<string, number>>();
     for (const [catId, points] of Object.entries(byCategory)) {
       for (const p of points) {
-        if (p.pct === null) continue;
         const entry = dateMap.get(p.date) ?? {};
+        dateMap.set(p.date, entry);
+        if (p.pct === null) continue;
         entry[catId] = p.pct;
         entry[`${catId}__passing`] = p.passing;
         entry[`${catId}__total`] = p.total;
-        dateMap.set(p.date, entry);
       }
     }
     const sorted = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -128,6 +132,14 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     };
   }, [summary, merged.categories]);
 
+  // The days a line's counting changed, from the versions on the points themselves. Only a day the chart
+  // has a point for can carry a line.
+  const markers = useMemo(() => {
+    if (!summary?.trendByCategory) return [];
+    const drawn = new Set(chartData.map(d => d['date'] as string));
+    return trendMarkerDates(summary.trendLevel ?? 'install', summary.trendByCategory).filter(d => drawn.has(d));
+  }, [summary, chartData]);
+
   const legendColors = useMemo(
     () => Object.fromEntries(series.map(s => [s.key, s.legendColor])),
     [series]
@@ -138,13 +150,13 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
 
   if (summary?.trendIsCategoryScopedOnly) {
-    return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">{WIDGET_LIMITS.w4}</div>;
+    return <WidgetUnavailable reason={{ title: TREND_FILTER_TITLE, detail: WIDGET_LIMITS.w4 }} />;
   }
   if (summary?.trendUnavailable) {
     return <WidgetUnavailable reason={trendUnavailableMessage(summary.trendUnavailable)} />;
   }
   if (!chartData.length) {
-    return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No trend data yet. Run scans to build history.</div>;
+    return <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-muted">{TREND_EMPTY_STATE}</div>;
   }
 
   /* An area fill reads as "how much is under the curve", which is only true of one series.
@@ -155,13 +167,12 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
     : config.chartType === 'line' || series.length > 1 ? 'line'
     : 'area';
 
-  const showSubscriptionDenominatorCaveat = merged.subscriptions?.length === 1;
+  const markerLines = markers.map(date => (
+    <ReferenceLine key={`marker-${date}`} x={date} stroke={TREND_MARKER_STROKE} strokeDasharray="4 3" />
+  ));
 
   return (
     <div className="flex h-full flex-col px-2 py-3">
-      {showSubscriptionDenominatorCaveat && (
-        <p className="px-2 pb-1 text-xs text-ink-muted">{PER_CATEGORY_TOTAL_NOTE}</p>
-      )}
       <ResponsiveContainer width="100%" height="100%" className="min-h-0 flex-1">
         {chartType === 'bar' ? (
           <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
@@ -170,6 +181,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} unit="%" label={Y_AXIS_LABEL} />
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
+            {markerLines}
             {series.map(s => <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} />)}
           </BarChart>
         ) : chartType === 'line' ? (
@@ -179,6 +191,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} unit="%" label={Y_AXIS_LABEL} />
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
+            {markerLines}
             {series.map(s => (
               <Line key={s.key} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             ))}
@@ -198,6 +211,7 @@ export function TrendWidget({ config, filters, refreshKey }: Props) {
             <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} unit="%" label={Y_AXIS_LABEL} />
             <Tooltip content={<CustomTooltip legendColors={legendColors} />} />
             {series.length > 1 && <Legend content={<CustomLegend series={series} />} />}
+            {markerLines}
             {series.map(s => (
               <Area key={s.key} type="monotone" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={1.5} fill={`url(#g-${s.key})`} dot={false} activeDot={{ r: 4 }} />
             ))}

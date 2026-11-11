@@ -71,6 +71,8 @@ export function chartSeriesColor(index: number): string {
  * takes its tick and legend styling from here, so a widget added later inherits the fix
  * instead of repeating the literal. */
 export const CHART_TICK = { fontSize: 12, fill: 'var(--color-ink-muted)' };
+/** The vertical line on a trend where a line's counting changed: a neutral token, never red (a problem) or ink (type and hairlines). */
+export const TREND_MARKER_STROKE = 'var(--color-ink-faint)';
 export const CHART_LEGEND_STYLE = { fontSize: 12, color: 'var(--color-ink-2)' };
 
 export function timeAgo(iso: string): string {

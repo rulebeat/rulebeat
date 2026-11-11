@@ -2,11 +2,12 @@ import { listFindings, listFindingSummaries, getFindingEventCounts, getActivityO
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, type DailySnapshot } from './db/snapshots';
+import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates } from './db/snapshots';
 import { posturePct, postureDelta } from './posture-math';
-import { equalFormulaVersions } from './trend-version-equality';
+import { equalFormulaVersions, type TrendLevel } from './trend-version-equality';
+import { aggregateLine, trendLines, trendMarkerDates, type AggregateTrendPoint, type TrendPoint } from './trend-points';
 import type { BaselineGap } from './posture-baseline';
-import { trendScopeOf, type TrendReason } from './trend-scope';
+import { trendAllowedFor, trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow } from './date-window';
 import { listLastScanTimes } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
@@ -18,7 +19,7 @@ import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
-import { categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure } from './widget-limits';
+import { categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, WIDGET_LIMITS } from './widget-limits';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -162,35 +163,6 @@ async function queryFixedFindings(filters: WidgetFilters, access: Access): Promi
   return narrow(await listFindingSummaries(access, { status: 'fixed' }), filters, access);
 }
 
-function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }> {
-  const byDate = new Map<string, { passing: number; total: number; findings: number }>();
-  for (const s of snaps) {
-    const e = byDate.get(s.date) ?? { passing: 0, total: 0, findings: 0 };
-    e.passing += s.passingRules;
-    e.total += s.totalRules;
-    e.findings += s.activeFindings;
-    byDate.set(s.date, e);
-  }
-  return Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, e]) => ({
-      date,
-      pct: posturePct(e.passing, e.total),
-      findings: e.findings,
-      passing: e.passing,
-      total: e.total,
-    }));
-}
-
-function groupSnapshotsByCategory(snaps: DailySnapshot[]): Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> {
-  const map: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> = {};
-  for (const s of snaps) {
-    (map[s.category] ??= []).push({ date: s.date, pct: posturePct(s.passingRules, s.totalRules), findings: s.activeFindings, passing: s.passingRules, total: s.totalRules });
-  }
-  for (const key of Object.keys(map)) map[key].sort((a, b) => a.date.localeCompare(b.date));
-  return map;
-}
-
 export interface WidgetSummary {
   // --- live, findings-sourced: computed from the `findings` lifecycle table (+ `finding_events`
   //     for newVsFixedTrend). Exact and available under every filter combination. Any number here
@@ -270,24 +242,34 @@ export interface WidgetSummary {
   /** Why `baseline` is null although a trend is served: some category has no point the version-equality
    *  table counts equal on or before `needed`. Null when a baseline was built or no trend is served. */
   baselineGap: BaselineGap | null;
-  trend: Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>;
-  trendByCategory?: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>>;
+  /** The all-categories line, starting on the first day every category has a count. Quiet days are carried
+   *  from the category's last point (lib/trend-points.ts). */
+  trend: AggregateTrendPoint[];
+  /** Each category's own line, starting at its own first point, over today's categories only. Every point
+   *  carries the formula version it was counted under, and whether it is a carried day. */
+  trendByCategory?: Record<string, TrendPoint[]>;
+  /** Where the trend is kept for this request: the whole install, one subscription or the Directory.
+   *  Null when no trend is served. */
+  trendLevel?: TrendLevel | null;
+  /** The notes a served trend carries: W2 on a subscription's trend, and "Counted differently before
+   *  <date>" once for each distinct day a line's counting changed. */
+  trendNotes?: string[];
   /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters, i.e.
-   *  anything beyond category + at most one subscription (RG/tag/severity/rule, or more than one
-   *  subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
+   *  anything the allow-list in lib/trend-scope.ts does not serve (RG/tag/severity/rule, or more than
+   *  one subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
    *  Name kept from pre-Phase-5 for call-site stability. */
   trendIsCategoryScopedOnly: boolean;
   /** Why `trend`, `baseline` and `deltaPct` are empty for this person (#274): they are kept per
-   *  subscription, and the person holds no whole subscription or has not chosen one. Null when the
+   *  subscription and for the Directory, and the person holds neither or has not chosen one. Null when the
    *  trend is served, or empty for a reason `trendIsCategoryScopedOnly` already gives. */
   trendUnavailable: TrendReason | null;
 }
 
 /** Live posture/findings numbers from the findings lifecycle table, plus trend/baseline
  *  history from posture_snapshots (meaningful when `filters` narrows to category and/or a
- *  single subscription: snapshots are recorded per category × subscription (Phase 5); any
- *  RG/tag/severity/rule filter, or more than one subscription at once, makes "trend over time"
- *  ill-defined at that granularity since it isn't recorded). */
+ *  single subscription or the Directory: points are recorded per category for the install, each
+ *  subscription and the Directory; any RG/tag/severity/rule filter, or more than one subscription at
+ *  once, makes "trend over time" ill-defined at that granularity since it isn't recorded). */
 export async function computeWidgetSummary(filters: WidgetFilters, trendDays: number, access: Access): Promise<WidgetSummary> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   const allCategories = await listCategories();
@@ -430,21 +412,10 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     sinceDate: daysAgo(trendDays),
   }, access);
 
-  // Trend/baseline need a representation in posture_snapshots. Category is always supported
-  // (snapshots are recorded per category). A *single* subscription is also supported: snapshots
-  // now carry a per-subscription breakdown (Phase 5), but RG/tag/severity/rule filters aren't
-  // recorded at all, and combining more than one subscription can't be reconstructed from summed
-  // per-subscription totals (each rule's pass/fail would need to be evaluated across the union of
-  // subscriptions, which isn't recoverable from the stored per-day counts). Directory is not a
-  // subscription and no snapshot is recorded for it, so choosing it is unsupported too.
-  const hasUnsupportedTrendFilter = Boolean(
-    filters.resourceGroups?.length || filters.tags?.length ||
-    filters.severities?.length || filters.ruleIds?.length ||
-    (filters.subscriptions && filters.subscriptions.length > 1) ||
-    filters.subscriptions?.includes(DIRECTORY_SUBSCRIPTION),
-  );
-
-  if (hasUnsupportedTrendFilter) {
+  // A stored point has a representation only under the filters the allow-list serves (lib/trend-scope.ts):
+  // category, the date window and at most one subscription or the Directory. Any other filter would put
+  // a filtered live number beside unfiltered points, so none of trend, baseline and delta is served.
+  if (!trendAllowedFor(filters)) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
       perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
@@ -462,15 +433,27 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     };
   }
   const trendSubscriptionId = trendScope.subscriptionId;
-  const snaps = await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: daysAgo(trendDays) });
-  const trend = aggregateSnapshotsByDate(snaps);
-  const trendByCategory = groupSnapshotsByCategory(snaps);
+  const level: TrendLevel = !trendSubscriptionId ? 'install'
+    : trendSubscriptionId.toLowerCase() === DIRECTORY_SUBSCRIPTION ? 'directory'
+    : 'subscription';
+
+  // The lines are drawn over today's categories only. The newest point on or before the window's first
+  // day is read as well, so a category with no point inside the window carries from it.
+  const since = daysAgo(trendDays);
+  const inWindow = await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: since });
+  const beforeWindow = await getBaselineSnapshots(trendCategoryIds, since, access, trendSubscriptionId);
+  const lines = trendLines([...beforeWindow, ...inWindow], since, daysAgo(0));
+  const trend = aggregateLine(lines, trendCategoryIds);
+  const trendByCategory = lines;
+  const trendNotes = [
+    ...(level === 'subscription' ? [WIDGET_LIMITS.w2] : []),
+    ...trendMarkerDates(level, lines).map(WIDGET_LIMITS.w5),
+  ];
 
   // The baseline is each category's newest point that the version-equality table counts equal, on or
   // before the day before the window's first day. If any category has none, there is no baseline:
   // building one from the rest would compare two different sets of rules, so the delta is withheld
   // and the gap names the date needed and the earliest date every category could be compared from.
-  const level = trendSubscriptionId ? 'subscription' : 'install';
   const equalFormulas = equalFormulaVersions(level);
   const needed = dayBefore(from);
   const baselineSnaps = await getBaselineSnapshots(trendCategoryIds, needed, access, trendSubscriptionId, equalFormulas);
@@ -495,7 +478,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   return {
     current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits,
-    perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
+    perCategory, perSubscription, trend, trendByCategory, trendLevel: level, trendNotes, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

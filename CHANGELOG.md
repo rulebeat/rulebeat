@@ -18,6 +18,8 @@ All notable changes to RuleBeat are documented here. Format follows
 - Scans can filter, group and show findings by where they are placed ("Placed at").
 - The Rules tab filters by last run, and for someone without Everything, by rules that look at what they hold; its status, last run and category filters are kept in the link.
 - Scan Coverage counts the rules whose last run did not finish, of every kind, and the count opens that list on the Rules tab; for someone without Everything, last scanned is the newest scan that covered part of what they hold.
+- The Trend chart is available for the Directory, and marks the day a line's counting changed.
+- A trend line marks the day its counting changed. What each number counts, and how older trend points were counted, is in docs/public/posture.md.
 
 ## [0.13.1] - 2026-10-16
 
