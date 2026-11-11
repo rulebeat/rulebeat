@@ -1,6 +1,6 @@
 'use client';
 
-import { rememberCopiedDashboard } from '@/lib/held-back';
+import { deleteHeldBackNote, heldBackTotal, rememberCopiedDashboard } from '@/lib/held-back';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,7 +19,9 @@ import {
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
-import type { Dashboard } from '@/lib/types';
+import type { HeldBackDashboard } from '@/lib/types';
+
+type Dashboard = HeldBackDashboard;
 
 interface Props {
   /** The dashboards the person may open: their own, Personal or Shared, and everyone's Shared ones. */
@@ -108,7 +110,8 @@ export function DashboardsGallery({ initialDashboards, currentUserId, permission
   }
 
   async function handleDelete(d: Dashboard) {
-    if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
+    const heldNote = deleteHeldBackNote(heldBackTotal(d.heldBack));
+    if (!confirm(`Delete "${d.name}"? ${heldNote ? `${heldNote} ` : ''}This cannot be undone.`)) return;
     setError(null);
     try {
       const res = await fetch(`/api/dashboards/${d.id}`, { method: 'DELETE' });

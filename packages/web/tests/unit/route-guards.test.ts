@@ -180,6 +180,8 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['dashboards/[id]/hand-over/route.ts', 'dashboards:personal'],
     ['dashboards/[id]/hand-over-candidates/route.ts', 'dashboards:personal'],
     ['dashboards/[id]/take-over/route.ts', 'dashboards:personal'],
+    // Removing held-back values edits the item: it gets in on the Personal action and guardItem() asks whatever editing needs.
+    ['dashboards/[id]/remove-held-back/route.ts', 'dashboards:personal'],
     ['views/route.ts', 'read'],
     ['views/route.ts', 'views:personal'],
     ['views/[id]/route.ts', 'read'],
@@ -189,6 +191,7 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['views/[id]/hand-over/route.ts', 'views:personal'],
     ['views/[id]/hand-over-candidates/route.ts', 'views:personal'],
     ['views/[id]/take-over/route.ts', 'views:personal'],
+    ['views/[id]/remove-held-back/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],

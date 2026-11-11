@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboardAs, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { heldBackCountOfDashboard, restoreHeldBackDashboard } from '@/lib/db/held-back';
 import { STALE_DASHBOARD_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
@@ -68,10 +68,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json({ error }, { status: 409 });
   }
 
-  // A Personal dashboard is logged by id and kind only, and only for a rename: every widget drag and resize
-  // also lands here as a `config` save, and logging those would bury every meaningful entry under layout
-  // noise. A Shared dashboard is everyone's, so each save that changed something writes one entry with the
-  // changed field names (never their values).
+  // A Personal dashboard is logged by id and kind only, and only for a rename or for removing a widget that held
+  // values held back from the saver (the count, never the values): every widget drag and resize also lands here
+  // as a `config` save, and logging those would bury every meaningful entry under layout noise. A Shared
+  // dashboard is everyone's, so each save that changed something writes one entry with the changed field names
+  // (never their values), and the count when the save removed held-back values.
+  const heldBackRemoved = restored?.removed ?? 0;
   if (before.visibility === 'personal') {
     const renamed = (
       (body.name !== undefined && body.name !== before.name) ||
@@ -86,6 +88,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         summary: 'Renamed a Personal dashboard',
       });
     }
+    if (heldBackRemoved > 0) {
+      await writeAudit({
+        actor,
+        action: 'dashboard.update',
+        entityType: 'dashboard',
+        entityId: id,
+        summary: 'Updated a Personal dashboard',
+        details: { heldBackCount: heldBackRemoved },
+      });
+    }
   } else {
     const changed = changedDashboardFields(before, result.dashboard);
     if (changed.length > 0) {
@@ -98,7 +110,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         summary: renamedOnly
           ? `Renamed dashboard "${before.name}" to "${result.dashboard.name}"`
           : `Updated dashboard "${before.name}"`,
-        details: { fields: changed },
+        details: { fields: changed, ...(heldBackRemoved > 0 && { heldBackCount: heldBackRemoved }) },
       });
     }
   }
@@ -113,6 +125,8 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const before = await getDashboard(id);
   const refused = guardItem(actor, 'dashboard', before, 'change');
   if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+  // What it holds that is held back from the person is counted for the audit entry before it goes.
+  const heldBackCount = await heldBackCountOfDashboard(actor.access, before);
   // Whether it is the Install default is read again inside the delete, so a dashboard chosen after the read above is still protected and audited.
   const deleted = await deleteDashboardAs(id, mayAct(actor.access, 'dashboards:manage'));
   if (!deleted.ok) {
@@ -127,6 +141,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     entityType: 'dashboard',
     entityId: id,
     summary: before.visibility === 'personal' ? 'Deleted a Personal dashboard' : `Deleted dashboard "${before.name}"`,
+    ...(heldBackCount > 0 && { details: { heldBackCount } }),
   });
   if (deleted.wasInstallDefault) {
     await writeAudit({
