@@ -12,7 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { fetchJson } from '@/lib/fetch-json';
 import { MAX_SAVED_VIEW_NAME_LENGTH, type HeldBackSavedView, type SavedViewTab } from '@/lib/saved-view-query';
-import { copiedViewNotice, copyNoticeWhileOpen, dimensionsHeldInFull, type CopyNotice, type HeldBack } from '@/lib/held-back';
+import {
+  copiedViewNotice, copyNoticeWhileOpen, deleteHeldBackNote, dimensionsHeldInFull, heldBackTotal, removeHeldBackConfirmation, removeHeldBackLabel,
+  type CopyNotice, type HeldBack,
+} from '@/lib/held-back';
 import { baseCopyAfterVisibilityChange, requestSavedViewChange, upsertSavedView, type SavedViewChange } from '@/lib/saved-view-actions';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeItemWith, mayChangeVisibilityWith, openableItems, ownerLabel, sectionsOf, transferControlsWith, type ItemPermissions,
@@ -20,7 +23,7 @@ import {
 import { shareConfirmation } from '@/lib/item-sharing';
 import { sharedDashboardUseNote } from '@/lib/saved-view-reference';
 import { SHARE_REASON } from '@/lib/write-controls';
-import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { requestRemoveHeldBack, requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 
 interface SavedViewsMenuProps {
@@ -54,7 +57,7 @@ interface SavedViewsMenuProps {
 }
 
 /** What the dialog is for. */
-type ViewAction = 'save' | 'update' | 'rename' | 'delete' | 'share' | 'unshare';
+type ViewAction = 'save' | 'update' | 'rename' | 'delete' | 'share' | 'unshare' | 'remove-held-back';
 interface SavedViewsState { status: 'loading' | 'error' | 'ready'; views: HeldBackSavedView[] }
 
 export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: shareControlProp, openId, onOpenIdChange, onClose, onOpen, onHeldBackChange, currentQuery, appliedView, onStale }: SavedViewsMenuProps) {
@@ -87,6 +90,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
   const canChangeOpen = open !== null && mayChangeItemWith(actor, permissions, open);
   const canShareOpen = open !== null && open.visibility === 'personal' && isOwnItem(actor, open);
   const canUnshareOpen = open !== null && mayChangeVisibilityWith(actor, permissions, open, 'unshare');
+  const openHeldBackCount = heldBackTotal(open?.heldBack);
   const demotedOpen = open !== null && isDemotedOwner(actor, permissions, open);
   const { handOver: canHandOverOpen, takeOver: canTakeOverOpen } = open ? transferControlsWith(actor, permissions, open) : { handOver: false, takeOver: false };
 
@@ -134,6 +138,21 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
       setBase(prev => (prev && prev.id === open.id && changed.revision !== undefined && changed.visibility !== undefined
         ? baseCopyAfterVisibilityChange(prev, { visibility: changed.visibility, revision: changed.revision })
         : prev));
+      return null;
+    }
+    if (kind === 'remove-held-back') {
+      if (!open || !baseCopy || !canChangeOpen) return null;
+      const outcome = await requestRemoveHeldBack('view', open.id, baseCopy.revision);
+      if (!outcome.ok) {
+        if (outcome.stale) onStale?.(outcome.error);
+        return outcome.error;
+      }
+      // The view is stored without them now: this is the copy later saves are based on, and the page applies it, so
+      // the placeholder that stood for a dimension held back in full goes with them.
+      const stored = outcome.item as HeldBackSavedView;
+      setBase(stored);
+      setState(prev => ({ status: prev.status, views: upsertSavedView(prev.views, stored) }));
+      onOpen(stored);
       return null;
     }
     if (kind === 'save') change = { kind: 'create', fields: { name, tab, query: currentQuery }, from: open?.id };
@@ -231,6 +250,9 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
                 <>
                   <DropdownMenuItem onClick={() => setAction('update')}>Update with current view</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setAction('rename')}>Rename</DropdownMenuItem>
+                  {openHeldBackCount > 0 && (
+                    <DropdownMenuItem onClick={() => setAction('remove-held-back')}>{removeHeldBackLabel(openHeldBackCount)}</DropdownMenuItem>
+                  )}
                   <DropdownMenuItem variant="destructive" onClick={() => setAction('delete')}>Delete</DropdownMenuItem>
                 </>
               )}
@@ -269,6 +291,7 @@ export function SavedViewsMenu({ tab, currentUserId, permissions, shareControl: 
           viewName={open?.name ?? ''}
           shared={open?.visibility === 'shared'}
           sharedDashboardCount={open?.sharedDashboardCount ?? 0}
+          heldBackCount={openHeldBackCount}
           onClose={() => setAction(null)}
           onConfirm={name => applyAction(action, name)}
         />
@@ -284,6 +307,7 @@ const COPY: Record<ViewAction, { title: string; confirm: string; busy: string }>
   delete: { title: 'Delete saved view', confirm: 'Delete', busy: 'Deleting…' },
   share: { title: 'Share saved view', confirm: 'Share', busy: 'Sharing…' },
   unshare: { title: 'Unshare saved view', confirm: 'Unshare', busy: 'Unsharing…' },
+  'remove-held-back': { title: 'Remove values', confirm: 'Remove', busy: 'Removing…' },
 };
 
 /** One saved view in the list: a check where it is open, its name, and a quiet tag on the right. */
@@ -299,13 +323,15 @@ function ViewItem({ view, openId, onOpen, tag }: { view: HeldBackSavedView; open
   );
 }
 
-function ViewDialog({ kind, viewName, shared, sharedDashboardCount, onClose, onConfirm }: {
+function ViewDialog({ kind, viewName, shared, sharedDashboardCount, heldBackCount, onClose, onConfirm }: {
   kind: ViewAction;
   viewName: string;
   /** Whether the open view is Shared: what the dialog says about who sees the change. */
   shared: boolean;
   /** How many Shared dashboards have a widget on the open view: an unshare or a delete of it affects them. */
   sharedDashboardCount: number;
+  /** How many of the open view's stored values are held back from this person: a delete or a removal takes them with it. */
+  heldBackCount: number;
   onClose: () => void;
   /** Returns the message to show, or null when it worked. */
   onConfirm: (name: string) => Promise<string | null>;
@@ -368,7 +394,8 @@ function ViewDialog({ kind, viewName, shared, sharedDashboardCount, onClose, onC
                 {kind === 'save' && 'Only you can open this saved view. It keeps the filters, search, window, columns, sort and grouping you have now.'}
                 {kind === 'update' && `Replace the filters saved in "${viewName}" with the ones you have now.${shared ? ' Everyone who opens it will see the change.' : ''}`}
                 {kind === 'rename' && (shared ? 'Everyone who uses this install sees the new name.' : 'Only you see the new name.')}
-                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.${sharedDashboardUseNote(sharedDashboardCount, 'deleted')}`}
+                {kind === 'delete' && `Delete "${viewName}"${shared ? ' for everyone on this install' : ''}. Findings are not affected.${deleteHeldBackNote(heldBackCount) ? ` ${deleteHeldBackNote(heldBackCount)}` : ''}${sharedDashboardUseNote(sharedDashboardCount, 'deleted')}`}
+                {kind === 'remove-held-back' && removeHeldBackConfirmation(heldBackCount, viewName)}
                 {kind === 'share' && shareConfirmation('view', viewName)}
                 {kind === 'unshare' && `Unshare "${viewName}"? Only its owner will be able to open it, and it stops showing for everyone else.${sharedDashboardUseNote(sharedDashboardCount, 'unshared')}`}
               </p>
@@ -381,7 +408,7 @@ function ViewDialog({ kind, viewName, shared, sharedDashboardCount, onClose, onC
                 </Button>
                 <Button
                   ref={confirmRef}
-                  variant={kind === 'delete' ? 'destructive' : 'default'}
+                  variant={kind === 'delete' || kind === 'remove-held-back' ? 'destructive' : 'default'}
                   className="flex-1"
                   onClick={submit}
                   disabled={busy || (asksName && !name.trim())}

@@ -16,7 +16,7 @@
  * `restoreHeldBackDashboard`), so a save made from a trimmed copy cannot lose them for everyone else.
  */
 import type { Access } from '../access-model';
-import { OUTSIDE_ACCESS_LABEL, withoutPlaceholder, type HeldBack, type HeldBackPlace } from '../held-back';
+import { OUTSIDE_ACCESS_LABEL, heldBackTotal, withoutPlaceholder, type HeldBack, type HeldBackPlace } from '../held-back';
 import { markOutsideAccess } from '../outside-access';
 import {
   findingSubject, isRowField, readPath, rowPath, valueText, viewFromSearchParams, viewToSearchParams,
@@ -362,7 +362,7 @@ export async function restoreHeldBackView(
  */
 export async function restoreHeldBackDashboard(
   access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig, opened?: DashboardConfig,
-): Promise<{ config: DashboardConfig; restored: boolean; unseen: boolean }> {
+): Promise<{ config: DashboardConfig; restored: boolean; unseen: boolean; removed: number }> {
   const storedValues = dashboardValues(stored.id, stored.config);
   const incomingValues = dashboardValues(stored.id, incoming);
   const held = await heldBackValues(access, [...storedValues, ...incomingValues]);
@@ -392,7 +392,10 @@ export async function restoreHeldBackDashboard(
     if (!before) return widget;
     return { ...widget, config: restoreInto(widget.config, before.config, opened?.widgets?.find(w => w.id === widget.id)?.config) };
   });
-  return { config, restored, unseen };
+  // A widget the person removed takes its held-back values with it: those are counted for the Save's audit entry.
+  const kept = new Set((incoming.widgets ?? []).map(w => w.id));
+  const removed = heldBackTotal(countsOf(storedValues.filter(v => v.place === 'widget' && !kept.has(v.id)), held));
+  return { config, restored, unseen, removed };
 }
 
 // ---- Widget reads ----
@@ -428,4 +431,48 @@ export async function heldBackForRead(
     return out;
   };
   return { dashboard: of('dashboard'), widget: of('widget'), held, counts: countsOf(stored, held) };
+}
+
+// ---- Removing ----
+
+/**
+ * What "Remove N values" does to a dashboard's config for `access`: every value held back from the person taken
+ * out of the filter bar and of each widget's override, and how many that was. A dimension left with no value no
+ * longer narrows, which is the point: only this action, or deleting the item, widens what a held-back value
+ * matched nothing for. Values on a saved view a widget uses are not in the config and are never touched.
+ */
+export async function removeHeldBackFromDashboard(
+  access: Access, source: { id: string; config: DashboardConfig },
+): Promise<{ config: DashboardConfig; removed: number }> {
+  const stored = dashboardValues(source.id, source.config);
+  const held = await heldBackValues(access, stored);
+  const removed = heldBackTotal(countsOf(stored, held));
+  return { config: removed > 0 ? trimConfig(source.config, held) : source.config, removed };
+}
+
+/** The same for a saved view's query: every held-back value out, a filter left with none dropped. */
+export async function removeHeldBackFromView(
+  access: Access, source: { id: string; query: string },
+): Promise<{ query: string; removed: number }> {
+  const parsed = viewFromSearchParams(new URLSearchParams(source.query));
+  const stored = viewValues(source.id, parsed);
+  const held = await heldBackValues(access, stored);
+  const removed = heldBackTotal(countsOf(stored, held));
+  if (removed === 0) return { query: source.query, removed };
+  const filters = parsed.filters
+    .map((f): ViewFilter => (isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f))
+    .filter(f => f.values.length > 0);
+  return { query: viewToSearchParams({ ...parsed, filters }).toString(), removed };
+}
+
+/** How many values a dashboard stores that are held back from `access`: what its removal or deletion takes with it. */
+export async function heldBackCountOfDashboard(access: Access, source: { id: string; config: DashboardConfig }): Promise<number> {
+  const stored = dashboardValues(source.id, source.config);
+  return heldBackTotal(countsOf(stored, await heldBackValues(access, stored)));
+}
+
+/** The same for a saved view. */
+export async function heldBackCountOfView(access: Access, source: { id: string; query: string }): Promise<number> {
+  const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
+  return heldBackTotal(countsOf(stored, await heldBackValues(access, stored)));
 }

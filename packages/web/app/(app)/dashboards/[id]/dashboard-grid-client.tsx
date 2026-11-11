@@ -33,7 +33,10 @@ import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboar
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { HeldBackDashboard, WidgetDef } from '@/lib/types';
 import { widgetHasScopeOverrides, type WidgetFilters } from '@/lib/dashboard-filters';
-import { STALE_DASHBOARD_MESSAGE, copiedDashboardNotice, rememberCopiedDashboard, takeCopiedDashboard, widgetHeldBackReason, type HeldBack } from '@/lib/held-back';
+import {
+  STALE_DASHBOARD_MESSAGE, copiedDashboardNotice, deleteHeldBackNote, heldBackTotal, removeHeldBackConfirmation, removeHeldBackLabel,
+  removeWidgetConfirmation, rememberCopiedDashboard, takeCopiedDashboard, widgetHeldBackReason, type HeldBack,
+} from '@/lib/held-back';
 import { WidgetReadContext } from '@/lib/hooks/use-widget-read';
 import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
@@ -44,7 +47,7 @@ import {
   DashboardWrites, SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits,
 } from '@/lib/dashboard-filter-save';
 import { shareConfirmation } from '@/lib/item-sharing';
-import { requestVisibilityChange } from '@/lib/item-sharing-client';
+import { requestRemoveHeldBack, requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
 
 type RGLLayout = LayoutItem;
@@ -426,6 +429,9 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   }
 
   function removeWidget(id: string) {
+    // A widget that holds values held back from this person takes them with it: say how many before it goes.
+    const held = heldBackTotal(dashboard.heldBack?.filter(h => h.place === 'widget' && h.id === id));
+    if (held > 0 && !confirm(removeWidgetConfirmation(held))) return;
     const updated = widgets.filter(w => w.id !== id);
     setWidgets(updated);
     setDirty(true);
@@ -507,8 +513,29 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
     router.refresh(); // the Header and the sidebar list are read on the server
   }
 
+  // One action drops every value held back from this person, across the filter bar and every widget, for everyone.
+  async function handleRemoveHeldBack() {
+    if (!confirm(removeHeldBackConfirmation(heldBackTotal(dashboard.heldBack), dashboard.name))) return;
+    setError(null);
+    const outcome = await writes.run(async latest => {
+      const result = await requestRemoveHeldBack('dashboard', latest.id, latest.revision);
+      if (result.ok) return { kind: 'saved' as const, dashboard: result.item as HeldBackDashboard };
+      return result.stale ? { kind: 'stale' as const } : { kind: 'failed' as const, message: result.error };
+    });
+    if (outcome.kind === 'saved') {
+      applyDashboard(outcome.dashboard);
+      setStaleMessage(null);
+      router.refresh();
+    } else if (outcome.kind === 'stale') {
+      setStaleMessage(STALE_DASHBOARD_MESSAGE);
+    } else {
+      setError(outcome.message);
+    }
+  }
+
   async function handleDelete() {
-    if (!confirm(`Delete "${dashboard.name}"? This cannot be undone.`)) return;
+    const heldNote = deleteHeldBackNote(heldBackTotal(dashboard.heldBack));
+    if (!confirm(`Delete "${dashboard.name}"? ${heldNote ? `${heldNote} ` : ''}This cannot be undone.`)) return;
     setError(null);
     try {
       const res = await fetch(`/api/dashboards/${dashboard.id}`, { method: 'DELETE' });
@@ -629,6 +656,11 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
             <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddingWidget(true)}>
               <Plus className="size-3.5" />Add Widget
             </Button>
+            {heldBackTotal(dashboard.heldBack) > 0 && (
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void handleRemoveHeldBack()}>
+                <Trash2 className="size-3.5" />{removeHeldBackLabel(heldBackTotal(dashboard.heldBack))}
+              </Button>
+            )}
           </>
         ) : canChange && (
           <>

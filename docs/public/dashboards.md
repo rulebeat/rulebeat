@@ -171,6 +171,24 @@ dashboard, it adds "Or remove those values in edit mode." The seven widget data 
 `findings`, `top-rules`, `top-resources`, `advisories`, `rules` and `filter-options`) answer a dashboard
 that does not exist, or is someone else's Personal one, with "not found".
 
+### Removing values held back from you
+
+A value held back from you stays on the dashboard until someone deliberately drops it. Whoever may change
+the dashboard sees one action for that in edit mode, "Remove N values", where N counts every value held
+back from you across the filter bar and every widget. It asks "Remove N values outside your access from
+<name>? Everyone who could see them loses them." and, once confirmed, removes all of them in one step
+(`POST /api/dashboards/[id]/remove-held-back`). A dimension left with no value no longer narrows
+anything, which is why the question is asked. The request carries the revision of the copy you counted on,
+and a dashboard that has changed since answers 409 with a reload message. Values on a saved view that a
+widget uses belong to that view and are never touched by this. The action is audited as
+`dashboard.remove_held_back` with the count only; for a Personal dashboard the entry holds the id, the
+kind and the count.
+
+Removing a widget in edit mode that holds values held back from you asks "This widget holds N values
+outside your access. Removing it removes them." The Save that follows records the count in its audit entry,
+only when it is above 0, and the entry for a Personal dashboard holds the id, kind and count only. Deleting
+a dashboard that holds such values gives the count in the confirmation and in the delete entry.
+
 A name is unique among your own Personal dashboards, whatever its case or surrounding spaces, and nobody
 else's Personal names are ever checked, so a clash never tells you what someone else keeps. Renaming a
 Shared dashboard checks the names of Shared dashboards across the install. A clash answers 409. Names

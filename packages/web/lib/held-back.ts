@@ -227,3 +227,30 @@ export function withoutHeldPlaceholders<F extends { field: string; values: reado
     .map(f => (isHeldField(f.field) && f.values.includes(OUTSIDE_ACCESS_LABEL) ? { ...f, values: f.values.filter(value => value !== OUTSIDE_ACCESS_LABEL) } : f))
     .filter(f => f.values.length > 0);
 }
+
+const valuesOf = (n: number) => (n === 1 ? '1 value' : `${n} values`);
+
+/** How many values a set of counts adds up to, across every place and dimension. */
+export function heldBackTotal(heldBack: readonly HeldBack[] | undefined): number {
+  return (heldBack ?? []).reduce((sum, h) => sum + h.count, 0);
+}
+
+/** The label of the one "Remove N values" action. */
+export function removeHeldBackLabel(count: number): string {
+  return `Remove ${valuesOf(count)}`;
+}
+
+/** What "Remove N values" asks before it drops them, from the item for good. */
+export function removeHeldBackConfirmation(count: number, name: string): string {
+  return `Remove ${valuesOf(count)} outside your access from ${name}? Everyone who could see them loses them.`;
+}
+
+/** What removing a widget in edit mode says when the widget holds held-back values. */
+export function removeWidgetConfirmation(count: number): string {
+  return `This widget holds ${valuesOf(count)} outside your access. Removing it removes them.`;
+}
+
+/** What deleting a dashboard or saved view adds to its confirmation when it holds held-back values, or null when it holds none. */
+export function deleteHeldBackNote(count: number): string | null {
+  return count > 0 ? `It holds ${valuesOf(count)} outside your access. Deleting it removes them for everyone who could see them.` : null;
+}

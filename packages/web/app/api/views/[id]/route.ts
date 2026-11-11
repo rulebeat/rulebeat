@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { heldBackCountOfView, heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
 import { STALE_VIEW_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
@@ -102,8 +102,11 @@ export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
 
   try {
-    const refused = guardItem(actor, 'view', await getSavedView(id), 'change');
-    if (refused) return refused;
+    const before = await getSavedView(id);
+    const refused = guardItem(actor, 'view', before, 'change');
+    if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    // What it holds that is held back from the person is counted for the audit entry before it goes.
+    const heldBackCount = await heldBackCountOfView(actor.access, before);
     const removed = await deleteSavedView(id);
     if (!removed) return Response.json({ error: 'Not found' }, { status: 404 });
 
@@ -113,7 +116,7 @@ export async function DELETE(_: Request, { params }: Params) {
       entityType: 'saved_view',
       entityId: id,
       summary: removed.visibility === 'personal' ? 'Deleted a Personal saved view' : `Deleted saved view "${removed.name}"`,
-      details: { fields: SAVED_VIEW_FIELDS },
+      details: { fields: SAVED_VIEW_FIELDS, ...(heldBackCount > 0 && { heldBackCount }) },
     });
     return new Response(null, { status: 204 });
   } catch (err) {

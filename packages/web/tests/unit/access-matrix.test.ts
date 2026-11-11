@@ -824,6 +824,27 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: sharingExpected(kind),
   });
+  // "Remove N values" is open to whoever may edit the item, and every Role may edit their own Personal one, so the probe is
+  // a Personal item of the asking person's own that stores subscription two. Whoever holds no Scope covering it has it
+  // removed and is answered with what is left; whoever holds it has nothing removed.
+  const removalMatrix = (kind: 'dashboard' | 'view'): Matrix => {
+    const kept = same({ status: 200, ...stored(kind), heldBack: [] });
+    const removed = same({ status: 200, ...(kind === 'dashboard' ? { filters: { subscriptions: [] } } : { query: '' }), heldBack: [] });
+    return {
+      probe: async () => {
+        const id = await ownItem(kind, 'personal');
+        const route = await import(kind === 'dashboard' ? '@/app/api/dashboards/[id]/remove-held-back/route' : '@/app/api/views/[id]/remove-held-back/route');
+        const res = await route.POST(
+          new Request(`http://localhost/api/${kind}s/x/remove-held-back`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+          { params: Promise.resolve({ id }) },
+        );
+        if (res.status !== 200) return { status: res.status };
+        const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+        return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
+      },
+      expected: byPerson(kept, kept, removed, removed, removed, removed),
+    };
+  };
   const shareMatrix = (kind: 'dashboard' | 'view', action: 'share' | 'unshare'): Matrix => ({
     probe: async () => {
       const id = await ownItem(kind, action === 'share' ? 'personal' : 'shared');
@@ -893,6 +914,7 @@ function dashboardMatrix(): Record<string, Matrix> {
     'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
     'dashboards/[id]/hand-over': transferMatrix('dashboard', 'hand-over'), 'dashboards/[id]/take-over': transferMatrix('dashboard', 'take-over'),
     'views/[id]/hand-over': transferMatrix('view', 'hand-over'), 'views/[id]/take-over': transferMatrix('view', 'take-over'),
+    'dashboards/[id]/remove-held-back': removalMatrix('dashboard'), 'views/[id]/remove-held-back': removalMatrix('view'),
     'widgets/summary': onDashboardToo('summary', summary, body => count((body as { current: { activeFindings: number } }).current.activeFindings), [count(1), count(1), count(0), count(0), count(0), count(0)]),
     'widgets/findings': onDashboardToo('findings', findings, (body, seed) => nameOf(body as { fingerprint: string }[], seed), [OTHER_SUB, OTHER_SUB, [], [], [], []]),
     'widgets/top-rules': onDashboardToo('top-rules', topRules, body => (body as { ruleId: string; count: number }[]).map(r => [r.ruleId, r.count]), [[['matrix-rule', 1]], [['matrix-rule', 1]], [], [], [], []]),
@@ -2685,6 +2707,14 @@ const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
   'views/[id]/hand-over-candidates': [
     { kind: 'view', expected: handingOver(200),
       call: async id => (await (await import('@/app/api/views/[id]/hand-over-candidates/route')).GET(new Request(`http://localhost/api/views/${id}/hand-over-candidates`), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/remove-held-back': [
+    { kind: 'dashboard', expected: changing(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/remove-held-back/route')).POST(putRequest(`/api/dashboards/${id}/remove-held-back`, 'POST', {}), ctxFor({ id }))).status },
+  ],
+  'views/[id]/remove-held-back': [
+    { kind: 'view', expected: changing(200),
+      call: async id => (await (await import('@/app/api/views/[id]/remove-held-back/route')).POST(putRequest(`/api/views/${id}/remove-held-back`, 'POST', {}), ctxFor({ id }))).status },
   ],
   'views/[id]/take-over': [
     { kind: 'view', expected: takingOver,

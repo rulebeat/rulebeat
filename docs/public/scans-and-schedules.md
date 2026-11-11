@@ -166,6 +166,15 @@ own findings." Closing the view (Close view in the Views menu or beside that mes
 widen on Scans, and it drops the placeholder with the view. Held-back values are described on the
 [Access](access.md#held-back-values) page.
 
+Whoever may change the open view sees "Remove N values" in the Views menu, where N counts the stored values
+held back from you. It asks "Remove N values outside your access from <name>? Everyone who could see them
+loses them." and removes every one of them from the saved view in one step
+(`POST /api/views/[id]/remove-held-back`), under the revision check: a view that has changed since you
+opened it answers 409 with a reload message. A filter left with no value is dropped from the view, so it no
+longer narrows, and the view opens as it is now stored. The action is logged as `view.remove_held_back` with
+the count only; for a Personal view the entry holds the id, the kind and the count. Deleting a view that holds
+such values gives the count in the confirmation and in the `view.delete` entry.
+
 When `view=<id>` names a view that was deleted, or is now someone else's Personal view, the read says so
 and the page shows "This saved view no longer exists." once. It drops `view=<id>` from the address and
 carries on with the filters the address holds. The two cases look the same, an Admin included. The export
