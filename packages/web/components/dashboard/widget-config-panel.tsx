@@ -119,12 +119,12 @@ interface Props {
   outsideAccess?: OutsideAccess;
 }
 
-const STAT_METRICS: Array<{ value: StatMetric; label: string }> = [
+export const STAT_METRICS: Array<{ value: StatMetric; label: string }> = [
   { value: 'posture-pct',       label: 'Overall Posture %' },
   { value: 'total-findings',    label: 'Total Open Findings' },
   { value: 'critical-findings', label: 'Critical Findings' },
   { value: 'high-findings',     label: 'High Severity Findings' },
-  { value: 'rules-scanned',     label: 'Rules Scanned' },
+  { value: 'rules-scanned',     label: 'Rules Counted' },
   { value: 'modules-healthy',   label: 'Healthy Categories' },
   { value: 'new-findings',      label: 'New Findings (window)' },
   { value: 'fixed-findings',    label: 'Fixed Findings (window)' },
