@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
+import { ACTIVITY_KEPT_DAYS } from '@/lib/widget-limits';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -18,8 +19,8 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
  *  so there is no pass/fail posture to show, only how often the pattern keeps occurring. Backed by
  *  getActivityOccurrenceCounts() via the shared /api/widgets/summary endpoint. */
 export function ActivityOccurrencesWidget({ config, filters, refreshKey }: Props) {
-  // The date window draws the chart. A saved period is this widget's own window; 'all' is the 180 days finding_events keeps.
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: 180 }), [filters, config]);
+  // The date window draws the chart. A saved period is this widget's own window; 'all' is the days of activity kept.
+  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: ACTIVITY_KEPT_DAYS }), [filters, config]);
   const params = useMemo(() => buildSummaryParams(merged).toString(), [merged]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,

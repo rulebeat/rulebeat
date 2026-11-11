@@ -11,6 +11,8 @@ import { queryView } from '@/lib/db/finding-views';
 import { emptyView, type View } from '@/lib/finding-view';
 import { saveSuppressions } from '@/lib/suppressions';
 import { resolveDateWindow, todayKey, type DateWindow } from '@/lib/date-window';
+import { newVsFixedBarHref } from '@/lib/scans-link';
+import { viewFromSearchParams } from '@/lib/finding-view';
 import { trendRetentionNote, activityRetentionNote } from '@/lib/widget-limits';
 import type { Finding } from '@/lib/types';
 import { resetDb } from '../helpers/db';
@@ -130,6 +132,19 @@ describe('the New vs Fixed bars', () => {
     // And the fixture is not trivially empty: yesterday's fix and the day-before's fix are both there.
     expect(summary.newVsFixedTrend.find(b => b.date === dayKey(1))).toMatchObject({ created: 0, resolved: 1 });
     expect(summary.newVsFixedTrend.find(b => b.date === dayKey(2))).toMatchObject({ created: 1, resolved: 1 });
+  });
+
+  it('open the one-day Scans list holding exactly their number', async () => {
+    const filters = { categories: [CATEGORY], dateWindow: sevenDays };
+    const summary = await computeWidgetSummary(filters, EVERYTHING_ACCESS);
+    for (const bar of summary.newVsFixedTrend) {
+      for (const [status, expected] of [['new', bar.created], ['fixed', bar.resolved]] as const) {
+        const href = newVsFixedBarHref(filters, bar.date, status);
+        const view = viewFromSearchParams(new URLSearchParams(href.split('?')[1]));
+        const opened = (await queryView(view, { tab: 'results', showSuppressed: false }, EVERYTHING_ACCESS)).total;
+        expect(opened, `${status} on ${bar.date}`).toBe(expected);
+      }
+    }
   });
 
   it('do not count a reactivation as new, a suppressed finding, or an advisory', async () => {

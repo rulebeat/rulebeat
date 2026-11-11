@@ -9,7 +9,7 @@ import { act, createElement } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import type { WidgetDef } from '@/lib/types';
-import { EVERYONE_LINE, postureEmptyReason } from '@/lib/widget-limits';
+import { EVERYONE_LINE, NEW_FIXED_DEFINITION, postureEmptyReason } from '@/lib/widget-limits';
 import { installMiniDom, textOf, withAttribute } from '../helpers/mini-dom';
 
 let summary: WidgetSummary | null = null;
@@ -137,8 +137,16 @@ describe('a widget\'s notes in its frame', () => {
 
   it('shows no note on a stat card metric that does not read the posture formula', () => {
     summary = summaryWith();
-    const widget = { ...ringWidget, type: 'stat-card', config: { metric: 'total-findings' } } as unknown as WidgetDef;
+    const widget = { ...ringWidget, type: 'stat-card', config: { metric: 'critical-findings' } } as unknown as WidgetDef;
     const { container } = mount(frame(widget));
     expect(notesIn(container)).toEqual([]);
+  });
+
+  it('shows only the New and Fixed definition on the stat card that counts them', () => {
+    summary = summaryWith();
+    const widget = { ...ringWidget, type: 'stat-card', config: { metric: 'total-findings' } } as unknown as WidgetDef;
+    const { container } = mount(frame(widget));
+    expect(notesIn(container)).toHaveLength(1);
+    expect(container.textContent).toContain(NEW_FIXED_DEFINITION);
   });
 });

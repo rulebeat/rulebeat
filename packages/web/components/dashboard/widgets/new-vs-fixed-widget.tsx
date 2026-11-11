@@ -1,11 +1,15 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { CHART_LEGEND_STYLE, CHART_TICK } from '@/components/dashboard/dashboard-constants';
+import { newVsFixedBarHref } from '@/lib/scans-link';
+import { ACTIVITY_KEPT_DAYS, NEW_FIXED_DEFINITION } from '@/lib/widget-limits';
+import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
@@ -14,15 +18,18 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 
 /** Remediation velocity: findings new vs. fixed per UTC day of the date window, counted from the live
  *  findings with the Scans predicates (a reactivated finding is not new): a platform team closing more
- *  than it opens is the story this chart tells. Works under every filter dimension. */
+ *  than it opens is the story this chart tells. Each bar opens the one-day Scans list holding its number. Works under every filter dimension. */
 export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
-  // The date window draws the chart. A saved period is this widget's own window; 'all' is the 180 days finding_events keeps.
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: 180 }), [filters, config]);
+  const router = useRouter();
+  // The date window draws the chart. A saved period is this widget's own window; 'all' is the days of activity kept.
+  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: ACTIVITY_KEPT_DAYS }), [filters, config]);
   const params = useMemo(() => buildSummaryParams(merged).toString(), [merged]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]
   );
+
+  useReportWidgetNotes(!loading && !failed ? [NEW_FIXED_DEFINITION] : []);
 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 
@@ -58,8 +65,10 @@ export function NewVsFixedWidget({ config, filters, refreshKey }: Props) {
           {/* The same two colours the Scans table gives new and fixed counts, so the
               same pair of numbers never appears in two different colours. Square bars:
               a rounded cap is not a Grid detail. */}
-          <Bar dataKey="created" name="New" fill="var(--color-sev-critical)" />
-          <Bar dataKey="resolved" name="Fixed" fill="var(--color-status-ok)" />
+          <Bar dataKey="created" name="New" fill="var(--color-sev-critical)" cursor="pointer"
+            onClick={(bar: { payload?: { date?: string } }) => { if (bar.payload?.date) router.push(newVsFixedBarHref(merged, bar.payload.date, 'new')); }} />
+          <Bar dataKey="resolved" name="Fixed" fill="var(--color-status-ok)" cursor="pointer"
+            onClick={(bar: { payload?: { date?: string } }) => { if (bar.payload?.date) router.push(newVsFixedBarHref(merged, bar.payload.date, 'fixed')); }} />
         </BarChart>
       </ResponsiveContainer>
     </div>

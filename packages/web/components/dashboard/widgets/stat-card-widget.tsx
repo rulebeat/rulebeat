@@ -10,7 +10,7 @@ import { dateWindowLabel, dateWindowPhrase } from '@/lib/date-window';
 import type { StatMetric } from '@/lib/types';
 import { PostureDelta } from '@/components/dashboard/widgets/posture-delta';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
-import { postureEmptyReason } from '@/lib/widget-limits';
+import { NEW_FIXED_DEFINITION, netChangeLabel, postureEmptyReason } from '@/lib/widget-limits';
 import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -48,7 +48,11 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   const dateWindowKey = JSON.stringify(merged.dateWindow);
   // The metrics that read the posture formula carry its limits; the finding counts do not.
   const countsRules = config.metric === 'posture-pct' || config.metric === 'rules-scanned' || config.metric === 'modules-healthy';
-  useReportWidgetNotes(countsRules && !loading && !failed && summary ? summary.postureNotes : []);
+  // The metrics that count new and fixed findings state what the window makes of a finding opened and fixed inside it.
+  const countsNewFixed = config.metric === 'total-findings' || config.metric === 'new-findings' || config.metric === 'fixed-findings';
+  useReportWidgetNotes(
+    loading || failed || !summary ? [] : countsRules ? summary.postureNotes : countsNewFixed ? [NEW_FIXED_DEFINITION] : [],
+  );
 
   const { value, label, subtext, color } = useMemo(() => {
     const fallback = { value: '-', label: '', subtext: 'No data', color: 'var(--color-ink-faint)' };
@@ -71,11 +75,9 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
         return {
           value: String(current.activeFindings),
           label: 'open findings',
-          // Plain new/fixed counts instead of a signed net delta. A single +/-N number forces
-          // the reader to reverse-engineer two hidden numbers (and doesn't explain moves from
-          // suppression/rule changes either); showing both counts directly needs no decoding and
-          // matches Scans' own new-findings/fixed-findings numbers exactly.
-          subtext: `${current.newInWindow} new · ${current.fixedInWindow} fixed ${windowPhrase}`,
+          // New and Fixed are Scans' own new/fixed list counts. Net change is their difference, labelled
+          // as a count of findings so it is not read as a posture change.
+          subtext: `${current.newInWindow} new · ${current.fixedInWindow} fixed · ${netChangeLabel(summary.deltaFindings ?? current.newInWindow - current.fixedInWindow)} ${windowPhrase}`,
           color: 'var(--color-ink)',
         };
       case 'critical-findings':

@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { CATEGORY_COLORS, CATEGORY_LABELS, CHART_LEGEND_STYLE, CHART_TICK, chartSeriesColor, formatTrendTooltipLabel } from '@/components/dashboard/dashboard-constants';
+import { TREND_KEPT_DAYS } from '@/lib/widget-limits';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
@@ -61,8 +62,8 @@ function CustomLegend({ series }: { series: Series[] }) {
 }
 
 export function TrendWidget({ config, filters, refreshKey }: Props) {
-  // The date window draws the chart. A saved period is this widget's own window; 'all' is the 365 days of trend points kept.
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: 365 }), [filters, config]);
+  // The date window draws the chart. A saved period is this widget's own window; 'all' is the days of trend points kept.
+  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: TREND_KEPT_DAYS }), [filters, config]);
   const params = useMemo(() => buildSummaryParams(merged).toString(), [merged]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,

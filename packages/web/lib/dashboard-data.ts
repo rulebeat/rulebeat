@@ -19,12 +19,7 @@ import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
 import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
-import { activityRetentionNote, categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, trendRetentionNote } from './widget-limits';
-
-/** How many UTC days of trend points and of activity occurrences are kept (lib/db/snapshots.ts and
- *  lib/db/findings.ts prune to these). A window that reaches further back draws from the first kept day. */
-const TREND_KEPT_DAYS = 365;
-const ACTIVITY_KEPT_DAYS = 180;
+import { ACTIVITY_KEPT_DAYS, TREND_KEPT_DAYS, activityRetentionNote, categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, trendRetentionNote } from './widget-limits';
 
 function dayBefore(dateKey: string): string {
   return new Date(new Date(`${dateKey}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
@@ -237,7 +232,8 @@ export interface WidgetSummary {
     newInWindow: number;
     fixedInWindow: number;
   };
-  /** Net lifecycle change over the window (newInWindow − fixedInWindow). A count, not a level
+  /** Net change over the window (newInWindow − fixedInWindow), a count of findings, shown on the Open
+   *  findings Stat Card. A finding opened and fixed inside the window counts only as Fixed. Not a level
    *  comparison against a past snapshot. See DATA-SOURCE-UNIFICATION-PLAN.md §3. */
   deltaFindings: number | null;
   /** Limit notes the ring, the posture Stat Card and the Category scorecard show: what "passing" means
@@ -277,8 +273,8 @@ export interface WidgetSummary {
    *  under every filter combination, unlike the snapshot-sourced `trend`. */
   newVsFixedTrend: Array<{ date: string; created: number; resolved: number }>;
   /** Daily occurrence counts for kind:'activity' findings. The Activity Occurrences widget's
-   *  data source (spec 034). Same filter support as newVsFixedTrend (subscription/RG/severity via
-   *  a fingerprint join, tags resolved to rule ids). Empty when nothing in scope is activity-kind.
+   *  data source (spec 034). Subscription, resource group and severity filters
+   *  narrow it by the finding's own columns, and tags are resolved to rule ids. Empty when nothing in scope is activity-kind.
    *  The widget renders its own empty state for that, it isn't an error. */
   activityTrend: Array<{ date: string; count: number }>;
   /** The note a chart carries when the date window reaches past the 365 days of trend points, or the 180

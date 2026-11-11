@@ -12,7 +12,7 @@ import { resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
 import { queryFilterOptions, queryGroup, queryView } from '@/lib/db/finding-views';
-import { getActivityOccurrenceCounts, getFindingEventCounts } from '@/lib/db/findings';
+import { getActivityOccurrenceCounts } from '@/lib/db/findings';
 import { getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
 import { computeWidgetSummary, queryActiveFindings } from '@/lib/dashboard-data';
 import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
@@ -121,7 +121,8 @@ describe('Directory is one choice in the subscription filter', () => {
 describe('the dashboard does not count Directory findings under a subscription', () => {
   const since = '2000-01-01';
   const created = async (subscriptions?: string[]) =>
-    (await getFindingEventCounts({ sinceDate: since, subscriptions }, EVERYTHING_ACCESS)).reduce((n, d) => n + d.created, 0);
+    (await computeWidgetSummary({ subscriptions, dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS))
+      .newVsFixedTrend.reduce((n, d) => n + d.created, 0);
 
   it('counts new findings of a subscription without them, and of Directory alone', async () => {
     // The Problems the totals count: vm-a, vm-b, app-1 and app-2. Advisories and Activity are not in them.
