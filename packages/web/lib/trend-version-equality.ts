@@ -46,3 +46,12 @@ export function formulaCountsEqual(level: TrendLevel, formulaVersion: number): b
 export function findingCountCountsEqual(level: TrendLevel, findingCountVersion: number): boolean {
   return rowFor(level).findingCount.includes(findingCountVersion);
 }
+
+/**
+ * Whether two points of one line were counted the same way: written under the same formula version,
+ * or under two versions this level's row counts equal. A change from one to the other is where a line
+ * is marked "Counted differently before <date>".
+ */
+export function formulasComparable(level: TrendLevel, a: number, b: number): boolean {
+  return a === b || (formulaCountsEqual(level, a) && formulaCountsEqual(level, b));
+}

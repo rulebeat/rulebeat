@@ -1,5 +1,5 @@
 /**
- * No widget writes its own limit copy: the Trend widget's and the Subscription scorecard's per-category
+ * No widget writes its own limit copy: the Subscription scorecard's per-category
  * total caveat comes from lib/widget-limits.ts, and no file under components/dashboard/widgets repeats
  * a sentence the module holds.
  */
@@ -57,13 +57,8 @@ describe('the per-category total caveat', () => {
     expect(html).not.toContain('Totals are per category');
   });
 
-  it('shows on a single-subscription trend, and not on W2, which is not true yet', () => {
-    const html = trend([SUB]);
-    expect(html).toContain(PER_CATEGORY_TOTAL_NOTE);
-    expect(html).not.toContain('A rule counts for every subscription or resource group');
-  });
-
-  it('is gone from the trend when no single subscription is picked', () => {
+  it('is gone from the trend, whether or not a single subscription is picked', () => {
+    expect(trend([SUB])).not.toContain(PER_CATEGORY_TOTAL_NOTE);
     expect(trend([])).not.toContain(PER_CATEGORY_TOTAL_NOTE);
   });
 });

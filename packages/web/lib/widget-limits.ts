@@ -62,6 +62,12 @@ export function postureLimitNote(holdsEverything: boolean): string {
   return holdsEverything ? EVERYONE_LINE : `${WIDGET_LIMITS.w1} ${EDIT_SENTENCE}`;
 }
 
+/** The title of the Trend widget's reason when a filter other than the ones a trend is kept for is set; W4 is its detail. */
+export const TREND_FILTER_TITLE = 'No trend for this filter';
+
+/** What the Trend widget says when a trend is served but no point is stored at that level yet. */
+export const TREND_EMPTY_STATE = 'No trend points at this level yet. RuleBeat writes the first one when it next starts or when a rule, suppression or scan changes it.';
+
 /** The note on a chart whose window reaches past the 365 days of trend points; `start` is the first day it draws. */
 export function trendRetentionNote(start: string): string {
   return `Trend points are kept for 365 days, so this chart starts on ${start}.`;

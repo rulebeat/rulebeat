@@ -136,8 +136,10 @@ Formula 1 equals nothing, and a Finding-count version of 0 ("not recorded") equa
 line's counting changes, the chart marks the day with "Counted differently before <date>" rather than
 reading a change of definition as a change in your estate. When a baseline cannot be found for every
 category, the change is withheld and names the date it needed and the earliest date it could use,
-instead of comparing a different set of rules. A subscription or Directory line starts at its first
-formula 3 point.
+instead of comparing a different set of rules. A subscription or Directory baseline starts at its first
+formula 3 point, while the line itself is drawn from its first point and marked where the counting changed.
+A day with no point of its own is drawn from the category's last point before it, and each category's
+line starts at its own first point; the all-categories line starts on the first day every category has one.
 
 An upgrade never writes a Trend point dated before the upgrade and never changes an existing one.
 

@@ -9,6 +9,8 @@
 import { sql } from 'drizzle-orm';
 import { db, dbReady, pgDb } from '@/lib/db/client';
 import { dbKind } from '@/lib/db/backend';
+import { postureSnapshots } from '@/lib/db/tables';
+import { run } from '@/lib/db/exec';
 
 /**
  * Tables `resetDb()` empties, child-before-parent so foreign keys never block a delete.
@@ -138,4 +140,31 @@ export function tableExists(table: string): boolean {
 export function columnsOf(table: string): string[] {
   const rows = db.all<{ name: string }>(sql.raw(`PRAGMA table_info(${table})`));
   return rows.map(r => r.name);
+}
+
+export interface TrendPointSeed {
+  category: string;
+  subscriptionId: string;
+  date: string;
+  passing: number;
+  total: number;
+  formulaVersion?: number;
+  activeFindings?: number;
+  updatedAt?: string;
+}
+
+/** Stores one trend point exactly as given, for a suite that needs a level, a case or a version the real
+ *  writer does not produce (yet). The counts are not derived from anything. */
+export async function insertTrendPoint(p: TrendPointSeed): Promise<void> {
+  await run(db.insert(postureSnapshots).values({
+    category: p.category,
+    subscriptionId: p.subscriptionId,
+    date: p.date,
+    posturePct: p.total === 0 ? null : Math.round((p.passing / p.total) * 100),
+    passingRules: p.passing,
+    totalRules: p.total,
+    formulaVersion: p.formulaVersion ?? 3,
+    activeFindings: p.activeFindings ?? 0,
+    updatedAt: p.updatedAt ?? `${p.date}T12:00:00.000Z`,
+  }));
 }
