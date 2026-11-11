@@ -1,37 +1,37 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
 import {
   advisoriesWidgetView, formatLastSeen, ADVISORIES_WIDGET_DEFAULT_LIMIT, ADVISORIES_WIDGET_EMPTY,
-  type AdvisoriesWidgetData,
+  type AdvisoriesWidgetResponse,
 } from '@/lib/advisories-widget';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
+interface Props { config: Config; refreshKey: number; }
 
 /** Open Advisories, by severity then most recently seen, so a dashboard shows what needs action without counting it as a
  *  failure. Backed by /api/widgets/advisories, the same read as the Advisories tab. A row opens
  *  that tab filtered to the Advisory's rule and resource. The empty state says whether no Advisory
  *  rule is enabled or the enabled ones have nothing open; a failed fetch never shows either. */
-export function AdvisoriesWidget({ config, filters, refreshKey }: Props) {
+export function AdvisoriesWidget({ config, refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('advisories', { limit: config.limit ?? ADVISORIES_WIDGET_DEFAULT_LIMIT });
-  const { data, loading, failed, retry } = useWidgetFetch<AdvisoriesWidgetData>(
+  const { data, loading, failed, noCount, retry } = useWidgetFetch<AdvisoriesWidgetResponse>(
     url,
     [refreshKey]
   );
+
+  // Nothing to count for this viewer is not an empty list: the server says why, and no view applies.
+  if (!loading && noCount) return <WidgetNothingToCount reason={noCount} />;
 
   const view = advisoriesWidgetView({ loading, failed, data });
 
@@ -68,9 +68,8 @@ export function AdvisoriesWidget({ config, filters, refreshKey }: Props) {
           </TableHeader>
           <TableBody>
             {items.map(item => {
-              const href = buildScansHref(merged, { tab: 'advisories', ruleId: item.ruleId, search: item.resourceName });
               return (
-                <TableRow key={item.fingerprint} interactive onClick={() => router.push(href)}>
+                <TableRow key={item.fingerprint} interactive onClick={() => router.push(item.href)}>
                   <TableCell shrink>
                     <SeverityBadge severity={item.severity} />
                   </TableCell>

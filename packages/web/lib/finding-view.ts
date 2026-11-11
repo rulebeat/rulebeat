@@ -636,6 +636,12 @@ const LIST_PARAMS: Partial<Record<BuiltinField, string>> = {
  *  repeated `f=field=v1|v2`. */
 export const GENERIC_FIELDS: readonly BuiltinField[] = BUILTIN_FIELDS.filter(f => f !== 'status' && !LIST_PARAMS[f]);
 
+/** One `f=` value for a built-in field with no short param (`resourceName`, `resourceType`, ...), as the
+ *  page reads it. The widgets use it to link to one exact resource. */
+export function genericFilterParam(field: BuiltinField, values: string[]): string {
+  return `${field}=${values.map(esc).join('|')}`;
+}
+
 const MAX_URL_PAGE = 1_000_000;
 
 function readParam(source: ParamSource, name: string): string | undefined {

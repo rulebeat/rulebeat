@@ -159,7 +159,7 @@
 | `packages/web/components/modules/scan-history-tab.tsx` | Run History tab: cross-category run list, drill-down, and the compare screen (`CompareScreen`) when `?compare=` names two runs |
 | `packages/web/lib/hooks/use-resizable-columns.tsx` | `useResizableColumns`: drag-to-resize column state; `flexCol` names the column that absorbs leftover width |
 | `packages/web/lib/hooks/use-sidebar-pref.ts` | `useSidebarPref`: pin/hover-flyout state, cookie-persisted (not localStorage) so server render matches client on first paint |
-| `packages/web/lib/hooks/use-widget-fetch.ts` | `useWidgetFetch<T>()` owns loading/failed/data plus a monotonic request id to discard stale responses; `retry()` is scoped to the one widget, not the dashboard-wide `refreshKey` |
+| `packages/web/lib/hooks/use-widget-fetch.ts` | `useWidgetFetch<T>()` owns loading/failed/data and the `noCount` reason the server answers instead of numbers, plus a monotonic request id to discard stale responses; `retry()` is scoped to the one widget, not the dashboard-wide `refreshKey` |
 | `packages/web/components/scans/target-picker.tsx` | `TargetPicker`: All/Categories/Tags/Rules selector shared by Run Scan and schedules |
 | `packages/web/components/scans/run-scan-button.tsx` | `RunScanButton` popover → `POST /api/scans/run` |
 | `packages/web/lib/run-executor.ts` | `executeTarget()`: shared execution core for manual and scheduled runs, takes the run's `access` in its options |
@@ -183,11 +183,13 @@
 | `packages/web/lib/dashboard-filters.ts` | `WidgetFilters` type + `mergeWidgetFilters()`, where per-widget replaces and never intersects |
 | `packages/web/lib/effective-filters.ts` | `effectiveFilters()`: a widget's filters assembled on the server from the dashboard's saved filters, the address's filter changes and the widget override, plus the held-back count and the revision (ADR 0013). `effectiveView()` does the same for a saved view open on `/scans`: the view's saved query with the address's changes on top, or `unavailable` for a view that is unknown, deleted or not the person's to open |
 | `packages/web/lib/widget-request.ts` | `readWidgetRequest()`: what every counting widget route reads (ids, filter changes, stored limit and trend length, edit-mode preview). Refuses assembled filter params with a 400 |
+| `packages/web/lib/widget-links.ts` | Client-safe: `viewerScansHref()` (a widget's Scans link built from what the viewer holds, naming one resource exactly for a list row), `numberScansHref()` (null when the widget's own severities leave the number empty), `metricScansOverrides()`, the "nothing to count" reasons and the summary response shape |
+| `packages/web/lib/widget-gone.ts` | `goneDimension()`: whether every category, rule or tag a widget is filtered to has been deleted (a category kept alive by findings counts only the findings the viewer may see) |
 | `packages/web/lib/widget-settings.ts` | Client-safe `periodToDays()` and the stored limit and trend length of a widget, with the 365 and 180 day caps |
 | `packages/web/components/dashboard/widget-request.tsx` | `WidgetRequestProvider` and `useWidgetUrl()`: the URL a widget asks a counting route for |
 | `packages/web/lib/dashboard-data.ts` | `queryActiveFindings`/`computeWidgetSummary`. See the Dashboards trend-limits note in `CLAUDE.md` |
 | `packages/web/lib/dashboard-templates.ts` | `STARTER_DASHBOARD`, shared by seed and restore-from-empty |
-| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the one shared click-through builder every widget uses |
+| `packages/web/lib/scans-link.ts` | `buildScansHref()`: the Scans link builder. Widgets do not call it: the server builds their links through `viewerScansHref()` |
 | `packages/web/lib/dashboard-migrations.ts` | `migrateDashboardConfig()` rewrites deleted widget types and renamed metric ids on every read |
 | `packages/web/app/(app)/dashboard/page.tsx` | Redirect: `/dashboard` → default dashboard with its query passed through, or `/dashboards` gallery if none exist |
 | `packages/web/lib/db/dashboards.ts` | Dashboard CRUD. Delete is always allowed, and promotes the oldest remaining to default. Create, rename, duplicate and starter restore check the name (and a first create checks for an empty table) inside the same transaction as the write, taking a Postgres advisory lock first, and return typed `name-taken`/`not-found` results the routes map to 409/404 |
@@ -216,6 +218,7 @@
 | `packages/web/components/dashboard/widgets/delta.tsx` | Shared `Delta` trend indicator (Up/Down/flat), used by the stat-card and posture-ring widgets |
 | `packages/web/components/dashboard/widgets/` | 13 widget types. Every one self-fetches through `useWidgetUrl` (dashboard and widget ids plus filter changes) via `useWidgetFetch`; the server assembles the filters |
 | `packages/web/components/dashboard/widgets/widget-unavailable.tsx` | Shared "Couldn't load this widget" + Retry state, distinct from each widget's own empty-result copy |
+| `packages/web/components/dashboard/widgets/widget-no-count.tsx` | Shared "Outside your access" and "Nothing to count" state: the server's reason in place of a number or a link, distinct from each widget's own empty-result copy |
 | `packages/web/components/dashboard/widgets/recent-findings-widget.tsx` | Replaces the old findings-table + findings-explorer widgets |
 | `packages/web/app/api/widgets/` | Widget data APIs: `/summary`, `/findings`, `/top-rules`, `/top-resources`, `/advisories` (counting: dashboard and widget ids plus filter changes) and `/filter-options`, `/rules` (option lists) |
 | `packages/web/lib/explorer-data.ts` | `buildExplorerData()` and the `ExplorerFinding` and `FindingDisplayStatus` types. The explorer no longer reads its findings from here: it reads the view route. Nothing in the running app calls `buildExplorerData()` any more; what still does is the tests that compare the view routes with it (`cross-surface-filters`, `finding-payloads`, `advisory-rules-e2e`, `service-retirements-e2e`, `db-leftover-advisory-columns`) and the "today" baseline in `scripts/bench/finding-views.ts`. Recency (new/active/fixed) is computed in the client, not here; see `getRecencyStatus()` in `explorer-filters.ts` |

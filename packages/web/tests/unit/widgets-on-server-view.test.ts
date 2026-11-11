@@ -158,13 +158,14 @@ describe('the filter lists', () => {
 });
 
 describe('the Advisories widget', () => {
-  it('keeps its shape: items with eight keys, a total and the Advisory rules signal', async () => {
+  it('keeps its shape: items with nine keys, a total and the Advisory rules signal', async () => {
     const data = await widget('severity=low');
     expect(data).toEqual({
       items: [{
         fingerprint: expect.any(String), ruleId: ADV_LOW, ruleName: `Rule ${ADV_LOW}`,
         resourceId: expect.stringContaining('/virtualMachines/low-1'), resourceName: 'low-1',
         category: 'security', severity: 'low', lastSeenAt: NOW.toISOString(),
+        href: `/scans?tab=advisories&ruleId=${ADV_LOW}&severity=low&subscription=${TEST_SUB_A}&window=7&rg=rg-low&f=resourceName%3Dlow-1&f=resourceType%3Dmicrosoft.compute%2Fvirtualmachines&q=${encodeURIComponent(`/subscriptions/${TEST_SUB_A}/resourceGroups/rg-low/providers/Microsoft.Compute/virtualMachines/low-1`)}`,
       }],
       total: 1,
       hasAdvisoryRules: true,
@@ -172,8 +173,16 @@ describe('the Advisories widget', () => {
       heldBack: 0,
     });
     expect(Object.keys(data.items[0]).sort()).toEqual([
-      'category', 'fingerprint', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
+      'category', 'fingerprint', 'href', 'lastSeenAt', 'resourceId', 'resourceName', 'ruleId', 'ruleName', 'severity',
     ]);
+  });
+
+  it('links each row to the one Advisory it lists', async () => {
+    const data = await widget('');
+    expect(data.items.length).toBeGreaterThan(1);
+    for (const { href } of data.items as unknown as { href: string }[]) {
+      expect((await view(href.slice('/scans?'.length))).total, href).toBe(1);
+    }
   });
 
   it('lists the same open Advisories, and counts the same total, as the view route for the same filters', async () => {

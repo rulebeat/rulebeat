@@ -12,5 +12,10 @@ export async function GET(req: Request) {
   if (widget instanceof NextResponse) return widget;
 
   const limit = Math.min(widget.limit ?? ADVISORIES_WIDGET_DEFAULT_LIMIT, ADVISORIES_WIDGET_MAX_LIMIT);
-  return Response.json({ ...await queryAdvisoriesWidget(widget.filters, { limit }, actor.access), ...widget.meta });
+  const data = await queryAdvisoriesWidget(widget.filters, { limit }, actor.access);
+  const items = data.items.map(({ resourceType, subscriptionId, resourceGroup, placement, ...item }) => ({
+    ...item,
+    href: widget.resourceHref({ ...item, resourceType, subscriptionId, resourceGroup, placement }, { tab: 'advisories', ruleId: item.ruleId }),
+  }));
+  return Response.json({ ...data, items, ...widget.meta });
 }

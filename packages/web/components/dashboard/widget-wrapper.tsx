@@ -12,12 +12,14 @@ interface Props {
    *  Scope override: shows a subtle indicator next to the title so users know this widget's
    *  numbers are scoped, not tenant-wide. */
   filtered?: boolean;
+  /** What the funnel says: the dimensions this widget overrides, or that the dashboard's filters scope it. */
+  scopeNote?: string;
   children: React.ReactNode;
   onRemove?: () => void;
   onConfigure?: () => void;
 }
 
-export function WidgetWrapper({ widget, editMode, filtered, children, onRemove, onConfigure }: Props) {
+export function WidgetWrapper({ widget, editMode, filtered, scopeNote, children, onRemove, onConfigure }: Props) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -40,7 +42,7 @@ export function WidgetWrapper({ widget, editMode, filtered, children, onRemove, 
         <span className="title-grid flex min-w-0 flex-1 select-none items-center gap-1.5 truncate">
           <span className="truncate">{widget.title}</span>
           {filtered && (
-            <span title="Scoped by dashboard or widget filters" className="flex shrink-0 items-center">
+            <span title={scopeNote} className="flex shrink-0 items-center">
               <Filter className="size-3 text-ink" />
             </span>
           )}

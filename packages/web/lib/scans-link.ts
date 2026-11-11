@@ -50,6 +50,7 @@ export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverr
   } else {
     params.set('window', String(filters.dateWindow.days));
   }
+  if (filters.includeSuppressed) params.set('suppressed', '1');
   if (overrides.search) params.set('q', overrides.search);
 
   return `/scans?${params.toString()}`;

@@ -65,19 +65,38 @@ export function mergeWidgetFilters(dashboard: WidgetFilters, widgetCfg: Record<s
   return merged;
 }
 
+/** The dimensions a widget's own config overrides, named as the dashboard's filter bar names them. Same
+ *  semantics as `mergeWidgetFilters`: `category: 'all'` and an empty list inherit instead of overriding. */
+export function widgetOverriddenDimensions(cfg: Record<string, unknown>): string[] {
+  const dimensions: string[] = [];
+  if (typeof cfg['category'] === 'string' && cfg['category'] !== 'all') dimensions.push('Category');
+  const lists: Array<[string, string]> = [
+    ['policyIds', 'Rule'], ['subscriptions', 'Subscription'], ['resourceGroups', 'Resource Group'], ['tags', 'Tags'], ['severities', 'Severity'],
+  ];
+  for (const [key, label] of lists) {
+    const v = cfg[key];
+    if (Array.isArray(v) && v.length > 0) dimensions.push(label);
+  }
+  const windowDays = cfg['windowDays'];
+  if (windowDays === 1 || windowDays === 7 || windowDays === 30) dimensions.push('Window');
+  return dimensions;
+}
+
 /** True when a widget's saved config carries any Scope override (category/rules/subscription/
  *  RG/tags/severity/window): used alongside the dashboard-level `hasActiveFilters` to decide
  *  whether the "scoped" funnel indicator shows on the widget title, so a widget-level override
- *  is just as visible as a dashboard-level filter. Mirrors mergeWidgetFilters' own semantics
- *  (`category: 'all'` and empty arrays mean "inherit", not "override"). */
+ *  is just as visible as a dashboard-level filter. */
 export function widgetHasScopeOverrides(cfg: Record<string, unknown>): boolean {
-  if (typeof cfg['category'] === 'string' && cfg['category'] !== 'all') return true;
-  for (const key of ['policyIds', 'subscriptions', 'resourceGroups', 'tags', 'severities'] as const) {
-    const v = cfg[key];
-    if (Array.isArray(v) && v.length > 0) return true;
-  }
-  const windowDays = cfg['windowDays'];
-  return windowDays === 1 || windowDays === 7 || windowDays === 30;
+  return widgetOverriddenDimensions(cfg).length > 0;
+}
+
+/** What the funnel on a widget title says: which dimensions the widget sets itself, so a change in the
+ *  filter bar does not reach them, and whether the dashboard's filters apply to the rest. */
+export function widgetScopeNote(cfg: Record<string, unknown>, dashboardFiltered: boolean): string {
+  const own = widgetOverriddenDimensions(cfg);
+  if (own.length === 0) return 'Scoped by the dashboard\'s filters.';
+  const named = own.length === 1 ? own[0]! : `${own.slice(0, -1).join(', ')} and ${own[own.length - 1]}`;
+  return `This widget uses its own ${named}.${dashboardFiltered ? ' The dashboard\'s filters apply to the rest.' : ''}`;
 }
 
 /** The filters a dashboard saved, in the shape the address changes are differences from. The

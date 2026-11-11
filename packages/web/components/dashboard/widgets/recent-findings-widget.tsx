@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { timeAgo } from '@/components/dashboard/dashboard-constants';
@@ -9,24 +9,22 @@ import { CategoryBadge } from '@/components/findings/category-badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
 } from '@/components/ui/table';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
 import type { Finding, FilterOptionsResponse } from '@/lib/types';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { category?: string; limit?: number; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
+interface Props { config: Config; refreshKey: number; }
 
 /** Compact, filter-aware findings feed. The single replacement for the old findings-table and
  *  findings-explorer dashboard widgets. Anything bigger belongs on the Scans page; this is a
  *  "what's new" glance with a row click that navigates there, filtered. */
-export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
+export function RecentFindingsWidget({ config, refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('findings', { limit: config.limit ?? 10 });
-  const { data, loading, failed, retry } = useWidgetFetch<{ items: Finding[] }>(
+  const { data, loading, failed, noCount, retry } = useWidgetFetch<{ items: Array<Finding & { href: string }> }>(
     url,
     [refreshKey]
   );
@@ -48,6 +46,7 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!findings.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No findings. All rules passing</div>;
   }
@@ -69,9 +68,8 @@ export function RecentFindingsWidget({ config, filters, refreshKey }: Props) {
         </TableHeader>
         <TableBody>
           {findings.map((f, i) => {
-            const href = buildScansHref(merged, { ruleId: f.ruleId, search: f.resourceName });
             return (
-              <TableRow key={f.fingerprint ?? i} interactive onClick={() => router.push(href)}>
+              <TableRow key={f.fingerprint ?? i} interactive onClick={() => router.push(f.href)}>
                 <TableCell shrink>
                   <SeverityBadge severity={f.severity} />
                 </TableCell>

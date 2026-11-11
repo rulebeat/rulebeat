@@ -1,27 +1,24 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import type { Severity } from '@/lib/types';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
-interface RuleViolation { ruleId: string; name: string; count: number; severity: string; category: string; color?: string; }
+interface RuleViolation { ruleId: string; name: string; count: number; severity: string; category: string; color?: string; href: string; }
 interface Config { category?: string; limit?: number; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
+interface Props { config: Config; refreshKey: number; }
 
-export function TopRulesWidget({ config, filters, refreshKey }: Props) {
+export function TopRulesWidget({ config, refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('top-rules', { limit: config.limit ?? 10 });
-  const { data, loading, failed, retry } = useWidgetFetch<{ items: RuleViolation[] }>(
+  const { data, loading, failed, noCount, retry } = useWidgetFetch<{ items: RuleViolation[] }>(
     url,
     [refreshKey]
   );
@@ -33,6 +30,7 @@ export function TopRulesWidget({ config, filters, refreshKey }: Props) {
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!items.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No violations found</div>;
   }
@@ -40,7 +38,7 @@ export function TopRulesWidget({ config, filters, refreshKey }: Props) {
   const chartData = items.map(d => ({
     name: d.name.length > 28 ? d.name.slice(0, 28) + '…' : d.name,
     fullName: d.name,
-    ruleId: d.ruleId,
+    href: d.href,
     count: d.count,
     severity: d.severity,
   }));
@@ -72,7 +70,7 @@ export function TopRulesWidget({ config, filters, refreshKey }: Props) {
                 key={i}
                 fill="var(--color-fill)"
                 cursor="pointer"
-                onClick={() => router.push(buildScansHref(merged, { ruleId: entry.ruleId }))}
+                onClick={() => router.push(entry.href)}
               />
             ))}
           </Bar>

@@ -1,18 +1,16 @@
 'use client';
 
-import { useMemo } from 'react';
 import Link from 'next/link';
 import { Loader2, CheckCircle2, AlertTriangle, Clock, HelpCircle } from 'lucide-react';
-import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
+import type { WidgetSummaryResponse } from '@/lib/widget-links';
 import { timeAgo } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { staleAfterHours?: number; category?: string; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+interface Props { config: Config; refreshKey: number }
 
 type Freshness = 'fresh' | 'recent' | 'stale' | 'never';
 
@@ -36,11 +34,10 @@ const BADGE: Record<Freshness, { label: string; className: string; icon: typeof 
 
 /** A high posture % means nothing if the underlying scan is weeks old. This widget surfaces
  *  per-category scan recency so that trust signal is visible next to the score, not implied. */
-export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+export function CoverageFreshnessWidget({ config, refreshKey }: Props) {
   const staleAfterHours = config.staleAfterHours ?? 168; // 7 days
   const url = useWidgetUrl('summary');
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummaryResponse>(
     url,
     [refreshKey]
   );
@@ -51,6 +48,7 @@ export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) 
   if (failed) {
     return <WidgetUnavailable onRetry={retry} />;
   }
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
   if (!summary) return null;
 
   return (
@@ -65,7 +63,7 @@ export function CoverageFreshnessWidget({ config, filters, refreshKey }: Props) 
           return (
             <Link
               key={cat.category}
-              href={buildScansHref(merged, { category: cat.category })}
+              href={cat.href}
               className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover"
             >
               <div className="flex items-center gap-2 min-w-0">

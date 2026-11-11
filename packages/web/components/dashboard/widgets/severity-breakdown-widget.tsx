@@ -4,22 +4,20 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, type WidgetFilters } from '@/lib/dashboard-filters';
-import { buildScansHref } from '@/lib/scans-link';
+import type { WidgetSummaryResponse } from '@/lib/widget-links';
+import type { Severity } from '@/lib/types';
 import { CHART_LEGEND_STYLE, SEVERITY_CHART_COLOR, SEVERITY_LABEL, SEV_ORDER } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
-interface Config { category?: string; policyIds?: string[] }
-interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
+interface Props { refreshKey: number }
 
-export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) {
+export function SeverityBreakdownWidget({ refreshKey }: Props) {
   const router = useRouter();
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
   const url = useWidgetUrl('summary');
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummaryResponse>(
     url,
     [refreshKey]
   );
@@ -34,6 +32,7 @@ export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 
   if (failed) return <WidgetUnavailable onRetry={retry} />;
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
 
   if (!data.length) {
     return <div className="flex h-full items-center justify-center text-sm text-ink-muted">No open findings</div>;
@@ -53,7 +52,8 @@ export function SeverityBreakdownWidget({ config, filters, refreshKey }: Props) 
             cursor="pointer"
             onClick={(entry) => {
               const severity = (entry as unknown as { severity?: string }).severity;
-              if (severity) router.push(buildScansHref(merged, { severity }));
+              const href = severity && summary ? summary.severityHrefs[severity as Severity] : null;
+              if (href) router.push(href);
             }}
           >
             {data.map((d) => <Cell key={d.severity} fill={d.color} fillOpacity={0.9} />)}

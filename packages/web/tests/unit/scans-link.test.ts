@@ -61,3 +61,15 @@ describe('parseCategoryParam', () => {
     }
   });
 });
+
+describe('buildScansHref · suppressed findings', () => {
+  it('asks for suppressed findings when the number counted them', () => {
+    const href = buildScansHref(widgetFilters({ includeSuppressed: true }));
+    expect(new URLSearchParams(href.split('?')[1]).get('suppressed')).toBe('1');
+  });
+
+  it('leaves the param out otherwise', () => {
+    expect(new URLSearchParams(buildScansHref(widgetFilters()).split('?')[1]).has('suppressed')).toBe(false);
+    expect(new URLSearchParams(buildScansHref(widgetFilters({ includeSuppressed: false })).split('?')[1]).has('suppressed')).toBe(false);
+  });
+});

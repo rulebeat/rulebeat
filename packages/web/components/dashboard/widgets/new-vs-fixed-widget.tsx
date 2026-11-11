@@ -8,6 +8,7 @@ import { periodToDays, TREND_CAP_DAYS } from '@/lib/widget-settings';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
 import { useWidgetUrl } from '@/components/dashboard/widget-request';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
+import { WidgetNothingToCount } from '@/components/dashboard/widgets/widget-no-count';
 
 interface Config { category?: string; period?: string; policyIds?: string[] }
 interface Props { config: Config; refreshKey: number }
@@ -18,7 +19,7 @@ interface Props { config: Config; refreshKey: number }
 export function NewVsFixedWidget({ config, refreshKey }: Props) {
   const trendDays = periodToDays(config.period ?? '30d', TREND_CAP_DAYS['new-vs-fixed']!);
   const url = useWidgetUrl('summary', { trendDays });
-  const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
+  const { data: summary, loading, failed, noCount, retry } = useWidgetFetch<WidgetSummary>(
     url,
     [refreshKey]
   );
@@ -26,6 +27,7 @@ export function NewVsFixedWidget({ config, refreshKey }: Props) {
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 
   if (failed) return <WidgetUnavailable onRetry={retry} />;
+  if (noCount) return <WidgetNothingToCount reason={noCount} />;
 
   const data = summary?.newVsFixedTrend ?? [];
   if (!data.length) {

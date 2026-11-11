@@ -3,11 +3,18 @@
  * from a request (ADR 0013): the dashboard and widget ids, plus the filter changes from the address.
  * It never takes assembled filter params, and it takes a row limit or trend length from the request
  * only in an edit-mode preview; otherwise those come from the widget's stored config.
+ *
+ * A widget with nothing to count for the viewer (every subscription or resource group it is filtered to
+ * is outside their access, or every category, rule or tag it is filtered to is gone) is answered here with
+ * the reason alone, so no route computes a number or a link for it.
  */
 import { NextResponse } from 'next/server';
 import type { Access } from '@/lib/access-model';
 import { effectiveFilters } from '@/lib/effective-filters';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
+import { goneNoCount } from '@/lib/widget-gone';
+import { numberScansHref, outsideAccessReason, viewerScansHref, type LinkedResource } from '@/lib/widget-links';
+import type { ScansLinkOverrides } from '@/lib/scans-link';
 import { DEFAULT_TREND_DAYS, MAX_TREND_DAYS, TREND_CAP_DAYS, limitFor, storedTrendDays } from '@/lib/widget-settings';
 
 /** The params the routes used to take as an assembled filter. They are refused, not read. */
@@ -28,6 +35,14 @@ export interface WidgetRequest {
   limit: number | undefined;
   /** Trend length in days, from the stored config (or the request, in a preview). */
   trendDays: number;
+  /** The widget's config: the stored one, or the draft in a preview. */
+  config: Record<string, unknown>;
+  /** The Scans link for this widget's filters as the viewer holds them, with `overrides` for one number. */
+  href(overrides?: ScansLinkOverrides): string;
+  /** `href`, or null when the widget's own severities leave the overriding severity out (its number is zero). */
+  numberHref(overrides?: ScansLinkOverrides): string | null;
+  /** The Scans link for one resource of a list row, which holds that resource's findings and no other's. */
+  resourceHref(resource: LinkedResource, overrides?: ScansLinkOverrides): string;
 }
 
 function positiveInt(value: string | null): number | undefined {
@@ -73,6 +88,9 @@ export async function readWidgetRequest(req: Request, access: Access): Promise<W
       : NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
+  const noCount = outsideAccessReason(result.filters, access) ?? await goneNoCount(result.filters, access);
+  if (noCount) return NextResponse.json({ noCount, revision: result.revision, heldBack: result.heldBack });
+
   const requestedLimit = positiveInt(searchParams.get('limit'));
   const requestedTrend = positiveInt(searchParams.get('trendDays'));
   // A widget added in this edit is not stored yet, so a preview names its type itself.
@@ -87,5 +105,9 @@ export async function readWidgetRequest(req: Request, access: Access): Promise<W
     meta: { revision: result.revision, heldBack: result.heldBack },
     limit: preview ? (requestedLimit ?? limitFor(type, result.config)) : limitFor(type, result.config),
     trendDays,
+    config: result.config,
+    href: overrides => viewerScansHref(result.filters, access, overrides),
+    numberHref: overrides => numberScansHref(result.filters, access, overrides),
+    resourceHref: (resource, overrides) => viewerScansHref(result.filters, access, overrides, resource),
   };
 }
