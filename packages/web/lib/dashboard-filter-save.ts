@@ -1,4 +1,5 @@
 import type { DateWindow } from '@/lib/date-window';
+import { STALE_DASHBOARD_MESSAGE } from '@/lib/held-back';
 import { isOwnItem } from '@/lib/item-access-model';
 import type { DashboardConfig, HeldBackDashboard } from '@/lib/types';
 
@@ -89,4 +90,31 @@ export async function autoSaveFilters(
   } catch {
     return { kind: 'failed', message: FAILED };
   }
+}
+
+export type DashboardSaveOutcome =
+  | { kind: 'saved'; dashboard: HeldBackDashboard }
+  /** 409 on a stale base: the dashboard changed after this copy was read. The page shows the reload notice. */
+  | { kind: 'stale'; message: string }
+  | { kind: 'failed'; message: string };
+
+/**
+ * The Save of edit mode. It carries the revision and the copy it was sent. Only the stale-base 409 is the reload
+ * notice: the same status also answers a name already in use, which is an error the person can fix without
+ * losing their edits.
+ */
+export async function saveDashboardEdits(
+  dashboard: Pick<HeldBackDashboard, 'id' | 'revision' | 'config'>,
+  changes: { name: string; config: DashboardConfig },
+  fetchImpl: typeof fetch = fetch,
+): Promise<DashboardSaveOutcome> {
+  const res = await fetchImpl(`/api/dashboards/${encodeURIComponent(dashboard.id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...changes, revision: dashboard.revision, opened: dashboard.config }),
+  });
+  if (res.ok) return { kind: 'saved', dashboard: await res.json() as HeldBackDashboard };
+  const body = await res.json().catch(() => ({})) as { error?: string };
+  if (res.status === 409 && body.error === STALE_DASHBOARD_MESSAGE) return { kind: 'stale', message: STALE_DASHBOARD_MESSAGE };
+  return { kind: 'failed', message: body.error ?? 'Failed to save the dashboard.' };
 }

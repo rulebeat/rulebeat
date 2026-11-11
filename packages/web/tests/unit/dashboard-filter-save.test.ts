@@ -4,8 +4,8 @@
  * sends nothing, for its owner too: stored filters change only through Save in edit mode.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody } from '@/lib/dashboard-filter-save';
-import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits } from '@/lib/dashboard-filter-save';
+import { STALE_DASHBOARD_MESSAGE, UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import type { HeldBackDashboard } from '@/lib/types';
 
 const ME = { id: 'me' };
@@ -128,5 +128,36 @@ describe('the line on a Shared dashboard', () => {
 describe('the body of a rename', () => {
   it('carries the revision of the copy the page holds, so a rename from a stale copy is refused', () => {
     expect(renameBody(dashboard({ revision: 7 }), 'New name')).toEqual({ name: 'New name', revision: 7 });
+  });
+});
+
+describe('saveDashboardEdits', () => {
+  const body = { name: 'Taken', config: { widgets: [] } };
+
+  it('puts the body with the revision and the copy it was sent', async () => {
+    const current = dashboard();
+    const saved = dashboard({ revision: 8 });
+    const fetchImpl = answer(200, saved);
+    expect(await saveDashboardEdits(current, body, fetchImpl)).toEqual({ kind: 'saved', dashboard: saved });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/dashboards/dash-1');
+    expect(JSON.parse(init.body as string)).toEqual({ ...body, revision: 7, opened: current.config });
+  });
+
+  it('shows a stale base as the reload notice', async () => {
+    const outcome = await saveDashboardEdits(dashboard(), body, answer(409, { error: STALE_DASHBOARD_MESSAGE }));
+    expect(outcome).toEqual({ kind: 'stale', message: STALE_DASHBOARD_MESSAGE });
+  });
+
+  it('shows a name clash as an error, not as the reload notice that throws away edits', async () => {
+    const outcome = await saveDashboardEdits(dashboard(), body, answer(409, { error: 'A dashboard named "Taken" already exists.' }));
+    expect(outcome).toEqual({ kind: 'failed', message: 'A dashboard named "Taken" already exists.' });
+  });
+
+  it('shows any other refusal as an error', async () => {
+    expect(await saveDashboardEdits(dashboard(), body, answer(400, { error: UNSEEN_VALUE_MESSAGE })))
+      .toEqual({ kind: 'failed', message: UNSEEN_VALUE_MESSAGE });
+    expect(await saveDashboardEdits(dashboard(), body, answer(500, {})))
+      .toEqual({ kind: 'failed', message: 'Failed to save the dashboard.' });
   });
 });

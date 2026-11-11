@@ -39,7 +39,7 @@ import { cn } from '@/lib/utils';
 import {
   DEMOTED_OWNER_NOTE, isDemotedOwner, isOwnItem, mayChangeVisibilityWith, transferControlsWith, type ItemPermissions,
 } from '@/lib/item-access-model';
-import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody } from '@/lib/dashboard-filter-save';
+import { SHARED_FILTERS_NOTE, autoSaveFilters, autoSavesFilters, configForSave, filterBarForSave, renameBody, saveDashboardEdits } from '@/lib/dashboard-filter-save';
 import { shareConfirmation } from '@/lib/item-sharing';
 import { requestVisibilityChange } from '@/lib/item-sharing-client';
 import { ItemTransferDialog } from '@/components/item-transfer-dialog';
@@ -369,30 +369,23 @@ export function DashboardGridClient({ dashboard: initial, canChange, canSetDefau
   async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue, inEditMode = false) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: updatedName,
-          // A Personal dashboard's filter bar saves on its own (see the debounced effect above), so this save
-          // must not clobber it. A Shared dashboard stores its filter bar only here.
-          config: configForSave(dashboard, {
-            widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...filterBarForSave(inEditMode, dashFilters, dateWindow),
-          }),
-          revision: dashboard.revision,
-          opened: dashboard.config,
+      const outcome = await saveDashboardEdits(dashboard, {
+        name: updatedName,
+        // A Personal dashboard's filter bar saves on its own (see the debounced effect above), so this save
+        // must not clobber it. A Shared dashboard stores its filter bar only here.
+        config: configForSave(dashboard, {
+          widgets: updatedWidgets, autoRefresh: updatedAutoRefresh, ...filterBarForSave(inEditMode, dashFilters, dateWindow),
         }),
       });
-      if (res.ok) {
-        const d = await res.json() as HeldBackDashboard;
-        setDashboard(d);
+      if (outcome.kind === 'saved') {
+        setDashboard(outcome.dashboard);
         setDirty(false);
         setError(null);
         setStaleMessage(null);
+      } else if (outcome.kind === 'stale') {
+        setStaleMessage(outcome.message);
       } else {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        if (res.status === 409) setStaleMessage(body.error ?? STALE_DASHBOARD_MESSAGE);
-        else setError(body.error ?? 'Failed to save the dashboard.');
+        setError(outcome.message);
       }
     } finally { setSaving(false); }
   }
