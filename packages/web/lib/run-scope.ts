@@ -122,6 +122,43 @@ export function coveredAccess(access: Access): Access {
   return buildAccess(usableGrants(access), access.source, access.managementGroups.filter(e => can(e.role, ACTION)));
 }
 
+/**
+ * Whether a run's covered Scope shares anything with what a person holds: the newest scan that "covered
+ * part of what you hold". Everything holds all of it, so any scan overlaps (even one that recorded no
+ * entry); a run that covered Everything overlaps anyone who holds a Scope. Otherwise some covered entry
+ * must lie inside, contain, or be a management group on the same branch as, a held one: a management
+ * group is read over `hierarchy`, RuleBeat's copy of the tree. A covered entry that cannot be read overlaps nothing.
+ */
+export function coveredScopeOverlaps(
+  covered: readonly CoveredEntry[], access: Access, hierarchy: readonly HierarchyNode[],
+): boolean {
+  if (access.everything) return true;
+  if (access.grants.length === 0) return false;
+  const reach = accessReach(access);
+  return covered.some(entry => {
+    const scope = parseScope(entry.path);
+    if (!scope) return false;
+    const parts = entry.path.toLowerCase().split('/');
+    switch (scope.kind) {
+      case 'everything':
+        return true;
+      case 'directory':
+        return reach.directory;
+      case 'subscription':
+        return reach.subscriptions.has(parts[2]!) || reach.resourceGroups.has(parts[2]!);
+      case 'resourceGroup':
+        return reach.subscriptions.has(parts[2]!) || (reach.resourceGroups.get(parts[2]!)?.has(parts[4]!) ?? false);
+      case 'managementGroup': {
+        const id = managementGroupIdOf(entry.path).toLowerCase();
+        if (reach.managementGroups.has(id)) return true;
+        const inside = expandRuleGroup(managementGroupIdOf(entry.path), hierarchy);
+        return [...inside.subscriptions].some(s => reach.subscriptions.has(s) || reach.resourceGroups.has(s))
+          || [...inside.groups].some(g => reach.managementGroups.has(g));
+      }
+    }
+  });
+}
+
 // --- Which findings are inside it ---
 
 /** Where a finding sits: the four fields `accessFilterSql()` reads. */

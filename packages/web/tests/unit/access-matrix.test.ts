@@ -575,9 +575,10 @@ function dashboardMatrix(): Record<string, Matrix> {
         activeFindings: 1, high: 1, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
         trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
       }),
+      // Holds no Scope, so no scan covered part of what they hold: last scanned is not theirs to be told.
       same({
         activeFindings: 0, high: 0, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
-        trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+        trendUnavailable: 'no-whole-subscription', lastScanAt: null, securityLastScanAt: null,
       }),
     ),
   };

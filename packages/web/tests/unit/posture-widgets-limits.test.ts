@@ -30,7 +30,7 @@ vi.mock('@/lib/hooks/use-widget-notes', () => ({
 
 const category = (over: Partial<WidgetSummary['perCategory'][number]> & { category: string }): WidgetSummary['perCategory'][number] => ({
   label: over.category, pct: null, activeFindings: 0, passing: 0, total: 0, unknown: 0, emptyLabel: null,
-  lastScanAt: null, lastScanCoverage: null, lastScanIncompleteRules: [],
+  lastScanAt: null, incompleteRuleCount: 0,
   ...over,
 });
 

@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
-import { getBaselineSnapshots, getLastSnapshotTimes, getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
+import { getBaselineSnapshots, getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 
 const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
@@ -95,13 +95,5 @@ describe('getBaselineSnapshots', () => {
 
   it('gives a management group Scope a subscription under it', async () => {
     expect(counts(await getBaselineSnapshots(['security'], '2026-06-02', underGroup, SUB_TWO))).toEqual([[SUB_TWO, '2026-06-02', 1]]);
-  });
-});
-
-describe('getLastSnapshotTimes', () => {
-  it('gives the time of the install-wide row and no count', async () => {
-    const times = await getLastSnapshotTimes(['security', 'cost'], '2026-06-30');
-    expect([...times.keys()]).toEqual(['security']);
-    expect(typeof times.get('security')).toBe('string');
   });
 });

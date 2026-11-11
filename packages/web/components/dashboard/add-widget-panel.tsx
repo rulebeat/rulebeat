@@ -79,7 +79,7 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
   {
     type: 'coverage-freshness',
     title: 'Scan Coverage',
-    description: 'Last scan time per category, with a staleness warning.',
+    description: 'Last scan time per category, with a staleness warning and a count of rules whose last run did not finish.',
     defaultConfig: {},
     defaultW: 6, defaultH: 6,
   },
