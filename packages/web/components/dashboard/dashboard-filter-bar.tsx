@@ -31,13 +31,15 @@ interface Props {
   /** The dashboard whose filter bar this is, and the stored values of it the person's Access does not reach (#363). */
   dashboardId: string;
   heldBack?: HeldBack[];
+  /** Why the last filter change could not be saved. The filter still applies to the page. */
+  error?: string | null;
 }
 
 /** Dashboard-level filter toolbar: Category/Rule/Subscription/Tags/Severity multi-selects plus a
  *  24h/7d/30d/custom window control. Persistence (debounced PUT) and refetch-triggering
  *  (refreshKey bump) both live in the parent (`dashboard-grid-client.tsx`); this component only
  *  reports changes upward via `onFiltersChange`/`onDateWindowChange`. */
-export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, dashboardId, heldBack }: Props) {
+export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDateWindowChange, dashboardId, heldBack, error }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
@@ -136,6 +138,8 @@ export function DashboardFilterBar({ filters, dateWindow, onFiltersChange, onDat
           <X className="h-3.5 w-3.5" />Clear
         </button>
       )}
+
+      {error && <p role="alert" className="text-xs font-medium text-destructive">{error}</p>}
 
       <div className="ml-auto">
         <DateRangePicker value={dateWindow} onChange={onDateWindowChange} />

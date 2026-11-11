@@ -4,12 +4,11 @@ import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
 import { heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
-import { claimedRevision, openedCopy } from '@/lib/held-back';
+import { STALE_VIEW_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
-const STALE_COPY = 'This saved view changed while you were editing it. Reload it and try again.';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -48,23 +47,24 @@ export async function PATCH(req: Request, { params }: Params) {
     // The write is made on the revision of that copy, not the one read just now: a copy the item has moved on
     // from is refused, since it would put values back that are no longer there.
     const revision = claimedRevision(body);
-    if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_COPY }, { status: 409 });
+    if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
     const opened = openedCopy(body);
     // One findings query serves the restore and the answer: the answer's values are the stored ones and the incoming ones.
     const held = fields.value.query === undefined
       ? undefined
       : await heldBackOfQueries(actor.access, [current, { id, query: fields.value.query }]);
     const restored = fields.value.query === undefined
-      ? { query: undefined, restored: false }
+      ? { query: undefined, restored: false, unseen: false }
       : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined, held);
-    if (revision === undefined && restored.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
+    if (restored.unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
+    if (revision === undefined && restored.restored) return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
     const result = await updateSavedView(
       id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
       revision === undefined ? {} : { ifRevision: revision },
     );
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
-      if (result.reason === 'conflict') return Response.json({ error: STALE_COPY }, { status: 409 });
+      if (result.reason === 'conflict') return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
       return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
     }
 

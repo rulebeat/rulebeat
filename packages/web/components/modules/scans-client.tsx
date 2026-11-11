@@ -170,6 +170,8 @@ export function ScansClient({
   // only counts those restarts; what the explorer shows always comes from the URL.
   const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
   const [explorerKey, setExplorerKey] = useState(0);
+  // The copy of the saved view the person opened from the menu: what the page now shows, which a later save is based on.
+  const [appliedView, setAppliedView] = useState<HeldBackSavedView | null>(null);
   // Counts finished scans, so the explorer reads its view again rather than the page being reloaded.
   const [scansFinished, setScansFinished] = useState(0);
   const explorerTab = activeTab === 'results' || activeTab === 'advisories' || activeTab === 'activity' ? activeTab : null;
@@ -186,7 +188,9 @@ export function ScansClient({
     permissions: viewPermissions,
     shareControl: savedViewAccess?.shareControl,
     openId: initialSavedViewId ?? null,
+    appliedView,
     onOpen: (saved: HeldBackSavedView) => {
+      setAppliedView(saved);
       ownWrites.forget();
       router.push(savedViewHref(saved));
     },

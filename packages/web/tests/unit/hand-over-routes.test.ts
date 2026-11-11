@@ -9,8 +9,8 @@ import { clearDashboards, execRaw, resetDb } from '../helpers/db';
 import { createUser } from '@/lib/db/users';
 import { setPassword } from '@/lib/db/local-accounts';
 import { listAllAuditEntries } from '@/lib/db/audit';
-import { getDashboard, setDefaultDashboard, transferDashboard } from '@/lib/db/dashboards';
-import { getSavedView, transferSavedView } from '@/lib/db/saved-views';
+import { createDashboard, getDashboard, setDefaultDashboard, transferDashboard } from '@/lib/db/dashboards';
+import { createSavedView, getSavedView, transferSavedView } from '@/lib/db/saved-views';
 import type { Role } from '@/lib/rbac';
 import type { Dashboard } from '@/lib/types';
 import type { SavedView } from '@/lib/saved-view-query';
@@ -18,12 +18,10 @@ import type { SavedView } from '@/lib/saved-view-query';
 const mockAuth = vi.fn();
 vi.mock('@/auth', () => ({ auth: () => mockAuth() }));
 
-const dashboardsRoute = await import('@/app/api/dashboards/route');
 const dashboardShare = await import('@/app/api/dashboards/[id]/share/route');
 const dashboardCandidates = await import('@/app/api/dashboards/[id]/hand-over-candidates/route');
 const dashboardHandOver = await import('@/app/api/dashboards/[id]/hand-over/route');
 const dashboardTakeOver = await import('@/app/api/dashboards/[id]/take-over/route');
-const viewsRoute = await import('@/app/api/views/route');
 const viewShare = await import('@/app/api/views/[id]/share/route');
 const viewCandidates = await import('@/app/api/views/[id]/hand-over-candidates/route');
 const viewHandOver = await import('@/app/api/views/[id]/hand-over/route');
@@ -44,6 +42,7 @@ async function signInAs(role: Role, options: { scoped?: boolean; noScope?: boole
   mockAuth.mockResolvedValue({ user: { uid: result.user.id } });
   return { id: result.user.id, email };
 }
+const signedInId = async () => ((await mockAuth()) as { user: { uid: string } }).user.uid;
 const actAs = (person: Person) => mockAuth.mockResolvedValue({ user: { uid: person.id } });
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -72,9 +71,10 @@ const dashboards: Kind = {
   create: async name => {
     // Stored filter values that some viewers hold back: the hand-over must leave them exactly as they are.
     const config = { autoRefresh: 0, widgets: [], filters: { subscriptions: ['00000000-0000-0000-0000-000000000009'] } };
-    const res = await dashboardsRoute.POST(post({ name, config }));
-    expect(res.status).toBe(201);
-    return await res.json() as Dashboard;
+    // Made through the repository: the create route refuses values outside a scoped person's Access.
+    const created = await createDashboard({ name, config }, await signedInId());
+    if (!created.ok) throw new Error(created.reason);
+    return created.dashboard as Dashboard;
   },
   share: id => dashboardShare.POST(post(), ctx(id)),
   candidates: id => dashboardCandidates.GET(get(), ctx(id)),
@@ -92,9 +92,9 @@ const dashboards: Kind = {
 const views: Kind = {
   label: 'view',
   create: async name => {
-    const res = await viewsRoute.POST(post({ name, tab: 'results', query: 'subscription=hidden-one&severity=critical' }));
-    expect(res.status).toBe(201);
-    return await res.json() as SavedView;
+    const created = await createSavedView({ name, tab: 'results', query: 'subscription=hidden-one&severity=critical' }, await signedInId());
+    if (!created.ok) throw new Error(created.reason);
+    return created.view as SavedView;
   },
   share: id => viewShare.POST(post(), ctx(id)),
   candidates: id => viewCandidates.GET(get(), ctx(id)),

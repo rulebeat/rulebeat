@@ -3,8 +3,8 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { copyViewQuery, holdBackSavedViews } from '@/lib/db/held-back';
-import { withoutPlaceholder } from '@/lib/held-back';
+import { copyViewQuery, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { UNSEEN_VALUE_MESSAGE, withoutPlaceholder } from '@/lib/held-back';
 import { canOpenItem, openableItems } from '@/lib/item-access';
 import { createSavedView, getSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
@@ -43,6 +43,9 @@ export async function POST(req: Request) {
     const copy = source
       ? await copyViewQuery(actor.access, source, fields.value.query)
       : { query: withoutPlaceholder(fields.value.query), widened: 0 };
+    // A new item holds no value yet, so every value outside the saver's Access in it is one they are bringing in.
+    const { unseen } = await restoreHeldBackView(actor.access, { id: '', query: '' }, copy.query);
+    if (unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
     const result = await createSavedView({ ...fields.value, query: copy.query }, actor.id);
     if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
 

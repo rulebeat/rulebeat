@@ -3,7 +3,8 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { holdBackDashboards } from '@/lib/db/held-back';
+import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
 import { openableItems } from '@/lib/item-access';
 import { getMyDefault } from '@/lib/db/default-dashboard';
 import { withMyDefault } from '@/lib/default-dashboards';
@@ -40,11 +41,11 @@ export async function POST(req: Request) {
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
 
   const name = body.name.trim();
-  const result = await createDashboard({
-    name,
-    description: body.description,
-    config: body.config ?? { autoRefresh: 0, widgets: [] },
-  }, actor.id);
+  const config = body.config ?? { autoRefresh: 0, widgets: [] };
+  // A new item holds no value yet, so every value outside the saver's Access in it is one they are bringing in.
+  const { unseen } = await restoreHeldBackDashboard(actor.access, { id: '', config: { autoRefresh: 0, widgets: [] } }, config);
+  if (unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
+  const result = await createDashboard({ name, description: body.description, config }, actor.id);
 
   if (!result.ok) {
     const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);

@@ -9,7 +9,7 @@ import { createPeople, MATRIX_OWNER, seedMatrix, share, SUB_ONE, SUB_TWO } from 
 import { createDashboard, getDashboard } from '@/lib/db/dashboards';
 import { createSavedView, getSavedView } from '@/lib/db/saved-views';
 import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
-import { OUTSIDE_ACCESS_LABEL, copiedDashboardNotice, copiedViewNotice, copyNoticeWhileOpen, rememberCopiedDashboard, takeCopiedDashboard, type NoticeStore } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL, UNSEEN_VALUE_MESSAGE, copiedDashboardNotice, copiedViewNotice, copyNoticeWhileOpen, rememberCopiedDashboard, takeCopiedDashboard, type NoticeStore } from '@/lib/held-back';
 import type { Dashboard, DashboardConfig, HeldBackDashboard } from '@/lib/types';
 
 const mockAuth = vi.fn();
@@ -248,6 +248,17 @@ describe('Save a new view from an open saved view', () => {
     expect(stored.query).not.toContain(SUB_TWO);
     expect(stored.query).not.toContain('vm-other-sub');
     expect(viewFromSearchParams(new URLSearchParams(stored.query)).filters).toEqual([{ field: 'subscription', values: [SUB_ONE] }]);
+  });
+
+  it('still refuses a new value outside the copier\'s Access that the open view did not hold', async () => {
+    const id = await sharedView([{ field: 'subscription', values: [SUB_TWO, SUB_ONE] }]);
+    signIn(SCOPED);
+    const res = await CREATE_VIEW(new Request('http://localhost/api/views', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: `New ${++serial}`, tab: 'results', query: queryOf([{ field: 'subscription', values: [SUB_ONE] }, { field: 'resourceName', values: ['vm-other-sub'] }]), from: id }),
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe(UNSEEN_VALUE_MESSAGE);
   });
 
   it('keeps what the request carries for an Everything copier, held back or not', async () => {

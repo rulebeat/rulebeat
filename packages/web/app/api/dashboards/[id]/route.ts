@@ -4,7 +4,7 @@ import { parseJsonBody } from '@/lib/api-body';
 import { getDashboard, updateDashboard, deleteDashboardAs, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
 import { restoreHeldBackDashboard } from '@/lib/db/held-back';
-import { claimedRevision, openedCopy } from '@/lib/held-back';
+import { STALE_DASHBOARD_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
 import { guardItem } from '@/lib/item-access';
 import { mayAct } from '@/lib/rbac';
 import { INSTALL_DEFAULT_REASON } from '@/lib/write-controls';
@@ -13,7 +13,7 @@ import { sharedDashboardViewsRefusal } from '@/lib/saved-view-reference';
 import { changedDashboardFields } from '@/lib/dashboard-edit-fields';
 import type { DashboardConfig } from '@/lib/types';
 
-const STALE_COPY = 'This dashboard changed while you were editing it. Reload it and try again.';
+const STALE_COPY = STALE_DASHBOARD_MESSAGE;
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const actor = await requireRole('read');
@@ -55,6 +55,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const restored = body.config === undefined ? null : await restoreHeldBackDashboard(
     actor.access, before, body.config, opened && typeof opened === 'object' ? opened as DashboardConfig : undefined,
   );
+  if (restored?.unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
   if (revision === undefined && restored?.restored) return Response.json({ error: STALE_COPY }, { status: 409 });
   const result = await updateDashboard(
     id, restored ? { ...body, config: restored.config } : body, revision === undefined ? {} : { ifRevision: revision },

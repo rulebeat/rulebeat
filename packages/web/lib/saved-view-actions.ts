@@ -1,3 +1,4 @@
+import { STALE_VIEW_MESSAGE } from '@/lib/held-back';
 import type { HeldBackSavedView, SavedViewFields } from '@/lib/saved-view-query';
 
 export type SavedViewChange =
@@ -10,7 +11,10 @@ export type SavedViewChange =
   | { kind: 'delete'; id: string };
 
 /** `view` is the stored view after a create or update, and null after a delete. */
-export type SavedViewChangeOutcome = { ok: true; view: HeldBackSavedView | null; widened?: number } | { ok: false; error: string };
+export type SavedViewChangeOutcome =
+  | { ok: true; view: HeldBackSavedView | null; widened?: number }
+  /** `stale`: the view changed since the copy this save was made from, so the page offers a reload. */
+  | { ok: false; error: string; stale?: true };
 
 const FALLBACK = 'The change could not be saved. Try again.';
 
@@ -42,7 +46,9 @@ export async function requestSavedViewChange(
     // Only a refusal the person can act on (a name in use, a name too long) carries its own message.
     if (res.status === 400 || res.status === 409) {
       const body = await res.json().catch(() => null) as { error?: unknown } | null;
-      if (typeof body?.error === 'string' && body.error.trim() !== '') return { ok: false, error: body.error };
+      if (typeof body?.error === 'string' && body.error.trim() !== '') {
+        return body.error === STALE_VIEW_MESSAGE ? { ok: false, error: body.error, stale: true } : { ok: false, error: body.error };
+      }
     }
     if (res.status === 404) return { ok: false, error: 'This saved view no longer exists.' };
     if (res.status === 403) return { ok: false, error: 'Your role cannot change saved views.' };
@@ -52,7 +58,34 @@ export async function requestSavedViewChange(
   }
 }
 
+/**
+ * Reads one view as the server holds it now. The reload notice after a stale save opens this copy: reloading the
+ * address would bring back the query of the old copy, with the newest revision to save it over.
+ */
+export async function fetchCurrentSavedView(
+  id: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; view: HeldBackSavedView } | { ok: false; gone: boolean }> {
+  try {
+    const res = await fetchImpl(`/api/views/${encodeURIComponent(id)}`);
+    if (res.redirected) return { ok: false, gone: false };
+    if (res.ok) return { ok: true, view: await res.json() as HeldBackSavedView };
+    return { ok: false, gone: res.status === 404 };
+  } catch {
+    return { ok: false, gone: false };
+  }
+}
+
 /** A view stored in the list: replaces the one with its id, or is added when there is none. */
 export function upsertSavedView(views: HeldBackSavedView[], view: HeldBackSavedView): HeldBackSavedView[] {
   return views.some(v => v.id === view.id) ? views.map(v => (v.id === view.id ? view : v)) : [...views, view];
+}
+
+/**
+ * The copy a later save is based on, after our own share or unshare. The server answers with only the id,
+ * visibility and revision. When that revision is the very next one, nothing else changed in between and the
+ * base moves on; otherwise someone else wrote too, so the base stays and the next save is refused as stale.
+ */
+export function baseCopyAfterVisibilityChange(base: HeldBackSavedView, changed: Pick<HeldBackSavedView, 'visibility' | 'revision'>): HeldBackSavedView {
+  return changed.revision === base.revision + 1 ? { ...base, visibility: changed.visibility, revision: changed.revision } : base;
 }

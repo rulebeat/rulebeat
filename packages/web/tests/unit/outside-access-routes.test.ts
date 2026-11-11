@@ -7,14 +7,14 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createPeople, MATRIX_OWNER, MATRIX_TENANT, SCOPE_SUBSCRIPTION, seedMatrix, share, SUB_ONE, SUB_TWO, type MatrixSeed } from '../helpers/access-matrix';
-import { createSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
-import { createDashboard, getDashboard, updateDashboard } from '@/lib/db/dashboards';
+import { createSavedView, getSavedView, listSavedViews, updateSavedView } from '@/lib/db/saved-views';
+import { createDashboard, getDashboard, listDashboards, updateDashboard } from '@/lib/db/dashboards';
 import { createUser } from '@/lib/db/users';
 import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { emptyView, viewFromSearchParams, viewToSearchParams } from '@/lib/finding-view';
 import { emptyListCopy, emptyReasonOf, filterChipLabel } from '@/lib/explorer-screen';
-import { OUTSIDE_ACCESS_LABEL, type HeldBack } from '@/lib/held-back';
+import { OUTSIDE_ACCESS_LABEL, UNSEEN_VALUE_MESSAGE, type HeldBack } from '@/lib/held-back';
 
 /** The SQL of every query run through `many`, so a test can count the selects made on the findings table. */
 const statements = vi.hoisted(() => [] as string[]);
@@ -364,6 +364,24 @@ describe('saving an item back from the trimmed copy', () => {
     expect(stored.widgets[0]!.config.subscriptions).toEqual([SUB_TWO]);
   });
 
+  it('keeps a widget\'s held-back values when the person changes its type and another field of its config', async () => {
+    const own = await createDashboard({ name: 'Type change dashboard', config: CONFIG }, editor);
+    if (!own.ok) throw new Error(own.reason);
+    await share('dashboards', own.dashboard.id);
+    asEditor();
+    const received = await (await READ_DASHBOARD(new Request('http://localhost/api/dashboards/x'), ctx(own.dashboard.id))).json() as { config: typeof CONFIG; revision: number };
+    expect(received.config.widgets[0]!.config.subscriptions).toEqual([]);
+    const changed = {
+      ...received.config,
+      widgets: received.config.widgets.map(w => ({ ...w, type: 'top-rules' as const, title: 'Renamed', config: { ...w.config, limit: 5 } })),
+    };
+    const res = await putDashboard(own.dashboard.id, { config: changed, revision: received.revision, opened: received.config });
+    expect(res.status).toBe(200);
+    const [widget] = (await getDashboard(own.dashboard.id))!.config.widgets;
+    expect(widget).toMatchObject({ id: 'own-widget', type: 'top-rules', title: 'Renamed' });
+    expect(widget!.config).toEqual({ subscriptions: [SUB_TWO], limit: 5 });
+  });
+
   it('keeps held-back dashboard values when the person clears what they can see', async () => {
     const saved = await saveDashboard({ ...CONFIG, filters: { subscriptions: [], resourceGroups: [] }, widgets: [] });
     expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([SUB_TWO]);
@@ -410,9 +428,26 @@ describe('saving an item back from the trimmed copy', () => {
       expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([]);
     });
 
-    it('refuses a save that names no revision while the stored item holds values back from the person', async () => {
-      await saveDashboard({ ...CONFIG, filters: { subscriptions: [SUB_TWO], resourceGroups: [] } });
+    it('refuses a rename made from a copy the Admin has changed since, and keeps the Admin\'s change', async () => {
+      const received = await openDashboard();
       asAdmin();
+      const renamedByAdmin = await putDashboard(dashboardId, { name: 'Editor dashboard (admin)', revision: received.revision });
+      expect(renamedByAdmin.status).toBe(200);
+
+      asEditor();
+      const stale = await putDashboard(dashboardId, { name: 'Editor dashboard (stale)', revision: received.revision });
+      expect(stale.status).toBe(409);
+      expect((await getDashboard(dashboardId))!.name).toBe('Editor dashboard (admin)');
+
+      const current = await openDashboard();
+      expect((await putDashboard(dashboardId, { name: 'Editor dashboard', revision: current.revision })).status).toBe(200);
+    });
+
+    it('refuses a save that names no revision while the stored item holds values back from the person', async () => {
+      // Only someone who holds the subscription can put it in: the Editor's own save of it would be refused.
+      asAdmin();
+      const seeded = await putDashboard(dashboardId, { config: { ...CONFIG, filters: { subscriptions: [SUB_TWO], resourceGroups: [] } } });
+      expect(seeded.status).toBe(200);
       const stored = (await getDashboard(dashboardId))!;
       expect(stored.config.filters?.subscriptions).toEqual([SUB_TWO]);
 
@@ -421,7 +456,9 @@ describe('saving an item back from the trimmed copy', () => {
       expect(unversioned.status).toBe(409);
       expect((await getDashboard(dashboardId))!.config.filters?.subscriptions).toEqual([SUB_TWO]);
 
+      asAdmin();
       await patchView(viewId, { query: `subscription=${SUB_TWO}`, revision: (await getSavedView(viewId))!.revision });
+      asEditor();
       const viewUnversioned = await patchView(viewId, { query: 'severity=low' });
       expect(viewUnversioned.status).toBe(409);
       expect((await getSavedView(viewId))!.query).toBe(`subscription=${SUB_TWO}`);
@@ -435,6 +472,140 @@ describe('saving an item back from the trimmed copy', () => {
       const res = await patchView(viewId, { query: `severity=low&subscription=${OUTSIDE_ACCESS_LABEL.replaceAll(' ', '+')}` });
       expect(res.status).toBe(200);
       expect((await getSavedView(viewId))!.query).toBe('severity=low');
+    });
+  });
+
+  describe('a new value outside the saver\'s Access', () => {
+    const asAdmin = () => mockAuth.mockResolvedValue({ user: { uid: people.Admin } });
+    const UNKNOWN_SUBSCRIPTION = '00000000-0000-0000-0000-0000000000ff';
+    let ownViewId: string;
+    let ownDashboardId: string;
+
+    beforeAll(async () => {
+      const view = await createSavedView({ name: 'Unseen view', tab: 'results', query: 'severity=high' }, editor);
+      if (!view.ok) throw new Error(view.reason);
+      await share('saved_views', view.view.id);
+      ownViewId = view.view.id;
+      const dashboard = await createDashboard({ name: 'Unseen dashboard', config: { filters: { subscriptions: [SUB_ONE], resourceGroups: [] }, widgets: [] } }, editor);
+      if (!dashboard.ok) throw new Error(dashboard.reason);
+      await share('dashboards', dashboard.dashboard.id);
+      ownDashboardId = dashboard.dashboard.id;
+    });
+
+    async function attemptView(query: string) {
+      asEditor();
+      const revision = (await getSavedView(ownViewId))!.revision;
+      const res = await patchView(ownViewId, { query, revision, opened: 'severity=high' });
+      return { status: res.status, body: await res.json() as unknown };
+    }
+    async function attemptDashboard(subscriptions: string[], widgetSubscriptions: string[] = []) {
+      asEditor();
+      const current = (await getDashboard(ownDashboardId))!;
+      const config = {
+        filters: { subscriptions, resourceGroups: [] },
+        widgets: [{ id: 'unseen-widget', type: 'stat-card' as const, title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: widgetSubscriptions } }],
+      };
+      const res = await putDashboard(ownDashboardId, { config, revision: current.revision, opened: current.config });
+      return { status: res.status, body: await res.json() as unknown };
+    }
+    const named = (resource: string, subscription?: string) => viewToSearchParams({
+      ...emptyView(),
+      filters: [
+        { field: 'severity', values: ['high'] },
+        { field: 'resourceName', values: [resource] },
+        ...(subscription ? [{ field: 'subscription' as const, values: [subscription] }] : []),
+      ],
+    }).toString();
+    const refusal = { status: 400, body: { error: UNSEEN_VALUE_MESSAGE } };
+
+    it('refuses a saved view naming a resource that a finding outside their Access carries, and one that nothing carries, in the same words', async () => {
+      const carried = await attemptView(named('vm-other-sub'));
+      const nobody = await attemptView(named('vm-nobody-has'));
+      expect(carried).toEqual(refusal);
+      expect(nobody).toEqual(refusal);
+      expect((await getSavedView(ownViewId))!.query).toBe('severity=high');
+    });
+
+    it('refuses a saved view naming a subscription they hold no Scope in, whether it exists or not', async () => {
+      expect(await attemptView(`severity=high&subscription=${SUB_TWO}`)).toEqual(refusal);
+      expect(await attemptView(`severity=high&subscription=${UNKNOWN_SUBSCRIPTION}`)).toEqual(refusal);
+      expect((await getSavedView(ownViewId))!.query).toBe('severity=high');
+    });
+
+    it('refuses a dashboard naming a subscription outside their Access in its filter bar or a widget, whether it exists or not', async () => {
+      expect(await attemptDashboard([SUB_ONE, SUB_TWO])).toEqual(refusal);
+      expect(await attemptDashboard([SUB_ONE, UNKNOWN_SUBSCRIPTION])).toEqual(refusal);
+      expect(await attemptDashboard([SUB_ONE], [SUB_TWO])).toEqual(refusal);
+      expect((await getDashboard(ownDashboardId))!.config.filters?.subscriptions).toEqual([SUB_ONE]);
+    });
+
+    const postJson = (route: (req: Request) => Promise<Response>, body: unknown) =>
+      route(new Request('http://localhost/api/x', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }));
+    const createView = async (name: string, query: string) => {
+      const res = await postJson(CREATE_VIEW, { name, tab: 'results', query });
+      return { status: res.status, body: await res.json() as unknown };
+    };
+    const createDashboardWith = async (name: string, subscriptions: string[], widgetSubscriptions: string[] = []) => {
+      const res = await postJson(CREATE_DASHBOARD, {
+        name,
+        config: {
+          filters: { subscriptions, resourceGroups: [] },
+          widgets: [{ id: `w-${name}`, type: 'stat-card', title: 'W', x: 0, y: 0, w: 4, h: 2, config: { subscriptions: widgetSubscriptions } }],
+        },
+      });
+      return { status: res.status, body: await res.json() as unknown };
+    };
+
+    it('refuses a new saved view naming a value outside their Access, in the same words with and without a finding that carries it', async () => {
+      asEditor();
+      expect(await createView('Create carried', named('vm-other-sub'))).toEqual(refusal);
+      expect(await createView('Create nobody', named('vm-nobody-has'))).toEqual(refusal);
+      expect(await createView('Create other sub', `severity=high&subscription=${SUB_TWO}`)).toEqual(refusal);
+      expect(await createView('Create unknown sub', `severity=high&subscription=${UNKNOWN_SUBSCRIPTION}`)).toEqual(refusal);
+      expect((await listSavedViews()).some(v => v.name.startsWith('Create '))).toBe(false);
+    });
+
+    it('refuses a new dashboard naming a subscription outside their Access in its filter bar or a widget, whether it exists or not', async () => {
+      asEditor();
+      expect(await createDashboardWith('Create dash other', [SUB_TWO])).toEqual(refusal);
+      expect(await createDashboardWith('Create dash unknown', [UNKNOWN_SUBSCRIPTION])).toEqual(refusal);
+      expect(await createDashboardWith('Create dash widget', [SUB_ONE], [SUB_TWO])).toEqual(refusal);
+      expect((await listDashboards()).some(d => d.name.startsWith('Create dash'))).toBe(false);
+    });
+
+    it('creates a view and a dashboard naming only what they can see', async () => {
+      asEditor();
+      expect((await createView('Create visible', named('vm-one'))).status).toBe(201);
+      expect((await createDashboardWith('Create dash visible', [SUB_ONE], [SUB_ONE])).status).toBe(201);
+    });
+
+    it('never refuses a create by a person who holds Everything', async () => {
+      for (const person of ['Admin', 'Editor on Everything']) {
+        mockAuth.mockResolvedValue({ user: { uid: people[person] } });
+        expect((await createView(`Create all ${person}`, named('vm-nobody-has', UNKNOWN_SUBSCRIPTION))).status).toBe(201);
+        expect((await createDashboardWith(`Create dash all ${person}`, [UNKNOWN_SUBSCRIPTION])).status).toBe(201);
+      }
+      asAdmin();
+    });
+
+    it('saves a resource a finding inside their Access carries, and a subscription they hold', async () => {
+      expect((await attemptView(named('vm-one'))).status).toBe(200);
+      expect((await attemptDashboard([SUB_ONE], [SUB_ONE])).status).toBe(200);
+    });
+
+    it('never refuses a person who holds Everything, for a value no finding carries', async () => {
+      for (const person of ['Admin', 'Editor on Everything']) {
+        mockAuth.mockResolvedValue({ user: { uid: people[person] } });
+        const view = (await getSavedView(ownViewId))!;
+        const savedView = await patchView(ownViewId, { query: named('vm-nobody-has', UNKNOWN_SUBSCRIPTION), revision: view.revision, opened: view.query });
+        expect(savedView.status).toBe(200);
+        const dashboard = (await getDashboard(ownDashboardId))!;
+        const savedDashboard = await putDashboard(ownDashboardId, {
+          config: { ...dashboard.config, filters: { subscriptions: [UNKNOWN_SUBSCRIPTION], resourceGroups: [] } }, revision: dashboard.revision, opened: dashboard.config,
+        });
+        expect(savedDashboard.status).toBe(200);
+      }
+      asAdmin();
     });
   });
 
@@ -588,10 +759,10 @@ describe('every route that returns a dashboard or a saved view, for a person wit
   const counted = (body: Record<string, unknown>) => expect((body.heldBack as HeldBack[]).length).toBeGreaterThan(0);
 
   describe.each(['scoped', 'No Scope'])('%s: Personal items', person => {
-    it('POST /api/views answers the saved view without them', async () => {
+    it('POST /api/views refuses a new view naming them, and the refusal holds none of them', async () => {
       as(person);
-      const { body } = await clean(await CREATE_VIEW(req('POST', { name: name('Created view'), tab: 'results', query: HELD_QUERY })), 201);
-      counted(body);
+      const { body } = await clean(await CREATE_VIEW(req('POST', { name: name('Created view'), tab: 'results', query: HELD_QUERY })), 400);
+      expect(body).toEqual({ error: UNSEEN_VALUE_MESSAGE });
     });
 
     it('PATCH /api/views/[id] answers the saved view without them, for a rename and for a save of the received query', async () => {
@@ -604,10 +775,10 @@ describe('every route that returns a dashboard or a saved view, for a person wit
       counted(saved.body);
     });
 
-    it('POST /api/dashboards answers the dashboard without them', async () => {
+    it('POST /api/dashboards refuses a new dashboard naming them, and the refusal holds none of them', async () => {
       as(person);
-      const { body } = await clean(await CREATE_DASHBOARD(req('POST', { name: name('Created dashboard'), config: heldConfig() })), 201);
-      counted(body);
+      const { body } = await clean(await CREATE_DASHBOARD(req('POST', { name: name('Created dashboard'), config: heldConfig() })), 400);
+      expect(body).toEqual({ error: UNSEEN_VALUE_MESSAGE });
     });
 
     it('PUT /api/dashboards/[id] answers the dashboard without them, for a rename, for a config save and for a refused isDefault', async () => {

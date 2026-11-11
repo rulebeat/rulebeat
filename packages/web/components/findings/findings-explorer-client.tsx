@@ -59,6 +59,7 @@ import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
+import { fetchCurrentSavedView } from '@/lib/saved-view-actions';
 import type { ItemPermissions } from '@/lib/item-access-model';
 import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { OPEN_VIEW_OUTSIDE_COPY, valuesWithoutPlaceholder, withoutHeldPlaceholders, type HeldBack } from '@/lib/held-back';
@@ -117,6 +118,9 @@ interface FindingsExplorerClientProps {
     openId: string | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
     onOpen: (view: HeldBackSavedView) => void;
+    /** The copy of the saved view the page was last opened from the menu with, so a save is based on what the
+     *  page shows. Null when the page was opened from a link. */
+    appliedView?: HeldBackSavedView | null;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -687,6 +691,8 @@ export function FindingsExplorerClient({
   // The open saved view's stored values this person's Access does not reach, counted beside the filters
   // they sit with. The values themselves never arrive.
   const [{ heldBack: openHeldBack, inFull: heldInFull }, setOpenHeld] = useState<{ heldBack: HeldBack[]; inFull: string[] }>({ heldBack: [], inFull: [] });
+  // Set when a save of the open view was refused because the view changed since this page showed it.
+  const [viewStale, setViewStale] = useState<string | null>(null);
   const chips = useMemo<FilterChip[]>(() => filters
     .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
     .flatMap(f => valuesWithoutPlaceholder(openViewId ? openHeldBack : [], f.field, f.values).map(value => ({
@@ -819,6 +825,30 @@ export function FindingsExplorerClient({
   // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
   const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
 
+  // The reload notice opens the view as the server holds it now. Reloading the address would bring back the query of
+  // the copy this page was opened from, and the next Update would be based on the newest revision with the old filters.
+  const reloadStaleView = useCallback(async () => {
+    if (!openViewId) return;
+    const current = await fetchCurrentSavedView(openViewId);
+    if (current.ok) {
+      setViewStale(null);
+      savedViews?.onOpen(current.view);
+    } else if (current.gone) {
+      setViewStale('This saved view no longer exists.');
+      setOpenViewId(null);
+    } else {
+      setViewStale('The saved view could not be reloaded. Try again.');
+    }
+  }, [openViewId, savedViews, setOpenViewId]);
+  const staleNotice = viewStale && (
+    <Callout tone="warn" className="mt-2.5">
+      <span>{viewStale}</span>
+      {openViewId && (
+        <>{' '}<button type="button" className="font-medium underline" onClick={() => void reloadStaleView()}>Reload</button></>
+      )}
+    </Callout>
+  );
+
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
   const savedViewQuery = useMemo(
@@ -875,10 +905,13 @@ export function FindingsExplorerClient({
               onOpenIdChange={setOpenViewId}
               onOpen={savedViews.onOpen}
               currentQuery={savedViewQuery}
+              appliedView={savedViews.appliedView}
+              onStale={setViewStale}
             />
           </div>
         )}
         {viewGone}
+        {mode === 'page' && savedViews && staleNotice}
         <NoAccessState />
       </>
     );
@@ -1364,6 +1397,8 @@ export function FindingsExplorerClient({
             onOpen={savedViews.onOpen}
             onHeldBackChange={setOpenHeld}
             currentQuery={savedViewQuery}
+            appliedView={savedViews.appliedView}
+            onStale={setViewStale}
           />
         )}
 
@@ -1406,6 +1441,8 @@ export function FindingsExplorerClient({
       </div>
 
       {viewGone}
+
+      {staleNotice}
 
       <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
 
