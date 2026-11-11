@@ -135,7 +135,10 @@ export function StatCardWidget({ config, filters, refreshKey }: Props) {
   if (failed) return <WidgetUnavailable onRetry={retry} />;
 
   // A posture with nothing to count says why, in place of "0 of 0".
-  if (config.metric === 'posture-pct' && summary && summary.current.pct === null) {
+  // Categories healthy counts categories with a counted rule, so it has nothing to count when none has.
+  const nothingCounted = summary
+    && (summary.current.pct === null || (config.metric === 'modules-healthy' && summary.perCategory.every(m => m.total === 0)));
+  if ((config.metric === 'posture-pct' || config.metric === 'modules-healthy') && nothingCounted) {
     return <WidgetUnavailable reason={summary.emptyReason ?? postureEmptyReason('filter-left-nothing')} />;
   }
 

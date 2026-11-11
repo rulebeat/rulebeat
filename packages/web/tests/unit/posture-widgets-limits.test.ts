@@ -161,10 +161,22 @@ describe('the Stat Card', () => {
       expect(html).toContain('1/1');
     });
 
-    it('is 0/0 only when no category has a counted rule, and says what it counts', () => {
+    it.each([
+      ['no-access', 'You have been given no access'],
+      ['no-rules-here', 'No rules here look at anything you hold'],
+      ['filter-left-nothing', 'The filter left nothing to count'],
+    ] as const)('says %s when no category has a counted rule, and never 0/0', (key, title) => {
+      const html = card(nothing(key, { perCategory: [category({ category: 'cost', emptyLabel: 'No enabled rules' })] }), 'modules-healthy');
+      expect(html).toContain(title);
+      expect(html).toContain('role="status"');
+      expect(html).not.toContain('0/0');
+      expect(html).not.toContain('No data');
+    });
+
+    it('falls back to the filter reason when the summary carries none', () => {
       const html = healthy([category({ category: 'cost', emptyLabel: 'No enabled rules' })]);
-      expect(html).toContain('0/0');
-      expect(html).toContain('categories with every counted rule passing');
+      expect(html).toContain('The filter left nothing to count');
+      expect(html).not.toContain('0/0');
     });
   });
 });
