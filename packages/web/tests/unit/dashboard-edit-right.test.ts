@@ -4,15 +4,21 @@
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DashboardGridClient } from '@/app/(app)/dashboards/[id]/dashboard-grid-client';
 import { SCOPED_DASHBOARD_REASON } from '@/lib/write-controls';
+import { buildBarState } from '@/lib/dashboard-bar';
+import { savedFiltersOf } from '@/lib/dashboard-filters';
+import { dashboardAddress } from '@/lib/finding-view';
 import type { Dashboard } from '@/lib/types';
+import { EVERYTHING_ACCESS } from '../helpers/access';
 
+let query = '';
+beforeEach(() => { query = ''; });
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => undefined, replace: () => undefined, refresh: () => undefined }),
   usePathname: () => '/dashboards/d1',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(query),
 }));
 
 const DASHBOARD = {
@@ -20,9 +26,14 @@ const DASHBOARD = {
   config: { widgets: [], filters: {} },
 } as unknown as Dashboard;
 
-const render = (edit: { allowed: boolean; reason?: string }) => renderToStaticMarkup(createElement(DashboardGridClient, {
-  dashboard: DASHBOARD, outsideAccess: { subscriptions: 0, resourceGroups: 0 } as never, edit,
-}));
+const SAVED = savedFiltersOf(DASHBOARD.config);
+const barFor = (address: string) => buildBarState({
+  revision: 1, saved: SAVED, changes: dashboardAddress(SAVED).read(new URLSearchParams(address)), access: EVERYTHING_ACCESS, widgets: [],
+});
+
+const render = (edit: { allowed: boolean; reason?: string }, address = '', canDuplicate = edit.allowed) => (query = address, renderToStaticMarkup(createElement(DashboardGridClient, {
+  dashboard: DASHBOARD, outsideAccess: barFor(address).marks, bar: barFor(address).state, edit, canDuplicate,
+})));
 
 /** The `disabled` attribute, not the `disabled:` utility classes every button carries. */
 const isDisabled = (button: string): boolean => /\sdisabled(=|\s|>)/.test(button);
@@ -46,5 +57,26 @@ describe('the Edit control', () => {
   it('turns the empty dashboard\'s Add your first widget off too', () => {
     const add = buttonWith(render({ allowed: false, reason: SCOPED_DASHBOARD_REASON }), 'Add your first widget');
     expect(isDisabled(add)).toBe(true);
+  });
+});
+
+describe('Save as this dashboard\'s filters', () => {
+  const SAVE = 'Save as this dashboard&#x27;s filters';
+
+  it('is on for someone who may edit, once the address holds a change', () => {
+    const save = buttonWith(render({ allowed: true }, 'severity=high'), SAVE);
+    expect(save).not.toBe('');
+    expect(isDisabled(save)).toBe(false);
+  });
+
+  it('is off with the server\'s reason for someone who may not, and Duplicate is offered beside it when the server allows it', () => {
+    const markup = render({ allowed: false, reason: SCOPED_DASHBOARD_REASON }, 'severity=high', true);
+    expect(isDisabled(buttonWith(markup, SAVE))).toBe(true);
+    expect(markup).toContain(SCOPED_DASHBOARD_REASON.replace(/'/g, '&#x27;'));
+    expect(buttonWith(markup, 'Duplicate')).not.toBe('');
+  });
+
+  it('is not shown while the address holds no change', () => {
+    expect(render({ allowed: true })).not.toContain(SAVE);
   });
 });

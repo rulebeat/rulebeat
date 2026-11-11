@@ -30,25 +30,33 @@ import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage
 import { NewVsFixedWidget } from '@/components/dashboard/widgets/new-vs-fixed-widget';
 import { ActivityOccurrencesWidget } from '@/components/dashboard/widgets/activity-occurrences-widget';
 import { AdvisoriesWidget } from '@/components/dashboard/widgets/advisories-widget';
-import { DashboardFilterBar, type DashboardFilters } from '@/components/dashboard/dashboard-filter-bar';
+import { DashboardFilterBar } from '@/components/dashboard/dashboard-filter-bar';
 import { REFRESH_OPTIONS } from '@/components/dashboard/dashboard-constants';
 import type { Dashboard, WidgetDef } from '@/lib/types';
 import {
-  widgetHasScopeOverrides, widgetScopeNote, savedFiltersOf, dashboardFiltersOf, differencesFromSaved, type WidgetFilters,
+  widgetHasScopeOverrides, widgetScopeNote, savedFiltersOf, applyChanges, widgetFiltersOf, type WidgetFilters,
 } from '@/lib/dashboard-filters';
-import { dashboardAddress } from '@/lib/finding-view';
+import { dashboardAddress, type DashboardFilterChanges } from '@/lib/finding-view';
+import { withWidgetOverrides, type DashboardBarState } from '@/lib/dashboard-bar';
+import { NO_REFRESH_CHOICE, pageInterval, pickInterval, savedInterval, shownInterval, type RefreshChoice } from '@/lib/dashboard-refresh';
+import { incomingDashboard, latestOf, noticeFor, revisionToSave, seeRevision } from '@/lib/dashboard-revision';
+import { UNAVAILABLE_NOTICE, conflictNotice, movedDimensions } from '@/lib/dashboard-conflict';
+import { sendFiltersSave, type SaveOutcome } from '@/lib/dashboard-filter-save-client';
 import type { OutsideAccess } from '@/lib/outside-access';
-import type { DateWindow } from '@/lib/date-window';
 import { cn } from '@/lib/utils';
 
 type RGLLayout = LayoutItem;
 
 interface Props {
   dashboard: Dashboard;
-  /** Stored subscription and resource group values, in the filter bar or on a widget, that the person's access does not reach. */
+  /** Subscription and resource group values, saved, in the address or on a widget, that the person's access does not reach. */
   outsideAccess: OutsideAccess;
+  /** The filter bar for this person, worked out on the server from the address in the request. */
+  bar: DashboardBarState;
   /** Whether the person may edit the dashboard, and why not. Edit mode previews widget drafts, which the server refuses without the right. */
   edit: { allowed: boolean; reason?: string };
+  /** Whether the duplicate route will take this person's request. Computed on the server from the same action the route checks. */
+  canDuplicate: boolean;
 }
 
 /* The grid's own geometry. Named here because the fit-to-content pass has to run
@@ -56,18 +64,7 @@ interface Props {
 const ROW_HEIGHT = 80;
 const ROW_MARGIN = 8;
 
-function filtersFromConfig(config: Dashboard['config']): DashboardFilters {
-  return {
-    categories: config.filters?.categories ?? [],
-    subscriptions: config.filters?.subscriptions ?? [],
-    resourceGroups: config.filters?.resourceGroups ?? [],
-    tags: config.filters?.tags ?? [],
-    severities: config.filters?.severities ?? [],
-    ruleIds: config.filters?.ruleIds ?? [],
-  };
-}
-
-function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, scopeNote, refreshKey, editMode, canPreview, onRemove, onConfigure }: {
+function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtered, scopeNote, refreshKey, editMode, canPreview, onRevision, onRemove, onConfigure }: {
   widget: WidgetDef;
   /** The widget as saved on the dashboard, or undefined for one added in this edit. */
   stored: WidgetDef | undefined;
@@ -81,6 +78,7 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
   editMode: boolean;
   /** The person has the edit right, so a draft widget may be counted by the server. */
   canPreview: boolean;
+  onRevision: (revision: number) => void;
   onRemove: () => void;
   onConfigure: () => void;
 }) {
@@ -125,39 +123,65 @@ function WidgetRenderer({ widget, stored, dashboardId, changes, filters, filtere
 
   return (
     <WidgetWrapper widget={widget} editMode={editMode} filtered={filtered} scopeNote={scopeNote} onRemove={onRemove} onConfigure={onConfigure}>
-      <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
+      <WidgetRequestProvider value={{ dashboardId, widgetId: widget.id, widgetType: widget.type, changes, onRevision, preview: draft ? { config: widget.config as Record<string, unknown> } : undefined }}>
         {inner}
       </WidgetRequestProvider>
     </WidgetWrapper>
   );
 }
 
-export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }: Props) {
+/** The layout a save sends. The saved filters and window are not part of it: the server keeps them. */
+export function layoutConfig(config: Dashboard['config'], autoRefresh: number, widgets: WidgetDef[]): Dashboard['config'] {
+  const { filters: _filters, dateWindow: _dateWindow, windowDays: _windowDays, ...rest } = config;
+  return { ...rest, autoRefresh, widgets };
+}
+
+export function DashboardGridClient({ dashboard: initial, outsideAccess, bar, edit: editRight, canDuplicate }: Props) {
   const router = useRouter();
+  // A save can find the edit right gone (a Role change or a handover while the page was open). The page then
+  // shows the controls off with the reason the server gave, as it would for anyone who never had the right.
+  const [lostEditReason, setLostEditReason] = useState<string | null>(null);
+  const edit = lostEditReason ? { allowed: false, reason: lostEditReason } : editRight;
+  // The dashboard was deleted, unshared or handed over while the page was open.
+  const [unavailable, setUnavailable] = useState(false);
+  // The notice a save that met a newer revision leaves. It outlasts the reload that follows, and it goes
+  // when the address no longer holds changes to check.
+  const [conflict, setConflict] = useState<string | null>(null);
+  // The revision a conflict reported. While a layout edit is open the page keeps the dashboard it holds,
+  // so a second Save goes over this one, not over the older revision of the layout.
+  const [conflictRevision, setConflictRevision] = useState<number | undefined>(undefined);
   const [dashboard, setDashboard] = useState<Dashboard>(initial);
   const [widgets, setWidgets] = useState<WidgetDef[]>(initial.config.widgets);
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [dashFilters, setDashFilters] = useState<DashboardFilters>(filtersFromConfig(initial.config));
-  const [dateWindow, setDateWindow] = useState<DateWindow>(
-    initial.config.dateWindow ?? { mode: 'relative', days: initial.config.windowDays ?? 7 },
-  );
-  const filters: WidgetFilters = { ...dashFilters, dateWindow };
-  // What the widgets ask the server for: the changes in the address, with any bar change not saved yet
-  // laid over them. The server holds the saved filters, so only differences from them travel.
+  // What the widgets ask the server for is the address: the changes on top of the saved filters. The
+  // filter bar writes them there and nowhere else, so nothing a person picks is saved to the dashboard.
   const searchParams = useSearchParams();
+  // The saved filters are the newest the server has sent, not the dashboard held for a layout edit: the
+  // server counts with them, so the address is read against them too.
+  const savedSource = latestOf(dashboard, initial);
+  const saved = useMemo(() => savedFiltersOf(savedSource.config), [savedSource.config]);
   const changes = useMemo(() => {
-    const saved = savedFiltersOf(dashboard.config);
     const address = dashboardAddress(saved);
-    const live = differencesFromSaved(saved, dashboardFiltersOf(dashFilters, dateWindow));
-    return address.write({ ...address.read(searchParams), ...live }).toString();
-  }, [dashboard.config, searchParams, dashFilters, dateWindow]);
-  const hasActiveFilters = dashFilters.categories.length > 0 || dashFilters.subscriptions.length > 0
-    || dashFilters.resourceGroups.length > 0 || dashFilters.tags.length > 0
-    || dashFilters.severities.length > 0 || dashFilters.ruleIds.length > 0;
+    return address.write(address.read(searchParams)).toString();
+  }, [saved, searchParams]);
+  // Back at the saved filters there is nothing left to check, so a later pick starts without the old notice.
+  if (changes === '' && conflict !== null) setConflict(null);
+  const filters: WidgetFilters = useMemo(
+    () => widgetFiltersOf(applyChanges(saved, dashboardAddress(saved).read(searchParams))),
+    [saved, searchParams],
+  );
+  const hasActiveFilters = Boolean(
+    filters.categories || filters.subscriptions || filters.resourceGroups || filters.tags || filters.severities || filters.ruleIds,
+  );
   const [refreshKey, setRefreshKey] = useState(0);
-  const [autoRefresh, setAutoRefresh] = useState(dashboard.config.autoRefresh ?? 0);
+  // Outside edit mode a pick applies only to this open page. The saved interval is set in edit mode and
+  // saved with the layout, so nothing a person picks while looking changes the dashboard for everyone.
+  const [refreshChoice, setRefreshChoice] = useState<RefreshChoice>(NO_REFRESH_CHOICE);
+  const savedRefresh = dashboard.config.autoRefresh ?? 0;
+  const autoRefresh = pageInterval(savedRefresh, refreshChoice);
+  const shownRefresh = shownInterval(editMode, savedRefresh, refreshChoice);
   const [countdown, setCountdown] = useState(0);
   const [configuringWidget, setConfiguringWidget] = useState<WidgetDef | null>(null);
   const [addingWidget, setAddingWidget] = useState(false);
@@ -165,6 +189,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   const [titleValue, setTitleValue] = useState(dashboard.name);
   const [titleError, setTitleError] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const widgetsRef = useRef(initial.config.widgets);
@@ -175,27 +200,51 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   useEffect(() => { widgetsRef.current = widgets; }, [widgets]);
   const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 });
 
-  // Filter-bar persistence: deliberately independent of the widget-layout `dirty`/edit-mode Save
-  // flow above: changing a filter bumps refreshKey immediately (all widgets refetch) and persists
-  // to the server debounced, with no explicit "Save" required and regardless of `editMode`. Built
-  // from `dashboard.config` (last-synced state), never the possibly-dirty `widgets` local state,
-  // so a filter change can never silently persist an unsaved layout edit as a side effect.
-  const filtersFirstRender = useRef(true);
+  // The dashboard has one revision on this page. A counting response computed from a newer one means
+  // the dashboard changed underneath it (the saved filters among other things): reload the bar and
+  // every number together, and say so. Nothing is saved, and the address stays as it is. A layout edit
+  // that is open is not discarded: the page keeps the layout it holds and takes the newer one when the
+  // edit ends. The filters are not part of that layout, so the bar and the numbers still reload.
+  const layoutEditOpen = editMode || dirty;
+  const layoutEditOpenRef = useRef(layoutEditOpen);
+  useEffect(() => { layoutEditOpenRef.current = layoutEditOpen; }, [layoutEditOpen]);
+  const heldRevision = useRef(initial.revision);
+  const handledRevision = useRef(initial.revision);
+  useEffect(() => { heldRevision.current = dashboard.revision; }, [dashboard.revision]);
+  const onRevision = useCallback((seen: number) => {
+    const { view, newer } = seeRevision({ held: heldRevision.current, handled: handledRevision.current }, seen);
+    if (!newer) return;
+    handledRevision.current = view.handled;
+    setNotice(noticeFor(layoutEditOpenRef.current ? 'defer' : 'adopt'));
+    router.refresh();
+  }, [router]);
+
   useEffect(() => {
-    if (filtersFirstRender.current) { filtersFirstRender.current = false; return; }
+    const action = incomingDashboard({ held: dashboard.revision, incoming: initial.revision, layoutEditOpen });
+    if (action === 'defer') {
+      // The layout waits, the numbers do not: they are counted from the newest saved filters.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRefreshKey(k => k + 1);
+      return;
+    }
+    if (action !== 'adopt') return;
+    // Adopting the reloaded dashboard from props after router.refresh(): an external sync, not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDashboard(initial);
+    setWidgets(initial.config.widgets);
     setRefreshKey(k => k + 1);
-    const t = setTimeout(() => {
-      fetch(`/api/dashboards/${dashboard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { ...dashboard.config, filters: dashFilters, dateWindow, windowDays: undefined } }),
-      })
-        .then(res => res.ok ? res.json() as Promise<Dashboard> : null)
-        .then(d => { if (d) setDashboard(d); });
-    }, 500);
-    return () => clearTimeout(t);
+    setNotice(noticeFor('adopt'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashFilters, dateWindow]);
+  }, [initial.revision, layoutEditOpen]);
+
+  // The bar is the server's account of the filters, from the same request that counts the numbers, so it
+  // follows the newest revision even while a layout edit holds an older layout. Only a bar older than the
+  // one shown (the page rendered before this tab saved) is ignored.
+  const [shownBar, setShownBar] = useState(bar);
+  if (bar !== shownBar && latestOf(shownBar, bar) === bar) setShownBar(bar);
+  // A layout save adds or changes a widget override without reloading the page, so the line that says
+  // which dimensions widgets override is counted from the dashboard as held.
+  const barShown = useMemo(() => withWidgetOverrides(shownBar, dashboard.config.widgets), [shownBar, dashboard.config.widgets]);
 
   // Every widget below self-fetches from /api/widgets/summary (or its own route) keyed off
   // `refreshKey`: bumping it is the shared "refetch everything" signal for manual refresh and
@@ -323,6 +372,41 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
     setDirty(true);
   }
 
+  // Save the changes in the address as the dashboard's filters. The page sends the revision it holds and
+  // adopts the one the server returns, so its own save is never mistaken for someone else's change. A
+  // layout edit that is open is untouched: it never carries filters, and the revision it holds moves with this.
+  async function saveFilters(changes: DashboardFilterChanges): Promise<SaveOutcome> {
+    const before = shownBar;
+    const outcome = await sendFiltersSave(
+      dashboard.id, revisionToSave({ dashboard: dashboard.revision, bar: shownBar.revision, conflict: conflictRevision }), changes,
+    );
+    if (outcome.kind === 'saved') {
+      setConflictRevision(undefined);
+      setDashboard(prev => latestOf(prev, outcome.dashboard));
+      setShownBar(outcome.bar);
+      setRefreshKey(k => k + 1);
+      setNotice(null);
+      setConflict(null);
+    } else if (outcome.kind === 'conflict') {
+      // Nothing was saved. The bar and every number reload from the newer revision, the address stays, and
+      // the notice says who changed the saved filters, which dimensions moved under the person, and to
+      // check the changes before saving again. A second Save is then a deliberate save over the new revision.
+      const after = outcome.bar;
+      if (after) setShownBar(prev => latestOf(prev, after));
+      onRevision(outcome.revision);
+      setConflictRevision(prev => Math.max(prev ?? 0, outcome.revision));
+      setConflict(conflictNotice({
+        by: outcome.changedBy, at: outcome.changedAt, moved: after ? movedDimensions(before, after, changes) : [],
+        layoutEditOpen,
+      }));
+    } else if (outcome.kind === 'gone') {
+      setUnavailable(true);
+    } else if (outcome.kind === 'forbidden') {
+      setLostEditReason(outcome.message);
+    }
+    return outcome;
+  }
+
   // Save title rename only
   async function saveTitle(newName: string) {
     const trimmed = newName.trim();
@@ -330,7 +414,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
     const res = await fetch(`/api/dashboards/${dashboard.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: trimmed }),
+      body: JSON.stringify({ name: trimmed, revision: dashboard.revision }),
     });
     if (res.ok) {
       const d = await res.json() as Dashboard;
@@ -347,7 +431,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   }
 
   // Save layout + config to API
-  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = autoRefresh, updatedName = titleValue) {
+  async function save(updatedWidgets: WidgetDef[] = widgets, updatedAutoRefresh = savedInterval(savedRefresh, refreshChoice), updatedName = titleValue) {
     setSaving(true);
     try {
       const res = await fetch(`/api/dashboards/${dashboard.id}`, {
@@ -355,15 +439,19 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: updatedName,
-          // Layout/title/auto-refresh saves must not clobber the filter bar's own config keys.
-          // That persistence is independent (see the debounced effect above).
-          config: { ...dashboard.config, autoRefresh: updatedAutoRefresh, widgets: updatedWidgets },
+          revision: dashboard.revision,
+          // A layout save never carries the saved filters or window. Those change only by an explicit save.
+          config: layoutConfig(dashboard.config, updatedAutoRefresh, updatedWidgets),
         }),
       });
       if (res.ok) {
         const d = await res.json() as Dashboard;
         setDashboard(d);
         setDirty(false);
+        setRefreshChoice(choice => ({ ...choice, draft: null }));
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? 'Failed to save the dashboard.');
       }
     } finally { setSaving(false); }
   }
@@ -390,11 +478,18 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
   }
 
   async function handleDuplicate() {
-    const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/dashboards/${dashboard.id}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        setError(res.status === 403 ? 'Duplicating a dashboard needs the Editor Role on the whole install.' : 'Failed to duplicate dashboard.');
+        return;
+      }
       const copy = await res.json() as Dashboard;
       router.push(`/dashboards/${copy.id}`);
       router.refresh();
+    } catch {
+      setError('Failed to duplicate dashboard.');
     }
   }
 
@@ -430,14 +525,25 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
     }
   }
 
+  // Sends no request: in edit mode the pick waits for Save, outside it applies to this page only.
   function handleRefreshChange(val: number) {
-    setAutoRefresh(val);
-    save(widgets, val, titleValue);
+    const picked = pickInterval(editMode, refreshChoice, val);
+    setRefreshChoice(picked.choice);
+    if (picked.layoutChanged) setDirty(true);
   }
 
   const layout: RGLLayout[] = widgets.map(w => ({
     i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2,
   }));
+
+  if (unavailable) {
+    return (
+      <div role="alert" className="flex h-64 flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-sm font-semibold text-ink">{UNAVAILABLE_NOTICE}</p>
+        <Button size="sm" variant="outline" onClick={() => router.replace('/dashboard')}>Open your dashboards</Button>
+      </div>
+    );
+  }
 
   return (
     /* No height cap and no scroll container of its own. The app has exactly one
@@ -489,7 +595,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
             render={
               <Button variant="outline" size="sm" className="gap-1.5">
                 <RefreshCw className="size-3.5" />
-                {autoRefresh === 0 ? 'Off' : REFRESH_OPTIONS.find(o => o.value === autoRefresh)?.label ?? `${autoRefresh}s`}
+                {shownRefresh === 0 ? 'Off' : REFRESH_OPTIONS.find(o => o.value === shownRefresh)?.label ?? `${shownRefresh}s`}
                 <ChevronDown className="size-3" />
               </Button>
             }
@@ -499,7 +605,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
               <DropdownMenuItem
                 key={o.value}
                 onClick={() => handleRefreshChange(o.value)}
-                className={cn(autoRefresh === o.value && 'font-semibold')}
+                className={cn(shownRefresh === o.value && 'font-semibold')}
               >
                 {o.label}
               </DropdownMenuItem>
@@ -515,7 +621,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
         {/* Edit mode toggle */}
         {editMode ? (
           <>
-            <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setWidgets(dashboard.config.widgets); setDirty(false); setRefreshChoice(choice => ({ ...choice, draft: null })); }}>
               Cancel
             </Button>
             <Button size="sm" className="gap-1.5" onClick={() => { save(); setEditMode(false); }} disabled={saving}>
@@ -568,14 +674,8 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
         </DropdownMenu>
       </div>
 
-      {/* Dashboard-level filter bar: persists independently of edit mode / layout Save */}
-      <DashboardFilterBar
-        filters={dashFilters}
-        dateWindow={dateWindow}
-        onFiltersChange={setDashFilters}
-        onDateWindowChange={setDateWindow}
-        outsideAccess={outsideAccess}
-      />
+      {/* Dashboard-level filter bar: writes its picks to the address, never to the dashboard */}
+      <DashboardFilterBar state={barShown} saved={saved} marks={outsideAccess} save={{ allowed: edit.allowed, reason: edit.reason, canDuplicate, run: saveFilters, duplicate: handleDuplicate }} />
 
       {/* Edit mode banner */}
       {editMode && (
@@ -586,6 +686,9 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
       </div>
 
       {error && <Callout tone="error" className="shrink-0 border-b border-rule-strong">{error}</Callout>}
+      {(conflict && changes !== '' ? conflict : notice) && (
+        <Callout tone="warn" className="shrink-0 border-b border-rule-strong">{conflict && changes !== '' ? conflict : notice}</Callout>
+      )}
 
       {/* Grid */}
       <div className="px-4 py-4" ref={gridContainerRef as React.RefObject<HTMLDivElement>}>
@@ -620,6 +723,7 @@ export function DashboardGridClient({ dashboard: initial, outsideAccess, edit }:
                   refreshKey={refreshKey}
                   editMode={editMode}
                   canPreview={edit.allowed}
+                  onRevision={onRevision}
                   onRemove={() => removeWidget(w.id)}
                   onConfigure={() => setConfiguringWidget(w)}
                 />

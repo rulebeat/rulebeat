@@ -10,7 +10,11 @@ import { parseViewTab, type ViewTab } from './view-response';
 import { effectiveView } from './effective-filters';
 import { OPEN_VIEW_PARAM, SAVED_VIEW_UNAVAILABLE } from './saved-view-query';
 
-export interface ViewRequest { view: View; tab: ViewTab; showSuppressed: boolean }
+export interface ViewRequest {
+  view: View; tab: ViewTab; showSuppressed: boolean;
+  /** The revision of the saved view the read used, when one is open. */
+  savedRevision?: number;
+}
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -31,7 +35,8 @@ export type ReadViewRequest =
  * `parseViewRequest` for a route that may be asked for a saved view (`view=<id>&rev=<n>`). With a view
  * open, the View is the saved view with the query's changes on top (`effectiveView`), assembled here
  * and never from a copy the browser built; an unknown, deleted or unopenable view is a 404 with one
- * message. The read always uses the view as it is now; `rev` is ignored.
+ * message. The read always uses the view as it is now; `rev` is ignored, and the revision it used is
+ * `savedRevision`, so a page holding an older one can pick the change up.
  */
 export async function readViewRequest(params: URLSearchParams): Promise<ReadViewRequest> {
   const parsed = parseViewRequest(params);
@@ -40,7 +45,7 @@ export async function readViewRequest(params: URLSearchParams): Promise<ReadView
   if (!viewId) return parsed;
   const effective = await effectiveView({ viewId, changes: params });
   if (!effective.ok) return { ok: false, error: SAVED_VIEW_UNAVAILABLE, status: 404 };
-  return { ok: true, value: { ...parsed.value, view: effective.view } };
+  return { ok: true, value: { ...parsed.value, view: effective.view, savedRevision: effective.saved.revision } };
 }
 
 /** `format=csv|json`: which file the export route writes. There is no default, so a link that forgot

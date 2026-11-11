@@ -679,9 +679,36 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: dashboardExpected,
   };
+  // PUT /api/dashboards/[id] is a layout write: only an Editor on Everything or an Admin may make one, it needs
+  // the revision the person read, and it never changes the saved filters, whatever the body carries.
+  const putLayout = async (seed: MatrixSeed, body: object) => {
+    const route = await import('@/app/api/dashboards/[id]/route');
+    const res = await route.PUT(
+      new Request('http://localhost/api/dashboards/x', { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+      { params: Promise.resolve({ id: seed.dashboardId }) },
+    );
+    const answered = res.status === 200 ? await res.json() as { config: { filters?: unknown } } : undefined;
+    return { status: res.status, filters: answered?.config.filters };
+  };
   const dashboardById: Matrix = {
-    probe: async seed => dashboardOf(await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as never),
-    expected: dashboardExpected,
+    probe: async seed => {
+      const route = await import('@/app/api/dashboards/[id]/route');
+      const read = await BODY(await getWith('/api/dashboards/x', route, seed.dashboardId)) as { revision: number; config: { widgets: unknown[] } };
+      const layout = { widgets: read.config.widgets };
+      return {
+        ...dashboardOf(read as never),
+        withRevision: await putLayout(seed, { revision: read.revision, config: { ...layout, filters: { severities: ['high'] } } }),
+        withoutRevision: await putLayout(seed, { config: layout }),
+      };
+    },
+    expected: Object.fromEntries(Object.entries(dashboardExpected).map(([person, byTab]) => {
+      const mayWrite = person === 'Admin' || person === 'Editor on Everything';
+      const writes = {
+        withRevision: mayWrite ? { status: 200, filters: STORED_DASHBOARD.filters } : { status: 403, filters: undefined },
+        withoutRevision: { status: mayWrite ? 409 : 403, filters: undefined },
+      };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
@@ -694,16 +721,48 @@ function dashboardMatrix(): Record<string, Matrix> {
     { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
     { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
   );
+  // Writing a saved view is install-wide like the rest of the library writes: the Admin and the Editor on
+  // Everything may, and everyone who holds less is refused. A write needs the revision the person read.
+  const mayWriteViews = (person: string) => person === 'Admin' || person === 'Editor on Everything';
+  const jsonRequest = (url: string, method: string, body: object) =>
+    new Request(`http://localhost${url}`, { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
   const views: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
-      return viewOf(list.find(v => v.id === seed.savedViewId)!);
+      const route = await import('@/app/api/views/route');
+      const list = await BODY(await route.GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      const read = list.find(v => v.id === seed.savedViewId)!;
+      // Saving from the open view builds the new one on the server from its id, revision and the changes.
+      const { getSavedView } = await import('@/lib/db/saved-views');
+      const revision = (await getSavedView(seed.savedViewId))!.revision;
+      const name = `Matrix copy ${crypto.randomUUID()}`;
+      const created = await route.POST(jsonRequest('/api/views', 'POST', { name, tab: 'results', fromView: seed.savedViewId, revision, changes: '' }));
+      const body = created.status === 201 ? await created.json() as { query: string; dropped: number } : undefined;
+      const withoutRevision = await route.POST(jsonRequest('/api/views', 'POST', { name: `${name} again`, tab: 'results', fromView: seed.savedViewId, changes: '' }));
+      return { ...viewOf(read), fromOpen: { status: created.status, query: body?.query, dropped: body?.dropped }, withoutRevision: withoutRevision.status };
     },
-    expected: viewExpected,
+    expected: Object.fromEntries(Object.entries(viewExpected).map(([person, byTab]) => {
+      const writes = mayWriteViews(person)
+        ? { fromOpen: { status: 201, query: VIEW_QUERY, dropped: 0 }, withoutRevision: 409 }
+        : { fromOpen: { status: 403, query: undefined, dropped: undefined }, withoutRevision: 403 };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
   const viewById: Matrix = {
-    probe: async seed => viewOf(await BODY(await getWith('/api/views/x', await import('@/app/api/views/[id]/route'), seed.savedViewId)) as never),
-    expected: viewExpected,
+    probe: async seed => {
+      const route = await import('@/app/api/views/[id]/route');
+      const read = await BODY(await getWith('/api/views/x', route, seed.savedViewId)) as { revision: number; query: string; tab: string; outsideAccess: unknown };
+      const patch = async (body: object) => (await route.PATCH(jsonRequest('/api/views/x', 'PATCH', body), { params: Promise.resolve({ id: seed.savedViewId }) })).status;
+      return {
+        ...viewOf(read),
+        // The changes name the saved subscription, so a write that is allowed leaves the view as it was.
+        withRevision: await patch({ revision: read.revision, changes: VIEW_QUERY }),
+        renameWithoutRevision: await patch({ name: 'Renamed' }),
+      };
+    },
+    expected: Object.fromEntries(Object.entries(viewExpected).map(([person, byTab]) => {
+      const writes = mayWriteViews(person) ? { withRevision: 200, renameWithoutRevision: 409 } : { withRevision: 403, renameWithoutRevision: 403 };
+      return [person, Object.fromEntries(Object.entries(byTab).map(([tab, read]) => [tab, { ...(read as object), ...writes }]))];
+    })) as Matrix['expected'],
   };
 
   // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
@@ -721,10 +780,30 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
+  // Saving the dashboard's filters is install-wide like the rest of the dashboard writes: the Admin and the
+  // Editor on Everything save, and everyone who holds less is refused the same way, with the reason.
+  const saveFilters: Matrix = {
+    probe: async seed => {
+      const { getDashboard } = await import('@/lib/db/dashboards');
+      const route = await import('@/app/api/dashboards/[id]/filters/route');
+      const body = JSON.stringify({ revision: (await getDashboard(seed.dashboardId))!.revision, changes: { severity: ['low'] } });
+      const res = await route.PUT(
+        new Request('http://localhost/api/dashboards/x/filters', { method: 'PUT', body, headers: { 'Content-Type': 'application/json' } }),
+        { params: Promise.resolve({ id: seed.dashboardId }) },
+      );
+      return { status: res.status, saved: res.status === 200 };
+    },
+    expected: byPerson(
+      same({ status: 200, saved: true }),
+      same({ status: 403, saved: false }), same({ status: 403, saved: false }), same({ status: 403, saved: false }),
+      same({ status: 403, saved: false }), same({ status: 403, saved: false }),
+    ),
+  };
+
   return {
     'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
     'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
-    'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
+    'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'dashboards/[id]/filters': saveFilters, 'views': views, 'views/[id]': viewById,
   };
 }
 

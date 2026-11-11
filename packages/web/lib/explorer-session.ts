@@ -66,9 +66,17 @@ export function explorerAddress(
   opts: { extraParams?: Record<string, string>; viewId?: string | null; saved?: View; lockedCategory?: string } = {},
 ): string {
   const base = opts.viewId ? { ...opts.extraParams, [OPEN_VIEW_PARAM]: opts.viewId } : opts.extraParams;
-  const unlocked = (v: View): View => ({ ...v, filters: filtersWithoutLockedCategory(v.filters, opts.lockedCategory) });
+  const unlocked = (v: View) => withoutLockedCategory(v, opts.lockedCategory);
   if (opts.viewId && opts.saved) return savedViewAddress(unlocked(opts.saved)).write(unlocked(view), base).toString();
   return viewToSearchParams(unlocked(view), base).toString();
+}
+
+export const withoutLockedCategory = (view: View, lockedCategory?: string): View => ({ ...view, filters: filtersWithoutLockedCategory(view.filters, lockedCategory) });
+
+/** The differences `view` makes to the open saved view `saved`, as the query "Update with current view" and
+ *  "Save current view" send: the address without the params the page owns, and without the page. */
+export function explorerChanges(view: View, saved: View, lockedCategory?: string): string {
+  return savedViewAddress(withoutLockedCategory(saved, lockedCategory)).write({ ...withoutLockedCategory(view, lockedCategory), page: 1 }).toString();
 }
 
 /** The params the three lazy reads share. The page is the view's own position, which none of them

@@ -38,11 +38,11 @@ import {
 } from '@/lib/explorer-filters';
 import {
   BUILTIN_FIELDS, DEFAULT_SORT, clearFilter, columnCell, emptyView, filterValues,
-  findingSubject, isRowField, rowField, rowPath, savedViewAddress, toggleFilterValue, viewFromSearchParams,
+  FIELD_LABEL, findingSubject, isRowField, rowField, rowPath, savedViewAddress, toggleFilterValue, viewFromSearchParams,
   type BuiltinField, type GroupSort, type View, type ViewField, type ViewFilter, type ViewSort,
 } from '@/lib/finding-view';
 import {
-  explorerAddress, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery,
+  explorerAddress, explorerChanges, exportUrl, remoteValuesFor, ruleFindingsUrl, viewQuery, withoutLockedCategory,
   type ExplorerSession, type RowCondition, type ViewRequest,
 } from '@/lib/explorer-session';
 import { emptyListCopy, emptyReasonOf, filterChipLabel, filtersRecoveryOf, listBodyOf, openGroupUrl, screenOf } from '@/lib/explorer-screen';
@@ -58,6 +58,12 @@ import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
 import { addressWithoutView, type OpenSavedView, type SavedView, type SavedViewTab } from '@/lib/saved-view-query';
+import type { SavedViewConflict } from '@/lib/saved-view-actions';
+import { SAVED_VIEW_RELOADED_NOTICE, differingParts, movedParts } from '@/lib/saved-view-conflict';
+import { conflictNotice } from '@/lib/dashboard-conflict';
+import { sameValues } from '@/lib/dashboard-filters';
+import { isOutsideAccess } from '@/lib/outside-access';
+import { fetchJson } from '@/lib/fetch-json';
 import { SavedViewUnavailable } from '@/components/findings/saved-view-unavailable';
 // ---- Types ----
 
@@ -124,12 +130,6 @@ const RETURNED_COL_WIDTH = 180;
 /** The built-in field each column header filters and sorts by. */
 const COL_FIELD: Record<SortCol, BuiltinField> = {
   resource: 'resourceName', rule: 'rule', category: 'category', severity: 'severity', firstSeen: 'firstSeen', lastSeen: 'lastSeen',
-};
-/** How a built-in field is named in the Add filter list and on a filter chip. */
-const FIELD_LABEL: Record<BuiltinField, string> = {
-  rule: 'Rule', kind: 'Kind', category: 'Category', severity: 'Severity', status: 'Status',
-  subscription: 'Subscription', resourceGroup: 'Resource Group', location: 'Location',
-  resourceType: 'Resource type', resourceName: 'Resource', tags: 'Tags', firstSeen: 'First seen', lastSeen: 'Last seen',
 };
 const SEVERITY_OPTIONS: SegmentedOption<Severity>[] = EXPLORER_SEVERITIES.map(sev => ({ value: sev, label: sev }));
 
@@ -464,6 +464,8 @@ export function FindingsExplorerClient({
   // The saved view the address has open. It is kept here because saving, updating or deleting one
   // changes it without a navigation; the address is rewritten from it by the URL sync below.
   const [openSaved, setOpenSaved] = useState<OpenSavedView | null>(savedViews?.open ?? null);
+  // What a save of the open view that met a newer revision leaves behind, until the viewer is back at its saved filters.
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
   // the category tabs and the Add filter control all read and write it, and it is the View's own
@@ -783,26 +785,84 @@ export function FindingsExplorerClient({
     writeUrl(urlQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlQuery, basePath]);
-  const adoptSavedView = useCallback((stored: SavedView | null) => {
-    setOpenSaved(stored && { id: stored.id, revision: stored.revision, view: { ...viewFromSearchParams(new URLSearchParams(stored.query)), page: 1 } });
-  }, []);
-
-  // Back to the open view's saved filters: every part the viewer changed returns to what it saved.
-  const saved = openSaved?.view;
-  const differsFromSaved = !!saved && savedViewAddress(saved).write({ ...findingView, page: 1 }).size > 0;
-  const backToSaved = useCallback(() => {
-    if (!saved) return;
-    setFilters(saved.filters);
-    setSearch(saved.search);
-    setDateWindow(saved.window);
-    setColumns(saved.columns);
-    setSort(saved.sort);
-    setGroupBy(saved.groupBy);
-    setGroupSort(saved.groupSort);
+  // Shows `next` as the page's View: every part the viewer can change. A locked category is the page's own.
+  const applyView = useCallback((next: View) => {
+    setFilters(lockedCategory ? [...clearFilter(next.filters, 'category'), { field: 'category', values: [lockedCategory] }] : next.filters);
+    setSearch(next.search);
+    setDateWindow(next.window);
+    setColumns(next.columns);
+    setSort(next.sort);
+    setGroupBy(next.groupBy);
+    setGroupSort(next.groupSort);
     setExpandedGroups(new Set());
     setGroupPages(new Map());
     setPage(0);
-  }, [saved]);
+  }, [lockedCategory]);
+  // What a save of the open view left the page with: the stored view is open, and `reset` shows it as
+  // stored when saving kept or dropped values the page was not showing.
+  const adoptSavedView = useCallback((stored: SavedView | null, opts?: { reset?: boolean }) => {
+    if (!stored) { setOpenSaved(null); return; }
+    const view = { ...viewFromSearchParams(new URLSearchParams(stored.query)), page: 1 };
+    setOpenSaved({ id: stored.id, revision: stored.revision, view });
+    if (opts?.reset) applyView(view);
+    setSavedNotice(null);
+  }, [applyView]);
+
+  const saved = openSaved?.view;
+  // The viewer's changes over the open view, as a save sends them, and the parts of the view they touch.
+  const savedChanges = saved ? explorerChanges(findingView, saved, lockedCategory) : '';
+  const differsFromSaved = savedChanges !== '';
+  const changedParts = useMemo(() => {
+    if (!saved) return [];
+    return differingParts(withoutLockedCategory(saved, lockedCategory), withoutLockedCategory(findingView, lockedCategory));
+  }, [saved, findingView, lockedCategory]);
+  // Back to the open view's saved filters: every part the viewer changed returns to what it saved.
+  const backToSaved = useCallback(() => {
+    if (!saved) return;
+    applyView(saved);
+    setSavedNotice(null);
+  }, [saved, applyView]);
+
+  // Someone saved the open view first, or the page found out by reading. The page takes the newer view
+  // and keeps the viewer's changes over it, the address staying as it was.
+  const takeNewerSavedView = useCallback((newer: SavedView, notice: (moved: string[]) => string) => {
+    if (!openSaved) return;
+    const newView = { ...viewFromSearchParams(new URLSearchParams(newer.query)), page: 1 };
+    const changes = new URLSearchParams(explorerChanges(findingView, openSaved.view, lockedCategory));
+    const moved = movedParts(openSaved.view, newView, changes);
+    applyView(savedViewAddress(newView).read(changes));
+    setOpenSaved({ id: newer.id, revision: newer.revision, view: newView });
+    setSavedNotice(notice(moved));
+  }, [openSaved, findingView, lockedCategory, applyView]);
+  const adoptConflict = useCallback((conflict: SavedViewConflict) => {
+    takeNewerSavedView(conflict.view, moved => conflictNotice({ subject: 'saved view', by: conflict.changedBy, at: conflict.changedAt, moved }));
+  }, [takeNewerSavedView]);
+
+  // A read answers with the revision of the open view it used. With no refresh tick on this page, that is
+  // how a change someone else saved is picked up.
+  const seenRevision = feed.status === 'ready' ? feed.data.savedRevision : undefined;
+  useEffect(() => {
+    if (!openSaved || seenRevision === undefined || seenRevision <= openSaved.revision) return;
+    let live = true;
+    void fetchJson<SavedView>(`/api/views/${encodeURIComponent(openSaved.id)}`).then(result => {
+      if (live && result.ok && result.data.revision > openSaved.revision) takeNewerSavedView(result.data, () => SAVED_VIEW_RELOADED_NOTICE);
+    });
+    return () => { live = false; };
+  }, [openSaved, seenRevision, takeNewerSavedView]);
+  // A save was refused for values outside the viewer's access that their changes added: those go. Values the
+  // view saved stay as they are, so the dimension returns to what was saved plus the viewer's own picks.
+  const removeOutsideValues = useCallback(() => {
+    if (!saved) return;
+    const marks = data?.outsideAccess;
+    setFilters(prev => prev.map(f => {
+      if (f.field !== 'subscription' && f.field !== 'resourceGroup') return f;
+      const savedValues = filterValues(saved.filters, f.field);
+      if (sameValues(f.values, savedValues)) return f;
+      const dimension = f.field as 'subscription' | 'resourceGroup';
+      return { ...f, values: f.values.filter(v => !isOutsideAccess(marks, dimension, v) || savedValues.includes(v)) };
+    }));
+    setPage(0);
+  }, [saved, data?.outsideAccess]);
   const filtersRecovery = filtersRecoveryOf({ savedViewOpen: !!saved, hasActiveFilter, differsFromSaved });
   const recoverFilters = saved ? backToSaved : clearFilters;
   // The open view was deleted, or stopped being the person's, while the page was open: every read of it
@@ -1095,6 +1155,8 @@ export function FindingsExplorerClient({
   return (
     <div className="space-y-5">
 
+      {savedNotice && <Callout tone="warn">{savedNotice}</Callout>}
+
       {/* Scan context */}
       <div className="flex items-center justify-between text-sm">
         <span className="text-ink-muted">
@@ -1315,7 +1377,12 @@ export function FindingsExplorerClient({
             tab={savedViews.tab}
             canWrite={savedViews.canWrite}
             openId={openSaved?.id ?? null}
+            openRevision={openSaved?.revision ?? null}
+            changes={savedChanges}
+            changedParts={changedParts}
             onOpenChange={adoptSavedView}
+            onConflict={adoptConflict}
+            onRemoveOutside={removeOutsideValues}
             onOpen={savedViews.onOpen}
             currentQuery={savedViewQuery}
           />

@@ -1,6 +1,6 @@
 import { db } from './client';
 import { auditLog } from './tables';
-import { desc, count } from 'drizzle-orm';
+import { and, desc, count, eq } from 'drizzle-orm';
 import { many, one, run } from './exec';
 import type { AppUser } from './users';
 
@@ -10,7 +10,7 @@ export type AuditAction =
   | 'suppression.create' | 'suppression.delete'
   | 'schedule.create' | 'schedule.update' | 'schedule.delete' | 'schedule.run'
   | 'category.create' | 'category.update' | 'category.delete'
-  | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate'
+  | 'dashboard.create' | 'dashboard.rename' | 'dashboard.delete' | 'dashboard.duplicate' | 'dashboard.filters_save'
   | 'view.create' | 'view.rename' | 'view.update' | 'view.delete'
   | 'scan.run'
   | 'user.invite' | 'user.invite_claimed' | 'user.role_change' | 'user.access_change' | 'user.mirror_set' | 'user.mirror_refresh' | 'user.remove' | 'user.default_role_change'
@@ -138,6 +138,23 @@ export async function listAuditEntries(opts: { limit?: number; offset?: number }
       .limit(limit).offset(offset),
   );
   return rows.map(rowToEntry);
+}
+
+/**
+ * The newest "Saved this dashboard's filters" entry for a dashboard, when it wrote a revision later than
+ * `afterRevision`. A save that met a newer revision names that entry's actor and time; a revision that
+ * moved by a rename or a layout save has no such entry, so nobody is named for it.
+ */
+export async function filtersSaveAfter(dashboardId: string, afterRevision: number): Promise<AuditEntry | null> {
+  const row = await one(
+    db.select().from(auditLog)
+      .where(and(eq(auditLog.action, 'dashboard.filters_save'), eq(auditLog.entityId, dashboardId)))
+      .orderBy(desc(auditLog.occurredAt)).limit(1),
+  );
+  if (!row) return null;
+  const entry = rowToEntry(row);
+  const written = entry.details?.['revision'];
+  return typeof written === 'number' && written > afterRevision ? entry : null;
 }
 
 /** Every row, unpaginated, for CSV export. listAuditEntries() stays capped at 200 for the UI. */

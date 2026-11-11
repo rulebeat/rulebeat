@@ -6,13 +6,19 @@ import { NoAccessState } from '@/components/findings/no-access-state';
 import { getCurrentUser } from '@/lib/api-auth';
 import { resolveAccess } from '@/lib/access';
 import { NO_ACCESS, holdsNoScope } from '@/lib/access-model';
-import { markDashboardConfig } from '@/lib/outside-access';
-import { dashboardEditControlFor } from '@/lib/write-controls';
+import { buildBarState } from '@/lib/dashboard-bar';
+import { savedFiltersOf } from '@/lib/dashboard-filters';
+import { loadKnownValues } from '@/lib/dashboard-known-values';
+import { dashboardAddress } from '@/lib/finding-view';
+import { dashboardDuplicateAllowedFor, dashboardEditControlFor } from '@/lib/write-controls';
 import { DashboardGridClient } from './dashboard-grid-client';
 
-interface Props { params: Promise<{ id: string }> }
+interface Props {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
 
-export default async function DashboardPage({ params }: Props) {
+export default async function DashboardPage({ params, searchParams }: Props) {
   const { id } = await params;
   // Sentinel id for spec 015's error.tsx e2e coverage. A real dashboard id is a UUID and can
   // never collide with this string, so it's a safe, deterministic way to exercise the route's
@@ -23,6 +29,16 @@ export default async function DashboardPage({ params }: Props) {
   const dashboards = await listDashboards();
   const user = await getCurrentUser();
   const access = user ? await resolveAccess(user) : NO_ACCESS;
+  // The bar is worked out here, from the address in this request, so it and the widgets read the same changes.
+  const saved = savedFiltersOf(dashboard.config);
+  const { state, marks } = buildBarState({
+    revision: dashboard.revision,
+    saved,
+    changes: dashboardAddress(saved).read(await searchParams),
+    access,
+    widgets: dashboard.config.widgets,
+    known: await loadKnownValues(),
+  });
 
   return (
     <>
@@ -32,7 +48,7 @@ export default async function DashboardPage({ params }: Props) {
         <div className="flex-1 min-h-0">
           {holdsNoScope(access)
             ? <NoAccessState />
-            : <DashboardGridClient dashboard={dashboard} outsideAccess={markDashboardConfig(access, dashboard.config)} edit={dashboardEditControlFor(access)} />}
+            : <DashboardGridClient dashboard={dashboard} outsideAccess={marks} bar={state} edit={dashboardEditControlFor(access)} canDuplicate={dashboardDuplicateAllowedFor(access)} />}
         </div>
       </div>
     </>

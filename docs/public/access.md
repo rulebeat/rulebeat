@@ -146,8 +146,11 @@ Each finding records where it sits, and a person sees it when a Scope they hold 
 
 This narrows every list, count, filter option, column option, export and finding detail on the
 Results, Advisories and Activity tabs, the dashboards, saved views, suppressions and Run History. A
-saved view or dashboard filtered to something outside a person's access still opens: the filter
-reads "Outside your access" and can be cleared.
+saved view or dashboard filtered to something outside a person's access still opens. On a dashboard
+the filter bar counts those values as "N outside your access" and never names them. They stay in the
+filter, so the numbers stay the ones the person's access allows, and a link from someone with more access
+does not widen what the person sees. Unticking the last value a person can see, when the saved filter holds
+values they cannot, is off with the reason.
 
 ## What a scoped Editor can do
 

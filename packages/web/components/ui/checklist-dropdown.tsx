@@ -34,6 +34,7 @@ export function ChecklistPanel({
   selected,
   onToggle,
   onClear,
+  clearHint,
   remote,
 }: {
   label: string;
@@ -41,6 +42,8 @@ export function ChecklistPanel({
   selected: Set<string>;
   onToggle: (value: string) => void;
   onClear: () => void;
+  /** Said under the clear button: what clearing does beyond emptying the list. */
+  clearHint?: string;
   remote?: RemoteValues;
 }) {
   const [search, setSearch] = useState('');
@@ -97,16 +100,21 @@ export function ChecklistPanel({
         ) : (
           panel.options.map(o => {
             const checked = selected.has(o.value);
+            const locked = o.disabledReason !== undefined;
             return (
               <label
                 key={o.value}
-                title={o.label}
-                className="flex cursor-pointer items-start gap-2.5 px-3 py-1.5 select-none hover:bg-surface-hover"
+                title={o.disabledReason ? `${o.label}. ${o.disabledReason}` : o.label}
+                className={cn(
+                  'flex items-start gap-2.5 px-3 py-1.5 select-none',
+                  locked ? 'cursor-not-allowed text-ink-2' : 'cursor-pointer hover:bg-surface-hover',
+                )}
               >
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={() => onToggle(o.value)}
+                  disabled={locked}
+                  onChange={() => { if (!locked) onToggle(o.value); }}
                   className="sr-only"
                 />
                 <span
@@ -120,7 +128,10 @@ export function ChecklistPanel({
                 </span>
                 {/* Wraps rather than truncates. A checklist is how you pick the right
                     one of several similar names, so cutting them off defeats the control. */}
-                <span className="min-w-0 flex-1 text-xs leading-snug break-words text-ink">{o.label}</span>
+                <span className="min-w-0 flex-1 text-xs leading-snug break-words text-ink">
+                  {o.label}
+                  {o.disabledReason && <span className="block text-ink-2">{o.disabledReason}</span>}
+                </span>
                 {o.count !== undefined && (
                   <span className="mt-px shrink-0 text-xs tabular-nums text-ink">{o.count}</span>
                 )}
@@ -141,6 +152,7 @@ export function ChecklistPanel({
           >
             Clear selection
           </button>
+          {clearHint && <p className="mt-1 text-xs text-ink-2">{clearHint}</p>}
         </div>
       )}
     </div>
@@ -154,6 +166,8 @@ export function ChecklistDropdown({
   selected,
   onToggle,
   onClear,
+  clearHint,
+  count,
   size = 'default',
   remote,
 }: {
@@ -162,12 +176,16 @@ export function ChecklistDropdown({
   selected: Set<string>;
   onToggle: (value: string) => void;
   onClear: () => void;
+  clearHint?: string;
+  /** What the trigger's badge reads, when it is not the number of ticked boxes. */
+  count?: number;
   /** `sm` matches the severity chips in a filter row; `default` matches the
    *  h-9 inputs and buttons in a page toolbar. */
   size?: 'sm' | 'default';
   remote?: RemoteValues;
 }) {
-  const active = selected.size > 0;
+  const shown = count ?? selected.size;
+  const active = shown > 0;
   return (
     <Popover>
       <PopoverTrigger
@@ -181,7 +199,7 @@ export function ChecklistDropdown({
         )}
       >
         {label}
-        {active && <span className="text-xs font-semibold tabular-nums">{selected.size}</span>}
+        {active && <span className="text-xs font-semibold tabular-nums">{shown}</span>}
         <ChevronDown
           className="size-3.5 transition-transform data-[popup-open]:rotate-180"
           aria-hidden="true"
@@ -194,6 +212,7 @@ export function ChecklistDropdown({
           selected={selected}
           onToggle={onToggle}
           onClear={onClear}
+          clearHint={clearHint}
           remote={remote}
         />
       </PopoverContent>

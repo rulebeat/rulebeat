@@ -132,28 +132,37 @@ export function widgetFiltersOf(filters: DashboardFilters): WidgetFilters {
   };
 }
 
-/** The filter bar's state as a dashboard's dimensions. */
-export function dashboardFiltersOf(bar: {
-  categories: string[]; subscriptions: string[]; resourceGroups: string[]; tags: string[]; severities: string[]; ruleIds: string[];
-}, window: DateWindow): DashboardFilters {
-  return {
-    category: bar.categories, subscription: bar.subscriptions, resourceGroup: bar.resourceGroups,
-    tags: bar.tags, rule: bar.ruleIds, severity: bar.severities, window,
-  };
-}
-
-function sameValues(a: readonly string[], b: readonly string[]): boolean {
+export function sameValues(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a);
   const right = new Set(b);
   return left.size === right.size && [...left].every(v => right.has(v));
 }
 
-/** Only the dimensions of `current` that are not what `saved` holds, as filter changes. */
-export function differencesFromSaved(saved: DashboardFilters, current: DashboardFilters): DashboardFilterChanges {
-  const changes: DashboardFilterChanges = {};
-  for (const dim of ['category', 'subscription', 'resourceGroup', 'tags', 'rule', 'severity'] as const) {
-    if (!sameValues(current[dim], saved[dim])) changes[dim] = current[dim];
+/** How many of `configs` (widget configs) set their own value for each dimension, by the same rule
+ *  `mergeWidgetFilters` replaces the dashboard's: `category: 'all'` and an empty list inherit. */
+export function overriddenDimensions(configs: readonly Record<string, unknown>[]): Record<keyof DashboardFilters, number> {
+  const counts: Record<keyof DashboardFilters, number> = { category: 0, subscription: 0, resourceGroup: 0, tags: 0, rule: 0, severity: 0, window: 0 };
+  const listed = (cfg: Record<string, unknown>, key: string) => Array.isArray(cfg[key]) && (cfg[key] as unknown[]).length > 0;
+  for (const cfg of configs) {
+    if (typeof cfg['category'] === 'string' && cfg['category'] !== 'all') counts.category++;
+    if (listed(cfg, 'subscriptions')) counts.subscription++;
+    if (listed(cfg, 'resourceGroups')) counts.resourceGroup++;
+    if (listed(cfg, 'tags')) counts.tags++;
+    if (listed(cfg, 'policyIds')) counts.rule++;
+    if (listed(cfg, 'severities')) counts.severity++;
+    if (cfg['windowDays'] === 1 || cfg['windowDays'] === 7 || cfg['windowDays'] === 30) counts.window++;
   }
-  if (JSON.stringify(current.window) !== JSON.stringify(saved.window)) changes.window = current.window;
-  return changes;
+  return counts;
+}
+
+/** `incoming` with the stored dashboard's saved filters, window and legacy window kept as stored. A
+ *  layout save is not how those change, whatever the request carries. */
+export function keepSavedFilters(stored: DashboardConfig, incoming: DashboardConfig): DashboardConfig {
+  const { filters: _filters, dateWindow: _dateWindow, windowDays: _windowDays, ...layout } = incoming;
+  return {
+    ...layout,
+    ...(stored.filters !== undefined && { filters: stored.filters }),
+    ...(stored.dateWindow !== undefined && { dateWindow: stored.dateWindow }),
+    ...(stored.windowDays !== undefined && { windowDays: stored.windowDays }),
+  };
 }
