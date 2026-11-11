@@ -568,7 +568,7 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: byPerson(
       same({
-        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: carriedFrom(5, 6),
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], trend: carriedFrom(5, 6),
         baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...DIRECTORY_SERVED,
       }),
@@ -591,7 +591,8 @@ function dashboardMatrix(): Record<string, Matrix> {
       }),
       // Holds the Directory only: with no filter the trend is the Directory's own points, never the install's.
       same({
-        activeFindings: 1, high: 1, perSubscription: [], trend: carriedFrom(1, 1), baselineDate: SNAPSHOT_DAYS[1], deltaPct: null,
+        // The Directory has its own row, and a person who holds it is given it.
+        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(1, 1), baselineDate: SNAPSHOT_DAYS[1], deltaPct: null,
         trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...DIRECTORY_SERVED,
       }),

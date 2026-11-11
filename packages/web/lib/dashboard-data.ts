@@ -13,13 +13,19 @@ import { listLastScanTimes } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
-import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
+import { DIRECTORY_SUBSCRIPTION, isOutsidePlacement, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
-import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
-import { categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, WIDGET_LIMITS } from './widget-limits';
+import { incompleteRulesOf, namesUnexpandableGroup, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
+import { knownSubscriptions } from './known-subscriptions';
+import { buildSubscriptionRows } from './subscription-scorecard';
+import type { SubscriptionRow } from './subscription-rows';
+import { coversDirectory } from './run-scope';
+import {
+  WIDGET_LIMITS, categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure,
+} from './widget-limits';
 
 /** `from`/`to` are date keys (YYYY-MM-DD), inclusive. No `Date.now()` dependency, so this works
  *  identically for a rolling "last N days" window and a fixed past calendar range alike. */
@@ -80,6 +86,12 @@ function countedRulesForCategory(
   const enabled = enabledRulesOfCategory(category, allRules, filters);
   const stateRuleIds = new Set(enabled.filter(r => countsTowardPosture(r) && ruleOverlapsScopes(r, scopes, hierarchy)).map(r => r.id));
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
+}
+
+/** The Problem rules the Subscription scorecard grades each row by: enabled, in a target category and
+ *  matching the rule-level filters. A row keeps the ones whose scope overlaps it. */
+function scorecardRules(categories: Category[], allRules: Rule[], filters: Pick<WidgetFilters, 'tags' | 'ruleIds'>): Rule[] {
+  return categories.flatMap(cat => enabledRulesOfCategory(cat, allRules, filters).filter(countsTowardPosture));
 }
 
 /** Whether a selected rule is left out for one of the three reasons the note names: it no longer
@@ -210,12 +222,18 @@ export interface WidgetSummary {
      *  unknown count (a rule that never ran is unknown there and not counted here). */
     incompleteRuleCount: number;
   }>;
-  /** Per-subscription posture, derived live from findings (no schema change): only subscriptions
-   *  with at least one active finding appear (there's no tenant-wide subscription list without a
-   *  live ARM call), sorted worst-posture-first. `pct`/`totalRules` mirror the per-category
-   *  calc: rules with zero violations in that subscription / rules in scope for the active
-   *  category+rule filters. */
-  perSubscription: Array<{ subscriptionId: string; pct: number | null; activeFindings: number; totalRules: number; passingRules: number }>;
+  /** The Subscription scorecard's rows, lowest first: every subscription RuleBeat knows within the
+   *  viewer's Access (the tree's, a rule's scope names, or holding a finding) and the Directory for
+   *  whoever holds it. Each is graded by the rules whose scope overlaps it, and failing is findings
+   *  placed inside it. */
+  perSubscription: SubscriptionRow[];
+  /** The limit notes the Subscription scorecard shows: how a rule counts for a subscription (W2), and
+   *  while a rule's management group is not in the stored tree, what that does (W3). */
+  subscriptionNotes: string[];
+  /** Active, unsuppressed Problem findings placed at a management group or nowhere, which no row counts,
+   *  narrowed by the category, rule, tag and severity filters within the viewer's Access. Null under a
+   *  subscription, resource group or Directory filter, where the footer is hidden. */
+  outsideSubscriptions: number | null;
   /** Daily created-vs-resolved counts for the New vs Fixed widget: available under every filter
    *  combination (subscription/RG/severity via a fingerprint join to `findings`, tags resolved to
    *  rule ids), unlike the snapshot-sourced `trend`. */
@@ -281,27 +299,26 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   // queryActiveFindings stays unfiltered here (other callers, e.g. suppression round-trips, need
   // the full active set); this view filters to what counts toward a finding-level total.
-  const activeFindings = (await queryActiveFindings(filters, access)).filter(countsInFindingTotals);
+  const everyActive = await listFindingSummaries(access, { status: 'active' });
+  const activeFindings = (await narrow(everyActive, filters, access)).filter(countsInFindingTotals);
 
   const severityCounts = emptySeverityCounts();
   for (const f of activeFindings) {
     if (f.severity in severityCounts) severityCounts[f.severity]++;
   }
 
-  // The tree is read only when a counted rule could need it: below Everything, a rule that names a
-  // management group is expanded over the stored copy.
+  // The stored tree names the subscriptions the Subscription scorecard lists and expands a rule's
+  // management group, for a row or for anyone below Everything.
   const scopes = await postureScopes(filters, access);
-  const hierarchy = !scopes.everything && allRules.some(r => r.scope.managementGroups?.length) ? await listHierarchyNodes() : [];
+  const hierarchy = await listHierarchyNodes();
 
   const countedByCategory = new Map(targetCategories.map(cat => [cat.id, countedRulesForCategory(cat, allRules, filters, scopes, hierarchy)]));
-  const scopedRuleIds = new Set<string>();
   let totalRules = 0;
   let passingRules = 0;
   let unknownRules = 0;
   let activityRuleCount = 0;
   for (const cat of targetCategories) {
     const { stateRuleIds, activityRuleCount: catActivity } = countedByCategory.get(cat.id)!;
-    for (const id of stateRuleIds) scopedRuleIds.add(id);
     totalRules += stateRuleIds.size;
     activityRuleCount += catActivity;
     const outcome = splitRuleOutcomes(stateRuleIds, activeFindings.filter(f => f.category === cat.id), ruleById);
@@ -366,21 +383,26 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
     severityCounts, newInWindow, fixedInWindow,
   };
 
-  // Only subscriptions with at least one active finding are knowable without a live ARM call:
-  // see WidgetSummary's perSubscription doc comment.
-  const subIds = Array.from(new Set(activeFindings.map(f => f.subscriptionId).filter(Boolean)));
-  const perSubscription = subIds.map(subId => {
-    const subFindings = activeFindings.filter(f => f.subscriptionId === subId);
-    const total = scopedRuleIds.size;
-    const { passing } = splitRuleOutcomes(scopedRuleIds, subFindings, ruleById);
-    return {
-      subscriptionId: subId,
-      pct: posturePct(passing, total),
-      activeFindings: subFindings.length,
-      totalRules: total,
-      passingRules: passing,
-    };
-  }).sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101) || b.activeFindings - a.activeFindings);
+  // Every subscription known within the viewer's Scopes gets a row, and the Directory for whoever holds it.
+  const reach = accessReach(scopes);
+  const inScopes = (key: string) => scopes.everything || reach.subscriptions.has(key) || reach.resourceGroups.has(key);
+  const subscriptions = knownSubscriptions({
+    hierarchy,
+    rules: allRules,
+    findingSubscriptions: everyActive.filter(f => countsInFindingTotals(f) && f.placement !== 'directory').map(f => f.subscriptionId),
+  }).filter(sub => inScopes(sub.key));
+  const perSubscription = buildSubscriptionRows({
+    subscriptions,
+    includeDirectory: coversDirectory(scopes),
+    rules: scorecardRules(targetCategories, allRules, filters),
+    findings: activeFindings,
+    scopes,
+    hierarchy,
+  });
+  const subscriptionNotes = [WIDGET_LIMITS.w2, ...(namesUnexpandableGroup(allRules, hierarchy) ? [WIDGET_LIMITS.w3] : [])];
+  const outsideSubscriptions = filters.subscriptions?.length || filters.resourceGroups?.length
+    ? null
+    : activeFindings.filter(f => isOutsidePlacement(f.placement)).length;
 
   // New vs Fixed supports every filter dimension: subscription/RG/severity via a join to the
   // findings row (see getFindingEventCounts), tags resolved here to rule ids (rules own tags,
@@ -418,7 +440,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (!trendAllowedFor(filters)) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
+      perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
   }
@@ -428,7 +450,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
   if (!trendScope.available) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
+      perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
   }
@@ -478,7 +500,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, trendDays: nu
 
   return {
     current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits,
-    perCategory, perSubscription, trend, trendByCategory, trendLevel: level, trendNotes, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
+    perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend, trendByCategory, trendLevel: level, trendNotes, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

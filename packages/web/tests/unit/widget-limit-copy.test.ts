@@ -12,7 +12,7 @@ import type { WidgetSummary } from '@/lib/dashboard-data';
 import { SubscriptionScorecardWidget } from '@/components/dashboard/widgets/subscription-scorecard-widget';
 import { TrendWidget } from '@/components/dashboard/widgets/trend-widget';
 import * as limits from '@/lib/widget-limits';
-import { PER_CATEGORY_TOTAL_DETAIL, PER_CATEGORY_TOTAL_NOTE, WIDGET_LIMITS } from '@/lib/widget-limits';
+import { PER_CATEGORY_TOTAL_NOTE, WIDGET_LIMITS } from '@/lib/widget-limits';
 
 let summary: WidgetSummary | null = null;
 
@@ -30,7 +30,8 @@ const base = {
   },
   deltaFindings: 0, perCategory: [], newVsFixedTrend: [], activityTrend: [],
   lastScanAt: null, baseline: null, deltaPct: null, baselineGap: null, trendIsCategoryScopedOnly: false, trendUnavailable: null,
-  perSubscription: [{ subscriptionId: SUB, passingRules: 1, totalRules: 2, pct: 50, activeFindings: 1 }],
+  perSubscription: [{ subscriptionId: SUB, name: null, directory: false, passingRules: 1, totalRules: 2, unknownRules: 0, pct: 50, activeFindings: 1, yourGroupsOnly: false }],
+  subscriptionNotes: [], outsideSubscriptions: null,
   trend: [{ date: '2026-11-01', pct: 50, passing: 1, total: 2 }, { date: '2026-11-02', pct: 50, passing: 1, total: 2 }],
 } as unknown as WidgetSummary;
 
@@ -50,10 +51,9 @@ describe('the per-category total caveat', () => {
     expect(PER_CATEGORY_TOTAL_NOTE).toBe('Total is per category, not per subscription');
   });
 
-  it('shows on the Subscription scorecard from the module, with its detail as the tooltip', () => {
+  it('is gone from the Subscription scorecard, whose notes come from the server', () => {
     const html = scorecard();
-    expect(html).toContain(PER_CATEGORY_TOTAL_NOTE);
-    expect(html).toContain(`title="${PER_CATEGORY_TOTAL_DETAIL.replace(/'/g, '&#x27;')}"`);
+    expect(html).not.toContain(PER_CATEGORY_TOTAL_NOTE);
     expect(html).not.toContain('Totals are per category');
   });
 
