@@ -71,7 +71,7 @@ export function widgetOverriddenDimensions(cfg: Record<string, unknown>): string
   const dimensions: string[] = [];
   if (typeof cfg['category'] === 'string' && cfg['category'] !== 'all') dimensions.push('Category');
   const lists: Array<[string, string]> = [
-    ['policyIds', 'Rule'], ['subscriptions', 'Subscription'], ['resourceGroups', 'Resource group'], ['tags', 'Tags'], ['severities', 'Severity'],
+    ['policyIds', 'Rule'], ['subscriptions', 'Subscription'], ['resourceGroups', 'Resource Group'], ['tags', 'Tags'], ['severities', 'Severity'],
   ];
   for (const [key, label] of lists) {
     const v = cfg[key];
@@ -94,7 +94,7 @@ export function widgetHasScopeOverrides(cfg: Record<string, unknown>): boolean {
  *  filter bar does not reach them, and whether the dashboard's filters apply to the rest. */
 export function widgetScopeNote(cfg: Record<string, unknown>, dashboardFiltered: boolean): string {
   const own = widgetOverriddenDimensions(cfg);
-  if (own.length === 0) return 'Scoped by the dashboard\'s filters';
+  if (own.length === 0) return 'Scoped by the dashboard\'s filters.';
   const named = own.length === 1 ? own[0]! : `${own.slice(0, -1).join(', ')} and ${own[own.length - 1]}`;
   return `This widget uses its own ${named}.${dashboardFiltered ? ' The dashboard\'s filters apply to the rest.' : ''}`;
 }

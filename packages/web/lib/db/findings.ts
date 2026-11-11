@@ -1,4 +1,4 @@
-import { eq, and, asc, gte, inArray, lt, sql, getTableColumns } from 'drizzle-orm';
+import { eq, and, asc, gte, inArray, lt, or, sql, getTableColumns } from 'drizzle-orm';
 import { db } from './client';
 import { findings as findingsTable, findingEvents as findingEventsTable, findingRows as findingRowsTable, meta as metaTable } from './tables';
 import { FINDING_ROWS_COPY_MARKER } from './finding-rows-copy';
@@ -798,4 +798,26 @@ export async function categoriesCarriedByFindings(ids: readonly string[], access
   const rows = await many(db.selectDistinct({ category: findingsTable.category }).from(findingsTable)
     .where(and(inArray(findingsTable.category, [...ids]), accessFilterSql(access))));
   return new Set(rows.map(row => row.category));
+}
+
+/** Which of these subscription ids and resource group names some stored finding still carries, as lower case,
+ *  among the findings `access` reaches. Resolved findings count: a place that was fixed has not gone. */
+export async function scopeValuesCarriedByFindings(
+  subscriptions: readonly string[], resourceGroups: readonly string[], access: Access,
+): Promise<{ subscriptions: Set<string>; resourceGroups: Set<string> }> {
+  const found = { subscriptions: new Set<string>(), resourceGroups: new Set<string>() };
+  const subs = subscriptions.map(v => v.toLowerCase());
+  const groups = resourceGroups.map(v => v.toLowerCase());
+  const named = [
+    subs.length ? inArray(sql`lower(${findingsTable.subscriptionId})`, subs) : undefined,
+    groups.length ? inArray(sql`lower(${findingsTable.resourceGroup})`, groups) : undefined,
+  ].filter(c => c !== undefined);
+  if (!named.length) return found;
+  const rows = await many(db.selectDistinct({ subscriptionId: findingsTable.subscriptionId, resourceGroup: findingsTable.resourceGroup })
+    .from(findingsTable).where(and(or(...named), accessFilterSql(access))));
+  for (const row of rows) {
+    found.subscriptions.add(row.subscriptionId.toLowerCase());
+    if (row.resourceGroup) found.resourceGroups.add(row.resourceGroup.toLowerCase());
+  }
+  return found;
 }

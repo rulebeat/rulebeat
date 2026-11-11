@@ -82,25 +82,27 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
 
   const scansHref = summary?.scansHref;
   if (!result) {
-    return (
-      <button
-        type="button"
-        onClick={() => scansHref && router.push(scansHref)}
-        className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 transition-colors hover:bg-surface-hover"
-      >
+    const emptyClass = 'flex h-full w-full flex-col items-center justify-center gap-2';
+    const empty = (
+      <>
         <Ring pct={0} label="0/0" />
         <p className="text-sm text-ink-muted">No scan data</p>
-      </button>
+      </>
     );
+    return scansHref ? (
+      <button
+        type="button"
+        onClick={() => router.push(scansHref)}
+        className={`${emptyClass} cursor-pointer transition-colors hover:bg-surface-hover`}
+      >
+        {empty}
+      </button>
+    ) : <div className={emptyClass}>{empty}</div>;
   }
 
-  return (
-    <button
-      type="button"
-      onClick={() => scansHref && router.push(scansHref)}
-      title="View in Scans"
-      className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover"
-    >
+  const ringClass = 'flex h-full w-full flex-col items-center justify-center gap-3 px-4 py-3 text-left';
+  const body = (
+    <>
       <Ring pct={result.pct} label={`${result.passing}/${result.totalPolicies}`} />
       <div className="space-y-1 text-center">
         <p className="text-sm font-semibold text-ink">{result.label}</p>
@@ -118,6 +120,16 @@ export function PostureRingWidget({ config, filters, refreshKey }: Props) {
           <p className="text-xs text-ink-muted">{result.unknown} not yet proven</p>
         )}
       </div>
-    </button>
+    </>
   );
+  return scansHref ? (
+    <button
+      type="button"
+      onClick={() => router.push(scansHref)}
+      title="View in Scans"
+      className={`${ringClass} cursor-pointer transition-colors hover:bg-surface-hover`}
+    >
+      {body}
+    </button>
+  ) : <div className={ringClass}>{body}</div>;
 }

@@ -14,7 +14,7 @@ describe('the dimensions a widget overrides', () => {
     expect(widgetOverriddenDimensions({ severities: ['high'], tags: ['prod'], policyIds: ['r1'], windowDays: 7 }))
       .toEqual(['Rule', 'Tags', 'Severity', 'Window']);
     expect(widgetOverriddenDimensions({ category: 'security', subscriptions: ['s'], resourceGroups: ['rg'] }))
-      .toEqual(['Category', 'Subscription', 'Resource group']);
+      .toEqual(['Category', 'Subscription', 'Resource Group']);
   });
 
   it('leave out a config that inherits: category "all", empty lists, a window that is not a preset', () => {
@@ -29,12 +29,16 @@ describe('the funnel tooltip', () => {
       .toBe('This widget uses its own Tags, Severity and Window.');
   });
 
+  it('names a resource group as the filter bar does', () => {
+    expect(widgetScopeNote({ resourceGroups: ['rg-1'] }, false)).toBe('This widget uses its own Resource Group.');
+  });
+
   it('says the dashboard\'s filters apply to the rest while the bar has any', () => {
     expect(widgetScopeNote({ severities: ['high'] }, true)).toBe('This widget uses its own Severity. The dashboard\'s filters apply to the rest.');
   });
 
   it('says the dashboard\'s filters scope a widget that overrides nothing', () => {
-    expect(widgetScopeNote({}, true)).toBe('Scoped by the dashboard\'s filters');
+    expect(widgetScopeNote({}, true)).toBe('Scoped by the dashboard\'s filters.');
   });
 
   it('is what the widget title shows', () => {

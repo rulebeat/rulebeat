@@ -12,8 +12,8 @@ import { markOutsideAccess, widgetAccessReason } from './outside-access';
 import { buildScansHref, type ScansLinkOverrides } from './scans-link';
 import type { Severity, StatMetric } from './types';
 
-/** The filter dimensions whose values can be deleted from the install, and so can match nothing. */
-export type GoneDimension = 'category' | 'rule' | 'tags';
+/** The filter dimensions whose values can be deleted from the install or from Azure, and so can match nothing. */
+export type GoneDimension = 'category' | 'rule' | 'tags' | 'subscription' | 'resourceGroup';
 
 /** Why a widget has nothing to count, in place of a number. Never the copy of a genuinely empty result. */
 export interface WidgetNoCount {
@@ -26,6 +26,8 @@ const GONE_DETAIL: Record<GoneDimension, string> = {
   category: 'This widget is filtered to a category that no longer exists',
   rule: 'This widget is filtered to a rule that no longer exists',
   tags: 'This widget is filtered to tags that no longer exist',
+  subscription: 'This widget is filtered to a subscription that no longer exists',
+  resourceGroup: 'This widget is filtered to a resource group that no longer exists',
 };
 
 export function goneReason(dimension: GoneDimension): WidgetNoCount {
@@ -51,6 +53,10 @@ export interface LinkedResource {
   subscriptionId: string;
   resourceGroup?: string;
   placement?: FindingPlacement | string;
+  /** Other spellings of the name, type and group that findings of this same resource were stored with. The Scans
+   *  filters match case-sensitively, and a rule that projects only the id stores the id's casing where a
+   *  visual rule stores Resource Graph's lowercase, so a row that counts both must name both. */
+  alsoStoredAs?: { resourceName?: string[]; resourceType?: string[]; resourceGroup?: string[] };
 }
 
 /** The Scans link for `filters` as `access` sees them: a subscription or resource group the viewer's access
@@ -86,11 +92,18 @@ export function numberScansHref(filters: WidgetFilters, access: Access, override
   return viewerScansHref(filters, access, overrides);
 }
 
+function distinct(first: string | undefined, more: readonly string[] | undefined): string[] {
+  return [...new Set([first, ...(more ?? [])].filter((v): v is string => Boolean(v)))];
+}
+
 function withExactResource(href: string, resource: LinkedResource): string {
   const url = new URL(href, 'http://localhost');
-  if (resource.resourceGroup) url.searchParams.set('rg', resource.resourceGroup);
-  url.searchParams.append('f', genericFilterParam('resourceName', [findingSubject(resource)]));
-  if (resource.resourceType) url.searchParams.append('f', genericFilterParam('resourceType', [resource.resourceType]));
+  const also = resource.alsoStoredAs;
+  const groups = distinct(resource.resourceGroup, also?.resourceGroup);
+  if (groups.length) url.searchParams.set('rg', groups.join(','));
+  url.searchParams.append('f', genericFilterParam('resourceName', distinct(findingSubject(resource), also?.resourceName)));
+  const types = distinct(resource.resourceType, also?.resourceType);
+  if (types.length) url.searchParams.append('f', genericFilterParam('resourceType', types));
   // A child resource's name is not unique inside a resource group (two SQL databases called `master` on
   // different servers), so the full id narrows it to the one resource. The search matches an id as text,
   // and a longer id of the same type under the same group cannot contain this one.

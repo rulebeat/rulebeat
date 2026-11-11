@@ -218,7 +218,8 @@ describe('the Advisories widget route', () => {
     expect(new Set((await widget('severity=low')).items.map(i => i.ruleId))).toEqual(new Set([REL_ADV]));
     expect(new Set((await widget(`ruleId=${SEC_ADV}`)).items.map(i => i.ruleId))).toEqual(new Set([SEC_ADV]));
     expect(names(await widget(`subscription=${TEST_SUB_B}`))).toEqual(['a-subb']);
-    expect(names(await widget('rg=rg-nowhere'))).toEqual([]);
+    // A resource group nothing names any more is a reason to count nothing, not an empty list.
+    expect(await widget('rg=rg-nowhere')).toMatchObject({ noCount: { kind: 'gone' } });
     expect(new Set((await widget('tags=retirement')).items.map(i => i.ruleId))).toEqual(new Set([SEC_ADV]));
   });
 

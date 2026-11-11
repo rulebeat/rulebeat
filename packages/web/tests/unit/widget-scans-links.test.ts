@@ -27,6 +27,7 @@ const viewRoute = await import('@/app/api/findings/view/route');
 const TENANT = '00000000-0000-0000-0000-0000000000f0';
 const SUB_A = '00000000-0000-0000-0000-00000000000a';
 const SUB_B = '00000000-0000-0000-0000-00000000000b';
+const REMOVED_SUB = '00000000-0000-0000-0000-0000000000ee';
 const RULES = ['sl-rule-1', 'sl-rule-2', 'sl-rule-3'];
 
 function rule(id: string): Rule {
@@ -40,7 +41,7 @@ function finding(ruleId: string, name: string, subscriptionId: string, severity:
   const resourceId = `/subscriptions/${subscriptionId}/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/${name}`;
   return {
     module: 'security', category: 'security', ruleId, fingerprint: computeFingerprint(ruleId, resourceId),
-    resourceId, resourceType: 'microsoft.compute/virtualmachines', resourceName: name, subscriptionId,
+    resourceId, resourceType: 'microsoft.compute/virtualmachines', resourceName: name, subscriptionId, resourceGroup: 'rg-1',
     title: 'finding', description: 'test', evidence: {}, recommendation: 'fix', remediationSteps: [],
     detectedAt: new Date().toISOString(), severity,
   };
@@ -93,7 +94,9 @@ beforeEach(async () => {
         widget('gone-category', 'stat-card', { metric: 'total-findings', category: 'removed-category' }),
         widget('gone-rule', 'stat-card', { metric: 'total-findings', policyIds: ['removed-rule'] }),
         widget('gone-tag', 'stat-card', { metric: 'total-findings', tags: ['removed-tag'] }),
-        widget('gone-elsewhere', 'stat-card', { metric: 'total-findings', category: 'only-in-a' }),
+        widget('gone-subscription', 'stat-card', { metric: 'total-findings', subscriptions: [REMOVED_SUB] }),
+        widget('gone-group', 'stat-card', { metric: 'total-findings', resourceGroups: ['rg-removed'] }),
+        widget('real-group', 'stat-card', { metric: 'total-findings', resourceGroups: ['RG-1', 'rg-removed'] }),
         widget('half-gone', 'stat-card', { metric: 'total-findings', policyIds: ['removed-rule', 'sl-rule-1'] }),
       ],
     },
@@ -119,7 +122,7 @@ interface WidgetAnswer {
   scansHref: string | null;
   revision?: number;
   heldBack?: unknown;
-  noCount?: { kind: string; title: string };
+  noCount?: { kind: string; title: string; detail: string };
   current: { activeFindings: number; severityCounts: Record<string, number> };
   items: Row[];
   perCategory: { category: string; href: string; activeFindings: number }[];
@@ -219,15 +222,45 @@ describe('a widget whose subscription is entirely outside the viewer\'s access',
 
 describe('a widget whose values for a dimension are all gone', () => {
   it.each([
-    ['category', 'gone-category'],
-    ['rule', 'gone-rule'],
-    ['tags', 'gone-tag'],
-  ])('says why it has nothing to count when the %s no longer exists', async (_dimension, widgetId) => {
+    ['category', 'gone-category', 'a category that no longer exists'],
+    ['rule', 'gone-rule', 'a rule that no longer exists'],
+    ['tags', 'gone-tag', 'tags that no longer exist'],
+  ])('says why it has nothing to count when the %s no longer exists', async (_dimension, widgetId, named) => {
     const body = await ask('summary', widgetId);
     expect(body.noCount!.kind).toBe('gone');
     expect(body.noCount!.title).not.toBe('Outside your access');
+    expect(body.noCount!.detail).toContain(named);
     expect(body.current).toBeUndefined();
     expect(body.scansHref).toBeUndefined();
+  });
+
+  describe('for someone who holds Everything', () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { uid: everyoneId } });
+    });
+
+    it.each([
+      ['subscription', 'gone-subscription', 'a subscription that no longer exists'],
+      ['resource group', 'gone-group', 'a resource group that no longer exists'],
+    ])('says why it has nothing to count when the %s no longer exists', async (_dimension, widgetId, named) => {
+      const body = await ask('summary', widgetId);
+      expect(body.noCount!.kind).toBe('gone');
+      expect(body.noCount!.detail).toContain(named);
+      expect(body.current).toBeUndefined();
+      expect(body.scansHref).toBeUndefined();
+    });
+
+    it('counts as usual when one of its resource groups still exists, whatever its casing', async () => {
+      const body = await ask('summary', 'real-group');
+      expect(body.noCount).toBeUndefined();
+      expect(body.current.activeFindings).toBe(0);
+    });
+  });
+
+  it('names a subscription that no longer exists as outside their access to someone who does not hold it', async () => {
+    const body = await ask('summary', 'gone-subscription');
+    expect(body.noCount).toMatchObject({ kind: 'outside-access', title: 'Outside your access' });
+    expect(JSON.stringify(body)).not.toContain(REMOVED_SUB);
   });
 
   it('counts the values that do exist when only some are gone', async () => {
@@ -345,6 +378,33 @@ describe('the link of a row for a child resource that shares its name with anoth
     const databases = recent.items.filter(item => item.resourceName === 'master');
     expect(databases.length).toBe(3);
     for (const item of databases) expect((await opened(item.href)).total, item.href).toBe(item.count ?? 1);
+  });
+});
+
+describe('the link of a row for one resource whose findings were stored with different casing', () => {
+  // A built-in visual rule stores Resource Graph's lowercase group and type; a raw KQL rule that projects only
+  // the id has them backfilled from the id as written.
+  const vmId = `/subscriptions/${SUB_B}/resourceGroups/Rg-Mixed/providers/Microsoft.Compute/virtualMachines/Vm-Mixed`;
+  const stored = (ruleId: string, resourceGroup: string, resourceType: string, resourceName: string): Finding => ({
+    ...finding(ruleId, resourceName, SUB_B), resourceId: vmId, resourceGroup, resourceType,
+    fingerprint: computeFingerprint(ruleId, vmId),
+  });
+
+  beforeEach(async () => {
+    await syncScanFindings({
+      scanId: 'sl-6', category: 'security', ranRuleIds: RULES, finishedAt: new Date().toISOString(),
+      findings: [
+        stored('sl-rule-1', 'rg-mixed', 'microsoft.compute/virtualmachines', 'vm-mixed'),
+        stored('sl-rule-2', 'Rg-Mixed', 'Microsoft.Compute/virtualMachines', 'Vm-Mixed'),
+      ],
+    });
+  });
+
+  it('opens every finding the row counted', async () => {
+    const resources = await ask('top-resources', 'resources');
+    const row = resources.items.find(item => item.resourceName?.toLowerCase() === 'vm-mixed')!;
+    expect(row.count).toBe(2);
+    expect((await opened(row.href)).total, row.href).toBe(2);
   });
 });
 
