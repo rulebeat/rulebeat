@@ -88,12 +88,13 @@ test.describe('mutation feedback contract (spec 014)', async () => {
     await page.unroute('**/api/schedules/*/run');
   });
 
-  // The Install default is a Shared dashboard, and a new dashboard is Personal (ADR 0012), so the API has no way
-  // yet to make one this test could set as the default. It returns when sharing does.
-  test.fixme('setting a dashboard default surfaces an error on both failure modes', async ({ page }) => {
+  test('setting the Install default surfaces an error on both failure modes', async ({ page }) => {
     await signIn(page, ADMIN_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
     const name = `e2e-setdefault-${Date.now()}`;
     const id = await createDashboard(page, name);
+    // The Install default is a Shared dashboard and a new one is Personal (ADR 0012), so share it first.
+    const shared = await page.request.post(`${ADMIN_URL}/api/dashboards/${id}/share`);
+    expect(shared.ok()).toBeTruthy();
 
     try {
       await page.goto(`${ADMIN_URL}/dashboards`);
@@ -104,8 +105,8 @@ test.describe('mutation feedback contract (spec 014)', async () => {
         return route.continue();
       });
       await page.getByRole('button', { name: `Actions for ${name}` }).click();
-      await page.getByRole('menuitem', { name: 'Set default' }).click();
-      await expect(page.getByText('Failed to set default dashboard.')).toBeVisible();
+      await page.getByRole('menuitem', { name: 'Set as Install default' }).click();
+      await expect(page.getByText('Failed to set the Install default.')).toBeVisible();
       await page.unroute('**/api/dashboards/*');
 
       await page.route('**/api/dashboards/*', route => {
@@ -113,8 +114,8 @@ test.describe('mutation feedback contract (spec 014)', async () => {
         return route.continue();
       });
       await page.getByRole('button', { name: `Actions for ${name}` }).click();
-      await page.getByRole('menuitem', { name: 'Set default' }).click();
-      await expect(page.getByText('Failed to set default dashboard.')).toBeVisible();
+      await page.getByRole('menuitem', { name: 'Set as Install default' }).click();
+      await expect(page.getByText('Failed to set the Install default.')).toBeVisible();
       await page.unroute('**/api/dashboards/*');
     } finally {
       await page.request.delete(`${ADMIN_URL}/api/dashboards/${id}`);

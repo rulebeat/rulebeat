@@ -186,7 +186,7 @@ columns and filters by name, so a view that mentions a returned field no finding
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
 names of the fields that changed, never their values, and writes nothing when a save changes nothing.
-For a Personal view it records the id and kind only, with no name. Removing a person deletes their Personal views and leaves their Shared ones Shared
+For a Personal view it records the id and kind only, with no name, and only for a create, a rename and a delete: a save of its filters or tab is not logged. Removing a person deletes their Personal views and leaves their Shared ones Shared
 with no owner.
 
 ## Disable, clear findings, or suppress

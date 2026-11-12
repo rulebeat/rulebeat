@@ -27,6 +27,10 @@ All notable changes to RuleBeat are documented here. Format follows
 - The upgrade records an owner, a visibility (Personal or Shared) and a revision on every dashboard and saved view, and a My default on every person. Every existing item stays Shared, a saved view is owned by its creator while that person still exists, a dashboard has no owner, and the current default stays the install default. Nothing you see changes yet.
 - A dashboard or saved view no longer sends a stored subscription, resource group, resource name or returned-column value outside your Access to your browser. It comes back without those values and with a count for each place, and the dashboard filter bar, the widget editor and the Scans filter bar show a soft "N outside your access" chip (or "Outside your access" when every value in a filter is held back) in their place. A widget filtered only to values you cannot see says so instead of drawing a number, and a saved view filtered only to such values opens on an empty list instead of your whole Access. The "Outside your access" chip on the Scans filter bar has no remove control. Saving a dashboard or saved view puts back the values the copy you were sent left out, even if you have been granted them since you opened it, so they are not deleted for everyone else the item is shared with, while a value you could see and removed stays removed. A save made from a copy the item has since moved on from is refused so you can reload it, and the "Outside your access" text is never stored. People who hold Everything see every value as before.
 
+### Fixed
+
+- Saving the filters or tab of a Personal saved view no longer writes an audit entry. Only a Personal view's create, rename and delete are logged, by id and kind with no name, as a Personal dashboard's are.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

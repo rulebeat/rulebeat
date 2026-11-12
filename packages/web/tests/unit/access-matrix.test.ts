@@ -1955,7 +1955,8 @@ describe('a Personal rule and its results appear in no shared response', () => {
       Response.prototype.json = readJson;
       Response.prototype.text = readText;
     }
-  });
+    // Every person reads every route on every tab, which is minutes of Postgres round trips as the matrix grows, so the hook gets room beyond the 10 s default.
+  }, 60_000);
 
   it('read every probe for every person', () => {
     expect(seen.length).toBeGreaterThan(PEOPLE.length * Object.keys(MATRIX).length);
