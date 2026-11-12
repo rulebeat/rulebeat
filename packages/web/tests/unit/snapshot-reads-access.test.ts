@@ -4,7 +4,7 @@
  * subscription's row only for a subscription they hold whole. Snapshots are written by the real path.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { resetDb } from '../helpers/db';
+import { insertTrendPoint, resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { getBaselineSnapshots, getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
@@ -95,5 +95,70 @@ describe('getBaselineSnapshots', () => {
 
   it('gives a management group Scope a subscription under it', async () => {
     expect(counts(await getBaselineSnapshots(['security'], '2026-06-02', underGroup, SUB_TWO))).toEqual([[SUB_TWO, '2026-06-02', 1]]);
+  });
+});
+
+describe('the level of a point is compared without regard to case', () => {
+  const UPPER = SUB_ONE.replace('a', 'A');
+  const lowerHeld = viewerAt(`/subscriptions/${SUB_ONE}`);
+
+  beforeAll(async () => {
+    await resetDb();
+    await insertTrendPoint({ category: 'security', subscriptionId: UPPER, date: '2026-05-01', passing: 1, total: 2, formulaVersion: 2, activeFindings: 7 });
+  });
+
+  it('finds an upper-case old point for a lower-case level, for Everything and for a holder', async () => {
+    expect(counts(await getSnapshots(everythingAccess('admin'), { subscriptionId: SUB_ONE }))).toEqual([[UPPER, '2026-05-01', 7]]);
+    expect(counts(await getSnapshots(lowerHeld, { subscriptionId: SUB_ONE }))).toEqual([[UPPER, '2026-05-01', 7]]);
+    expect(counts(await getBaselineSnapshots(['security'], '2026-05-02', everythingAccess('admin'), SUB_ONE))).toEqual([[UPPER, '2026-05-01', 7]]);
+    expect(counts(await getBaselineSnapshots(['security'], '2026-05-02', lowerHeld, SUB_ONE))).toEqual([[UPPER, '2026-05-01', 7]]);
+  });
+
+  it('finds a lower-case point for an upper-case level', async () => {
+    await insertTrendPoint({ category: 'cost', subscriptionId: SUB_ONE, date: '2026-05-01', passing: 1, total: 2, activeFindings: 3 });
+    expect(counts(await getSnapshots(everythingAccess('admin'), { subscriptionId: UPPER, categories: ['cost'] }))).toEqual([[SUB_ONE, '2026-05-01', 3]]);
+  });
+
+  it('does not read the aggregate row for a subscription, or another subscription', async () => {
+    expect(await getSnapshots(everythingAccess('admin'))).toEqual([]);
+    expect(await getSnapshots(everythingAccess('admin'), { subscriptionId: SUB_TWO })).toEqual([]);
+  });
+
+  it('gives the most recently updated point when two cases of one level share a date', async () => {
+    await insertTrendPoint({ category: 'reliability', subscriptionId: SUB_ONE, date: '2026-05-01', passing: 1, total: 2, activeFindings: 11, updatedAt: '2026-05-01T20:00:00.000Z' });
+    await insertTrendPoint({ category: 'reliability', subscriptionId: UPPER, date: '2026-05-01', passing: 1, total: 2, activeFindings: 22, updatedAt: '2026-05-01T08:00:00.000Z' });
+    const admin = everythingAccess('admin');
+    expect(counts(await getSnapshots(admin, { subscriptionId: SUB_ONE, categories: ['reliability'] }))).toEqual([[SUB_ONE, '2026-05-01', 11]]);
+    expect(counts(await getBaselineSnapshots(['reliability'], '2026-05-01', admin, SUB_ONE))).toEqual([[SUB_ONE, '2026-05-01', 11]]);
+
+    await insertTrendPoint({ category: 'identity', subscriptionId: SUB_ONE, date: '2026-05-01', passing: 1, total: 2, activeFindings: 11, updatedAt: '2026-05-01T08:00:00.000Z' });
+    await insertTrendPoint({ category: 'identity', subscriptionId: UPPER, date: '2026-05-01', passing: 1, total: 2, activeFindings: 22, updatedAt: '2026-05-01T20:00:00.000Z' });
+    expect(counts(await getSnapshots(admin, { subscriptionId: SUB_ONE, categories: ['identity'] }))).toEqual([[UPPER, '2026-05-01', 22]]);
+    expect(counts(await getBaselineSnapshots(['identity'], '2026-05-01', admin, SUB_ONE))).toEqual([[UPPER, '2026-05-01', 22]]);
+  });
+});
+
+describe('the Directory\'s points', () => {
+  beforeAll(async () => {
+    await resetDb();
+    await insertTrendPoint({ category: 'identity', subscriptionId: 'directory', date: '2026-05-01', passing: 1, total: 2, activeFindings: 5 });
+  });
+
+  it('gives Everything and a Directory holder the Directory\'s rows', async () => {
+    expect(counts(await getSnapshots(everythingAccess('admin'), { subscriptionId: 'directory' }))).toEqual([['directory', '2026-05-01', 5]]);
+    expect(counts(await getSnapshots(viewerAt('@directory'), { subscriptionId: 'directory' }))).toEqual([['directory', '2026-05-01', 5]]);
+    expect(counts(await getSnapshots(viewerAt('@directory', `/subscriptions/${SUB_ONE}`), { subscriptionId: 'Directory' }))).toEqual([['directory', '2026-05-01', 5]]);
+    expect(counts(await getBaselineSnapshots(['identity'], '2026-05-02', viewerAt('@directory'), 'directory'))).toEqual([['directory', '2026-05-01', 5]]);
+  });
+
+  it('gives nobody else the Directory\'s rows', async () => {
+    expect(await getSnapshots(viewerAt(`/subscriptions/${SUB_ONE}`), { subscriptionId: 'directory' })).toEqual([]);
+    expect(await getSnapshots(underGroup, { subscriptionId: 'directory' })).toEqual([]);
+    expect(await getSnapshots(NO_ACCESS, { subscriptionId: 'directory' })).toEqual([]);
+    expect(await getBaselineSnapshots(['identity'], '2026-05-02', viewerAt(`/subscriptions/${SUB_ONE}`), 'directory')).toEqual([]);
+  });
+
+  it('does not give a Directory holder the install-wide row', async () => {
+    expect(await getSnapshots(viewerAt('@directory'))).toEqual([]);
   });
 });

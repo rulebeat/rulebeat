@@ -7,6 +7,7 @@ import { loadRules } from '../rules';
 import { loadSuppressions, isActiveSuppression } from '../suppressions';
 import { SYSTEM_ACCESS } from '../system-access';
 import { wholeSubscriptionIds, type Access } from '../access-model';
+import { DIRECTORY_SUBSCRIPTION } from '../placement';
 import { loadStoredScanBlobs } from './scan-blob-history';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
 import { getMeta, setMeta } from './meta';
@@ -151,11 +152,14 @@ export async function upsertDailySnapshot(categoryId: string, now: Date = new Da
 
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
- *  subscription's own trend history instead.
+ *  subscription's own trend history instead, or the Directory's reserved value for the Directory's.
+ *  The level is compared without regard to case, and when two rows of one category share a date (a
+ *  level written in two cases by older code) the most recently updated one is the day's point.
  *
  *  Anyone who does not hold Everything is never given the aggregate row, which counts every finding
- *  on the install, and gets a subscription's row only for one they hold whole (#274). A resource
- *  group Scope holds no whole subscription, so it reads nothing here. */
+ *  on the install, and gets a subscription's row only for one they hold whole (#274), or the
+ *  Directory's if they hold the Directory. A resource group Scope holds no whole subscription, so it
+ *  reads nothing here. */
 export async function getSnapshots(access: Access, opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
   const subscription = subscriptionCondition(access, opts.subscriptionId);
   if (!subscription) return [];
@@ -163,18 +167,25 @@ export async function getSnapshots(access: Access, opts: { categories?: string[]
   if (opts.categories && opts.categories.length > 0) conditions.push(inArray(snapshotsTable.category, opts.categories));
   if (opts.sinceDate) conditions.push(gte(snapshotsTable.date, opts.sinceDate));
 
-  const rows = await many(db.select().from(snapshotsTable).where(and(...conditions)).orderBy(snapshotsTable.date));
+  const rows = await many(db.select().from(snapshotsTable).where(and(...conditions))
+    .orderBy(snapshotsTable.date, snapshotsTable.updatedAt, snapshotsTable.subscriptionId));
 
-  return rows.map(rowToSnapshot);
+  // Oldest update first, so the last row seen for a category and date is the day's point.
+  const byDay = new Map<string, Row>();
+  for (const row of rows) byDay.set(`${row.category}\u0000${row.date}`, row);
+  return [...byDay.values()].map(rowToSnapshot);
 }
 
 /** The condition on a snapshot's subscription for one person, or null when they may read none of it.
- *  Everything reads exactly what it asked for. Anyone else reads a subscription held whole, compared
- *  without regard to case, and never the aggregate. */
+ *  Compared as lower case on both sides. Everything reads exactly what it asked for. Anyone else reads a
+ *  subscription held whole, or the Directory if they hold it, and never the aggregate. */
 function subscriptionCondition(access: Access, subscriptionId: string | undefined): SQL | null {
-  if (access.everything) return eq(snapshotsTable.subscriptionId, subscriptionId ?? '');
-  if (!subscriptionId || !wholeSubscriptionIds(access).includes(subscriptionId.toLowerCase())) return null;
-  return sql`lower(${snapshotsTable.subscriptionId}) = ${subscriptionId.toLowerCase()}`;
+  const level = (subscriptionId ?? '').toLowerCase();
+  if (!access.everything) {
+    const readable = level === DIRECTORY_SUBSCRIPTION ? access.directory : wholeSubscriptionIds(access).includes(level);
+    if (!level || !readable) return null;
+  }
+  return sql`lower(${snapshotsTable.subscriptionId}) = ${level}`;
 }
 
 /** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
@@ -192,7 +203,7 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
       lte(snapshotsTable.date, onOrBefore),
       ...(formulaVersions ? [inArray(snapshotsTable.formulaVersion, [...formulaVersions])] : []),
     ))
-    .orderBy(desc(snapshotsTable.date)));
+    .orderBy(desc(snapshotsTable.date), desc(snapshotsTable.updatedAt), desc(snapshotsTable.subscriptionId)));
 
   const seen = new Set<string>();
   const out: DailySnapshot[] = [];

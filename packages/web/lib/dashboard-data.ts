@@ -2,24 +2,32 @@ import { listFindings, listFindingSummaries, getActivityOccurrenceCounts, type F
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
-import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates, type DailySnapshot } from './db/snapshots';
+import { getSnapshots, getBaselineSnapshots, getFirstSnapshotDates } from './db/snapshots';
 import { getRecencyStatus, isFixedInWindow } from './explorer-filters';
 import { posturePct, postureDelta } from './posture-math';
-import { equalFormulaVersions } from './trend-version-equality';
+import { equalFormulaVersions, type TrendLevel } from './trend-version-equality';
+import { aggregateLine, trendLines, trendMarkerDates, type AggregateTrendPoint, type TrendPoint } from './trend-points';
 import type { BaselineGap } from './posture-baseline';
-import { trendScopeOf, type TrendReason } from './trend-scope';
+import { trendAllowedFor, trendScopeOf, type TrendReason } from './trend-scope';
 import { resolveDateWindow, todayKey } from './date-window';
 import { listLastScanTimes } from './scan-history';
 import type { WidgetFilters } from './dashboard-filters';
 import type { Category, Rule, Severity } from './types';
 import { emptySeverityCounts } from './severity';
-import { DIRECTORY_SUBSCRIPTION, subscriptionValue } from './placement';
+import { DIRECTORY_SUBSCRIPTION, isOutsidePlacement, subscriptionValue } from './placement';
 import { countsTowardPosture, countsInFindingTotals, isActivityRule } from './finding-kinds';
 import { accessReach, holdsNoScope, type Access } from './access-model';
 import { listHierarchyNodes } from './db/management-group-hierarchy';
 import type { HierarchyNode } from './management-group-tree';
-import { incompleteRulesOf, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
-import { ACTIVITY_KEPT_DAYS, TREND_KEPT_DAYS, activityRetentionNote, categoryEmptyLabel, postureEmptyReason, postureLimitNote, ruleSelectionNote, severityMeasure, trendRetentionNote } from './widget-limits';
+import { incompleteRulesOf, namesUnexpandableGroup, narrowScopes, ruleOverlapsScopes } from './rule-overlap';
+import { knownSubscriptions } from './known-subscriptions';
+import { buildSubscriptionRows } from './subscription-scorecard';
+import type { SubscriptionRow } from './subscription-rows';
+import { coversDirectory } from './run-scope';
+import {
+  ACTIVITY_KEPT_DAYS, TREND_KEPT_DAYS, WIDGET_LIMITS, activityRetentionNote, categoryEmptyLabel, postureEmptyReason,
+  postureLimitNote, ruleSelectionNote, severityMeasure, trendRetentionNote,
+} from './widget-limits';
 
 function dayBefore(dateKey: string): string {
   return new Date(new Date(`${dateKey}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
@@ -103,6 +111,12 @@ function countedRulesForCategory(
   return { stateRuleIds, activityRuleCount: enabled.filter(isActivityRule).length };
 }
 
+/** The Problem rules the Subscription scorecard grades each row by: enabled, in a target category and
+ *  matching the rule-level filters. A row keeps the ones whose scope overlaps it. */
+function scorecardRules(categories: Category[], allRules: Rule[], filters: Pick<WidgetFilters, 'tags' | 'ruleIds'>): Rule[] {
+  return categories.flatMap(cat => enabledRulesOfCategory(cat, allRules, filters).filter(countsTowardPosture));
+}
+
 /** Whether a selected rule is left out for one of the three reasons the note names: it no longer
  *  exists, it is disabled, or it looks at nothing the viewer holds. Judged on the rule list before the
  *  category, tag, Scope and kind filters narrow it, so a rule those filters drop is not blamed. */
@@ -184,35 +198,6 @@ async function queryFixedFindings(filters: WidgetFilters, access: Access): Promi
   return narrow(await listFindingSummaries(access, { status: 'fixed' }), filters, access);
 }
 
-function aggregateSnapshotsByDate(snaps: DailySnapshot[]): Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }> {
-  const byDate = new Map<string, { passing: number; total: number; findings: number }>();
-  for (const s of snaps) {
-    const e = byDate.get(s.date) ?? { passing: 0, total: 0, findings: 0 };
-    e.passing += s.passingRules;
-    e.total += s.totalRules;
-    e.findings += s.activeFindings;
-    byDate.set(s.date, e);
-  }
-  return Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, e]) => ({
-      date,
-      pct: posturePct(e.passing, e.total),
-      findings: e.findings,
-      passing: e.passing,
-      total: e.total,
-    }));
-}
-
-function groupSnapshotsByCategory(snaps: DailySnapshot[]): Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> {
-  const map: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>> = {};
-  for (const s of snaps) {
-    (map[s.category] ??= []).push({ date: s.date, pct: posturePct(s.passingRules, s.totalRules), findings: s.activeFindings, passing: s.passingRules, total: s.totalRules });
-  }
-  for (const key of Object.keys(map)) map[key].sort((a, b) => a.date.localeCompare(b.date));
-  return map;
-}
-
 export interface WidgetSummary {
   // --- live, findings-sourced: computed from the `findings` lifecycle table (+ `finding_events`
   //     for newVsFixedTrend). Exact and available under every filter combination. Any number here
@@ -261,12 +246,18 @@ export interface WidgetSummary {
      *  unknown count (a rule that never ran is unknown there and not counted here). */
     incompleteRuleCount: number;
   }>;
-  /** Per-subscription posture, derived live from findings (no schema change): only subscriptions
-   *  with at least one active finding appear (there's no tenant-wide subscription list without a
-   *  live ARM call), sorted worst-posture-first. `pct`/`totalRules` mirror the per-category
-   *  calc: rules with zero violations in that subscription / rules in scope for the active
-   *  category+rule filters. */
-  perSubscription: Array<{ subscriptionId: string; pct: number | null; activeFindings: number; totalRules: number; passingRules: number }>;
+  /** The Subscription scorecard's rows, lowest first: every subscription RuleBeat knows within the
+   *  viewer's Access (the tree's, a rule's scope names, or holding a finding) and the Directory for
+   *  whoever holds it. Each is graded by the rules whose scope overlaps it, and failing is findings
+   *  placed inside it. */
+  perSubscription: SubscriptionRow[];
+  /** The limit notes the Subscription scorecard shows: how a rule counts for a subscription (W2), and
+   *  while a rule's management group is not in the stored tree, what that does (W3). */
+  subscriptionNotes: string[];
+  /** Active, unsuppressed Problem findings placed at a management group or nowhere, which no row counts,
+   *  narrowed by the category, rule, tag and severity filters within the viewer's Access. Null under a
+   *  subscription, resource group or Directory filter, where the footer is hidden. */
+  outsideSubscriptions: number | null;
   /** Per-UTC-day New and Fixed counts for the New vs Fixed widget, one bar for every day of the date
    *  window, zero-filled. Counted from the live findings with the Scans predicates, Problem findings
    *  only and never a suppressed one, so each bar equals the one-day Scans list it opens. Available
@@ -298,24 +289,34 @@ export interface WidgetSummary {
   /** Why `baseline` is null although a trend is served: some category has no point the version-equality
    *  table counts equal on or before `needed`. Null when a baseline was built or no trend is served. */
   baselineGap: BaselineGap | null;
-  trend: Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>;
-  trendByCategory?: Record<string, Array<{ date: string; pct: number | null; findings: number; passing: number; total: number }>>;
+  /** The all-categories line, starting on the first day every category has a count. Quiet days are carried
+   *  from the category's last point (lib/trend-points.ts). */
+  trend: AggregateTrendPoint[];
+  /** Each category's own line, starting at its own first point, over today's categories only. Every point
+   *  carries the formula version it was counted under, and whether it is a carried day. */
+  trendByCategory?: Record<string, TrendPoint[]>;
+  /** Where the trend is kept for this request: the whole install, one subscription or the Directory.
+   *  Null when no trend is served. */
+  trendLevel?: TrendLevel | null;
+  /** The notes a served trend carries: W2 on a subscription's trend, and "Counted differently before
+   *  <date>" once for each distinct day a line's counting changed. */
+  trendNotes?: string[];
   /** True when `trend`/`baseline`/`deltaPct` are unavailable for the active filters, i.e.
-   *  anything beyond category + at most one subscription (RG/tag/severity/rule, or more than one
-   *  subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
+   *  anything the allow-list in lib/trend-scope.ts does not serve (RG/tag/severity/rule, or more than
+   *  one subscription at once). `deltaFindings` is findings-sourced and stays available regardless.
    *  Name kept from pre-Phase-5 for call-site stability. */
   trendIsCategoryScopedOnly: boolean;
   /** Why `trend`, `baseline` and `deltaPct` are empty for this person (#274): they are kept per
-   *  subscription, and the person holds no whole subscription or has not chosen one. Null when the
+   *  subscription and for the Directory, and the person holds neither or has not chosen one. Null when the
    *  trend is served, or empty for a reason `trendIsCategoryScopedOnly` already gives. */
   trendUnavailable: TrendReason | null;
 }
 
 /** Live posture/findings numbers from the findings lifecycle table, plus trend/baseline
  *  history from posture_snapshots (meaningful when `filters` narrows to category and/or a
- *  single subscription: snapshots are recorded per category × subscription (Phase 5); any
- *  RG/tag/severity/rule filter, or more than one subscription at once, makes "trend over time"
- *  ill-defined at that granularity since it isn't recorded). */
+ *  single subscription or the Directory: points are recorded per category for the install, each
+ *  subscription and the Directory; any RG/tag/severity/rule filter, or more than one subscription at
+ *  once, makes "trend over time" ill-defined at that granularity since it isn't recorded). */
 export async function computeWidgetSummary(filters: WidgetFilters, access: Access): Promise<WidgetSummary> {
   const { from, to } = resolveDateWindow(filters.dateWindow);
   const allCategories = await listCategories();
@@ -327,27 +328,26 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
 
   // queryActiveFindings stays unfiltered here (other callers, e.g. suppression round-trips, need
   // the full active set); this view filters to what counts toward a finding-level total.
-  const activeFindings = (await queryActiveFindings(filters, access)).filter(countsInFindingTotals);
+  const everyActive = await listFindingSummaries(access, { status: 'active' });
+  const activeFindings = (await narrow(everyActive, filters, access)).filter(countsInFindingTotals);
 
   const severityCounts = emptySeverityCounts();
   for (const f of activeFindings) {
     if (f.severity in severityCounts) severityCounts[f.severity]++;
   }
 
-  // The tree is read only when a counted rule could need it: below Everything, a rule that names a
-  // management group is expanded over the stored copy.
+  // The stored tree names the subscriptions the Subscription scorecard lists and expands a rule's
+  // management group, for a row or for anyone below Everything.
   const scopes = await postureScopes(filters, access);
-  const hierarchy = !scopes.everything && allRules.some(r => r.scope.managementGroups?.length) ? await listHierarchyNodes() : [];
+  const hierarchy = await listHierarchyNodes();
 
   const countedByCategory = new Map(targetCategories.map(cat => [cat.id, countedRulesForCategory(cat, allRules, filters, scopes, hierarchy)]));
-  const scopedRuleIds = new Set<string>();
   let totalRules = 0;
   let passingRules = 0;
   let unknownRules = 0;
   let activityRuleCount = 0;
   for (const cat of targetCategories) {
     const { stateRuleIds, activityRuleCount: catActivity } = countedByCategory.get(cat.id)!;
-    for (const id of stateRuleIds) scopedRuleIds.add(id);
     totalRules += stateRuleIds.size;
     activityRuleCount += catActivity;
     const outcome = splitRuleOutcomes(stateRuleIds, activeFindings.filter(f => f.category === cat.id), ruleById);
@@ -415,21 +415,26 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
     severityCounts, newInWindow, fixedInWindow,
   };
 
-  // Only subscriptions with at least one active finding are knowable without a live ARM call:
-  // see WidgetSummary's perSubscription doc comment.
-  const subIds = Array.from(new Set(activeFindings.map(f => f.subscriptionId).filter(Boolean)));
-  const perSubscription = subIds.map(subId => {
-    const subFindings = activeFindings.filter(f => f.subscriptionId === subId);
-    const total = scopedRuleIds.size;
-    const { passing } = splitRuleOutcomes(scopedRuleIds, subFindings, ruleById);
-    return {
-      subscriptionId: subId,
-      pct: posturePct(passing, total),
-      activeFindings: subFindings.length,
-      totalRules: total,
-      passingRules: passing,
-    };
-  }).sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101) || b.activeFindings - a.activeFindings);
+  // Every subscription known within the viewer's Scopes gets a row, and the Directory for whoever holds it.
+  const reach = accessReach(scopes);
+  const inScopes = (key: string) => scopes.everything || reach.subscriptions.has(key) || reach.resourceGroups.has(key);
+  const subscriptions = knownSubscriptions({
+    hierarchy,
+    rules: allRules,
+    findingSubscriptions: everyActive.filter(f => countsInFindingTotals(f) && f.placement !== 'directory').map(f => f.subscriptionId),
+  }).filter(sub => inScopes(sub.key));
+  const perSubscription = buildSubscriptionRows({
+    subscriptions,
+    includeDirectory: coversDirectory(scopes),
+    rules: scorecardRules(targetCategories, allRules, filters),
+    findings: activeFindings,
+    scopes,
+    hierarchy,
+  });
+  const subscriptionNotes = [WIDGET_LIMITS.w2, ...(namesUnexpandableGroup(allRules, hierarchy) ? [WIDGET_LIMITS.w3] : [])];
+  const outsideSubscriptions = filters.subscriptions?.length || filters.resourceGroups?.length
+    ? null
+    : activeFindings.filter(f => isOutsidePlacement(f.placement)).length;
 
   // The bars come from the live findings read above, so they carry every filter dimension the Scans
   // lists do and nothing the window's own range does not hold.
@@ -463,24 +468,13 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
     activityRetentionNote: from < activityStart ? activityRetentionNote(activityStart) : null,
   };
 
-  // Trend/baseline need a representation in posture_snapshots. Category is always supported
-  // (snapshots are recorded per category). A *single* subscription is also supported: snapshots
-  // now carry a per-subscription breakdown (Phase 5), but RG/tag/severity/rule filters aren't
-  // recorded at all, and combining more than one subscription can't be reconstructed from summed
-  // per-subscription totals (each rule's pass/fail would need to be evaluated across the union of
-  // subscriptions, which isn't recoverable from the stored per-day counts). Directory is not a
-  // subscription and no snapshot is recorded for it, so choosing it is unsupported too.
-  const hasUnsupportedTrendFilter = Boolean(
-    filters.resourceGroups?.length || filters.tags?.length ||
-    filters.severities?.length || filters.ruleIds?.length ||
-    (filters.subscriptions && filters.subscriptions.length > 1) ||
-    filters.subscriptions?.includes(DIRECTORY_SUBSCRIPTION),
-  );
-
-  if (hasUnsupportedTrendFilter) {
+  // A stored point has a representation only under the filters the allow-list serves (lib/trend-scope.ts):
+  // category, the date window and at most one subscription or the Directory. Any other filter would put
+  // a filtered live number beside unfiltered points, so none of trend, baseline and delta is served.
+  if (!trendAllowedFor(filters)) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits, ...retentionNotes,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
+      perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: true,
       trendUnavailable: null,
     };
   }
@@ -490,22 +484,35 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
   if (!trendScope.available) {
     return {
       current, baseline: null, deltaPct: null, baselineGap: null, deltaFindings, ...postureLimits, ...retentionNotes,
-      perCategory, perSubscription, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
+      perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend: [], newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything, trendIsCategoryScopedOnly: false,
       trendUnavailable: trendScope.reason,
     };
   }
   const trendSubscriptionId = trendScope.subscriptionId;
+  const level: TrendLevel = !trendSubscriptionId ? 'install'
+    : trendSubscriptionId.toLowerCase() === DIRECTORY_SUBSCRIPTION ? 'directory'
+    : 'subscription';
+
+  // The lines are drawn over today's categories only, from the window's first day or the first day of
+  // trend points kept, whichever is later. The newest point on or before that day is read as well, so a
+  // category with no point inside the window carries from it.
   const trendStart = firstKeptDay(TREND_KEPT_DAYS);
-  const snaps = (await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: from > trendStart ? from : trendStart }))
+  const since = from > trendStart ? from : trendStart;
+  const inWindow = (await getSnapshots(access, { categories: trendCategoryIds, subscriptionId: trendSubscriptionId, sinceDate: since }))
     .filter(s => s.date <= to);
-  const trend = aggregateSnapshotsByDate(snaps);
-  const trendByCategory = groupSnapshotsByCategory(snaps);
+  const beforeWindow = await getBaselineSnapshots(trendCategoryIds, since, access, trendSubscriptionId);
+  const lines = trendLines([...beforeWindow, ...inWindow], since, to);
+  const trend = aggregateLine(lines, trendCategoryIds);
+  const trendByCategory = lines;
+  const trendNotes = [
+    ...(level === 'subscription' ? [WIDGET_LIMITS.w2] : []),
+    ...trendMarkerDates(level, lines).map(WIDGET_LIMITS.w5),
+  ];
 
   // The baseline is each category's newest point that the version-equality table counts equal, on or
   // before the day before the window's first day. If any category has none, there is no baseline:
   // building one from the rest would compare two different sets of rules, so the delta is withheld
   // and the gap names the date needed and the earliest date every category could be compared from.
-  const level = trendSubscriptionId ? 'subscription' : 'install';
   const equalFormulas = equalFormulaVersions(level);
   const needed = dayBefore(from);
   const baselineSnaps = await getBaselineSnapshots(trendCategoryIds, needed, access, trendSubscriptionId, equalFormulas);
@@ -530,7 +537,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
 
   return {
     current, baseline, deltaPct, baselineGap, deltaFindings, ...postureLimits, ...retentionNotes,
-    perCategory, perSubscription, trend, trendByCategory, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
+    perCategory, perSubscription, subscriptionNotes, outsideSubscriptions, trend, trendByCategory, trendLevel: level, trendNotes, newVsFixedTrend, activityTrend, lastScanAt, holdsEverything: access.everything,
     trendIsCategoryScopedOnly: false, trendUnavailable: null,
   };
 }

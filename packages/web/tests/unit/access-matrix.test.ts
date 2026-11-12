@@ -501,6 +501,8 @@ const suppressionRemoval: Matrix = {
   expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
 
+// The nine days the summary probe's window covers when the clock reads MATRIX_NOW: the second snapshot day through the tenth.
+const MATRIX_DAYS = Array.from({ length: 9 }, (_, i) => `2026-06-${String(i + 2).padStart(2, '0')}`);
 const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
 const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
 const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
@@ -524,20 +526,30 @@ function dashboardMatrix(): Record<string, Matrix> {
     BODY(await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}${query}`)));
   const nameOf = (items: { fingerprint: string }[], seed: MatrixSeed) => namesOf(seed, items);
 
+  type SummaryBody = {
+    current: { activeFindings: number; severityCounts: { high: number } };
+    perSubscription: { subscriptionId: string; activeFindings: number }[];
+    trend: { date: string; findings: number }[];
+    baseline: { date: string } | null; deltaPct: number | null;
+    trendUnavailable: string | null; trendIsCategoryScopedOnly: boolean; lastScanAt: string | null;
+    perCategory: { category: string; lastScanAt: string | null }[];
+  };
+
+  // The clock reads 2026-06-10, so a point last written on the 2nd is carried through the 10th.
+  const carriedFrom = (count: number) => MATRIX_DAYS.map(day => [day, count]);
+  const NO_DIRECTORY = { directoryTrend: [], directoryTrendUnavailable: null as string | null };
+  const DIRECTORY_SERVED = { directoryTrend: carriedFrom(1), directoryTrendUnavailable: null };
+  const directoryRefused = (reason: string) => ({ directoryTrend: [], directoryTrendUnavailable: reason });
+
   const summary: Matrix = {
     probe: async () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(MATRIX_NOW));
       try {
         // One category: a delta is withheld unless every category in scope has a comparable point, and only security has any.
-        const body = await widget('summary', '?window=9&categories=security') as {
-          current: { activeFindings: number; severityCounts: { high: number } };
-          perSubscription: { subscriptionId: string; activeFindings: number }[];
-          trend: { date: string; findings: number }[];
-          baseline: { date: string } | null; deltaPct: number | null;
-          trendUnavailable: string | null; trendIsCategoryScopedOnly: boolean; lastScanAt: string | null;
-          perCategory: { category: string; lastScanAt: string | null }[];
-        };
+        const body = await widget('summary', '?window=9&categories=security') as SummaryBody;
+        // The same category filtered to the Directory: its own points, for whoever holds it.
+        const directory = await widget('summary', '?window=9&categories=security&subscriptions=directory') as SummaryBody;
         return {
           activeFindings: body.current.activeFindings,
           high: body.current.severityCounts.high,
@@ -548,6 +560,8 @@ function dashboardMatrix(): Record<string, Matrix> {
           trendUnavailable: body.trendUnavailable,
           lastScanAt: body.lastScanAt,
           securityLastScanAt: body.perCategory.find(c => c.category === 'security')?.lastScanAt,
+          directoryTrend: directory.trend.map(p => [p.date, p.findings]),
+          directoryTrendUnavailable: directory.trendUnavailable,
         };
       } finally {
         vi.useRealTimers();
@@ -555,31 +569,39 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: byPerson(
       same({
-        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [[SNAPSHOT_DAYS[1], 6]],
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], trend: carriedFrom(6),
         baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        ...DIRECTORY_SERVED,
       }),
       // Both subscriptions and no filter: two subscriptions' rows are never added into one trend.
       same({
         activeFindings: 4, high: 4, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1]], trend: [], baselineDate: null, deltaPct: null,
         trendUnavailable: 'choose-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+        ...directoryRefused('choose-subscription'),
       }),
       // Everything the person holds lies in subscription one, so its rows serve the trend: its count, not the install's.
       same({
-        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: [[SNAPSHOT_DAYS[1], 2]],
+        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: carriedFrom(2),
         baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        ...directoryRefused('choose-subscription'),
       }),
       same({
         activeFindings: 1, high: 1, perSubscription: [[SUB_ONE, 1]], trend: [], baselineDate: null, deltaPct: null,
         trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+        ...directoryRefused('no-whole-subscription'),
       }),
+      // Holds the Directory only: with no filter the trend is the Directory's own points, never the install's.
       same({
-        activeFindings: 1, high: 1, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
-        trendUnavailable: 'no-whole-subscription', lastScanAt: DATE, securityLastScanAt: DATE,
+        // The Directory has its own row, and a person who holds it is given it.
+        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(1), baselineDate: SNAPSHOT_DAYS[0], deltaPct: null,
+        trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        ...DIRECTORY_SERVED,
       }),
       // Holds no Scope, so no scan covered part of what they hold: last scanned is not theirs to be told.
       same({
         activeFindings: 0, high: 0, perSubscription: [], trend: [], baselineDate: null, deltaPct: null,
         trendUnavailable: 'no-whole-subscription', lastScanAt: null, securityLastScanAt: null,
+        ...directoryRefused('no-whole-subscription'),
       }),
     ),
   };
