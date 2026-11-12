@@ -4,13 +4,14 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref, type ScansLinkOverrides } from '@/lib/scans-link';
 import { dateWindowLabel, dateWindowPhrase } from '@/lib/date-window';
 import type { StatMetric } from '@/lib/types';
 import { Delta } from '@/components/dashboard/widgets/delta';
 import { postureColor } from '@/components/dashboard/dashboard-constants';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 // Metric → /scans Results-tab overrides. Metrics with no obvious equivalent filter (posture %,
@@ -38,7 +39,8 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
 export function StatCardWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const params = buildSummaryParams(merged).toString();
+  const target = useWidgetReadTarget();
+  const params = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>).toString();
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]

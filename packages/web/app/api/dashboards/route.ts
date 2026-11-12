@@ -3,42 +3,49 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { listDashboards, createDashboard, createStarterDashboard, dashboardNameTakenMessage } from '@/lib/db/dashboards';
 import { writeAudit } from '@/lib/db/audit';
-import { markedDashboard } from '@/lib/outside-access';
+import { holdBackDashboards, restoreHeldBackDashboard } from '@/lib/db/held-back';
+import { UNSEEN_VALUE_MESSAGE } from '@/lib/held-back';
+import { openableItems } from '@/lib/item-access';
+import { getMyDefault } from '@/lib/db/default-dashboard';
+import { withMyDefault } from '@/lib/default-dashboards';
 import type { DashboardConfig } from '@/lib/types';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
-  return Response.json((await listDashboards()).map(d => markedDashboard(actor.access, d)));
+  const mine = (await getMyDefault(actor.id)).dashboardId;
+  return Response.json(await holdBackDashboards(actor.access, withMyDefault(openableItems(actor, await listDashboards()), mine)));
 }
 
 export async function POST(req: Request) {
-  const actor = await requireRole('dashboards:write');
+  const actor = await requireRole('dashboards:personal');
   if (actor instanceof NextResponse) return actor;
 
   const body = await parseJsonBody<{ name?: string; description?: string; config?: DashboardConfig; template?: 'starter' }>(req);
   if (body instanceof NextResponse) return body;
 
   if (body.template === 'starter') {
-    const dashboard = await createStarterDashboard();
+    const dashboard = await createStarterDashboard(actor.id);
+    // A Personal item is logged by id and kind only: its name is its owner's alone.
     await writeAudit({
       actor,
       action: 'dashboard.create',
       entityType: 'dashboard',
       entityId: dashboard.id,
-      summary: `Restored the starter dashboard "${dashboard.name}"`,
+      summary: 'Restored the starter as a Personal dashboard',
     });
-    return Response.json(markedDashboard(actor.access, dashboard), { status: 201 });
+    const [held] = await holdBackDashboards(actor.access, [dashboard]);
+    return Response.json(held, { status: 201 });
   }
 
   if (!body.name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
 
   const name = body.name.trim();
-  const result = await createDashboard({
-    name,
-    description: body.description,
-    config: body.config ?? { autoRefresh: 0, widgets: [] },
-  });
+  const config = body.config ?? { autoRefresh: 0, widgets: [] };
+  // A new item holds no value yet, so every value outside the saver's Access in it is one they are bringing in.
+  const { unseen } = await restoreHeldBackDashboard(actor.access, { id: '', config: { autoRefresh: 0, widgets: [] } }, config);
+  if (unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
+  const result = await createDashboard({ name, description: body.description, config }, actor.id);
 
   if (!result.ok) {
     const error = result.reason === 'empty-name' ? 'Name is required.' : dashboardNameTakenMessage(name);
@@ -50,8 +57,9 @@ export async function POST(req: Request) {
     action: 'dashboard.create',
     entityType: 'dashboard',
     entityId: result.dashboard.id,
-    summary: `Created dashboard "${result.dashboard.name}"`,
+    summary: 'Created a Personal dashboard',
   });
 
-  return Response.json(markedDashboard(actor.access, result.dashboard), { status: 201 });
+  const [held] = await holdBackDashboards(actor.access, [result.dashboard]);
+  return Response.json(held, { status: 201 });
 }

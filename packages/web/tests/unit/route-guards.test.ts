@@ -158,10 +158,40 @@ describe('TS-04 · the actions the sensitive routes require', () => {
     ['onboarding/route.ts', 'azure:manage'],
     ['settings/notifications/route.ts', 'notifications:manage'],
     ['settings/notifications/test/route.ts', 'notifications:manage'],
-    // Saved views are shared with everyone on the install, so a write is an editor's call and a
-    // viewer only reads.
-    ['views/route.ts', 'views:write'],
-    ['views/[id]/route.ts', 'views:write'],
+    // Dashboards and saved views are Personal or Shared (ADR 0012). Every Role may keep Personal ones, so a write
+    // names the Personal action to get in, and the owner and visibility check in lib/item-access.ts decides what
+    // the person may do to this item: `*:write` for their own Shared one, `*:manage` for anyone else's. Reads name
+    // `read` and answer someone else's Personal item like an unknown id.
+    ['dashboards/route.ts', 'read'],
+    ['dashboards/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/route.ts', 'read'],
+    ['dashboards/[id]/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/duplicate/route.ts', 'dashboards:personal'],
+    // Sharing and unsharing change who sees an item, not its content: they name the Personal action to get in,
+    // and guardItem() asks `*:write` for the owner's own item or `*:manage` to unshare anyone else's.
+    ['dashboards/[id]/share/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/unshare/route.ts', 'dashboards:personal'],
+    // The Install default is a curation call on the whole install (ADR 0012): it needs the Manage action, which an
+    // Editor holds only on Everything. My default is the person's own preference, so it needs the Personal action.
+    ['dashboards/install-default/route.ts', 'dashboards:manage'],
+    ['account/default-dashboard/route.ts', 'dashboards:personal'],
+    // Handing over and taking over change who owns a Shared item: they get in on the Personal action too, and
+    // guardItem() asks `*:write` for the owner's hand-over, `*:manage` for anyone else's and for every take-over.
+    ['dashboards/[id]/hand-over/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/hand-over-candidates/route.ts', 'dashboards:personal'],
+    ['dashboards/[id]/take-over/route.ts', 'dashboards:personal'],
+    // Removing held-back values edits the item: it gets in on the Personal action and guardItem() asks whatever editing needs.
+    ['dashboards/[id]/remove-held-back/route.ts', 'dashboards:personal'],
+    ['views/route.ts', 'read'],
+    ['views/route.ts', 'views:personal'],
+    ['views/[id]/route.ts', 'read'],
+    ['views/[id]/route.ts', 'views:personal'],
+    ['views/[id]/share/route.ts', 'views:personal'],
+    ['views/[id]/unshare/route.ts', 'views:personal'],
+    ['views/[id]/hand-over/route.ts', 'views:personal'],
+    ['views/[id]/hand-over-candidates/route.ts', 'views:personal'],
+    ['views/[id]/take-over/route.ts', 'views:personal'],
+    ['views/[id]/remove-held-back/route.ts', 'views:personal'],
     // The view routes answer from every finding, so a removed user must lose them at once (ADR 0007).
     ['findings/view/route.ts', 'read'],
     ['findings/rows/route.ts', 'read'],

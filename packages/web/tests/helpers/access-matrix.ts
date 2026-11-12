@@ -6,6 +6,7 @@
  * Every id is fake: zero GUIDs, `example.com`, made-up group names.
  */
 import { createUser } from '@/lib/db/users';
+import { execRaw } from './db';
 import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createSchedule } from '@/lib/db/schedules';
@@ -24,6 +25,15 @@ import type { Finding, ScanSummary } from '@/lib/types';
 import { emptySeverityCounts } from '@/lib/severity';
 import { syntheticFinding } from './synthetic-findings';
 import { fakeHierarchy, group, refreshFrom, subscription, type FakeHierarchy } from './fake-hierarchy';
+
+/**
+ * Who created the seeded dashboard and saved view. Not one of the seven people, and no user row, so both read
+ * as Shared items with no owner: every person opens them, and none of them is the owner.
+ */
+export const MATRIX_OWNER = 'matrix-seed-owner';
+
+/** Makes a seeded item Shared. Sharing is a later change; the seed writes the row the way it would be stored. */
+export const share = (table: 'dashboards' | 'saved_views', id: string) => execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
 
 export const MATRIX_TENANT = '00000000-0000-0000-0000-0000000000f0';
 export const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
@@ -221,8 +231,9 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   const view = await createSavedView({
     name: 'Subscription two only', tab: 'results',
     query: viewToSearchParams({ ...emptyView(), filters: [{ field: 'subscription', values: [SUB_TWO] }] }).toString(),
-  }, null);
+  }, MATRIX_OWNER);
   if (!view.ok) throw new Error(view.reason);
+  await share('saved_views', view.view.id);
   // resetDb keeps the seeded dashboards table, so a second seeding replaces the one it wrote before.
   for (const existing of await listDashboards()) if (existing.name === DASHBOARD_NAME) await deleteDashboard(existing.id);
   const dashboard = await createDashboard({
@@ -231,8 +242,9 @@ export async function seedMatrix(): Promise<MatrixSeed> {
       filters: { subscriptions: [SUB_TWO] },
       widgets: [{ id: 'matrix-widget', type: 'stat-card', title: 'Findings', x: 0, y: 0, w: 4, h: 2, config: { resourceGroups: [WIDGET_RESOURCE_GROUP] } }],
     },
-  });
+  }, MATRIX_OWNER);
   if (!dashboard.ok) throw new Error(dashboard.reason);
+  await share('dashboards', dashboard.dashboard.id);
 
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
   return { scanIds, scopedScanId, scheduleId: created.schedule.id, runId: run.id, scopedRunId: scopedRun.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };

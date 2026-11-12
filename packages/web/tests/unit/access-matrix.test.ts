@@ -35,9 +35,14 @@ import type { Rule } from '@rulebeat/core';
 import { replaceAssignmentsOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createPersonalRule, replacePersonalRuleResults } from '@/lib/db/personal-rules';
+import { chooseInstallDefault, createDashboard, deleteDashboard } from '@/lib/db/dashboards';
+import { getMyDefault } from '@/lib/db/default-dashboard';
+import { buildWidgetReadParams } from '@/lib/dashboard-filters';
+import { createSavedView } from '@/lib/db/saved-views';
+import { execRaw } from '../helpers/db';
 import { createLibraryRequest } from '@/lib/db/library-requests';
 import {
-  createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
+  createPeople, matrixHierarchy, MANAGEMENT_GROUP, MATRIX_NOW, MATRIX_OWNER, MATRIX_TENANT, PEOPLE, SCOPE_DIRECTORY, SCOPE_MANAGEMENT_GROUP, SCOPE_RESOURCE_GROUP, SCOPE_SUBSCRIPTION, SCOPED_RULE_ID,
   SCOPED_RULE_KQL, SCOPED_RULE_NAME, SNAPSHOT_DAYS, SUB_ONE, SUB_TWO, seedMatrix, seedScopedRule, type MatrixSeed,
 } from '../helpers/access-matrix';
 import type { OwnAccess } from '@/lib/access';
@@ -501,9 +506,6 @@ const suppressionRemoval: Matrix = {
   expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
 
-const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
-const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
-const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
 
 /**
  * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
@@ -518,6 +520,7 @@ function dashboardMatrix(): Record<string, Matrix> {
     'top-resources': () => import('@/app/api/widgets/top-resources/route'),
     'advisories': () => import('@/app/api/widgets/advisories/route'),
     'filter-options': () => import('@/app/api/widgets/filter-options/route'),
+    'rules': () => import('@/app/api/widgets/rules/route'),
   };
   const widget = async (route: string, query = '') =>
     BODY(await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}${query}`)));
@@ -620,6 +623,12 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
+  // The rule list is every rule, for everyone: the picker names rules, not findings.
+  const rulesList: Matrix = {
+    probe: async () => ({ listsRules: ((await widget('rules')) as { id: string }[]).length > 0 }),
+    expected: byPerson(...Array.from({ length: 6 }, () => same({ listsRules: true })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  };
+
   const ALL_RULES = ['matrix-advisory-rule', 'matrix-rule'];
   const options = (subscriptions: string[], resourceGroups: string[], rules: string[]) => same({
     categories: ['compliance', 'cost', 'security', 'identity', 'reliability'], hasTags: false, subscriptions, resourceGroups, rules,
@@ -644,26 +653,76 @@ function dashboardMatrix(): Record<string, Matrix> {
     ),
   };
 
-  // A stored filter reads back exactly as stored, with the marks beside it. The marks are what differs.
-  const marked = (marks: { subscriptions: string[]; resourceGroups: string[] }) => ({ marks });
-  const marksByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
+  // #375: a widget read names the dashboard (and widget) it is for. The reads below are made the way the page makes
+  // them: the dashboard's filter bar as this person was sent it, no widget named. Subscription two is the seeded
+  // dashboard's filter, so the people who hold it read its findings and everyone else, who is held it back from, reads
+  // nothing and never their own Access. An id that is unknown, and someone else's Personal dashboard, are 404 for all.
+  const readOnDashboard = async (route: string, seed: MatrixSeed): Promise<Response> => {
+    const sent = await BODY(await getWith('/api/dashboards/x', await import('@/app/api/dashboards/[id]/route'), seed.dashboardId)) as {
+      config: { filters?: { subscriptions?: string[] } };
+    };
+    const params = buildWidgetReadParams({ dashboardId: seed.dashboardId }, { dateWindow: { mode: 'relative', days: 7 }, subscriptions: sent.config.filters?.subscriptions }, {});
+    return (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}?${params}`));
+  };
+  const statusOnDashboard = async (route: string, id: string): Promise<number> =>
+    (await (await loaders[route]!()).GET(new Request(`http://localhost/api/widgets/${route}?${buildWidgetReadParams({ dashboardId: id }, { dateWindow: { mode: 'relative', days: 7 } }, {})}`))).status;
+  const refusals = async (route: string): Promise<{ unknownId: number; othersPersonal: number }> => {
+    const made = await createDashboard({ name: `matrix personal ${Math.random().toString(36).slice(2)}`, config: { widgets: [] } }, MATRIX_OWNER);
+    if (!made.ok) throw new Error(made.reason);
+    try {
+      return { unknownId: await statusOnDashboard(route, 'no-such-dashboard'), othersPersonal: await statusOnDashboard(route, made.dashboard.id) };
+    } finally {
+      await deleteDashboard(made.dashboard.id);
+    }
+  };
+  const REFUSED = { unknownId: 404, othersPersonal: 404 };
+  /** The entry as it was, plus the dashboard read and the two refusals. `onDashboard` is each person's expectation, by hand. */
+  const onDashboardToo = (
+    route: string, base: Matrix, digest: (body: unknown, seed: MatrixSeed) => unknown,
+    onDashboard: [unknown, unknown, unknown, unknown, unknown, unknown],
+  ): Matrix => {
+    const people = PEOPLE.map(p => p.name);
+    // The Admin and the Editor on Everything hold the same, so they share the first expectation.
+    const slot = [0, 0, 1, 2, 3, 4, 5];
+    return {
+      probe: async (seed, tab) => ({
+        plain: await base.probe(seed, tab),
+        onDashboard: digest(await BODY(await readOnDashboard(route, seed)), seed),
+        ...(await refusals(route)),
+      }),
+      expected: Object.fromEntries(people.map((person, i) => [person, Object.fromEntries(VIEW_TABS.map(tab => [tab, {
+        plain: base.expected[person]![tab], onDashboard: onDashboard[slot[i]!], ...REFUSED,
+      }]))])) as Matrix['expected'],
+    };
+  };
+  const count = (n: number) => ({ activeFindings: n });
+  const OTHER_SUB = ['vm-other-sub'];
+
+  // #363: a stored filter value outside the person's Access is left out of what comes back and counted beside it.
+  // Each expectation is the item as stored with only the held-back values removed, and the counts, by hand.
+  const heldByPerson = (everything: object, managementGroup: object, subscription: object, resourceGroup: object, directory: object, nothing: object) =>
     byPerson(same(everything), same(managementGroup), same(subscription), same(resourceGroup), same(directory), same(nothing));
 
-  const dashboardOf = (body: { config: { filters?: unknown; widgets: { config: unknown }[] }; outsideAccess: unknown }) =>
-    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, marks: body.outsideAccess });
-  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] } };
-  const dashboardExpected = marksByPerson(
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(NOTHING_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(SUB_TWO_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
-    { ...STORED_DASHBOARD, ...marked(BOTH_MARKED) },
+  const SELF = 'self';
+  const dashboardOf = (body: { id: string; config: { filters?: unknown; widgets: { config: unknown }[] }; heldBack: { id: string }[] }) =>
+    ({ filters: body.config.filters, widgetOverride: body.config.widgets[0]!.config, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  const STORED_DASHBOARD = { filters: { subscriptions: [SUB_TWO] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [] };
+  const DASHBOARD_SUBSCRIPTION = { place: 'dashboard', id: SELF, dimension: 'subscription', count: 1 };
+  const WIDGET_GROUP = { place: 'widget', id: 'matrix-widget', dimension: 'resourceGroup', count: 1 };
+  // Subscription one holds every resource group name, since a name is not tied to a subscription. A person who
+  // holds one resource group, the Directory or nothing holds neither subscription two nor `rg-two`.
+  const dashboardExpected = heldByPerson(
+    STORED_DASHBOARD,
+    STORED_DASHBOARD,
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: ['rg-two'] }, heldBack: [DASHBOARD_SUBSCRIPTION] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
+    { filters: { subscriptions: [] }, widgetOverride: { resourceGroups: [] }, heldBack: [DASHBOARD_SUBSCRIPTION, WIDGET_GROUP] },
   );
   const dashboards: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; outsideAccess: unknown }[];
-      return dashboardOf(list.find(d => d.id === seed.dashboardId)!);
+      const list = await BODY(await (await import('@/app/api/dashboards/route')).GET()) as { id: string; config: never; heldBack: never }[];
+      return dashboardOf(list.find(d => d.id === seed.dashboardId)! as never);
     },
     expected: dashboardExpected,
   };
@@ -673,18 +732,22 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   const VIEW_QUERY = `subscription=${SUB_TWO}`;
-  const viewOf = (body: { query: string; tab: string; outsideAccess: unknown }) => ({ tab: body.tab, query: body.query, marks: body.outsideAccess });
-  const viewExpected = marksByPerson(
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(NOTHING_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
-    { tab: 'results', query: VIEW_QUERY, ...marked(SUB_TWO_MARKED) },
+  const viewOf = (body: { id: string; query: string; tab: string; heldBack: { id: string }[] }) =>
+    ({ tab: body.tab, query: body.query, heldBack: body.heldBack.map(h => ({ ...h, id: h.id === body.id ? SELF : h.id })) });
+  // The held subscription leaves as a placeholder no finding carries, so the view lists nothing for them.
+  const VIEW_MATCHES_NOTHING = `subscription=${encodeURIComponent('Outside your access').replace(/%20/g, '+')}`;
+  const VIEW_HELD = [{ place: 'savedView', id: SELF, dimension: 'subscription', count: 1 }];
+  const viewExpected = heldByPerson(
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: VIEW_QUERY, heldBack: [] },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
+    { tab: 'results', query: VIEW_MATCHES_NOTHING, heldBack: VIEW_HELD },
   );
   const views: Matrix = {
     probe: async seed => {
-      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; outsideAccess: unknown }[];
+      const list = await BODY(await (await import('@/app/api/views/route')).GET()) as { id: string; query: string; tab: string; heldBack: { id: string }[] }[];
       return viewOf(list.find(v => v.id === seed.savedViewId)!);
     },
     expected: viewExpected,
@@ -694,24 +757,175 @@ function dashboardMatrix(): Record<string, Matrix> {
     expected: viewExpected,
   };
 
-  // Only an Editor or an Admin may duplicate, and they hold Everything here, so the copy's marks are empty.
-  const FORBIDDEN = { status: 403, filters: undefined, marks: undefined };
+  // Anyone may duplicate a dashboard they can open: the copy is their own Personal one (ADR 0012). It stores only the
+  // values the person's Access reaches, so it holds nothing back, and it says how many widgets show more than the
+  // original did: the seeded widget takes the dashboard's subscription, and also overrides the resource group.
+  const duplicated = (subscriptions: string[], widened: number) => same({ status: 201, filters: { subscriptions }, heldBack: [], widened });
   const duplicate: Matrix = {
     probe: async seed => {
       const route = await import('@/app/api/dashboards/[id]/duplicate/route');
       const res = await route.POST(new Request('http://localhost/api/dashboards/x/duplicate', { method: 'POST' }), { params: Promise.resolve({ id: seed.dashboardId }) });
-      const body = await res.json() as { outsideAccess?: unknown; config?: { filters?: unknown } };
-      return { status: res.status, filters: body.config?.filters, marks: body.outsideAccess };
+      const body = await res.json() as { heldBack?: unknown[]; widened?: number; config?: { filters?: unknown } };
+      return { status: res.status, filters: body.config?.filters, heldBack: body.heldBack, widened: body.widened };
     },
     expected: byPerson(
-      same({ status: 201, filters: { subscriptions: [SUB_TWO] }, marks: NOTHING_MARKED }),
-      same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN), same(FORBIDDEN),
+      duplicated([SUB_TWO], 0), duplicated([SUB_TWO], 0),
+      duplicated([], 1),
+      duplicated([], 1), duplicated([], 1), duplicated([], 1),
     ),
   };
 
+  // Sharing and unsharing answer with the item, so each person is held back the same values they are on the item itself.
+  // Only an Admin or an Editor on Everything holds the write action in this matrix (the other people are Viewers),
+  // so a probe is a fresh item of the asking person's own: a Personal one to share, a Shared one to unshare.
+  const ROUTES = {
+    dashboard: { share: () => import('@/app/api/dashboards/[id]/share/route'), unshare: () => import('@/app/api/dashboards/[id]/unshare/route'), 'hand-over': () => import('@/app/api/dashboards/[id]/hand-over/route'), 'take-over': () => import('@/app/api/dashboards/[id]/take-over/route') },
+    view: { share: () => import('@/app/api/views/[id]/share/route'), unshare: () => import('@/app/api/views/[id]/unshare/route'), 'hand-over': () => import('@/app/api/views/[id]/hand-over/route'), 'take-over': () => import('@/app/api/views/[id]/take-over/route') },
+  };
+  /** What a reply holds that depends on the person: the stored filters (a dashboard) or query (a view), and the counts held back. */
+  const stored = (kind: 'dashboard' | 'view') => (kind === 'dashboard' ? { filters: { subscriptions: [SUB_TWO] } } : { query: VIEW_QUERY });
+  const refusedShare = { status: 403 };
+  const sharingExpected = (kind: 'dashboard' | 'view') => {
+    const shared = same({ status: 200, ...stored(kind), heldBack: [] });
+    return byPerson(shared, same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare), same(refusedShare));
+  };
+  const ownItem = async (kind: 'dashboard' | 'view', visibility: 'personal' | 'shared', ownerId?: string) => {
+    const uid = ownerId ?? ((await mockAuth()) as { user: { uid: string } }).user.uid;
+    const name = `sharing probe ${Math.random().toString(36).slice(2)}`;
+    if (kind === 'dashboard') {
+      const made = await createDashboard({ name, config: { autoRefresh: 0, widgets: [], filters: { subscriptions: [SUB_TWO] } } }, uid);
+      if (!made.ok) throw new Error(made.reason);
+      if (visibility === 'shared') await execRaw(`UPDATE dashboards SET visibility = 'shared' WHERE id = '${made.dashboard.id}'`);
+      return made.dashboard.id;
+    }
+    const made = await createSavedView({ name, tab: 'results', query: VIEW_QUERY }, uid);
+    if (!made.ok) throw new Error(made.reason);
+    if (visibility === 'shared') await execRaw(`UPDATE saved_views SET visibility = 'shared' WHERE id = '${made.view.id}'`);
+    return made.view.id;
+  };
+  // Handing over and taking over answer with the item too. Only Shared items change owner: a hand-over probe is
+  // the asking person's own Shared item handed to an Admin, a take-over probe a Shared item of someone else's.
+  const person = async (role: 'admin' | 'editor') => {
+    const made = await createUser({ email: `transfer-${Math.random().toString(36).slice(2)}@example.com`, role });
+    if ('error' in made) throw new Error(made.error);
+    return made.user.id;
+  };
+  const transferMatrix = (kind: 'dashboard' | 'view', action: 'hand-over' | 'take-over'): Matrix => ({
+    probe: async () => {
+      const id = await ownItem(kind, 'shared', action === 'hand-over' ? undefined : await person('editor'));
+      const payload = action === 'hand-over' ? JSON.stringify({ userId: await person('admin') }) : undefined;
+      const res = await (await ROUTES[kind][action]()).POST(
+        new Request(`http://localhost/api/${kind}s/x/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload }),
+        { params: Promise.resolve({ id }) },
+      );
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
+    },
+    expected: sharingExpected(kind),
+  });
+  // "Remove N values" is open to whoever may edit the item, and every Role may edit their own Personal one, so the probe is
+  // a Personal item of the asking person's own that stores subscription two. Whoever holds no Scope covering it has it
+  // removed and is answered with what is left; whoever holds it has nothing removed.
+  const removalMatrix = (kind: 'dashboard' | 'view'): Matrix => {
+    const kept = same({ status: 200, ...stored(kind), heldBack: [] });
+    const removed = same({ status: 200, ...(kind === 'dashboard' ? { filters: { subscriptions: [] } } : { query: '' }), heldBack: [] });
+    return {
+      probe: async () => {
+        const id = await ownItem(kind, 'personal');
+        const route = await import(kind === 'dashboard' ? '@/app/api/dashboards/[id]/remove-held-back/route' : '@/app/api/views/[id]/remove-held-back/route');
+        const res = await route.POST(
+          new Request(`http://localhost/api/${kind}s/x/remove-held-back`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+          { params: Promise.resolve({ id }) },
+        );
+        if (res.status !== 200) return { status: res.status };
+        const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+        return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
+      },
+      expected: byPerson(kept, kept, removed, removed, removed, removed),
+    };
+  };
+  const shareMatrix = (kind: 'dashboard' | 'view', action: 'share' | 'unshare'): Matrix => ({
+    probe: async () => {
+      const id = await ownItem(kind, action === 'share' ? 'personal' : 'shared');
+      const res = await (await ROUTES[kind][action]()).POST(new Request(`http://localhost/api/${kind}s/x/${action}`, { method: 'POST' }), { params: Promise.resolve({ id }) });
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { heldBack: unknown; config: { filters: unknown }; query: string };
+      return { status: res.status, ...(kind === 'dashboard' ? { filters: reply.config.filters } : { query: reply.query }), heldBack: reply.heldBack };
+    },
+    expected: sharingExpected(kind),
+  });
+
+  // Choosing the Install default needs `dashboards:manage`, which only the Admin and the Editor on Everything hold
+  // (the other people here are Viewers). A probe is a Shared dashboard of the asking person's own, so the one who may
+  // gets the dashboard back with the held-back counts they would see on it, and everyone else is refused.
+  const installDefault: Matrix = {
+    probe: async () => {
+      const id = await ownItem('dashboard', 'shared');
+      const res = await (await import('@/app/api/dashboards/install-default/route')).PUT(new Request('http://localhost/api/dashboards/install-default', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+      }));
+      if (res.status !== 200) return { status: res.status };
+      const reply = await res.json() as { heldBack: unknown; config: { filters: unknown } };
+      return { status: res.status, filters: reply.config.filters, heldBack: reply.heldBack };
+    },
+    expected: sharingExpected('dashboard'),
+  };
+
+  // My default needs only `dashboards:personal`, which every Role holds, so every person gets the same answers: their own
+  // Personal dashboard and any Shared one are accepted, someone else's Personal one answers like an unknown id, and a
+  // refused choice leaves the earlier one in place. Choosing also clears the "no longer available" notice. The person
+  // with no Scope is still allowed in: My default never reads their Access.
+  const myDefault: Matrix = {
+    probe: async () => {
+      const uid = ((await mockAuth()) as { user: { uid: string } }).user.uid;
+      const put = async (id: string) => (await (await import('@/app/api/account/default-dashboard/route')).PUT(new Request('http://localhost/api/account/default-dashboard', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+      }))).status;
+      const ownerless = async (visibility: 'personal' | 'shared') => {
+        const made = await createDashboard({ name: `my default probe ${Math.random().toString(36).slice(2)}`, config: { autoRefresh: 0, widgets: [] } }, uid);
+        if (!made.ok) throw new Error(made.reason);
+        await execRaw(`UPDATE dashboards SET owner_id = NULL, visibility = '${visibility}' WHERE id = '${made.dashboard.id}'`);
+        return made.dashboard.id;
+      };
+      await execRaw(`UPDATE users SET default_dashboard_unavailable = TRUE WHERE id = '${uid}'`);
+      const ownPersonal = await put(await ownItem('dashboard', 'personal'));
+      const ownShared = await put(await ownItem('dashboard', 'shared'));
+      const sharedId = await ownerless('shared');
+      const otherShared = await put(sharedId);
+      const afterChoosing = await getMyDefault(uid);
+      const otherPersonal = await put(await ownerless('personal'));
+      const unknown = await put('00000000-0000-0000-0000-00000000dead');
+      const afterRefusals = await getMyDefault(uid);
+      return {
+        ownPersonal, ownShared, otherShared, otherPersonal, unknown,
+        choiceKept: afterRefusals.dashboardId === sharedId, noticeCleared: !afterChoosing.unavailable,
+      };
+    },
+    expected: byPerson(...Array(6).fill(same({
+      ownPersonal: 200, ownShared: 200, otherShared: 200, otherPersonal: 404, unknown: 404, choiceKept: true, noticeCleared: true,
+    })) as [ByTab, ByTab, ByTab, ByTab, ByTab, ByTab]),
+  };
+
   return {
-    'widgets/summary': summary, 'widgets/findings': findings, 'widgets/top-rules': topRules, 'widgets/top-resources': topResources,
-    'widgets/advisories': advisories, 'widgets/filter-options': filterOptions,
+    'account/default-dashboard': myDefault,
+    'dashboards/install-default': installDefault,
+    'dashboards/[id]/share': shareMatrix('dashboard', 'share'), 'dashboards/[id]/unshare': shareMatrix('dashboard', 'unshare'),
+    'views/[id]/share': shareMatrix('view', 'share'), 'views/[id]/unshare': shareMatrix('view', 'unshare'),
+    'dashboards/[id]/hand-over': transferMatrix('dashboard', 'hand-over'), 'dashboards/[id]/take-over': transferMatrix('dashboard', 'take-over'),
+    'views/[id]/hand-over': transferMatrix('view', 'hand-over'), 'views/[id]/take-over': transferMatrix('view', 'take-over'),
+    'dashboards/[id]/remove-held-back': removalMatrix('dashboard'), 'views/[id]/remove-held-back': removalMatrix('view'),
+    'widgets/summary': onDashboardToo('summary', summary, body => count((body as { current: { activeFindings: number } }).current.activeFindings), [count(1), count(1), count(0), count(0), count(0), count(0)]),
+    'widgets/findings': onDashboardToo('findings', findings, (body, seed) => nameOf(body as { fingerprint: string }[], seed), [OTHER_SUB, OTHER_SUB, [], [], [], []]),
+    'widgets/top-rules': onDashboardToo('top-rules', topRules, body => (body as { ruleId: string; count: number }[]).map(r => [r.ruleId, r.count]), [[['matrix-rule', 1]], [['matrix-rule', 1]], [], [], [], []]),
+    'widgets/top-resources': onDashboardToo('top-resources', topResources, body => (body as { resourceName: string }[]).map(r => r.resourceName).sort(), [OTHER_SUB, OTHER_SUB, [], [], [], []]),
+    'widgets/advisories': onDashboardToo('advisories', advisories, (body, seed) => {
+      const b = body as { items: { fingerprint: string }[]; total: number };
+      return { names: nameOf(b.items, seed), total: b.total };
+    }, [{ names: ['advisory-other-sub'], total: 1 }, { names: ['advisory-other-sub'], total: 1 }, { names: [], total: 0 }, { names: [], total: 0 }, { names: [], total: 0 }, { names: [], total: 0 }]),
+    // These two apply no filter: a dashboard the person may open is read, any other id is refused.
+    'widgets/filter-options': onDashboardToo('filter-options', filterOptions, () => 'opens', ['opens', 'opens', 'opens', 'opens', 'opens', 'opens']),
+    'widgets/rules': onDashboardToo('rules', rulesList, () => 'opens', ['opens', 'opens', 'opens', 'opens', 'opens', 'opens']),
     'dashboards': dashboards, 'dashboards/[id]': dashboardById, 'dashboards/[id]/duplicate': duplicate, 'views': views, 'views/[id]': viewById,
   };
 }
@@ -858,6 +1072,135 @@ function runHistoryMatrix(): Record<string, Matrix> {
     'scans/compare': compare, 'scans/compare/export': compareExport, 'schedules/[id]/run': scheduleRun,
   };
 }
+
+// #373: the same five routes with the seeded saved view open. It is filtered to subscription two, so a person
+// who holds subscription two gets their findings there and a person who does not gets nothing, never their own
+// findings: the view's value is held back from them and every read adds it back. Each person's address is the
+// query the view opens with for them, which is all of the view they were ever sent.
+
+/** The address a person opens the seeded view with: its id, then the query the server sent them. */
+async function openViewAddress(seed: MatrixSeed, tab: ViewTab, extra = ''): Promise<string> {
+  const opened = await BODY(await getWith('/api/views/x', await import('@/app/api/views/[id]/route'), seed.savedViewId)) as { query: string };
+  return `${tabParams(tab)}&view=${seed.savedViewId}&${opened.query}${extra}`;
+}
+
+const NO_NAMES = { names: [], total: 0 };
+
+const openView: Matrix = {
+  probe: async (seed, tab) => {
+    const body = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${await openViewAddress(seed, tab)}`))) as {
+      items: { finding: { fingerprint: string } }[]; total: number; viewMissing?: boolean;
+    };
+    expect(body.viewMissing).toBeUndefined();
+    return { names: namesOf(seed, body.items.map(i => i.finding)), total: body.total };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { names: ['vm-other-sub'], total: 1 }, advisories: { names: ['advisory-other-sub'], total: 1 }, activity: NO_NAMES,
+      };
+      const held = same(NO_NAMES);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openGroup: Matrix = {
+  probe: async (seed, tab) => {
+    const address = `${await openViewAddress(seed, tab)}&group=category`;
+    const headers = await BODY(await (await import('@/app/api/findings/view/route')).GET(new Request(`http://localhost/api/findings/view?${address}`))) as {
+      grouped: { groups: { value: string; findingCount: number }[] };
+    };
+    const inside = await BODY(await (await import('@/app/api/findings/group/route')).GET(
+      new Request(`http://localhost/api/findings/group?${address}&groupPath=%5B%22security%22%5D`),
+    )) as { items: { finding: { fingerprint: string } }[]; total: number; group?: { findingCount: number } | null };
+    return {
+      headers: headers.grouped.groups.map(g => [g.value, g.findingCount]),
+      names: namesOf(seed, inside.items.map(i => i.finding)),
+      total: inside.total,
+      groupCount: inside.group?.findingCount ?? null,
+    };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { headers: [['security', 1]], names: ['vm-other-sub'], total: 1, groupCount: 1 },
+        advisories: { headers: [['security', 1]], names: ['advisory-other-sub'], total: 1, groupCount: 1 },
+        activity: NOTHING_GROUP,
+      };
+      const held = same(NOTHING_GROUP);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openColumnValues: Matrix = {
+  probe: async (seed, tab) => {
+    const route = await import('@/app/api/findings/column-values/route');
+    const read = async (column: string) => {
+      const body = await BODY(await route.GET(new Request(`http://localhost/api/findings/column-values?${await openViewAddress(seed, tab)}&column=row.${column}`))) as {
+        values: { value: string; count: number }[];
+      };
+      return body.values.map(v => [v.value, v.count]);
+    };
+    return { zone: await read('zone'), otherSubColumn: await read('otherSubColumn') };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { zone: [['a', 1]], otherSubColumn: [['x', 1]] },
+        advisories: { zone: [['a', 1]], otherSubColumn: [] },
+        activity: NOTHING_COLUMN,
+      };
+      const held = same(NOTHING_COLUMN);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+const openExport: Matrix = {
+  probe: async (seed, tab) => {
+    const res = await (await import('@/app/api/findings/export/route')).GET(
+      new Request(`http://localhost/api/findings/export?${await openViewAddress(seed, tab)}&format=json`),
+    );
+    expect(res.headers.get('X-View-Missing')).toBeNull();
+    const list = await BODY(res) as { fingerprint: string; rows: Record<string, unknown>[] }[];
+    return {
+      names: namesOf(seed, list),
+      rowKeys: [...new Set(list.flatMap(f => f.rows.flatMap(r => Object.keys(r))))].sort(),
+    };
+  },
+  expected: byPerson(
+    ...(() => {
+      const inSubscriptionTwo: ByTab = {
+        results: { names: ['vm-other-sub'], rowKeys: ['otherSubColumn', 'zone'] },
+        advisories: { names: ['advisory-other-sub'], rowKeys: ['zone'] },
+        activity: NOTHING_EXPORT,
+      };
+      const held = same(NOTHING_EXPORT);
+      return [inSubscriptionTwo, inSubscriptionTwo, held, held, held, held] as const;
+    })(),
+  ),
+};
+
+// The rows route is narrowed by row filters only, so a view filtered to a subscription changes which finding
+// opens for nobody: each person opens what their Scopes cover and nothing more.
+const openRows: Matrix = {
+  probe: async (seed, tab) => {
+    const route = await import('@/app/api/findings/rows/route');
+    const out: Record<string, number> = {};
+    for (const name of STORED_BY_TAB[tab]) {
+      const res = await route.GET(new Request(`http://localhost/api/findings/rows?${await openViewAddress(seed, tab)}&fingerprint=${seed.fingerprints[name]}`));
+      out[name] = res.status;
+    }
+    return out;
+  },
+  expected: rows.expected,
+};
+
+const OPEN_VIEW_MATRIX: Record<string, Matrix> = {
+  'findings/view': openView, 'findings/group': openGroup, 'findings/column-values': openColumnValues, 'findings/export': openExport, 'findings/rows': openRows,
+};
 
 /** Routes that narrow what a person sees, and what each person gets from them. */
 const FINDINGS_MATRIX: Record<string, Matrix> = {
@@ -1383,6 +1726,24 @@ describe('the findings routes show each person only what their Scopes cover', ()
     }
   }
 
+  for (const [route, entry] of Object.entries(OPEN_VIEW_MATRIX)) {
+    for (const person of PEOPLE.map(p => p.name)) {
+      for (const tab of VIEW_TABS) {
+        it(`${route} with the saved view open: ${person}, ${tab} tab`, async () => {
+          mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+          expect(await entry.probe(seed, tab)).toEqual(entry.expected[person]![tab]);
+        });
+      }
+    }
+  }
+
+  it('holds an expectation for every person and tab of each read with the saved view open', () => {
+    for (const entry of Object.values(OPEN_VIEW_MATRIX)) {
+      expect(Object.keys(entry.expected).sort()).toEqual(PEOPLE.map(p => p.name).sort());
+      for (const byTab of Object.values(entry.expected)) expect(Object.keys(byTab).sort()).toEqual([...VIEW_TABS].sort());
+    }
+  });
+
   /** A new Viewer holding exactly these Scopes, signed in, and what the Results and Advisories tabs list for them. */
   async function listedFor(...scopes: string[]): Promise<{ results: string[]; advisories: string[] }> {
     const created = await createUser({ email: `extra${scopes.length}-${Math.random().toString(36).slice(2)}@example.com`, role: 'viewer' });
@@ -1594,7 +1955,8 @@ describe('a Personal rule and its results appear in no shared response', () => {
       Response.prototype.json = readJson;
       Response.prototype.text = readText;
     }
-  });
+    // Every person reads every route on every tab, which is minutes of Postgres round trips as the matrix grows, so the hook gets room beyond the 10 s default.
+  }, 60_000);
 
   it('read every probe for every person', () => {
     expect(seen.length).toBeGreaterThan(PEOPLE.length * Object.keys(MATRIX).length);
@@ -2192,4 +2554,262 @@ describe('suppressing needs a Role that allows it at a Scope containing the find
       expect((await remove(userIds['Editor on Everything']!, second)).status).toBe(204);
     });
   });
+});
+
+// ---- Dashboards and saved views: the owner and visibility check (ADR 0012, #355) ----
+
+/**
+ * Five people against the five kinds of item. Each cell seeds a fresh item of that kind, so a delete in one cell
+ * leaves the next untouched. "Own" means the person owns it; "other" means a sixth person does; an ownerless Shared
+ * item is what an upgrade leaves. Written by hand from the rules: your own Personal item needs `*:personal`, your own
+ * Shared item `*:write`, anyone else's Shared item `*:manage`, and someone else's Personal item answers like an
+ * unknown id, an Admin included.
+ */
+const ITEM_PEOPLE = ['Viewer on one subscription', 'Editor on one subscription', 'Editor on Everything', 'Admin', 'No Scope'] as const;
+type ItemPerson = typeof ITEM_PEOPLE[number];
+const ITEM_KINDS = ['own Personal', 'other Personal', 'own Shared', 'other Shared', 'ownerless Shared', 'own Install default'] as const;
+type ItemKindName = typeof ITEM_KINDS[number];
+
+type PerKind<T> = Record<ItemKindName, T>;
+const perKind = (ownPersonal: number, otherPersonal: number, ownShared: number, otherShared: number, ownerless: number, installDefault: number): PerKind<number> =>
+  ({ 'own Personal': ownPersonal, 'other Personal': otherPersonal, 'own Shared': ownShared, 'other Shared': otherShared, 'ownerless Shared': ownerless, 'own Install default': installDefault });
+/** The Install default is a dashboard idea, so a saved view is never seeded or checked as one. */
+const kindsFor = (kind: 'dashboard' | 'view'): ItemKindName[] => ITEM_KINDS.filter(k => kind === 'dashboard' || k !== 'own Install default');
+
+/** What each person gets for opening an item, and for Duplicate: all but someone else's Personal item. */
+const OPENS = perKind(200, 404, 200, 200, 200, 200);
+const DUPLICATES = perKind(201, 404, 201, 201, 201, 201);
+/** What each person gets for changing an item, by what they hold. A change that works answers `ok`. The Install default is
+ *  the one own Shared item a person who holds only `*:write` cannot remove: `removal` makes it need `*:manage`. */
+const changing = (ok: number, removal = false): Record<ItemPerson, PerKind<number>> => {
+  const scopedOwner = removal ? 403 : ok;
+  return {
+    'Viewer on one subscription': perKind(ok, 404, 403, 403, 403, 403),
+    'Editor on one subscription': perKind(ok, 404, ok, 403, 403, scopedOwner),
+    'Editor on Everything': perKind(ok, 404, ok, ok, ok, ok),
+    'Admin': perKind(ok, 404, ok, ok, ok, ok),
+    'No Scope': perKind(ok, 404, 403, 403, 403, 403),
+  };
+};
+/** Sharing and unsharing, by what each person holds: `*:write` on their own item, `*:manage` on any Shared one. A call
+ *  the item's state no longer allows answers 409, and an unshare of an item with no owner does too. The Install default
+ *  is Shared already, so sharing it answers 409, and only `*:manage` may unshare it. */
+const sharing: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(200, 404, 409, 403, 403, 409),
+  'Editor on Everything': perKind(200, 404, 409, 403, 403, 409),
+  'Admin': perKind(200, 404, 409, 403, 403, 409),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+};
+const unsharing: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(409, 404, 200, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 409, 200),
+  'Admin': perKind(409, 404, 200, 200, 409, 200),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+};
+/** Handing over by what each person holds: `*:write` on their own item, `*:manage` on any Shared one, and only a Shared item
+ *  changes hands, so a Personal one answers 409 to someone who may hand over. Choosing who to hand to answers 200 to the same people. */
+const handingOver = (ok: number): Record<ItemPerson, PerKind<number>> => ({
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(409, 404, ok, 403, 403, ok),
+  'Editor on Everything': perKind(409, 404, ok, ok, ok, ok),
+  'Admin': perKind(409, 404, ok, ok, ok, ok),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+});
+/** Taking over needs `*:manage`, so a scoped Editor cannot even on their own item, and no one takes over what they own already. */
+const takingOver: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(403, 404, 403, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 409, 200, 200, 409),
+  'Admin': perKind(409, 404, 409, 200, 200, 409),
+  'No Scope': perKind(403, 404, 403, 403, 403, 403),
+};
+/** The person every hand-over in the table hands to: eligible, and never the owner of a seeded item. */
+const handOverTarget = { id: '' };
+
+/** Whether an item shows in the list, and in the owner's own "Yours" section: shared ones and one's own Personal. */
+const LISTED: PerKind<boolean> = { 'own Personal': true, 'other Personal': false, 'own Shared': true, 'other Shared': true, 'ownerless Shared': true, 'own Install default': true };
+
+type OwnedKind = 'dashboard' | 'view';
+interface OwnedRoute {
+  kind: OwnedKind;
+  /** Calls the route for one item and answers its status. */
+  call: (id: string) => Promise<number>;
+  expected: Record<ItemPerson, PerKind<number>>;
+}
+
+let ownedCounter = 0;
+const putRequest = (url: string, method: string, body: unknown) =>
+  new Request(`http://localhost${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+const sameForAll = (by: PerKind<number>): Record<ItemPerson, PerKind<number>> =>
+  Object.fromEntries(ITEM_PEOPLE.map(p => [p, by])) as Record<ItemPerson, PerKind<number>>;
+
+/** Choosing the Install default: `dashboards:manage` to get in, then a Shared dashboard the person may open. */
+const choosingInstallDefault: Record<ItemPerson, PerKind<number>> = {
+  'Viewer on one subscription': perKind(403, 403, 403, 403, 403, 403),
+  'Editor on one subscription': perKind(403, 403, 403, 403, 403, 403),
+  'Editor on Everything': perKind(409, 404, 200, 200, 200, 200),
+  'Admin': perKind(409, 404, 200, 200, 200, 200),
+  'No Scope': perKind(403, 403, 403, 403, 403, 403),
+};
+
+/** One entry for each route file under `app/api/dashboards` and `app/api/views`, written by hand. */
+const OWNED_ITEM_MATRIX: Record<string, OwnedRoute[]> = {
+  'dashboards/[id]': [
+    { kind: 'dashboard', expected: sameForAll(OPENS),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).GET(new Request('http://localhost/api/dashboards/x'), ctxFor({ id }))).status },
+    { kind: 'dashboard', expected: changing(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).PUT(putRequest(`/api/dashboards/${id}`, 'PUT', { name: `renamed dashboard ${++ownedCounter}` }), ctxFor({ id }))).status },
+    { kind: 'dashboard', expected: changing(204, true),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/route')).DELETE(new Request(`http://localhost/api/dashboards/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/install-default': [
+    { kind: 'dashboard', expected: choosingInstallDefault,
+      call: async id => (await (await import('@/app/api/dashboards/install-default/route')).PUT(putRequest('/api/dashboards/install-default', 'PUT', { id }))).status },
+  ],
+  'dashboards/[id]/duplicate': [
+    { kind: 'dashboard', expected: sameForAll(DUPLICATES),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/duplicate/route')).POST(new Request(`http://localhost/api/dashboards/${id}/duplicate`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/share': [
+    { kind: 'dashboard', expected: sharing,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/share/route')).POST(new Request(`http://localhost/api/dashboards/${id}/share`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/unshare': [
+    { kind: 'dashboard', expected: unsharing,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/unshare/route')).POST(new Request(`http://localhost/api/dashboards/${id}/unshare`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/share': [
+    { kind: 'view', expected: sharing,
+      call: async id => (await (await import('@/app/api/views/[id]/share/route')).POST(new Request(`http://localhost/api/views/${id}/share`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/unshare': [
+    { kind: 'view', expected: unsharing,
+      call: async id => (await (await import('@/app/api/views/[id]/unshare/route')).POST(new Request(`http://localhost/api/views/${id}/unshare`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/hand-over': [
+    { kind: 'dashboard', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/hand-over/route')).POST(putRequest(`/api/dashboards/${id}/hand-over`, 'POST', { userId: handOverTarget.id }), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/hand-over-candidates': [
+    { kind: 'dashboard', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/hand-over-candidates/route')).GET(new Request(`http://localhost/api/dashboards/${id}/hand-over-candidates`), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/take-over': [
+    { kind: 'dashboard', expected: takingOver,
+      call: async id => (await (await import('@/app/api/dashboards/[id]/take-over/route')).POST(new Request(`http://localhost/api/dashboards/${id}/take-over`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/hand-over': [
+    { kind: 'view', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/views/[id]/hand-over/route')).POST(putRequest(`/api/views/${id}/hand-over`, 'POST', { userId: handOverTarget.id }), ctxFor({ id }))).status },
+  ],
+  'views/[id]/hand-over-candidates': [
+    { kind: 'view', expected: handingOver(200),
+      call: async id => (await (await import('@/app/api/views/[id]/hand-over-candidates/route')).GET(new Request(`http://localhost/api/views/${id}/hand-over-candidates`), ctxFor({ id }))).status },
+  ],
+  'dashboards/[id]/remove-held-back': [
+    { kind: 'dashboard', expected: changing(200),
+      call: async id => (await (await import('@/app/api/dashboards/[id]/remove-held-back/route')).POST(putRequest(`/api/dashboards/${id}/remove-held-back`, 'POST', {}), ctxFor({ id }))).status },
+  ],
+  'views/[id]/remove-held-back': [
+    { kind: 'view', expected: changing(200),
+      call: async id => (await (await import('@/app/api/views/[id]/remove-held-back/route')).POST(putRequest(`/api/views/${id}/remove-held-back`, 'POST', {}), ctxFor({ id }))).status },
+  ],
+  'views/[id]/take-over': [
+    { kind: 'view', expected: takingOver,
+      call: async id => (await (await import('@/app/api/views/[id]/take-over/route')).POST(new Request(`http://localhost/api/views/${id}/take-over`, { method: 'POST' }), ctxFor({ id }))).status },
+  ],
+  'views/[id]': [
+    { kind: 'view', expected: sameForAll(OPENS),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).GET(new Request('http://localhost/api/views/x'), ctxFor({ id }))).status },
+    { kind: 'view', expected: changing(200),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).PATCH(putRequest(`/api/views/${id}`, 'PATCH', { name: `renamed view ${++ownedCounter}` }), ctxFor({ id }))).status },
+    { kind: 'view', expected: changing(204),
+      call: async id => (await (await import('@/app/api/views/[id]/route')).DELETE(new Request(`http://localhost/api/views/${id}`, { method: 'DELETE' }), ctxFor({ id }))).status },
+  ],
+};
+
+/** The collection routes: create answers 201 to everyone, and the list holds what each person may open. */
+const OWNED_COLLECTION_ROUTES = ['dashboards', 'views'] as const;
+
+describe('the dashboard and saved view routes answer each person by who owns the item and whether it is Shared', () => {
+  const userIds: Record<string, string> = {};
+  let strangerId: string;
+
+  async function seedItem(kind: OwnedKind, which: ItemKindName, person: ItemPerson): Promise<string> {
+    const owner = which.startsWith('own') ? userIds[person]! : strangerId;
+    const name = `owned item ${++ownedCounter}`;
+    let id: string;
+    if (kind === 'dashboard') {
+      const made = await createDashboard({ name, config: { autoRefresh: 0, widgets: [] } }, owner);
+      if (!made.ok) throw new Error(made.reason);
+      id = made.dashboard.id;
+    } else {
+      const made = await createSavedView({ name, tab: 'results', query: '' }, owner);
+      if (!made.ok) throw new Error(made.reason);
+      id = made.view.id;
+    }
+    const table = kind === 'dashboard' ? 'dashboards' : 'saved_views';
+    if (which.endsWith('Shared') || which === 'own Install default') await execRaw(`UPDATE ${table} SET visibility = 'shared' WHERE id = '${id}'`);
+    if (which === 'ownerless Shared') await execRaw(`UPDATE ${table} SET owner_id = NULL WHERE id = '${id}'`);
+    if (which === 'own Install default') {
+      const chosen = await chooseInstallDefault(id);
+      if (!chosen.ok) throw new Error(chosen.reason);
+    }
+    return id;
+  }
+
+  beforeAll(async () => {
+    await resetDb();
+    Object.assign(userIds, await createPeople());
+    const editor = await createUser({ email: 'owned-items-editor@example.com', role: 'editor' });
+    if ('error' in editor) throw new Error(editor.error);
+    await inTransaction(tx => replaceAssignmentsOn(tx, editor.user.id, [{ tenantId: MATRIX_TENANT, scope: SCOPE_SUBSCRIPTION, role: 'editor' }]));
+    userIds['Editor on one subscription'] = editor.user.id;
+    const stranger = await createUser({ email: 'owned-items-stranger@example.com', role: 'editor' });
+    if ('error' in stranger) throw new Error(stranger.error);
+    strangerId = stranger.user.id;
+    const target = await createUser({ email: 'owned-items-target@example.com', role: 'editor' });
+    if ('error' in target) throw new Error(target.error);
+    handOverTarget.id = target.user.id;
+  });
+
+  it('has an entry for every route file under dashboards and views', () => {
+    const onDisk = [...diskRoutes.keys()].filter(r => r.startsWith('dashboards') || r.startsWith('views')).sort();
+    expect(onDisk).toEqual([...OWNED_COLLECTION_ROUTES, ...Object.keys(OWNED_ITEM_MATRIX)].sort());
+  });
+
+  for (const [route, calls] of Object.entries(OWNED_ITEM_MATRIX)) {
+    for (const [index, entry] of calls.entries()) {
+      for (const person of ITEM_PEOPLE) {
+        for (const which of kindsFor(entry.kind)) {
+          it(`${route} #${index + 1}: ${person}, ${which}`, async () => {
+            const id = await seedItem(entry.kind, which, person);
+            mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+            expect(await entry.call(id)).toBe(entry.expected[person][which]);
+          });
+        }
+      }
+    }
+  }
+
+  for (const route of OWNED_COLLECTION_ROUTES) {
+    for (const person of ITEM_PEOPLE) {
+      it(`${route}: ${person} creates a Personal item and lists exactly what they may open`, async () => {
+        const kind = route === 'dashboards' ? 'dashboard' : 'view';
+        const ids = Object.fromEntries(await Promise.all(kindsFor(kind).map(async which => [which, await seedItem(kind, which, person)])));
+        mockAuth.mockResolvedValue({ user: { uid: userIds[person] } });
+        const routeModule = route === 'dashboards' ? await import('@/app/api/dashboards/route') : await import('@/app/api/views/route');
+        const listed = (await (await routeModule.GET()).json() as { id: string }[]).map(i => i.id);
+        for (const which of kindsFor(kind)) expect(listed.includes(ids[which]!), which).toBe(LISTED[which]);
+
+        const res = await routeModule.POST(putRequest(`/api/${route}`, 'POST', route === 'dashboards'
+          ? { name: `created ${++ownedCounter}` } : { name: `created ${++ownedCounter}`, tab: 'results', query: '' }));
+        expect(res.status).toBe(201);
+        expect(await res.json()).toMatchObject({ visibility: 'personal', owner: { id: userIds[person] } });
+      });
+    }
+  }
 });

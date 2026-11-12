@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 import { accessAllowing, type Role } from '@/lib/rbac';
-import { categoryControlFor, SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, writeControlsFor } from '@/lib/write-controls';
+import { categoryControlFor, SCOPED_CATEGORY_REASON, SCOPED_WRITE_REASON, SHARE_REASON, shareControlFor, writeControlsFor } from '@/lib/write-controls';
 
 const grants = (...held: [path: string, role: Role][]): Access =>
   buildAccess(held.map(([path, role]) => ({ tenantId: 't', scope: parseScope(path)!, role })), 'manual');
@@ -81,6 +81,27 @@ describe('categoryControlFor', () => {
     expect(SCOPED_CATEGORY_REASON).toContain('categories');
     expect(SCOPED_CATEGORY_REASON).toContain('Admin');
     expect(SCOPED_CATEGORY_REASON).toContain('Editor on Everything');
+  });
+});
+
+describe('shareControlFor', () => {
+  it('allows an Editor at any Scope, and an Admin, to share a dashboard or a saved view', () => {
+    for (const kind of ['dashboard', 'view'] as const) {
+      expect(shareControlFor(everythingAccess('admin'), kind)).toEqual({ allowed: true });
+      expect(shareControlFor(grants([SUB, 'editor']), kind)).toEqual({ allowed: true });
+    }
+  });
+
+  it('turns Share off with its own reason for a Viewer, on Everything or a subscription, and for a person with no Scope', () => {
+    for (const kind of ['dashboard', 'view'] as const) {
+      expect(shareControlFor(everythingAccess('viewer', 'manual'), kind)).toEqual({ allowed: false, reason: SHARE_REASON });
+      expect(shareControlFor(grants([SUB, 'viewer']), kind)).toEqual({ allowed: false, reason: SHARE_REASON });
+      expect(shareControlFor(NO_ACCESS, kind)).toEqual({ allowed: false, reason: SHARE_REASON });
+    }
+  });
+
+  it('says what is needed in the words the screen shows', () => {
+    expect(SHARE_REASON).toBe('Sharing needs an Editor Role at some Scope.');
   });
 });
 

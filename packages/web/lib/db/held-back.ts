@@ -1,0 +1,478 @@
+/**
+ * Held-back values (#363, ADR 0012): which stored filter values of a dashboard or a saved view sit outside
+ * a person's Access, and the item as it leaves the server without them. The words and the lookups the
+ * components share are in lib/held-back.ts.
+ *
+ *  - A **Scope** value (a subscription, a resource group, the reserved Directory value) is held back when
+ *    the person holds no Scope that covers it and none inside it. The Access alone decides.
+ *  - A **resourceName** or `row.*` value is held back unless a finding inside the person's Access carries
+ *    it, whatever its status and suppressed or not. One findings query through the access filter answers
+ *    every value of a request.
+ *  - **Everything** holds nothing back and is never queried for it.
+ *  - Free-text search and the rule, category, tag, severity and date-window values are never held back.
+ *
+ * The stored item is not changed by reading. A person who saves a trimmed item back (their own Personal one, or a
+ * Shared one they may change) has the held-back values put back first (`restoreHeldBackView`,
+ * `restoreHeldBackDashboard`), so a save made from a trimmed copy cannot lose them for everyone else.
+ */
+import type { Access } from '../access-model';
+import { OUTSIDE_ACCESS_LABEL, heldBackTotal, withoutPlaceholder, type HeldBack, type HeldBackPlace } from '../held-back';
+import { markOutsideAccess } from '../outside-access';
+import {
+  findingSubject, isRowField, readPath, rowPath, valueText, viewFromSearchParams, viewToSearchParams,
+  type View, type ViewFilter,
+} from '../finding-view';
+import type { DashboardConfig } from '../types';
+import { accessFilterSql } from './access-filter';
+import { CHUNK_SIZE, chunk } from './chunk';
+import { inReadTransaction, many } from './exec';
+import { findings as findingsTable } from './tables';
+import { loadFindingRows, rowToRecordFromColumns, rowsTableReady } from './findings';
+
+/** The stored values of one dimension in one place, as the item holds them. */
+export interface StoredValues {
+  place: HeldBackPlace;
+  id: string;
+  /** The filter's field name: `subscription`, `resourceGroup`, `resourceName` or `row.<path>`. */
+  dimension: string;
+  values: readonly string[];
+}
+
+/** The held-back values per dimension, each as it was stored. A dimension with none is absent. */
+export type HeldValues = ReadonlyMap<string, ReadonlySet<string>>;
+
+/** What the findings inside an Access carry of the values asked about. */
+export interface Carried {
+  /** The resource names (as the Resource column shows them) among those asked about that a finding carries. */
+  names: ReadonlySet<string>;
+  /** By row path, the values among those asked about that a row of a finding carries. */
+  rows: ReadonlyMap<string, ReadonlySet<string>>;
+}
+/** The values to look for, in the same shape as what is found. */
+export type Wanted = Carried;
+export type CarriedReader = (access: Access, wanted: Wanted) => Promise<Carried>;
+
+const SCOPE_DIMENSIONS = ['subscription', 'resourceGroup'] as const;
+type ScopeDimension = (typeof SCOPE_DIMENSIONS)[number];
+
+const isScopeDimension = (dimension: string): dimension is ScopeDimension => (SCOPE_DIMENSIONS as readonly string[]).includes(dimension);
+const isHeldDimension = (dimension: string) => isScopeDimension(dimension) || dimension === 'resourceName' || isRowField(dimension);
+
+/**
+ * The one findings query: every finding inside `access`, to read the names they show, and then their rows, a chunk
+ * of findings at a time and only until every value asked about has been found.
+ */
+const readCarried: CarriedReader = (access, wanted) => inReadTransaction(async (tx) => {
+  const t = findingsTable;
+  const where = accessFilterSql(access);
+  // Until the copy into finding_rows is proven the rows are in the findings' own columns, so that one select
+  // takes them whole. Otherwise it takes only the columns the names are read from.
+  const legacy = wanted.rows.size > 0 && !(await rowsTableReady(tx));
+  const stored = legacy ? await many(tx.select().from(t).where(where)) : undefined;
+  const inside = stored ?? await many(tx.select({
+    fingerprint: t.fingerprint, resourceName: t.resourceName, dimensionKey: t.dimensionKey, resourceId: t.resourceId,
+  }).from(t).where(where));
+
+  const names = new Set<string>();
+  if (wanted.names.size > 0) {
+    for (const f of inside) {
+      const subject = findingSubject({
+        resourceName: f.resourceName ?? undefined, dimensionKey: f.dimensionKey ?? undefined, resourceId: f.resourceId ?? undefined,
+      });
+      if (wanted.names.has(subject)) names.add(subject);
+    }
+  }
+
+  const rows = new Map<string, Set<string>>([...wanted.rows.keys()].map(path => [path, new Set<string>()]));
+  if (wanted.rows.size === 0) return { names, rows };
+
+  const allFound = () => [...wanted.rows].every(([path, values]) => rows.get(path)!.size === values.size);
+  const read = (row: unknown) => {
+    for (const [path, values] of wanted.rows) {
+      const value = valueText(readPath(row, path));
+      if (values.has(value)) rows.get(path)!.add(value);
+    }
+  };
+
+  if (stored) {
+    for (const row of stored) for (const r of rowToRecordFromColumns(row).rows) read(r);
+    return { names, rows };
+  }
+  for (const fpChunk of chunk(inside.map(f => f.fingerprint), CHUNK_SIZE)) {
+    for (const found of (await loadFindingRows(tx, fpChunk)).values()) for (const row of found) read(row);
+    if (allFound()) break;
+  }
+  return { names, rows };
+});
+
+/**
+ * Which of the `stored` values are outside `access`. `read` is how the findings are asked, and is not
+ * called when nothing asks about a resource name or a returned column, or for Everything.
+ */
+export async function heldBackValues(
+  access: Access, stored: readonly StoredValues[], read: CarriedReader = readCarried,
+): Promise<HeldValues> {
+  const held = new Map<string, Set<string>>();
+  if (access.everything) return held;
+
+  const asked = new Map<string, Set<string>>();
+  for (const s of stored) {
+    if (!isHeldDimension(s.dimension) || s.values.length === 0) continue;
+    const set = asked.get(s.dimension) ?? new Set<string>();
+    for (const value of s.values) set.add(value);
+    asked.set(s.dimension, set);
+  }
+  const hold = (dimension: string, values: Iterable<string>) => {
+    const set = held.get(dimension) ?? new Set<string>();
+    for (const value of values) set.add(value);
+    if (set.size > 0) held.set(dimension, set);
+  };
+
+  const outside = markOutsideAccess(access, {
+    subscriptions: [...asked.get('subscription') ?? []], resourceGroups: [...asked.get('resourceGroup') ?? []],
+  });
+  hold('subscription', outside.subscriptions);
+  hold('resourceGroup', outside.resourceGroups);
+
+  const wanted: Wanted = {
+    names: asked.get('resourceName') ?? new Set(),
+    rows: new Map([...asked].filter(([dimension]) => isRowField(dimension)).map(([dimension, values]) => [rowPath(dimension as `row.${string}`), values])),
+  };
+  if (wanted.names.size > 0 || wanted.rows.size > 0) {
+    const carried = await read(access, wanted);
+    hold('resourceName', [...wanted.names].filter(name => !carried.names.has(name)));
+    for (const [path, values] of wanted.rows) hold(`row.${path}`, [...values].filter(value => !carried.rows.get(path)?.has(value)));
+  }
+  return held;
+}
+
+const isHeld = (held: HeldValues, dimension: string, value: string) => held.get(dimension)?.has(value) ?? false;
+
+/** One count per place and dimension for the stored values that are held back. */
+function countsOf(stored: readonly StoredValues[], held: HeldValues): HeldBack[] {
+  return stored.flatMap(s => {
+    const count = new Set(s.values.filter(value => isHeld(held, s.dimension, value))).size;
+    return count > 0 ? [{ place: s.place, id: s.id, dimension: s.dimension, count }] : [];
+  });
+}
+
+// ---- Dashboards ----
+
+const DASHBOARD_KEYS = [['subscriptions', 'subscription'], ['resourceGroups', 'resourceGroup']] as const;
+
+const stringsOf = (value: unknown): string[] | undefined => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : undefined);
+
+/** The Scope values a dashboard stores: its filter bar's, and each widget's override. */
+function dashboardValues(id: string, config: DashboardConfig): StoredValues[] {
+  const out: StoredValues[] = [];
+  for (const [key, dimension] of DASHBOARD_KEYS) {
+    const values = stringsOf(config.filters?.[key]);
+    if (values?.length) out.push({ place: 'dashboard', id, dimension, values });
+  }
+  for (const widget of config.widgets ?? []) {
+    for (const [key, dimension] of DASHBOARD_KEYS) {
+      const values = stringsOf((widget.config ?? {})[key]);
+      if (values?.length) out.push({ place: 'widget', id: widget.id, dimension, values });
+    }
+  }
+  return out;
+}
+
+/** The config with every held-back value taken out of the filter bar and the widgets' overrides. */
+function trimConfig(config: DashboardConfig, held: HeldValues): DashboardConfig {
+  const without = (values: unknown, dimension: string) => (Array.isArray(values) ? values.filter(v => typeof v !== 'string' || !isHeld(held, dimension, v)) : values);
+  const filters = config.filters && { ...config.filters };
+  const widgets = (config.widgets ?? []).map(widget => {
+    const own = { ...(widget.config ?? {}) };
+    for (const [key, dimension] of DASHBOARD_KEYS) if (key in own) own[key] = without(own[key], dimension);
+    return { ...widget, config: own };
+  });
+  if (filters) for (const [key, dimension] of DASHBOARD_KEYS) if (filters[key]) filters[key] = without(filters[key], dimension) as string[];
+  return { ...config, ...(filters ? { filters } : {}), widgets };
+}
+
+/**
+ * Dashboards as the routes and pages return them: each without the stored values `access` does not reach,
+ * with a count for the filter bar and for each widget that held some. One findings query serves the lot.
+ */
+export async function holdBackDashboards<T extends { id: string; config: DashboardConfig }>(
+  access: Access, dashboards: readonly T[],
+): Promise<(T & { heldBack: HeldBack[] })[]> {
+  const stored = dashboards.map(d => dashboardValues(d.id, d.config));
+  const held = await heldBackValues(access, stored.flat());
+  return dashboards.map((d, i) => {
+    const heldBack = countsOf(stored[i]!, held);
+    return { ...d, config: heldBack.length > 0 ? trimConfig(d.config, held) : d.config, heldBack };
+  });
+}
+
+/**
+ * The config a Duplicate gives `access`: the source's, without the values held back from the copier, and how
+ * many widgets then show more than the original did. A held-back value matches nothing for the copier, so a
+ * widget only shows more when the filter it was set up with (its own list, else the dashboard's, as
+ * `mergeWidgetFilters` picks it) held values and every one was held back: the copy then has no filter on that
+ * dimension. Everything holds nothing back, so its copy is the source and counts 0.
+ */
+export async function copyDashboardConfig(
+  access: Access, source: { id: string; config: DashboardConfig },
+): Promise<{ config: DashboardConfig; widened: number }> {
+  const held = await heldBackValues(access, dashboardValues(source.id, source.config));
+  if (held.size === 0) return { config: source.config, widened: 0 };
+  const allHeld = (values: string[] | undefined, dimension: string) => !!values?.length && values.every(v => isHeld(held, dimension, v));
+  const widened = (source.config.widgets ?? []).filter(widget => DASHBOARD_KEYS.some(([key, dimension]) => {
+    const own = stringsOf((widget.config ?? {})[key]);
+    return allHeld(own?.length ? own : stringsOf(source.config.filters?.[key]), dimension);
+  })).length;
+  return { config: trimConfig(source.config, held), widened };
+}
+
+// ---- Saved views ----
+
+/** The Scope, resource name and returned-column filters of a saved view, in the order the view lists them. */
+function viewValues(id: string, view: View): StoredValues[] {
+  return view.filters.filter(f => isHeldDimension(f.field)).map(f => ({ place: 'savedView', id, dimension: f.field, values: f.values }));
+}
+
+/** Saved views as the routes return them: each query without the stored values `access` does not reach, and
+ *  a count per dimension. A dimension with every value held back keeps the placeholder `OUTSIDE_ACCESS_LABEL`. A query with nothing held back is returned exactly as stored.
+ *  `known` is what `heldBackOfQueries` already answered for these views' values, so a request that saves a view and
+ *  answers with it asks the findings once. */
+export async function holdBackSavedViews<T extends { id: string; query: string }>(
+  access: Access, views: readonly T[], known?: HeldValues,
+): Promise<(T & { heldBack: HeldBack[] })[]> {
+  const parsed = views.map(v => viewFromSearchParams(new URLSearchParams(v.query)));
+  const stored = views.map((v, i) => viewValues(v.id, parsed[i]!));
+  const held = known ?? await heldBackValues(access, stored.flat());
+  return views.map((v, i) => {
+    const heldBack = countsOf(stored[i]!, held);
+    if (heldBack.length === 0) return { ...v, heldBack };
+    // A dimension whose values are all held back keeps one placeholder that no finding carries, so opening the
+    // view lists nothing for this person. Dropping the filter instead would list the whole of their Access.
+    const filters = parsed[i]!.filters.map((f): ViewFilter => {
+      if (!isHeldDimension(f.field)) return f;
+      const values = f.values.filter(value => !isHeld(held, f.field, value));
+      return { ...f, values: values.length > 0 || f.values.length === 0 ? values : [OUTSIDE_ACCESS_LABEL] } as ViewFilter;
+    }).filter(f => f.values.length > 0);
+    return { ...v, query: viewToSearchParams({ ...parsed[i]!, filters }).toString(), heldBack };
+  });
+}
+
+/**
+ * The query a view saved from `source` holds, and how many filter dimensions it shows more on than the original
+ * did for `access`. The query is the one sent with the placeholder and every value of the source that is held back
+ * from the copier taken out, so a tab opened before their Access narrowed cannot carry them in. A dimension widens
+ * when every value the source stored for it is held back and the copy holds none of its own. Values left beside
+ * others they can see never matched, so they widen nothing.
+ */
+export async function copyViewQuery(
+  access: Access, source: { id: string; query: string }, incoming: string,
+): Promise<{ query: string; widened: number }> {
+  const query = withoutPlaceholder(incoming);
+  const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
+  const held = await heldBackValues(access, stored);
+  if (held.size === 0) return { query, widened: 0 };
+  const sent = viewFromSearchParams(new URLSearchParams(query));
+  const filters = sent.filters.map((f): ViewFilter => (
+    isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f
+  )).filter(f => f.values.length > 0);
+  const kept = new Set(filters.map(f => f.field as string));
+  const dimensions = new Set(stored.filter(s => s.values.length > 0 && s.values.every(v => isHeld(held, s.dimension, v))).map(s => s.dimension));
+  return { query: viewToSearchParams({ ...sent, filters }).toString(), widened: [...dimensions].filter(dimension => !kept.has(dimension)).length };
+}
+
+// ---- Saving back ----
+
+/**
+ * What is held back among the values of every query given, from one findings query. A save asks it for the stored
+ * query and the one coming in, then hands the answer to `restoreHeldBackView` and to `holdBackSavedViews` for the
+ * answer, whose values are among those two queries'.
+ */
+export function heldBackOfQueries(access: Access, queries: readonly { id: string; query: string }[]): Promise<HeldValues> {
+  return heldBackValues(access, queries.flatMap(q => viewValues(q.id, viewFromSearchParams(new URLSearchParams(withoutPlaceholder(q.query))))));
+}
+
+/**
+ * Whether a save brings a value in that is outside the saver's Access and that the item did not already hold in
+ * that place and dimension. Such a value is one they could not have picked from anything they see, and saving it
+ * would let them write filters for places they do not hold. A value the item already stores stays as it is: it
+ * is put back, not added. The answer is the same whether a finding outside their Access carries the value or none
+ * does, since the question is only whether the value is theirs to see. Everything holds nothing back, so it is
+ * never refused.
+ */
+function bringsUnseenValue(held: HeldValues, incoming: readonly StoredValues[], stored: readonly StoredValues[]): boolean {
+  return incoming.some(s => {
+    const already = new Set(stored.filter(o => o.place === s.place && o.id === s.id && o.dimension === s.dimension).flatMap(o => o.values));
+    return s.values.some(value => isHeld(held, s.dimension, value) && !already.has(value));
+  });
+}
+
+const withHeld = (visible: readonly string[], held: readonly string[]) => [...new Set([...visible, ...held])];
+
+/**
+ * The stored values of one dimension that go back into a save: those the copy the person was sent left out
+ * (`opened`, which holds the values it was sent), and those outside their Access now, which they cannot have
+ * chosen to remove. What the copy held and the person took out is not here, so it stays removed. Without a
+ * copy to measure against, only the values outside their Access now go back.
+ */
+function leftOut(held: HeldValues, dimension: string, stored: unknown, opened: readonly string[] | undefined): string[] {
+  const sent = opened && new Set(opened);
+  return (stringsOf(stored) ?? []).filter(value => isHeld(held, dimension, value) || (sent !== undefined && !sent.has(value)));
+}
+
+/**
+ * The query a person saves back, with the stored values their copy left out put back. `opened` is the query they were
+ * sent: what it did not hold is restored from the stored row, whatever their Access is now. What they changed among
+ * the values it held is kept. The placeholder `OUTSIDE_ACCESS_LABEL` that stood in for a dimension held back in full
+ * is not a value and is never stored. `unseen` says the save brings a value in that is outside their Access and not
+ * already stored (`bringsUnseenValue`), which the route refuses. `restored` says whether anything was put back, which is when the write needs
+ * the revision the copy was read at. `known` is `heldBackOfQueries`' answer for the stored and the incoming query.
+ */
+export async function restoreHeldBackView(
+  access: Access, stored: { id: string; query: string }, incoming: string, opened?: string, known?: HeldValues,
+): Promise<{ query: string; restored: boolean; unseen: boolean }> {
+  const before = viewFromSearchParams(new URLSearchParams(stored.query));
+  const sent = opened === undefined ? undefined : viewFromSearchParams(new URLSearchParams(opened));
+  const query = withoutPlaceholder(incoming);
+  const after = viewFromSearchParams(new URLSearchParams(query));
+  const storedValues = viewValues(stored.id, before);
+  const incomingValues = viewValues(stored.id, after);
+  const held = known ?? await heldBackValues(access, [...storedValues, ...incomingValues]);
+  const unseen = bringsUnseenValue(held, incomingValues, storedValues);
+  const back = before.filters.filter(f => isHeldDimension(f.field)).map(f => ({
+    field: f.field,
+    values: leftOut(held, f.field, f.values, sent && sent.filters.filter(o => o.field === f.field).flatMap(o => o.values)),
+  })).filter(f => f.values.length > 0);
+
+  if (back.length === 0) return { query, restored: false, unseen };
+
+  const filters = [...after.filters];
+  for (const { field, values } of back) {
+    const index = filters.findIndex(f => f.field === field);
+    const merged = { field, values: withHeld(index < 0 ? [] : filters[index]!.values, values) } as ViewFilter;
+    if (index < 0) filters.push(merged);
+    else filters[index] = merged;
+  }
+  return { query: viewToSearchParams({ ...after, filters }).toString(), restored: true, unseen };
+}
+
+/**
+ * The config a person saves back, with the stored subscriptions and resource groups their copy left out put back
+ * into the filter bar and into each widget's override that is still there. `opened` is the config they were sent.
+ * A widget they removed takes its held-back values with it. `restored` and `unseen` are as for `restoreHeldBackView`.
+ */
+export async function restoreHeldBackDashboard(
+  access: Access, stored: { id: string; config: DashboardConfig }, incoming: DashboardConfig, opened?: DashboardConfig,
+): Promise<{ config: DashboardConfig; restored: boolean; unseen: boolean; removed: number }> {
+  const storedValues = dashboardValues(stored.id, stored.config);
+  const incomingValues = dashboardValues(stored.id, incoming);
+  const held = await heldBackValues(access, [...storedValues, ...incomingValues]);
+  const unseen = bringsUnseenValue(held, incomingValues, storedValues);
+  let restored = false;
+
+  const restoreInto = (
+    own: Record<string, unknown> | undefined, before: Record<string, unknown> | undefined, sent: Record<string, unknown> | undefined,
+  ) => {
+    const out = { ...own };
+    for (const [key, dimension] of DASHBOARD_KEYS) {
+      const back = leftOut(held, dimension, before?.[key], opened && (stringsOf(sent?.[key]) ?? []));
+      if (back.length === 0) continue;
+      out[key] = withHeld(stringsOf(own?.[key]) ?? [], back);
+      restored = true;
+    }
+    return out;
+  };
+
+  const config: DashboardConfig = { ...incoming };
+  if (stored.config.filters) {
+    const filters = restoreInto(incoming.filters, stored.config.filters, opened?.filters);
+    if (restored) config.filters = filters as DashboardConfig['filters'];
+  }
+  config.widgets = (incoming.widgets ?? []).map(widget => {
+    const before = stored.config.widgets?.find(w => w.id === widget.id);
+    if (!before) return widget;
+    return { ...widget, config: restoreInto(widget.config, before.config, opened?.widgets?.find(w => w.id === widget.id)?.config) };
+  });
+  // A widget the person removed takes its held-back values with it: those are counted for the Save's audit entry.
+  const kept = new Set((incoming.widgets ?? []).map(w => w.id));
+  const removed = heldBackTotal(countsOf(storedValues.filter(v => v.place === 'widget' && !kept.has(v.id)), held));
+  return { config, restored, unseen, removed };
+}
+
+// ---- Widget reads ----
+
+/** What a widget read adds back for the one dashboard it names. */
+export interface PlaceHeldBack {
+  /** The held-back values per dimension, each as stored, for the filter bar. */
+  dashboard: ReadonlyMap<string, readonly string[]>;
+  /** The same for the widget the read names, empty when the dashboard has no such widget (an unsaved one). */
+  widget: ReadonlyMap<string, readonly string[]>;
+  /** Every held-back value, whichever place stores it: what matches nothing for this person. */
+  held: HeldValues;
+  /** One count per place and dimension. */
+  counts: HeldBack[];
+}
+
+/**
+ * The stored held-back values of a dashboard's filter bar and of one of its widgets, for a widget read (#375). Both
+ * places are asked about in one findings query. A widget that is not in the stored dashboard has none.
+ */
+export async function heldBackForRead(
+  access: Access, dashboard: { id: string; config: DashboardConfig }, widgetId: string | null,
+): Promise<PlaceHeldBack> {
+  const stored = dashboardValues(dashboard.id, dashboard.config)
+    .filter(s => s.place === 'dashboard' || (s.place === 'widget' && s.id === widgetId));
+  const held = await heldBackValues(access, stored);
+  const of = (place: HeldBackPlace) => {
+    const out = new Map<string, string[]>();
+    for (const s of stored.filter(v => v.place === place)) {
+      const values = s.values.filter(value => isHeld(held, s.dimension, value));
+      if (values.length > 0) out.set(s.dimension, values);
+    }
+    return out;
+  };
+  return { dashboard: of('dashboard'), widget: of('widget'), held, counts: countsOf(stored, held) };
+}
+
+// ---- Removing ----
+
+/**
+ * What "Remove N values" does to a dashboard's config for `access`: every value held back from the person taken
+ * out of the filter bar and of each widget's override, and how many that was. A dimension left with no value no
+ * longer narrows, which is the point: only this action, or deleting the item, widens what a held-back value
+ * matched nothing for. Values on a saved view a widget uses are not in the config and are never touched.
+ */
+export async function removeHeldBackFromDashboard(
+  access: Access, source: { id: string; config: DashboardConfig },
+): Promise<{ config: DashboardConfig; removed: number }> {
+  const stored = dashboardValues(source.id, source.config);
+  const held = await heldBackValues(access, stored);
+  const removed = heldBackTotal(countsOf(stored, held));
+  return { config: removed > 0 ? trimConfig(source.config, held) : source.config, removed };
+}
+
+/** The same for a saved view's query: every held-back value out, a filter left with none dropped. */
+export async function removeHeldBackFromView(
+  access: Access, source: { id: string; query: string },
+): Promise<{ query: string; removed: number }> {
+  const parsed = viewFromSearchParams(new URLSearchParams(source.query));
+  const stored = viewValues(source.id, parsed);
+  const held = await heldBackValues(access, stored);
+  const removed = heldBackTotal(countsOf(stored, held));
+  if (removed === 0) return { query: source.query, removed };
+  const filters = parsed.filters
+    .map((f): ViewFilter => (isHeldDimension(f.field) ? { ...f, values: f.values.filter(value => !isHeld(held, f.field, value)) } as ViewFilter : f))
+    .filter(f => f.values.length > 0);
+  return { query: viewToSearchParams({ ...parsed, filters }).toString(), removed };
+}
+
+/** How many values a dashboard stores that are held back from `access`: what its removal or deletion takes with it. */
+export async function heldBackCountOfDashboard(access: Access, source: { id: string; config: DashboardConfig }): Promise<number> {
+  const stored = dashboardValues(source.id, source.config);
+  return heldBackTotal(countsOf(stored, await heldBackValues(access, stored)));
+}
+
+/** The same for a saved view. */
+export async function heldBackCountOfView(access: Access, source: { id: string; query: string }): Promise<number> {
+  const stored = viewValues(source.id, viewFromSearchParams(new URLSearchParams(source.query)));
+  return heldBackTotal(countsOf(stored, await heldBackValues(access, stored)));
+}

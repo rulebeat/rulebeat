@@ -3,9 +3,12 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
+import { heldBackCountOfView, heldBackOfQueries, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { STALE_VIEW_MESSAGE, UNSEEN_VALUE_MESSAGE, claimedRevision, openedCopy } from '@/lib/held-back';
+import { guardItem } from '@/lib/item-access';
 import { deleteSavedView, getSavedView, updateSavedView } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
+
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,15 +18,19 @@ export async function GET(_: Request, { params }: Params) {
   const { id } = await params;
   try {
     const view = await getSavedView(id);
-    if (!view) return Response.json({ error: 'Not found' }, { status: 404 });
-    return Response.json(markedSavedView(actor.access, view));
+    const refused = guardItem(actor, 'view', view, 'open');
+    if (refused || !view) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    const [held] = await holdBackSavedViews(actor.access, [view]);
+    return Response.json(held);
   } catch (err) {
     return serverError('Could not load the saved view', err);
   }
 }
 
 export async function PATCH(req: Request, { params }: Params) {
-  const actor = await requireRole('views:write');
+  // Every Role holds the Personal action, so this only gets the person in: which action the change needs
+  // depends on the view's owner and visibility, which guardItem() checks next.
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
 
@@ -33,9 +40,31 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await updateSavedView(id, fields.value, actor.id);
+    const current = await getSavedView(id);
+    const refused = guardItem(actor, 'view', current, 'change');
+    if (refused || !current) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    // The values the copy the person was sent left out go back in before the save, whatever their Access is now.
+    // The write is made on the revision of that copy, not the one read just now: a copy the item has moved on
+    // from is refused, since it would put values back that are no longer there.
+    const revision = claimedRevision(body);
+    if (revision !== undefined && revision !== current.revision) return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
+    const opened = openedCopy(body);
+    // One findings query serves the restore and the answer: the answer's values are the stored ones and the incoming ones.
+    const held = fields.value.query === undefined
+      ? undefined
+      : await heldBackOfQueries(actor.access, [current, { id, query: fields.value.query }]);
+    const restored = fields.value.query === undefined
+      ? { query: undefined, restored: false, unseen: false }
+      : await restoreHeldBackView(actor.access, current, fields.value.query, typeof opened === 'string' ? opened : undefined, held);
+    if (restored.unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
+    if (revision === undefined && restored.restored) return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
+    const result = await updateSavedView(
+      id, { ...fields.value, ...(restored.query !== undefined && { query: restored.query }) }, actor.id,
+      revision === undefined ? {} : { ifRevision: revision },
+    );
     if (!result.ok) {
       if (result.reason === 'not-found') return Response.json({ error: 'Not found' }, { status: 404 });
+      if (result.reason === 'conflict') return Response.json({ error: STALE_VIEW_MESSAGE }, { status: 409 });
       return Response.json({ error: savedViewNameTakenMessage(fields.value.name ?? '') }, { status: 409 });
     }
 
@@ -44,31 +73,43 @@ export async function PATCH(req: Request, { params }: Params) {
     // person filtered on.
     const { before, view } = result;
     const changed = SAVED_VIEW_FIELDS.filter(f => f in fields.value && view[f] !== before[f]);
-    if (changed.length > 0) {
-      const renamedOnly = changed.length === 1 && changed[0] === 'name';
+    // A Personal view's filter and tab saves are unaudited, as a Personal dashboard's layout and config saves are:
+    // only a rename is logged, and removing held-back values has its own route and entry.
+    const personal = before.visibility === 'personal';
+    if (personal ? changed.includes('name') : changed.length > 0) {
+      const renamedOnly = personal || (changed.length === 1 && changed[0] === 'name');
       await writeAudit({
         actor,
         action: renamedOnly ? 'view.rename' : 'view.update',
         entityType: 'saved_view',
         entityId: id,
-        summary: renamedOnly
-          ? `Renamed saved view "${before.name}" to "${view.name}"`
-          : `Updated saved view "${view.name}"`,
-        details: { fields: changed },
+        // A Personal item is logged by id and kind only: its name is its owner's alone.
+        summary: before.visibility === 'personal'
+          ? (renamedOnly ? 'Renamed a Personal saved view' : 'Updated a Personal saved view')
+          : renamedOnly
+            ? `Renamed saved view "${before.name}" to "${view.name}"`
+            : `Updated saved view "${view.name}"`,
+        details: { fields: personal ? ['name'] : changed },
       });
     }
-    return Response.json(markedSavedView(actor.access, view));
+    const [answer] = await holdBackSavedViews(actor.access, [view], held);
+    return Response.json(answer);
   } catch (err) {
     return serverError('Could not update the saved view', err);
   }
 }
 
 export async function DELETE(_: Request, { params }: Params) {
-  const actor = await requireRole('views:write');
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
   const { id } = await params;
 
   try {
+    const before = await getSavedView(id);
+    const refused = guardItem(actor, 'view', before, 'change');
+    if (refused || !before) return refused ?? Response.json({ error: 'Not found' }, { status: 404 });
+    // What it holds that is held back from the person is counted for the audit entry before it goes.
+    const heldBackCount = await heldBackCountOfView(actor.access, before);
     const removed = await deleteSavedView(id);
     if (!removed) return Response.json({ error: 'Not found' }, { status: 404 });
 
@@ -77,8 +118,8 @@ export async function DELETE(_: Request, { params }: Params) {
       action: 'view.delete',
       entityType: 'saved_view',
       entityId: id,
-      summary: `Deleted saved view "${removed.name}"`,
-      details: { fields: SAVED_VIEW_FIELDS },
+      summary: removed.visibility === 'personal' ? 'Deleted a Personal saved view' : `Deleted saved view "${removed.name}"`,
+      details: { fields: SAVED_VIEW_FIELDS, ...(heldBackCount > 0 && { heldBackCount }) },
     });
     return new Response(null, { status: 204 });
   } catch (err) {

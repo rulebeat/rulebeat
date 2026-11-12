@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Callout } from '@/components/ui/callout';
+import { SavedViewGoneNotice } from '@/components/findings/saved-view-gone-notice';
+import { OPEN_VIEW_INITIAL, afterClose, afterDismiss, afterRead, openViewIdOf } from '@/lib/open-view-state';
 import { ChecklistDropdown, ColumnFilterIcon, type ChecklistOption } from '@/components/ui/checklist-dropdown';
 import { ReadStatus } from '@/components/ui/read-status';
 import { CodeBlock } from '@/components/ui/code-block';
@@ -52,12 +54,15 @@ import {
   NO_VALUE_LABEL, groupCountText, tabResolves, tabStatusOptions,
   type ExplorerCategory, type GroupHeader, type GroupResponse, type ResponseFinding, type ViewItemResponse, type ViewTab,
 } from '@/lib/view-response';
-import { AddFilter, FilterChips, type AddFilterField, type FilterChip } from '@/components/findings/add-filter';
+import { AddFilter, FilterChips, type AddFilterField, type FilterChip, type HeldFilterChip } from '@/components/findings/add-filter';
 import { GroupBy } from '@/components/findings/group-by';
 import { FindingsPager } from '@/components/findings/findings-pager';
 import type { FindingRow } from '@/lib/finding-rows';
 import { SavedViewsMenu } from '@/components/findings/saved-views-menu';
-import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import { fetchCurrentSavedView } from '@/lib/saved-view-actions';
+import type { ItemPermissions } from '@/lib/item-access-model';
+import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
+import { OPEN_VIEW_OUTSIDE_COPY, valuesWithoutPlaceholder, withoutHeldPlaceholders, type HeldBack } from '@/lib/held-back';
 // ---- Types ----
 
 type SortCol = 'resource' | 'rule' | 'category' | 'severity' | 'firstSeen' | 'lastSeen';
@@ -103,12 +108,19 @@ interface FindingsExplorerClientProps {
    *  applying one means starting the explorer again from that view. */
   savedViews?: {
     tab: SavedViewTab;
-    canWrite: boolean;
+    /** The person, and what they may do with saved views, for the sections and the controls on the open view. */
+    currentUserId: string;
+    permissions: ItemPermissions;
+    /** Whether Share is on for a saved view, and why not when it is off. */
+    shareControl?: { allowed: boolean; reason?: string };
     /** The saved view the URL says is open (its `view` param), or null. The parent reads it from
      *  the URL, and the explorer never keeps its own copy. */
     openId: string | null;
     /** Opens a saved view. The parent navigates to its URL, which starts the explorer on that view. */
-    onOpen: (view: SavedView) => void;
+    onOpen: (view: HeldBackSavedView) => void;
+    /** The copy of the saved view the page was last opened from the menu with, so a save is based on what the
+     *  page shows. Null when the page was opened from a link. */
+    appliedView?: HeldBackSavedView | null;
     /** Reports the query this explorer is about to write to the URL, so the parent can tell its own
      *  writes from a navigation that came from elsewhere. */
     onUrlWrite: (query: string) => void;
@@ -460,7 +472,10 @@ export function FindingsExplorerClient({
   const router = useRouter();
   const session = useExplorerSession();
   const [initial] = useState<View>(() => initialView ?? emptyView());
-  const openViewId = savedViews?.openId ?? null;
+  // The view the address names stays open until the viewer closes it or the server says it no longer opens.
+  // Either drops it here at once, since the address only follows once the page has read it again.
+  const [openView, setOpenView] = useState(OPEN_VIEW_INITIAL);
+  const openViewId = openViewIdOf(savedViews?.openId, openView);
 
   // Every filter on this page is one entry in one list: the toolbar controls, the header funnels,
   // the category tabs and the Add filter control all read and write it, and it is the View's own
@@ -575,7 +590,10 @@ export function FindingsExplorerClient({
     ...emptyView(),
     filters, search, window: dateWindow, columns, sort, groupBy, groupSort, page: page + 1,
   }), [filters, search, dateWindow, columns, sort, groupBy, groupSort, page]);
-  const request = useMemo<ViewRequest>(() => ({ view: findingView, tab, showSuppressed }), [findingView, tab, showSuppressed]);
+  const request = useMemo<ViewRequest>(
+    () => ({ view: findingView, tab, showSuppressed, savedViewId: openViewId }),
+    [findingView, tab, showSuppressed, openViewId],
+  );
   const requestQuery = useMemo(() => viewQuery(request), [request]);
   useEffect(() => { session.view.request(request); }, [session, request]);
 
@@ -594,6 +612,23 @@ export function FindingsExplorerClient({
   const failure = feed.status === 'failed' ? feed.message : null;
   // The page the server answered with is the page of the address, since it clamps a page that is out of range.
   const answered = feed.status === 'ready' && feed.query === requestQuery;
+
+  // Closing the open view is the one way to widen what its held-back values keep out: the placeholder a held-back
+  // dimension stands for goes with it. Everything else the address holds stays.
+  const closeOpenView = useCallback(() => {
+    setFilters(prev => withoutHeldPlaceholders(prev));
+    setPage(0);
+    setOpenView(prev => afterClose(prev, openViewId));
+  }, [openViewId]);
+
+  // A view that was deleted, or is now someone else's Personal view, is announced once and dropped from the address.
+  // The page then follows the address filters alone. Adjusted while rendering, so the notice is part of whichever
+  // screen the page draws and no screen can leave it out.
+  const nextOpenView = afterRead(openView, openViewId, answered && data?.viewMissing === true);
+  if (nextOpenView !== openView) setOpenView(nextOpenView);
+  const viewGone = (
+    <SavedViewGoneNotice gone={nextOpenView.gone} onDismiss={() => setOpenView(prev => afterDismiss(prev))} />
+  );
 
   // What a filter value is called on screen: a rule by name, a category by label, a subscription by
   // its display name, a day as a date. The value itself, which the URL carries, stays the id.
@@ -653,13 +688,26 @@ export function FindingsExplorerClient({
     (field: ViewField): ChecklistOption[] => (isRowField(field) ? [] : builtinOptions(field)),
     [builtinOptions],
   );
+  // The open saved view's stored values this person's Access does not reach, counted beside the filters
+  // they sit with. The values themselves never arrive.
+  const [{ heldBack: openHeldBack, inFull: heldInFull }, setOpenHeld] = useState<{ heldBack: HeldBack[]; inFull: string[] }>({ heldBack: [], inFull: [] });
+  // Set when a save of the open view was refused because the view changed since this page showed it.
+  const [viewStale, setViewStale] = useState<string | null>(null);
   const chips = useMemo<FilterChip[]>(() => filters
     .filter(f => !NO_CHIP_FIELDS.includes(f.field) && !(lockedCategory && f.field === 'category'))
-    .flatMap(f => f.values.map(value => ({
+    .flatMap(f => valuesWithoutPlaceholder(openViewId ? openHeldBack : [], f.field, f.values).map(value => ({
       field: f.field, value, fieldLabel: fieldLabel(f.field),
       valueLabel: isRowField(f.field) ? value : filterChipLabel(f.field, value, data?.outsideAccess, v => valueLabel(f.field, v)),
     }))),
-  [filters, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
+  [filters, openViewId, openHeldBack, lockedCategory, fieldLabel, valueLabel, data?.outsideAccess]);
+
+  // A dimension held back in full arrives holding the placeholder `OUTSIDE_ACCESS_LABEL`, which lists nothing. It is
+  // not drawn as a chip of its own: this one stands for it, reads only "Outside your access" and has no remove control.
+  // Every read adds the open view's held-back values back, so the chip stays whatever the filters below it hold.
+  const heldChips = useMemo<HeldFilterChip[]>(() => (openViewId ? openHeldBack : []).map(h => ({
+    dimension: h.dimension, fieldLabel: fieldLabel(h.dimension as ViewField), count: h.count,
+    visible: valuesWithoutPlaceholder(openHeldBack, h.dimension, filterValues(filters, h.dimension as ViewField)).length,
+  })), [openViewId, openHeldBack, filters, fieldLabel]);
 
   const stats = data?.tiles ?? NO_TILES;
   const suppressedCount = data?.suppressedCount ?? 0;
@@ -777,6 +825,30 @@ export function FindingsExplorerClient({
   // Saving, deleting or losing the open view rewrites the same URL with a different `view`.
   const setOpenViewId = useCallback((id: string | null) => writeUrl(urlQueryFor(id)), [writeUrl, urlQueryFor]);
 
+  // The reload notice opens the view as the server holds it now. Reloading the address would bring back the query of
+  // the copy this page was opened from, and the next Update would be based on the newest revision with the old filters.
+  const reloadStaleView = useCallback(async () => {
+    if (!openViewId) return;
+    const current = await fetchCurrentSavedView(openViewId);
+    if (current.ok) {
+      setViewStale(null);
+      savedViews?.onOpen(current.view);
+    } else if (current.gone) {
+      setViewStale('This saved view no longer exists.');
+      setOpenViewId(null);
+    } else {
+      setViewStale('The saved view could not be reloaded. Try again.');
+    }
+  }, [openViewId, savedViews, setOpenViewId]);
+  const staleNotice = viewStale && (
+    <Callout tone="warn" className="mt-2.5">
+      <span>{viewStale}</span>
+      {openViewId && (
+        <>{' '}<button type="button" className="font-medium underline" onClick={() => void reloadStaleView()}>Reload</button></>
+      )}
+    </Callout>
+  );
+
   // What a saved view keeps: the View without the page, which is where the viewer happens to be
   // rather than part of what they set up.
   const savedViewQuery = useMemo(
@@ -817,26 +889,65 @@ export function FindingsExplorerClient({
   // in the widget, then a failed read, then loading, then the empty state, so a failure is never
   // drawn as "no findings".
   const screen = screenOf({ noAccess, mode, suppressionsFailed, failure, data });
-  if (screen === 'no-access') return <NoAccessState />;
+  if (screen === 'no-access') {
+    // Saved views are the person's own to keep and Shared ones are open to everyone, so the menu stays
+    // even when there are no findings to read.
+    return (
+      <>
+        {mode === 'page' && savedViews && (
+          <div className="flex items-center bg-surface px-5 py-3">
+            <SavedViewsMenu
+              tab={savedViews.tab}
+              currentUserId={savedViews.currentUserId}
+              permissions={savedViews.permissions}
+              shareControl={savedViews.shareControl}
+              openId={openViewId}
+              onOpenIdChange={setOpenViewId}
+              onOpen={savedViews.onOpen}
+              currentQuery={savedViewQuery}
+              appliedView={savedViews.appliedView}
+              onStale={setViewStale}
+            />
+          </div>
+        )}
+        {viewGone}
+        {mode === 'page' && savedViews && staleNotice}
+        <NoAccessState />
+      </>
+    );
+  }
   if (screen === 'widget-unavailable') {
     return <WidgetUnavailable onRetry={() => setSuppressionsRetryTick(t => t + 1)} />;
   }
 
   if (screen === 'unavailable' && failure) {
-    return <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />;
+    return (
+      <>
+        {viewGone}
+        <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />
+      </>
+    );
   }
 
   if (screen === 'loading' || !data) {
-    return <p role="status" className="bg-surface py-16 text-center text-sm text-ink-2">Loading findings</p>;
+    return (
+      <>
+        {viewGone}
+        <p role="status" className="bg-surface py-16 text-center text-sm text-ink-2">Loading findings</p>
+      </>
+    );
   }
 
   if (screen === 'empty') {
     return (
-      <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
-        <Search className="mb-4 size-7 text-ink-faint" />
-        <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
-        <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
-      </div>
+      <>
+        {viewGone}
+        <div className="flex flex-col items-center justify-center bg-surface py-16 text-center">
+          <Search className="mb-4 size-7 text-ink-faint" />
+          <h3 className="mb-1 font-heading text-base font-semibold text-ink">{emptyTitle ?? 'No findings yet'}</h3>
+          <p className="max-w-xs text-sm text-ink-muted">{emptyHint ?? 'Run a scan in any category to populate findings here.'}</p>
+        </div>
+      </>
     );
   }
 
@@ -1277,11 +1388,17 @@ export function FindingsExplorerClient({
         {mode === 'page' && savedViews && (
           <SavedViewsMenu
             tab={savedViews.tab}
-            canWrite={savedViews.canWrite}
+            currentUserId={savedViews.currentUserId}
+            permissions={savedViews.permissions}
+            shareControl={savedViews.shareControl}
             openId={openViewId}
             onOpenIdChange={setOpenViewId}
+            onClose={closeOpenView}
             onOpen={savedViews.onOpen}
+            onHeldBackChange={setOpenHeld}
             currentQuery={savedViewQuery}
+            appliedView={savedViews.appliedView}
+            onStale={setViewStale}
           />
         )}
 
@@ -1323,7 +1440,20 @@ export function FindingsExplorerClient({
         <ExportButton exportUrl={format => exportUrl(request, format)} />
       </div>
 
-      <FilterChips chips={chips} onRemove={chip => toggleValue(chip.field, chip.value)} />
+      {viewGone}
+
+      {staleNotice}
+
+      <FilterChips chips={chips} held={heldChips} onRemove={chip => toggleValue(chip.field, chip.value)} />
+
+      {openViewId && heldInFull.length > 0 && (
+        <Callout tone="warn">
+          <div className="flex items-center justify-between gap-3">
+            <span>{OPEN_VIEW_OUTSIDE_COPY}</span>
+            <Button variant="outline" size="xs" onClick={closeOpenView}>Close view</Button>
+          </div>
+        </Callout>
+      )}
 
       {listBody === 'unavailable' && failure && layout === 'rule' ? (
         <ViewUnavailable message={failure} onRetry={() => session.view.refresh()} onClear={hasActiveFilter ? clearFilters : undefined} />

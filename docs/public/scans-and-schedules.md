@@ -102,20 +102,92 @@ a field name.
 
 ### Saved views
 
-The Views button in the toolbar keeps the current view under a name, and the view is shared with
-everyone on the install. A saved view holds the tab it was saved on (Results or Advisories) and
+The Views button in the toolbar keeps the current view under a name. A saved view is **Personal** or
+**Shared**, and has an owner. Saving one makes it Personal: only you can open it, and anyone else, an
+Admin included, gets "not found" for it. A saved view holds the tab it was saved on (Results or Advisories) and
 everything the address carries: filters, search, window, picked columns, sort and grouping. It does not hold
 the page you were on, which findings are suppressed, or the By resource and By rule choice. Choose
 a saved view in the menu to open it. The menu lists the views for the tab you are on, and opening
 one puts its filters in the address, so the link still reproduces what you see.
 
-Viewers can open saved views. Editors and admins can also save the current view, replace an open
-view's filters with the current ones (Update with current view), rename it and delete it. A name
-is unique whatever its case, and saving a name already in use says so. A saved view stores the
+The menu has two sections for the tab you are on. **Yours** lists every view you own, each tagged
+Personal or Shared. **Shared by others** lists the Shared views you do not own, with the owner's name,
+or their email, or "No owner". Your own Shared views appear only under Yours.
+
+Everyone signed in, a Viewer included, can save the current view and can replace an open Personal
+view's filters with the current ones (Update with current view), rename it and delete it. A Shared view
+opens for everyone. Its owner can change it if they are an Editor, and an Admin or an Editor on
+Everything can change any Shared view. A name is unique among your own Personal views, whatever its
+case, and saving a name already in use says so. Nobody else's Personal names are checked. Renaming a
+Shared view checks the names of Shared views across the install.
+
+Share, in the Views menu with a Personal view of yours open, makes it Shared. It first asks: "Share
+<name> with everyone on this install? Its name and search text will be visible to everyone, and its name
+will appear in the audit log." Only the owner shares, and only with an Editor Role at some Scope; for a
+Viewer, and an Editor who holds no Scope, Share is off with "Sharing needs an Editor Role at some Scope."
+Sharing checks the names of Shared views across the install and answers 409 when the name is taken.
+Unshare makes a Shared view Personal again. The owner can unshare their own view, and refuses with 409 when
+it clashes with one of their Personal names. An Admin, or an Editor on Everything, can unshare any
+Shared view: the view takes the next free name among its owner's Personal names, the answer does not say
+what that name is, and a view with no owner is refused with "Take this over before unsharing it." Share
+and Unshare are logged as `view.share` and `view.unshare`, the unshare with the name the view had while
+Shared. If your access no longer lets you change a Shared view you own, the menu says "Your access no
+longer lets you change Shared items. Duplicate it, or ask an Admin to take it over."
+
+Saving a new view while a saved view is open counts as a Duplicate: the new view is Personal and holds
+only the values you can see, so a Scope, resource name or returned-column value that your access does not
+reach is not copied. When that leaves a filter that was held back in full with nothing in its place, the
+new view shows more than the original did for you, and the Views menu says so while that new view is the open one: "Saved as a Personal
+view. N filters show more than the original, because values outside your access were left out." N counts
+filters (a Scope, resource name or returned column each counts once). Opening another view, or closing the view, removes the
+notice for good. Nothing is shown when N is 0, and
+someone who holds Everything has nothing left out.
+
+Hand over and Take over are items in the Views menu, shown for the open view. Hand over gives a Shared view
+to another person, chosen from a list of names and emails only. The list
+holds Admins and people who hold an Editor Role at any Scope, and leaves out the current owner; the server
+checks the choice again and refuses anyone else with "That person cannot take this over. Choose someone
+else." The owner can hand over their own view. An Admin, or an Editor on Everything, can hand over any
+Shared view, one with no owner included, to an eligible person, and can take over any Shared view with
+Take over. Both act only on Shared views, never on a Personal one. The view stays Shared and keeps its
+search text under the new owner, nobody is notified, and both check the names of Shared views across the
+install. A hand-over or take-over the view's current state no longer allows answers 409 and asks for a
+reload. They are logged as `view.hand_over`, naming both people by display name, else email, and
+`view.take_over`.
+
+An open saved view keeps meaning the same thing for you. The address holds `view=<id>` and only the filter
+values you can see. Every read of the findings and the export (the list, a finding's rows, a group, a
+column's values and the export file), on the Results, Advisories and Activity tabs, loads the stored
+view and adds the values held back from you before it matches. A value you cannot see matches nothing for
+you, so a filter whose values are all held back shows "Outside your access", lists nothing and never widens
+to your whole Access. You can add values next to it, but you cannot remove it. While such a filter is
+present the page says "This saved view is filtered to places outside your Access. Close the view to see your
+own findings." Closing the view (Close view in the Views menu or beside that message) is the only way to
+widen on Scans, and it drops the placeholder with the view. Held-back values are described on the
+[Access](access.md#held-back-values) page.
+
+Whoever may change the open view sees "Remove N values" in the Views menu, where N counts the stored values
+held back from you. It asks "Remove N values outside your access from <name>? Everyone who could see them
+loses them." and removes every one of them from the saved view in one step
+(`POST /api/views/[id]/remove-held-back`), under the revision check: a view that has changed since you
+opened it answers 409 with a reload message. A filter left with no value is dropped from the view, so it no
+longer narrows, and the view opens as it is now stored. The action is logged as `view.remove_held_back` with
+the count only; for a Personal view the entry holds the id, the kind and the count. Deleting a view that holds
+such values gives the count in the confirmation and in the `view.delete` entry.
+
+When `view=<id>` names a view that was deleted, or is now someone else's Personal view, the read says so
+and the page shows "This saved view no longer exists." once. It drops `view=<id>` from the address and
+carries on with the filters the address holds. The two cases look the same, an Admin included. The export
+answers the same way, with an `X-View-Missing: 1` header on a file filtered by the address alone. The Views
+menu no longer closes a view without saying so.
+
+A saved view stores the
 columns and filters by name, so a view that mentions a returned field no finding has yet still
 opens, with an empty column and a filter that keeps nothing, as it does in a link. Deleting a saved
 view never changes findings. The audit log records each save, update, rename and delete with the
-names of the fields that changed, never their values.
+names of the fields that changed, never their values, and writes nothing when a save changes nothing.
+For a Personal view it records the id and kind only, with no name, and only for a create, a rename and a delete: a save of its filters or tab is not logged. Removing a person deletes their Personal views and leaves their Shared ones Shared
+with no owner.
 
 ## Disable, clear findings, or suppress
 
