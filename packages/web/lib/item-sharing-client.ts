@@ -11,7 +11,7 @@ const NOUN: Record<ItemKind, string> = { dashboard: 'dashboard', view: 'saved vi
 
 /**
  * Sends one share or unshare and reports whether the server accepted it, in the same contract as
- * `requestSavedViewChange`: a refusal the person can act on (a name in use, a changed state) shows the server's
+ * `requestSavedViewChange`: a refusal the person can act on (a name in use, a changed state, a widget on a view that is no longer shared) shows the server's
  * message, and anything else (a failure, a followed redirect to /signin, a thrown fetch) gets a fixed one.
  */
 export async function requestVisibilityChange(
@@ -24,7 +24,7 @@ export async function requestVisibilityChange(
     const res = await fetchImpl(`/api/${PATH[kind]}/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     if (res.redirected) return { ok: false, error: FALLBACK };
     if (res.ok) return { ok: true, item: await res.json() };
-    if (res.status === 409) {
+    if (res.status === 409 || res.status === 400) {
       const body = await res.json().catch(() => null) as { error?: unknown } | null;
       if (typeof body?.error === 'string' && body.error.trim() !== '') return { ok: false, error: body.error };
     }
