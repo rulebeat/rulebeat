@@ -81,14 +81,17 @@ const structureOf = (n: HierarchyNode): string => `${n.tenantId}|${n.kind}|${n.i
  */
 export async function replaceHierarchy(nodes: readonly HierarchyNode[], at: string): Promise<boolean> {
   const rows = distinctNodes(nodes);
+  // Read before the transaction opens: on Postgres a failed statement aborts the transaction it ran in, so a
+  // failure here caught inside it would fail the delete after it and lose the replace. A read that fails
+  // counts as a change, the safe answer.
+  let changed: boolean;
+  try {
+    const stored = new Set((await listHierarchyNodes()).map(structureOf));
+    changed = (stored.size === 0 && rows.length > 0) || stored.size !== rows.length || rows.some(n => !stored.has(structureOf(n)));
+  } catch {
+    changed = true;
+  }
   return inTransaction(async tx => {
-    let changed: boolean;
-    try {
-      const stored = new Set((await listHierarchyNodes(tx)).map(structureOf));
-      changed = (stored.size === 0 && rows.length > 0) || stored.size !== rows.length || rows.some(n => !stored.has(structureOf(n)));
-    } catch {
-      changed = true;
-    }
     await run(tx.delete(hierarchyTable));
     for (const node of rows) {
       await run(tx.insert(hierarchyTable).values({

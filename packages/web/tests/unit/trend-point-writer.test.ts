@@ -259,18 +259,44 @@ describe('retention', () => {
 });
 
 describe('the queue', () => {
+  /** Holds the writer's queue shut, so no turn can have started while the test changes state. Returns the key. */
+  function closeQueue(): () => void {
+    const queue = (globalThis as typeof globalThis & { __rulebeatTrendWriter: { tail: Promise<void> } }).__rulebeatTrendWriter;
+    let open!: () => void;
+    const held = queue.tail.then(() => new Promise<void>(resolve => { open = resolve; }));
+    queue.tail = held;
+    return () => open();
+  }
+
   it('serializes overlapping refreshes, so the last write reflects the latest state', async () => {
     await insertRuleRow({ id: 'r' });
+    const open = closeQueue();
     const first = refreshSnapshotsFor(['security'], new Date('2026-03-10T08:00:00.000Z'));
     await insertRuleRow({ id: 'r2' });
     const second = refreshSnapshotsFor(['security'], new Date('2026-03-10T09:00:00.000Z'));
     const third = refreshSnapshotsFor(['security'], new Date('2026-03-10T10:00:00.000Z'));
+    open();
     await Promise.all([first, second, third]);
 
     const point = (await pointOn('security', '', '2026-03-10'))!;
     expect(point.updatedAt).toBe('2026-03-10T10:00:00.000Z');
     expect(point.totalRules).toBe(2);
     expect((await pointsAt('security', '')).filter(p => p.date === '2026-03-10')).toHaveLength(1);
+  });
+
+  it('reads live state when its own turn starts, not when it was called', async () => {
+    await insertRuleRow({ id: 'r' });
+    const open = closeQueue();
+    const first = refreshSnapshotsFor(['security'], new Date('2026-03-10T08:00:00.000Z'));
+    // The rule arrives after the call was made and before its turn can start.
+    await insertRuleRow({ id: 'r2' });
+    const second = refreshSnapshotsFor(['security'], new Date('2026-03-11T08:00:00.000Z'));
+    await insertRuleRow({ id: 'r3' });
+    open();
+    await Promise.all([first, second]);
+
+    expect((await pointOn('security', '', '2026-03-10'))!.totalRules).toBe(3);
+    expect((await pointOn('security', '', '2026-03-11'))!.totalRules).toBe(3);
   });
 });
 

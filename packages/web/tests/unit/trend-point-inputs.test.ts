@@ -15,6 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { refreshSnapshotsFor, backfillSnapshots } from '@/lib/db/snapshots';
 import { listFindings, deleteFindingsForRule } from '@/lib/db/findings';
 import { createRule, deleteRule, duplicateRule, saveRules, setRulesEnabled, updateRule } from '@/lib/rules';
+import { approveLibraryRequest, copyPersonalRuleToLibrary, createLibraryRequest } from '@/lib/db/library-requests';
+import { createPersonalRule } from '@/lib/db/personal-rules';
+import { createUser } from '@/lib/db/users';
 import { addSuppression, removeSuppression, saveSuppressions } from '@/lib/suppressions';
 import { refreshExpiredSuppressions } from '@/lib/scheduler';
 import { clearRules, execRaw, resetDb } from '../helpers/db';
@@ -40,6 +43,34 @@ const newRule = (id: string, over: Partial<Rule> = {}): Rule => ({
   id, name: `New rule ${id}`, description: 'a rule', category: 'security', severity: 'medium', enabled: true, type: 'custom',
   scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: 'resources | project id', ...over,
 } as unknown as Rule);
+
+let requesters = 0;
+
+/** An open library request from a new author: a new rule, or an edit of `targetRuleId`, with the definition's category. */
+async function personalRuleOf(category: string) {
+  requesters += 1;
+  const author = await createUser({ email: `inputs-author-${requesters}@example.com`, role: 'editor' });
+  if ('error' in author) throw new Error(author.error);
+  const personal = await createPersonalRule(author.user.id, {
+    name: `Requested rule ${requesters}`, description: '', category, severity: 'high', queryBackend: 'resource-graph', kind: 'state',
+    scope: { level: 'subscription' }, resourceTypes: [], conditions: [], rawKql: 'resources | project id',
+  });
+  return { author: author.user, personal };
+}
+
+async function openRequest(category: string, targetRuleId?: string): Promise<string> {
+  const { author, personal } = await personalRuleOf(category);
+  const made = await createLibraryRequest(personal, author.id, undefined, targetRuleId);
+  if (!made.ok) throw new Error(made.reason);
+  return made.request.id;
+}
+
+const approve = async (requestId: string) => {
+  const reviewer = await createUser({ email: `inputs-reviewer-${++requesters}@example.com`, role: 'admin' });
+  if ('error' in reviewer) throw new Error(reviewer.error);
+  const result = await approveLibraryRequest(requestId, reviewer.user.id, { enabled: true });
+  if (!result.ok) throw new Error(result.reason);
+};
 
 const install = (category = 'security') => pointOn(category, '', DAY);
 
@@ -75,6 +106,23 @@ const CASES: InputCase[] = [
   { name: 'deleting a rule that has no findings', act: () => deleteRule('r2'), expected: { totalRules: 1, activeFindings: 1 } },
   { name: 'clearing a rule\'s findings', act: () => deleteFindingsForRule('r1'), expected: { totalRules: 2, activeFindings: 0, passingRules: 2 } },
   { name: 'replacing the rule set', act: () => saveRules([newRule('only')]), expected: { totalRules: 1 } },
+  { name: 'approving a library request for a new rule', act: async () => approve(await openRequest('security')), expected: { totalRules: 3 } },
+  {
+    name: 'approving a library request that edits a rule and moves it (the old category)',
+    act: async () => approve(await openRequest('cost', 'r2')), expected: { totalRules: 1 },
+  },
+  {
+    name: 'approving a library request that edits a rule and moves it (the new category)',
+    act: async () => approve(await openRequest('cost', 'r2')), expected: { totalRules: 1 }, category: 'cost',
+  },
+  {
+    name: 'copying a Personal rule straight into the library',
+    act: async () => {
+      const copied = await copyPersonalRuleToLibrary((await personalRuleOf('cost')).personal);
+      if (!copied.ok) throw new Error(copied.reason);
+    },
+    expected: { totalRules: 0 }, category: 'cost',
+  },
   {
     name: 'adding a suppression',
     act: async () => addSuppression({ id: 's1', fingerprint: (await listFindings(EVERYTHING_ACCESS))[0]!.fingerprint, reason: 'test', suppressedAt: T0 }),
@@ -175,8 +223,8 @@ describe('where the writer is called from', () => {
   });
   const rel = (file: string) => path.relative(WEB, file).split(path.sep).join('/');
 
-  /** Every call of `names` in a file, with its arguments' text. */
-  function calls(file: string, names: readonly string[]): { name: string; args: string[] }[] {
+  /** Every call of `names` in a file (or within the one top-level `statement` of it), with its arguments' text. */
+  function calls(file: string, names: readonly string[], statement?: string): { name: string; args: string[] }[] {
     const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const found: { name: string; args: string[] }[] = [];
     const visit = (node: ts.Node): void => {
@@ -185,24 +233,31 @@ describe('where the writer is called from', () => {
       }
       ts.forEachChild(node, visit);
     };
-    visit(source);
+    if (statement === undefined) visit(source);
+    else {
+      for (const stmt of source.statements) {
+        if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === statement) visit(stmt);
+      }
+    }
     return found;
   }
 
   it('no route or scheduler path passes `now` to the writer', () => {
     const files = [...sourceFiles(path.join(WEB, 'app')), path.join(WEB, 'lib/scheduler.ts'), path.join(WEB, 'instrumentation.ts')];
-    const passing = files.flatMap(f => calls(f, ['refreshSnapshotsFor', 'backfillSnapshots']).filter(c => c.args.length > (c.name === 'backfillSnapshots' ? 0 : 1)).map(() => rel(f)));
-    expect(passing).toEqual([]);
+    const all = files.flatMap(f => calls(f, ['refreshSnapshotsFor', 'backfillSnapshots']).map(c => ({ ...c, file: rel(f) })));
+    // The sweep found the scheduler's and the startup step's calls, so an empty list below is not an empty search.
+    expect(new Set(all.map(c => c.file))).toEqual(new Set(['lib/scheduler.ts', 'instrumentation.ts']));
+    expect(all.filter(c => c.args.length > (c.name === 'backfillSnapshots' ? 0 : 1))).toEqual([]);
   });
 
   it('only the scan runner threads a `now` to the writer, and no route sets the one it passes', () => {
     const lib = sourceFiles(path.join(WEB, 'lib')).filter(f => !rel(f).startsWith('lib/demo/'));
     const withNow = lib.filter(f => calls(f, ['refreshSnapshotsFor']).some(c => c.args.length > 1)).map(rel);
     expect(withNow).toEqual(['lib/scan-runner.ts']);
-    const routesSettingIt = sourceFiles(path.join(WEB, 'app'))
-      .filter(f => calls(f, ['runCategoryScan', 'executeTarget', 'runManualTarget']).some(c => c.args.some(a => /\bnow\b/.test(a))))
-      .map(rel);
-    expect(routesSettingIt).toEqual([]);
+    const routeCalls = sourceFiles(path.join(WEB, 'app'))
+      .flatMap(f => calls(f, ['runCategoryScan', 'executeTarget', 'runManualTarget']).map(c => ({ ...c, file: rel(f) })));
+    expect(routeCalls.length).toBeGreaterThan(0);
+    expect(routeCalls.filter(c => c.args.some(a => /\bnow\b/.test(a)))).toEqual([]);
   });
 
   it('every repository writer of rules and suppressions refreshes, or says why it need not', () => {
@@ -225,13 +280,24 @@ describe('where the writer is called from', () => {
     expect(unrefreshed).toEqual([]);
   });
 
-  it('every caller of insertRuleOn and updateRuleOn refreshes the categories they report', () => {
+  it('every function that calls insertRuleOn or updateRuleOn refreshes the categories they report', () => {
+    const callers: string[] = [];
+    const unrefreshed: string[] = [];
     for (const file of ['lib/db/library-requests.ts', 'lib/rules.ts']) {
-      const source = readFileSync(path.join(WEB, file), 'utf8');
-      if (/\b(insertRuleOn|updateRuleOn)\(/.test(source.replace(/export async function (insertRuleOn|updateRuleOn)/g, ''))) {
-        expect(source, file).toContain('refreshSnapshotsFor');
+      const full = path.join(WEB, file);
+      const source = ts.createSourceFile(full, readFileSync(full, 'utf8'), ts.ScriptTarget.Latest, true);
+      for (const stmt of source.statements) {
+        if (!ts.isFunctionDeclaration(stmt) || !stmt.name || stmt.name.text === 'insertRuleOn' || stmt.name.text === 'updateRuleOn') continue;
+        if (calls(full, ['insertRuleOn', 'updateRuleOn'], stmt.name.text).length === 0) continue;
+        callers.push(`${file}:${stmt.name.text}`);
+        if (!/\brefreshSnapshotsFor\(/.test(stmt.getText(source))) unrefreshed.push(`${file}:${stmt.name.text}`);
       }
     }
+    // Both approvals, the direct copy and the rule repository's own writers were found.
+    expect(callers).toEqual(expect.arrayContaining([
+      'lib/db/library-requests.ts:approveLibraryRequest', 'lib/db/library-requests.ts:copyPersonalRuleToLibrary',
+    ]));
+    expect(unrefreshed).toEqual([]);
   });
 
   it('the writer reads and writes only on its transaction, never on the module handle', () => {
