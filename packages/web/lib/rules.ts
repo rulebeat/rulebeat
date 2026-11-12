@@ -307,7 +307,7 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
  */
 export async function deleteRule(id: string): Promise<boolean> {
   const outcome = await inTransaction(async (tx) => {
-    const existing = await one(tx.select({ id: rulesTable.id }).from(rulesTable).where(eq(rulesTable.id, id)));
+    const existing = await one(tx.select({ id: rulesTable.id, category: rulesTable.category }).from(rulesTable).where(eq(rulesTable.id, id)));
     if (!existing) return null;
     await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
     // A Personal rule copied from this one stays, without the link back to it (#281).
@@ -317,7 +317,10 @@ export async function deleteRule(id: string): Promise<boolean> {
     // An open update request aimed at this rule keeps its target id on purpose (#283): clearing it would
     // turn the request into a new-rule request. Approving it answers 'target-gone' and the review page
     // says the rule no longer exists.
-    return removeFindingRowsForRule(tx, id);
+    const removed = await removeFindingRowsForRule(tx, id);
+    // The rule's own category too: a rule with no findings is in no category the findings name, yet leaving the
+    // denominator changes its points.
+    return { categories: [...removed.categories, existing.category] };
   });
   if (!outcome) return false;
   await refreshSnapshotsFor(outcome.categories);

@@ -72,6 +72,7 @@ const CASES: InputCase[] = [
   { name: 'disabling rules in bulk', act: () => setRulesEnabled(['r1', 'r2'], false), expected: { totalRules: 0 } },
   { name: 'duplicating a rule', act: () => duplicateRule('r2'), expected: { totalRules: 2 } },
   { name: 'deleting a rule', act: () => deleteRule('r1'), expected: { totalRules: 1, activeFindings: 0 } },
+  { name: 'deleting a rule that has no findings', act: () => deleteRule('r2'), expected: { totalRules: 1, activeFindings: 1 } },
   { name: 'clearing a rule\'s findings', act: () => deleteFindingsForRule('r1'), expected: { totalRules: 2, activeFindings: 0, passingRules: 2 } },
   { name: 'replacing the rule set', act: () => saveRules([newRule('only')]), expected: { totalRules: 1 } },
   {

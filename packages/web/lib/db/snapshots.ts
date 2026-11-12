@@ -3,7 +3,7 @@ import { db } from './client';
 import {
   postureSnapshots as snapshotsTable, findings as findingsTable, suppressions as suppressionsTable, categories as categoriesTable,
 } from './tables';
-import { many, run, inTransaction, type DbHandle } from './exec';
+import { many, run, inConsistentWrite, type DbHandle } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { isActiveSuppression } from '../suppressions';
@@ -110,7 +110,7 @@ export function refreshSnapshotsFor(categories: readonly string[], now?: Date): 
 async function writeTodaysPoints(categoryIds: string[], now: Date): Promise<void> {
   for (const id of categoryIds) {
     try {
-      await inTransaction(tx => writeCategoryPoints(tx, id, now));
+      await inConsistentWrite(tx => writeCategoryPoints(tx, id, now));
     } catch (err) {
       console.error(`[trend] Could not write today's trend points for category "${id}":`, err);
     }

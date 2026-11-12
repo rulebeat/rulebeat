@@ -100,8 +100,9 @@ export async function refreshExpiredSuppressions(now: Date = new Date()): Promis
   if (last >= at) return;
   try {
     const categories = await categoriesWithSuppressionExpiringBetween(last, at);
+    const queued = refreshSnapshotsFor(categories);
     g.__rulebeatExpiryCheckedAt = at;
-    await refreshSnapshotsFor(categories);
+    await queued;
   } catch (err) {
     console.error('[scheduler] suppression expiry refresh failed:', err);
   }
