@@ -73,8 +73,11 @@ export async function PATCH(req: Request, { params }: Params) {
     // person filtered on.
     const { before, view } = result;
     const changed = SAVED_VIEW_FIELDS.filter(f => f in fields.value && view[f] !== before[f]);
-    if (changed.length > 0) {
-      const renamedOnly = changed.length === 1 && changed[0] === 'name';
+    // A Personal view's filter and tab saves are unaudited, as a Personal dashboard's layout and config saves are:
+    // only a rename is logged, and removing held-back values has its own route and entry.
+    const personal = before.visibility === 'personal';
+    if (personal ? changed.includes('name') : changed.length > 0) {
+      const renamedOnly = personal || (changed.length === 1 && changed[0] === 'name');
       await writeAudit({
         actor,
         action: renamedOnly ? 'view.rename' : 'view.update',
@@ -86,7 +89,7 @@ export async function PATCH(req: Request, { params }: Params) {
           : renamedOnly
             ? `Renamed saved view "${before.name}" to "${view.name}"`
             : `Updated saved view "${view.name}"`,
-        details: { fields: changed },
+        details: { fields: personal ? ['name'] : changed },
       });
     }
     const [answer] = await holdBackSavedViews(actor.access, [view], held);

@@ -241,6 +241,8 @@ describe('saved views routes', () => {
   describe('audit', () => {
     it('writes one row per change with field names and no values', async () => {
       const view = await created('Secret Name', { query: 'q=hunter2' });
+      // A Personal view's query saves are unaudited, so the changes to log are a Shared view's.
+      await share(view.id);
       await patch(view.id, { name: 'Other Secret' });
       await patch(view.id, { query: 'q=correct-horse', tab: 'advisories' });
       await remove(view.id);
@@ -340,5 +342,18 @@ describe('Personal saved views (ADR 0012)', () => {
     expect(entries.every(e => e.entityId === view.id)).toBe(true);
     const text = JSON.stringify(entries.map(e => [e.summary, e.details]));
     for (const value of ['Quarterly', 'Annual', 'hunter2']) expect(text).not.toContain(value);
+  });
+
+  it('leaves a Personal query or tab save unaudited, and logs a rename made in the same save as a rename only', async () => {
+    await signInAs('viewer');
+    const view = await created('Quarterly numbers', { query: 'q=hunter2' });
+    expect((await patch(view.id, { query: 'q=correct-horse', tab: 'advisories' })).status).toBe(200);
+    expect((await viewAudit()).map(e => e.action)).toEqual(['view.create']);
+
+    expect((await patch(view.id, { name: 'Annual numbers', query: 'q=again' })).status).toBe(200);
+    const renames = (await viewAudit()).filter(e => e.action === 'view.rename');
+    expect(renames).toHaveLength(1);
+    expect(renames[0].details).toEqual({ fields: ['name'] });
+    expect((await viewAudit()).some(e => e.action === 'view.update')).toBe(false);
   });
 });
