@@ -268,15 +268,22 @@ describe('where the writer is called from', () => {
       removeFindingRowsForRule: 'the half of a delete that runs on the caller\'s transaction; the caller refreshes after commit',
     };
     const unrefreshed: string[] = [];
+    const writers: string[] = [];
     for (const file of ['lib/rules.ts', 'lib/suppressions.ts']) {
       const source = ts.createSourceFile(file, readFileSync(path.join(WEB, file), 'utf8'), ts.ScriptTarget.Latest, true);
       for (const stmt of source.statements) {
         if (!ts.isFunctionDeclaration(stmt) || !stmt.name || !stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
         const text = stmt.getText(source);
         const writes = /\.(insert|update|delete)\((rulesTable|suppressionsTable)\b/.test(text);
+        if (writes) writers.push(stmt.name.text);
         if (writes && !text.includes('refreshSnapshotsFor') && !text.includes('refreshCategoriesOf') && !EXEMPT[stmt.name.text]) unrefreshed.push(`${file}:${stmt.name.text}`);
       }
     }
+    // The sweep matched the known writers, so a renamed table alias cannot leave it matching nothing.
+    expect(writers).toEqual(expect.arrayContaining([
+      'setRulesEnabled', 'saveRules', 'deleteRule', 'duplicateRule', 'switchRuleVersion', 'insertRuleOn', 'updateRuleOn',
+      'addSuppression', 'removeSuppression', 'saveSuppressions',
+    ]));
     expect(unrefreshed).toEqual([]);
   });
 
