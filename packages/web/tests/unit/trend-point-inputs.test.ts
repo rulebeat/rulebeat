@@ -254,10 +254,13 @@ describe('where the writer is called from', () => {
     const lib = sourceFiles(path.join(WEB, 'lib')).filter(f => !rel(f).startsWith('lib/demo/'));
     const withNow = lib.filter(f => calls(f, ['refreshSnapshotsFor']).some(c => c.args.length > 1)).map(rel);
     expect(withNow).toEqual(['lib/scan-runner.ts']);
-    const routeCalls = sourceFiles(path.join(WEB, 'app'))
-      .flatMap(f => calls(f, ['runCategoryScan', 'executeTarget', 'runManualTarget']).map(c => ({ ...c, file: rel(f) })));
-    expect(routeCalls.length).toBeGreaterThan(0);
-    expect(routeCalls.filter(c => c.args.some(a => /\bnow\b/.test(a)))).toEqual([]);
+    // Every caller of the scan path outside the executor and the runner themselves (which thread the
+    // option on purpose) and the Demo: the routes, and the scheduler's scheduled-scan path.
+    const callers = [...sourceFiles(path.join(WEB, 'app')), ...lib, path.join(WEB, 'instrumentation.ts')]
+      .filter(f => !['lib/scan-runner.ts', 'lib/run-executor.ts'].includes(rel(f)));
+    const scanCalls = callers.flatMap(f => calls(f, ['runCategoryScan', 'executeTarget', 'runManualTarget']).map(c => ({ ...c, file: rel(f) })));
+    expect(new Set(scanCalls.map(c => c.file))).toEqual(new Set(['app/api/scans/run/route.ts', 'lib/scheduler.ts']));
+    expect(scanCalls.filter(c => c.args.some(a => /\bnow\b/.test(a)))).toEqual([]);
   });
 
   it('every repository writer of rules and suppressions refreshes, or says why it need not', () => {
