@@ -29,6 +29,7 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Fixed
 
+- Sharing a dashboard whose widgets use a saved view that is no longer shared now shows the server's message naming the widgets, from the gallery and the dashboard More menu, instead of "The change could not be saved. Try again."
 - Saving the filters or tab of a Personal saved view no longer writes an audit entry. Only a Personal view's create, rename and delete are logged, by id and kind with no name, as a Personal dashboard's are.
 
 ## [0.13.1] - 2026-10-16

@@ -40,6 +40,17 @@ describe('requestVisibilityChange', () => {
       .toEqual({ ok: false, error: staleStateMessage('dashboard') });
   });
 
+  it('shows the server\'s message for the 400 that names the widgets using a view that is no longer shared', async () => {
+    const message = '2 widgets use saved views that are no longer shared: Open, Fixed. Change or remove them before saving.';
+    expect(await requestVisibilityChange('dashboard', 'x', 'share', reply(400, { error: message }))).toEqual({ ok: false, error: message });
+  });
+
+  it('gives the fixed message for a 400 with no usable message', async () => {
+    const fallback = { ok: false, error: 'The change could not be saved. Try again.' };
+    expect(await requestVisibilityChange('dashboard', 'x', 'share', reply(400, { error: '  ' }))).toEqual(fallback);
+    expect(await requestVisibilityChange('dashboard', 'x', 'share', reply(400))).toEqual(fallback);
+  });
+
   it('says the item is gone for a 404, and a fixed message for a 403, a failure, a redirect and a thrown fetch', async () => {
     expect(await requestVisibilityChange('view', 'x', 'share', reply(404, { error: 'Not found' }))).toEqual({ ok: false, error: 'This saved view no longer exists.' });
     expect(await requestVisibilityChange('view', 'x', 'share', reply(403, { error: 'Forbidden' }))).toEqual({ ok: false, error: 'Your access does not let you share this.' });
