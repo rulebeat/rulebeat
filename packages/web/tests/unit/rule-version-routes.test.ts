@@ -174,6 +174,13 @@ describe('recorded Rule versions', () => {
     ]);
   });
 
+  /** A switch refreshes today's trend points as the clock reads, so the clock reads the day the scans around it are on. */
+  async function onDay<T>(at: string, fn: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(at));
+    try { return await fn(); } finally { vi.useRealTimers(); }
+  }
+
   it('moves matched findings to the switched category and resolves dropped findings under their original category', async () => {
     const security = (await getCategory('security'))!;
     const compliance = (await getCategory('compliance'))!;
@@ -186,7 +193,7 @@ describe('recorded Rule versions', () => {
     });
     await runCategoryScan(security, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-24T12:00:00Z') });
     const kept = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')!;
-    expect((await PUT(switchRequest('3.0.0'), params)).status).toBe(200);
+    expect((await onDay('2026-09-24T13:00:00Z', () => PUT(switchRequest('3.0.0'), params))).status).toBe(200);
     await runCategoryScan(compliance, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-25T12:00:00Z') });
     expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, category: 'compliance', status: 'active',
@@ -197,7 +204,7 @@ describe('recorded Rule versions', () => {
     expect((await getFindingEventCounts({ categories: ['security'], sinceDate: '2026-09-24' }, EVERYTHING_ACCESS)).slice(0, 2)).toEqual([
       { date: '2026-09-24', created: 2, resolved: 0 }, { date: '2026-09-25', created: 0, resolved: 1 },
     ]);
-    expect((await PUT(switchRequest('1.0.0'), params)).status).toBe(200);
+    expect((await onDay('2026-09-25T13:00:00Z', () => PUT(switchRequest('1.0.0'), params))).status).toBe(200);
     await runCategoryScan(security, { access: EVERYTHING_ACCESS, ctx, ruleIds: [ID], now: new Date('2026-09-26T12:00:00Z') });
     expect((await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'kept')).toMatchObject({
       fingerprint: kept.fingerprint, firstSeenAt: kept.firstSeenAt, category: 'security', status: 'active',

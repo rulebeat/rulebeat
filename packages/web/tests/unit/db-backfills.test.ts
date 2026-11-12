@@ -94,7 +94,7 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
     // never silently upgraded to look like an honest row it never was.
     expect(original!.formulaVersion, 'a pre-existing row must not be mistaken for an honest one').toBe(1);
 
-    // await backfillSnapshots() also writes a fresh "today" row per category via upsertDailySnapshot.
+    // await backfillSnapshots() also writes a fresh "today" row per category through the queued writer.
     // That one IS computed under the current formula and must say so.
     const today = new Date().toISOString().slice(0, 10);
     const freshRow = after.find(s => s.date === today);
@@ -104,8 +104,10 @@ describe('TS-25 · rebuilding trend history on upgrade', () => {
 
   it('25-11 · running twice does not double up the trend', async () => {
     await snapshotsRepo.backfillSnapshots();
-    const first = JSON.stringify(await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] }));
+    // Every start rewrites today's point, so its update time moves; nothing else about the history does.
+    const dated = async () => (await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] })).map(({ updatedAt, ...point }) => point);
+    const first = JSON.stringify(await dated());
     await snapshotsRepo.backfillSnapshots();
-    expect(JSON.stringify(await snapshotsRepo.getSnapshots(EVERYTHING_ACCESS, { categories: ['cost'] }))).toBe(first);
+    expect(JSON.stringify(await dated())).toBe(first);
   });
 });

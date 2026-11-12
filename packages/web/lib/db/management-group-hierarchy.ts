@@ -20,8 +20,8 @@ function isKind(value: string): value is HierarchyKind {
 }
 
 /** Every stored node. A row whose kind is not one this release knows is left out. */
-export async function listHierarchyNodes(): Promise<HierarchyNode[]> {
-  const rows = await many(db.select().from(hierarchyTable));
+export async function listHierarchyNodes(handle: DbHandle = db): Promise<HierarchyNode[]> {
+  const rows = await many(handle.select().from(hierarchyTable));
   const nodes: HierarchyNode[] = [];
   for (const row of rows) {
     if (!isKind(row.kind)) continue;
@@ -69,13 +69,26 @@ function distinctNodes(nodes: readonly HierarchyNode[]): HierarchyNode[] {
   return out;
 }
 
+const structureOf = (n: HierarchyNode): string => `${n.tenantId}|${n.kind}|${n.id}|${n.parentId ?? ''}`;
+
 /**
  * Replaces the whole tree with what a read returned and records the success, in one transaction: a
  * person never sees half of one tree and half of another, and a failure part-way leaves the old tree.
+ *
+ * Returns whether the tree changed, which is what decides if today's trend points are refreshed: any node
+ * added, removed or moved to another parent, and the first read. A display name alone is not a change.
+ * A stored tree that cannot be listed counts as a change.
  */
-export async function replaceHierarchy(nodes: readonly HierarchyNode[], at: string): Promise<void> {
+export async function replaceHierarchy(nodes: readonly HierarchyNode[], at: string): Promise<boolean> {
   const rows = distinctNodes(nodes);
-  await inTransaction(async tx => {
+  return inTransaction(async tx => {
+    let changed: boolean;
+    try {
+      const stored = new Set((await listHierarchyNodes(tx)).map(structureOf));
+      changed = (stored.size === 0 && rows.length > 0) || stored.size !== rows.length || rows.some(n => !stored.has(structureOf(n)));
+    } catch {
+      changed = true;
+    }
     await run(tx.delete(hierarchyTable));
     for (const node of rows) {
       await run(tx.insert(hierarchyTable).values({
@@ -83,6 +96,7 @@ export async function replaceHierarchy(nodes: readonly HierarchyNode[], at: stri
       }));
     }
     await writeStatus(tx, { lastSuccessAt: at, lastAttemptAt: at, errorCode: null });
+    return changed;
   });
 }
 

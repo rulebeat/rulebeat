@@ -2,9 +2,6 @@
  * #324: the one-time trend backfill approximates past days from stored scan blobs. Those points are
  * guesses (no unknown-rule split, no last-run check), yet they are written dated in the past and
  * under the current formula version, so the baseline comparison trusts them as honest history.
- *
- * Both tests describe the intended contract and go red against today's code, so they carry `it.fails`
- * (a known-but-unfixed bug). Fixing the backfill forces the markers' removal.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/lib/db/client';
@@ -45,14 +42,14 @@ describe('backfillSnapshots over stored scan-blob history (#324)', () => {
     await storeBlobScan('blob-scan-10', 10, 4);
   });
 
-  it.fails('writes no trend point dated before today', async () => {
+  it('writes no trend point dated before today', async () => {
     await backfillSnapshots();
 
     const points = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] });
     expect(points.filter(p => p.date < today()).map(p => p.date)).toEqual([]);
   });
 
-  it.fails('leaves computeWidgetSummary with no baseline that came from a blob-derived point', async () => {
+  it('leaves computeWidgetSummary with no baseline that came from a blob-derived point', async () => {
     await backfillSnapshots();
 
     const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);

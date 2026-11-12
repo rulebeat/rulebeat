@@ -9,7 +9,7 @@ import { hasScanLeftOutOfHistory, loadStoredScanBlobs } from './scan-blob-histor
 import { FINDINGS_BACKFILL_MARKER, findingsBackfillCategoryKey } from './scan-findings-copy';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
-import { upsertDailySnapshot } from './snapshots';
+import { refreshSnapshotsFor } from './snapshots';
 import { derivePlacement } from './finding-placement';
 import type { Access } from '../access-model';
 import { SYSTEM_ACCESS } from '../system-access';
@@ -623,7 +623,7 @@ export async function deleteFindingsForRule(ruleId: string): Promise<number> {
 
 /** The row-deleting half of deleteFindingsForRule, for a caller that already holds a transaction
  *  (deleting a rule removes the rule and its findings atomically). Returns the categories that lost
- *  rows; the caller must pass them to refreshSnapshotsFor() once its transaction has committed. */
+ *  rows; the caller must pass them to refreshSnapshotsFor() (lib/db/snapshots.ts) once its transaction has committed. */
 export async function removeFindingRowsForRule(
   tx: DbHandle,
   ruleId: string,
@@ -643,13 +643,6 @@ export async function removeFindingRowsForRule(
   await removeColumnCatalogueForRule(tx, ruleId);
 
   return { deleted: rows.length, categories: [...new Set(rows.map(r => r.category))] };
-}
-
-/** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
- *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
- *  transaction has not yet committed. */
-export async function refreshSnapshotsFor(categories: string[], now?: Date): Promise<void> {
-  for (const category of categories) await upsertDailySnapshot(category, now);
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---

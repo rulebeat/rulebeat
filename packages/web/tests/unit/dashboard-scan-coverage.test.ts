@@ -11,7 +11,7 @@ import { run as execRun } from '@/lib/db/exec';
 import { rules as rulesTable } from '@/lib/db/tables';
 import { loadRules } from '@/lib/rules';
 import { listHierarchyNodes } from '@/lib/db/management-group-hierarchy';
-import { upsertDailySnapshot } from '@/lib/db/snapshots';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { computeWidgetSummary, type WidgetSummary } from '@/lib/dashboard-data';
 import { CoverageFreshnessWidget } from '@/components/dashboard/widgets/coverage-freshness-widget';
 import { saveScanResult } from '@/lib/scan-history';
@@ -164,7 +164,7 @@ describe('Last scanned follows what the viewer holds', () => {
 
   it('is never read from a trend point\'s time', async () => {
     await resetDb();
-    await upsertDailySnapshot('security', new Date());
+    await refreshSnapshotsFor(['security'], new Date());
     const summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
     expect(summary.perCategory.find(c => c.category === 'security')!.lastScanAt).toBeNull();
     expect(summary.lastScanAt).toBeNull();

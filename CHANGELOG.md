@@ -9,6 +9,7 @@ All notable changes to RuleBeat are documented here. Format follows
 ### Fixed
 
 - Posture no longer reads 100% while a rule is failing or unknown, and the baseline no longer blends categories or subtracts rounded numbers.
+- Upgrading no longer writes trend points dated before the upgrade.
 
 ### Changed
 
@@ -21,6 +22,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - The Subscription scorecard lists every subscription, including ones with no findings or no rules, plus a Directory row. Each is graded against the rules whose scope includes it, and a footer counts findings placed elsewhere.
 - Scorecards say All passing only when every counted rule passes, show how many are not yet proven, and list the lowest first; posture tiles say why there is nothing to count.
 - The Trend chart is available for the Directory, and marks the day a line's counting changed.
+- Today's trend points change as soon as a rule or a suppression is changed, a suppression expires, or the management group tree moves a subscription, and at every start, not only after a scan. A point is stored for every subscription and the Directory, and only when it differs from the one before.
 - A trend line marks the day its counting changed. What each number counts, and how older trend points were counted, is in docs/public/posture.md.
 
 ## [0.13.1] - 2026-10-16

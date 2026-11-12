@@ -50,7 +50,6 @@ const EXEMPT: Record<string, Record<string, string>> = {
     syncScanFindingsDetailed: 'write: stores a scan\'s findings',
     deleteFindingsForRule: 'write: removes a deleted rule\'s findings',
     removeFindingRowsForRule: 'write: removes a rule\'s finding rows',
-    refreshSnapshotsFor: 'write: recomputes the stored snapshots, under the system access',
     backfillFindings: 'write: startup backfill, under the system access',
   },
   'lib/db/finding-views.ts': {
@@ -64,8 +63,8 @@ const EXEMPT: Record<string, Record<string, string>> = {
     readExportBatches: 'streams the batches of an export the caller already opened with its access',
   },
   'lib/db/snapshots.ts': {
-    upsertDailySnapshot: 'write: stores an install-wide value, so it is computed under the system access',
-    backfillSnapshots: 'write: startup backfill, under the system access',
+    refreshSnapshotsFor: 'write: stores install-wide values, so it is computed over Everything and never under whoever caused it',
+    backfillSnapshots: 'write: startup refresh, over Everything',
   },
   'lib/db/column-catalogue.ts': {
     listReturnedColumnsIn: 'runs on the caller\'s transaction handle',
@@ -89,6 +88,7 @@ const EXEMPT: Record<string, Record<string, string>> = {
     removeSuppression: 'write: removes a suppression',
     saveSuppressions: 'write: replaces the suppressions',
     isActiveSuppression: 'pure helper over a suppression already read',
+    categoriesWithSuppressionExpiringBetween: 'read for the scheduler, which acts for RuleBeat itself: names categories, returns no finding',
   },
   'lib/workspace-placement.ts': {
     placeWorkspaceFindings: 'write: places stored findings, under the system access',

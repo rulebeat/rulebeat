@@ -6,7 +6,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { insertTrendPoint, resetDb, stampSubscriptionPointsFormula3 } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
-import { upsertDailySnapshot } from '@/lib/db/snapshots';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { TREND_FILTER_SUPPORT } from '@/lib/trend-scope';
@@ -50,9 +50,9 @@ beforeAll(async () => {
   const a = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_ONE, resourceGroup: 'rg-one' });
   const b = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_TWO, resourceGroup: 'rg-one' });
   await storeScan([a('a1'), a('a2'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e1', finishedAt: '2026-06-01T10:00:00.000Z' });
-  await upsertDailySnapshot('security', new Date('2026-06-01T10:00:00.000Z'));
+  await refreshSnapshotsFor(['security'], new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e2', finishedAt: '2026-06-02T10:00:00.000Z' });
-  await upsertDailySnapshot('security', new Date('2026-06-02T10:00:00.000Z'));
+  await refreshSnapshotsFor(['security'], new Date('2026-06-02T10:00:00.000Z'));
   await stampSubscriptionPointsFormula3();
 });
 

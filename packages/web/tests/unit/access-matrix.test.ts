@@ -17,7 +17,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, getUser } from '@/lib/db/users';
 import { createRule, loadRule, loadRules, saveRules } from '@/lib/rules';
@@ -537,7 +537,7 @@ function dashboardMatrix(): Record<string, Matrix> {
   // The clock reads 2026-06-10, so a point last written on the 2nd is carried through the 10th.
   const carriedFrom = (first: number, rest: number) => MATRIX_DAYS.map((day, i) => [day, i === 0 ? first : rest]);
   const NO_DIRECTORY = { directoryTrend: [], directoryTrendUnavailable: null as string | null };
-  const DIRECTORY_SERVED = { directoryTrend: carriedFrom(1, 1), directoryTrendUnavailable: null };
+  const DIRECTORY_SERVED = { directoryTrend: carriedFrom(0, 1), directoryTrendUnavailable: null };
   const directoryRefused = (reason: string) => ({ directoryTrend: [], directoryTrendUnavailable: reason });
 
   const summary: Matrix = {
@@ -592,7 +592,7 @@ function dashboardMatrix(): Record<string, Matrix> {
       // Holds the Directory only: with no filter the trend is the Directory's own points, never the install's.
       same({
         // The Directory has its own row, and a person who holds it is given it.
-        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(1, 1), baselineDate: SNAPSHOT_DAYS[1], deltaPct: null,
+        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(0, 1), baselineDate: SNAPSHOT_DAYS[1], deltaPct: null,
         trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...DIRECTORY_SERVED,
       }),
@@ -1342,6 +1342,14 @@ export function checkLists(routes: Map<string, boolean>, matrix: Record<string, 
 
 const diskRoutes = new Map<string, boolean>();
 for (const file of routeFiles(API_DIR)) diskRoutes.set(routeName(file), USES_ACCESS.test(stripComments(readFileSync(file, 'utf8'))));
+
+// A write the probes make (a suppression, a rule) refreshes today's trend points as the clock reads. Pinning the
+// clock to the seed's own days keeps those points inside the days the summary probe expects, not on the real today.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(MATRIX_NOW));
+});
+afterEach(() => { vi.useRealTimers(); });
 
 describe('MATRIX is checked against the route files on disk', () => {
   it('finds the routes, and the ones that use the access of the person asking', () => {

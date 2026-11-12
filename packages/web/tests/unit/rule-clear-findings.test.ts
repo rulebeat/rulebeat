@@ -18,7 +18,7 @@ import { createUser } from '@/lib/db/users';
 import { listAllAuditEntries } from '@/lib/db/audit';
 import { loadRules } from '@/lib/rules';
 import { syncScanFindings, listFindings } from '@/lib/db/findings';
-import { upsertDailySnapshot, getSnapshots } from '@/lib/db/snapshots';
+import { refreshSnapshotsFor, getSnapshots } from '@/lib/db/snapshots';
 import { resetDb, clearRules, countRows } from '../helpers/db';
 import type { Finding } from '@/lib/types';
 import type { Role } from '@/lib/rbac';
@@ -204,7 +204,7 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
   });
 
   it("refreshes today's aggregate posture snapshot for the category", async () => {
-    await upsertDailySnapshot(CATEGORY);
+    await refreshSnapshotsFor([CATEGORY]);
     const before = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] });
     expect(before.at(-1)!.activeFindings).toBe(3);
 
@@ -214,12 +214,10 @@ describe('DELETE /api/rules/[id]/findings (issue #98)', () => {
     expect(after.at(-1)!.activeFindings).toBe(1);
   });
 
-  // Known limitation, documented in the issue rather than fixed here: upsertDailySnapshot() only
-  // writes a per-subscription row for subscriptions that currently have an active finding, so a
-  // subscription whose findings all went stops getting a fresh row and keeps the pre-clear count
-  // until the next scan. The aggregate row above is always rewritten, so the headline is right.
-  it.fails("today's per-subscription snapshot row keeps the cleared count until the next scan", async () => {
-    await upsertDailySnapshot(CATEGORY);
+  // A subscription whose findings all went has left the subscription list, but its point for today exists, so the
+  // writer rewrites it with the cleared count instead of leaving the old one until the next scan.
+  it("today's per-subscription snapshot row drops to the cleared count at once", async () => {
+    await refreshSnapshotsFor([CATEGORY]);
     const before = await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY], subscriptionId: SUB_BUILTIN });
     expect(before.at(-1)!.activeFindings).toBe(2);
 

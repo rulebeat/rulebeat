@@ -13,7 +13,8 @@ import {
 import { createScanContext } from './scan-context';
 import { loadRules, setRulesLastRunStatus } from './rules';
 import { saveScanResult } from './scan-history';
-import { syncScanFindingsDetailed, refreshSnapshotsFor } from './db/findings';
+import { syncScanFindingsDetailed } from './db/findings';
+import { refreshSnapshotsFor } from './db/snapshots';
 import { mergeFindingsByFingerprint } from './finding-rows';
 import { SEVERITY_ORDER, emptySeverityCounts } from './severity';
 import type { Category, ChangedFindingDetail, Finding, IncompleteRule, ScanSummary } from './types';

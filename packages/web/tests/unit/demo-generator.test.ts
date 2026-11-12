@@ -21,7 +21,8 @@ import { runRules } from '@rulebeat/core';
 import { loadRules, setRulesEnabled } from '@/lib/rules';
 import { db, rawSqlite } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
-import { scheduleRuns, findings } from '@/lib/db/schema';
+import { scheduleRuns, findings, postureSnapshots } from '@/lib/db/schema';
+import { SNAPSHOT_FORMULA_VERSION } from '@/lib/db/snapshots';
 import { and, eq } from 'drizzle-orm';
 import { buildEstate, TYPE_META } from '@/lib/demo/estate';
 import { buildIdentityApps, graphAppsForDay } from '@/lib/demo/identity-fixtures';
@@ -414,6 +415,15 @@ describe('replay(): small-scale integration against the real scan pipeline', () 
     const runs = db.select().from(scheduleRuns).where(eq(scheduleRuns.scheduleId, scheduleId)).all();
     expect(runs).toHaveLength(totalDays);
     for (const run of runs) expect(run.status).toBe('success');
+
+    // The history is written by the one queued writer, through the replay's simulated days: every point at every
+    // level carries the current formula and finding-count version, and none is dated after the last simulated day.
+    const points = db.select().from(postureSnapshots).all();
+    expect(points.length).toBeGreaterThan(0);
+    expect(new Set(points.map(p => [p.formulaVersion, p.findingCountVersion].join('/')))).toEqual(new Set([`${SNAPSHOT_FORMULA_VERSION}/1`]));
+    expect(points.some(p => p.subscriptionId === 'directory')).toBe(true);
+    expect(points.some(p => p.subscriptionId !== '' && p.subscriptionId !== 'directory')).toBe(true);
+    expect(points.filter(p => p.date > new Date().toISOString().slice(0, 10))).toEqual([]);
 
     const allFindings = db.select().from(findings).all();
     const categories = new Set(allFindings.map(f => f.category));

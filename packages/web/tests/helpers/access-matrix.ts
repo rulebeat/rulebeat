@@ -5,12 +5,13 @@
  *
  * Every id is fake: zero GUIDs, `example.com`, made-up group names.
  */
+import { vi } from 'vitest';
 import { createUser } from '@/lib/db/users';
 import { deleteAssignmentsOn, grantAssignmentOn } from '@/lib/db/role-assignments';
 import { inTransaction } from '@/lib/db/exec';
 import { createSchedule } from '@/lib/db/schedules';
 import { syncScanFindings } from '@/lib/db/findings';
-import { upsertDailySnapshot } from '@/lib/db/snapshots';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { createSavedView } from '@/lib/db/saved-views';
 import { createDashboard, deleteDashboard, listDashboards } from '@/lib/db/dashboards';
 import { emptyView, viewToSearchParams } from '@/lib/finding-view';
@@ -23,7 +24,7 @@ import type { Role } from '@/lib/rbac';
 import type { Finding, ScanSummary } from '@/lib/types';
 import { emptySeverityCounts } from '@/lib/severity';
 import { syntheticFinding } from './synthetic-findings';
-import { insertTrendPoint, stampSubscriptionPointsFormula3 } from './db';
+import { stampSubscriptionPointsFormula3 } from './db';
 import { fakeHierarchy, group, refreshFrom, subscription, type FakeHierarchy } from './fake-hierarchy';
 
 export const MATRIX_TENANT = '00000000-0000-0000-0000-0000000000f0';
@@ -109,7 +110,7 @@ export interface MatrixSeed {
   dashboardId: string;
 }
 
-/** The day each of the two stored snapshots is for, written by the real `upsertDailySnapshot`. */
+/** The day each of the two stored snapshots is for, written by the real `refreshSnapshotsFor`. */
 export const SNAPSHOT_DAYS = ['2026-06-01', '2026-06-02'] as const;
 /** A clock reading after both snapshot days, for a probe that reads a rolling window. */
 export const MATRIX_NOW = '2026-06-10T12:00:00.000Z';
@@ -150,7 +151,8 @@ function summaryOf(id: string, finishedAt: string, findings: Finding[]): ScanSum
  * one, and stored 5 with none new. The first scan is not part of any run.
  */
 export async function seedMatrix(): Promise<MatrixSeed> {
-  await refreshFrom(matrixHierarchy());
+  // The first read of the tree refreshes today's points as the clock reads, so the clock reads the first snapshot day.
+  await atClock(`${SNAPSHOT_DAYS[0]}T00:00:00.000Z`, () => refreshFrom(matrixHierarchy()));
   const at = { ruleId: RULE, category: CATEGORY };
   const all: Finding[] = [
     syntheticFinding('vm-one', [{ zone: 'a' }], { ...at, subscriptionId: SUB_ONE, resourceGroup: RG_ONE }),
@@ -188,7 +190,7 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   for (const [id, finishedAt, findings] of stored) {
     await saveScanResult(CATEGORY, summaryOf(id, finishedAt, findings), { id, ...(id === scanIds[1] ? { runId: run.id } : {}) });
     await syncScanFindings({ scanId: id, category: CATEGORY, ranRuleIds: [RULE, ADVISORY_RULE], findings, finishedAt });
-    if (finishedAt.startsWith(SNAPSHOT_DAYS[0])) await upsertDailySnapshot(CATEGORY, new Date(finishedAt));
+    if (finishedAt.startsWith(SNAPSHOT_DAYS[0])) await refreshSnapshotsFor([CATEGORY], new Date(finishedAt));
   }
 
   // The scan the earlier run produced: the findings in subscription one, never synced, since a run that covered
@@ -210,14 +212,14 @@ export async function seedMatrix(): Promise<MatrixSeed> {
   });
 
   const suppressedFingerprint = all[1]!.fingerprint;
-  await addSuppression({
+  // The suppression refreshes today's points as the clock reads, so the clock reads the second snapshot day.
+  await atClock(stored[1]![1], () => addSuppression({
     id: '00000000-0000-0000-0000-0000000000b1',
     fingerprint: suppressedFingerprint,
     resourceId: all[1]!.resourceId,
     reason: 'accepted for the matrix',
     suppressedAt: '2026-06-02T00:00:00.000Z',
-  });
-  await upsertDailySnapshot(CATEGORY, new Date(stored[1]![1]));
+  }));
 
   const view = await createSavedView({
     name: 'Subscription two only', tab: 'results',
@@ -237,9 +239,18 @@ export async function seedMatrix(): Promise<MatrixSeed> {
 
   const fingerprints = Object.fromEntries(all.map(f => [f.resourceName ?? f.dimensionKey!, f.fingerprint]));
   await stampSubscriptionPointsFormula3();
-  // The Directory's own points: the writer does not keep them yet, so they stand in for it, one finding on each day.
-  for (const date of SNAPSHOT_DAYS) await insertTrendPoint({ category: CATEGORY, subscriptionId: 'directory', date, passing: 0, total: 1, activeFindings: 1 });
   return { scanIds, scopedScanId, scheduleId: created.schedule.id, runId: run.id, scopedRunId: scopedRun.id, suppressedFingerprint, fingerprints, savedViewId: view.view.id, dashboardId: dashboard.dashboard.id };
+}
+
+/** Runs `fn` with the clock reading `at`, for a seed write whose trend refresh lands on the day the clock reads. */
+async function atClock<T>(at: string, fn: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(at));
+  try {
+    return await fn();
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 export const SCOPED_RULE_ID = 'matrix-scoped-rule';
@@ -251,9 +262,9 @@ export const SCOPED_RULE_KQL = 'resources | project id';
  * `seedMatrix` so the findings expectations never see it: a rule with no findings changes none of them.
  */
 export async function seedScopedRule(): Promise<void> {
-  await saveRules([{
+  await atClock(`${SNAPSHOT_DAYS[1]}T12:00:00.000Z`, () => saveRules([{
     id: SCOPED_RULE_ID, name: SCOPED_RULE_NAME, description: 'a rule scoped to the seed', category: CATEGORY, severity: 'medium',
     enabled: true, type: 'custom', scope: { level: 'subscription', subscriptions: [SUB_ONE, SUB_TWO], managementGroups: [MANAGEMENT_GROUP] },
     resourceTypes: [], conditions: [], rawKql: SCOPED_RULE_KQL,
-  } as unknown as Rule]);
+  } as unknown as Rule]));
 }

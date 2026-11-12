@@ -20,7 +20,8 @@ export const TREND_POINT_COLUMNS = [
 
 export type TrendPoint = Record<(typeof TREND_POINT_COLUMNS)[number], string | number | null>;
 
-const SUB_LOWER = '3f2a9c1e-7b4d-4a6e-9d10-5c8e2b7a1f40';
+/** The one subscription the points above are about, in lower case; its upper-case point is the same level. */
+export const SUB_LOWER = '3f2a9c1e-7b4d-4a6e-9d10-5c8e2b7a1f40';
 const SUB_UPPER = SUB_LOWER.toUpperCase();
 
 function point(over: Partial<TrendPoint> & Pick<TrendPoint, 'category' | 'date'>): TrendPoint {
@@ -54,6 +55,15 @@ export const TREND_RULES = [
   { id: 'trend-rule-passing', name: 'Trend rule passing', category: 'security', last_run_status: 'success' },
   { id: 'trend-rule-failing', name: 'Trend rule failing', category: 'security', last_run_status: 'failed' },
 ] as const;
+
+/** The management group tree the install holds: the subscription above with no finding and no rule naming it. */
+export const TREND_TREE = [
+  { tenant_id: 'tenant-trend', kind: 'managementGroup', node_id: 'tenant-trend', display_name: 'Tenant Root Group', parent_id: null },
+  { tenant_id: 'tenant-trend', kind: 'subscription', node_id: SUB_LOWER, display_name: 'Trend subscription', parent_id: 'tenant-trend' },
+] as const;
+
+/** The key a point is found by, with the level in lower case: the same level in two cases is one key. */
+export const levelKey = (p: Record<string, unknown>): string => `${p.category}|${String(p.subscription_id).toLowerCase()}|${p.date}`;
 
 /** Orders points the way the tests compare them. */
 export const byPointKey = (a: Record<string, unknown>, b: Record<string, unknown>): number =>
