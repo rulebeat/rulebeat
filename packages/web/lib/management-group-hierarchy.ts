@@ -1,5 +1,7 @@
 import { armFetch, getArmTenantId, getArmToken } from '@/lib/arm';
+import { listCategories } from '@/lib/db/categories';
 import { recordFailedAttempt, replaceHierarchy } from '@/lib/db/management-group-hierarchy';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import type { HierarchyNode, RefreshError, RefreshErrorCode } from '@/lib/management-group-tree';
 import { refreshError } from '@/lib/management-group-tree';
 
@@ -54,6 +56,14 @@ export const readHierarchyFromArm: HierarchyReader = async () => {
   return nodes;
 };
 
+async function refreshAllCategories(): Promise<void> {
+  try {
+    await refreshSnapshotsFor((await listCategories()).map(c => c.id));
+  } catch (err) {
+    console.error('[RuleBeat] Could not refresh the trend points after a management group tree change:', err);
+  }
+}
+
 export type RefreshResult =
   | { ok: true; groups: number; subscriptions: number }
   | { ok: false; error: RefreshError };
@@ -75,7 +85,10 @@ export async function refreshManagementGroupHierarchy(
   const at = (opts.now ?? new Date()).toISOString();
   try {
     const nodes = await read();
-    await replaceHierarchy(nodes, at);
+    const changed = await replaceHierarchy(nodes, at);
+    // After the tree has committed: a rule scoped to a group counts for the subscriptions under it from the tree
+    // as it is now. A tree that did not change queues nothing.
+    if (changed) await refreshAllCategories();
     return {
       ok: true,
       groups: nodes.filter(n => n.kind === 'managementGroup').length,

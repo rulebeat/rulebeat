@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { makeSample, open } from '../fixtures/upgrade';
 import { runMigrations } from '@/lib/db/migrate';
-import { TREND_POINT_COLUMNS, TREND_RULES, byPointKey, isPreToday, trendPoints } from '../fixtures/trend-points';
+import {
+  DELETED_CATEGORY, SUB_LOWER, TREND_POINT_COLUMNS, TREND_RULES, TREND_TREE, byPointKey, daysAgo, isPreToday, levelKey, trendPoints,
+} from '../fixtures/trend-points';
 
 let sqlite: Database.Database | undefined;
 let closeProductDb: (() => void) | undefined;
@@ -52,11 +54,13 @@ function previousReleaseDatabase() {
       'resources | project id, name, type, location, resourceGroup, subscriptionId', 'custom', @last_run_status)
   `);
   for (const r of TREND_RULES) insertRule.run(r);
+  const insertNode = db.prepare(`INSERT INTO management_group_hierarchy (tenant_id, kind, node_id, display_name, parent_id) VALUES (@tenant_id, @kind, @node_id, @display_name, @parent_id)`);
+  for (const n of TREND_TREE) insertNode.run(n);
   return { sample, db };
 }
 
 describe('upgrading to a database that records a finding count version on every trend point', () => {
-  it('keeps every column of every point dated before today, and reads each as version 0', async () => {
+  it('keeps every column of every point dated before today, adds none, and removes only what retention removes', async () => {
     const { sample, db } = previousReleaseDatabase();
     expect(columns(db, 'posture_snapshots')).not.toContain('finding_count_version');
     const before = points(db);
@@ -65,14 +69,32 @@ describe('upgrading to a database that records a finding count version on every 
     expect(rulesBefore).toHaveLength(TREND_RULES.length);
     db.close();
 
+    // The first start, as instrumentation.ts runs it: the upgrade, then the refresh of today's points.
     await startProductOn(sample.file);
+    await (await import('@/lib/db/snapshots')).backfillSnapshots();
 
     sqlite = open(sample.file);
     expect(columns(sqlite, 'posture_snapshots')).toContain('finding_count_version');
     const after = points(sqlite);
-    expect(after).toHaveLength(before.length);
-    expect(after.filter(isPreToday)).toEqual(before.filter(isPreToday).map(p => ({ ...p, finding_count_version: 0 })));
-    expect(after.map(p => p.finding_count_version)).toEqual(after.map(() => 0));
+    const past = after.filter(isPreToday);
+
+    // Retention removes the 370-day point (a 366-day one stands in for the baseline at the edge) and the
+    // deleted category's point; every other point before today is as it was, now reading version 0.
+    const removed = before.filter(isPreToday).filter(p => p.date === daysAgo(370) || p.category === DELETED_CATEGORY);
+    expect(removed).toHaveLength(2);
+    expect(past).toEqual(before.filter(isPreToday).filter(p => !removed.includes(p)).map(p => ({ ...p, finding_count_version: 0 })));
+    // Nothing dated before today was added.
+    const keysBefore = new Set(before.map(levelKey));
+    expect(past.filter(p => !keysBefore.has(levelKey(p)))).toEqual([]);
+
+    // Today: the install, the subscription (no finding, no rule names it) and the Directory, each as version 1.
+    const today = after.filter(p => !isPreToday(p) && p.category === 'security');
+    expect(today.map(p => p.subscription_id).sort()).toEqual(['', SUB_LOWER, 'directory']);
+    expect(today.map(p => p.finding_count_version)).toEqual(today.map(() => 1));
+    // No finding, and every rule here is unscoped, so the subscription is graded by the rules the install is.
+    const install = today.find(p => p.subscription_id === '')!;
+    expect(today.find(p => p.subscription_id === SUB_LOWER)).toMatchObject({ total_rules: install.total_rules, active_findings: 0 });
+    expect(install.total_rules).toBeGreaterThan(0);
     expect(rulesOf(sqlite)).toEqual(rulesBefore);
   });
 });

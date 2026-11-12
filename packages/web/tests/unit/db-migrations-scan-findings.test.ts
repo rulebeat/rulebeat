@@ -460,7 +460,7 @@ describe('emptying the stored findings blobs', () => {
     expect(blobs(db)).toEqual([{ id: 'scan-new', findings: '[]' }]);
   });
 
-  it('gives an old database that still needs the backfills its history from the blobs, then empties them', async () => {
+  it('gives an old database that still needs the backfills its finding history from the blobs and no trend points, then empties them', async () => {
     const { sample, db } = previousReleaseDatabase();
     insertScan(db, 'scan-1', [blobFinding('vm-1'), blobFinding('vm-2')], '2026-01-01T00:00:00.000Z');
     insertScan(db, 'scan-2', [blobFinding('vm-1')], '2026-01-02T00:00:00.000Z');
@@ -480,9 +480,11 @@ describe('emptying the stored findings blobs', () => {
     closeProductDb?.();
     closeProductDb = undefined;
     const between = open(sample.file);
-    const trend = all(between, `SELECT date, active_findings FROM posture_snapshots WHERE category = 'reliability' AND date < '2026-02-01' ORDER BY date`);
+    const trend = all(between, `SELECT date, active_findings FROM posture_snapshots WHERE category = 'reliability' AND subscription_id = '' ORDER BY date`);
     between.close();
-    expect(trend).toEqual([{ date: '2026-01-01', active_findings: 2 }, { date: '2026-01-02', active_findings: 1 }]);
+    // The upgrade writes no point dated before it (ADR 0013): the blobs give the findings their history, and the
+    // trend starts with the one point the start itself writes, for today.
+    expect(trend).toEqual([{ date: new Date().toISOString().slice(0, 10), active_findings: 1 }]);
 
     // The next start finds both markers set and empties the blobs, and the history they gave stays.
     const next = await startProductOn(sample.file);

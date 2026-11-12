@@ -51,7 +51,7 @@ function scopeKey(rule: Pick<Rule, 'queryBackend' | 'scope'>): string {
 }
 
 /** The level a finding counts against: a subscription key, the Directory, or none (a management group or unplaced finding). */
-function levelOf(f: PlacedRuleFinding): string | null {
+export function levelOf(f: PlacedRuleFinding): string | null {
   if (f.placement === 'directory') return DIRECTORY_SUBSCRIPTION;
   if (isOutsidePlacement(f.placement)) return null;
   const key = f.subscriptionId.trim().toLowerCase();

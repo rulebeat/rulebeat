@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { insertTrendPoint, resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
-import { getBaselineSnapshots, getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
+import { getBaselineSnapshots, getSnapshots, refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { buildAccess, everythingAccess, NO_ACCESS, parseScope, type Access } from '@/lib/access-model';
 
 const SUB_ONE = '00000000-0000-0000-0000-00000000000a';
@@ -28,9 +28,9 @@ beforeAll(async () => {
   const a = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'snap-rule', subscriptionId: SUB_ONE, resourceGroup: 'rg-one' });
   const b = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'snap-rule', subscriptionId: SUB_TWO, resourceGroup: 'rg-one' });
   await storeScan([a('a1'), a('a2'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000d1', finishedAt: '2026-06-01T10:00:00.000Z' });
-  await upsertDailySnapshot('security', new Date('2026-06-01T10:00:00.000Z'));
+  await refreshSnapshotsFor(['security'], new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000d2', finishedAt: '2026-06-02T10:00:00.000Z' });
-  await upsertDailySnapshot('security', new Date('2026-06-02T10:00:00.000Z'));
+  await refreshSnapshotsFor(['security'], new Date('2026-06-02T10:00:00.000Z'));
 });
 
 describe('getSnapshots', () => {
@@ -59,7 +59,8 @@ describe('getSnapshots', () => {
 
   it('gives a management group Scope the rows of a subscription under it, and not the aggregate', async () => {
     expect(await getSnapshots(underGroup)).toEqual([]);
-    expect(counts(await getSnapshots(underGroup, { subscriptionId: SUB_TWO }))).toEqual([[SUB_TWO, '2026-06-01', 1], [SUB_TWO, '2026-06-02', 1]]);
+    // Subscription two held one finding on both days, so only the first day has a point: a missing point means unchanged.
+    expect(counts(await getSnapshots(underGroup, { subscriptionId: SUB_TWO }))).toEqual([[SUB_TWO, '2026-06-01', 1]]);
   });
 
   it('gives a person with no Scope and a Directory only person nothing', async () => {
@@ -94,7 +95,8 @@ describe('getBaselineSnapshots', () => {
   });
 
   it('gives a management group Scope a subscription under it', async () => {
-    expect(counts(await getBaselineSnapshots(['security'], '2026-06-02', underGroup, SUB_TWO))).toEqual([[SUB_TWO, '2026-06-02', 1]]);
+    // The newest point on or before the 2nd is the one written on the 1st, because nothing changed on the 2nd.
+    expect(counts(await getBaselineSnapshots(['security'], '2026-06-02', underGroup, SUB_TWO))).toEqual([[SUB_TWO, '2026-06-01', 1]]);
   });
 });
 

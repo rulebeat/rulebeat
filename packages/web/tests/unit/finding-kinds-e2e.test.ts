@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { computeActivityFingerprint, computeFingerprint } from '@rulebeat/core';
 import { syncScanFindings, getFindingEventCounts } from '@/lib/db/findings';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
-import { upsertDailySnapshot, getSnapshots } from '@/lib/db/snapshots';
+import { refreshSnapshotsFor, getSnapshots } from '@/lib/db/snapshots';
 import { resetDb, clearRules } from '../helpers/db';
 import type { Finding, RuleKind } from '@/lib/types';
 import { EVERYTHING_ACCESS } from '../helpers/access';
@@ -131,7 +131,7 @@ describe('getFindingEventCounts (issue #175)', () => {
   });
 });
 
-describe('upsertDailySnapshot (issue #175)', () => {
+describe('refreshSnapshotsFor (issue #175)', () => {
   it('activeFindings/severityCounts on the written row reflect the state finding, not the activity or future-kind one', async () => {
     const activity = activityFinding('principal-a');
     const state = stateFinding('vm-1');
@@ -141,11 +141,11 @@ describe('upsertDailySnapshot (issue #175)', () => {
       findings: [activity, state, future], finishedAt: daysAgo(1),
     });
 
-    await upsertDailySnapshot(CATEGORY);
+    await refreshSnapshotsFor([CATEGORY]);
     const today = new Date().toISOString().slice(0, 10);
     const row = (await getSnapshots(EVERYTHING_ACCESS, { categories: [CATEGORY] })).find(s => s.date === today);
 
-    expect(row, 'upsertDailySnapshot did not write today\'s row').toBeDefined();
+    expect(row, 'refreshSnapshotsFor did not write today\'s row').toBeDefined();
     expect(row!.activeFindings).toBe(1);
     expect(row!.severityCounts.high).toBe(1);
   });

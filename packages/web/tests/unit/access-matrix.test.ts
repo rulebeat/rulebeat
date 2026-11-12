@@ -17,7 +17,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../helpers/db';
 import { createUser, getUser } from '@/lib/db/users';
 import { createRule, loadRule, loadRules, saveRules } from '@/lib/rules';
@@ -1343,6 +1343,14 @@ export function checkLists(routes: Map<string, boolean>, matrix: Record<string, 
 
 const diskRoutes = new Map<string, boolean>();
 for (const file of routeFiles(API_DIR)) diskRoutes.set(routeName(file), USES_ACCESS.test(stripComments(readFileSync(file, 'utf8'))));
+
+// A write the probes make (a suppression, a rule) refreshes today's trend points as the clock reads. Pinning the
+// clock to the seed's own days keeps those points inside the days the summary probe expects, not on the real today.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(MATRIX_NOW));
+});
+afterEach(() => { vi.useRealTimers(); });
 
 describe('MATRIX is checked against the route files on disk', () => {
   it('finds the routes, and the ones that use the access of the person asking', () => {

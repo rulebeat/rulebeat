@@ -2,7 +2,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/client';
 import { rules as rulesTable, ruleVersions, personalRules } from './db/tables';
 import { many, one, run, inTransaction, pgAdvisoryXactLock, type DbHandle } from './db/exec';
-import { removeFindingRowsForRule, refreshSnapshotsFor } from './db/findings';
+import { removeFindingRowsForRule } from './db/findings';
+import { refreshSnapshotsFor } from './db/snapshots';
 import type { Condition, ConditionGroup, GraphQuery, LogAnalyticsQuery, QueryBackend, Rule, RuleExecutionStatus, RuleKind, RuleType, VisualQuery } from '@rulebeat/core';
 import { buildRuleQuery } from '@rulebeat/core/kql';
 import { definitionOfRow, definitionToColumns } from './rule-versions';
@@ -10,8 +11,8 @@ import { isCommitDateVersion } from './rule-version-markers';
 import type { RuleDefinition } from './shipped-catalogue';
 import type { RuleVersionHistory } from './types';
 
-export async function loadRules(): Promise<Rule[]> {
-  return (await many(db.select().from(rulesTable))).map(rowToRule);
+export async function loadRules(handle: DbHandle = db): Promise<Rule[]> {
+  return (await many(handle.select().from(rulesTable))).map(rowToRule);
 }
 
 function definitionQuery(definition: RuleDefinition): string {
@@ -102,7 +103,10 @@ export async function setRulesEnabled(ids: string[], enabled: boolean): Promise<
   const notFoundIds = ids.filter(id => !existingSet.has(id));
 
   if (existingIds.length > 0) {
+    const categories = (await many(db.select({ category: rulesTable.category }).from(rulesTable)
+      .where(inArray(rulesTable.id, existingIds)))).map(r => r.category);
     await run(db.update(rulesTable).set({ enabled }).where(inArray(rulesTable.id, existingIds)));
+    await refreshSnapshotsFor(categories);
   }
 
   return { updatedIds: existingIds, notFoundIds };
@@ -153,7 +157,7 @@ export function ruleNameTakenError(name: string): { error: string } {
 }
 
 export type CreateRuleResult =
-  | { ok: true; rule: Rule }
+  | { ok: true; rule: Rule; /** The categories whose posture the write changed: the caller refreshes them once its transaction commits. */ categories: string[] }
   | { ok: false; reason: 'name-taken' };
 
 /**
@@ -166,15 +170,18 @@ export async function insertRuleOn(tx: DbHandle, rule: Rule): Promise<CreateRule
   await run(tx.insert(rulesTable).values(ruleToRow(rule)));
   // The stored row, not the input: a field the table has no column for is not echoed back.
   const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, rule.id)));
-  return { ok: true, rule: rowToRule(stored!) };
+  const inserted = rowToRule(stored!);
+  return { ok: true, rule: inserted, categories: [inserted.category] };
 }
 
 /** Inserts one rule. Touches no other row, so it cannot disturb a concurrent edit or scan write. */
 export async function createRule(rule: Rule): Promise<CreateRuleResult> {
-  return inTransaction(async (tx) => {
+  const result = await inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     return insertRuleOn(tx, rule);
   });
+  if (result.ok) await refreshSnapshotsFor(result.categories);
+  return result;
 }
 
 /**
@@ -205,15 +212,17 @@ const UPDATABLE_FIELDS = [
  * `lastRunStatus`/`lastRunAt` are never written here.
  */
 export type UpdateRuleResult =
-  | { ok: true; rule: Rule }
+  | { ok: true; rule: Rule; /** The rule's category before and after, whose posture the write changed: refreshed once the transaction commits. */ categories: string[] }
   | { ok: false; reason: 'not-found' }
   | { ok: false; reason: 'name-taken' };
 
 export async function updateRule(id: string, changes: RuleChanges): Promise<UpdateRuleResult> {
-  return inTransaction(async (tx) => {
+  const result = await inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     return updateRuleOn(tx, id, changes);
   });
+  if (result.ok) await refreshSnapshotsFor(result.categories);
+  return result;
 }
 
 /**
@@ -251,7 +260,8 @@ export async function updateRuleOn(tx: DbHandle, id: string, changes: RuleChange
   // Always present: this same transaction just confirmed the row exists and only this process
   // can be writing it (the lock/txLock above), so a concurrent delete between the two selects
   // isn't reachable through any caller `updateRule()` has today.
-  return { ok: true, rule: rowToRule(stored!) };
+  const rule = rowToRule(stored!);
+  return { ok: true, rule, categories: [...new Set([current.category, rule.category])] };
 }
 
 export type SwitchRuleVersionResult =
@@ -260,7 +270,7 @@ export type SwitchRuleVersionResult =
   | { ok: false; reason: 'name-taken'; conflictingName: string };
 
 export async function switchRuleVersion(id: string, version: string): Promise<SwitchRuleVersionResult> {
-  return inTransaction(async (tx) => {
+  const result = await inTransaction(async (tx): Promise<SwitchRuleVersionResult & { categories?: string[] }> => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     if (!current) return { ok: false, reason: 'not-found' };
@@ -279,11 +289,15 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
       ...definitionToColumns(definition), version, filter: null,
     }).where(eq(rulesTable.id, id)));
     const stored = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
+    const rule = rowToRule(stored!);
     return {
-      ok: true, rule: rowToRule(stored!), oldVersion: current.version,
+      ok: true, rule, oldVersion: current.version,
       before: definitionOfRow(current), after: definition,
+      categories: [...new Set([current.category, rule.category])],
     };
   });
+  if (result.ok && result.categories) await refreshSnapshotsFor(result.categories);
+  return result;
 }
 
 /**
@@ -293,7 +307,7 @@ export async function switchRuleVersion(id: string, version: string): Promise<Sw
  */
 export async function deleteRule(id: string): Promise<boolean> {
   const outcome = await inTransaction(async (tx) => {
-    const existing = await one(tx.select({ id: rulesTable.id }).from(rulesTable).where(eq(rulesTable.id, id)));
+    const existing = await one(tx.select({ id: rulesTable.id, category: rulesTable.category }).from(rulesTable).where(eq(rulesTable.id, id)));
     if (!existing) return null;
     await run(tx.delete(rulesTable).where(eq(rulesTable.id, id)));
     // A Personal rule copied from this one stays, without the link back to it (#281).
@@ -303,7 +317,10 @@ export async function deleteRule(id: string): Promise<boolean> {
     // An open update request aimed at this rule keeps its target id on purpose (#283): clearing it would
     // turn the request into a new-rule request. Approving it answers 'target-gone' and the review page
     // says the rule no longer exists.
-    return removeFindingRowsForRule(tx, id);
+    const removed = await removeFindingRowsForRule(tx, id);
+    // The rule's own category too: a rule with no findings is in no category the findings name, yet leaving the
+    // denominator changes its points.
+    return { categories: [...removed.categories, existing.category] };
   });
   if (!outcome) return false;
   await refreshSnapshotsFor(outcome.categories);
@@ -316,12 +333,15 @@ export async function deleteRule(id: string): Promise<boolean> {
  * changed. It remains for test fixtures that need an exact starting set.
  */
 export async function saveRules(rules: Rule[]): Promise<void> {
-  await inTransaction(async (tx) => {
+  const categories = await inTransaction(async (tx) => {
+    const before = (await many(tx.select({ category: rulesTable.category }).from(rulesTable))).map(r => r.category);
     await run(tx.delete(rulesTable));
     for (const r of rules) {
       await run(tx.insert(rulesTable).values(ruleToRow(r)));
     }
+    return [...before, ...rules.map(r => r.category)];
   });
+  await refreshSnapshotsFor(categories);
 }
 
 export interface OnboardingRuleSummary {
@@ -389,7 +409,7 @@ export function copiedOrigin(
  * both pass their own uniqueness check before either writes.
  */
 export async function duplicateRule(id: string): Promise<Rule | null> {
-  return inTransaction(async (tx) => {
+  const copy = await inTransaction(async (tx) => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const originalRow = await one(tx.select().from(rulesTable).where(eq(rulesTable.id, id)));
     if (!originalRow) return null;
@@ -421,6 +441,8 @@ export async function duplicateRule(id: string): Promise<Rule | null> {
     await run(tx.insert(rulesTable).values(ruleToRow(copy)));
     return copy;
   });
+  if (copy) await refreshSnapshotsFor([copy.category]);
+  return copy;
 }
 
 // --- helpers ---

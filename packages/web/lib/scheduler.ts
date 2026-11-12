@@ -11,6 +11,8 @@ import { refreshManagementGroupHierarchy, type HierarchyReader } from './managem
 import { refreshDue } from './management-group-tree';
 import type { RoleAssignmentReader } from './access-mirror';
 import { refreshMirrorsIfDue } from './access-mirror-refresh';
+import { categoriesWithSuppressionExpiringBetween } from './suppressions';
+import { refreshSnapshotsFor } from './db/snapshots';
 
 const TICK_INTERVAL_MS = 30_000;
 
@@ -18,6 +20,7 @@ type SchedulerGlobals = {
   __rulebeatSchedulerStarted?: boolean;
   __rulebeatSchedulerLastTickAt?: string;
   __rulebeatScanLock?: { busy: boolean };
+  __rulebeatExpiryCheckedAt?: string;
 };
 
 function schedulerGlobals(): SchedulerGlobals {
@@ -68,6 +71,8 @@ export async function tickOnce(opts: {
   now?: Date; ctx?: TenantContext; read?: HierarchyReader; mirrorRead?: RoleAssignmentReader; mirrorWait?: (ms: number) => Promise<void>;
 } = {}): Promise<void> {
   schedulerGlobals().__rulebeatSchedulerLastTickAt = new Date().toISOString();
+  // Busy or not: an expiry is a clock event, and the busy flag only holds back scans.
+  await refreshExpiredSuppressions(opts.now);
   if (scanLock.busy) return;
   scanLock.busy = true;
   try {
@@ -78,6 +83,28 @@ export async function tickOnce(opts: {
     await refreshMirrorsIfDue({ now: opts.now, read: opts.mirrorRead, wait: opts.mirrorWait });
   } finally {
     scanLock.busy = false;
+  }
+}
+
+/**
+ * Refreshes today's trend points of the categories holding a finding whose suppression expired since the last
+ * tick, so the trend and the ring agree the moment it lapses. Suppressions that lapsed while RuleBeat was
+ * stopped are covered by the refresh every start makes. The time moves forward once the refresh is queued.
+ * It never passes a `now` to the writer: the clock here is only the window of expiries, and `now` is for tests.
+ */
+export async function refreshExpiredSuppressions(now: Date = new Date()): Promise<void> {
+  const g = schedulerGlobals();
+  const at = now.toISOString();
+  const last = g.__rulebeatExpiryCheckedAt;
+  if (last === undefined) { g.__rulebeatExpiryCheckedAt = at; return; }
+  if (last >= at) return;
+  try {
+    const categories = await categoriesWithSuppressionExpiringBetween(last, at);
+    const queued = refreshSnapshotsFor(categories);
+    g.__rulebeatExpiryCheckedAt = at;
+    await queued;
+  } catch (err) {
+    console.error('[scheduler] suppression expiry refresh failed:', err);
   }
 }
 

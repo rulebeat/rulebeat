@@ -88,6 +88,17 @@ export function inReadTransaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<
 }
 
 /**
+ * A write transaction whose reads all see the database as it was when the first of them ran. On Postgres that
+ * is REPEATABLE READ (not read-only), so a row another connection commits meanwhile is not seen by a later
+ * read in it; at READ COMMITTED each statement would see it, and a value computed from several reads would
+ * mix two states. On SQLite every transaction is already that, under the one lock. For a writer that
+ * computes what it stores from several reads (the trend point writer). Joins a transaction that is already open.
+ */
+export function inConsistentWrite<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T> {
+  return runInTransaction(fn, 'consistent-write');
+}
+
+/**
  * Like `inReadTransaction`, for a read that stays open for as long as a download is being read (an
  * export). On Postgres it is the same read-only REPEATABLE READ transaction, which holds one pool
  * connection and takes no lock anyone else waits on. On SQLite it is a read-only connection of its own
@@ -113,7 +124,7 @@ export async function inSnapshotRead<T>(fn: (tx: DbHandle) => Promise<T>): Promi
   }
 }
 
-async function runInTransaction<T>(fn: (tx: DbHandle) => Promise<T>, mode: 'write' | 'read'): Promise<T> {
+async function runInTransaction<T>(fn: (tx: DbHandle) => Promise<T>, mode: 'write' | 'read' | 'consistent-write'): Promise<T> {
   const enclosing = txStore.getStore();
   if (enclosing) return fn(enclosing);
 
@@ -123,7 +134,8 @@ async function runInTransaction<T>(fn: (tx: DbHandle) => Promise<T>, mode: 'writ
     return pgDb!.transaction((tx) => {
       const handle = tx as unknown as DbHandle;
       return txStore.run(handle, () => fn(handle));
-    }, mode === 'read' ? { isolationLevel: 'repeatable read', accessMode: 'read only' } : undefined);
+    }, mode === 'read' ? { isolationLevel: 'repeatable read', accessMode: 'read only' }
+      : mode === 'consistent-write' ? { isolationLevel: 'repeatable read' } : undefined);
   }
 
   while (txLock.held) await txLock.held;

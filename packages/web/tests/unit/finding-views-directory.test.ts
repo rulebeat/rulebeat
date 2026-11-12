@@ -13,7 +13,7 @@ import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
 import { queryFilterOptions, queryGroup, queryView } from '@/lib/db/finding-views';
 import { getActivityOccurrenceCounts } from '@/lib/db/findings';
-import { getSnapshots, upsertDailySnapshot } from '@/lib/db/snapshots';
+import { getSnapshots, refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { computeWidgetSummary, queryActiveFindings } from '@/lib/dashboard-data';
 import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
 import type { ViewTab } from '@/lib/view-response';
@@ -163,11 +163,11 @@ describe('the dashboard does not count Directory findings under a subscription',
     expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
   });
 
-  it('writes no per-subscription snapshot for them, and counts them in the aggregate row', async () => {
-    await upsertDailySnapshot('security');
+  it('writes them a trend point of their own, keeps them out of every subscription point, and counts them in the aggregate row', async () => {
+    await refreshSnapshotsFor(['security']);
     const aggregate = await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] });
     expect(aggregate.map(s => s.activeFindings)).toEqual([4]);
-    expect(await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'], subscriptionId: SUB_A })).toHaveLength(1);
-    expect(await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'], subscriptionId: DIRECTORY_SUBSCRIPTION })).toEqual([]);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'], subscriptionId: SUB_A })).map(s => s.activeFindings)).toEqual([1]);
+    expect((await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'], subscriptionId: DIRECTORY_SUBSCRIPTION })).map(s => s.activeFindings)).toEqual([2]);
   });
 });
