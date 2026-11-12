@@ -166,7 +166,7 @@ describe('the skip rule', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(at(date));
     try {
-      return await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_A], dateWindow: { mode: 'relative', days } }, days, EVERYTHING_ACCESS);
+      return await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_A], dateWindow: { mode: 'relative', days } }, EVERYTHING_ACCESS);
     } finally {
       vi.useRealTimers();
     }
@@ -194,14 +194,14 @@ describe('the skip rule', () => {
   it('draws the same line and finds the same baseline with or without the skipped points', async () => {
     await seedThreeDays();
     await stampSubscriptionPointsFormula3();
-    const without = await summaryOn('2026-03-04', 2);
+    const without = await summaryOn('2026-03-04', 3);
 
     // The points the rule skipped, written out: the 2nd repeats the 1st, the 4th repeats the 3rd.
     for (const [date, copyOf] of [['2026-03-02', '2026-03-01'], ['2026-03-04', '2026-03-03']] as const) {
       const source = (await pointOn('security', SUB_A, copyOf))!;
       await run(db.insert(postureSnapshots).values({ ...source, date }));
     }
-    const withPoints = await summaryOn('2026-03-04', 2);
+    const withPoints = await summaryOn('2026-03-04', 3);
 
     expect(without.baseline).toMatchObject({ date: '2026-03-01' });
     expect(withPoints.baseline).toEqual(without.baseline);
@@ -249,7 +249,7 @@ describe('retention', () => {
     await refreshSnapshotsFor(['security']);
 
     const summary = await computeWidgetSummary(
-      { categories: ['security'], subscriptions: [SUB_A], dateWindow: { mode: 'relative', days: 365 } }, 365, EVERYTHING_ACCESS);
+      { categories: ['security'], subscriptions: [SUB_A], dateWindow: { mode: 'relative', days: 365 } }, EVERYTHING_ACCESS);
 
     expect(summary.baseline).toMatchObject({ date: dayOf(405) });
     const line = summary.trendByCategory!.security!;

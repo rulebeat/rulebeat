@@ -29,10 +29,11 @@ const underGroup: Access = buildAccess(
 );
 
 // Security is the one category with snapshots, and a delta is withheld unless every category in scope has a comparable point.
+// The window is the ten days from 2026-06-01, so the trend holds the two points of June and the baseline is the one before it.
 async function summary(access: Access, subscriptions?: string[]) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
-  const result = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 }, ...(subscriptions ? { subscriptions } : {}) }, 30, access);
+  const result = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 10 }, ...(subscriptions ? { subscriptions } : {}) }, access);
   return {
     live: result.current.activeFindings,
     trend: result.trend.map(p => [p.date, p.findings]),
@@ -49,6 +50,8 @@ beforeAll(async () => {
   await resetDb();
   const a = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_ONE, resourceGroup: 'rg-one' });
   const b = (name: string) => syntheticFinding(name, [{ zone: 'a' }], { ruleId: 'trend-rule', subscriptionId: SUB_TWO, resourceGroup: 'rg-one' });
+  await storeScan([a('a1')], { scanId: '00000000-0000-0000-0000-0000000000e0', finishedAt: '2026-05-31T10:00:00.000Z' });
+  await refreshSnapshotsFor(['security'], new Date('2026-05-31T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e1', finishedAt: '2026-06-01T10:00:00.000Z' });
   await refreshSnapshotsFor(['security'], new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e2', finishedAt: '2026-06-02T10:00:00.000Z' });
@@ -59,13 +62,13 @@ beforeAll(async () => {
 describe('the summary trend for a person below Everything', () => {
   it('draws Everything\'s trend from the install-wide row', async () => {
     expect(await summary(everythingAccess('admin'))).toMatchObject({
-      live: 4, trend: carriedFrom(3, 4), baseline: '2026-06-02', reason: null,
+      live: 4, trend: carriedFrom(3, 4), baseline: '2026-05-31', reason: null,
     });
   });
 
   it('draws a subscription Viewer\'s trend from that subscription\'s rows, not the install\'s', async () => {
     const result = await summary(viewerAt(`/subscriptions/${SUB_ONE}`));
-    expect(result).toMatchObject({ live: 3, trend: carriedFrom(2, 3), baseline: '2026-06-02', reason: null });
+    expect(result).toMatchObject({ live: 3, trend: carriedFrom(2, 3), baseline: '2026-05-31', reason: null });
     expect(typeof result.deltaPct).toBe('number');
   });
 
@@ -100,7 +103,7 @@ describe('the summary trend for a person below Everything', () => {
 async function summaryWith(filters: Partial<WidgetFilters>, access: Access) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
-  return computeWidgetSummary({ dateWindow: { mode: 'relative', days: 7 }, ...filters }, 30, access);
+  return computeWidgetSummary({ dateWindow: { mode: 'relative', days: 10 }, ...filters }, access);
 }
 
 describe('a trend is served only under the filters the allow-list names', () => {
@@ -145,7 +148,8 @@ describe('the Directory\'s trend', () => {
     const result = await summaryWith({ categories: ['identity'] }, directoryHolder);
     expect(days(result)).toEqual(carriedFrom(4, 0));
     expect(result).toMatchObject({ trendLevel: 'directory', trendUnavailable: null, trendIsCategoryScopedOnly: false });
-    expect(result.baseline?.date).toBe('2026-06-02');
+    // The window starts on the 1st, the first day the Directory has a point, so no earlier count exists to compare with.
+    expect(result).toMatchObject({ baseline: null, baselineGap: { needed: '2026-05-31', earliest: '2026-06-01', level: 'directory' } });
   });
 
   it('serves Everything and a Directory holder the Directory\'s trend when the filter names it', async () => {

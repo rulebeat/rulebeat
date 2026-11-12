@@ -52,7 +52,7 @@ describe('backfillSnapshots over stored scan-blob history (#324)', () => {
   it('leaves computeWidgetSummary with no baseline that came from a blob-derived point', async () => {
     await backfillSnapshots();
 
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     // Nothing but blob-derived points sit on or before the window start, so there is nothing honest to compare against.
     expect(summary.baseline).toBeNull();

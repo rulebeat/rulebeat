@@ -32,7 +32,7 @@ vi.mock('@/lib/hooks/use-widget-fetch', () => ({
 
 /** The freshness badge the widget renders for the security row, from the summary the viewer is served. */
 async function freshnessShownTo(access: Access): Promise<string> {
-  widgetSummary = await computeWidgetSummary(FILTERS, 30, access);
+  widgetSummary = await computeWidgetSummary(FILTERS, access);
   const html = renderToStaticMarkup(createElement(CoverageFreshnessWidget, { config: {}, filters: FILTERS, refreshKey: 0 }));
   return /(Fresh|Recent|Stale|Never scanned)<\/span>/.exec(html)![1]!;
 }
@@ -85,7 +85,7 @@ describe('Scan Coverage counts the rules whose last run did not finish', () => {
   });
 
   async function opened(access: Access) {
-    const summary = await computeWidgetSummary(FILTERS, 30, access);
+    const summary = await computeWidgetSummary(FILTERS, access);
     const category = summary.perCategory.find(c => c.category === 'security')!;
     const href = incompleteRulesHref('security', summary.holdsEverything);
     const filter = readRulesTabFilter(new URL(href, 'http://localhost').searchParams);
@@ -125,7 +125,7 @@ describe('Scan Coverage counts the rules whose last run did not finish', () => {
   });
 
   it('ignores the rule, tag and subscription filters', async () => {
-    const summary = await computeWidgetSummary({ ...FILTERS, ruleIds: ['succeeded'], subscriptions: [SUB_B] }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ ...FILTERS, ruleIds: ['succeeded'], subscriptions: [SUB_B] }, EVERYTHING_ACCESS);
     expect(summary.perCategory.find(c => c.category === 'security')!.incompleteRuleCount).toBe(5);
   });
 });
@@ -143,10 +143,10 @@ describe('Last scanned follows what the viewer holds', () => {
   });
 
   it('reads the older scan of the subscription they hold, while Everything reads the newer scan', async () => {
-    const scoped = await computeWidgetSummary(FILTERS, 30, holder);
+    const scoped = await computeWidgetSummary(FILTERS, holder);
     expect(scoped.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(tenDaysAgo);
     expect(scoped.lastScanAt).toBe(tenDaysAgo);
-    const everything = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+    const everything = await computeWidgetSummary(FILTERS, EVERYTHING_ACCESS);
     expect(everything.perCategory.find(c => c.category === 'security')!.lastScanAt).toBe(yesterday);
     expect(everything.lastScanAt).toBe(yesterday);
   });
@@ -165,7 +165,7 @@ describe('Last scanned follows what the viewer holds', () => {
   it('is never read from a trend point\'s time', async () => {
     await resetDb();
     await refreshSnapshotsFor(['security'], new Date());
-    const summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary(FILTERS, EVERYTHING_ACCESS);
     expect(summary.perCategory.find(c => c.category === 'security')!.lastScanAt).toBeNull();
     expect(summary.lastScanAt).toBeNull();
     expect(await freshnessShownTo(EVERYTHING_ACCESS)).toBe('Never scanned');

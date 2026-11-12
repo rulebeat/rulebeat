@@ -501,8 +501,8 @@ const suppressionRemoval: Matrix = {
   expected: byPerson(same(204), same(403), same(403), same(403), same(403), same(403)),
 };
 
-// The days a carried trend covers when the clock reads MATRIX_NOW and the first point is on the first snapshot day.
-const MATRIX_DAYS = Array.from({ length: 10 }, (_, i) => `2026-06-${String(i + 1).padStart(2, '0')}`);
+// The nine days the summary probe's window covers when the clock reads MATRIX_NOW: the second snapshot day through the tenth.
+const MATRIX_DAYS = Array.from({ length: 9 }, (_, i) => `2026-06-${String(i + 2).padStart(2, '0')}`);
 const NOTHING_MARKED = { subscriptions: [], resourceGroups: [] };
 const SUB_TWO_MARKED = { subscriptions: [SUB_TWO], resourceGroups: [] };
 const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
@@ -510,7 +510,8 @@ const BOTH_MARKED = { subscriptions: [SUB_TWO], resourceGroups: ['rg-two'] };
 /**
  * #274: the six widget routes, the two saved view routes and the two dashboard routes. A widget route
  * is not per tab, so each expectation is `same(...)` across the three. The summary probe runs under a
- * fixed clock because `trendDays` and the delta window are rolling: the seed's days are in June 2026.
+ * fixed clock because the date window is rolling: the seed's days are in June 2026. The window is nine days, so it starts on
+ * the seed's second day and the first is the baseline.
  */
 function dashboardMatrix(): Record<string, Matrix> {
   const loaders: Record<string, () => Promise<{ GET(req: Request): Promise<Response> }>> = {
@@ -535,9 +536,9 @@ function dashboardMatrix(): Record<string, Matrix> {
   };
 
   // The clock reads 2026-06-10, so a point last written on the 2nd is carried through the 10th.
-  const carriedFrom = (first: number, rest: number) => MATRIX_DAYS.map((day, i) => [day, i === 0 ? first : rest]);
+  const carriedFrom = (count: number) => MATRIX_DAYS.map(day => [day, count]);
   const NO_DIRECTORY = { directoryTrend: [], directoryTrendUnavailable: null as string | null };
-  const DIRECTORY_SERVED = { directoryTrend: carriedFrom(0, 1), directoryTrendUnavailable: null };
+  const DIRECTORY_SERVED = { directoryTrend: carriedFrom(1), directoryTrendUnavailable: null };
   const directoryRefused = (reason: string) => ({ directoryTrend: [], directoryTrendUnavailable: reason });
 
   const summary: Matrix = {
@@ -546,9 +547,9 @@ function dashboardMatrix(): Record<string, Matrix> {
       vi.setSystemTime(new Date(MATRIX_NOW));
       try {
         // One category: a delta is withheld unless every category in scope has a comparable point, and only security has any.
-        const body = await widget('summary', '?trendDays=30&categories=security') as SummaryBody;
+        const body = await widget('summary', '?window=9&categories=security') as SummaryBody;
         // The same category filtered to the Directory: its own points, for whoever holds it.
-        const directory = await widget('summary', '?trendDays=30&categories=security&subscriptions=directory') as SummaryBody;
+        const directory = await widget('summary', '?window=9&categories=security&subscriptions=directory') as SummaryBody;
         return {
           activeFindings: body.current.activeFindings,
           high: body.current.severityCounts.high,
@@ -568,8 +569,8 @@ function dashboardMatrix(): Record<string, Matrix> {
     },
     expected: byPerson(
       same({
-        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], trend: carriedFrom(5, 6),
-        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        activeFindings: 6, high: 6, perSubscription: [[SUB_ONE, 2], [SUB_TWO, 1], ['directory', 1]], trend: carriedFrom(6),
+        baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...DIRECTORY_SERVED,
       }),
       // Both subscriptions and no filter: two subscriptions' rows are never added into one trend.
@@ -580,8 +581,8 @@ function dashboardMatrix(): Record<string, Matrix> {
       }),
       // Everything the person holds lies in subscription one, so its rows serve the trend: its count, not the install's.
       same({
-        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: carriedFrom(3, 2),
-        baselineDate: SNAPSHOT_DAYS[1], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
+        activeFindings: 2, high: 2, perSubscription: [[SUB_ONE, 2]], trend: carriedFrom(2),
+        baselineDate: SNAPSHOT_DAYS[0], deltaPct: 'a number', trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...directoryRefused('choose-subscription'),
       }),
       same({
@@ -592,7 +593,7 @@ function dashboardMatrix(): Record<string, Matrix> {
       // Holds the Directory only: with no filter the trend is the Directory's own points, never the install's.
       same({
         // The Directory has its own row, and a person who holds it is given it.
-        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(0, 1), baselineDate: SNAPSHOT_DAYS[1], deltaPct: null,
+        activeFindings: 1, high: 1, perSubscription: [['directory', 1]], trend: carriedFrom(1), baselineDate: SNAPSHOT_DAYS[0], deltaPct: null,
         trendUnavailable: null, lastScanAt: DATE, securityLastScanAt: DATE,
         ...DIRECTORY_SERVED,
       }),

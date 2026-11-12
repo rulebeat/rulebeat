@@ -12,7 +12,7 @@ interface WidgetTemplate {
   defaultH: number;
 }
 
-const WIDGET_TEMPLATES: WidgetTemplate[] = [
+export const WIDGET_TEMPLATES: WidgetTemplate[] = [
   {
     type: 'stat-card',
     title: 'Stat Card',
@@ -31,7 +31,7 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
     type: 'trend',
     title: 'Trend Chart',
     description: 'Area, line, or bar chart showing posture % over time.',
-    defaultConfig: { category: 'all', period: '30d', chartType: 'area', showFindings: true },
+    defaultConfig: { category: 'all', chartType: 'area', showFindings: true },
     defaultW: 8, defaultH: 5,
   },
   {
@@ -87,14 +87,14 @@ const WIDGET_TEMPLATES: WidgetTemplate[] = [
     type: 'new-vs-fixed',
     title: 'New vs. Fixed',
     description: 'Remediation velocity: findings created vs. resolved over time.',
-    defaultConfig: { period: '30d' },
+    defaultConfig: {},
     defaultW: 12, defaultH: 5,
   },
   {
     type: 'activity-occurrences',
     title: 'Activity Occurrences',
     description: 'How often activity-pattern findings (sign-in risk, audit events) keep recurring.',
-    defaultConfig: { period: '30d' },
+    defaultConfig: {},
     defaultW: 12, defaultH: 5,
   },
   {

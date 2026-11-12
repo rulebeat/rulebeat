@@ -10,6 +10,19 @@ import type { Severity } from './types';
 /** The heading of the full-page no-access state, and the first reason a posture has nothing to count. */
 export const NO_ACCESS_HEADING = 'You have been given no access';
 
+/** How many UTC days of trend points and of activity occurrences are kept. The writers prune to these, the
+ *  readers draw from the first kept day, and a stored period of 'all' means this many days. */
+export const TREND_KEPT_DAYS = 365;
+export const ACTIVITY_KEPT_DAYS = 180;
+
+/** What New and Fixed mean in a window, and so what Net change is the difference of. */
+export const NEW_FIXED_DEFINITION = 'A finding opened and fixed inside the window counts only as Fixed.';
+
+/** Net change as the stat card reads it: a signed count of findings, New minus Fixed. */
+export function netChangeLabel(net: number): string {
+  return `net change ${net > 0 ? '+' : net < 0 ? '\u2212' : ''}${Math.abs(net)} ${Math.abs(net) === 1 ? 'finding' : 'findings'}`;
+}
+
 const PASS_SENTENCE = 'A rule passes when it has no open finding and its most recent run succeeded.';
 const EDIT_SENTENCE = 'An edit to a rule counts from its next run.';
 
@@ -68,14 +81,14 @@ export const TREND_FILTER_TITLE = 'No trend for this filter';
 /** What the Trend widget says when a trend is served but no point is stored at that level yet. */
 export const TREND_EMPTY_STATE = 'No trend points at this level yet. RuleBeat writes the first one when it next starts or when a rule, suppression or scan changes it.';
 
-/** The note on a chart whose window reaches past the 365 days of trend points; `start` is the first day it draws. */
+/** The note on a chart whose window reaches past the days of trend points; `start` is the first day it draws. */
 export function trendRetentionNote(start: string): string {
-  return `Trend points are kept for 365 days, so this chart starts on ${start}.`;
+  return `Trend points are kept for ${TREND_KEPT_DAYS} days, so this chart starts on ${start}.`;
 }
 
-/** The note on a chart whose window reaches past the 180 days of activity occurrences. */
+/** The note on a chart whose window reaches past the days of activity occurrences. */
 export function activityRetentionNote(start: string): string {
-  return `Activity occurrences are kept for 180 days, so this chart starts on ${start}.`;
+  return `Activity occurrences are kept for ${ACTIVITY_KEPT_DAYS} days, so this chart starts on ${start}.`;
 }
 
 export type PostureEmptyReasonKey = 'no-access' | 'no-rules-here' | 'no-enabled-rules' | 'filter-left-nothing';

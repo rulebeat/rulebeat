@@ -12,7 +12,7 @@ import { resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { emptyView, viewToSearchParams, type View } from '@/lib/finding-view';
 import { queryFilterOptions, queryGroup, queryView } from '@/lib/db/finding-views';
-import { getActivityOccurrenceCounts, getFindingEventCounts } from '@/lib/db/findings';
+import { getActivityOccurrenceCounts } from '@/lib/db/findings';
 import { getSnapshots, refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { computeWidgetSummary, queryActiveFindings } from '@/lib/dashboard-data';
 import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
@@ -121,7 +121,8 @@ describe('Directory is one choice in the subscription filter', () => {
 describe('the dashboard does not count Directory findings under a subscription', () => {
   const since = '2000-01-01';
   const created = async (subscriptions?: string[]) =>
-    (await getFindingEventCounts({ sinceDate: since, subscriptions }, EVERYTHING_ACCESS)).reduce((n, d) => n + d.created, 0);
+    (await computeWidgetSummary({ subscriptions, dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS))
+      .newVsFixedTrend.reduce((n, d) => n + d.created, 0);
 
   it('counts new findings of a subscription without them, and of Directory alone', async () => {
     // The Problems the totals count: vm-a, vm-b, app-1 and app-2. Advisories and Activity are not in them.
@@ -146,20 +147,20 @@ describe('the dashboard does not count Directory findings under a subscription',
 
   it('gives the Directory a row of its own in the subscription scorecard, apart from the subscriptions', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
-    const summary = await computeWidgetSummary({ dateWindow }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ dateWindow }, EVERYTHING_ACCESS);
     expect(summary.perSubscription.filter(s => !s.directory).map(s => s.subscriptionId).sort()).toEqual([SUB_A, SUB_B]);
     expect(summary.perSubscription.filter(s => s.directory).map(s => [s.subscriptionId, s.activeFindings])).toEqual([[DIRECTORY_SUBSCRIPTION, 2]]);
     expect(summary.current.activeFindings).toBe(4);
 
-    const narrowed = await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS);
+    const narrowed = await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, EVERYTHING_ACCESS);
     expect(narrowed.current.activeFindings).toBe(1);
   });
 
   it('serves a trend for the Directory alone as it does for one subscription, with no line until a point is stored', async () => {
     const dateWindow = { mode: 'relative', days: 7 } as const;
-    const directory = await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, 30, EVERYTHING_ACCESS);
+    const directory = await computeWidgetSummary({ dateWindow, subscriptions: [DIRECTORY_SUBSCRIPTION] }, EVERYTHING_ACCESS);
     expect(directory).toMatchObject({ trendIsCategoryScopedOnly: false, trendLevel: 'directory', trend: [] });
-    expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, 30, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
+    expect((await computeWidgetSummary({ dateWindow, subscriptions: [SUB_A] }, EVERYTHING_ACCESS)).trendIsCategoryScopedOnly).toBe(false);
   });
 
   it('writes them a trend point of their own, keeps them out of every subscription point, and counts them in the aggregate row', async () => {
