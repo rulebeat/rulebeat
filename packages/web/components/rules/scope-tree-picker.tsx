@@ -6,7 +6,7 @@ import { ChevronDown, Loader2, X } from 'lucide-react';
 import type { ScopeTree, ScopeTreeNode } from '@/app/api/azure/scope-tree/route';
 import { ScopeTree as ScopeTreeView } from '@/components/scope-tree';
 import { ruleScopeItems, ruleScopeKey } from '@/lib/scope-tree';
-import { OUTSIDE_ACCESS_LABEL } from '@/lib/outside-access';
+import { OUTSIDE_ACCESS_LABEL } from '@/lib/held-back';
 import { cn } from '@/lib/utils';
 
 /* The three scope kinds are told apart by shape and letter, not by colour.

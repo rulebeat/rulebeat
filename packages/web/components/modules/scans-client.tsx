@@ -30,9 +30,10 @@ import { applyBulkToggle, bulkToggleMessage, requestBulkToggle, rulesPhrase } fr
 import { splitLearnMore } from '@/lib/rule-description';
 import { can, type Role } from '@/lib/rbac';
 import type { WriteControls } from '@/lib/write-controls';
+import type { ItemPermissions } from '@/lib/item-access-model';
 import type { Category, Rule, Severity, Suppression } from '@/lib/types';
 import type { View } from '@/lib/finding-view';
-import type { SavedView, SavedViewTab } from '@/lib/saved-view-query';
+import type { HeldBackSavedView, SavedViewTab } from '@/lib/saved-view-query';
 import { savedViewHref } from '@/lib/saved-view-query';
 import { OwnUrlWrites } from '@/lib/own-url-writes';
 import { KIND_DESCRIPTION, KIND_LABEL } from '@/lib/finding-kinds';
@@ -106,6 +107,8 @@ export interface ScansClientProps {
   /** The library, schedule and suppression controls the person gets, from `writeControlsFor` on the server.
    *  Without it the Role alone decides, as it did before Scopes. */
   controls?: WriteControls;
+  /** Who is asking and what they may do with saved views, from `itemPermissionsFor` on the server. */
+  savedViewAccess?: { userId: string; permissions: ItemPermissions; shareControl: { allowed: boolean; reason?: string } };
   /** Notification channel list for the Notifications section in the schedule form.
    *  Empty when the user lacks notifications:manage. The section is simply hidden. */
   notificationChannels?: NotificationChannelSummary[];
@@ -137,6 +140,7 @@ export function ScansClient({
   compareQuery,
   initialSchedules,
   controls,
+  savedViewAccess,
   notificationChannels = [],
   ruleFindingCounts = {},
   tabEmpty,
@@ -156,7 +160,9 @@ export function ScansClient({
   const writeOffReason = controls?.reason;
   const rulesOffReason = canEditRules ? undefined : writeOffReason;
   const clearOffReason = canClearFindings ? undefined : writeOffReason;
-  const canWriteViews = can(role, 'views:write');
+  // Everyone keeps their own Personal saved views; changing a Shared one depends on who owns it (ADR 0012).
+  const viewPermissions: ItemPermissions = savedViewAccess?.permissions
+    ?? { personal: can(role, 'views:personal'), write: can(role, 'views:write'), manage: can(role, 'views:manage') };
 
   // The explorer reads its initial view once and then writes every change back to the URL. So when
   // the URL changes by anything other than one of its own writes (a saved view opened from the
@@ -164,6 +170,8 @@ export function ScansClient({
   // only counts those restarts; what the explorer shows always comes from the URL.
   const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
   const [explorerKey, setExplorerKey] = useState(0);
+  // The copy of the saved view the person opened from the menu: what the page now shows, which a later save is based on.
+  const [appliedView, setAppliedView] = useState<HeldBackSavedView | null>(null);
   // Counts finished scans, so the explorer reads its view again rather than the page being reloaded.
   const [scansFinished, setScansFinished] = useState(0);
   const explorerTab = activeTab === 'results' || activeTab === 'advisories' || activeTab === 'activity' ? activeTab : null;
@@ -176,9 +184,13 @@ export function ScansClient({
   }, [searchString, ownWrites]);
   const savedViewsFor = (tab: SavedViewTab) => ({
     tab,
-    canWrite: canWriteViews,
+    currentUserId: savedViewAccess?.userId ?? '',
+    permissions: viewPermissions,
+    shareControl: savedViewAccess?.shareControl,
     openId: initialSavedViewId ?? null,
-    onOpen: (saved: SavedView) => {
+    appliedView,
+    onOpen: (saved: HeldBackSavedView) => {
+      setAppliedView(saved);
       ownWrites.forget();
       router.push(savedViewHref(saved));
     },

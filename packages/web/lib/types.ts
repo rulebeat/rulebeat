@@ -3,6 +3,7 @@ import type { ChangedFinding, FindingRow } from './finding-rows';
 import type { FindingPlacement } from './placement';
 import type { CoveredScopeView } from './run-scope';
 import type { QueryDiffLine } from './rule-version-preview';
+import type { HeldBack } from './held-back';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type RemediationStepType = 'az-cli' | 'powershell' | 'portal' | 'terraform' | 'bicep';
@@ -237,13 +238,39 @@ export interface DashboardConfig {
   };
 }
 
+/** Who a dashboard or saved view belongs to (ADR 0012), as the person is now. */
+export interface ItemOwner {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+/** Personal: its Owner only. Shared: everyone on the install, each seeing what their Access allows. */
+export type ItemVisibility = 'personal' | 'shared';
+
 export interface Dashboard {
   id: string;
   name: string;
   description?: string;
   config: DashboardConfig;
+  /** The stored default flag. A Personal dashboard is never the Install default, see `isInstallDefault`. */
   isDefault: boolean;
+  /** Is this the Install default (ADR 0012): the default, and Shared. */
+  isInstallDefault: boolean;
+  /** Is this the signed-in person's My default. Set where a list or a read is made for a person, absent elsewhere. */
+  isMyDefault?: boolean;
   createdAt: string;
+  /** Null for a Shared item with no Owner, which includes every dashboard from before owners. */
+  owner: ItemOwner | null;
+  visibility: ItemVisibility;
+  /** Starts at 1 and goes up by one on every write. */
+  revision: number;
+}
+
+/** A dashboard as the routes and pages return it: the stored values outside the viewer's Access are left out
+ *  of `config` and counted in `heldBack` (lib/held-back.ts). */
+export interface HeldBackDashboard extends Dashboard {
+  heldBack: HeldBack[];
 }
 
 export interface Category {

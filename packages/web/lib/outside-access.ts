@@ -1,22 +1,18 @@
 /**
- * Which values a stored filter names that a person's access does not reach (#274). A saved view or a
- * dashboard is shared with everyone, so it can be filtered to a subscription or a resource group the
- * person holds no Scope in. It still opens, and the filter reads "Outside your access" where it would
- * name the value, because the id or the name of something they cannot see is not theirs to read.
+ * Which values of the Scans address a person's access does not reach (#274). The explorer's own filters
+ * (the URL's `subscription` and `rg`) can name a subscription or a resource group the person holds no Scope
+ * in. The page still opens, and the filter reads "Outside your access" where it would name the value,
+ * because the id or the name of something they cannot see is not theirs to read.
  *
- * The marks are a list beside the stored filter, never a change to it: an Editor on Everything who saves
- * the filter again loses nothing. Pure and client-safe, like `lib/access-model.ts`, so the routes, the
- * dashboard page and the components share one definition.
+ * The marks are a list beside the filter, never a change to it. What a dashboard or a saved view stores is
+ * not marked here: those values leave the server only as counts (lib/held-back.ts). Pure and client-safe,
+ * like `lib/access-model.ts`.
  */
 import { DIRECTORY_SUBSCRIPTION } from './placement';
-import { filterValues, viewFromSearchParams } from './finding-view';
 import { wholeSubscriptionIds, type Access } from './access-model';
-import type { DashboardConfig } from './types';
+import { OUTSIDE_ACCESS_LABEL } from './held-back';
 
-/** What a filter chip or a select reads in place of a value outside the person's access. */
-export const OUTSIDE_ACCESS_LABEL = 'Outside your access';
-
-/** The stored values, as stored, that sit outside a person's access. */
+/** The address values, as written, that sit outside a person's access. */
 export interface OutsideAccess {
   subscriptions: string[];
   resourceGroups: string[];
@@ -79,7 +75,7 @@ export function isOutsideAccess(marks: OutsideAccess | undefined, dimension: Out
   return (list ?? []).some(marked => marked.toLowerCase() === key);
 }
 
-/** What a stored value reads as: the label for a mark, else `named(value)`. */
+/** What an address value reads as: the label for a mark, else `named(value)`. */
 export function outsideAwareLabel(
   marks: OutsideAccess | undefined, dimension: OutsideDimension, value: string, named: (value: string) => string,
 ): string {
@@ -96,73 +92,4 @@ export function filterOutsideDimension(filter: AccessFilterValues, marks: Outsid
   if (allOutside('subscription', filter.subscriptions)) return 'subscription';
   if (allOutside('resourceGroup', filter.resourceGroups)) return 'resourceGroup';
   return null;
-}
-
-/**
- * `options` with each selected value that is marked appended as "Outside your access". The option lists
- * come from what the person can see, so a stored value outside their access is in none of them, and
- * without this the control would count it in its badge and offer nothing to untick. The option's value is
- * the stored one, so unticking it removes it; the label never names it.
- */
-export function withOutsideOptions(
-  options: readonly { value: string; label: string }[],
-  selected: readonly string[],
-  marks: OutsideAccess | undefined,
-  dimension: OutsideDimension,
-): { value: string; label: string }[] {
-  const have = new Set(options.map(o => o.value));
-  const extra = selected
-    .filter(value => isOutsideAccess(marks, dimension, value) && !have.has(value))
-    .map(value => ({ value, label: OUTSIDE_ACCESS_LABEL }));
-  return [...options, ...extra];
-}
-
-/** What a widget says in place of a number when every subscription (or every resource group) it is
- *  filtered to is outside the person's access. A posture of 100%, "No violations found" or "All rules
- *  passing" would claim something was checked and found clean, when nothing of it is theirs to see. */
-export function widgetAccessReason(filter: AccessFilterValues, marks: OutsideAccess | undefined): { title: string; detail: string } | null {
-  const dimension = filterOutsideDimension(filter, marks);
-  if (!dimension) return null;
-  return {
-    title: OUTSIDE_ACCESS_LABEL,
-    detail: dimension === 'subscription'
-      ? 'This widget is filtered to subscriptions your Access does not include, so it has nothing to count for you. Clear the filter to see your own.'
-      : 'This widget is filtered to resource groups your Access does not include, so it has nothing to count for you. Clear the filter to see your own.',
-  };
-}
-
-/** The marks for a saved view's stored query, read the way the explorer reads it. */
-export function markSavedViewQuery(access: Access, query: string): OutsideAccess {
-  const { filters } = viewFromSearchParams(new URLSearchParams(query));
-  return markOutsideAccess(access, {
-    subscriptions: filterValues(filters, 'subscription'),
-    resourceGroups: filterValues(filters, 'resourceGroup'),
-  });
-}
-
-/** A dashboard as the routes and the page return it: the stored dashboard unchanged, plus its marks. */
-export function markedDashboard<T extends { config: DashboardConfig }>(access: Access, dashboard: T): T & { outsideAccess: OutsideAccess } {
-  return { ...dashboard, outsideAccess: markDashboardConfig(access, dashboard.config) };
-}
-
-/** A saved view as the routes return it: the stored view unchanged, plus its marks. */
-export function markedSavedView<T extends { query: string }>(access: Access, view: T): T & { outsideAccess: OutsideAccess } {
-  return { ...view, outsideAccess: markSavedViewQuery(access, view.query) };
-}
-
-/**
- * The marks for everything a dashboard stores: its filter bar and the override on each widget. A mark is
- * a value, not a place, so one list serves every consumer, whichever of them holds the value.
- */
-export function markDashboardConfig(access: Access, config: DashboardConfig): OutsideAccess {
-  const subscriptions: string[] = [...(config.filters?.subscriptions ?? [])];
-  const resourceGroups: string[] = [...(config.filters?.resourceGroups ?? [])];
-  for (const widget of config.widgets ?? []) {
-    const override = widget.config ?? {};
-    for (const [key, into] of [['subscriptions', subscriptions], ['resourceGroups', resourceGroups]] as const) {
-      const value = override[key];
-      if (Array.isArray(value)) into.push(...value.filter((v): v is string => typeof v === 'string'));
-    }
-  }
-  return markOutsideAccess(access, { subscriptions, resourceGroups });
 }

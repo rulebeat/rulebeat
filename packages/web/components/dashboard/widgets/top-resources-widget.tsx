@@ -7,9 +7,10 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
 import { SeverityBadge } from '@/components/findings/severity-badge';
 import type { Severity } from '@/lib/types';
-import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
+import { mergeWidgetFilters, buildWidgetReadParams, type WidgetFilters } from '@/lib/dashboard-filters';
 import { buildScansHref } from '@/lib/scans-link';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useWidgetReadTarget } from '@/lib/hooks/use-widget-read';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface ResourceOffender { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: string; }
@@ -23,11 +24,12 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number; }
 export function TopResourcesWidget({ config, filters, refreshKey }: Props) {
   const router = useRouter();
   const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
+  const target = useWidgetReadTarget();
   const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
+    const p = buildWidgetReadParams(target, filters, config as unknown as Record<string, unknown>);
     p.set('limit', String(config.limit ?? 10));
     return p.toString();
-  }, [merged, config.limit]);
+  }, [target, filters, config]);
   const { data, loading, failed, retry } = useWidgetFetch<ResourceOffender[]>(
     `/api/widgets/top-resources?${params}`,
     [refreshKey]

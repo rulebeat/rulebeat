@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
-import type { SavedView } from '@/lib/saved-view-query';
+import { baseCopyAfterVisibilityChange, fetchCurrentSavedView, requestSavedViewChange, upsertSavedView } from '@/lib/saved-view-actions';
+import { STALE_VIEW_MESSAGE } from '@/lib/held-back';
+import type { HeldBackSavedView } from '@/lib/saved-view-query';
 
-const view = (id: string, name: string): SavedView => ({
+const view = (id: string, name: string): HeldBackSavedView => ({
   id, name, tab: 'results', query: '', createdBy: null, createdAt: '2026-01-01T00:00:00.000Z', updatedBy: null, updatedAt: '2026-01-01T00:00:00.000Z',
+  owner: null, visibility: 'shared', revision: 1, sharedDashboardCount: 0, heldBack: [],
 });
 
 function fake(status: number, body?: unknown, opts: { redirected?: boolean } = {}) {
@@ -24,10 +26,38 @@ describe('requestSavedViewChange', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ method: 'POST', body: JSON.stringify(fields) }));
   });
 
+  it('names the open view a new one is saved from, and hands back how many filters now show more', async () => {
+    const fetchImpl = fake(201, { ...view('v2', 'Copy'), widened: 2 });
+    const fields = { name: 'Copy', tab: 'results' as const, query: 'q=x' };
+    const outcome = await requestSavedViewChange({ kind: 'create', fields, from: 'v1' }, fetchImpl);
+    expect(outcome).toEqual({ ok: true, view: view('v2', 'Copy'), widened: 2 });
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views', expect.objectContaining({ body: JSON.stringify({ ...fields, from: 'v1' }) }));
+  });
+
   it('patches only the fields it is given', async () => {
     const fetchImpl = fake(200, view('v1', 'B'));
     await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { name: 'B' } }, fetchImpl);
     expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"name":"B"}' }));
+  });
+
+  it('names the revision of the copy it was sent, so the server can refuse a save made after the view changed', async () => {
+    const fetchImpl = fake(200, view('v1', 'B'));
+    await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { query: 'q=x' }, revision: 3 }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3}' }));
+  });
+
+  it('names the query of the copy it was sent, so the server can put back what that copy left out', async () => {
+    const fetchImpl = fake(200, view('v1', 'B'));
+    await requestSavedViewChange({ kind: 'update', id: 'v1', fields: { query: 'q=x' }, revision: 3, opened: 'q=y' }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v1', expect.objectContaining({ method: 'PATCH', body: '{"query":"q=x","revision":3,"opened":"q=y"}' }));
+  });
+
+  it('marks a refusal for a changed view as stale, so the page can offer a reload, and not a name clash', async () => {
+    const change = { kind: 'update' as const, id: 'v1', fields: { query: 'q=x' }, revision: 3 };
+    expect(await requestSavedViewChange(change, fake(409, { error: STALE_VIEW_MESSAGE })))
+      .toEqual({ ok: false, error: STALE_VIEW_MESSAGE, stale: true });
+    const clash = await requestSavedViewChange(change, fake(409, { error: 'A saved view named "A" already exists.' }));
+    expect(clash).not.toHaveProperty('stale');
   });
 
   it('deletes with no body and returns no view', async () => {
@@ -70,5 +100,36 @@ describe('upsertSavedView', () => {
 
   it('adds a view it has not seen', () => {
     expect(upsertSavedView([view('a', 'A')], view('b', 'B')).map(v => v.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('baseCopyAfterVisibilityChange', () => {
+  const base = { ...view('a', 'A'), revision: 4, query: 'q=x' };
+
+  it('moves the base to the revision our own share or unshare made', () => {
+    expect(baseCopyAfterVisibilityChange(base, { visibility: 'personal', revision: 5 })).toMatchObject({ visibility: 'personal', revision: 5, query: 'q=x' });
+  });
+
+  it('keeps the old base when someone else changed the view too, so the next save is refused as stale', () => {
+    expect(baseCopyAfterVisibilityChange(base, { visibility: 'personal', revision: 6 })).toBe(base);
+  });
+});
+
+describe('fetchCurrentSavedView', () => {
+  it('reads the view as the server holds it now, so a reload can open that copy and not the one the address names', async () => {
+    const fetchImpl = fake(200, { ...view('v1', 'A'), revision: 9, query: 'q=newest' });
+    const outcome = await fetchCurrentSavedView('v 1', fetchImpl);
+    expect(outcome).toEqual({ ok: true, view: expect.objectContaining({ revision: 9, query: 'q=newest' }) });
+    expect(fetchImpl).toHaveBeenCalledWith('/api/views/v%201');
+  });
+
+  it('says the view is gone when the server does not open it', async () => {
+    expect(await fetchCurrentSavedView('v1', fake(404, { error: 'Not found' }))).toEqual({ ok: false, gone: true });
+  });
+
+  it('says it could not be read, and not that it is gone, on any other failure', async () => {
+    expect(await fetchCurrentSavedView('v1', fake(500, { error: 'boom' }))).toEqual({ ok: false, gone: false });
+    expect(await fetchCurrentSavedView('v1', vi.fn(async () => { throw new Error('offline'); }))).toEqual({ ok: false, gone: false });
+    expect(await fetchCurrentSavedView('v1', fake(200, view('v1', 'A'), { redirected: true }))).toEqual({ ok: false, gone: false });
   });
 });

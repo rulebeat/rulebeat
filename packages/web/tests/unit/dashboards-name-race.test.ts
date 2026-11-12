@@ -1,8 +1,8 @@
 /**
- * Issue #161: two dashboards could end up with the same name, or two could both become the
- * default, when requests landed at the same moment. The name check (and for a first create the
- * "is the table empty" read) used to run in steps separate from the write, so two concurrent
- * requests could both pass the check before either wrote its row.
+ * Issue #161: two dashboards could end up with the same name when requests landed at the same
+ * moment. The name check used to run in a step separate from the write, so two concurrent
+ * requests could both pass the check before either wrote its row. (Nothing becomes the default
+ * by being first any more, ADR 0012.)
  *
  * Nothing here parks a request on a gate: the repository's steps are plain awaits on a synchronous
  * database, so two requests started together advance in lockstep and both finish their checks
@@ -60,7 +60,7 @@ function sameName(list: Dashboard[], name: string): Dashboard[] {
   return list.filter(d => d.name.trim().toLowerCase() === name.trim().toLowerCase());
 }
 
-describe('dashboard name uniqueness and first-default under concurrent writes', () => {
+describe('dashboard name uniqueness under concurrent writes', () => {
   beforeEach(async () => {
     await resetDb();
     await clearDashboards();
@@ -116,13 +116,13 @@ describe('dashboard name uniqueness and first-default under concurrent writes', 
     expect(names).toEqual([STARTER_DASHBOARD.name, `${STARTER_DASHBOARD.name} (2)`].sort());
   });
 
-  it('makes exactly one dashboard the default when two creates land on an empty table', async () => {
+  it('makes no dashboard the default when two creates land on an empty table', async () => {
     const responses = await Promise.all([post({ name: unique('First A') }), post({ name: unique('First B') })]);
 
     expect(responses.map(r => r.status)).toEqual([201, 201]);
     const all = await listDashboards();
     expect(all).toHaveLength(2);
-    expect(all.filter(d => d.isDefault)).toHaveLength(1);
+    expect(all.filter(d => d.isDefault)).toHaveLength(0);
   });
 
   it('lets an update that keeps an existing duplicate pair\'s name succeed', async () => {

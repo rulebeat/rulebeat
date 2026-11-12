@@ -146,8 +146,68 @@ Each finding records where it sits, and a person sees it when a Scope they hold 
 
 This narrows every list, count, filter option, column option, export and finding detail on the
 Results, Advisories and Activity tabs, the dashboards, saved views, suppressions and Run History. A
-saved view or dashboard filtered to something outside a person's access still opens: the filter
-reads "Outside your access" and can be cleared.
+saved view or dashboard filtered to something outside a person's access still opens, and the page
+says how much of it is held back.
+
+### Held-back values
+
+A **held-back value** is a value stored in a dashboard or a saved view that sits outside the
+viewer's Access. It is stored in the item, so everyone it is shared with sees the item, but the
+value itself never reaches the viewer's browser. The page shows only a count, as "N outside your
+access" beside the values the viewer can see, or "Outside your access" alone when every value in
+that filter is held back.
+
+- A subscription or resource group in a filter is held back when the viewer holds no Scope that
+  covers it and none inside it.
+- A resource name or a value of a returned column is held back unless a finding inside the viewer's
+  Access carries it, whether that finding is open, fixed or suppressed.
+- Search text, rules, categories, tags, severities and the date window are never held back.
+- A person who holds Everything has nothing held back.
+
+A held-back value matches nothing for that viewer. A filter whose values are all held back shows
+"Outside your access" in place of a number, never a posture computed over the viewer's whole Access.
+The counts appear in the dashboard filter bar, the widget editor and the Scans filter bar. They are
+a soft chip with no remove control: a viewer cannot clear a value they cannot see.
+
+A widget's numbers are read the same way. The browser asks for a widget by its dashboard and its widget
+and sends only the values the viewer can see: the page's filters, and the widget's own. The server then
+adds back the values each of those two places stores that the viewer's Access does not reach, and the
+widget's own value for a dimension replaces the page's, held-back values included, as it does for
+everyone. Held-back values match nothing, so a dimension whose values are all held back counts nothing
+and is reported in the answer's `heldBack` counts. It never falls back to the viewer's whole Access, and
+no request can leave the held-back values out. A widget filtered entirely to places outside the viewer's
+Access says "Outside your access" and "This widget is filtered to places outside your Access, so it has
+nothing to count for you. Duplicate the dashboard to get a copy without them."; someone who may edit the
+dashboard also reads "Or remove those values in edit mode." A dashboard that is someone else's Personal
+one, or does not exist, answers "not found" to a widget read.
+
+Opening a saved view whose filter has every value held back lists nothing for that viewer. The filter
+stays on the Scans page as an "Outside your access" chip in place of the values, so the list is empty
+and does not widen to the viewer's whole Access. The chip has no remove control.
+
+A saved view that is open on Scans keeps applying its held-back values in every read and in the export,
+on the Results, Advisories and Activity tabs. The address carries only the values the person can see next to
+`view=<id>`, and the server adds the rest back before it matches, so the open view means what it means for
+everyone else. Closing the view is the only way to widen it on Scans. A view that was deleted, or is now
+someone else's Personal view, is announced with "This saved view no longer exists." and dropped from the
+address.
+
+Saving does not lose a held-back value the person was not sent. Each save carries the copy the person
+was sent and the version it was made from. Whatever that copy left out is put back from the stored item
+before it is written, so everyone else the item is shared with still gets it, even if the person has been
+granted that value since they opened the item. What they changed among the values they were sent is
+kept, so a value they could see and removed stays removed. A value outside their Access at the moment
+they save is also put back. If the item changed after the person opened it, the save is refused and they
+reload it. The words "Outside your access" stand in for values the person was not sent and are never
+stored: a save that carries them has them removed.
+
+A value the person adds that is outside their Access, and that the item does not already hold, is refused
+with "No finding you can see has this value, so it can't be saved." The refusal is worded the same whether a
+finding outside their Access carries the value or none does, so it never says whether such a place exists.
+Everything is never refused.
+
+The address of the Scans page is different. A subscription or resource group typed into the address
+bar is the viewer's own input, so it reads "Outside your access" on its chip and leaves the list empty.
 
 ## What a scoped Editor can do
 

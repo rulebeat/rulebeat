@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/api-auth';
 import { queryActiveFindings } from '@/lib/dashboard-data';
 import { listCategories } from '@/lib/db/categories';
-import { parseWidgetFiltersFromSearchParams } from '@/lib/dashboard-filters';
+import { resolveWidgetRead, respondWithHeldBack } from '@/lib/widget-reads';
 import { countsInFindingTotals } from '@/lib/finding-kinds';
 import type { Severity } from '@/lib/types';
 
@@ -14,10 +14,11 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 50);
-  const filters = parseWidgetFiltersFromSearchParams(searchParams);
+  const read = await resolveWidgetRead(actor, searchParams);
+  if (read instanceof NextResponse) return read;
 
   // A no-op today: 'activity' findings are already excluded below by the resourceId check.
-  const findings = (await queryActiveFindings(filters, actor.access)).filter(countsInFindingTotals);
+  const findings = (await queryActiveFindings(read.filters, actor.access)).filter(countsInFindingTotals);
   const categoryColorById = new Map((await listCategories()).map(c => [c.id, c.color]));
 
   const resourceMap = new Map<string, { resourceId: string; resourceName: string; resourceType: string; category: string; color?: string; count: number; maxSeverity: Severity }>();
@@ -46,5 +47,5 @@ export async function GET(req: Request) {
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 
-  return Response.json(sorted);
+  return respondWithHeldBack(sorted, read.heldBack, read.savedView);
 }

@@ -199,6 +199,9 @@ async function seedDefaultDashboard(db: PgDb): Promise<void> {
         config: JSON.stringify(STARTER_DASHBOARD.config),
         isDefault: true,
         createdAt: new Date().toISOString(),
+        ownerId: null,
+        visibility: 'shared',
+        revision: 1,
       }).onConflictDoNothing();
     }
 

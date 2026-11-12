@@ -90,7 +90,7 @@ describe('reads that never look at a row', () => {
 
   it('serve the dashboard filter lists without rows', async () => {
     await corruptStoredRows();
-    const res = await filterOptions.GET();
+    const res = await filterOptions.GET(new Request('http://localhost/api/widgets/filter-options'));
     expect(res.status).toBe(200);
     const body = await res.json() as { rules: { id: string }[] };
     expect(body.rules.map(r => r.id).sort()).toEqual([ADVISORY, RULE].sort());

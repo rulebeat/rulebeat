@@ -42,6 +42,29 @@ export function categoryControlFor(access: Access): { allowed: boolean; reason?:
   return { allowed, ...(heldButScoped ? { reason: SCOPED_CATEGORY_REASON } : {}) };
 }
 
+export const SHARE_REASON = 'Sharing needs an Editor Role at some Scope.';
+
+/**
+ * The Share control on a dashboard or saved view: `allowed` from `mayAct` on the kind's write action, and the
+ * reason it is off when it is not. Its own field, so a screen shows why without working it out from the Role.
+ */
+export function shareControlFor(access: Access, kind: 'dashboard' | 'view'): { allowed: boolean; reason?: string } {
+  const allowed = mayAct(access, kind === 'dashboard' ? 'dashboards:write' : 'views:write');
+  return allowed ? { allowed } : { allowed, reason: SHARE_REASON };
+}
+
+export const INSTALL_DEFAULT_REASON =
+  'The Install default is chosen, unshared and deleted by an Admin or an Editor on Everything. Choose another one first, or ask one of them.';
+
+/**
+ * The Unshare and Delete controls on the Install default: `allowed` from `mayAct` on `dashboards:manage`, and the
+ * reason they are off when it is not. The owner of the Install default who may not manage still edits its contents.
+ */
+export function installDefaultControlFor(access: Access): { allowed: boolean; reason?: string } {
+  const allowed = mayAct(access, 'dashboards:manage');
+  return allowed ? { allowed } : { allowed, reason: INSTALL_DEFAULT_REASON };
+}
+
 const INSTALL_WIDE_WRITES = ['rules:write', 'rules:delete', 'schedules:write'] as const;
 
 export function writeControlsFor(access: Access): WriteControls {

@@ -8,6 +8,8 @@ import { highestRole, isAccessSource, parseScope, type AccessSource, type GrantR
 import {
   isMirrorErrorCode, mirrorError, type MirrorErrorCode, type MirrorStatus, type MirroredScope,
 } from '@/lib/access-mirror-model';
+import { releaseOwnedItemsOn, type OwnedItemsRemoved } from './item-owners';
+import { clearUnreachableMyDefaultsOn } from './default-dashboard';
 import { detachRequestsOfAuthorOn, withdrawOpenRequestsOn } from './library-request-cleanup';
 import {
   deleteAssignmentsOn, replaceAssignmentsOn, replaceWithEverythingOn, setRoleOnAssignmentsOn, type AssignmentInput,
@@ -328,7 +330,7 @@ export async function listUsersLinkedTo(objectId: string, exceptId?: string): Pr
  * part-way through the deletes rolls every one of them back instead of leaving the user row gone
  * but their saved queries or run history still present, or vice versa.
  */
-export async function deleteUser(id: string): Promise<{ withdrawnRequests: number } | 'notfound' | 'last-admin'> {
+export async function deleteUser(id: string): Promise<(OwnedItemsRemoved & { withdrawnRequests: number }) | 'notfound' | 'last-admin'> {
   return inTransaction(async (tx) => {
     const existing = await getUserOn(tx, id);
     if (!existing) return 'notfound';
@@ -354,9 +356,13 @@ export async function deleteUser(id: string): Promise<{ withdrawnRequests: numbe
     // Closed ones stay as history, no longer pointing at a Personal rule. The caller audits the count.
     const withdrawnRequests = await withdrawOpenRequestsOn(tx, id);
     await detachRequestsOfAuthorOn(tx, id);
+    // Their Personal dashboards and saved views (ADR 0012) go with them; their Shared ones stay with no owner.
+    const owned = await releaseOwnedItemsOn(tx, id);
     await deleteAssignmentsOn(tx, id);
     await run(tx.delete(users).where(eq(users.id, id)));
-    return { withdrawnRequests };
+    // Anyone whose My default is no longer there for them is told on their next visit to /dashboard.
+    await clearUnreachableMyDefaultsOn(tx);
+    return { withdrawnRequests, ...owned };
   });
 }
 

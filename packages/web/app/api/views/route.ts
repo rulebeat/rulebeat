@@ -3,22 +3,32 @@ import { requireRole } from '@/lib/api-auth';
 import { parseJsonBody } from '@/lib/api-body';
 import { serverError } from '@/lib/api-error';
 import { writeAudit } from '@/lib/db/audit';
-import { markedSavedView } from '@/lib/outside-access';
-import { createSavedView, listSavedViews } from '@/lib/db/saved-views';
+import { copyViewQuery, holdBackSavedViews, restoreHeldBackView } from '@/lib/db/held-back';
+import { UNSEEN_VALUE_MESSAGE, withoutPlaceholder } from '@/lib/held-back';
+import { canOpenItem, openableItems } from '@/lib/item-access';
+import { createSavedView, getSavedView, listSavedViews } from '@/lib/db/saved-views';
 import { SAVED_VIEW_FIELDS, parseSavedViewFields, savedViewNameTakenMessage } from '@/lib/saved-views';
 
 export async function GET() {
   const actor = await requireRole('read');
   if (actor instanceof NextResponse) return actor;
   try {
-    return Response.json((await listSavedViews()).map(v => markedSavedView(actor.access, v)));
+    return Response.json(await holdBackSavedViews(actor.access, openableItems(actor, await listSavedViews())));
   } catch (err) {
     return serverError('Could not load saved views', err);
   }
 }
 
+/** The saved view a new one is being saved from (`from` in the body), when it exists and the person may open it. */
+async function openedSource(actor: { id: string }, body: unknown) {
+  const from = (body as { from?: unknown } | null)?.from;
+  if (typeof from !== 'string') return null;
+  const source = await getSavedView(from);
+  return source && canOpenItem(actor, source) ? source : null;
+}
+
 export async function POST(req: Request) {
-  const actor = await requireRole('views:write');
+  const actor = await requireRole('views:personal');
   if (actor instanceof NextResponse) return actor;
 
   const body = await parseJsonBody<unknown>(req);
@@ -27,7 +37,16 @@ export async function POST(req: Request) {
   if (!fields.ok) return Response.json({ error: fields.error }, { status: 400 });
 
   try {
-    const result = await createSavedView(fields.value, actor.id);
+    // A view saved from an open one is a Duplicate: it holds none of the values held back from the copier, whatever
+    // the request carries, and says how many filters now show more than the original did.
+    const source = await openedSource(actor, body);
+    const copy = source
+      ? await copyViewQuery(actor.access, source, fields.value.query)
+      : { query: withoutPlaceholder(fields.value.query), widened: 0 };
+    // A new item holds no value yet, so every value outside the saver's Access in it is one they are bringing in.
+    const { unseen } = await restoreHeldBackView(actor.access, { id: '', query: '' }, copy.query);
+    if (unseen) return Response.json({ error: UNSEEN_VALUE_MESSAGE }, { status: 400 });
+    const result = await createSavedView({ ...fields.value, query: copy.query }, actor.id);
     if (!result.ok) return Response.json({ error: savedViewNameTakenMessage(fields.value.name) }, { status: 409 });
 
     await writeAudit({
@@ -35,10 +54,12 @@ export async function POST(req: Request) {
       action: 'view.create',
       entityType: 'saved_view',
       entityId: result.view.id,
-      summary: `Saved view "${result.view.name}"`,
+      // A Personal item is logged by id and kind only: its name is its owner's alone.
+      summary: 'Saved a Personal view',
       details: { fields: SAVED_VIEW_FIELDS },
     });
-    return Response.json(markedSavedView(actor.access, result.view), { status: 201 });
+    const [view] = await holdBackSavedViews(actor.access, [result.view]);
+    return Response.json({ ...view, widened: copy.widened }, { status: 201 });
   } catch (err) {
     return serverError('Could not save the view', err);
   }
