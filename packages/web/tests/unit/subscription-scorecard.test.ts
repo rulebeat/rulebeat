@@ -51,7 +51,7 @@ const grant = (kind: ScopeGrant['scope']['kind'], path: string): ScopeGrant => (
 const holds = (...grants: ScopeGrant[]): Access => buildAccess(grants, 'manual');
 
 const summaryFor = (filters: Partial<WidgetFilters> = {}, access: Access = EVERYTHING_ACCESS) =>
-  computeWidgetSummary({ dateWindow: window, ...filters }, 30, access);
+  computeWidgetSummary({ dateWindow: window, ...filters }, access);
 const rowOf = (summary: Awaited<ReturnType<typeof summaryFor>>, id: string) => summary.perSubscription.find(r => r.subscriptionId === id);
 
 beforeEach(async () => {

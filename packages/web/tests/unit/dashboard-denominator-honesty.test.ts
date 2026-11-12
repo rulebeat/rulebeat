@@ -89,7 +89,7 @@ describe('dashboard denominator honesty: a Severity filter changes who fails, no
   });
 
   it('with no severity filter, totalRules counts both rules and passingRules counts only the clean one', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.current.totalRules).toBe(2);
     expect(summary.current.passingRules).toBe(1);
@@ -97,8 +97,7 @@ describe('dashboard denominator honesty: a Severity filter changes who fails, no
 
   it('filtering by severity:high keeps both rules in the count, and only the rule with a High finding fails', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -107,8 +106,7 @@ describe('dashboard denominator honesty: a Severity filter changes who fails, no
 
   it('a rule whose only finding is of another severity passes under the filter', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], severities: ['critical'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], severities: ['critical'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -117,8 +115,7 @@ describe('dashboard denominator honesty: a Severity filter changes who fails, no
 
   it('the same count applies to perCategory, which the pct is rounded from', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], severities: ['high'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
     const mod = summary.perCategory.find(m => m.category === CATEGORY);
 
@@ -147,8 +144,7 @@ describe('dashboard denominator honesty: tag filter narrows the counted rules', 
 
   it('filtering by tag narrows totalRules to just the tagged rule', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], tags: ['pci'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], tags: ['pci'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(1);
@@ -174,8 +170,7 @@ describe('dashboard denominator honesty: a resource group filter counts the rule
 
   it('a resourceGroups-only filter leaves totalRules at the full count of rules that look at that group', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -186,8 +181,7 @@ describe('dashboard denominator honesty: a resource group filter counts the rule
     await insertRule('test-rule-here', { scope: { level: 'subscription', subscriptions: ['sub-1'] } });
 
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(3);
@@ -195,8 +189,7 @@ describe('dashboard denominator honesty: a resource group filter counts the rule
 
   it('a resource group no finding has ever sat in is looked at by every rule the viewer holds, not by none', async () => {
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], resourceGroups: ['rg-nobody-has'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], resourceGroups: ['rg-nobody-has'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -214,8 +207,7 @@ describe('dashboard denominator honesty: a resource group filter counts the rule
     });
 
     const summary = await computeWidgetSummary(
-      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { categories: [CATEGORY], resourceGroups: ['rg1'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(2);
@@ -247,7 +239,7 @@ describe('live posture counts only the rules that can look at what the viewer ho
   });
 
   it('a one-subscription holder\'s total leaves out a rule scoped to another subscription and the Graph rule', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, 30, buildAccess([oneSubscription('sub-1')], 'manual'));
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, buildAccess([oneSubscription('sub-1')], 'manual'));
 
     expect(summary.current.totalRules).toBe(2);
     expect(summary.current.passingRules).toBe(1);
@@ -256,21 +248,21 @@ describe('live posture counts only the rules that can look at what the viewer ho
   });
 
   it('someone without the Directory has no Graph rules counted, and someone with it does', async () => {
-    const without = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, 30, buildAccess([oneSubscription('sub-1')], 'manual'));
-    const withDirectory = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, 30, buildAccess([oneSubscription('sub-1'), directory], 'manual'));
+    const without = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, buildAccess([oneSubscription('sub-1')], 'manual'));
+    const withDirectory = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, buildAccess([oneSubscription('sub-1'), directory], 'manual'));
 
     expect(withDirectory.current.totalRules - without.current.totalRules).toBe(1);
   });
 
   it('Everything counts every enabled Problem rule, whatever its scope', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: window }, EVERYTHING_ACCESS);
 
     expect(summary.current.totalRules).toBe(4);
     expect(summary.current.passingRules).toBe(3);
   });
 
   it('the subscription filter narrows the Scopes the same way', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], subscriptions: ['sub-2'], dateWindow: window }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], subscriptions: ['sub-2'], dateWindow: window }, EVERYTHING_ACCESS);
 
     expect(summary.current.totalRules).toBe(2);
   });
@@ -293,8 +285,7 @@ describe('a rule-scoped widget counts only the rules it names that exist and are
 
   it('a deleted id and a disabled id count neither', async () => {
     const summary = await computeWidgetSummary(
-      { ruleIds: ['rule-live', 'rule-deleted', 'rule-disabled'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { ruleIds: ['rule-live', 'rule-deleted', 'rule-disabled'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(1);
@@ -303,8 +294,7 @@ describe('a rule-scoped widget counts only the rules it names that exist and are
 
   it('a selection of nothing that exists reads empty, not 100', async () => {
     const summary = await computeWidgetSummary(
-      { ruleIds: ['rule-deleted'], dateWindow: { mode: 'relative', days: 7 } },
-      30, EVERYTHING_ACCESS,
+      { ruleIds: ['rule-deleted'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS,
     );
 
     expect(summary.current.totalRules).toBe(0);

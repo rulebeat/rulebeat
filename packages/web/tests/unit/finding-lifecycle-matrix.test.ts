@@ -329,7 +329,7 @@ describe('active vs. expired suppressions (queryActiveFindings)', () => {
     expect((await listFindings(EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
     expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
     expect((await queryActiveFindingsWithRows(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
-    const summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary(FILTERS, EVERYTHING_ACCESS);
     expect(summary.current.activeFindings).toBe(0);
     expect(summary.current.severityCounts).toEqual({ critical: 0, high: 0, medium: 0, low: 0, info: 0 });
   });

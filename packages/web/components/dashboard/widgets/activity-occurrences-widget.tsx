@@ -5,8 +5,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Loader2 } from 'lucide-react';
 import type { WidgetSummary } from '@/lib/dashboard-data';
 import { mergeWidgetFilters, buildSummaryParams, type WidgetFilters } from '@/lib/dashboard-filters';
-import { CHART_TICK, periodToDays } from '@/components/dashboard/dashboard-constants';
+import { CHART_TICK } from '@/components/dashboard/dashboard-constants';
+import { ACTIVITY_KEPT_DAYS } from '@/lib/widget-limits';
 import { useWidgetFetch } from '@/lib/hooks/use-widget-fetch';
+import { useReportWidgetNotes } from '@/lib/hooks/use-widget-notes';
 import { WidgetUnavailable } from '@/components/dashboard/widgets/widget-unavailable';
 
 interface Config { category?: string; period?: string; policyIds?: string[] }
@@ -17,17 +19,15 @@ interface Props { config: Config; filters: WidgetFilters; refreshKey: number }
  *  so there is no pass/fail posture to show, only how often the pattern keeps occurring. Backed by
  *  getActivityOccurrenceCounts() via the shared /api/widgets/summary endpoint. */
 export function ActivityOccurrencesWidget({ config, filters, refreshKey }: Props) {
-  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>), [filters, config]);
-  const trendDays = periodToDays(config.period ?? '30d', 180); // finding_events retention is 180 days
-  const params = useMemo(() => {
-    const p = buildSummaryParams(merged);
-    p.set('trendDays', String(trendDays));
-    return p.toString();
-  }, [merged, trendDays]);
+  // The date window draws the chart. A saved period is this widget's own window; 'all' is the days of activity kept.
+  const merged = useMemo(() => mergeWidgetFilters(filters, config as unknown as Record<string, unknown>, { periodAllDays: ACTIVITY_KEPT_DAYS }), [filters, config]);
+  const params = useMemo(() => buildSummaryParams(merged).toString(), [merged]);
   const { data: summary, loading, failed, retry } = useWidgetFetch<WidgetSummary>(
     `/api/widgets/summary?${params}`,
     [refreshKey]
   );
+
+  useReportWidgetNotes(!loading && !failed && summary?.activityRetentionNote ? [summary.activityRetentionNote] : []);
 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-ink-muted" /></div>;
 

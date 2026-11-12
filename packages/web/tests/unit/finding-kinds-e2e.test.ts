@@ -106,7 +106,7 @@ describe('computeWidgetSummary (issue #175)', () => {
       findings: [activity, state, future], finishedAt: daysAgo(1),
     });
 
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.current.activeFindings).toBe(1);
     expect(summary.current.severityCounts.high).toBe(1);

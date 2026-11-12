@@ -87,14 +87,14 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('a rule with zero findings but a failed or never-run last status counts as unknown, never passing', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.current.passingRules).toBe(1);
     expect(summary.current.unknownRules).toBe(2);
   });
 
   it('an activity-kind rule is excluded from totalRules/passingRules and counted in activityRuleCount', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     // 4 state rules (passing, unknown-failed, unknown-never-run, with-finding). The activity
     // rule is not one of them, no matter how healthy its own status looks.
@@ -103,7 +103,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('perCategory carries the same passing/total its pct is rounded from (spec 033)', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     const mod = summary.perCategory.find(m => m.category === CATEGORY);
 
     expect(mod).toBeDefined();
@@ -113,7 +113,7 @@ describe('the honest posture metric: passing / unknown / activity (spec 030)', (
   });
 
   it('perSubscription carries the same passingRules/totalRules its pct is rounded from (spec 033)', async () => {
-    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: [CATEGORY], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     const sub = summary.perSubscription.find(s => s.subscriptionId === 'sub-1');
 
     expect(sub).toBeDefined();
@@ -129,8 +129,8 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
   const BASELINE_DATE = daysAgo(30);
   const DAYS_AGO_10 = daysAgo(10);
   const DAYS_AGO_2 = daysAgo(2);
-  // A 7-day window starts 7 days ago, so the baseline is the newest point on or before the day before.
-  const DAY_BEFORE_WINDOW = daysAgo(8);
+  // A 7-day window starts 6 days ago (today and the six before it), so the baseline is the newest point on or before the day before.
+  const DAY_BEFORE_WINDOW = daysAgo(7);
   const SUB_ONE = 'sub-1';
 
   async function baselineRow(category: string, passingRules: number, totalRules: number, formulaVersion: number, date = BASELINE_DATE, subscriptionId = ''): Promise<void> {
@@ -165,7 +165,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('cost', 1, 4, 2);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' }); // lands in `security`; gives `pct` a value.
 
-    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.current.pct).toBe(100);
     expect(summary.baseline, 'a partial blend was built').toBeNull();
@@ -178,7 +178,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('cost', 1, 4, 2);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.baseline).toBeNull();
     expect(summary.deltaPct).toBeNull();
@@ -191,7 +191,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('cost', 1, 4, 3, DAYS_AGO_10);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security', 'cost'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     // 3/4 + 1/4 = 4/8: 50%. The live 1/1 is 100%.
     expect(summary.baseline).toEqual({ pct: 50, date: BASELINE_DATE });
@@ -203,7 +203,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('security', 3, 4, 2, DAYS_AGO_2);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.baseline).toBeNull();
     expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: DAYS_AGO_2, level: 'install' });
@@ -214,7 +214,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     for (let i = 0; i < 239; i++) await insertRule(`bulk-passing-${i}`, { lastRunStatus: 'success' });
     await insertRule('bulk-unproven', { lastRunStatus: null });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.current.pct).toBe(99);
     expect(summary.baseline!.pct).toBe(100);
@@ -225,7 +225,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('security', 3, 4, 2, BASELINE_DATE, SUB_ONE);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_ONE], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_ONE], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.baseline).toBeNull();
     expect(summary.baselineGap).toEqual({ needed: DAY_BEFORE_WINDOW, earliest: null, level: 'subscription' });
@@ -235,7 +235,7 @@ describe('spec 033: baseline honesty: a pre-honest-formula snapshot must not ble
     await baselineRow('security', 3, 4, SNAPSHOT_FORMULA_VERSION);
     await insertRule(RULE_PASSING, { lastRunStatus: 'success' });
 
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
 
     expect(summary.baseline).not.toBeNull();
     expect(summary.baseline!.pct).toBe(75);

@@ -29,7 +29,7 @@ vi.mock('@/lib/hooks/use-widget-fetch', () => ({
 const FILTERS = { categories: ['security'], dateWindow: { mode: 'relative' as const, days: 7 } };
 
 async function renderRow(): Promise<string> {
-  summary = await computeWidgetSummary(FILTERS, 30, EVERYTHING_ACCESS);
+  summary = await computeWidgetSummary(FILTERS, EVERYTHING_ACCESS);
   return renderToStaticMarkup(createElement(CoverageFreshnessWidget, { config: {}, filters: FILTERS, refreshKey: 0 }));
 }
 

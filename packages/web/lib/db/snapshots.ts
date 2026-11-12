@@ -14,9 +14,10 @@ import { getMeta, setMeta } from './meta';
 import { emptySeverityCounts } from '../severity';
 import { countsTowardPosture, isActivityRule } from '../finding-kinds';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
+import { TREND_KEPT_DAYS } from '../widget-limits';
 import type { Severity } from '../types';
 
-const RETENTION_DAYS = 365;
+const RETENTION_DAYS = TREND_KEPT_DAYS;
 
 /** The posture formula a freshly-written row is computed under: bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and

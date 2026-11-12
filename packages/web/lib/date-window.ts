@@ -15,7 +15,8 @@ function daysAgoKey(days: number, now: Date = new Date()): string {
   return new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Resolves a DateWindow into concrete `[from, to]` date-key bounds (inclusive). Custom ranges
+/** Resolves a DateWindow into concrete `[from, to]` date-key bounds (inclusive). A relative window of
+ *  N days holds exactly N UTC day keys: today and the N-1 days before it. Custom ranges
  *  are clamped: `to` can never be in the future (no data exists there), and `from` can never be
  *  after `to`. */
 export function resolveDateWindow(w: DateWindow, now: Date = new Date()): { from: string; to: string } {
@@ -25,10 +26,10 @@ export function resolveDateWindow(w: DateWindow, now: Date = new Date()): { from
     const from = w.from > to ? to : w.from;
     return { from, to };
   }
-  return { from: daysAgoKey(w.days, now), to: today };
+  return { from: daysAgoKey(Math.max(1, w.days) - 1, now), to: today };
 }
 
-const RELATIVE_LABELS: Record<number, string> = { 1: '24h', 7: '7d', 30: '30d' };
+const RELATIVE_LABELS: Record<number, string> = { 1: 'Today (UTC)', 7: '7d', 30: '30d' };
 
 function formatDateKey(dateKey: string): string {
   // Parse as UTC to avoid the browser's local timezone shifting a YYYY-MM-DD date by a day.
@@ -36,7 +37,7 @@ function formatDateKey(dateKey: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-/** Human label for display: relative windows use the familiar "24h"/"7d"/"30d" short form
+/** Human label for display: relative windows use the familiar "Today (UTC)"/"7d"/"30d" short form
  *  (falling back to "{N}d" for any other day count); custom ranges always show the real picked
  *  dates, never a vague placeholder. */
 export function dateWindowLabel(w: DateWindow): string {
@@ -49,5 +50,6 @@ export function dateWindowLabel(w: DateWindow): string {
  *  where the label already IS the dates. */
 export function dateWindowPhrase(w: DateWindow): string {
   const label = dateWindowLabel(w);
-  return w.mode === 'relative' ? `in the last ${label}` : `during ${label}`;
+  if (w.mode === 'custom') return `during ${label}`;
+  return w.days === 1 ? 'today (UTC)' : `in the last ${label}`;
 }

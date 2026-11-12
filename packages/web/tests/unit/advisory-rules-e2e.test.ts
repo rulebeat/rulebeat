@@ -92,7 +92,7 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
 
   it('counts only Problem findings in posture, the severity breakdown and the daily snapshot', async () => {
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     expect(summary.current.activeFindings).toBe(2);
     expect(summary.current.severityCounts.high).toBe(2);
     const snapshot = (await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1);
@@ -106,10 +106,10 @@ describe('an Advisory rule and a Problem rule through a scan (#176)', () => {
       conditions: JSON.stringify([]), rawKql: 'resources // marker-activity', type: 'custom', kind: 'activity',
     }));
     await scan();
-    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const summary = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     expect(summary.current.totalRules).toBe(1);
     expect(summary.current.activityRuleCount).toBe(1);
-    const scoped = await computeWidgetSummary({ ruleIds: [PROBLEM, ADVISORY, 'adv-e2e-activity'], dateWindow: { mode: 'relative', days: 7 } }, 30, EVERYTHING_ACCESS);
+    const scoped = await computeWidgetSummary({ ruleIds: [PROBLEM, ADVISORY, 'adv-e2e-activity'], dateWindow: { mode: 'relative', days: 7 } }, EVERYTHING_ACCESS);
     expect(scoped.current.activityRuleCount).toBe(1);
     const snapshot = (await getSnapshots(EVERYTHING_ACCESS, { categories: ['security'] })).at(-1);
     expect(snapshot?.totalRules).toBe(1);

@@ -19,6 +19,7 @@ import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
+import { ACTIVITY_KEPT_DAYS } from '../widget-limits';
 import type { FindingPlacement } from '../placement';
 import type { Finding, RuleKind, Severity } from '../types';
 
@@ -68,7 +69,7 @@ export interface SyncScanFindingsOptions {
   covered?: Access;
 }
 
-const EVENT_RETENTION_DAYS = 180;
+const EVENT_RETENTION_DAYS = ACTIVITY_KEPT_DAYS;
 
 /** The two placement columns a finding is written with. A finding the scan path placed says where it
  *  sits; one built outside it (a restored scan blob) is placed by what it implies. */

@@ -12,6 +12,8 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ### Changed
 
+- The shortest date window is now Today (UTC), and last N days covers exactly N days on Scans and dashboards.
+- New, Fixed and the New vs Fixed bars match the Scans New and Fixed lists for the dashboard's date window. A widget's own period now acts as its date window.
 - Dashboard posture now counts only the rules that can look at something you hold. Someone without the Directory no longer has Microsoft Graph rules in their number.
 - The Stat Card reads Rules counted and gives the posture change in points against a named date.
 - Top violating rules shows each rule's highest open severity.
