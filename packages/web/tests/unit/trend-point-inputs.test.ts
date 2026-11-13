@@ -180,6 +180,18 @@ describe('every posture input refreshes today\'s points', () => {
     expect((await install())!.updatedAt).toBe('2026-05-04T11:00:00.000Z');
   });
 
+  it('a group moved under the group a rule is scoped to rewrites the point of the subscription under it', async () => {
+    // The subscription's own parent never changes: only the group above it moves.
+    await insertRuleRow({ id: 'rmg', managementGroups: ['top'] });
+    const tree = fakeHierarchy([group('top', 'Top', null), group('other', 'Other', null), group('b', 'B', 'other'), subscription(SUB, 'S', 'b')]);
+    await atClock(T1, () => refreshFrom(tree));
+    expect(await pointOn('security', SUB, DAY)).toMatchObject({ totalRules: 2, updatedAt: T1 });
+
+    tree.nodes = [group('top', 'Top', null), group('other', 'Other', null), group('b', 'B', 'top'), subscription(SUB, 'S', 'b')];
+    await atClock('2026-05-04T10:00:00.000Z', () => refreshFrom(tree));
+    expect(await pointOn('security', SUB, DAY)).toMatchObject({ totalRules: 3, updatedAt: '2026-05-04T10:00:00.000Z' });
+  });
+
   it('a failed tree read queues nothing', async () => {
     const tree = fakeHierarchy([group('mg', 'Root', null)]);
     tree.failWith = new Error('azure down');
@@ -263,21 +275,25 @@ describe('where the writer is called from', () => {
     expect(scanCalls.filter(c => c.args.some(a => /\bnow\b/.test(a)))).toEqual([]);
   });
 
-  it('every repository writer of rules and suppressions refreshes, or says why it need not', () => {
+  it('every repository writer of rules, suppressions, findings and categories refreshes, or says why it need not', () => {
     const EXEMPT: Record<string, string> = {
       setRulesLastRunStatus: 'the scan path refreshes after its own sync',
+      updateCategory: 'changes the label, colour, icon and order only, which no point counts',
+      createCategory: 'a new category holds no rules',
+      deleteCategory: 'a deleted category writes nothing and its points leave with retention',
+      syncScanFindingsDetailed: 'reports the categories it touched; syncScanFindings and the scan runner refresh after its commit',
       insertRuleOn: 'runs on the caller\'s transaction and reports the categories; the caller refreshes after commit',
       updateRuleOn: 'runs on the caller\'s transaction and reports the categories; the caller refreshes after commit',
       removeFindingRowsForRule: 'the half of a delete that runs on the caller\'s transaction; the caller refreshes after commit',
     };
     const unrefreshed: string[] = [];
     const writers: string[] = [];
-    for (const file of ['lib/rules.ts', 'lib/suppressions.ts']) {
+    for (const file of ['lib/rules.ts', 'lib/suppressions.ts', 'lib/db/findings.ts', 'lib/db/categories.ts']) {
       const source = ts.createSourceFile(file, readFileSync(path.join(WEB, file), 'utf8'), ts.ScriptTarget.Latest, true);
       for (const stmt of source.statements) {
         if (!ts.isFunctionDeclaration(stmt) || !stmt.name || !stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) continue;
         const text = stmt.getText(source);
-        const writes = /\.(insert|update|delete)\((rulesTable|suppressionsTable)\b/.test(text);
+        const writes = /\.(insert|update|delete)\((rulesTable|suppressionsTable|findingsTable|categories)\b/.test(text);
         if (writes) writers.push(stmt.name.text);
         if (writes && !text.includes('refreshSnapshotsFor') && !text.includes('refreshCategoriesOf') && !EXEMPT[stmt.name.text]) unrefreshed.push(`${file}:${stmt.name.text}`);
       }
@@ -286,6 +302,7 @@ describe('where the writer is called from', () => {
     expect(writers).toEqual(expect.arrayContaining([
       'setRulesEnabled', 'saveRules', 'deleteRule', 'duplicateRule', 'switchRuleVersion', 'insertRuleOn', 'updateRuleOn',
       'addSuppression', 'removeSuppression', 'saveSuppressions',
+      'syncScanFindingsDetailed', 'createCategory', 'updateCategory', 'deleteCategory',
     ]));
     expect(unrefreshed).toEqual([]);
   });

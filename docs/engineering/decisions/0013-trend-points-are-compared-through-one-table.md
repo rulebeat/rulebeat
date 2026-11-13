@@ -74,10 +74,50 @@ here: formula 3 and finding-count version 1.
 - An upgrade changes no stored count. Until the formula-3 change raises the version, subscription
   and Directory points are written as formula 2, which the table refuses at those levels, so
   history stays honest even in a partial release.
-- The refresh on every posture input costs one awaited write per touched category. Its bench times
-  are filled in by the refresh-on-every-input ticket, laid out as in ADR 0007 (a table of the
-  measured figures) with the machine and the backend named. The 1-second limit is this spec's
+- The refresh on every posture input costs one awaited write per touched category. Its bench
+  (`npm run bench:trend-points`, ADR 0007's layout) is below. The 1-second limit is this spec's
   threshold, not an existing rule. A measurement over it sends the spec back before the formula-3
   change lands.
 
-Bench times: to be filled in by the refresh-on-every-input ticket.
+Measured on the benchmark harness at 2,000 subscriptions, 30 categories, 240 rules and 50,000
+findings (960 suppressed), seed 1, three warm runs. Machine: AMD EPYC-Rome Processor, 4 vCPUs, 8 GB,
+Linux 7.0, Node 24.22. SQLite is a file in the temp directory; Postgres is 17 on the same machine,
+over the loopback. Both runs follow two earlier days of history written by the real writer, so today's
+refresh compares with an earlier point at every level.
+
+The first run found the cost in the management group expansion (below). Each management group is now
+expanded once per read of the tree and shared by every subscription and every rule scoped to a group
+(`expandRuleGroup` in `lib/run-scope.ts`), and `expandManagementGroups` no longer scans a list for each
+frontier step. No number a refresh writes changes: a test compares the overlap from the shared expansion
+with a fresh read of the same tree. The table gives the figures before and after.
+
+| Measurement | SQLite before | SQLite after | Postgres 17 before | Postgres 17 after |
+| --- | --- | --- | --- | --- |
+| One refresh of all 30 categories, first of the day | 24.6 s | 3.7 s | 26.6 s | 5.1 s |
+| One refresh of all 30 categories, repeat (every level rewritten) | 24.5 s | 3.6 s | 26.1 s | 5.0 s |
+| Transaction hold, one category: median | 0.72 s | 0.12 s | 0.83 s | 0.16 s |
+| Transaction hold, one category: longest | 2.4 s | 0.20 s | 2.0 s | 0.20 s |
+| `computeWidgetSummary`, Everything | 15.3 s | 2.0 s | 15.6 s | 2.2 s |
+| `computeWidgetSummary`, one category | 0.83 s | 0.58 s | 1.05 s | 0.66 s |
+| `computeWidgetSummary`, a person holding 20 subscriptions | 0.32 s | 0.20 s | 0.47 s | 0.29 s |
+| Last-scanned read, Everything | 1.4 ms | 1.8 ms | 3.6 ms | 3.9 ms |
+| Last-scanned read, a person holding 20 subscriptions | 4.9 ms | 4.9 ms | 9.0 ms | 9.5 ms |
+
+The transaction hold is one category refreshed on its own, so it includes the retention statement
+and the queue turn; the figure is an upper bound of the hold itself. The "after" figures are the
+cold run of each measurement, except the two rows that name a median.
+
+**Two are still over the 1-second limit on both backends: one refresh of all categories (3.7 s on
+SQLite, 5.1 s on Postgres) and `computeWidgetSummary` for Everything (2.0 s and 2.2 s).** The hold per
+category, which is what a concurrent write waits behind, is now under the limit on both. The two
+backends differ by less than a factor of two, so the cost is still mostly in the process and not the
+database. The before-profile (a SQLite run at 2,000 subscriptions, 3 categories) put most of the time
+in `expandRuleGroup` and `expandManagementGroups`: the count of each subscription asked, for every rule
+scoped to a management group, for that group's subscriptions, and each ask walked the whole tree again.
+No index is called for: the reads of stored points are not where the time goes, so the lower-case
+expression index on `lower(subscription_id)` is not added.
+
+The spec keeps its 1-second limit and its 2,000-subscription target. The remaining over-limit times are
+recorded here and the owner decides before the formula-3 change. The tree is read once per category
+transaction, so a refresh of 30 categories expands each group 30 times, not once; sharing the read
+across the categories of one queued call is the next step if the owner wants a lower figure.

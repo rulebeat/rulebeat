@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "generate-demo": "tsx scripts/generate-demo.ts",
     "bench:views": "tsx scripts/bench-finding-views.ts",
+    "bench:trend-points": "tsx scripts/bench-trend-points.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
