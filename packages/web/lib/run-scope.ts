@@ -221,20 +221,35 @@ export interface RequestScope {
 }
 
 interface GroupExpansion {
-  groups: Set<string>;
-  subscriptions: Set<string>;
+  groups: ReadonlySet<string>;
+  subscriptions: ReadonlySet<string>;
 }
 
-/** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it. */
+/** Each tree's expansions, kept for as long as the array that was read is: a refresh reads the tree once and
+ *  every subscription and rule that asks about one group shares the answer. A tree is never changed in place
+ *  (a refresh replaces the whole array), so a changed tree is a new array and is read in full. */
+const expansionsOf = new WeakMap<readonly HierarchyNode[], { tenants: string[]; byGroup: Map<string, GroupExpansion> }>();
+
+/** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it.
+ *  The result is shared: read it, never change it. */
 function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
-  const out: GroupExpansion = { groups: new Set(), subscriptions: new Set() };
-  const grants: ScopeGrant[] = [...new Set(hierarchy.map(n => n.tenantId))].map(tenantId => ({
+  let kept = expansionsOf.get(hierarchy);
+  if (!kept) {
+    kept = { tenants: [...new Set(hierarchy.map(n => n.tenantId))], byGroup: new Map() };
+    expansionsOf.set(hierarchy, kept);
+  }
+  const key = id.toLowerCase();
+  const known = kept.byGroup.get(key);
+  if (known) return known;
+  const out = { groups: new Set<string>(), subscriptions: new Set<string>() };
+  const grants: ScopeGrant[] = kept.tenants.map(tenantId => ({
     tenantId, scope: { kind: 'managementGroup', path: `${MANAGEMENT_GROUP_PATH}${id}` }, role: 'viewer' as Role,
   }));
   for (const expansion of expandManagementGroups(grants, hierarchy)) {
     for (const g of expansion.groups) out.groups.add(g);
     for (const s of expansion.subscriptions) out.subscriptions.add(s);
   }
+  kept.byGroup.set(key, out);
   return out;
 }
 

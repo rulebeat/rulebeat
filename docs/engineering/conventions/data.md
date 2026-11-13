@@ -124,3 +124,5 @@ Two tests hold the twins together. `tests/unit/schema-twins.test.ts` compares th
 ## Measuring the findings views
 
 **A change to how findings views are read is measured with `npm run bench:views`, not guessed.** A read that got slower or heavier shows up there before a user feels it; the codebase map says how to run it.
+
+**A change to what the trend point writer does, or to a read it sits beside, is measured with `npm run bench:trend-points`.** Every posture input awaits a refresh, so its cost is paid by whoever made the change. Run it on SQLite and on Postgres (ADR 0013 holds the last figures and the 1-second limit); the codebase map says how.
