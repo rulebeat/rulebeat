@@ -11,10 +11,19 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
+import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { db, dbReady, rawSqlite, pgDb } from '@/lib/db/client';
+import { run } from '@/lib/db/exec';
+import { ruleVersions } from '@/lib/db/tables';
+import { runSeeds } from '@/lib/db/migrate';
+import { seedPg } from '@/lib/db/pg/seeds';
+import { getCategory } from '@/lib/db/categories';
+import { runCategoryScan } from '@/lib/scan-runner';
 import { refreshSnapshotsFor, backfillSnapshots } from '@/lib/db/snapshots';
 import { listFindings, deleteFindingsForRule } from '@/lib/db/findings';
-import { createRule, deleteRule, duplicateRule, saveRules, setRulesEnabled, updateRule } from '@/lib/rules';
+import { createRule, deleteRule, duplicateRule, saveRules, setRulesEnabled, switchRuleVersion, updateRule } from '@/lib/rules';
 import { approveLibraryRequest, copyPersonalRuleToLibrary, createLibraryRequest } from '@/lib/db/library-requests';
 import { createPersonalRule } from '@/lib/db/personal-rules';
 import { createUser } from '@/lib/db/users';
@@ -22,6 +31,8 @@ import { addSuppression, removeSuppression, saveSuppressions } from '@/lib/suppr
 import { refreshExpiredSuppressions } from '@/lib/scheduler';
 import { clearRules, execRaw, resetDb } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+import { argRow, fakeTenantContext } from '../helpers/fake-azure';
+import { catalogueOf, shippedRule } from '../helpers/catalogue';
 import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 import { insertRuleRow, pointOn, storeFindings, syntheticFinding } from '../helpers/trend-writer';
 import type { Rule } from '@/lib/types';
@@ -37,6 +48,28 @@ async function atClock<T>(iso: string, fn: () => Promise<T>): Promise<T> {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(iso));
   try { return await fn(); } finally { vi.useRealTimers(); }
+}
+
+const SWITCHED = 'aaaaaaaa-0000-4000-8000-0000000000d1';
+const v1 = shippedRule({ id: SWITCHED });
+const v2 = shippedRule({ id: SWITCHED, version: '2.0.0', releaseNote: 'Moved.', definition: { category: 'cost' } });
+
+/** A shipped rule in Security that has a recorded second version which belongs to Cost, seeded without a refresh. */
+async function seedSwitchableRule(): Promise<void> {
+  await dbReady;
+  await run(db.delete(ruleVersions).where(eq(ruleVersions.ruleId, SWITCHED)));
+  const dataDir = join(WEB, 'data');
+  for (const catalogue of [catalogueOf(v1), catalogueOf(v2)]) {
+    if (pgDb) await seedPg(pgDb, dataDir, { skipOwnerBootstrap: true, catalogue });
+    else runSeeds(rawSqlite!, dataDir, { skipOwnerBootstrap: true, catalogue });
+  }
+}
+
+/** A scan of Security whose one rule returns two resources, so the sync opens two findings and resolves the stored one. */
+async function scanSecurity(): Promise<void> {
+  const category = (await getCategory('security'))!;
+  const ctx = fakeTenantContext({ rows: () => [argRow({ name: 'a' }), argRow({ name: 'b' })] });
+  await runCategoryScan(category, { access: EVERYTHING_ACCESS, ctx, ruleIds: ['r1'] });
 }
 
 const newRule = (id: string, over: Partial<Rule> = {}): Rule => ({
@@ -88,6 +121,8 @@ afterEach(() => { vi.useRealTimers(); });
 
 interface InputCase {
   name: string;
+  /** Runs before the clock is set, for state the write needs that must not refresh a point itself. */
+  setup?: () => Promise<void>;
   act: () => Promise<unknown>;
   /** What the install-wide point of the category reads after the write. */
   expected: { totalRules?: number; passingRules?: number; activeFindings?: number };
@@ -100,6 +135,15 @@ const CASES: InputCase[] = [
   { name: 'disabling a rule through an edit', act: () => updateRule('r2', { enabled: false }), expected: { totalRules: 1 } },
   { name: 'moving a rule out of the category (the old one)', act: () => updateRule('r2', { category: 'cost' }), expected: { totalRules: 1 } },
   { name: 'moving a rule into a category (the new one)', act: () => updateRule('r2', { category: 'cost' }), expected: { totalRules: 1 }, category: 'cost' },
+  {
+    name: 'switching a rule to a version in another category (the old one)',
+    setup: seedSwitchableRule, act: () => switchRuleVersion(SWITCHED, '2.0.0'), expected: { totalRules: 2 },
+  },
+  {
+    name: 'switching a rule to a version in another category (the new one)',
+    setup: seedSwitchableRule, act: () => switchRuleVersion(SWITCHED, '2.0.0'), expected: { totalRules: 1 }, category: 'cost',
+  },
+  { name: 'a scan syncing its findings', act: scanSecurity, expected: { totalRules: 2, activeFindings: 2 } },
   { name: 'disabling rules in bulk', act: () => setRulesEnabled(['r1', 'r2'], false), expected: { totalRules: 0 } },
   { name: 'duplicating a rule', act: () => duplicateRule('r2'), expected: { totalRules: 2 } },
   { name: 'deleting a rule', act: () => deleteRule('r1'), expected: { totalRules: 1, activeFindings: 0 } },
@@ -143,6 +187,7 @@ const CASES: InputCase[] = [
 describe('every posture input refreshes today\'s points', () => {
   for (const c of CASES) {
     it(c.name, async () => {
+      await c.setup?.();
       await atClock(T1, c.act);
       const point = (await install(c.category))!;
       expect(point.updatedAt).toBe(T1);
@@ -281,7 +326,7 @@ describe('where the writer is called from', () => {
       updateCategory: 'changes the label, colour, icon and order only, which no point counts',
       createCategory: 'a new category holds no rules',
       deleteCategory: 'a deleted category writes nothing and its points leave with retention',
-      syncScanFindingsDetailed: 'reports the categories it touched; syncScanFindings and the scan runner refresh after its commit',
+      syncScanFindingsDetailed: 'reports the categories it touched; the scan runner refreshes them after its commit (syncScanFindings, its thin wrapper, does not)',
       insertRuleOn: 'runs on the caller\'s transaction and reports the categories; the caller refreshes after commit',
       updateRuleOn: 'runs on the caller\'s transaction and reports the categories; the caller refreshes after commit',
       removeFindingRowsForRule: 'the half of a delete that runs on the caller\'s transaction; the caller refreshes after commit',
