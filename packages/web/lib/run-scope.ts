@@ -221,8 +221,8 @@ export interface RequestScope {
 }
 
 interface GroupExpansion {
-  groups: Set<string>;
-  subscriptions: Set<string>;
+  groups: ReadonlySet<string>;
+  subscriptions: ReadonlySet<string>;
 }
 
 /** Each tree's expansions, kept for as long as the array that was read is: a refresh reads the tree once and
@@ -241,7 +241,7 @@ function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): Group
   const key = id.toLowerCase();
   const known = kept.byGroup.get(key);
   if (known) return known;
-  const out: GroupExpansion = { groups: new Set(), subscriptions: new Set() };
+  const out = { groups: new Set<string>(), subscriptions: new Set<string>() };
   const grants: ScopeGrant[] = kept.tenants.map(tenantId => ({
     tenantId, scope: { kind: 'managementGroup', path: `${MANAGEMENT_GROUP_PATH}${id}` }, role: 'viewer' as Role,
   }));

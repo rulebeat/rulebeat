@@ -4,7 +4,7 @@
 //
 //   --backend NAME        sqlite (default) or postgres
 //   --pg-url URL          the Postgres database to use (or RULEBEAT_BENCH_PG_URL). Use a scratch database: the
-//                         bench writes rules, findings and trend points into it and refuses one that already holds findings
+//                         bench writes rules, findings and trend points into it and refuses one that already holds findings or trend points
 //   --subscriptions N     subscriptions in the management group tree (default 2000)
 //   --categories N        categories (default 30)
 //   --findings N          findings the scans save (default 50000)
@@ -77,8 +77,11 @@ async function main(): Promise<void> {
     const { dbReady, pgDb } = await import('../lib/db/client');
     const { sql } = await import('drizzle-orm');
     await dbReady;
-    const held = await pgDb!.execute(sql.raw('SELECT count(*)::int AS n FROM findings'));
-    if (Number((held.rows[0] as { n: number }).n) > 0) throw new Error('That Postgres database already holds findings. Give the bench a scratch database.');
+    // The bench clears the trend points it finds before it writes its own, so history counts as data here too.
+    for (const table of ['findings', 'posture_snapshots']) {
+      const held = await pgDb!.execute(sql.raw(`SELECT count(*)::int AS n FROM ${table}`));
+      if (Number((held.rows[0] as { n: number }).n) > 0) throw new Error(`That Postgres database already holds rows in ${table}. Give the bench a scratch database.`);
+    }
   }
 
   const { formatTable, runBench } = await import('./bench/trend-points');

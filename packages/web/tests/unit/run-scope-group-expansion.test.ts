@@ -94,9 +94,9 @@ describe('expanding each management group once', () => {
     const hierarchy = tree(200);
     const levels = hierarchy.filter(n => n.kind === 'subscription').map(n => narrowScopes(EVERYTHING_ACCESS, [n.id.toLowerCase()]));
     for (const level of levels) for (const r of RULES) ruleOverlapsScopes(r, level, hierarchy);
-    // Seven names are asked for, 'north' in two casings: at most one read each.
+    // Seven distinct names are asked for: at most one read each.
     expect(expansions.calls).toBeGreaterThan(0);
-    expect(expansions.calls).toBeLessThanOrEqual(8);
+    expect(expansions.calls).toBeLessThanOrEqual(7);
   });
 
   it('reads a changed tree afresh', () => {

@@ -11,7 +11,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
-import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, dbReady, rawSqlite, pgDb } from '@/lib/db/client';
@@ -28,7 +27,7 @@ import { approveLibraryRequest, copyPersonalRuleToLibrary, createLibraryRequest 
 import { createPersonalRule } from '@/lib/db/personal-rules';
 import { createUser } from '@/lib/db/users';
 import { addSuppression, removeSuppression, saveSuppressions } from '@/lib/suppressions';
-import { refreshExpiredSuppressions } from '@/lib/scheduler';
+import { refreshExpiredSuppressions, tickOnce } from '@/lib/scheduler';
 import { clearRules, execRaw, resetDb } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 import { argRow, fakeTenantContext } from '../helpers/fake-azure';
@@ -58,7 +57,7 @@ const v2 = shippedRule({ id: SWITCHED, version: '2.0.0', releaseNote: 'Moved.', 
 async function seedSwitchableRule(): Promise<void> {
   await dbReady;
   await run(db.delete(ruleVersions).where(eq(ruleVersions.ruleId, SWITCHED)));
-  const dataDir = join(WEB, 'data');
+  const dataDir = path.join(WEB, 'data');
   for (const catalogue of [catalogueOf(v1), catalogueOf(v2)]) {
     if (pgDb) await seedPg(pgDb, dataDir, { skipOwnerBootstrap: true, catalogue });
     else runSeeds(rawSqlite!, dataDir, { skipOwnerBootstrap: true, catalogue });
@@ -220,6 +219,8 @@ describe('every posture input refreshes today\'s points', () => {
     tree.nodes = [group('a', 'A', null), group('b', 'B', 'a'), subscription(SUB, 'S', 'b')];
     await atClock('2026-05-04T10:00:00.000Z', () => refreshFrom(tree));
     expect((await install())!.updatedAt).toBe('2026-05-04T10:00:00.000Z');
+    // The subscription's own point is rewritten too, not only the install-wide one.
+    expect((await pointOn('security', SUB, DAY))!.updatedAt).toBe('2026-05-04T10:00:00.000Z');
     tree.nodes = [group('a', 'A', null), group('b', 'B', null), subscription(SUB, 'S', 'b')];
     await atClock('2026-05-04T11:00:00.000Z', () => refreshFrom(tree));
     expect((await install())!.updatedAt).toBe('2026-05-04T11:00:00.000Z');
@@ -255,7 +256,11 @@ describe('a suppression that expires', () => {
     expect((await install())!.activeFindings).toBe(0);
   };
 
-  it('is refreshed by the first scheduler tick after it lapses, busy or not', async () => {
+  const globals = globalThis as typeof globalThis & { __rulebeatExpiryCheckedAt?: string; __rulebeatScanLock?: { busy: boolean } };
+  beforeEach(() => { delete globals.__rulebeatExpiryCheckedAt; });
+  afterEach(() => { globals.__rulebeatScanLock!.busy = false; });
+
+  it('is refreshed by the first scheduler tick after it lapses', async () => {
     await addExpiring();
     await atClock('2026-05-04T08:10:00.000Z', () => refreshExpiredSuppressions(new Date('2026-05-04T08:10:00.000Z')));
     await atClock('2026-05-04T08:20:00.000Z', () => refreshExpiredSuppressions(new Date('2026-05-04T08:20:00.000Z')));
@@ -263,6 +268,19 @@ describe('a suppression that expires', () => {
 
     await atClock('2026-05-04T08:40:00.000Z', () => refreshExpiredSuppressions(new Date('2026-05-04T08:40:00.000Z')));
     expect(await install()).toMatchObject({ activeFindings: 1, updatedAt: '2026-05-04T08:40:00.000Z' });
+  });
+
+  it('is refreshed by a tick that runs while a scan holds the busy flag', async () => {
+    await addExpiring();
+    await atClock('2026-05-04T08:10:00.000Z', () => refreshExpiredSuppressions(new Date('2026-05-04T08:10:00.000Z')));
+    globals.__rulebeatScanLock!.busy = true;
+    await atClock('2026-05-04T08:20:00.000Z', () => tickOnce({ now: new Date('2026-05-04T08:20:00.000Z') }));
+    expect((await install())!.activeFindings).toBe(0);
+
+    await atClock('2026-05-04T08:40:00.000Z', () => tickOnce({ now: new Date('2026-05-04T08:40:00.000Z') }));
+    expect(await install()).toMatchObject({ activeFindings: 1, updatedAt: '2026-05-04T08:40:00.000Z' });
+    // The tick held back everything else: the flag is still the scan's.
+    expect(globals.__rulebeatScanLock!.busy).toBe(true);
   });
 
   it('is counted from the next start when it lapsed while RuleBeat was stopped', async () => {
