@@ -25,6 +25,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - The Subscription scorecard lists every subscription, including ones with no findings or no rules, plus a Directory row. Each is graded against the rules whose scope includes it, and a footer counts findings placed elsewhere.
 - Scorecards say All passing only when every counted rule passes, show how many are not yet proven, and list the lowest first; posture tiles say why there is nothing to count.
 - The Trend chart is available for the Directory, and marks the day a line's counting changed.
+- Trend points for each subscription and the Directory are now written as posture formula 3, so they can be compared from the first start after the upgrade. That start writes today's points for every category and level, zero-finding subscriptions included, and leaves earlier points as they were.
 - A trend line marks the day its counting changed. What each number counts, and how older trend points were counted, is in docs/public/posture.md.
 
 ## [0.13.1] - 2026-10-16

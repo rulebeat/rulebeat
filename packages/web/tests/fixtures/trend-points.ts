@@ -5,7 +5,7 @@
  * `finding_count_version`), and the points cover every shape a later ticket has to treat differently:
  * a v1 point, v2 install-wide and per-subscription points, a point the scan-blob backfill wrote, today's
  * point, points past the retention window, a point of a category since deleted, and a subscription id
- * in upper case.
+ * in upper case (one dated before today and one dated today).
  */
 
 const DAY_MS = 86_400_000;
@@ -47,6 +47,8 @@ export function trendPoints(): TrendPoint[] {
     point({ category: 'security', date: daysAgo(370), posture_pct: 40, passing_rules: 2, total_rules: 5 }),
     point({ category: DELETED_CATEGORY, date: daysAgo(366), posture_pct: 10, passing_rules: 1, total_rules: 10 }),
     point({ category: 'security', date: daysAgo(0), unknown_rules: 1, updated_at: new Date().toISOString() }),
+    // Today's point of the same subscription in upper case, left by the release before: the first start must leave one row.
+    point({ category: 'security', subscription_id: SUB_UPPER, date: daysAgo(0), posture_pct: 25, passing_rules: 1, updated_at: new Date().toISOString() }),
   ];
 }
 
@@ -71,3 +73,63 @@ export const byPointKey = (a: Record<string, unknown>, b: Record<string, unknown
 
 /** True for a point dated before today, which is every point the upgrade must not touch. */
 export const isPreToday = (p: Record<string, unknown>): boolean => String(p.date) < daysAgo(0);
+
+/**
+ * What the first start on formula 3 must leave, read back through the dashboard's own reads (the one list
+ * both upgrade tests share, so both backends are held to it). Call it after the product has started on the
+ * upgraded database and the startup refresh has run. `todayRows` is every row of `security` dated today.
+ *
+ *  - Today is formula 3 and finding-count version 1 at every level.
+ *  - The v2 install-wide point is accepted as a baseline.
+ *  - The v2 per-subscription point is refused, naming the day it needed and the first day a v3 point exists.
+ *  - The upper-case v2 subscription point is found, refused, carried over the quiet days after it, and the first
+ *    v3 day is marked as the day the counting changed.
+ *  - Today holds exactly one row for that level, though the release before left one in upper case.
+ *  - A window whose baseline candidate is the upper-case v2 point (four days: the point of five days back is the
+ *    newest on or before the day before it) is refused too, naming the day it needed and today.
+ */
+export async function expectFormula3Reads(todayRows: Array<Record<string, unknown>>): Promise<void> {
+  const { expect } = await import('vitest');
+  const { computeWidgetSummary } = await import('@/lib/dashboard-data');
+  const { everythingAccess } = await import('@/lib/access-model');
+  const { baselineGapMessage } = await import('@/lib/posture-baseline');
+  const { WIDGET_LIMITS } = await import('@/lib/widget-limits');
+  const everything = everythingAccess('admin');
+  const today = daysAgo(0);
+
+  expect(todayRows.map(p => p.subscription_id).sort()).toEqual(['', SUB_LOWER, 'directory']);
+  expect(todayRows.map(p => [p.formula_version, p.finding_count_version])).toEqual(todayRows.map(() => [3, 1]));
+  expect(todayRows.filter(p => String(p.subscription_id).toLowerCase() === SUB_LOWER)).toHaveLength(1);
+
+  // Install-wide: the newest point on or before the day before the window is the backfill-shaped v2 one, 10 days back.
+  const install = await computeWidgetSummary({ categories: ['security'], dateWindow: { mode: 'relative', days: 7 } }, everything);
+  expect(install.baseline).toMatchObject({ date: daysAgo(10) });
+  expect(install.baselineGap).toBeNull();
+  expect(install.deltaPct).not.toBeNull();
+
+  // One subscription: its v2 points do not count equal, so there is no baseline and the gap names both dates.
+  const subscription = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_LOWER], dateWindow: { mode: 'relative', days: 7 } }, everything);
+  expect(subscription.baseline).toBeNull();
+  expect(subscription.deltaPct).toBeNull();
+  expect(subscription.baselineGap).toEqual({ needed: daysAgo(7), earliest: today, level: 'subscription' });
+  const message = baselineGapMessage(subscription.baselineGap!);
+  expect(message.title).toContain(daysAgo(7));
+  expect(message.detail).toContain(today);
+
+  // A four-day window needs a point on or before daysAgo(4), and the newest one at the level is the upper-case v2 point
+  // of five days back. The table refuses it, so there is no baseline and the gap names both dates.
+  const refused = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_LOWER], dateWindow: { mode: 'relative', days: 4 } }, everything);
+  expect(refused.baseline).toBeNull();
+  expect(refused.deltaPct).toBeNull();
+  expect(refused.baselineGap).toEqual({ needed: daysAgo(4), earliest: today, level: 'subscription' });
+
+  // The upper-case v2 point of five days back is the same level: drawn on its own day, carried after it, and the
+  // first v3 day is marked.
+  const drawn = await computeWidgetSummary({ categories: ['security'], subscriptions: [SUB_LOWER], dateWindow: { mode: 'relative', days: 10 } }, everything);
+  const line = drawn.trendByCategory!.security!;
+  expect(line.find(p => p.date === daysAgo(5))).toMatchObject({ formulaVersion: 2, findings: 9, carried: false });
+  expect(line.filter(p => p.date > daysAgo(5) && p.date < today).map(p => [p.formulaVersion, p.findings, p.carried]))
+    .toEqual([1, 2, 3, 4].map(() => [2, 9, true]));
+  expect(line.at(-1)).toMatchObject({ date: today, formulaVersion: 3, carried: false });
+  expect(drawn.trendNotes).toContain(WIDGET_LIMITS.w5(today));
+}

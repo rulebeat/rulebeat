@@ -469,7 +469,7 @@ export function formatTable(result: BenchResult): string {
       ? [`The refresh of every category is over ${THRESHOLD_MS} ms. That is accepted (ADR 0013): it runs in the queue, and a save waits for the hold of its own category.`]
       : []),
     result.overThreshold.length
-      ? `OVER the ${THRESHOLD_MS} ms threshold: ${result.overThreshold.join('; ')}. Send the spec back before the formula-3 change.`
+      ? `OVER the ${THRESHOLD_MS} ms threshold: ${result.overThreshold.join('; ')}. Bring it under the threshold or record why it is accepted in ADR 0013.`
       : `Every longest run is under the ${THRESHOLD_MS} ms threshold.`,
   ].join('\n');
 }
