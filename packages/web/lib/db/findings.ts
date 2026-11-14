@@ -260,6 +260,37 @@ export async function listFindingSummaries(access: Access, opts: ListFindingsOpt
   return rows.map(rowToSummary);
 }
 
+/** What a count over findings reads of one: which rule and category, where it sits, how severe, and when it
+ *  opened and closed. Never the text columns, which are most of a row's weight. */
+export type FindingDigest = Pick<FindingSummary,
+  'ruleId' | 'fingerprint' | 'severity' | 'category' | 'kind' | 'subscriptionId' | 'resourceGroup' | 'placement' | 'status' | 'firstSeenAt' | 'resolvedAt'>;
+
+const digestColumns = {
+  ruleId: findingsTable.ruleId, fingerprint: findingsTable.fingerprint, severity: findingsTable.severity,
+  category: findingsTable.category, kind: findingsTable.kind, subscriptionId: findingsTable.subscriptionId,
+  resourceGroup: findingsTable.resourceGroup, placement: findingsTable.placement, status: findingsTable.status,
+  firstSeenAt: findingsTable.firstSeenAt, resolvedAt: findingsTable.resolvedAt,
+};
+
+/** listFindingSummaries() cut to the fields a count reads, the same findings and the same values for them.
+ *  The dashboard summary counts tens of thousands of findings and reads this. */
+export async function listFindingDigests(access: Access, opts: ListFindingsOptions = {}): Promise<FindingDigest[]> {
+  const rows = await many(db.select(digestColumns).from(findingsTable).where(listConditions(opts, access)));
+  return rows.map(row => ({
+    ruleId: row.ruleId,
+    fingerprint: row.fingerprint,
+    severity: row.severity as Severity,
+    category: row.category,
+    kind: row.kind as RuleKind,
+    subscriptionId: row.subscriptionId,
+    resourceGroup: row.resourceGroup ?? undefined,
+    placement: row.placement as FindingPlacement,
+    status: row.status as 'active' | 'fixed',
+    firstSeenAt: row.firstSeenAt,
+    resolvedAt: row.resolvedAt ?? undefined,
+  }));
+}
+
 export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<SyncResult> {
   const { created, reactivated, resolved } = await syncScanFindingsDetailed(opts);
   return { created, reactivated, resolved };

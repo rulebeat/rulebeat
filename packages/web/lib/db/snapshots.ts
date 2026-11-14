@@ -8,6 +8,7 @@ import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
 import { isActiveSuppression } from '../suppressions';
 import { listHierarchyNodes } from './management-group-hierarchy';
+import type { HierarchyNode } from '../management-group-tree';
 import { wholeSubscriptionIds, type Access } from '../access-model';
 import { DIRECTORY_SUBSCRIPTION } from '../placement';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
@@ -108,10 +109,30 @@ export function refreshSnapshotsFor(categories: readonly string[], now?: Date): 
   return turn;
 }
 
+/** The tree as one queued call last read it. Each category still reads the tree on its own transaction, and
+ *  keeps the array it read last when the new read holds the same nodes, so the expansion that
+ *  `lib/run-scope.ts` keeps per array is built once for the call, not once per category. */
+export interface SharedTree { nodes: readonly HierarchyNode[] | null }
+
+function sameNodes(a: readonly HierarchyNode[], b: readonly HierarchyNode[]): boolean {
+  return a.length === b.length && a.every((n, i) => {
+    const m = b[i]!;
+    return n.tenantId === m.tenantId && n.kind === m.kind && n.id === m.id && n.name === m.name && n.parentId === m.parentId;
+  });
+}
+
+/** What a category's transaction read, or the array of an earlier read in this call when it holds the same nodes. */
+export function shareTree(read: HierarchyNode[], shared: SharedTree): readonly HierarchyNode[] {
+  if (shared.nodes && sameNodes(shared.nodes, read)) return shared.nodes;
+  shared.nodes = read;
+  return read;
+}
+
 async function writeTodaysPoints(categoryIds: string[], now: Date): Promise<void> {
+  const shared: SharedTree = { nodes: null };
   for (const id of categoryIds) {
     try {
-      await inConsistentWrite(tx => writeCategoryPoints(tx, id, now));
+      await inConsistentWrite(tx => writeCategoryPoints(tx, id, now, shared));
     } catch (err) {
       console.error(`[trend] Could not write today's trend points for category "${id}":`, err);
     }
@@ -168,12 +189,12 @@ const WRITE_BATCH = 100;
 
 /** One category's points for the UTC day of `now`, all read and written on the transaction `tx`. A category that
  *  no longer exists writes nothing. */
-async function writeCategoryPoints(tx: DbHandle, categoryId: string, now: Date): Promise<void> {
+async function writeCategoryPoints(tx: DbHandle, categoryId: string, now: Date, sharedTree: SharedTree = { nodes: null }): Promise<void> {
   if (!await getCategory(categoryId, tx)) return;
 
   const today = toDateKey(now);
   const rules = await loadRules(tx);
-  const hierarchy = await listHierarchyNodes(tx);
+  const hierarchy = shareTree(await listHierarchyNodes(tx), sharedTree);
 
   // A stored point is an install-wide value, so it is computed over Everything, never under whoever caused the write.
   const suppressed = new Set(

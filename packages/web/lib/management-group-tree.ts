@@ -104,22 +104,27 @@ export function refreshDue(status: Pick<HierarchyStatus, 'lastAttemptAt'>, now: 
  */
 export function expandManagementGroups(grants: readonly ScopeGrant[], nodes: readonly HierarchyNode[]): ManagementGroupExpansion[] {
   const out: ManagementGroupExpansion[] = [];
+  const byTenant = new Map<string, HierarchyNode[]>();
   for (const grant of grants) {
     if (grant.scope.kind !== 'managementGroup') continue;
-    const inTenant = nodes.filter(n => n.tenantId === grant.tenantId);
+    let inTenant = byTenant.get(grant.tenantId);
+    if (!inTenant) {
+      inTenant = nodes.filter(n => n.tenantId === grant.tenantId);
+      byTenant.set(grant.tenantId, inTenant);
+    }
     const own = managementGroupIdOf(grant.scope.path).toLowerCase();
     const groups = new Set<string>();
     const subscriptions = new Set<string>();
     if (inTenant.some(n => n.kind === 'managementGroup' && n.id.toLowerCase() === own)) groups.add(own);
-    let frontier = [...groups];
-    while (frontier.length > 0) {
-      const next: string[] = [];
+    let frontier = new Set(groups);
+    while (frontier.size > 0) {
+      const next = new Set<string>();
       for (const node of inTenant) {
         const parent = node.parentId?.toLowerCase();
-        if (parent === undefined || !frontier.includes(parent)) continue;
+        if (parent === undefined || !frontier.has(parent)) continue;
         const id = node.id.toLowerCase();
         if (node.kind === 'subscription') subscriptions.add(id);
-        else if (!groups.has(id)) { groups.add(id); next.push(id); }
+        else if (!groups.has(id)) { groups.add(id); next.add(id); }
       }
       frontier = next;
     }

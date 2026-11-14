@@ -10,7 +10,7 @@ import { accessReach, type Access } from './access-model';
 import type { KnownSubscription } from './known-subscriptions';
 import type { HierarchyNode } from './management-group-tree';
 import { DIRECTORY_SUBSCRIPTION, isOutsidePlacement } from './placement';
-import { narrowScopes, ruleOverlapsScopes } from './rule-overlap';
+import { narrowScopes, ruleOverlapsScopes, wholeSubscriptionsOverlapped } from './rule-overlap';
 import { posturePct } from './posture-math';
 import { compareRows, type SubscriptionRow } from './subscription-rows';
 import type { Rule } from './types';
@@ -42,6 +42,8 @@ interface ScopeGroup {
   representative: CountedRule;
   size: number;
   succeeded: number;
+  /** The subscriptions held whole that the group's scope overlaps, found on first use. */
+  wholeSubscriptions?: true | ReadonlySet<string>;
 }
 
 /** Rules that share a backend class and a scope overlap the same levels, so they are tested once. */
@@ -84,12 +86,21 @@ export function buildSubscriptionRows(input: SubscriptionRowsInput): Subscriptio
 
   const reach = accessReach(scopes);
 
-  function grade(levelScopes: Access, level: string): Omit<SubscriptionRow, 'subscriptionId' | 'name' | 'directory' | 'yourGroupsOnly'> {
+  /** Whether a group's rules overlap a subscription held whole: a lookup, the scope read once per group. */
+  function overlapsWhole(group: ScopeGroup, key: string): boolean {
+    group.wholeSubscriptions ??= wholeSubscriptionsOverlapped(group.representative, hierarchy);
+    return group.wholeSubscriptions === true || group.wholeSubscriptions.has(key);
+  }
+
+  /** Which groups of rules overlap the row's Scopes. A subscription held whole is the common row, and gets a lookup. */
+  function grade(
+    overlapsGroup: (group: ScopeGroup) => boolean, level: string,
+  ): Omit<SubscriptionRow, 'subscriptionId' | 'name' | 'directory' | 'yourGroupsOnly'> {
     const overlapping = new Set<string>();
     let total = 0;
     let proven = 0;
     for (const [key, group] of groups) {
-      if (!ruleOverlapsScopes(group.representative, levelScopes, hierarchy)) continue;
+      if (!overlapsGroup(group)) continue;
       overlapping.add(key);
       total += group.size;
       proven += group.succeeded;
@@ -111,17 +122,22 @@ export function buildSubscriptionRows(input: SubscriptionRowsInput): Subscriptio
     };
   }
 
-  const rows: SubscriptionRow[] = input.subscriptions.map(sub => ({
-    subscriptionId: sub.id,
-    name: sub.name,
-    directory: false,
-    yourGroupsOnly: !scopes.everything && !reach.subscriptions.has(sub.key) && reach.resourceGroups.has(sub.key),
-    ...grade(narrowScopes(scopes, [sub.key]), sub.key),
-  }));
+  const rows: SubscriptionRow[] = input.subscriptions.map(sub => {
+    const heldWhole = scopes.everything || reach.subscriptions.has(sub.key);
+    const narrowed = heldWhole ? null : narrowScopes(scopes, [sub.key]);
+    return {
+      subscriptionId: sub.id,
+      name: sub.name,
+      directory: false,
+      yourGroupsOnly: !heldWhole && reach.resourceGroups.has(sub.key),
+      ...grade(narrowed ? group => ruleOverlapsScopes(group.representative, narrowed, hierarchy) : group => overlapsWhole(group, sub.key), sub.key),
+    };
+  });
   if (input.includeDirectory) {
+    const directoryScopes = narrowScopes(scopes, [DIRECTORY_SUBSCRIPTION]);
     rows.push({
       subscriptionId: DIRECTORY_SUBSCRIPTION, name: null, directory: true, yourGroupsOnly: false,
-      ...grade(narrowScopes(scopes, [DIRECTORY_SUBSCRIPTION]), DIRECTORY_SUBSCRIPTION),
+      ...grade(group => ruleOverlapsScopes(group.representative, directoryScopes, hierarchy), DIRECTORY_SUBSCRIPTION),
     });
   }
   return rows.sort((a, b) => compareRows(a, b));

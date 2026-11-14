@@ -65,6 +65,7 @@ const EXEMPT: Record<string, Record<string, string>> = {
   'lib/db/snapshots.ts': {
     refreshSnapshotsFor: 'write: stores install-wide values, so it is computed over Everything and never under whoever caused it',
     backfillSnapshots: 'write: startup refresh, over Everything',
+    shareTree: 'pure helper over a management group tree already read',
   },
   'lib/db/column-catalogue.ts': {
     listReturnedColumnsIn: 'runs on the caller\'s transaction handle',

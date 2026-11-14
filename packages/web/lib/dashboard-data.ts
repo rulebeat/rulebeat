@@ -1,4 +1,4 @@
-import { listFindings, listFindingSummaries, getActivityOccurrenceCounts, type FindingRecord, type FindingSummary } from './db/findings';
+import { listFindings, listFindingSummaries, listFindingDigests, getActivityOccurrenceCounts, type FindingDigest, type FindingRecord, type FindingSummary } from './db/findings';
 import { loadRules } from './rules';
 import { listCategories } from './db/categories';
 import { loadSuppressions, isActiveSuppression } from './suppressions';
@@ -53,7 +53,7 @@ function dayKeysBetween(from: string, to: string): string[] {
  *  and the Scans predicates (getRecencyStatus, isFixedInWindow) applied to that one day, so a bar equals
  *  the one-day Scans list it opens. A finding opened and fixed inside the window is Fixed only, and a
  *  reactivated finding keeps its first-seen date, so it is not New. */
-function newVsFixedByDay(from: string, to: string, open: readonly FindingSummary[], fixed: readonly FindingSummary[]): WidgetSummary['newVsFixedTrend'] {
+function newVsFixedByDay(from: string, to: string, open: readonly FindingDigest[], fixed: readonly FindingDigest[]): WidgetSummary['newVsFixedTrend'] {
   const bars = new Map(dayKeysBetween(from, to).map(date => [date, { date, created: 0, resolved: 0 }]));
   for (const f of open) {
     const bar = f.firstSeenAt ? bars.get(f.firstSeenAt.slice(0, 10)) : undefined;
@@ -141,7 +141,7 @@ function emptyReasonFor(access: Access, categories: Category[], allRules: Rule[]
  *  with an active finding is skipped: it's implicitly failing, and never 'unknown' even if its
  *  last run technically errored, since the finding is real even if not exhaustive (spec 004's
  *  capped/failed distinction). */
-function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
+function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingDigest[], ruleById: Map<string, Rule>): { passing: number; unknown: number } {
   const failingIds = new Set(findings.map(f => f.ruleId).filter(id => ruleIds.has(id)));
   let passing = 0;
   let unknown = 0;
@@ -154,7 +154,7 @@ function splitRuleOutcomes(ruleIds: Set<string>, findings: FindingSummary[], rul
 }
 
 function matchesFilters(
-  f: FindingSummary,
+  f: FindingDigest,
   filters: WidgetFilters,
   ruleById: Map<string, Rule>,
   suppressedFingerprints: Set<string>,
@@ -177,7 +177,7 @@ async function suppressedFingerprintSet(access: Access): Promise<Set<string>> {
 }
 
 /** Findings matching every dimension in `filters`, never an actively-suppressed one. */
-async function narrow<T extends FindingSummary>(all: T[], filters: WidgetFilters, access: Access): Promise<T[]> {
+async function narrow<T extends FindingDigest>(all: T[], filters: WidgetFilters, access: Access): Promise<T[]> {
   const ruleById = new Map((await loadRules()).map(r => [r.id, r]));
   const suppressed = await suppressedFingerprintSet(access);
   return all.filter(f => matchesFilters(f, filters, ruleById, suppressed));
@@ -194,8 +194,8 @@ export async function queryActiveFindingsWithRows(filters: WidgetFilters, access
   return narrow(await listFindings(access, { status: 'active' }), filters, access);
 }
 
-async function queryFixedFindings(filters: WidgetFilters, access: Access): Promise<FindingSummary[]> {
-  return narrow(await listFindingSummaries(access, { status: 'fixed' }), filters, access);
+async function queryFixedFindings(filters: WidgetFilters, access: Access): Promise<FindingDigest[]> {
+  return narrow(await listFindingDigests(access, { status: 'fixed' }), filters, access);
 }
 
 export interface WidgetSummary {
@@ -328,7 +328,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
 
   // queryActiveFindings stays unfiltered here (other callers, e.g. suppression round-trips, need
   // the full active set); this view filters to what counts toward a finding-level total.
-  const everyActive = await listFindingSummaries(access, { status: 'active' });
+  const everyActive = await listFindingDigests(access, { status: 'active' });
   const activeFindings = (await narrow(everyActive, filters, access)).filter(countsInFindingTotals);
 
   const severityCounts = emptySeverityCounts();
@@ -342,6 +342,11 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
   const hierarchy = await listHierarchyNodes();
 
   const countedByCategory = new Map(targetCategories.map(cat => [cat.id, countedRulesForCategory(cat, allRules, filters, scopes, hierarchy)]));
+  const findingsByCategory = new Map<string, FindingDigest[]>();
+  for (const f of activeFindings) {
+    const held = findingsByCategory.get(f.category);
+    if (held) held.push(f); else findingsByCategory.set(f.category, [f]);
+  }
   let totalRules = 0;
   let passingRules = 0;
   let unknownRules = 0;
@@ -350,7 +355,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
     const { stateRuleIds, activityRuleCount: catActivity } = countedByCategory.get(cat.id)!;
     totalRules += stateRuleIds.size;
     activityRuleCount += catActivity;
-    const outcome = splitRuleOutcomes(stateRuleIds, activeFindings.filter(f => f.category === cat.id), ruleById);
+    const outcome = splitRuleOutcomes(stateRuleIds, findingsByCategory.get(cat.id) ?? [], ruleById);
     passingRules += outcome.passing;
     unknownRules += outcome.unknown;
   }
@@ -386,7 +391,7 @@ export async function computeWidgetSummary(filters: WidgetFilters, access: Acces
   const perCategory = targetCategories.map(cat => {
     const { stateRuleIds } = countedByCategory.get(cat.id)!;
     const catTotal = stateRuleIds.size;
-    const catFindings = activeFindings.filter(f => f.category === cat.id);
+    const catFindings = findingsByCategory.get(cat.id) ?? [];
     const { passing: catPassing, unknown: catUnknown } = splitRuleOutcomes(stateRuleIds, catFindings, ruleById);
     const catPct = posturePct(catPassing, catTotal);
     return {
