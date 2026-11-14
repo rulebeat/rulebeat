@@ -4,7 +4,7 @@
  * are never added up. Live `current` numbers narrow by Scope for everyone, whatever the trend does.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { insertTrendPoint, resetDb, stampSubscriptionPointsFormula3 } from '../helpers/db';
+import { insertTrendPoint, resetDb } from '../helpers/db';
 import { storeScan, syntheticFinding } from '../helpers/synthetic-findings';
 import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
@@ -56,7 +56,6 @@ beforeAll(async () => {
   await refreshSnapshotsFor(['security'], new Date('2026-06-01T10:00:00.000Z'));
   await storeScan([a('a1'), a('a2'), a('a3'), b('b1')], { scanId: '00000000-0000-0000-0000-0000000000e2', finishedAt: '2026-06-02T10:00:00.000Z' });
   await refreshSnapshotsFor(['security'], new Date('2026-06-02T10:00:00.000Z'));
-  await stampSubscriptionPointsFormula3();
 });
 
 describe('the summary trend for a person below Everything', () => {

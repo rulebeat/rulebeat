@@ -20,8 +20,11 @@ import { resolveDateWindow } from '@/lib/date-window';
 import { countsInFindingTotals, countsTowardPosture, isActivityRule } from '@/lib/finding-kinds';
 import { isActiveSuppression } from '@/lib/suppressions';
 import { FINDING_COUNT_VERSION } from '@/lib/trend-point-counts';
-import { clearRules, execRaw, insertTrendPoint, resetDb, stampSubscriptionPointsFormula3 } from '../helpers/db';
+import { clearRules, execRaw, insertTrendPoint, resetDb } from '../helpers/db';
 import { EVERYTHING_ACCESS } from '../helpers/access';
+import { buildAccess, parseScope, type Access } from '@/lib/access-model';
+import { trendScopeOf } from '@/lib/trend-scope';
+import type { WidgetFilters } from '@/lib/dashboard-filters';
 import { fakeHierarchy, group, refreshFrom, subscription } from '../helpers/fake-hierarchy';
 import { allPoints, insertRuleRow, pointOn, pointsAt, storeFindings, syntheticFinding } from '../helpers/trend-writer';
 
@@ -160,6 +163,152 @@ describe('formula 3 under Everything equals formula 2 (Q15)', () => {
   });
 });
 
+describe('the live number and today\'s stored point agree (Q26, Q38)', () => {
+  const SUB_UNCOVERED = '0d000000-0000-4000-8000-00000000000d';
+  const CATEGORIES = ['security', 'cost'] as const;
+  const DAY = '2026-03-10';
+  /** What each level's baseline point holds, distinct per level so a read from the wrong level shows. */
+  const BASELINE: Record<string, { passing: number; total: number; pct: number }> = {
+    '': { passing: 8, total: 10, pct: 80 },
+    [SUB_A]: { passing: 3, total: 4, pct: 75 },
+    [SUB_B]: { passing: 1, total: 4, pct: 25 },
+    [SUB_UNCOVERED]: { passing: 2, total: 5, pct: 40 },
+    directory: { passing: 1, total: 2, pct: 50 },
+  };
+
+  /**
+   * Security holds a rule naming one subscription, one naming two (the overlap rule), a management group rule the
+   * tree can expand and one it cannot, a Graph rule, an Advisory rule, an Activity rule and a finding of a rule that
+   * is suppressed. Cost holds the one unscoped rule. SUB_A holds findings, SUB_B has none, SUB_UNCOVERED is in the
+   * tree under another group and covered by no security rule, and a finding sits at the management group.
+   */
+  async function seed() {
+    await insertRuleRow({ id: 'r-sub', subscriptions: [SUB_A] });
+    await insertRuleRow({ id: 'r-overlap', subscriptions: [SUB_A, SUB_B] });
+    await insertRuleRow({ id: 'r-mg-tree', managementGroups: ['mg-known'] });
+    await insertRuleRow({ id: 'r-mg-notree', managementGroups: ['mg-missing'], lastRunStatus: 'failed' });
+    await insertRuleRow({ id: 'r-graph', queryBackend: 'microsoft-graph' });
+    await insertRuleRow({ id: 'r-advisory', kind: 'advisory' });
+    await insertRuleRow({ id: 'r-activity', queryBackend: 'log-analytics' });
+    await insertRuleRow({ id: 'r-unscoped', category: 'cost' });
+    await storeFindings([
+      syntheticFinding('f-overlap', [{ z: 1 }], { ruleId: 'r-overlap', subscriptionId: SUB_A, severity: 'critical' }),
+      syntheticFinding('f-suppressed', [{ z: 1 }], { ruleId: 'r-sub', subscriptionId: SUB_A, severity: 'high' }),
+      syntheticFinding('f-advisory', [{ z: 1 }], { ruleId: 'r-advisory', subscriptionId: SUB_A, kind: 'advisory' }),
+      syntheticFinding('f-activity', [{ z: 1 }], { ruleId: 'r-activity', subscriptionId: SUB_A, placement: 'workspace', kind: 'activity' }),
+      syntheticFinding('f-graph', [{ z: 1 }], { ruleId: 'r-graph', placement: 'directory', severity: 'medium' }),
+      syntheticFinding('f-mg', [{ z: 1 }], { ruleId: 'r-mg-tree', placement: 'management-group', managementGroupId: 'mg-known', severity: 'low' }),
+    ]);
+    await storeFindings([
+      syntheticFinding('f-cost-a', [{ z: 1 }], { ruleId: 'r-unscoped', category: 'cost', subscriptionId: SUB_A, severity: 'low' }),
+      syntheticFinding('f-cost-b', [{ z: 1 }], { ruleId: 'r-unscoped', category: 'cost', subscriptionId: SUB_A, severity: 'medium' }),
+    ], { category: 'cost' });
+    const suppressed = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'f-suppressed')!;
+    await addSuppression({ id: 's1', fingerprint: suppressed.fingerprint, reason: 'test', suppressedAt: new Date().toISOString() });
+    await refreshFrom(fakeHierarchy([
+      group('mg-known', 'Known', null), group('mg-other', 'Other', null),
+      subscription(SUB_A, 'A', 'mg-known'), subscription(SUB_B, 'B', 'mg-known'), subscription(SUB_UNCOVERED, 'D', 'mg-other'),
+    ]));
+    // The tree refresh queued points dated today; this suite writes its own day.
+    await run(db.delete(postureSnapshots));
+    for (const category of CATEGORIES) {
+      for (const [level, b] of Object.entries(BASELINE)) {
+        await insertTrendPoint({ category, subscriptionId: level, date: '2026-03-01', passing: b.passing, total: b.total });
+      }
+    }
+    await refreshSnapshotsFor([...CATEGORIES], at(DAY));
+  }
+
+  const viewerAt = (...paths: string[]): Access =>
+    buildAccess(paths.map(path => ({ tenantId: 't', scope: parseScope(path)!, role: 'viewer' as const })), 'manual');
+
+  /** The live summary of a filter for a person, read on the day the points were written. */
+  async function live(filters: Omit<WidgetFilters, 'dateWindow'>, access: Access) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(at(DAY));
+    try {
+      return await computeWidgetSummary({ dateWindow: { mode: 'relative', days: 3 }, ...filters }, access);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  /** Reads today's stored point at the level `trendScopeOf` serves this person, and checks the live summary against it. */
+  async function expectAgreement(category: string, filters: Omit<WidgetFilters, 'dateWindow'>, access: Access, expected: { passing: number; total: number; unknown: number; findings: number }) {
+    const scope = trendScopeOf(access, filters.subscriptions);
+    if (!scope.available) throw new Error('the level must be served for this person');
+    const level = scope.subscriptionId?.toLowerCase() ?? '';
+    const summary = await live({ ...filters, categories: [category] }, access);
+    const stored = (await pointOn(category, level, DAY))!;
+
+    expect(summary.current).toMatchObject({
+      passingRules: stored.passingRules, totalRules: stored.totalRules, unknownRules: stored.unknownRules, activeFindings: stored.activeFindings,
+    });
+    expect(summary.current.severityCounts).toEqual(JSON.parse(stored.severityCounts));
+    expect(summary.current.pct).toBe(stored.posturePct);
+    // The numbers themselves are written out by hand, so the agreement cannot be two copies of one mistake.
+    expect({ passing: stored.passingRules, total: stored.totalRules, unknown: stored.unknownRules, findings: stored.activeFindings }).toEqual(expected);
+    // The baseline is read from the same level.
+    expect(summary.baseline).toEqual({ date: '2026-03-01', pct: BASELINE[level]!.pct });
+  }
+
+  type Row = { passing: number; total: number; unknown: number; findings: number };
+  const EXPECTED: Record<string, Record<string, Row>> = {
+    security: {
+      '': { passing: 1, total: 5, unknown: 1, findings: 3 },
+      [SUB_A]: { passing: 2, total: 3, unknown: 0, findings: 1 },
+      [SUB_B]: { passing: 2, total: 2, unknown: 0, findings: 0 },
+      [SUB_UNCOVERED]: { passing: 0, total: 0, unknown: 0, findings: 0 },
+      directory: { passing: 0, total: 1, unknown: 0, findings: 1 },
+    },
+    cost: {
+      '': { passing: 0, total: 1, unknown: 0, findings: 2 },
+      [SUB_A]: { passing: 0, total: 1, unknown: 0, findings: 2 },
+      [SUB_B]: { passing: 1, total: 1, unknown: 0, findings: 0 },
+      [SUB_UNCOVERED]: { passing: 1, total: 1, unknown: 0, findings: 0 },
+      directory: { passing: 0, total: 0, unknown: 0, findings: 0 },
+    },
+  };
+
+  beforeEach(async () => { await seed(); });
+
+  describe.each(CATEGORIES)('under Everything, in %s', category => {
+    it.each(['', SUB_A, SUB_B, SUB_UNCOVERED, 'directory'])('agrees at the level %j', async level => {
+      const filters: Omit<WidgetFilters, 'dateWindow'> = level ? { subscriptions: [level] } : {};
+      await expectAgreement(category, filters, EVERYTHING_ACCESS, EXPECTED[category]![level]!);
+    });
+  });
+
+  it('agrees for a person holding one whole subscription, who is not counted a finding placed at the management group', async () => {
+    for (const category of CATEGORIES) {
+      await expectAgreement(category, {}, viewerAt(`/subscriptions/${SUB_A}`), EXPECTED[category]![SUB_A]!);
+    }
+  });
+
+  it('agrees for a person whose Access is only the Directory', async () => {
+    for (const category of CATEGORIES) {
+      await expectAgreement(category, {}, viewerAt('@directory'), EXPECTED[category]!.directory!);
+    }
+  });
+
+  it('agrees for Everything filtered to one subscription, which is the same level a holder of it reads', async () => {
+    for (const category of CATEGORIES) {
+      await expectAgreement(category, { subscriptions: [SUB_A] }, EVERYTHING_ACCESS, EXPECTED[category]![SUB_A]!);
+    }
+  });
+
+  it('agrees over every category together, level by level', async () => {
+    for (const level of ['', SUB_A, SUB_B, SUB_UNCOVERED, 'directory']) {
+      const summary = await live(level ? { subscriptions: [level] } : {}, EVERYTHING_ACCESS);
+      const stored = await Promise.all(CATEGORIES.map(async c => (await pointOn(c, level, DAY))!));
+      const sum = (pick: (p: (typeof stored)[number]) => number) => stored.reduce((n, p) => n + pick(p), 0);
+      expect(summary.current).toMatchObject({
+        passingRules: sum(p => p.passingRules), totalRules: sum(p => p.totalRules), unknownRules: sum(p => p.unknownRules), activeFindings: sum(p => p.activeFindings),
+      });
+    }
+  });
+});
+
 describe('the skip rule', () => {
   /** Moves the clock so the live read and the writer agree on the day, and returns the lines a Trend chart draws. */
   async function summaryOn(date: string, days: number) {
@@ -193,7 +342,6 @@ describe('the skip rule', () => {
 
   it('draws the same line and finds the same baseline with or without the skipped points', async () => {
     await seedThreeDays();
-    await stampSubscriptionPointsFormula3();
     const without = await summaryOn('2026-03-04', 3);
 
     // The points the rule skipped, written out: the 2nd repeats the 1st, the 4th repeats the 3rd.

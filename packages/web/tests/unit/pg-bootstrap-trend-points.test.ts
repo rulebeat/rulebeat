@@ -13,7 +13,7 @@ import { dbReady, pgDb } from '@/lib/db/client';
 import { bootstrapPg } from '@/lib/db/pg/bootstrap';
 import { resetDb } from '../helpers/db';
 import {
-  DELETED_CATEGORY, SUB_LOWER, TREND_POINT_COLUMNS, TREND_RULES, TREND_TREE, byPointKey, daysAgo, isPreToday, levelKey, trendPoints,
+  DELETED_CATEGORY, TREND_POINT_COLUMNS, TREND_RULES, TREND_TREE, byPointKey, daysAgo, expectFormula3Reads, isPreToday, levelKey, trendPoints,
 } from '../fixtures/trend-points';
 import { backfillSnapshots } from '@/lib/db/snapshots';
 
@@ -71,10 +71,10 @@ describe.skipIf(dbKind !== 'pg')('bootstrapPg adds finding_count_version to an e
     const keysBefore = new Set(before.map(levelKey));
     expect(past.filter(p => !keysBefore.has(levelKey(p)))).toEqual([]);
 
-    // Today: the install, the subscription (no finding, no rule names it) and the Directory, each as version 1.
+    // Today: the install, the subscription (no finding, no rule names it) and the Directory, each as formula 3 and
+    // version 1, and the dashboard's reads treat the older points as the equality table says.
     const today = after.filter(p => !isPreToday(p) && p.category === 'security');
-    expect(today.map(p => p.subscription_id).sort()).toEqual(['', SUB_LOWER, 'directory']);
-    expect(today.map(p => p.finding_count_version)).toEqual(today.map(() => 1));
+    await expectFormula3Reads(today);
     expect(await rulesOf()).toEqual(rulesBefore);
   });
 });

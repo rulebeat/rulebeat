@@ -71,9 +71,10 @@ here: formula 3 and finding-count version 1.
   has left the list.
 - Every reader of a stored point goes through the table, so a new definition is one edit there, and
   a test fails when `posture.md` and the module disagree.
-- An upgrade changes no stored count. Until the formula-3 change raises the version, subscription
-  and Directory points are written as formula 2, which the table refuses at those levels, so
-  history stays honest even in a partial release.
+- An upgrade changes no stored count. Before the formula-3 change raised the version, subscription
+  and Directory points were written as formula 2, which the table refuses at those levels, so
+  history stayed honest even in a partial release. The first start on formula 3 writes today's
+  points as formula 3 and finding-count version 1 at every level, and nothing dated before today.
 - The refresh on every posture input costs one awaited write per touched category. Its bench
   (`npm run bench:trend-points`, ADR 0007's layout) is below. The spec set a 1-second limit. It is held
   to what a person or a concurrent write waits for: the transaction hold per category, and

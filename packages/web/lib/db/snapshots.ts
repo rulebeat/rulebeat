@@ -25,7 +25,7 @@ const RETENTION_DAYS = TREND_KEPT_DAYS;
 /** The posture formula a freshly-written row is computed under: bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and
  *  exclude what it can't honestly compare against, instead of silently blending the two. */
-export const SNAPSHOT_FORMULA_VERSION = 2;
+export const SNAPSHOT_FORMULA_VERSION = 3;
 
 export interface DailySnapshot {
   category: string;
