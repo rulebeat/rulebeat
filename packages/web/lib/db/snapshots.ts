@@ -294,11 +294,20 @@ async function enforceRetention(now: Date): Promise<void> {
     lt(snapshotsTable.date, cutoff),
     or(
       notInArray(snapshotsTable.category, db.select({ id: categoriesTable.id }).from(categoriesTable)),
-      sql`${snapshotsTable.date} < (
-        SELECT max(newer.date) FROM posture_snapshots newer
-        WHERE newer.category = ${snapshotsTable.category}
-          AND lower(newer.subscription_id) = lower(${snapshotsTable.subscriptionId})
-          AND newer.date < ${cutoff}
+      // The newest point older than the cutoff of each level is worked out once, from the points older than
+      // the cutoff alone (the date index reaches them), and a point goes when its level has a newer one.
+      // A subquery per point that matched on lower(subscription_id) could not use the key and read its
+      // whole category each time.
+      sql`EXISTS (
+        SELECT 1 FROM (
+          SELECT old.category AS category, lower(old.subscription_id) AS level, max(old.date) AS newest
+          FROM posture_snapshots old
+          WHERE old.date < ${cutoff}
+          GROUP BY old.category, lower(old.subscription_id)
+        ) keep
+        WHERE keep.category = ${snapshotsTable.category}
+          AND keep.level = lower(${snapshotsTable.subscriptionId})
+          AND keep.newest > ${snapshotsTable.date}
       )`,
     ),
   )));

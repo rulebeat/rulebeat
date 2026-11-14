@@ -11,6 +11,7 @@ All notable changes to RuleBeat are documented here. Format follows
 - Posture no longer reads 100% while a rule is failing or unknown, and the baseline no longer blends categories or subtracts rounded numbers.
 - Upgrading no longer writes trend points dated before the upgrade.
 - Today's trend point updates when a rule, suppression or category changes, not only after a scan.
+- Removing trend points older than 365 days no longer stalls the app for seconds every 30 seconds on an install that holds a year of history for many subscriptions.
 
 ### Changed
 

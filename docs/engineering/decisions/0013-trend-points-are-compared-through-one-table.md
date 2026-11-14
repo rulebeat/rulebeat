@@ -134,5 +134,15 @@ No number the summary returns changes. A test compares each scorecard row, for s
 rule-by-rule definition (`ruleOverlapsScopes` over the Scopes narrowed to the row), and another compares a
 digest with the summary of the same finding field by field.
 
-No index is called for: the reads of stored points are not where the time goes, so the lower-case
-expression index on `lower(subscription_id)` is not added.
+Retention runs after every queued refresh, including the empty one the scheduler makes every 30 seconds.
+The bench seeds a year of daily points for two categories (366 days per level, so each level keeps one
+point past the cutoff, as an install a year old does) and times that empty refresh. The first version of the
+statement looked up, for each point past the cutoff, the newest older point of its level with a subquery
+matching on `lower(subscription_id)`, which cannot use the key and read the whole category each time: about
+0.6 s at 50 subscriptions and 10 s at 200, with nothing deleted. It now works out each level's newest point
+past the cutoff once, from the points past the cutoff alone (reached through the date index), and deletes a
+point when its level has a newer one. The empty refresh then takes 6 to 9 ms on SQLite at 2,000 subscriptions
+(Postgres was not re-measured for this statement).
+
+No index is called for: the reads of stored points and the retention statement are not where the time goes,
+so the lower-case expression index on `lower(subscription_id)` is not added.

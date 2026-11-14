@@ -85,6 +85,7 @@ describe('the run', () => {
     expect(result.measurements.map(m => m.name)).toEqual([
       expect.stringContaining('one refresh'),
       expect.stringContaining('transaction hold'),
+      expect.stringContaining('empty refresh'),
       'computeWidgetSummary, Everything',
       'computeWidgetSummary, one category',
       expect.stringContaining('computeWidgetSummary, holds'),
@@ -106,7 +107,8 @@ describe('the run', () => {
     const stored = await many(db.select({ ruleId: findingsTable.ruleId }).from(findingsTable).where(eq(findingsTable.status, 'active')));
     expect(stored).toHaveLength(data.findings.length);
     const points = await many(db.select().from(postureSnapshots));
-    const firstDay = points.map(p => p.date).sort()[0]!;
+    // The writer's first day is two days back; the older points are copies of its points.
+    const firstDay = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
     // Read through the points the writer wrote; the expected figure comes from the plan, not a recount of the findings.
     for (let category = 0; category < OPTIONS.categories; category += 1) {
       const point = points.find(p => p.category === result.categoryIds[category] && p.subscriptionId === '' && p.date === firstDay);
@@ -122,9 +124,12 @@ describe('the run', () => {
     // Every subscription of the tree has a point on the first day: nothing stood before it to match.
     for (const sub of data.subscriptions) expect(levels.has(sub)).toBe(true);
     expect(points.every(p => p.findingCountVersion === FINDING_COUNT_VERSION)).toBe(true);
-    // Two earlier days were written with the writer's `now`, and the measured refreshes then wrote today's.
+    // Two earlier days were written with the writer's `now`, a year of copies stands behind them (the oldest
+    // goes to retention while the measured refreshes run), and the measured refreshes then wrote today's.
     const today = new Date().toISOString().slice(0, 10);
-    expect([...new Set(points.map(p => p.date))].sort().filter(d => d < today)).toHaveLength(2);
+    const earlier = [...new Set(points.map(p => p.date))].sort().filter(d => d < today);
+    expect(earlier.slice(-2)).toEqual([2, 1].map(n => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)));
+    expect(earlier.length).toBeGreaterThanOrEqual(365);
     expect(points.some(p => p.date === today)).toBe(true);
   });
 

@@ -6,6 +6,7 @@
  *  - one refresh of every category, the first of the day (most subscription points are unchanged and not
  *    written) and a repeat (every level already has today's point, so every level is rewritten);
  *  - the transaction hold per category, taken as one category refreshed on its own, its median and its longest;
+ *  - the empty refresh the scheduler makes every tick, which is all retention over a year of history;
  *  - `computeWidgetSummary` for Everything and for a person who holds a slice of the estate;
  *  - the last-scanned read, `listLastScanTimes`, for the same two people.
  *
@@ -35,6 +36,10 @@ const BENCH_ACCESS = everythingAccess('admin');
 
 const TENANT = '00000000-0000-0000-0000-0000000000b0';
 const DAY_MS = 86_400_000;
+/** The days of trend history the seeded install holds, and how many categories hold them (the whole install
+ *  would be millions of rows at full size). */
+const HISTORY_DAYS = 366;
+const HISTORY_CATEGORIES = 2;
 
 // ---- The dataset ----
 
@@ -164,11 +169,11 @@ const nameOf = (finding: PlannedFinding): string => `bench-resource-${finding.in
 
 /** Stores the dataset: categories, rules, the tree, findings through the real scan sync, suppressions and
  *  scan history; then two days of trend history through the real writer, so a refresh today has earlier
- *  points to compare with. Leaves no point for today. */
+ *  points to compare with, and a year of older points copied from them. Leaves no point for today. */
 export async function seedDatabase(dataset: Dataset, opts: DatasetOptions, log: (line: string) => void = () => {}): Promise<Seeded> {
   const { computeFingerprint } = await import('@rulebeat/core');
   const { db } = await import('../../lib/db/client');
-  const { run } = await import('../../lib/db/exec');
+  const { run, many } = await import('../../lib/db/exec');
   const { rules, categories, suppressions, scans, postureSnapshots } = await import('../../lib/db/tables');
   const { listCategories } = await import('../../lib/db/categories');
   const { replaceHierarchy } = await import('../../lib/db/management-group-hierarchy');
@@ -177,7 +182,7 @@ export async function seedDatabase(dataset: Dataset, opts: DatasetOptions, log: 
   const { serializeCoveredScope } = await import('../../lib/covered-scope-view');
   const { EMPTY_SCAN_BLOB } = await import('../../lib/db/scan-findings-copy');
   const { EVERYTHING_TENANT_ID } = await import('../../lib/access-model');
-  const { eq } = await import('drizzle-orm');
+  const { eq, inArray } = await import('drizzle-orm');
 
   const start = performance.now();
   const now = Date.now();
@@ -304,6 +309,19 @@ export async function seedDatabase(dataset: Dataset, opts: DatasetOptions, log: 
   }
   await refreshSnapshotsFor(categoryIds, new Date(now - DAY_MS));
 
+  // A year of daily history behind them, as an install a year old holds, so the retention statement that runs
+  // after every refresh meets what it meets there: one point past the cutoff for every level. Each older day
+  // copies the stored points of the first categories (all of them would be millions of rows at full size).
+  const historical = categoryIds.slice(0, HISTORY_CATEGORIES);
+  const latest = await many(db.select().from(postureSnapshots).where(inArray(postureSnapshots.category, historical)));
+  const base = latest.filter(r => r.date === new Date(now - DAY_MS).toISOString().slice(0, 10));
+  for (let daysAgo = 3; daysAgo <= HISTORY_DAYS; daysAgo += 1) {
+    const date = new Date(now - daysAgo * DAY_MS).toISOString().slice(0, 10);
+    for (let i = 0; i < base.length; i += 500) {
+      await run(db.insert(postureSnapshots).values(base.slice(i, i + 500).map(r => ({ ...r, date, updatedAt: `${date}T12:00:00.000Z` }))));
+    }
+  }
+
   // A real install has had autovacuum analyze its tables by the time it holds this much. Straight after a
   // bulk load Postgres has no statistics yet, and the first refresh can plan badly and take 30 s.
   const { dbKind } = await import('../../lib/db/backend');
@@ -386,6 +404,8 @@ export async function buildMeasurements(seeded: Seeded): Promise<Measurement[]> 
       runs: () => all.length - 1,
       run: () => refreshSnapshotsFor([all[next++ % all.length]!]),
     },
+    // What the scheduler asks for every 30 seconds: nothing to write, so it is all retention over a year of history.
+    { name: 'empty refresh (retention over a year of history)', runs: w => w, run: () => refreshSnapshotsFor([]) },
     { name: 'computeWidgetSummary, Everything', runs: w => w, run: () => computeWidgetSummary({ dateWindow: window }, BENCH_ACCESS) },
     { name: 'computeWidgetSummary, one category', runs: w => w, run: () => computeWidgetSummary({ dateWindow: window, categories: [all[0]!] }, BENCH_ACCESS) },
     { name: `computeWidgetSummary, holds ${seeded.heldSubscriptions.length} subscriptions`, runs: w => w, run: () => computeWidgetSummary({ dateWindow: window }, sliced) },
