@@ -10,7 +10,7 @@ import {
 } from '@/lib/access-model';
 import type { HierarchyNode } from '@/lib/management-group-tree';
 import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
-import { coversDirectory, scopeForRule } from '@/lib/run-scope';
+import { coversDirectory, expandRuleGroup, scopeForRule } from '@/lib/run-scope';
 import type { Rule } from '@/lib/types';
 
 const subscriptionOf = (path: string): string => path.split('/')[2]!.toLowerCase();
@@ -55,6 +55,28 @@ export function ruleOverlapsScopes(
   if (scopes.everything) return true;
   if (rule.queryBackend === 'microsoft-graph') return coversDirectory(scopes);
   return scopeForRule(rule.scope, scopes, hierarchy) !== null;
+}
+
+/**
+ * The subscriptions a rule overlaps when a person holds each of them whole: `true` for a rule that names no
+ * subscription or group (it overlaps every one), else the lower-case ids it names plus every subscription
+ * under a management group it names, over the stored tree. A Microsoft Graph rule overlaps no subscription.
+ * Reads the rule's scope the way `scopeForRule()` does for a whole held subscription, so
+ * `ruleOverlapsScopes(rule, <that subscription>)` is `covered === true || covered.has(id)`, found once per
+ * rule instead of once per subscription and rule. Share the result: read it, never change it.
+ */
+export function wholeSubscriptionsOverlapped(
+  rule: Pick<Rule, 'queryBackend' | 'scope'>, hierarchy: readonly HierarchyNode[],
+): true | ReadonlySet<string> {
+  if (rule.queryBackend === 'microsoft-graph') return new Set();
+  const subscriptions = rule.scope?.subscriptions?.filter(s => s.trim() !== '') ?? [];
+  const groups = rule.scope?.managementGroups?.filter(g => g.trim() !== '') ?? [];
+  if (subscriptions.length === 0 && groups.length === 0) return true;
+  const covered = new Set(subscriptions.map(s => s.toLowerCase()));
+  for (const group of groups) {
+    for (const id of expandRuleGroup(group, hierarchy).subscriptions) covered.add(id);
+  }
+  return covered;
 }
 
 /** The ids of the rules that look at what `access` holds: the Rules tab's "Rules that look at what you hold". */

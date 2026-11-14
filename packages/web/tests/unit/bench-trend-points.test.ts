@@ -12,7 +12,7 @@ import { listLastScanTimes } from '@/lib/scan-history';
 import { DIRECTORY_SUBSCRIPTION } from '@/lib/placement';
 import { FINDING_COUNT_VERSION } from '@/lib/trend-point-counts';
 import {
-  formatTable, generateDataset, median, runBench, runMeasurements, slicedAccess, THRESHOLD_MS,
+  formatTable, generateDataset, median, overThresholdOf, runBench, runMeasurements, slicedAccess, THRESHOLD_MS, WHOLE_REFRESH_NAME,
   type BenchResult,
 } from '../../scripts/bench/trend-points';
 import { EVERYTHING_ACCESS } from '../helpers/access';
@@ -58,6 +58,20 @@ describe('the harness', () => {
   });
 });
 
+describe('the limit', () => {
+  const timed = (name: string, maxMs: number) => ({ name, coldMs: maxMs, medianMs: maxMs, maxMs });
+
+  it('holds the summary and the hold per category to the limit, and not the refresh of every category (the owner\'s decision in ADR 0013)', () => {
+    expect(overThresholdOf([
+      timed(WHOLE_REFRESH_NAME, 5 * THRESHOLD_MS),
+      timed('transaction hold, one category', 0.9 * THRESHOLD_MS),
+      timed('computeWidgetSummary, Everything', 1.5 * THRESHOLD_MS),
+      timed('last-scanned read, Everything', 0.01 * THRESHOLD_MS),
+    ])).toEqual(['computeWidgetSummary, Everything']);
+    expect(overThresholdOf([timed('transaction hold, one category', 2 * THRESHOLD_MS)])).toEqual(['transaction hold, one category']);
+  });
+});
+
 describe('the run', () => {
   let result: BenchResult;
   const data = generateDataset(OPTIONS);
@@ -84,7 +98,7 @@ describe('the run', () => {
     expect(result.machine).toMatch(/Node v/);
     expect(['sqlite', 'postgres']).toContain(result.backend);
     expect(result.counts).toMatchObject({ subscriptions: 12, categories: 3, rules: 12, findings: 90 });
-    expect(result.overThreshold).toEqual(result.measurements.filter(m => m.maxMs > THRESHOLD_MS).map(m => m.name));
+    expect(result.overThreshold).toEqual(overThresholdOf(result.measurements));
     expect(formatTable(result)).toContain(`Backend: ${result.backend}`);
   });
 

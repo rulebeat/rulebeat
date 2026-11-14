@@ -225,14 +225,15 @@ interface GroupExpansion {
   subscriptions: ReadonlySet<string>;
 }
 
-/** Each tree's expansions, kept for as long as the array that was read is: a refresh reads the tree once and
- *  every subscription and rule that asks about one group shares the answer. A tree is never changed in place
- *  (a refresh replaces the whole array), so a changed tree is a new array and is read in full. */
+/** Each tree's expansions, kept for as long as the array that was read is: every subscription and rule that
+ *  asks about one group shares the answer. A tree is never changed in place (a refresh replaces the whole
+ *  array), so a changed tree is a new array and is read in full. The trend writer keeps one array for all the
+ *  categories of a queued refresh while each category's read holds the same nodes (`shareTree`). */
 const expansionsOf = new WeakMap<readonly HierarchyNode[], { tenants: string[]; byGroup: Map<string, GroupExpansion> }>();
 
 /** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it.
  *  The result is shared: read it, never change it. */
-function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
+export function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
   let kept = expansionsOf.get(hierarchy);
   if (!kept) {
     kept = { tenants: [...new Set(hierarchy.map(n => n.tenantId))], byGroup: new Map() };

@@ -75,49 +75,63 @@ here: formula 3 and finding-count version 1.
   and Directory points are written as formula 2, which the table refuses at those levels, so
   history stays honest even in a partial release.
 - The refresh on every posture input costs one awaited write per touched category. Its bench
-  (`npm run bench:trend-points`, ADR 0007's layout) is below. The 1-second limit is this spec's
-  threshold, not an existing rule. A measurement over it sends the spec back before the formula-3
-  change lands.
+  (`npm run bench:trend-points`, ADR 0007's layout) is below. The spec set a 1-second limit. It is held
+  to what a person or a concurrent write waits for: the transaction hold per category, and
+  `computeWidgetSummary` for Everything. A measurement over it sends the spec back before the formula-3
+  change. **The owner decided that the background refresh of every category is not held to it** (see
+  below).
 
 Measured on the benchmark harness at 2,000 subscriptions, 30 categories, 240 rules and 50,000
 findings (960 suppressed), seed 1, three warm runs. Machine: AMD EPYC-Rome Processor, 4 vCPUs, 8 GB,
-Linux 7.0, Node 24.22. SQLite is a file in the temp directory; Postgres is 17 on the same machine,
-over the loopback. Both runs follow two earlier days of history written by the real writer, so today's
-refresh compares with an earlier point at every level.
+Linux 7.0, Node 24.22. SQLite is a file in the temp directory; Postgres is 17.11 on the same machine,
+over the loopback, a freshly created database that the bench analyzes after seeding (straight after a bulk
+load Postgres has no statistics, and the first refresh could take 14 to 30 s; an install has had them
+analyzed by autovacuum). Both runs follow two earlier days of history written by the real writer, so
+today's refresh compares with an earlier point at every level.
 
-The first run found the cost in the management group expansion (below). Each management group is now
-expanded once per read of the tree and shared by every subscription and every rule scoped to a group
-(`expandRuleGroup` in `lib/run-scope.ts`), and `expandManagementGroups` no longer scans a list for each
-frontier step. No number a refresh writes changes: a test compares the overlap from the shared expansion
-with a fresh read of the same tree. The table gives the figures before and after.
-
-| Measurement | SQLite before | SQLite after | Postgres 17 before | Postgres 17 after |
+| Measurement | SQLite before | SQLite now | Postgres 17 before | Postgres 17 now |
 | --- | --- | --- | --- | --- |
-| One refresh of all 30 categories, first of the day | 24.6 s | 3.7 s | 26.6 s | 5.1 s |
-| One refresh of all 30 categories, repeat (every level rewritten) | 24.5 s | 3.6 s | 26.1 s | 5.0 s |
-| Transaction hold, one category: median | 0.72 s | 0.12 s | 0.83 s | 0.16 s |
-| Transaction hold, one category: longest | 2.4 s | 0.20 s | 2.0 s | 0.20 s |
-| `computeWidgetSummary`, Everything | 15.3 s | 2.0 s | 15.6 s | 2.2 s |
-| `computeWidgetSummary`, one category | 0.83 s | 0.58 s | 1.05 s | 0.66 s |
-| `computeWidgetSummary`, a person holding 20 subscriptions | 0.32 s | 0.20 s | 0.47 s | 0.29 s |
-| Last-scanned read, Everything | 1.4 ms | 1.8 ms | 3.6 ms | 3.9 ms |
-| Last-scanned read, a person holding 20 subscriptions | 4.9 ms | 4.9 ms | 9.0 ms | 9.5 ms |
+| One refresh of all 30 categories, first of the day | 24.6 s | 2.6 s | 26.6 s | 3.5 s |
+| One refresh of all 30 categories, repeat (every level rewritten), median | 24.5 s | 2.4 s | 26.1 s | 3.7 s |
+| Transaction hold, one category: median | 0.72 s | 0.08 s | 0.83 s | 0.13 s |
+| Transaction hold, one category: longest | 2.4 s | 0.14 s | 2.0 s | 0.22 s |
+| `computeWidgetSummary`, Everything | 15.3 s | 0.57 s | 15.6 s | 0.56 s |
+| `computeWidgetSummary`, one category | 0.83 s | 0.25 s | 1.05 s | 0.37 s |
+| `computeWidgetSummary`, a person holding 20 subscriptions | 0.32 s | 0.20 s | 0.47 s | 0.26 s |
+| Last-scanned read, Everything | 1.4 ms | 2.0 ms | 3.6 ms | 5.3 ms |
+| Last-scanned read, a person holding 20 subscriptions | 4.9 ms | 5.9 ms | 9.0 ms | 14.6 ms |
 
 The transaction hold is one category refreshed on its own, so it includes the retention statement
-and the queue turn; the figure is an upper bound of the hold itself. The "after" figures are the
-cold run of each measurement, except the two rows that name a median.
+and the queue turn; the figure is an upper bound of the hold itself. "Now" is the cold run of each
+measurement, except the rows that name a median. A second Postgres run gave 3.6 s for the first
+refresh and 0.68 s for the Everything summary; the longest of any run was under 1 second.
 
-**Two are still over the 1-second limit on both backends: one refresh of all categories (3.7 s on
-SQLite, 5.1 s on Postgres) and `computeWidgetSummary` for Everything (2.0 s and 2.2 s).** The hold per
-category, which is what a concurrent write waits behind, is now under the limit on both. The two
-backends differ by less than a factor of two, so the cost is still mostly in the process and not the
-database. The before-profile (a SQLite run at 2,000 subscriptions, 3 categories) put most of the time
-in `expandRuleGroup` and `expandManagementGroups`: the count of each subscription asked, for every rule
-scoped to a management group, for that group's subscriptions, and each ask walked the whole tree again.
+**The owner's decision on the 1-second limit.** One refresh of every category (2.6 s on SQLite, 3.5 s
+on Postgres at 2,000 subscriptions) stays over 1 second and is accepted. It runs in the queue, and an
+awaited write waits only for the hold of the categories it touched (0.1 to 0.2 s each). The bench
+still prints the time and says it is accepted; it does not count it as over the limit. **The limit
+stays for `computeWidgetSummary` for Everything, which a person waits for, and for the hold per
+category.** Both are under it on both backends.
+
+What got the numbers down, and what it did not change:
+
+- The management group expansion was the first cost: each group is expanded once per read of the tree and
+  shared by every subscription and rule scoped to a group (`expandRuleGroup` in `lib/run-scope.ts`), and
+  one queued refresh keeps the array it read for all its categories while each category's read holds the
+  same nodes (`shareTree` in `lib/db/snapshots.ts`). A tree that changes between two categories' reads is
+  not shared.
+- The Everything summary then spent most of its time asking, for each of 2,000 rows and each distinct rule
+  scope, whether the rule overlaps the row (hundreds of thousands of `scopeForRule` calls, about 0.8 s of its 1.9 s in the profile). A
+  subscription held whole now looks its rules up in a list built once per scope shape
+  (`wholeSubscriptionsOverlapped` in `lib/rule-overlap.ts`). A row for a person who holds only some
+  resource groups of a subscription, and the Directory row, still use `ruleOverlapsScopes`.
+- The summary read every open finding in full, including its text columns, and filtered the findings of each
+  category with one pass per category. It now reads only the columns a count uses
+  (`listFindingDigests` in `lib/db/findings.ts`) and groups the findings by category once.
+
+No number the summary returns changes. A test compares each scorecard row, for seven kinds of person, with the
+rule-by-rule definition (`ruleOverlapsScopes` over the Scopes narrowed to the row), and another compares a
+digest with the summary of the same finding field by field.
+
 No index is called for: the reads of stored points are not where the time goes, so the lower-case
 expression index on `lower(subscription_id)` is not added.
-
-The spec keeps its 1-second limit and its 2,000-subscription target. The remaining over-limit times are
-recorded here and the owner decides before the formula-3 change. The tree is read once per category
-transaction, so a refresh of 30 categories expands each group 30 times, not once; sharing the read
-across the categories of one queued call is the next step if the owner wants a lower figure.

@@ -26,6 +26,10 @@ import { buildAccess, everythingAccess, type Access } from '../../lib/access-mod
 /** The spec's limit: a refresh or a read that takes longer sends the spec back for a decision. */
 export const THRESHOLD_MS = 1000;
 
+/** The owner's decision (ADR 0013): the refresh of every category runs in the queue, and a save waits only
+ *  for the hold of the category it touched, so the whole-install refresh is timed and reported but is not held to the limit. */
+export const WHOLE_REFRESH_NAME = 'one refresh, every category (cold: first of the day; warm: every level rewritten)';
+
 /** The bench measures the reads themselves, so the main reader is Everything. */
 const BENCH_ACCESS = everythingAccess('admin');
 
@@ -299,6 +303,16 @@ export async function seedDatabase(dataset: Dataset, opts: DatasetOptions, log: 
     await run(db.update(rules).set({ lastRunStatus: 'failed' }).where(eq(rules.id, rule.id)));
   }
   await refreshSnapshotsFor(categoryIds, new Date(now - DAY_MS));
+
+  // A real install has had autovacuum analyze its tables by the time it holds this much. Straight after a
+  // bulk load Postgres has no statistics yet, and the first refresh can plan badly and take 30 s.
+  const { dbKind } = await import('../../lib/db/backend');
+  if (dbKind === 'pg') {
+    const { dbReady, pgDb } = await import('../../lib/db/client');
+    const { sql } = await import('drizzle-orm');
+    await dbReady;
+    await pgDb!.execute(sql.raw('ANALYZE'));
+  }
   timed('seeded', start);
 
   return { categoryIds, heldSubscriptions };
@@ -365,7 +379,7 @@ export async function buildMeasurements(seeded: Seeded): Promise<Measurement[]> 
 
   return [
     // Cold is the first refresh of the day; the warm runs after it find every level's point already there and rewrite them all.
-    { name: 'one refresh, every category (cold: first of the day; warm: every level rewritten)', runs: w => w, run: () => refreshSnapshotsFor(all) },
+    { name: WHOLE_REFRESH_NAME, runs: w => w, run: () => refreshSnapshotsFor(all) },
     // One category on its own: the transaction it holds is most of this. Each run is the next category.
     {
       name: 'transaction hold, one category (median and longest over the categories)',
@@ -400,8 +414,13 @@ export interface BenchResult {
   /** The categories the dataset's categories were stored in, in the dataset's order. */
   categoryIds: string[];
   measurements: MeasurementResult[];
-  /** The measurements whose longest run is over THRESHOLD_MS. */
+  /** The measurements whose longest run is over THRESHOLD_MS, apart from the whole-install refresh (see WHOLE_REFRESH_NAME). */
   overThreshold: string[];
+}
+
+/** The measurements held to the limit whose longest run is over it. */
+export function overThresholdOf(measurements: readonly MeasurementResult[]): string[] {
+  return measurements.filter(m => m.name !== WHOLE_REFRESH_NAME && m.maxMs > THRESHOLD_MS).map(m => m.name);
 }
 
 export function machineDescription(): string {
@@ -427,7 +446,7 @@ export async function runBench(opts: BenchOptions, log: (line: string) => void =
     },
     categoryIds: seeded.categoryIds,
     measurements,
-    overThreshold: measurements.filter(m => m.maxMs > THRESHOLD_MS).map(m => m.name),
+    overThreshold: overThresholdOf(measurements),
   };
 }
 
@@ -446,6 +465,9 @@ export function formatTable(result: BenchResult): string {
     line(widths.map(w => '-'.repeat(w))),
     ...rows.map(line),
     '',
+    ...(result.measurements.some(m => m.name === WHOLE_REFRESH_NAME && m.maxMs > THRESHOLD_MS)
+      ? [`The refresh of every category is over ${THRESHOLD_MS} ms. That is accepted (ADR 0013): it runs in the queue, and a save waits for the hold of its own category.`]
+      : []),
     result.overThreshold.length
       ? `OVER the ${THRESHOLD_MS} ms threshold: ${result.overThreshold.join('; ')}. Send the spec back before the formula-3 change.`
       : `Every longest run is under the ${THRESHOLD_MS} ms threshold.`,
