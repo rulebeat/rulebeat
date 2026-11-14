@@ -21,7 +21,7 @@ import { runRules } from '@rulebeat/core';
 import { loadRules, setRulesEnabled } from '@/lib/rules';
 import { db, rawSqlite } from '@/lib/db/client';
 import { runSeeds } from '@/lib/db/migrate';
-import { scheduleRuns, findings, postureSnapshots } from '@/lib/db/schema';
+import { scheduleRuns, findings, postureSnapshots, rules as rulesTable } from '@/lib/db/schema';
 import { DEMO_SUBSCRIPTIONS } from '@/lib/demo-fixtures';
 import { and, eq } from 'drizzle-orm';
 import { buildEstate, TYPE_META } from '@/lib/demo/estate';
@@ -32,6 +32,8 @@ import { curateRules, HELD_BACK_RULE_IDS } from '@/lib/demo/curation';
 import { createLiveDemoContext, resetLiveDemoContextForTests } from '@/lib/demo/live-context';
 import { executeTarget } from '@/lib/run-executor';
 import { resetDb } from '../helpers/db';
+import { insertRuleRow } from '../helpers/trend-writer';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { extractProjectColumns } from '@/lib/demo/kql-columns';
 import { isViolatingOnDay, rowsForRuleOnDay } from '@/lib/demo/violation-engine';
 import { createFakeContext, assertNoQueryFailures } from '@/lib/demo/fake-context';
@@ -432,6 +434,22 @@ describe('replay(): small-scale integration against the real scan pipeline', () 
     const uncovered = points.filter(p => p.category === 'identity' && DEMO_SUBSCRIPTIONS.some(s => s.id === p.subscriptionId));
     expect(uncovered.length).toBe(DEMO_SUBSCRIPTIONS.length);
     for (const p of uncovered) expect(p).toMatchObject({ totalRules: 0, posturePct: null, activeFindings: 0 });
+    // A subscription the rules cover but that holds no finding is a different point from an uncovered one: it has a
+    // total and a percentage, and no findings. Every subscription of the Demo estate holds findings, so one is added
+    // the way an install gains one: a rule that names it, then the real writer's refresh of today.
+    const EMPTY_SUBSCRIPTION = '0e000000-0000-4000-8000-00000000000e';
+    await insertRuleRow({ id: 'demo-rule-empty-subscription', subscriptions: [EMPTY_SUBSCRIPTION] });
+    await refreshSnapshotsFor(['security']);
+    const empty = db.select().from(postureSnapshots)
+      .where(and(eq(postureSnapshots.category, 'security'), eq(postureSnapshots.subscriptionId, EMPTY_SUBSCRIPTION))).all();
+    db.delete(rulesTable).where(eq(rulesTable.id, 'demo-rule-empty-subscription')).run();
+    expect(empty).toHaveLength(1);
+    expect(empty[0]!.totalRules).toBeGreaterThan(0);
+    expect(empty[0]).toMatchObject({ passingRules: empty[0]!.totalRules, posturePct: 100, activeFindings: 0, formulaVersion: 3, findingCountVersion: 1 });
+    // The Directory has a point of its own in every category, written by the same writer.
+    for (const category of ['security', 'cost', 'reliability', 'compliance', 'identity']) {
+      expect(points.some(p => p.category === category && p.subscriptionId === 'directory')).toBe(true);
+    }
 
     const allFindings = db.select().from(findings).all();
     const categories = new Set(allFindings.map(f => f.category));

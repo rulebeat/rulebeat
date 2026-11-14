@@ -384,8 +384,9 @@ export const postureSnapshots = sqliteTable('posture_snapshots', {
   totalRules: integer('total_rules').notNull().default(0),
   unknownRules: integer('unknown_rules').notNull().default(0),       // zero findings but lastRunStatus wasn't a proven 'success' (or never run), neither passing nor failing
   activityRuleCount: integer('activity_rule_count').notNull().default(0), // 'activity'-kind rules enabled for this category, excluded from totalRules entirely
-  // 1 = pre-spec-030 (possibly backfilled) posture formula, 2 = honest spec-030 formula: lets a
-  // baseline comparison exclude rows it can't honestly compare against (spec 033).
+  // 1 = pre-spec-030 (possibly backfilled) posture formula, 2 = honest spec-030 formula, 3 = formula 3 (rules counted
+  // by what their scope overlaps; ADR 0013): lets a baseline comparison exclude rows it can't honestly compare against
+  // (spec 033), per the version-equality table in lib/trend-version-equality.ts.
   formulaVersion: integer('formula_version').notNull().default(1),
   findingCountVersion: integer('finding_count_version').notNull().default(0), // which version of the finding count computed active_findings/severity_counts; 0 = not recorded
   activeFindings: integer('active_findings').notNull().default(0),

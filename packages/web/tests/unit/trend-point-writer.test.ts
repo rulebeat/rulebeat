@@ -14,6 +14,7 @@ import { postureSnapshots } from '@/lib/db/tables';
 import { refreshSnapshotsFor, SNAPSHOT_FORMULA_VERSION } from '@/lib/db/snapshots';
 import { listFindings } from '@/lib/db/findings';
 import { loadRules } from '@/lib/rules';
+import { listCategories } from '@/lib/db/categories';
 import { loadSuppressions, addSuppression } from '@/lib/suppressions';
 import { computeWidgetSummary } from '@/lib/dashboard-data';
 import { resolveDateWindow } from '@/lib/date-window';
@@ -297,15 +298,30 @@ describe('the live number and today\'s stored point agree (Q26, Q38)', () => {
     }
   });
 
-  it('agrees over every category together, level by level', async () => {
-    for (const level of ['', SUB_A, SUB_B, SUB_UNCOVERED, 'directory']) {
-      const summary = await live(level ? { subscriptions: [level] } : {}, EVERYTHING_ACCESS);
-      const stored = await Promise.all(CATEGORIES.map(async c => (await pointOn(c, level, DAY))!));
-      const sum = (pick: (p: (typeof stored)[number]) => number) => stored.reduce((n, p) => n + pick(p), 0);
-      expect(summary.current).toMatchObject({
-        passingRules: sum(p => p.passingRules), totalRules: sum(p => p.totalRules), unknownRules: sum(p => p.unknownRules), activeFindings: sum(p => p.activeFindings),
-      });
+  /** What every category together holds at each level, written out by hand from the seed above. */
+  const TOGETHER: Record<string, { passing: number; total: number; unknown: number; findings: number; severities: Record<string, number> }> = {
+    '': { passing: 1, total: 6, unknown: 1, findings: 5, severities: { critical: 1, high: 0, medium: 2, low: 2 } },
+    [SUB_A]: { passing: 2, total: 4, unknown: 0, findings: 3, severities: { critical: 1, high: 0, medium: 1, low: 1 } },
+    [SUB_B]: { passing: 3, total: 3, unknown: 0, findings: 0, severities: { critical: 0, high: 0, medium: 0, low: 0 } },
+    [SUB_UNCOVERED]: { passing: 1, total: 1, unknown: 0, findings: 0, severities: { critical: 0, high: 0, medium: 0, low: 0 } },
+    directory: { passing: 0, total: 1, unknown: 0, findings: 1, severities: { critical: 0, high: 0, medium: 1, low: 0 } },
+  };
+
+  it.each(Object.keys(TOGETHER))('agrees over every category together at the level %j, in counts, severities and baseline', async level => {
+    const expected = TOGETHER[level]!;
+    // The all-categories baseline is strict: every category the install has needs a comparable point on that day.
+    for (const { id: category } of (await listCategories()).filter(c => !(CATEGORIES as readonly string[]).includes(c.id))) {
+      const b = BASELINE[level]!;
+      await insertTrendPoint({ category, subscriptionId: level, date: '2026-03-01', passing: b.passing, total: b.total });
     }
+    const summary = await live(level ? { subscriptions: [level] } : {}, EVERYTHING_ACCESS);
+    expect(summary.current).toMatchObject({
+      passingRules: expected.passing, totalRules: expected.total, unknownRules: expected.unknown, activeFindings: expected.findings,
+    });
+    expect(summary.current.severityCounts).toMatchObject(expected.severities);
+    // Both categories' baselines at a level hold the same ratio, so the all-categories baseline is that ratio.
+    expect(summary.baseline).toEqual({ date: '2026-03-01', pct: BASELINE[level]!.pct });
+    expect(summary.baselineGap).toBeNull();
   });
 });
 
