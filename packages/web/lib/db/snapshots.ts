@@ -295,19 +295,14 @@ async function enforceRetention(now: Date): Promise<void> {
     or(
       notInArray(snapshotsTable.category, db.select({ id: categoriesTable.id }).from(categoriesTable)),
       // The newest point older than the cutoff of each level is worked out once, from the points older than
-      // the cutoff alone (the date index reaches them), and a point goes when its level has a newer one.
-      // A subquery per point that matched on lower(subscription_id) could not use the key and read its
-      // whole category each time.
-      sql`EXISTS (
-        SELECT 1 FROM (
-          SELECT old.category AS category, lower(old.subscription_id) AS level, max(old.date) AS newest
-          FROM posture_snapshots old
-          WHERE old.date < ${cutoff}
-          GROUP BY old.category, lower(old.subscription_id)
-        ) keep
-        WHERE keep.category = ${snapshotsTable.category}
-          AND keep.level = lower(${snapshotsTable.subscriptionId})
-          AND keep.newest > ${snapshotsTable.date}
+      // the cutoff alone, and a point goes unless it is that one. The subquery names nothing of the outer row,
+      // so it is built once and each old point is one lookup. A subquery that matched on the outer row's level
+      // is rewritten by Postgres into one that reads its whole category for every old point.
+      sql`(${snapshotsTable.category}, lower(${snapshotsTable.subscriptionId}), ${snapshotsTable.date}) NOT IN (
+        SELECT old.category, lower(old.subscription_id), max(old.date)
+        FROM posture_snapshots old
+        WHERE old.date < ${cutoff}
+        GROUP BY old.category, lower(old.subscription_id)
       )`,
     ),
   )));

@@ -141,8 +141,12 @@ statement looked up, for each point past the cutoff, the newest older point of i
 matching on `lower(subscription_id)`, which cannot use the key and read the whole category each time: about
 0.6 s at 50 subscriptions and 10 s at 200, with nothing deleted. It now works out each level's newest point
 past the cutoff once, from the points past the cutoff alone (reached through the date index), and deletes a
-point when its level has a newer one. The empty refresh then takes 6 to 9 ms on SQLite at 2,000 subscriptions
-(Postgres was not re-measured for this statement).
+point that is not one of them. The subquery names nothing of the outer row: written as an `EXISTS` over the
+newest points matched to the outer row's level, Postgres pushed the match into the subquery and read the whole
+category for each old point again (2.7 s at 150 subscriptions and 3 categories, in the pipeline's Postgres
+run). As a row-value `NOT IN` over the newest points it is built once, and the statement takes about 6 ms
+there. The empty refresh takes 6 to 9 ms on SQLite at 2,000 subscriptions. The retention cost test runs on
+both backends.
 
 No index is called for: the reads of stored points and the retention statement are not where the time goes,
 so the lower-case expression index on `lower(subscription_id)` is not added.
