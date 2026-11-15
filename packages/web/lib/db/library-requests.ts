@@ -4,6 +4,7 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { many, one, run, inTransaction, pgAdvisoryXactLock } from './exec';
 import { LIBRARY_REQUEST_LOCK_KEY } from './library-request-cleanup';
 import type { Rule, RuleScope, Severity } from '@rulebeat/core';
+import { refreshSnapshotsFor } from '@/lib/db/snapshots';
 import { RULE_NAME_LOCK_KEY, insertRuleOn, loadRuleWithDefinition, resolveKind, updateRuleOn, type RuleChanges } from '@/lib/rules';
 import type { RuleDefinition } from '@/lib/shipped-catalogue';
 import {
@@ -250,7 +251,9 @@ function changesFrom(definition: PersonalRuleDefinition, enabled: boolean | unde
  * unless the reviewer sets one.
  */
 export async function approveLibraryRequest(id: string, reviewerId: string, edits: ReviewEdits): Promise<ApproveResult> {
-  return inTransaction(async (tx) => {
+  const categories: string[] = [];
+  const result = await inTransaction(async (tx): Promise<ApproveResult> => {
+    categories.length = 0;
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     await pgAdvisoryXactLock(tx, LIBRARY_REQUEST_LOCK_KEY);
     const row = await one(tx.select().from(libraryRequests).where(eq(libraryRequests.id, id)));
@@ -269,10 +272,12 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
       if (!updated.ok) return updated.reason === 'not-found' ? { ok: false, reason: 'target-gone' } : updated;
       rule = updated.rule;
       before = target.rule;
+      categories.push(...updated.categories);
     } else {
       const inserted = await insertRuleOn(tx, libraryRuleFrom(definition, edits.enabled ?? false, row.id));
       if (!inserted.ok) return inserted;
       rule = inserted.rule;
+      categories.push(...inserted.categories);
     }
 
     await run(tx.update(libraryRequests).set({
@@ -282,6 +287,9 @@ export async function approveLibraryRequest(id: string, reviewerId: string, edit
 
     return { ok: true, rule, before, request: rowToRequest((await one(tx.select().from(libraryRequests).where(eq(libraryRequests.id, id))))!) };
   });
+  // After the commit, never inside it: the queued writer opens a transaction of its own.
+  if (result.ok) await refreshSnapshotsFor(categories);
+  return result;
 }
 
 export type CloseResult =
@@ -327,7 +335,8 @@ export type CopyToLibraryResult =
  * clicks cannot add it twice.
  */
 export async function copyPersonalRuleToLibrary(rule: PersonalRule): Promise<CopyToLibraryResult> {
-  return inTransaction(async (tx) => {
+  const categories: string[] = [];
+  const result = await inTransaction(async (tx): Promise<CopyToLibraryResult> => {
     await pgAdvisoryXactLock(tx, RULE_NAME_LOCK_KEY);
     const current = await getPersonalRule(rule.id, rule.ownerId, tx);
     const existing = current?.libraryRuleId ? await loadRuleWithDefinition(current.libraryRuleId, tx) : null;
@@ -335,6 +344,9 @@ export async function copyPersonalRuleToLibrary(rule: PersonalRule): Promise<Cop
     const inserted = await insertRuleOn(tx, libraryRuleFrom(definitionOfPersonalRule(rule), false));
     if (!inserted.ok) return inserted;
     await setPersonalRuleLibraryRule(rule.id, rule.ownerId, inserted.rule.id, tx);
+    categories.push(...inserted.categories);
     return { ok: true, rule: inserted.rule };
   });
+  if (result.ok) await refreshSnapshotsFor(categories);
+  return result;
 }

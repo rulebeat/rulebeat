@@ -1,8 +1,9 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from './db/client';
 import { accessFilterSql } from './db/access-filter';
 import { findings as findingsTable, suppressions as suppressionsTable } from './db/tables';
 import { many, one, run, inTransaction, type DbHandle } from './db/exec';
+import { refreshSnapshotsFor } from './db/snapshots';
 import type { Suppression } from './types';
 import type { Access } from './access-model';
 import { accessAllowing, type Action } from './rbac';
@@ -41,9 +42,31 @@ async function findingIsInside(handle: DbHandle, allowed: Access, fingerprint: s
   return row !== undefined;
 }
 
+/**
+ * The categories holding a finding whose suppression expires in (`after`, `upTo`], both ISO times. An expiry
+ * is the one posture input that changes with the clock and no write, so the scheduler asks this every tick
+ * and refreshes those categories' trend points.
+ */
+export async function categoriesWithSuppressionExpiringBetween(after: string, upTo: string): Promise<string[]> {
+  const rows = await many(db.selectDistinct({ category: findingsTable.category }).from(suppressionsTable)
+    .innerJoin(findingsTable, eq(findingsTable.fingerprint, suppressionsTable.fingerprint))
+    .where(and(sql`${suppressionsTable.expiresAt} > ${after}`, sql`${suppressionsTable.expiresAt} <= ${upTo}`)));
+  return rows.map(r => r.category);
+}
+
 /** Inserts one suppression without touching the others, so two people suppressing at once both land. */
 export async function addSuppression(s: Suppression): Promise<void> {
   await run(db.insert(suppressionsTable).values(suppressionToRow(s)));
+  await refreshCategoriesOf([s.fingerprint]);
+}
+
+/** Refreshes today's trend points of the categories the findings with these fingerprints sit in: a suppression
+ *  moves them in or out of every count. After the write has committed, never inside a transaction. */
+async function refreshCategoriesOf(fingerprints: readonly string[]): Promise<void> {
+  if (fingerprints.length === 0) return;
+  const rows = await many(db.selectDistinct({ category: findingsTable.category }).from(findingsTable)
+    .where(inArray(findingsTable.fingerprint, [...fingerprints])));
+  await refreshSnapshotsFor(rows.map(r => r.category));
 }
 
 /**
@@ -52,23 +75,28 @@ export async function addSuppression(s: Suppression): Promise<void> {
  * and reads as there being none: pass `accessAllowing(actor.access, 'suppressions:write')`.
  */
 export async function removeSuppression(id: string, allowedBy?: Access): Promise<Suppression | null> {
-  return inTransaction(async (tx) => {
+  const removed = await inTransaction(async (tx) => {
     const row = await one(tx.select().from(suppressionsTable).where(eq(suppressionsTable.id, id)));
     if (!row) return null;
     if (allowedBy && !allowedBy.everything && !(await findingIsInside(tx, allowedBy, row.fingerprint))) return null;
     await run(tx.delete(suppressionsTable).where(eq(suppressionsTable.id, id)));
     return rowToSuppression(row);
   });
+  if (removed) await refreshCategoriesOf([removed.fingerprint]);
+  return removed;
 }
 
 /** Replaces the whole set. No route uses it; it remains for test fixtures that need an exact set. */
 export async function saveSuppressions(sups: Suppression[]): Promise<void> {
-  await inTransaction(async (tx) => {
+  const fingerprints = await inTransaction(async (tx) => {
+    const before = (await many(tx.select({ fingerprint: suppressionsTable.fingerprint }).from(suppressionsTable))).map(r => r.fingerprint);
     await run(tx.delete(suppressionsTable));
     for (const s of sups) {
       await run(tx.insert(suppressionsTable).values(suppressionToRow(s)));
     }
+    return [...before, ...sups.map(s => s.fingerprint)];
   });
+  await refreshCategoriesOf(fingerprints);
 }
 
 export function isActiveSuppression(s: Pick<Suppression, 'expiresAt'>): boolean {

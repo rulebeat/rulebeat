@@ -7,6 +7,7 @@ import { Loader2, Lock, Pencil, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/callout';
 import { PersonalRuleResults } from '@/components/rules/personal-rule-results';
+import { RuleSaveAction } from '@/components/rules/rule-save-action';
 import { RuleForm } from '@/components/rules/rule-form';
 import type { CoveredScopeView } from '@/lib/run-scope';
 import { LibraryRequestPanel } from './library-request-panel';
@@ -104,10 +105,7 @@ export function PersonalRuleClient({ rule, source, requests, copiedTo, copyToLib
             <>
               <span className="inline-flex items-center gap-1.5 border border-status-warn/40 px-2 py-1 text-xs font-medium text-status-warn">Editing</span>
               <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={() => setEditing(false)}>Cancel edit</Button>
-              <Button size="sm" className="h-6 text-xs px-2 gap-1" disabled={!dirty || saving} onClick={() => saveHandleRef.current?.()}>
-                {saving && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-                {saving ? 'Saving…' : 'Save changes'}
-              </Button>
+              <RuleSaveAction disabled={!dirty || saving} saving={saving} onSave={() => saveHandleRef.current?.()} />
             </>
           ) : (
             <>

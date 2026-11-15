@@ -122,6 +122,43 @@ export function coveredAccess(access: Access): Access {
   return buildAccess(usableGrants(access), access.source, access.managementGroups.filter(e => can(e.role, ACTION)));
 }
 
+/**
+ * Whether a run's covered Scope shares anything with what a person holds: the newest scan that "covered
+ * part of what you hold". Everything holds all of it, so any scan overlaps (even one that recorded no
+ * entry); a run that covered Everything overlaps anyone who holds a Scope. Otherwise some covered entry
+ * must lie inside, contain, or be a management group on the same branch as, a held one: a management
+ * group is read over `hierarchy`, RuleBeat's copy of the tree. A covered entry that cannot be read overlaps nothing.
+ */
+export function coveredScopeOverlaps(
+  covered: readonly CoveredEntry[], access: Access, hierarchy: readonly HierarchyNode[],
+): boolean {
+  if (access.everything) return true;
+  if (access.grants.length === 0) return false;
+  const reach = accessReach(access);
+  return covered.some(entry => {
+    const scope = parseScope(entry.path);
+    if (!scope) return false;
+    const parts = entry.path.toLowerCase().split('/');
+    switch (scope.kind) {
+      case 'everything':
+        return true;
+      case 'directory':
+        return reach.directory;
+      case 'subscription':
+        return reach.subscriptions.has(parts[2]!) || reach.resourceGroups.has(parts[2]!);
+      case 'resourceGroup':
+        return reach.subscriptions.has(parts[2]!) || (reach.resourceGroups.get(parts[2]!)?.has(parts[4]!) ?? false);
+      case 'managementGroup': {
+        const id = managementGroupIdOf(entry.path).toLowerCase();
+        if (reach.managementGroups.has(id)) return true;
+        const inside = expandRuleGroup(managementGroupIdOf(entry.path), hierarchy);
+        return [...inside.subscriptions].some(s => reach.subscriptions.has(s) || reach.resourceGroups.has(s))
+          || [...inside.groups].some(g => reach.managementGroups.has(g));
+      }
+    }
+  });
+}
+
 // --- Which findings are inside it ---
 
 /** Where a finding sits: the four fields `accessFilterSql()` reads. */
@@ -184,20 +221,36 @@ export interface RequestScope {
 }
 
 interface GroupExpansion {
-  groups: Set<string>;
-  subscriptions: Set<string>;
+  groups: ReadonlySet<string>;
+  subscriptions: ReadonlySet<string>;
 }
 
-/** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it. */
-function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
-  const out: GroupExpansion = { groups: new Set(), subscriptions: new Set() };
-  const grants: ScopeGrant[] = [...new Set(hierarchy.map(n => n.tenantId))].map(tenantId => ({
+/** Each tree's expansions, kept for as long as the array that was read is: every subscription and rule that
+ *  asks about one group shares the answer. A tree is never changed in place (a refresh replaces the whole
+ *  array), so a changed tree is a new array and is read in full. The trend writer keeps one array for all the
+ *  categories of a queued refresh while each category's read holds the same nodes (`shareTree`). */
+const expansionsOf = new WeakMap<readonly HierarchyNode[], { tenants: string[]; byGroup: Map<string, GroupExpansion> }>();
+
+/** What a rule's own management group holds, from RuleBeat's copy of the tree, whichever tenant holds it.
+ *  The result is shared: read it, never change it. */
+export function expandRuleGroup(id: string, hierarchy: readonly HierarchyNode[]): GroupExpansion {
+  let kept = expansionsOf.get(hierarchy);
+  if (!kept) {
+    kept = { tenants: [...new Set(hierarchy.map(n => n.tenantId))], byGroup: new Map() };
+    expansionsOf.set(hierarchy, kept);
+  }
+  const key = id.toLowerCase();
+  const known = kept.byGroup.get(key);
+  if (known) return known;
+  const out = { groups: new Set<string>(), subscriptions: new Set<string>() };
+  const grants: ScopeGrant[] = kept.tenants.map(tenantId => ({
     tenantId, scope: { kind: 'managementGroup', path: `${MANAGEMENT_GROUP_PATH}${id}` }, role: 'viewer' as Role,
   }));
   for (const expansion of expandManagementGroups(grants, hierarchy)) {
     for (const g of expansion.groups) out.groups.add(g);
     for (const s of expansion.subscriptions) out.subscriptions.add(s);
   }
+  kept.byGroup.set(key, out);
   return out;
 }
 

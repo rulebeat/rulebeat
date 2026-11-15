@@ -6,6 +6,30 @@ All notable changes to RuleBeat are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Posture no longer reads 100% while a rule is failing or unknown, and the baseline no longer blends categories or subtracts rounded numbers.
+- Upgrading no longer writes trend points dated before the upgrade.
+- Today's trend point updates when a rule, suppression or category changes, not only after a scan.
+
+### Changed
+
+- The shortest date window is now Today (UTC), and last N days covers exactly N days on Scans and dashboards.
+- New, Fixed and the New vs Fixed bars match the Scans New and Fixed lists for the dashboard's date window. A widget's own period now acts as its date window.
+- A Severity filter on a dashboard no longer narrows the rules posture counts. Every counted rule stays in the total, and the number reads as the rules with no finding of the picked severities, so the failing rules are the rules the same filter lists on Scans.
+- Suppressed findings are left out of every dashboard number, Advisories included. A `?suppressed=1` on a widget link is now ignored; Scans still has its own control for showing suppressed findings.
+- Dashboard posture now counts only the rules that can look at something you hold. Someone without the Directory no longer has Microsoft Graph rules in their number.
+- The Stat Card reads Rules counted and gives the posture change in points against a named date.
+- Top violating rules shows each rule's highest open severity.
+- Scans can filter, group and show findings by where they are placed ("Placed at").
+- The Rules tab filters by last run, and for someone without Everything, by rules that look at what they hold; its status, last run and category filters are kept in the link.
+- Scan Coverage counts the rules whose last run did not finish, of every kind, and the count opens that list on the Rules tab; for someone without Everything, last scanned is the newest scan that covered part of what they hold.
+- The Subscription scorecard lists every subscription, including ones with no findings or no rules, plus a Directory row. Each is graded against the rules whose scope includes it, and a footer counts findings placed elsewhere.
+- Scorecards say All passing only when every counted rule passes, show how many are not yet proven, and list the lowest first; posture tiles say why there is nothing to count.
+- The Trend chart is available for the Directory, and marks the day a line's counting changed.
+- Trend points for each subscription and the Directory are now written as posture formula 3, so they can be compared from the first start after the upgrade. That start writes today's points for every category and level, zero-finding subscriptions included, and leaves earlier points as they were.
+- What each dashboard number counts, and how older trend points were counted, is now written in docs/public/posture.md.
+
 ## [0.13.1] - 2026-10-16
 
 ### Fixed

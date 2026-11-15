@@ -7,9 +7,10 @@ import { chunk } from './db/chunk';
 import { EMPTY_SCAN_BLOB, SCAN_FINDING_COLUMNS, recordsFromFindings } from './db/scan-findings-copy';
 import type { ScanSummary, ScanMeta } from './types';
 import { accessReach, wholeSubscriptionIds, type Access } from './access-model';
-import { EVERYTHING_COVERED, type CoveredEntry } from './run-scope';
+import { EVERYTHING_COVERED, coveredScopeOverlaps, type CoveredEntry } from './run-scope';
 import { parseCoveredScope, serializeCoveredScope, viewCoveredScope } from './covered-scope-view';
 import { recountScans } from './db/run-recount';
+import { listHierarchyNodes } from './db/management-group-hierarchy';
 
 /** How many scans of a category history keeps (`SCAN_HISTORY_LIMIT`, default 90). */
 export const SCAN_HISTORY_LIMIT = Math.max(2, Number(process.env.SCAN_HISTORY_LIMIT) || 90);
@@ -87,6 +88,31 @@ export async function listScanMetas(module: string, access: Access, limit = 20):
     .orderBy(desc(scansTable.startedAt))
     .limit(limit));
   return narrowScans(rows.map(row => rowToScanMeta(row, access)), rows, access);
+}
+
+/**
+ * When each category was last scanned, as the person reading is told it: the finish time of the newest
+ * scan whose covered Scope overlaps what they hold, so a scan of someone else's subscription does not make
+ * their own look fresh. It searches back past scans that do not overlap. Everything reads the newest scan
+ * of the category, whatever it covered. A row stored with no covered Scope covers Everything. A category
+ * with no overlapping scan is absent. Scans are the only source: a trend point's time is not a scan time.
+ */
+export async function listLastScanTimes(categories: string[], access: Access): Promise<Map<string, string>> {
+  const times = new Map<string, string>();
+  if (categories.length === 0 || (!access.everything && access.grants.length === 0)) return times;
+  const rows = await many(db
+    .select({ module: scansTable.module, finishedAt: scansTable.finishedAt, coveredScope: scansTable.coveredScope })
+    .from(scansTable)
+    .where(inArray(scansTable.module, categories))
+    .orderBy(desc(scansTable.finishedAt)));
+  const hierarchy = access.everything ? [] : await listHierarchyNodes();
+  for (const row of rows) {
+    if (times.has(row.module)) continue;
+    if (access.everything || coveredScopeOverlaps(parseCoveredScope(row.coveredScope), access, hierarchy)) {
+      times.set(row.module, row.finishedAt);
+    }
+  }
+  return times;
 }
 
 /** All per-category scan rows produced by a single run execution (schedule_runs.id): the

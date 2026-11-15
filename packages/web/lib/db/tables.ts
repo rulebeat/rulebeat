@@ -70,3 +70,12 @@ export const savedQueriesInsertionOrder: SQL =
   dbKind === 'pg' ? sql`${pg.savedQueries.seq}` : sql`rowid`;
 export const queryRunsInsertionOrder: SQL =
   dbKind === 'pg' ? sql`${pg.queryRuns.seq}` : sql`rowid`;
+
+/**
+ * The retention statement's range read on `posture_snapshots.date`. SQLite reads every point of the table
+ * through the `(category, subscription_id, date)` key when left to plan it, so it is told to use the date
+ * index; Postgres has no such clause and plans the range on its own. Resolved here, like the order columns
+ * above, so the statement in `lib/db/snapshots.ts` is the same text on both backends.
+ */
+export const postureSnapshotsDateIndexHint: SQL =
+  dbKind === 'pg' ? sql.raw('') : sql.raw('INDEXED BY idx_snapshots_date');

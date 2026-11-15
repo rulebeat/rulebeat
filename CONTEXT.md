@@ -125,12 +125,34 @@ The findings one past scan returned, as that scan saw them: which findings, with
 severity, title, resource and row count each had then. A snapshot never changes after its scan.
 It keeps no rows and has no status; a finding's rows and status belong to the finding as it is
 now. A snapshot is not a trend point on the dashboard.
-_Avoid_: scan result, history entry, posture snapshot (that is the dashboard's daily trend record)
+_Avoid_: scan result, history entry, posture snapshot (that is a Trend point)
 
 **Compare**:
 Two snapshots of one category set side by side. A finding in only the newer one is added, in only
 the older one is fixed, and in both is persisted. Findings are matched by fingerprint.
 _Avoid_: diff, delta
+
+## Dashboards
+
+**Formula version**:
+Which definition of posture produced a Trend point. Version 3 counts enabled Problem rules whose
+scope overlaps the Scopes and that match the rule-level filters. A rule fails on an active,
+unsuppressed Problem finding placed inside the Scopes (of a picked severity), passes when it is not
+failing and its last run succeeded, and is unknown otherwise.
+
+**Finding-count version**:
+Which definition produced a Trend point's finding counts. Version 1 counts active, unsuppressed
+Problem findings placed in the Level, each once, by their own severity. 0 means not recorded.
+
+**Trend point**:
+One stored count for one category at one Level on one UTC day, with its Formula version and
+Finding-count version. Two Trend points are compared only where the version-equality table
+(ADR 0013) counts their versions equal.
+_Avoid_: posture snapshot, snapshot row, daily snapshot
+
+**Level**:
+Where a Trend point is kept: install-wide, one subscription, or the Directory.
+_Avoid_: scope (that is what a person holds)
 
 ## Access
 
@@ -143,7 +165,7 @@ _Avoid_: permission level, Azure role (that is a role in Azure, which only ever 
 The part of Azure whose findings someone can see and run scans against: Everything, the
 Directory, a management group, a subscription or a resource group, never a single resource. A
 management group covers whatever sits under it now, including subscriptions added later. A finding
-is seen by whoever's Scope contains the place it sits; one RuleBeat cannot place is seen only under
+is seen by whoever's Scope contains [the place it sits](#placement); one RuleBeat cannot place is seen only under
 Everything. A rule's kind never changes who sees its findings.
 _Avoid_: rule scope (that is where a rule's query looks, a separate thing), tenant scope
 
@@ -157,6 +179,11 @@ The Scope that covers findings about the Entra directory itself, such as an app 
 expiring secret. These belong to no subscription. Only an Admin grants it, by hand; it is never
 mirrored.
 _Avoid_: identity scope, tenant (that is the whole Azure tenant)
+
+<a id="placement"></a>**Placement**:
+Where a finding sits for Access: a resource, a subscription, a management group, the Directory, a
+workspace, or nowhere RuleBeat can place.
+_Avoid_: location (an Azure region), scope (what a person holds, or where a rule looks)
 
 **Access**:
 The Roles a person holds and the Scope each one holds on. Overlapping access adds up: the higher

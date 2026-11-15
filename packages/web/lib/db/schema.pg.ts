@@ -333,6 +333,7 @@ export const postureSnapshots = pgTable('posture_snapshots', {
   unknownRules: integer('unknown_rules').notNull().default(0),
   activityRuleCount: integer('activity_rule_count').notNull().default(0),
   formulaVersion: integer('formula_version').notNull().default(1),
+  findingCountVersion: integer('finding_count_version').notNull().default(0),
   activeFindings: integer('active_findings').notNull().default(0),
   severityCounts: text('severity_counts').notNull().default('{}'),
   updatedAt: text('updated_at').notNull(),

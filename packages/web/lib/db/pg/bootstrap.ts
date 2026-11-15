@@ -390,11 +390,14 @@ CREATE TABLE IF NOT EXISTS posture_snapshots (
   unknown_rules INTEGER NOT NULL DEFAULT 0,
   activity_rule_count INTEGER NOT NULL DEFAULT 0,
   formula_version INTEGER NOT NULL DEFAULT 1,
+  finding_count_version INTEGER NOT NULL DEFAULT 0,
   active_findings INTEGER NOT NULL DEFAULT 0,
   severity_counts TEXT NOT NULL DEFAULT '{}',
   updated_at TEXT NOT NULL,
   PRIMARY KEY (category, subscription_id, date)
 );
+-- Which version of the finding count each trend point was computed under; 0 = not recorded (map #320).
+ALTER TABLE posture_snapshots ADD COLUMN IF NOT EXISTS finding_count_version INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON posture_snapshots(date DESC);
 
 CREATE TABLE IF NOT EXISTS notification_channels (

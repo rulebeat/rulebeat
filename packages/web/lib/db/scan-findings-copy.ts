@@ -68,8 +68,9 @@ export const SCAN_COPY_DELETE_ORPHANS = `DELETE FROM scan_findings WHERE scan_id
  */
 export const EMPTY_SCAN_BLOB = '[]';
 
-/** The meta keys the two one-time backfills set once they have run (lib/db/findings.ts and
- *  lib/db/snapshots.ts). Both rebuild history from the blobs, so no blob is emptied before both are set.
+/** The meta keys the two startup steps set once they have run (lib/db/findings.ts and lib/db/snapshots.ts).
+ *  Only the findings one rebuilds history from the blobs now; ADR 0008's sequence still holds, so no blob is
+ *  emptied before both are set.
  *  The findings marker is set only once every category is rebuilt or had nothing to rebuild; a category
  *  that failed is tried again on the next start and the marker stays unset until then (#235). */
 export const FINDINGS_BACKFILL_MARKER = 'findings-backfilled-v1';

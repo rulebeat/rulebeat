@@ -1,26 +1,32 @@
-import { eq, and, inArray, gte, lte, lt, desc, sql, type SQL } from 'drizzle-orm';
+import { eq, and, or, inArray, notInArray, gte, lte, lt, ne, desc, min, max, sql, getTableColumns, type SQL } from 'drizzle-orm';
 import { db } from './client';
-import { postureSnapshots as snapshotsTable, findings as findingsTable } from './tables';
-import { many, run } from './exec';
+import {
+  postureSnapshots as snapshotsTable, findings as findingsTable, suppressions as suppressionsTable, categories as categoriesTable,
+  postureSnapshotsDateIndexHint,
+} from './tables';
+import { many, run, inConsistentWrite, type DbHandle } from './exec';
 import { getCategory, listCategories } from './categories';
 import { loadRules } from '../rules';
-import { loadSuppressions, isActiveSuppression } from '../suppressions';
-import { SYSTEM_ACCESS } from '../system-access';
+import { isActiveSuppression } from '../suppressions';
+import { listHierarchyNodes } from './management-group-hierarchy';
+import type { HierarchyNode } from '../management-group-tree';
 import { wholeSubscriptionIds, type Access } from '../access-model';
-import { loadStoredScanBlobs } from './scan-blob-history';
+import { DIRECTORY_SUBSCRIPTION } from '../placement';
 import { SNAPSHOTS_BACKFILL_MARKER } from './scan-findings-copy';
-import { getMeta, setMeta } from './meta';
-import { emptySeverityCounts } from '../severity';
-import { countsTowardPosture, isActivityRule } from '../finding-kinds';
+import { setMeta } from './meta';
+import { SEVERITY_ORDER } from '../severity';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
+import { knownSubscriptions } from '../known-subscriptions';
+import { categoryPoints, FINDING_COUNT_VERSION, INSTALL_LEVEL } from '../trend-point-counts';
+import { TREND_KEPT_DAYS } from '../widget-limits';
 import type { Severity } from '../types';
 
-const RETENTION_DAYS = 365;
+const RETENTION_DAYS = TREND_KEPT_DAYS;
 
 /** The posture formula a freshly-written row is computed under: bump this whenever the
  *  formula changes so a baseline comparison (spec 033) can tell old rows apart from new ones and
  *  exclude what it can't honestly compare against, instead of silently blending the two. */
-export const SNAPSHOT_FORMULA_VERSION = 2;
+export const SNAPSHOT_FORMULA_VERSION = 3;
 
 export interface DailySnapshot {
   category: string;
@@ -39,6 +45,9 @@ export interface DailySnapshot {
   /** Which posture formula computed this row's pct/passingRules/totalRules: see
    *  SNAPSHOT_FORMULA_VERSION. 1 on every row written before this column existed. */
   formulaVersion: number;
+  /** Which definition of the finding count produced `activeFindings` and `severityCounts`: see
+   *  FINDING_COUNT_VERSION. 0 on every row written before the column existed, meaning "not recorded". */
+  findingCountVersion: number;
   activeFindings: number;
   severityCounts: Record<Severity, number>;
   updatedAt: string;
@@ -57,6 +66,7 @@ function rowToSnapshot(row: Row): DailySnapshot {
     unknownRules: row.unknownRules,
     activityRuleCount: row.activityRuleCount,
     formulaVersion: row.formulaVersion,
+    findingCountVersion: row.findingCountVersion,
     activeFindings: row.activeFindings,
     severityCounts: JSON.parse(row.severityCounts) as Record<Severity, number>,
     updatedAt: row.updatedAt,
@@ -67,94 +77,251 @@ function toDateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Recomputes and upserts today's (UTC) row(s) for a category from the live findings table. An
- *  aggregate row (subscriptionId '') plus one row per subscription that currently has an active
- *  finding in this category (same "only knowable via live findings" limitation as
- *  dashboard-data.ts's `perSubscription`: a subscription that reaches zero findings simply stops
- *  getting a fresh row rather than writing an explicit 100%/0-findings row). */
-export async function upsertDailySnapshot(categoryId: string, now: Date = new Date()): Promise<void> {
-  const category = await getCategory(categoryId);
-  if (!category) return;
+// --- the one queued writer (ADR 0001, ADR 0013) ---
 
-  const enabledRules = (await loadRules()).filter(r => r.enabled && r.category === categoryId);
-  const stateRules = enabledRules.filter(countsTowardPosture);
-  const stateRuleIds = new Set(stateRules.map(r => r.id));
-  const ruleById = new Map(enabledRules.map(r => [r.id, r]));
-  const totalRules = stateRules.length;
-  const activityRuleCount = enabledRules.filter(isActivityRule).length;
+/** The writer's queue. On globalThis because the instrumentation hook and the route handlers can each load
+ *  their own copy of this module, and two queues would not serialize each other. */
+const writerQueue = ((globalThis as typeof globalThis & { __rulebeatTrendWriter?: { tail: Promise<void> } })
+  .__rulebeatTrendWriter ??= { tail: Promise.resolve() });
 
-  // An activity finding's ruleId never matches stateRuleIds below, so including it here doesn't
-  // affect failingRuleIds.
-  const activeRows = await many(db.select().from(findingsTable)
-    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'), countsInFindingTotalsSql)));
+/**
+ * Recomputes today's (UTC) trend points of each category from live state: the only writer of
+ * `posture_snapshots`. Every posture input calls it once its own transaction has committed (a scan's
+ * sync, a rule or suppression write, a tree refresh that changed), and the startup call refreshes every
+ * category.
+ *
+ * It writes only the UTC day of `now`. Production callers pass none; the Demo's replay passes its simulated
+ * day. A day before it is never written, updated or deleted here, apart from retention.
+ *
+ * Calls are queued in this process (one replica, ADR 0001) and each reads live state when its turn starts,
+ * so overlapping calls serialize and the last write reflects the latest state. It opens its own
+ * transaction per category and is never nested in the caller's: on Postgres a read here would not see rows
+ * the caller's transaction has not committed, and on SQLite the caller would hold the lock this waits for.
+ * A failure is caught and logged, never thrown, so the action that called it is not failed.
+ */
+export function refreshSnapshotsFor(categories: readonly string[], now?: Date): Promise<void> {
+  const ids = [...new Set(categories)];
+  // writeTodaysPoints() catches its own failures; the catch is for the queue itself, which one rejection must never stop.
+  // The default clock is read when the turn starts, so a call that waited behind a slow one writes the day it runs on.
+  const turn = writerQueue.tail.then(() => writeTodaysPoints(ids, now ?? new Date())).catch(err => {
+    console.error('[trend] The trend point writer failed:', err);
+  });
+  writerQueue.tail = turn;
+  return turn;
+}
 
-  // A stored snapshot is an install-wide value, so it is computed under SYSTEM_ACCESS, never under
-  // whoever triggered the scan or backfill.
-  const suppressedFingerprints = new Set(
-    (await loadSuppressions(SYSTEM_ACCESS)).filter(isActiveSuppression).map(s => s.fingerprint),
+/** The tree as one queued call last read it. Each category still reads the tree on its own transaction, and
+ *  keeps the array it read last when the new read holds the same nodes, so the expansion that
+ *  `lib/run-scope.ts` keeps per array is built once for the call, not once per category. */
+export interface SharedTree { nodes: readonly HierarchyNode[] | null }
+
+function sameNodes(a: readonly HierarchyNode[], b: readonly HierarchyNode[]): boolean {
+  return a.length === b.length && a.every((n, i) => {
+    const m = b[i]!;
+    return n.tenantId === m.tenantId && n.kind === m.kind && n.id === m.id && n.name === m.name && n.parentId === m.parentId;
+  });
+}
+
+/** What a category's transaction read, or the array of an earlier read in this call when it holds the same nodes. */
+export function shareTree(read: HierarchyNode[], shared: SharedTree): readonly HierarchyNode[] {
+  if (shared.nodes && sameNodes(shared.nodes, read)) return shared.nodes;
+  shared.nodes = read;
+  return read;
+}
+
+async function writeTodaysPoints(categoryIds: string[], now: Date): Promise<void> {
+  const shared: SharedTree = { nodes: null };
+  for (const id of categoryIds) {
+    try {
+      await inConsistentWrite(tx => writeCategoryPoints(tx, id, now, shared));
+    } catch (err) {
+      console.error(`[trend] Could not write today's trend points for category "${id}":`, err);
+    }
+  }
+  try {
+    await enforceRetention(now);
+  } catch (err) {
+    console.error('[trend] Could not remove trend points past retention:', err);
+  }
+}
+
+type PointInsert = typeof snapshotsTable.$inferInsert;
+
+function severityJson(counts: Record<Severity, number>): string {
+  return JSON.stringify(Object.fromEntries(SEVERITY_ORDER.map(sev => [sev, counts[sev] ?? 0])));
+}
+
+/** Whether a computed point reads differently from the newest earlier point at its level. */
+function differsFrom(point: PointInsert, earlier: Row | undefined): boolean {
+  if (!earlier) return true;
+  return point.passingRules !== earlier.passingRules
+    || point.totalRules !== earlier.totalRules
+    || point.unknownRules !== earlier.unknownRules
+    || point.activityRuleCount !== earlier.activityRuleCount
+    || point.activeFindings !== earlier.activeFindings
+    || point.severityCounts !== severityJson(JSON.parse(earlier.severityCounts) as Record<Severity, number>)
+    || point.formulaVersion !== earlier.formulaVersion
+    || point.findingCountVersion !== earlier.findingCountVersion;
+}
+
+/** The newest point before `today` at each level of a category, keyed by the level in lower case. When two rows
+ *  of one level share that date in different cases, the most recently updated one is the level's point. */
+async function newestEarlierPoints(tx: DbHandle, category: string, today: string): Promise<Map<string, Row>> {
+  const newest = tx.select({
+    level: sql<string>`lower(${snapshotsTable.subscriptionId})`.as('level_key'),
+    date: max(snapshotsTable.date).as('newest_date'),
+  }).from(snapshotsTable)
+    .where(and(eq(snapshotsTable.category, category), lt(snapshotsTable.date, today)))
+    .groupBy(sql`lower(${snapshotsTable.subscriptionId})`)
+    .as('newest');
+  const rows = await many(tx.select(getTableColumns(snapshotsTable)).from(snapshotsTable)
+    .innerJoin(newest, and(sql`lower(${snapshotsTable.subscriptionId}) = ${newest.level}`, eq(snapshotsTable.date, newest.date)))
+    .where(eq(snapshotsTable.category, category))) as unknown as Row[];
+  const out = new Map<string, Row>();
+  for (const row of rows) {
+    const level = row.subscriptionId.toLowerCase();
+    const seen = out.get(level);
+    if (!seen || row.updatedAt > seen.updatedAt) out.set(level, row);
+  }
+  return out;
+}
+
+const WRITE_BATCH = 100;
+
+/** One category's points for the UTC day of `now`, all read and written on the transaction `tx`. A category that
+ *  no longer exists writes nothing. */
+async function writeCategoryPoints(tx: DbHandle, categoryId: string, now: Date, sharedTree: SharedTree = { nodes: null }): Promise<void> {
+  if (!await getCategory(categoryId, tx)) return;
+
+  const today = toDateKey(now);
+  const rules = await loadRules(tx);
+  const hierarchy = shareTree(await listHierarchyNodes(tx), sharedTree);
+
+  // A stored point is an install-wide value, so it is computed over Everything, never under whoever caused the write.
+  const suppressed = new Set(
+    (await many(tx.select().from(suppressionsTable)))
+      .filter(s => isActiveSuppression({ expiresAt: s.expiresAt ?? undefined })).map(s => s.fingerprint),
   );
-  const visible = activeRows.filter(f => !suppressedFingerprints.has(f.fingerprint));
+  const active = await many(tx.select({
+    fingerprint: findingsTable.fingerprint, ruleId: findingsTable.ruleId, severity: findingsTable.severity,
+    subscriptionId: findingsTable.subscriptionId, placement: findingsTable.placement,
+  }).from(findingsTable)
+    .where(and(eq(findingsTable.category, categoryId), eq(findingsTable.status, 'active'), countsInFindingTotalsSql)));
+  const findings = active.filter(f => !suppressed.has(f.fingerprint));
 
-  const date = toDateKey(now);
+  // The shared subscription list: the tree's, those an enabled rule names, and those holding an active
+  // Problem finding in any category.
+  const holders = await many(tx.selectDistinct({ subscriptionId: findingsTable.subscriptionId }).from(findingsTable)
+    .where(and(eq(findingsTable.status, 'active'), countsInFindingTotalsSql, ne(findingsTable.placement, 'directory'))));
+  const known = knownSubscriptions({ hierarchy, rules, findingSubscriptions: holders.map(h => h.subscriptionId) });
+
+  const todays = await many(tx.select({ subscriptionId: snapshotsTable.subscriptionId }).from(snapshotsTable)
+    .where(and(eq(snapshotsTable.category, categoryId), eq(snapshotsTable.date, today))));
+  const todayLevels = new Set(todays.map(r => r.subscriptionId.toLowerCase()));
+  // A level whose point exists today is rewritten even when it has left the list (its findings all went), so
+  // the point does not keep a count that is no longer true.
+  const listed = new Set(known.map(sub => sub.key));
+  const subscriptions = [
+    ...known,
+    ...[...todayLevels].filter(level => level !== INSTALL_LEVEL && level !== DIRECTORY_SUBSCRIPTION && !listed.has(level))
+      .map(level => ({ key: level, id: level, name: null })),
+  ];
+
+  const computed = categoryPoints({ categoryId, rules, findings, subscriptions, hierarchy });
+
+  const earlier = await newestEarlierPoints(tx, categoryId, today);
+
   const updatedAt = now.toISOString();
-
-  async function upsertRow(subscriptionId: string, rows: typeof visible): Promise<void> {
-    const severityCounts = emptySeverityCounts();
-    for (const f of rows) {
-      const sev = f.severity as Severity;
-      if (sev in severityCounts) severityCounts[sev]++;
-    }
-
-    // A rule only counts as passing if it has zero findings here AND its last real run actually
-    // succeeded: zero findings from a rule whose query is silently erroring is not posture,
-    // it's a blind spot (spec 030's whole reason for existing).
-    const failingRuleIds = new Set(rows.map(f => f.ruleId).filter(id => stateRuleIds.has(id)));
-    let passingRules = 0;
-    let unknownRules = 0;
-    for (const id of stateRuleIds) {
-      if (failingRuleIds.has(id)) continue;
-      if (ruleById.get(id)?.lastRunStatus === 'success') passingRules++;
-      else unknownRules++;
-    }
-    const posturePct = totalRules === 0 ? null : Math.round((passingRules / totalRules) * 100);
-
-    await run(db.insert(snapshotsTable).values({
+  const toWrite: PointInsert[] = [];
+  for (const [level, counts] of computed) {
+    const point: PointInsert = {
       category: categoryId,
-      subscriptionId,
-      date,
-      posturePct,
-      passingRules,
-      totalRules,
-      unknownRules,
-      activityRuleCount,
+      subscriptionId: level,
+      date: today,
+      posturePct: counts.posturePct,
+      passingRules: counts.passingRules,
+      totalRules: counts.totalRules,
+      unknownRules: counts.unknownRules,
+      activityRuleCount: counts.activityRuleCount,
       formulaVersion: SNAPSHOT_FORMULA_VERSION,
-      activeFindings: rows.length,
-      severityCounts: JSON.stringify(severityCounts),
+      findingCountVersion: FINDING_COUNT_VERSION,
+      activeFindings: counts.activeFindings,
+      severityCounts: severityJson(counts.severityCounts),
       updatedAt,
-    }).onConflictDoUpdate({
+    };
+    // The install-wide point is written every time. A level is written when today's point exists (it is
+    // overwritten) or when it reads differently from its newest earlier point; a missing point means "unchanged".
+    if (level === INSTALL_LEVEL || todayLevels.has(level) || differsFrom(point, earlier.get(level))) toWrite.push(point);
+  }
+
+  // A level stored today in another case is the same level: replace that row rather than hold two.
+  const keys = new Set(toWrite.map(p => p.subscriptionId));
+  for (const row of todays) {
+    if (row.subscriptionId !== row.subscriptionId.toLowerCase() && keys.has(row.subscriptionId.toLowerCase())) {
+      await run(tx.delete(snapshotsTable).where(and(
+        eq(snapshotsTable.category, categoryId), eq(snapshotsTable.date, today), eq(snapshotsTable.subscriptionId, row.subscriptionId),
+      )));
+    }
+  }
+
+  for (let i = 0; i < toWrite.length; i += WRITE_BATCH) {
+    await run(tx.insert(snapshotsTable).values(toWrite.slice(i, i + WRITE_BATCH)).onConflictDoUpdate({
       target: [snapshotsTable.category, snapshotsTable.subscriptionId, snapshotsTable.date],
-      set: { posturePct, passingRules, totalRules, unknownRules, activityRuleCount, formulaVersion: SNAPSHOT_FORMULA_VERSION, activeFindings: rows.length, severityCounts: JSON.stringify(severityCounts), updatedAt },
+      set: {
+        posturePct: sql.raw('excluded.posture_pct'),
+        passingRules: sql.raw('excluded.passing_rules'),
+        totalRules: sql.raw('excluded.total_rules'),
+        unknownRules: sql.raw('excluded.unknown_rules'),
+        activityRuleCount: sql.raw('excluded.activity_rule_count'),
+        formulaVersion: sql.raw('excluded.formula_version'),
+        findingCountVersion: sql.raw('excluded.finding_count_version'),
+        activeFindings: sql.raw('excluded.active_findings'),
+        severityCounts: sql.raw('excluded.severity_counts'),
+        updatedAt: sql.raw('excluded.updated_at'),
+      },
     }));
   }
+}
 
-  await upsertRow('', visible);
-
-  const subIds = new Set(visible.map(f => f.subscriptionId).filter(Boolean));
-  for (const subId of subIds) {
-    await upsertRow(subId, visible.filter(f => f.subscriptionId === subId));
-  }
-
+/**
+ * Removes points older than 365 days, keeping each (category, level)'s newest point older than the
+ * cutoff, so a baseline at the edge of the window still has a point to stand on. The level is compared in
+ * lower case, and a category that no longer exists keeps nothing. One statement, the same text on both
+ * backends: the one clause only SQLite reads comes from `postureSnapshotsDateIndexHint`. Today's and every recent point are untouched.
+ */
+async function enforceRetention(now: Date): Promise<void> {
   const cutoff = toDateKey(new Date(now.getTime() - RETENTION_DAYS * 86_400_000));
-  await run(db.delete(snapshotsTable).where(lt(snapshotsTable.date, cutoff)));
+  await run(db.delete(snapshotsTable).where(and(
+    lt(snapshotsTable.date, cutoff),
+    or(
+      notInArray(snapshotsTable.category, db.select({ id: categoriesTable.id }).from(categoriesTable)),
+      // The newest point older than the cutoff of each level is worked out once, from the points older than
+      // the cutoff alone, and a point goes unless it is that one. The subquery names nothing of the outer row,
+      // so it is built once and each old point is one lookup. A subquery that matched on the outer row's level
+      // is rewritten by Postgres into one that reads its whole category for every old point.
+      // SQLite reads every point of the table through the key, which covers the three columns, rather than the
+      // few past the cutoff through the date index (231 ms at 2.2M points, minutes at 22M, every 30 seconds),
+      // so it is told which index to use. The hint is resolved in lib/db/tables.ts and is empty on Postgres.
+      sql`(${snapshotsTable.category}, lower(${snapshotsTable.subscriptionId}), ${snapshotsTable.date}) NOT IN (
+        SELECT old.category, lower(old.subscription_id), max(old.date)
+        FROM posture_snapshots old ${postureSnapshotsDateIndexHint}
+        WHERE old.date < ${cutoff}
+        GROUP BY old.category, lower(old.subscription_id)
+      )`,
+    ),
+  )));
 }
 
 /** `subscriptionId` omitted (or '') queries the aggregate (all-subscriptions) row. The only
  *  granularity that existed before Phase 5. Pass a specific subscription id to get that
- *  subscription's own trend history instead.
+ *  subscription's own trend history instead, or the Directory's reserved value for the Directory's.
+ *  The level is compared without regard to case, and when two rows of one category share a date (a
+ *  level written in two cases by older code) the most recently updated one is the day's point.
  *
  *  Anyone who does not hold Everything is never given the aggregate row, which counts every finding
- *  on the install, and gets a subscription's row only for one they hold whole (#274). A resource
- *  group Scope holds no whole subscription, so it reads nothing here. */
+ *  on the install, and gets a subscription's row only for one they hold whole (#274), or the
+ *  Directory's if they hold the Directory. A resource group Scope holds no whole subscription, so it
+ *  reads nothing here. */
 export async function getSnapshots(access: Access, opts: { categories?: string[]; subscriptionId?: string; sinceDate?: string } = {}): Promise<DailySnapshot[]> {
   const subscription = subscriptionCondition(access, opts.subscriptionId);
   if (!subscription) return [];
@@ -162,24 +329,32 @@ export async function getSnapshots(access: Access, opts: { categories?: string[]
   if (opts.categories && opts.categories.length > 0) conditions.push(inArray(snapshotsTable.category, opts.categories));
   if (opts.sinceDate) conditions.push(gte(snapshotsTable.date, opts.sinceDate));
 
-  const rows = await many(db.select().from(snapshotsTable).where(and(...conditions)).orderBy(snapshotsTable.date));
+  const rows = await many(db.select().from(snapshotsTable).where(and(...conditions))
+    .orderBy(snapshotsTable.date, snapshotsTable.updatedAt, snapshotsTable.subscriptionId));
 
-  return rows.map(rowToSnapshot);
+  // Oldest update first, so the last row seen for a category and date is the day's point.
+  const byDay = new Map<string, Row>();
+  for (const row of rows) byDay.set(`${row.category}\u0000${row.date}`, row);
+  return [...byDay.values()].map(rowToSnapshot);
 }
 
 /** The condition on a snapshot's subscription for one person, or null when they may read none of it.
- *  Everything reads exactly what it asked for. Anyone else reads a subscription held whole, compared
- *  without regard to case, and never the aggregate. */
+ *  Compared as lower case on both sides. Everything reads exactly what it asked for. Anyone else reads a
+ *  subscription held whole, or the Directory if they hold it, and never the aggregate. */
 function subscriptionCondition(access: Access, subscriptionId: string | undefined): SQL | null {
-  if (access.everything) return eq(snapshotsTable.subscriptionId, subscriptionId ?? '');
-  if (!subscriptionId || !wholeSubscriptionIds(access).includes(subscriptionId.toLowerCase())) return null;
-  return sql`lower(${snapshotsTable.subscriptionId}) = ${subscriptionId.toLowerCase()}`;
+  const level = (subscriptionId ?? '').toLowerCase();
+  if (!access.everything) {
+    const readable = level === DIRECTORY_SUBSCRIPTION ? access.directory : wholeSubscriptionIds(access).includes(level);
+    if (!level || !readable) return null;
+  }
+  return sql`lower(${snapshotsTable.subscriptionId}) = ${level}`;
 }
 
 /** Latest row per category on or before `onOrBefore`: used as the delta baseline. Defaults to
  *  the aggregate (all-subscriptions) row; pass `subscriptionId` for a per-subscription baseline.
- *  Narrowed like `getSnapshots`. */
-export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string): Promise<DailySnapshot[]> {
+ *  Narrowed like `getSnapshots`. With `formulaVersions`, only rows of those formula versions are
+ *  considered, so a category's latest row is its latest comparable one (trend-version-equality.ts). */
+export async function getBaselineSnapshots(categories: string[], onOrBefore: string, access: Access, subscriptionId?: string, formulaVersions?: readonly number[]): Promise<DailySnapshot[]> {
   if (categories.length === 0) return [];
   const subscription = subscriptionCondition(access, subscriptionId);
   if (!subscription) return [];
@@ -188,8 +363,9 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
       inArray(snapshotsTable.category, categories),
       subscription,
       lte(snapshotsTable.date, onOrBefore),
+      ...(formulaVersions ? [inArray(snapshotsTable.formulaVersion, [...formulaVersions])] : []),
     ))
-    .orderBy(desc(snapshotsTable.date)));
+    .orderBy(desc(snapshotsTable.date), desc(snapshotsTable.updatedAt), desc(snapshotsTable.subscriptionId)));
 
   const seen = new Set<string>();
   const out: DailySnapshot[] = [];
@@ -201,76 +377,40 @@ export async function getBaselineSnapshots(categories: string[], onOrBefore: str
   return out;
 }
 
-/** When each category's install-wide snapshot was last written, on or before `onOrBefore`. Only the
- *  time: a time is the same for everyone and carries no count, so a person on less than Everything
- *  can be told when a category was last scanned without being handed an aggregate number. */
-export async function getLastSnapshotTimes(categories: string[], onOrBefore: string): Promise<Map<string, string>> {
-  const times = new Map<string, string>();
-  if (categories.length === 0) return times;
-  const rows = await many(db.select({ category: snapshotsTable.category, updatedAt: snapshotsTable.updatedAt })
+/** The date of each category's oldest row of one of `formulaVersions`, narrowed like `getSnapshots`.
+ *  A category with no such row is absent. Tells a withheld baseline how far back a comparison could
+ *  ever reach. */
+export async function getFirstSnapshotDates(categories: string[], access: Access, subscriptionId: string | undefined, formulaVersions: readonly number[]): Promise<Map<string, string>> {
+  const first = new Map<string, string>();
+  const subscription = subscriptionCondition(access, subscriptionId);
+  if (categories.length === 0 || !subscription) return first;
+  const rows = await many(db.select({ category: snapshotsTable.category, first: min(snapshotsTable.date) })
     .from(snapshotsTable)
     .where(and(
       inArray(snapshotsTable.category, categories),
-      eq(snapshotsTable.subscriptionId, ''),
-      lte(snapshotsTable.date, onOrBefore),
+      subscription,
+      inArray(snapshotsTable.formulaVersion, [...formulaVersions]),
     ))
-    .orderBy(desc(snapshotsTable.date)));
-  for (const row of rows) if (!times.has(row.category)) times.set(row.category, row.updatedAt);
-  return times;
+    .groupBy(snapshotsTable.category));
+  for (const row of rows) if (row.first) first.set(row.category, row.first);
+  return first;
 }
 
-// --- one-time backfill from existing scan-blob history ---
+// --- startup ---
 
-/** Approximates historical daily snapshots from the scan-blob history (last scan of each day
- *  wins) so trend charts aren't empty on upgrade. Then writes an accurate "today" row for every
- *  category from the live findings table, which supersedes the blob-derived approximation. */
+/**
+ * What runs at every start: one queued refresh of today for every category, so a suppression that expired
+ * while RuleBeat was stopped, or a rule changed by the upgrade, counts from this start.
+ *
+ * It no longer approximates past days from the scan blobs. Those points were guesses (no unknown split, no
+ * last-run check) written dated before the upgrade under the current formula, and an upgrade never writes a
+ * past-dated point (ADR 0013). Points an earlier release already backfilled stay as they are.
+ *
+ * It still sets SNAPSHOTS_BACKFILL_MARKER: ADR 0008's sequence empties a scan's blob only once this marker
+ * and the findings one are both set.
+ */
 export async function backfillSnapshots(): Promise<void> {
-  if (await getMeta(SNAPSHOTS_BACKFILL_MARKER)) return;
-
   const categories = await listCategories();
-  for (const category of categories) {
-    const history = await loadStoredScanBlobs(category.id, SYSTEM_ACCESS); // newest-first
-    if (history.length === 0) continue;
-
-    const byDay = new Map<string, (typeof history)[number]>();
-    for (const scan of history) {
-      const day = scan.finishedAt.slice(0, 10);
-      const existing = byDay.get(day);
-      if (!existing || scan.finishedAt > existing.finishedAt) byDay.set(day, scan);
-    }
-
-    for (const [day, scan] of byDay) {
-      if (scan.totalRules === 0) continue;
-      const failingIds = new Set(scan.findings.map(f => f.ruleId));
-      const passing = scan.totalRules - failingIds.size;
-      const severityCounts = emptySeverityCounts();
-      for (const f of scan.findings) {
-        const sev = f.severity as Severity;
-        if (sev in severityCounts) severityCounts[sev]++;
-      }
-      await run(db.insert(snapshotsTable).values({
-        category: category.id,
-        subscriptionId: '',
-        date: day,
-        posturePct: Math.round((passing / scan.totalRules) * 100),
-        passingRules: passing,
-        totalRules: scan.totalRules,
-        // Explicit rather than relying on the schema default: this is the pre-spec-030 formula
-        // (no unknownRules distinction, no lastRunStatus check), so it must never be mistaken for
-        // an honest row even if the default changes later.
-        formulaVersion: SNAPSHOT_FORMULA_VERSION,
-        activeFindings: scan.findings.length,
-        severityCounts: JSON.stringify(severityCounts),
-        updatedAt: scan.finishedAt,
-      }).onConflictDoNothing());
-    }
-  }
-
-  // Write an accurate "today" row for every category from live state: supersedes any
-  // blob-derived approximation for today specifically.
-  for (const category of categories) {
-    await upsertDailySnapshot(category.id);
-  }
-
+  await refreshSnapshotsFor(categories.map(c => c.id));
   await setMeta(SNAPSHOTS_BACKFILL_MARKER, '1');
 }

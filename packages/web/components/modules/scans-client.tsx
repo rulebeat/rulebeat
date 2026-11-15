@@ -21,6 +21,10 @@ import { Select } from '@/components/ui/select';
 import { ToggleChip } from '@/components/ui/toggle-chip';
 import { cn } from '@/lib/utils';
 import { matchesRuleSearch } from '@/lib/rule-filters';
+import {
+  EMPTY_RULES_FILTER, RULE_LAST_RUNS, lastRunOf, matchesRulesTabFilter, readRulesTabFilter, writeRulesTabFilter,
+  type RuleLastRun, type RulesTabFilter,
+} from '@/lib/rules-tab-query';
 import { toggleInSet } from '@/lib/toggle-set';
 import { applyRuleToggle, requestRuleToggle } from '@/lib/rule-toggle';
 import {
@@ -47,6 +51,9 @@ const STATUS_OPTIONS = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const;
+const LAST_RUN_LABEL: Record<RuleLastRun, string> = {
+  success: 'Succeeded', failed: 'Query failed', capped: 'Result capped', invalid: 'No resource id', 'not-run': 'Not yet run',
+};
 type TabKey = 'results' | 'advisories' | 'activity' | 'history' | 'rules' | 'schedules';
 
 /** null for 'success' (the row shows no chip at all) and for a rule that predates spec 030's
@@ -82,6 +89,12 @@ export interface ScansClientProps {
   activeTab: TabKey;
   initialSuppressions?: Suppression[];
   initialCategoryFilter?: string[];
+  /** The Rules tab's status, last run, reach and category filters, read from the URL by the page
+   *  (`readRulesTabFilter`) and written back to it by the tab. Tag and severity are local. */
+  initialRulesFilter?: RulesTabFilter;
+  /** The ids of the rules that look at what the person holds, for the Rules tab's "Rules that look at what
+   *  you hold" filter. Undefined for someone who holds Everything, who has no such filter. */
+  reachRuleIds?: string[];
   /** The view the Results and Advisories tabs open on, read from the URL by `viewFromSearchParams`
    *  (e.g. an old `?category=` link, a "View in Findings" link carrying a ruleId, a dashboard widget
    *  click-through, or a saved link with columns, sort and row filters). Forwarded as-is into
@@ -125,6 +138,8 @@ export function ScansClient({
   activeTab,
   initialSuppressions,
   initialCategoryFilter,
+  initialRulesFilter,
+  reachRuleIds,
   initialView,
   initialSavedViewId,
   runs,
@@ -162,6 +177,9 @@ export function ScansClient({
   // the URL changes by anything other than one of its own writes (a saved view opened from the
   // menu, a Back or Forward, a link from another page), it starts again from the new URL. The key
   // only counts those restarts; what the explorer shows always comes from the URL.
+  const [rulesFilter, setRulesFilter] = useState<RulesTabFilter>(
+    initialRulesFilter ?? { ...EMPTY_RULES_FILTER, categories: initialCategoryFilter ?? [] },
+  );
   const [ownWrites] = useState(() => new OwnUrlWrites(searchString));
   const [explorerKey, setExplorerKey] = useState(0);
   // Counts finished scans, so the explorer reads its view again rather than the page being reloaded.
@@ -173,6 +191,8 @@ export function ScansClient({
     // Restarting the explorer for a navigation it did not make, not state derived from props.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExplorerKey(k => k + 1);
+    // The Rules tab's filters start again from the new URL the same way.
+    setRulesFilter(readRulesTabFilter(new URLSearchParams(searchString)));
   }, [searchString, ownWrites]);
   const savedViewsFor = (tab: SavedViewTab) => ({
     tab,
@@ -193,8 +213,18 @@ export function ScansClient({
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<Set<string>>(new Set(initialCategoryFilter ?? []));
+  const reachSet = useMemo(() => (reachRuleIds ? new Set(reachRuleIds) : undefined), [reachRuleIds]);
+  const statusFilter = rulesFilter.status;
+  const categoryFilter = useMemo(() => new Set(rulesFilter.categories), [rulesFilter.categories]);
+  const lastRunFilter = useMemo(() => new Set<string>(rulesFilter.lastRun), [rulesFilter.lastRun]);
+  // The status, last run, reach and category filters live in the link; tag and severity do not.
+  function changeRulesFilter(patch: Partial<RulesTabFilter>) {
+    const next = { ...rulesFilter, ...patch };
+    setRulesFilter(next);
+    const query = writeRulesTabFilter(window.location.search.slice(1), { ...next, reach: next.reach && !!reachSet });
+    ownWrites.record(query);
+    router.replace(`/scans?${query}`, { scroll: false });
+  }
 
   const explorerCategories = useMemo(() => categories.map(c => ({ id: c.id, label: c.label, color: c.color })), [categories]);
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
@@ -213,15 +243,17 @@ export function ScansClient({
       .map(([value, count]) => ({ value, label: categoryById.get(value)?.label ?? value, count }));
   }, [policies, categoryById]);
 
+  const lastRunOptions = useMemo(() => RULE_LAST_RUNS.map(value => ({
+    value, label: LAST_RUN_LABEL[value], count: policies.filter(p => lastRunOf(p) === value).length,
+  })), [policies]);
+
   const visible = useMemo(() => policies.filter(p => {
     if (tagFilter.size > 0 && !(p.tags ?? []).some(t => tagFilter.has(t))) return false;
     if (severityFilter.size > 0 && !severityFilter.has(p.severity)) return false;
-    if (statusFilter === 'enabled'  && !p.enabled) return false;
-    if (statusFilter === 'disabled' &&  p.enabled) return false;
-    if (categoryFilter.size > 0 && !categoryFilter.has(p.category)) return false;
+    if (!matchesRulesTabFilter(p, rulesFilter, reachSet)) return false;
     if (!matchesRuleSearch(p, search, categoryById.get(p.category)?.label)) return false;
     return true;
-  }), [policies, tagFilter, severityFilter, statusFilter, categoryFilter, search, categoryById]);
+  }), [policies, tagFilter, severityFilter, rulesFilter, reachSet, search, categoryById]);
 
   // A rule the filters hide leaves the selection for good, so widening the filters again cannot
   // bring it back into a bulk action unseen. Syncing to the filtered list, not derivable state.
@@ -233,7 +265,8 @@ export function ScansClient({
   const headerState = headerCheckboxState(selected, visible);
 
   const enabledCount = policies.filter(p => p.enabled).length;
-  const hasActiveFilter = search.trim() !== '' || tagFilter.size > 0 || severityFilter.size > 0 || statusFilter !== 'all' || categoryFilter.size > 0;
+  const hasActiveFilter = search.trim() !== '' || tagFilter.size > 0 || severityFilter.size > 0 || statusFilter !== 'all' || categoryFilter.size > 0
+    || lastRunFilter.size > 0 || (rulesFilter.reach && !!reachSet);
 
   async function toggleEnabled(policy: Rule) {
     setNotice(null);
@@ -417,8 +450,8 @@ export function ScansClient({
                   label="Category"
                   options={categoryOptions}
                   selected={categoryFilter}
-                  onToggle={v => setCategoryFilter(s => toggleInSet(s, v))}
-                  onClear={() => setCategoryFilter(new Set())}
+                  onToggle={v => changeRulesFilter({ categories: [...toggleInSet(categoryFilter, v)] })}
+                  onClear={() => changeRulesFilter({ categories: [] })}
                 />
 
                 {tagOptions.length > 0 && (
@@ -448,17 +481,31 @@ export function ScansClient({
                 <div className="w-36 shrink-0">
                   <Select
                     value={statusFilter}
-                    onValueChange={v => setStatusFilter(v as typeof statusFilter)}
+                    onValueChange={v => changeRulesFilter({ status: v as RulesTabFilter['status'] })}
                     options={STATUS_OPTIONS}
                     aria-label="Filter by status"
                   />
                 </div>
 
+                <ChecklistDropdown
+                  label="Last run"
+                  options={lastRunOptions}
+                  selected={lastRunFilter}
+                  onToggle={v => changeRulesFilter({ lastRun: RULE_LAST_RUNS.filter(r => r === v ? !lastRunFilter.has(v) : lastRunFilter.has(r)) })}
+                  onClear={() => changeRulesFilter({ lastRun: [] })}
+                />
+
+                {reachSet && (
+                  <ToggleChip selected={rulesFilter.reach} onClick={() => changeRulesFilter({ reach: !rulesFilter.reach })}>
+                    Rules that look at what you hold
+                  </ToggleChip>
+                )}
+
                 {hasActiveFilter && (
                   <Button
                     variant="ghost"
                     className="shrink-0"
-                    onClick={() => { setSearch(''); setTagFilter(new Set()); setSeverityFilter(new Set()); setStatusFilter('all'); setCategoryFilter(new Set()); }}
+                    onClick={() => { setSearch(''); setTagFilter(new Set()); setSeverityFilter(new Set()); changeRulesFilter({ status: 'all', lastRun: [], reach: false, categories: [] }); }}
                   >
                     Clear
                   </Button>

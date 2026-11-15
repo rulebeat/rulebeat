@@ -119,12 +119,12 @@ interface Props {
   outsideAccess?: OutsideAccess;
 }
 
-const STAT_METRICS: Array<{ value: StatMetric; label: string }> = [
+export const STAT_METRICS: Array<{ value: StatMetric; label: string }> = [
   { value: 'posture-pct',       label: 'Overall Posture %' },
   { value: 'total-findings',    label: 'Total Open Findings' },
   { value: 'critical-findings', label: 'Critical Findings' },
   { value: 'high-findings',     label: 'High Severity Findings' },
-  { value: 'rules-scanned',     label: 'Rules Scanned' },
+  { value: 'rules-scanned',     label: 'Rules Counted' },
   { value: 'modules-healthy',   label: 'Healthy Categories' },
   { value: 'new-findings',      label: 'New Findings (window)' },
   { value: 'fixed-findings',    label: 'Fixed Findings (window)' },
@@ -136,24 +136,9 @@ const CHART_TYPES = [
   { value: 'bar',  label: 'Bar Chart' },
 ];
 
-const PERIODS = [
-  { value: '7d',  label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-  { value: 'all', label: 'All time' },
-];
-
-// finding_events retention is 180 days: an "All time" label would overpromise here.
-const EVENT_PERIODS = [
-  { value: '7d',  label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-  { value: 'all', label: 'All history (180d)' },
-];
-
 const WINDOW_OVERRIDE_OPTIONS = [
   { value: 'inherit', label: 'Inherit dashboard filter' },
-  { value: '1', label: '24h' },
+  { value: '1', label: 'Today (UTC)' },
   { value: '7', label: '7d' },
   { value: '30', label: '30d' },
 ];
@@ -345,20 +330,10 @@ export function WidgetConfigPanel({ widget, onClose, onSave, outsideAccess }: Pr
       case 'trend':
         return (
           <>
-            <Field label="Time Period">
-              <Select size="sm" value={String(cfg.period ?? '30d')} onValueChange={v => setConfig('period', v)} options={PERIODS} />
-            </Field>
             <Field label="Chart Type">
               <Select size="sm" value={String(cfg.chartType ?? 'area')} onValueChange={v => setConfig('chartType', v)} options={CHART_TYPES} />
             </Field>
           </>
-        );
-      case 'new-vs-fixed':
-      case 'activity-occurrences':
-        return (
-          <Field label="Time Period">
-            <Select size="sm" value={String(cfg.period ?? '30d')} onValueChange={v => setConfig('period', v)} options={EVENT_PERIODS} />
-          </Field>
         );
       case 'recent-findings':
         return (

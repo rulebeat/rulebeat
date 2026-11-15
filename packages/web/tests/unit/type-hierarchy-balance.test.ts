@@ -116,8 +116,9 @@ const ALLOWED_FAINT_FILES = new Set([
  * per-subscription total still reflects the whole category's rule count, the same
  * helper/metadata-caption role, not a new one.
  * Lowered 171 -> 170 when Applies to was removed: the scans-client span it added (above) is gone.
+ * Raised 170 -> 171 by the widget notes slot: widget-wrapper.tsx's limit notes are caption text under a figure.
  */
-const INK_MUTED_CEILING = 170;
+const INK_MUTED_CEILING = 171;
 
 describe('type hierarchy: ink-muted/ink-faint stay narrow, weight carries the rest (spec 002)', () => {
   it('found the source files at all (guards against this suite silently testing nothing)', async () => {

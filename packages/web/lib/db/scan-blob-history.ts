@@ -34,10 +34,10 @@ export async function hasScanLeftOutOfHistory(category: string, access: Access):
 
 /**
  * Every stored scan of a category with the findings its blob holds, newest first. Upgrade code only: the
- * two one-time backfills (lib/db/findings.ts and lib/db/snapshots.ts) rebuild finding and trend history
- * from the blobs of a database that predates those tables, and nothing else reads a blob (#219). The
- * upgrade empties the blobs only once both backfills have run, so a database that needs them still has
- * its blobs here.
+ * one-time findings backfill (lib/db/findings.ts) rebuilds finding history from the blobs of a database that
+ * predates those tables, and nothing else reads a blob (#219). The trend backfill no longer reads them: it
+ * writes no past-dated point (ADR 0013). The upgrade empties the blobs only once both markers are set, so a
+ * database that needs the findings backfill still has its blobs here.
  *
  * A scan with an empty blob and records is left out: its blob was emptied, or it was saved by this
  * release, which stores no blob (a Demo's first boot saves its scans before the backfills run). Its

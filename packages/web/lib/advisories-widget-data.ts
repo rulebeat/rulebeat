@@ -15,7 +15,7 @@ function filtersOf(filters: WidgetFilters): View['filters'] {
 }
 
 /**
- * Open Advisories for the dashboard widget: active, not suppressed (unless the filter asks), narrowed
+ * Open Advisories for the dashboard widget: active, never suppressed, narrowed
  * by every dimension in `filters`, ordered by severity (critical first), then most recently seen.
  * Reads the same server view as the Advisories tab (`queryView`), so the number the widget shows is
  * the number the tab shows for the same filters. Severity ranks by `SEVERITY_ORDER`, the one ordering
@@ -38,7 +38,7 @@ export async function queryAdvisoriesWidget(
     pageSize: opts.limit,
   };
   const [page, rules] = await Promise.all([
-    queryView(view, { tab: 'advisories', showSuppressed: filters.includeSuppressed ?? false }, access),
+    queryView(view, { tab: 'advisories', showSuppressed: false }, access),
     loadRules(),
   ]);
 
