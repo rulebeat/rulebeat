@@ -310,17 +310,30 @@ export async function seedDatabase(dataset: Dataset, opts: DatasetOptions, log: 
   await refreshSnapshotsFor(categoryIds, new Date(now - DAY_MS));
 
   // A year of daily history behind them, as an install a year old holds, so the retention statement that runs
-  // after every refresh meets what it meets there: one point past the cutoff for every level. Each older day
-  // copies the stored points of the first categories (all of them would be millions of rows at full size).
+  // after every refresh meets what it meets there: one point past the cutoff for every level. The history is
+  // dense, the most it can be: every level (the install, the Directory and every subscription) has a point on
+  // every day, though the writer stores a subscription's point only when it changes. The first categories hold
+  // it (all of them would be tens of millions of rows at full size).
   const historical = categoryIds.slice(0, HISTORY_CATEGORIES);
-  const latest = await many(db.select().from(postureSnapshots).where(inArray(postureSnapshots.category, historical)));
-  const base = latest.filter(r => r.date === new Date(now - DAY_MS).toISOString().slice(0, 10));
+  const levels = ['', 'directory', ...dataset.subscriptions];
+  const history: (typeof postureSnapshots.$inferInsert)[] = [];
+  const flush = async () => {
+    for (let i = 0; i < history.length; i += 2000) await run(db.insert(postureSnapshots).values(history.slice(i, i + 2000)));
+    history.length = 0;
+  };
   for (let daysAgo = 3; daysAgo <= HISTORY_DAYS; daysAgo += 1) {
     const date = new Date(now - daysAgo * DAY_MS).toISOString().slice(0, 10);
-    for (let i = 0; i < base.length; i += 500) {
-      await run(db.insert(postureSnapshots).values(base.slice(i, i + 500).map(r => ({ ...r, date, updatedAt: `${date}T12:00:00.000Z` }))));
+    for (const category of historical) {
+      for (const subscriptionId of levels) {
+        history.push({
+          category, subscriptionId, date, posturePct: 50, passingRules: 1, totalRules: 2, formulaVersion: 3,
+          findingCountVersion: 1, activeFindings: 1, updatedAt: `${date}T12:00:00.000Z`,
+        });
+      }
     }
+    if (history.length >= 20_000) await flush();
   }
+  await flush();
 
   // A real install has had autovacuum analyze its tables by the time it holds this much. Straight after a
   // bulk load Postgres has no statistics yet, and the first refresh can plan badly and take 30 s.

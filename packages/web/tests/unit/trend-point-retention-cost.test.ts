@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/lib/db/client';
+import { dbKind } from '@/lib/db/backend';
 import { run } from '@/lib/db/exec';
 import { postureSnapshots } from '@/lib/db/tables';
 import { listCategories } from '@/lib/db/categories';
@@ -50,4 +51,40 @@ describe('retention cost', () => {
     // The same statement took 5 s or more at this size when it searched the whole category for each old point.
     expect(elapsed).toBeLessThan(1500);
   }, 120_000);
+});
+
+describe('retention cost at the size the product states', () => {
+  // 3 categories x 2,000 levels x 366 days is 2.2M points, the dense history an install a year old can hold
+  // (30 categories x 2,000 subscriptions would be 22M). Retention keeps each level's newest point past the
+  // cutoff and deletes nothing here, so the statement must find that out from the few points past the cutoff
+  // and not by reading every point of the table: on SQLite the planner read all 2.2M through the key (231 ms),
+  // about 140 s at 22M, on every 30 second tick.
+  it('does not read every stored point when it has nothing to delete', async () => {
+    const categories = (await listCategories()).slice(0, 3).map(c => c.id);
+    expect(categories).toHaveLength(3);
+    const columns = `category, subscription_id, date, posture_pct, passing_rules, total_rules, unknown_rules,
+      activity_rule_count, formula_version, finding_count_version, active_findings, severity_counts, updated_at`;
+    for (const category of categories) {
+      await execRaw(dbKind === 'pg'
+        ? `INSERT INTO posture_snapshots (${columns})
+           SELECT '${category}', '00000000-0000-4000-8000-' || lpad(l::text, 12, '0'),
+                  to_char((now() at time zone 'utc')::date - d, 'YYYY-MM-DD'), 50, 1, 2, 0, 0, 3, 1, 1, '{}',
+                  to_char((now() at time zone 'utc')::date - d, 'YYYY-MM-DD') || 'T12:00:00.000Z'
+           FROM generate_series(0, 1999) l, generate_series(1, 366) d`
+        : `INSERT INTO posture_snapshots (${columns})
+           WITH RECURSIVE l(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM l WHERE i < 1999),
+                          d(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM d WHERE i < 366)
+           SELECT '${category}', '00000000-0000-4000-8000-' || printf('%012d', l.i),
+                  date('now', '-' || d.i || ' days'), 50, 1, 2, 0, 0, 3, 1, 1, '{}',
+                  date('now', '-' || d.i || ' days') || 'T12:00:00.000Z'
+           FROM l, d`);
+    }
+    await refreshSnapshotsFor([]);
+
+    const start = performance.now();
+    await refreshSnapshotsFor([]);
+    const elapsed = performance.now() - start;
+
+    expect(elapsed).toBeLessThan(100);
+  }, 300_000);
 });
