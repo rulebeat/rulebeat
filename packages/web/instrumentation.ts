@@ -72,8 +72,8 @@ export async function register() {
   // Refresh daily (24h): keeps the 7-day TTL cache always fresh
   setInterval(() => { void warmSchemaCache(); }, 24 * 60 * 60 * 1000);
 
-  // Both reconstruct history for an install upgrading from a version that predated these tables.
-  // Guarded because they are best-effort approximations of the past: worth attempting, never worth
+  // The finding backfill reconstructs history for an install upgrading from a version that predated
+  // the findings table: a best-effort approximation of the past, worth attempting, never worth
   // preventing the app from starting. Logged rather than swallowed: silently empty history looks
   // identical to a customer who genuinely had none.
   try {
@@ -93,11 +93,12 @@ export async function register() {
     console.error('[startup] Log Analytics finding placement failed:', err);
   }
 
+  // Refreshes today's trend points for every category. It writes nothing dated before today.
   try {
     const { backfillSnapshots } = await import('./lib/db/snapshots');
     await backfillSnapshots();
   } catch (err) {
-    console.error('[startup] trend-history backfill failed:', err);
+    console.error('[startup] trend point refresh failed:', err);
   }
 
   // Two-pass crash recovery (spec 025). Pass 1 must run before pass 2: it can hand pass 2 rows it

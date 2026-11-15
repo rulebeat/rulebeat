@@ -71,6 +71,8 @@ export function chartSeriesColor(index: number): string {
  * takes its tick and legend styling from here, so a widget added later inherits the fix
  * instead of repeating the literal. */
 export const CHART_TICK = { fontSize: 12, fill: 'var(--color-ink-muted)' };
+/** The vertical line on a trend where a line's counting changed: a neutral token, never red (a problem) or ink (type and hairlines). */
+export const TREND_MARKER_STROKE = 'var(--color-ink-faint)';
 export const CHART_LEGEND_STYLE = { fontSize: 12, color: 'var(--color-ink-2)' };
 
 export function timeAgo(iso: string): string {
@@ -95,15 +97,6 @@ export function postureColor(pct: number | null): string {
   if (pct >= 80) return 'var(--color-fill)';
   if (pct >= 60) return 'var(--color-status-warn)';
   return 'var(--color-sev-critical)';
-}
-
-/** Widget "period" config values → day counts. `allDays` lets each caller pick what 'all' means
- *  for its own data source's retention window (e.g. posture_snapshots vs. finding_events). */
-export function periodToDays(period: string, allDays: number): number {
-  if (period === '7d') return 7;
-  if (period === '90d') return 90;
-  if (period === 'all') return allDays;
-  return 30;
 }
 
 /** Trend chart tooltip label (spec 033): "passing/total" reads a posture trend correctly.

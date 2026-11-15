@@ -17,6 +17,8 @@ import { many as execMany } from '@/lib/db/exec';
 import { findingEvents as findingEventsTable } from '@/lib/db/tables';
 import { syncScanFindings, listFindings, getActivityOccurrenceCounts } from '@/lib/db/findings';
 import { queryActiveFindings } from '@/lib/dashboard-data';
+import { queryView } from '@/lib/db/finding-views';
+import { emptyView } from '@/lib/finding-view';
 import { saveSuppressions, loadSuppressions, isActiveSuppression } from '@/lib/suppressions';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 import type { Finding, Suppression } from '@/lib/types';
@@ -239,6 +241,16 @@ describe('suppression round-trip with no resourceId (activity findings)', () => 
     await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
 
     expect((await queryActiveFindings(FILTERS, EVERYTHING_ACCESS)).map(r => r.fingerprint)).not.toContain(f.fingerprint);
-    expect((await queryActiveFindings({ ...FILTERS, includeSuppressed: true }, EVERYTHING_ACCESS)).map(r => r.fingerprint)).toContain(f.fingerprint);
+  });
+
+  it('the Scans Activity tab lists a suppressed activity finding only under showSuppressed', async () => {
+    const f = activityFinding('principal-a');
+    await syncScanFindings({ scanId: 's1', category: CATEGORY, ranRuleIds: [RULE_A], findings: [f], finishedAt: daysAgo(1) });
+    await saveSuppressions([suppression({ fingerprint: f.fingerprint })]);
+
+    const listed = async (showSuppressed: boolean) =>
+      (await queryView(emptyView(), { tab: 'activity', showSuppressed }, EVERYTHING_ACCESS)).items.map(i => i.finding.fingerprint);
+    expect(await listed(false)).not.toContain(f.fingerprint);
+    expect(await listed(true)).toContain(f.fingerprint);
   });
 });

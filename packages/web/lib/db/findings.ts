@@ -9,7 +9,7 @@ import { hasScanLeftOutOfHistory, loadStoredScanBlobs } from './scan-blob-histor
 import { FINDINGS_BACKFILL_MARKER, findingsBackfillCategoryKey } from './scan-findings-copy';
 import { loadRules } from '../rules';
 import { listCategories } from './categories';
-import { upsertDailySnapshot } from './snapshots';
+import { refreshSnapshotsFor } from './snapshots';
 import { derivePlacement } from './finding-placement';
 import type { Access } from '../access-model';
 import { SYSTEM_ACCESS } from '../system-access';
@@ -19,6 +19,7 @@ import { getMeta, setMeta } from './meta';
 import { countsInFindingTotalsSql } from './finding-kinds-sql';
 import { RESOLVABLE_KINDS } from '../finding-kinds';
 import { diffRows, findingRows, mergeFindingsByFingerprint, type ChangedFinding, type FindingRow } from '../finding-rows';
+import { ACTIVITY_KEPT_DAYS } from '../widget-limits';
 import type { FindingPlacement } from '../placement';
 import type { Finding, RuleKind, Severity } from '../types';
 
@@ -68,7 +69,7 @@ export interface SyncScanFindingsOptions {
   covered?: Access;
 }
 
-const EVENT_RETENTION_DAYS = 180;
+const EVENT_RETENTION_DAYS = ACTIVITY_KEPT_DAYS;
 
 /** The two placement columns a finding is written with. A finding the scan path placed says where it
  *  sits; one built outside it (a restored scan blob) is placed by what it implies. */
@@ -257,6 +258,37 @@ export async function listFindings(access: Access, opts: ListFindingsOptions = {
 export async function listFindingSummaries(access: Access, opts: ListFindingsOptions = {}): Promise<FindingSummary[]> {
   const rows = await many(db.select(summaryColumns).from(findingsTable).where(listConditions(opts, access)));
   return rows.map(rowToSummary);
+}
+
+/** What a count over findings reads of one: which rule and category, where it sits, how severe, and when it
+ *  opened and closed. Never the text columns, which are most of a row's weight. */
+export type FindingDigest = Pick<FindingSummary,
+  'ruleId' | 'fingerprint' | 'severity' | 'category' | 'kind' | 'subscriptionId' | 'resourceGroup' | 'placement' | 'status' | 'firstSeenAt' | 'resolvedAt'>;
+
+const digestColumns = {
+  ruleId: findingsTable.ruleId, fingerprint: findingsTable.fingerprint, severity: findingsTable.severity,
+  category: findingsTable.category, kind: findingsTable.kind, subscriptionId: findingsTable.subscriptionId,
+  resourceGroup: findingsTable.resourceGroup, placement: findingsTable.placement, status: findingsTable.status,
+  firstSeenAt: findingsTable.firstSeenAt, resolvedAt: findingsTable.resolvedAt,
+};
+
+/** listFindingSummaries() cut to the fields a count reads, the same findings and the same values for them.
+ *  The dashboard summary counts tens of thousands of findings and reads this. */
+export async function listFindingDigests(access: Access, opts: ListFindingsOptions = {}): Promise<FindingDigest[]> {
+  const rows = await many(db.select(digestColumns).from(findingsTable).where(listConditions(opts, access)));
+  return rows.map(row => ({
+    ruleId: row.ruleId,
+    fingerprint: row.fingerprint,
+    severity: row.severity as Severity,
+    category: row.category,
+    kind: row.kind as RuleKind,
+    subscriptionId: row.subscriptionId,
+    resourceGroup: row.resourceGroup ?? undefined,
+    placement: row.placement as FindingPlacement,
+    status: row.status as 'active' | 'fixed',
+    firstSeenAt: row.firstSeenAt,
+    resolvedAt: row.resolvedAt ?? undefined,
+  }));
 }
 
 export async function syncScanFindings(opts: SyncScanFindingsOptions): Promise<SyncResult> {
@@ -623,7 +655,7 @@ export async function deleteFindingsForRule(ruleId: string): Promise<number> {
 
 /** The row-deleting half of deleteFindingsForRule, for a caller that already holds a transaction
  *  (deleting a rule removes the rule and its findings atomically). Returns the categories that lost
- *  rows; the caller must pass them to refreshSnapshotsFor() once its transaction has committed. */
+ *  rows; the caller must pass them to refreshSnapshotsFor() (lib/db/snapshots.ts) once its transaction has committed. */
 export async function removeFindingRowsForRule(
   tx: DbHandle,
   ruleId: string,
@@ -643,13 +675,6 @@ export async function removeFindingRowsForRule(
   await removeColumnCatalogueForRule(tx, ruleId);
 
   return { deleted: rows.length, categories: [...new Set(rows.map(r => r.category))] };
-}
-
-/** Recomputes today's snapshot for each category. Runs outside any transaction on purpose: on
- *  Postgres the recompute uses its own connection, so inside one it would still see the rows that
- *  transaction has not yet committed. */
-export async function refreshSnapshotsFor(categories: string[], now?: Date): Promise<void> {
-  for (const category of categories) await upsertDailySnapshot(category, now);
 }
 
 // --- one-time backfill from existing scan history (blob-based, best-effort mid-history) ---

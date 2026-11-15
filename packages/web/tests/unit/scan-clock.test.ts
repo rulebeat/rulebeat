@@ -32,8 +32,15 @@ import { resetDb } from '../helpers/db';
 import { fakeTenantContext } from '../helpers/fake-azure';
 import { EVERYTHING_ACCESS } from '../helpers/access';
 
-const SIMULATED_DAY_1 = new Date('2026-05-01T09:00:00.000Z');
-const SIMULATED_DAY_2 = new Date('2026-05-02T09:00:00.000Z');
+// Relative to today: finding events older than their 180-day retention window are deleted as they
+// are written, so fixed calendar dates would start failing once they aged past it.
+function simulatedDay(daysAgo: number) {
+  const day = new Date(Date.now() - daysAgo * 86_400_000);
+  day.setUTCHours(9, 0, 0, 0);
+  return day;
+}
+const SIMULATED_DAY_1 = simulatedDay(30);
+const SIMULATED_DAY_2 = simulatedDay(29);
 
 async function identityCategory() {
   const category = await getCategory('identity');

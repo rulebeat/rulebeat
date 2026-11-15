@@ -12,12 +12,15 @@ interface Props {
    *  Scope override: shows a subtle indicator next to the title so users know this widget's
    *  numbers are scoped, not tenant-wide. */
   filtered?: boolean;
+  /** Limit notes for what this widget's number means, decided by the server and sent with the data.
+   *  Drawn inside the body after the content, always visible. */
+  notes?: string[];
   children: React.ReactNode;
   onRemove?: () => void;
   onConfigure?: () => void;
 }
 
-export function WidgetWrapper({ widget, editMode, filtered, children, onRemove, onConfigure }: Props) {
+export function WidgetWrapper({ widget, editMode, filtered, notes, children, onRemove, onConfigure }: Props) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -77,7 +80,12 @@ export function WidgetWrapper({ widget, editMode, filtered, children, onRemove, 
           scrolling. data-widget-body is also the box the dashboard's fit-to-content
           pass measures a widget's content against. */}
       <div data-widget-body className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {children}
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        {notes && notes.length > 0 && (
+          <div data-widget-notes className="shrink-0 space-y-1 px-4 pb-3 pt-1">
+            {notes.map(note => <p key={note} className="text-xs text-ink-muted">{note}</p>)}
+          </div>
+        )}
       </div>
     </div>
   );

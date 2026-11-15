@@ -8,7 +8,8 @@
  * multi-value param (`ruleId`, `subscription`, `severity`, `tags`) already on this same function.
  */
 import { describe, expect, it } from 'vitest';
-import { buildScansHref, parseCategoryParam } from '@/lib/scans-link';
+import { buildScansHref, newVsFixedBarHref, parseCategoryParam } from '@/lib/scans-link';
+import { viewFromSearchParams } from '@/lib/finding-view';
 import type { WidgetFilters } from '@/lib/dashboard-filters';
 
 function widgetFilters(overrides: Partial<WidgetFilters> = {}): WidgetFilters {
@@ -39,6 +40,26 @@ describe('buildScansHref · category param', () => {
   });
 });
 
+describe('buildScansHref · placements override', () => {
+  const params = (href: string) => new URLSearchParams(href.split('?')[1]);
+
+  it('writes the generic f= param, with the values joined by a pipe', () => {
+    const href = buildScansHref(widgetFilters(), { placements: ['directory', 'management-group'] });
+    expect(params(href).getAll('f')).toEqual(['placement=directory|management-group']);
+    expect(params(href).has('placement')).toBe(false);
+  });
+
+  it('writes nothing when no placement is given', () => {
+    expect(params(buildScansHref(widgetFilters())).has('f')).toBe(false);
+    expect(params(buildScansHref(widgetFilters(), { placements: [] })).has('f')).toBe(false);
+  });
+
+  it('opens a view that filters on the same placements', () => {
+    const view = viewFromSearchParams(params(buildScansHref(widgetFilters(), { placements: ['workspace'] })));
+    expect(view.filters).toEqual([{ field: 'placement', values: ['workspace'] }]);
+  });
+});
+
 describe('parseCategoryParam', () => {
   it('returns an empty list for undefined', async () => {
     expect(parseCategoryParam(undefined)).toEqual([]);
@@ -59,5 +80,32 @@ describe('parseCategoryParam', () => {
       const params = new URLSearchParams(href.split('?')[1]);
       expect(parseCategoryParam(params.get('category') ?? undefined)).toEqual(categories);
     }
+  });
+});
+
+describe('buildScansHref · dateWindow override', () => {
+  const params = (href: string) => new URLSearchParams(href.split('?')[1]);
+
+  it('replaces the inherited window with the override', () => {
+    const href = buildScansHref(widgetFilters(), { dateWindow: { mode: 'custom', from: '2026-03-04', to: '2026-03-04' } });
+    expect(params(href).get('from')).toBe('2026-03-04');
+    expect(params(href).get('to')).toBe('2026-03-04');
+    expect(params(href).has('window')).toBe(false);
+  });
+
+  it("keeps the inherited window when there is no override", () => {
+    expect(params(buildScansHref(widgetFilters())).get('window')).toBe('7');
+  });
+});
+
+describe('newVsFixedBarHref', () => {
+  it('opens a one-day list of the bar status under the widget filters', () => {
+    const href = newVsFixedBarHref(widgetFilters({ categories: ['security'] }), '2026-03-04', 'fixed');
+    const view = viewFromSearchParams(new URLSearchParams(href.split('?')[1]));
+    expect(view.window).toEqual({ mode: 'custom', from: '2026-03-04', to: '2026-03-04' });
+    expect(view.filters).toEqual(expect.arrayContaining([
+      { field: 'status', values: ['fixed'] },
+      { field: 'category', values: ['security'] },
+    ]));
   });
 });

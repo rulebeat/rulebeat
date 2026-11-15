@@ -171,7 +171,7 @@ describe('the Advisories widget route', () => {
     expect(keys).not.toContain('overdue');
   });
 
-  it('shows suppressed Advisories only when the filter asks for them', async () => {
+  it('never shows a suppressed Advisory, and ignores ?suppressed=1', async () => {
     await scan();
     const supp = (await listFindings(EVERYTHING_ACCESS)).find(f => f.resourceName === 'a-supp')!;
     await addSuppression({
@@ -179,7 +179,7 @@ describe('the Advisories widget route', () => {
       reason: 'accepted', suppressedAt: NOW.toISOString(),
     });
     expect(names(await widget())).not.toContain('a-supp');
-    expect(names(await widget('?suppressed=1'))).toContain('a-supp');
+    expect(names(await widget('?suppressed=1'))).not.toContain('a-supp');
   });
 
   it('caps the rows at the limit and still returns the full total', async () => {

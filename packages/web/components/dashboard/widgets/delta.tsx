@@ -3,8 +3,10 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 /** Shared Up/Down/flat trend indicator: used by stat-card and posture-ring widgets, which
  *  each render a numeric delta with the same icon/color-by-sign logic but slightly different
  *  wrapping text and sizing. */
-export function Delta({ value, suffix = '%', title, neutralLabel, size = 'sm', display = 'flex' }: {
+export function Delta({ value, suffix = '%', text: fullText, title, neutralLabel, size = 'sm', display = 'flex' }: {
   value: number | null;
+  /** The whole label, when the caller words it ("+25 pts vs 2026-10-01"); only the icon and colour follow `value`. */
+  text?: string;
   suffix?: string;
   title?: string;
   /** Text shown when value === 0 (e.g. 'flat'); when unset, renders the numeric value like the non-zero cases. */
@@ -24,7 +26,7 @@ export function Delta({ value, suffix = '%', title, neutralLabel, size = 'sm', d
   const textCls = size === 'xs' ? 'text-xs' : 'text-sm';
   const useNeutralLabel = !positive && !negative && neutralLabel !== undefined;
   const weightCls = useNeutralLabel ? '' : 'font-medium';
-  const text = useNeutralLabel ? neutralLabel : `${positive ? '+' : ''}${value}${suffix}`;
+  const text = fullText ?? (useNeutralLabel ? neutralLabel : `${positive ? '+' : ''}${value}${suffix}`);
 
   return (
     <span title={title} className={`${display} items-center gap-1 ${color} ${textCls} ${weightCls}`}>

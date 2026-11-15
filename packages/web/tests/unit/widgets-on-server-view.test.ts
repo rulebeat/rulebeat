@@ -170,7 +170,6 @@ describe('the Advisories widget', () => {
       ['?resourceGroups=rg-low', 'tab=advisories&rg=rg-low'],
       ['?tags=retirement', 'tab=advisories&tags=retirement'],
       [`?ruleIds=${ADV_LOW}`, `tab=advisories&ruleId=${ADV_LOW}`],
-      ['?suppressed=1', 'tab=advisories&suppressed=1'],
     ];
     for (const [widgetQuery, viewQuery] of cases) {
       const data = await widget(widgetQuery ? `${widgetQuery}&limit=50` : '?limit=50');

@@ -1,5 +1,7 @@
 import type { WidgetFilters } from './dashboard-filters';
+import type { DateWindow } from './date-window';
 import type { ExplorerStatusFilter } from './explorer-filters';
+import type { FindingPlacement } from './placement';
 
 /** Metric-appropriate overrides layered on top of a widget's inherited `WidgetFilters` when
  *  building a click-through link to the Scans Results tab: see `buildScansHref`. */
@@ -18,7 +20,12 @@ export interface ScansLinkOverrides {
   /** Single rule id to link to (e.g. a top-rules row): takes precedence over any inherited
    *  `filters.ruleIds`. */
   ruleId?: string;
+  /** Placements to link to (a `FindingPlacement` each): written as the generic `f=placement=a|b`
+   *  param, since the field has no short param of its own. */
+  placements?: readonly FindingPlacement[];
   search?: string;
+  /** Window to link to (e.g. one day of a New vs Fixed bar): takes precedence over the inherited window. */
+  dateWindow?: DateWindow;
 }
 
 /** Builds a `/scans?tab=results&...` href from a dashboard/widget's merged `WidgetFilters` plus
@@ -44,15 +51,23 @@ export function buildScansHref(filters: WidgetFilters, overrides: ScansLinkOverr
   if (subscription) params.set('subscription', subscription);
   if (filters.resourceGroups?.length) params.set('rg', filters.resourceGroups.join(','));
   if (filters.tags?.length) params.set('tags', filters.tags.join(','));
-  if (filters.dateWindow.mode === 'custom') {
-    params.set('from', filters.dateWindow.from);
-    params.set('to', filters.dateWindow.to);
+  const dateWindow = overrides.dateWindow ?? filters.dateWindow;
+  if (dateWindow.mode === 'custom') {
+    params.set('from', dateWindow.from);
+    params.set('to', dateWindow.to);
   } else {
-    params.set('window', String(filters.dateWindow.days));
+    params.set('window', String(dateWindow.days));
   }
+  if (overrides.placements?.length) params.append('f', `placement=${overrides.placements.join('|')}`);
   if (overrides.search) params.set('q', overrides.search);
 
   return `/scans?${params.toString()}`;
+}
+
+/** The one-day Scans list a New vs Fixed bar opens: the widget's own filters, the bar's UTC day and the
+ *  status of the series clicked, so the list holds exactly the number the bar shows. */
+export function newVsFixedBarHref(filters: WidgetFilters, date: string, status: 'new' | 'fixed'): string {
+  return buildScansHref(filters, { status, dateWindow: { mode: 'custom', from: date, to: date } });
 }
 
 /** Splits the `?category=` searchParam into a list, the same comma-list convention `?severity=`
