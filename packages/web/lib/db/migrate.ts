@@ -756,6 +756,8 @@ export function runMigrations(sqlite: Database.Database): void {
   } catch { /* best-effort */ }
   try { sqlite.exec(`ALTER TABLE compliance_snapshots RENAME TO posture_snapshots`); } catch { /* already renamed or doesn't exist */ }
   try { sqlite.exec(`ALTER TABLE posture_snapshots RENAME COLUMN compliance_pct TO posture_pct`); } catch { /* already renamed or doesn't exist */ }
+  // Retention names this index (lib/db/snapshots.ts), so it must exist on every install.
+  try { sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_snapshots_date ON posture_snapshots(date DESC)`); } catch { /* best-effort */ }
 
   // Which version of the finding count each trend point was computed under (map #320). 0 means "not
   // recorded": every point written before this column existed keeps that, and is never rewritten.
