@@ -1,8 +1,8 @@
 import { eq, and, or, inArray, notInArray, gte, lte, lt, ne, desc, min, max, sql, getTableColumns, type SQL } from 'drizzle-orm';
 import { db } from './client';
-import { dbKind } from './backend';
 import {
   postureSnapshots as snapshotsTable, findings as findingsTable, suppressions as suppressionsTable, categories as categoriesTable,
+  postureSnapshotsDateIndexHint,
 } from './tables';
 import { many, run, inConsistentWrite, type DbHandle } from './exec';
 import { getCategory, listCategories } from './categories';
@@ -286,8 +286,8 @@ async function writeCategoryPoints(tx: DbHandle, categoryId: string, now: Date, 
 /**
  * Removes points older than 365 days, keeping each (category, level)'s newest point older than the
  * cutoff, so a baseline at the edge of the window still has a point to stand on. The level is compared in
- * lower case, and a category that no longer exists keeps nothing. One statement, the same shape on both
- * backends. Today's and every recent point are untouched.
+ * lower case, and a category that no longer exists keeps nothing. One statement, the same text on both
+ * backends: the one clause only SQLite reads comes from `postureSnapshotsDateIndexHint`. Today's and every recent point are untouched.
  */
 async function enforceRetention(now: Date): Promise<void> {
   const cutoff = toDateKey(new Date(now.getTime() - RETENTION_DAYS * 86_400_000));
@@ -301,10 +301,10 @@ async function enforceRetention(now: Date): Promise<void> {
       // is rewritten by Postgres into one that reads its whole category for every old point.
       // SQLite reads every point of the table through the key, which covers the three columns, rather than the
       // few past the cutoff through the date index (231 ms at 2.2M points, minutes at 22M, every 30 seconds),
-      // so it is told which index to use. Postgres has no such clause and plans the range on its own.
+      // so it is told which index to use. The hint is resolved in lib/db/tables.ts and is empty on Postgres.
       sql`(${snapshotsTable.category}, lower(${snapshotsTable.subscriptionId}), ${snapshotsTable.date}) NOT IN (
         SELECT old.category, lower(old.subscription_id), max(old.date)
-        FROM posture_snapshots old ${dbKind === 'sqlite' ? sql.raw('INDEXED BY idx_snapshots_date') : sql.raw('')}
+        FROM posture_snapshots old ${postureSnapshotsDateIndexHint}
         WHERE old.date < ${cutoff}
         GROUP BY old.category, lower(old.subscription_id)
       )`,

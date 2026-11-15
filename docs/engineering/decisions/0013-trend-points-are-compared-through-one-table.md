@@ -152,12 +152,37 @@ On SQLite that was still not enough. Left to itself the planner answered the sub
 of the table through the `(category, subscription_id, date)` key, which covers the three columns, instead of
 the few points past the cutoff through the date index: 226 to 231 ms at 2.2 million points (3 categories,
 2,000 levels, 366 days), which grows with the table and would be about 140 s at 22 million, on every tick.
-The statement now says `INDEXED BY idx_snapshots_date` for the SQLite backend (Postgres has no such clause
-and plans the range on its own), and the upgrade creates that index if an old database lacks it. The same
-2.2 million points take 38 ms for the whole empty refresh. The dense bench, at 500 subscriptions, 10
-categories and 10,000 findings (the full size held more than the 3 GB a build sandbox allows while it built
-its dataset), takes 2.0 ms for the empty refresh on SQLite. The retention cost test holds the 2.2 million
-point case on both backends, with a limit of 100 ms, and fails on a scan of the table.
+The statement now carries an index hint for SQLite (`postureSnapshotsDateIndexHint` in `lib/db/tables.ts`,
+empty on Postgres, which has no such clause and plans the range on its own), so the statement in
+`lib/db/snapshots.ts` is the same text on both backends. The upgrade creates the date index if an old database
+lacks it. The same 2.2 million points take 38 ms for the whole empty refresh. The dense bench, at 500
+subscriptions, 10 categories and 10,000 findings (the full size held more than the 3 GB a build sandbox
+allows while it built its dataset), takes 2.0 ms for the empty refresh on SQLite.
+
+**The cost of retention at the size the product states** (2,000 subscriptions, 30 categories, 366 days of
+daily points per level: 21.96 million points, nothing to delete). The statement alone, as the empty refresh
+that runs every 30 seconds, on the machine above, with the points inserted level by level, so the few
+thousand points past the cutoff are spread over the table (the worst row order; points inserted day by day
+sit together and took 145 to 190 ms on SQLite):
+
+| Backend | First call after the bulk load | Repeat calls |
+| --- | --- | --- |
+| SQLite | 10.5 s | 450 to 480 ms |
+| Postgres 17, analyzed | 1.06 s | 460 to 480 ms |
+
+The review of this item measured the same statement at 14.5 s on SQLite with a cold operating system cache,
+and on Postgres at 9.3 s cold and about 866 ms warm without statistics. The cost grows with the points past
+the cutoff (one per level and category), not with the whole table, and the repeat figure is under the
+1-second limit on both backends. The first call after a cold start is not: it reads those points from disk,
+once. The date index does not hold the category and level, so each point past the cutoff is also read from
+the table; a covering index would remove that and is not added, because it costs every write on the largest
+table for a statement that is under the limit once warm.
+
+The retention cost test holds a smaller case on both backends: 450,000 points (150 levels, 3 categories)
+against a limit of 1.5 s, and 2.2 million points against a limit of 100 ms. Both fail when retention throws
+(the writer logs that and carries on) or deletes a point, and on Postgres they analyze the table first. They
+do not hold the full size; the figures above come from running the same statement on 21.96 million points by
+hand.
 
 The index that is called for is the date index, which exists. The lower-case expression index on
 `lower(subscription_id)` is still not added: the statement no longer matches the outer row on it.

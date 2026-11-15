@@ -5,10 +5,10 @@
  * year of daily points for many subscriptions and times the real refresh, which deletes nothing.
  * Runs on both backends.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/client';
 import { dbKind } from '@/lib/db/backend';
-import { run } from '@/lib/db/exec';
+import { many, run } from '@/lib/db/exec';
 import { postureSnapshots } from '@/lib/db/tables';
 import { listCategories } from '@/lib/db/categories';
 import { refreshSnapshotsFor } from '@/lib/db/snapshots';
@@ -23,6 +23,22 @@ beforeEach(async () => {
   await clearRules();
   await execRaw('DELETE FROM posture_snapshots');
 });
+
+afterEach(() => vi.restoreAllMocks());
+
+async function countPoints(): Promise<number> {
+  return (await many(db.select({ date: postureSnapshots.date }).from(postureSnapshots))).length;
+}
+
+/** The writer catches and logs a failed retention, so a statement that throws (a missing index) would still be fast.
+ *  The refresh counts as having run retention only when nothing was logged and every point is still there. */
+async function timedEmptyRefresh(): Promise<{ elapsed: number; logged: unknown[][] }> {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const start = performance.now();
+  await refreshSnapshotsFor([]);
+  const elapsed = performance.now() - start;
+  return { elapsed, logged: logged.mock.calls };
+}
 
 describe('retention cost', () => {
   it('does not scan a category for every point past the cutoff', async () => {
@@ -43,11 +59,15 @@ describe('retention cost', () => {
       }
     }
     for (let i = 0; i < rows.length; i += 500) await run(db.insert(postureSnapshots).values(rows.slice(i, i + 500)));
+    if (dbKind === 'pg') await execRaw('ANALYZE posture_snapshots');
+    const before = await countPoints();
+    expect(before).toBe(categories.length * SUBSCRIPTIONS * DAYS);
 
-    const start = performance.now();
-    await refreshSnapshotsFor([]);
-    const elapsed = performance.now() - start;
+    const { elapsed, logged } = await timedEmptyRefresh();
 
+    // Each level's day-366 point is the newest one past the cutoff and is kept, so nothing is deleted.
+    expect(logged).toEqual([]);
+    expect(await countPoints()).toBe(before);
     // The same statement took 5 s or more at this size when it searched the whole category for each old point.
     expect(elapsed).toBeLessThan(1500);
   }, 120_000);
@@ -79,12 +99,15 @@ describe('retention cost at the size the product states', () => {
                   date('now', '-' || d.i || ' days') || 'T12:00:00.000Z'
            FROM l, d`);
     }
+    if (dbKind === 'pg') await execRaw('ANALYZE posture_snapshots');
     await refreshSnapshotsFor([]);
+    const before = await countPoints();
+    expect(before).toBe(categories.length * 2000 * 366);
 
-    const start = performance.now();
-    await refreshSnapshotsFor([]);
-    const elapsed = performance.now() - start;
+    const { elapsed, logged } = await timedEmptyRefresh();
 
+    expect(logged).toEqual([]);
+    expect(await countPoints()).toBe(before);
     expect(elapsed).toBeLessThan(100);
   }, 300_000);
 });

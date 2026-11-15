@@ -124,12 +124,12 @@ describe('the run', () => {
     // Every subscription of the tree has a point on the first day: nothing stood before it to match.
     for (const sub of data.subscriptions) expect(levels.has(sub)).toBe(true);
     expect(points.every(p => p.findingCountVersion === FINDING_COUNT_VERSION)).toBe(true);
-    // Two earlier days were written with the writer's `now`, a year of copies stands behind them (the oldest
-    // goes to retention while the measured refreshes run), and the measured refreshes then wrote today's.
+    // Two earlier days were written with the writer's `now`, a year of copies stands behind them (days 3 to
+    // 366 back; the cutoff is 365 days back and retention keeps each level's day-366 point, so none is deleted), and the measured refreshes then wrote today's.
     const today = new Date().toISOString().slice(0, 10);
     const earlier = [...new Set(points.map(p => p.date))].sort().filter(d => d < today);
     expect(earlier.slice(-2)).toEqual([2, 1].map(n => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)));
-    expect(earlier.length).toBeGreaterThanOrEqual(365);
+    expect(earlier).toHaveLength(366);
     expect(points.some(p => p.date === today)).toBe(true);
   });
 
